@@ -72,7 +72,10 @@ With rootless Podman, the hopper's port (4790) is served by a process that belon
   1. The systemd credential `hopper-master-key` (an encrypted credential, for example under the TPM).
   2. The key you give at launch: run `bash hopper-service.sh start-with-key`. It reads `HOPPER_MASTER_KEY`, or asks you for the key. The service does not keep the key: give it again at the next start.
   3. The key sealed to this host (`bash master-key.sh seal`). Sealing is optional.
+- It gives the key to the containers as a file in memory, not as a setting of the container. `podman inspect` does not show the key. After a restart of this computer the file is gone, and only the service starts the stack again.
+- The install puts in `master-key.sh` when it is not there. When you give the install the key (`HOPPER_MASTER_KEY`), it seals the key to this host. Then the stack starts again by itself after a restart of this computer.
 - When the hopper has data and the service gets no key, the service does not start. It does not make a new key, and it tells you how to give the key.
+- When the service does not start, it shows a desktop notice, when there is a desktop. It also runs `hopper-alert.sh` beside `hopper-service.sh`, when there is one, with what went wrong. Write a script there that sends that text to you, for example to a webhook.
 - It starts the stack at boot, when linger is on.
 - Every minute, a timer checks the port from this host. When the hopper's container runs and its port does not answer, the timer restarts the service.
 - The update stops and starts the stack through the service.
@@ -234,7 +237,9 @@ When the image the hopper runs is of another channel than the one in Settings â†
 4. Restart: `systemctl --user restart hopper`.
 5. Keep the services running after you log out: `sudo loginctl enable-linger "$USER"`.
 
-The host install does not start OpenFGA. Until you run one and set `HOPPER_OPENFGA_URL`, access checks are off and every credential is denied. See docs/deploy.md, "Access: OpenFGA".
+The host install also sets up OpenFGA, which the access checks need. It downloads the OpenFGA release that the container install runs, and checks its SHA-256. It runs it as the service `hopper-openfga`, on this computer only, with its tables in the hopper's database. It adds `HOPPER_OPENFGA_URL` and `HOPPER_OPENFGA_KEY_FILE` to `~/.config/hopper/daemon.env`. An install from before gets OpenFGA when you run the install line again.
+
+To use your own OpenFGA, set `HOPPER_OPENFGA_URL` (and its key) in `daemon.env` before you install. The install then sets up none. See docs/deploy.md, "Access: OpenFGA".
 
 ### Update a host install
 
@@ -242,7 +247,7 @@ The host install does not start OpenFGA. Until you run one and set `HOPPER_OPENF
 2. Click **Update now** when an update is available. Or turn on **Auto-update**. Only the hopper's admins can do this.
 3. The hopper builds the update beside the running install and checks that it loads. It waits until no restart blocker is left, swaps the install in, and restarts. Running jobs that can reattach keep running.
 
-To update by hand, run the install line again.
+To update by hand, run the install line again. Run it again too to update OpenFGA: an update in Settings â†’ Version does not change the OpenFGA version.
 
 ## Back up
 
@@ -279,4 +284,5 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 | `postgres: another container runs on this data volume` | A second stack runs on the same data. Its Postgres does not start, and the first one keeps running. Remove the second stack with the tool that made it (`docker-compose down` or `podman-compose down`). Do not add `-v`: it removes the data. |
 | `unrecognized command "podman compose"` | Your Podman is older than 4.7. Use `podman-compose`, or install a newer Podman. |
 | Host install: `did not answer /api/health` | Read `journalctl --user -u hopper -n 50`. |
+| Host install: "Access checks are off" | Read `journalctl --user -u hopper-openfga -n 50`. Restart it: `systemctl --user restart hopper-openfga`. |
 | A **stalled** badge in the top bar | The hopper stopped answering for more than 2 s. Point at the badge to see how long, and the requests in flight. Read the log line `the event loop stalled` (`podman compose logs hopper`). The badge goes after 10 minutes. |

@@ -16,7 +16,8 @@
 // #637) is looked at once more first: done by now, its record is `resolved` and its job finished; else Jev picks, too. A
 // failure of a job that reported a hopper bug about itself waits on that report's problem, never a person (issue #1147).
 // A job whose own pull request's checks are red goes on to fix them, its failed checks run again first (issue #1230). One
-// whose own pull request has merge conflicts or is a draft goes on to finish it (issue #1265).
+// whose own pull request has merge conflicts or is a draft goes on to finish it (issue #1265). The same failure as its
+// item's run before stops the item for a person, with no Jev pick (issue #1461).
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   failureSettingsOf, jobPriorityTag, type ActingPerson, type Discarding, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
@@ -26,12 +27,12 @@ import { assess, STALE_AFTER_MS } from './assess.ts';
 import { BUILTIN_CAUSES, causePresent, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { askJev, type JevCase } from './jev.ts';
-import { attemptOf, causeInputOf, recentOf } from './chain.ts';
+import { attemptOf, causeInputOf, recentOf, repeatedOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts'; import { createChecksRed, type ChecksRedOptions } from './checks-red.ts'; import { createUnfinished, type UnfinishedDeps } from './unfinished.ts';
 import { rerunRecordOf, retryable } from './rerun.ts';
 import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
-import { createDoneAtSource, DONE_NOTE, lookedAgain } from './done-at-source.ts';
+import { createDoneAtSource, createWorkLook, DONE_NOTE, lookedAgain } from './done-at-source.ts';
 import { createBackfill } from './backfill.ts';
 import type { FailureAction, Failures } from './failures.ts';
 import { signatureOf } from './signature.ts';
@@ -90,7 +91,7 @@ export function createFailures(o: FailuresOptions): Failures {
   const checkWork = createWorkCheck({ store, clock, workState: o.workState, checked: (id, work) => handoffs.checked(id, work), logger: o.logger, live: () => !stopped });
 
   /** The done-check misses whose source found the work done when looked at once more, before their assessment (issue #637). */
-  const doneWhenAssessed = new Set<string>();
+  const doneWhenAssessed = new Set<string>(), work = createWorkLook({ store, workState: o.workState, skip: (id) => doneWhenAssessed.has(id), live: () => !stopped });
   const lookAgain = async (id: string): Promise<void> => { if (!stopped && await lookedAgain(store, o.doneAtSource, id) && !stopped) doneWhenAssessed.add(id); };
 
   /** Its latest run has a record — unless the job was continued since (issue #551): its new failure is assessed anew. */
@@ -114,7 +115,7 @@ export function createFailures(o: FailuresOptions): Failures {
       const at = now();
       const error = job.error ?? 'failed without a reason';
       const { normalised, signature } = signatureOf(error);
-      const cause = matchCause(error, signature, store.settings.getNamedCauses());
+      const { cause, reason: workReason } = work.causeOf(jobId, matchCause(error, signature, store.settings.getNamedCauses()));
       const machineId = machineOf(job);
       const attempt = attemptOf(store, job);
       const ranMs = job.startedAt && job.finishedAt ? Math.max(0, Date.parse(job.finishedAt) - Date.parse(job.startedAt)) : undefined;
@@ -129,7 +130,7 @@ export function createFailures(o: FailuresOptions): Failures {
         job: { executor: job.spec.executor, pinned: job.spec.machineId !== undefined, ...(machineId ? { machineId } : {}) },
         ...(ranMs !== undefined ? { ranMs } : {}), ...(job.errorTail ? { tail: job.errorTail } : {}),
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
-        ...causeInputOf(store, job, cause?.id),
+        ...causeInputOf(store, job, cause?.id), repeated: repeatedOf(store, job, signature), ...(workReason ? { causeReason: workReason } : {}),
         ...(report ? { hopperBug: { title: reportTitle(report), reason: reportReason(report), ...(reportOpen ? { open: reportOpen.id } : {}) } } : {}),
       });
       let problem: Problem | undefined;
@@ -158,7 +159,7 @@ export function createFailures(o: FailuresOptions): Failures {
       });
       finish = doneNow;
       if (!doneNow) handoffs.afterRecord(record);
-      if ((!cause || cause.id === 'not-complete') && !doneNow && a.decision === 'person' && !a.superseded && Date.parse(record.at) - Date.parse(job.finishedAt ?? job.updatedAt) <= STALE_AFTER_MS && attempt - 1 < s.maxAttempts) {
+      if ((!cause || cause.id === 'not-complete') && !doneNow && a.decision === 'person' && !a.superseded && !a.repeated && Date.parse(record.at) - Date.parse(job.finishedAt ?? job.updatedAt) <= STALE_AFTER_MS && attempt - 1 < s.maxAttempts) {
         jevCase = { recordId: record.id, job, error, attempt, doneCheck: cause !== undefined, ...(ranMs !== undefined ? { ranMs } : {}), ...(machineId ? { machineId } : {}) };
       }
       store.jobs.update(job.id, {
@@ -310,7 +311,7 @@ export function createFailures(o: FailuresOptions): Failures {
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;
         // A timeout's facts first (issue #630), then the assessment.
-        if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => { void timeouts.lookUpPullRequest(id).catch(() => {}).then(() => lookAgain(id)).catch(() => {}).then(() => assessJob(id)); }); }
+        if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => { void timeouts.lookUpPullRequest(id).catch(() => {}).then(() => lookAgain(id)).catch(() => {}).then(() => work.look(id)).catch(() => {}).then(() => assessJob(id)); }); }
         handoffs.onEvent(e);
       });
       timer = setInterval(() => { void sweep(); }, o.sweepMs);

@@ -21,6 +21,15 @@ export function recentOf(store: Reads, job: Job, signature: string, since: strin
   return [...byItem.values()];
 }
 
+/**
+ * Whether the failure of its item's run before it has this signature (issue #1461): the same job's earlier record, when it
+ * was continued, else the record of the job it ran again — by a retry, a person, tending or anything else.
+ */
+export function repeatedOf(store: Reads, job: Job, signature: string): boolean {
+  const before = store.failures.forJob(job.id) ?? (job.rerunOf !== undefined ? store.failures.forJob(job.rerunOf) : undefined);
+  return before?.signature === signature;
+}
+
 /** Its run in its chain of retries: 1, plus each earlier job of its item that a retry ran again. */
 export function attemptOf(store: Reads, job: Job): number {
   let n = 1;

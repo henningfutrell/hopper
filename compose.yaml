@@ -19,6 +19,8 @@
 #   podman run --rm ghcr.io/henningfutrell/hopper:latest hopper master-key script > master-key.sh
 #   bash master-key.sh seal                                           (paste the key; nothing is shown)
 #   systemctl --user restart hopper-compose.service                   (each start: it unseals the key for compose only)
+# The service's install puts in master-key.sh, and seals the key given to it as HOPPER_MASTER_KEY (issue #1487). It gives
+# the key to the containers as a file in memory, never in their config, and runs hopper-alert.sh here when a start fails.
 # Without the service: bash master-key.sh run podman compose up -d --force-recreate. Or give it at launch yourself — in the environment compose starts with, never in a file (issue #894):
 #   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY      (paste the 64 hex digits; nothing is shown)
 #   podman compose up -d --force-recreate --no-deps hopper
@@ -135,8 +137,11 @@ services:
         condition: service_healthy
     environment:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
-      # The master key (issue #659), given at launch, never in a file (issue #894): see the top of this file.
+      # The master key (issue #659), given at launch, never in a file of this folder (issue #894): see the top of this file.
+      # hopper-compose.service gives it as a file in memory, HOPPER_MASTER_KEY_FILE, mounted below (issue #1487): then no
+      # container's config holds it.
       HOPPER_MASTER_KEY: ${HOPPER_MASTER_KEY:-}
+      HOPPER_MASTER_KEY_FILE: ${HOPPER_MASTER_KEY_FILE:-}
       HOPPER_MASTER_KEY_PREVIOUS: ${HOPPER_MASTER_KEY_PREVIOUS:-}
       # How this host sealed the key (master-key.sh run sets it, issue #1296): the hopper then rotates only with the host.
       HOPPER_MASTER_KEY_SEALED: ${HOPPER_MASTER_KEY_SEALED:-}
@@ -209,6 +214,12 @@ services:
       - type: bind
         source: ${HOPPER_PODMAN_SOCKET_HOST:-/dev/null}
         target: /run/podman/podman.sock
+      # The master key's file (issue #1487): HOPPER_MASTER_KEY_HOST_FILE, its path on this computer, in memory, written by
+      # hopper-compose.service at each start and removed at its stop. Unset, /dev/null: the key comes as HOPPER_MASTER_KEY.
+      - type: bind
+        source: ${HOPPER_MASTER_KEY_HOST_FILE:-/dev/null}
+        target: /run/hopper-master-key
+        read_only: true
     # podman.socket makes the socket readable and writable by your group (mode 0660). In a rootless container your group is
     # group 0, so the hopper's user joins group 0 to reach the socket.
     group_add: ["0"]
@@ -285,14 +296,21 @@ services:
         condition: service_healthy
     environment:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
-      # The hopper's master key (issue #659), given at launch.
+      # The hopper's master key (issue #659), given at launch: as the hopper's, a variable or a file (issue #1487).
       HOPPER_MASTER_KEY: ${HOPPER_MASTER_KEY:-}
+      HOPPER_MASTER_KEY_FILE: ${HOPPER_MASTER_KEY_FILE:-}
       HOPPER_MASTER_KEY_PREVIOUS: ${HOPPER_MASTER_KEY_PREVIOUS:-}
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
       HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
       HOPPER_KMS_KEY: ${HOPPER_KMS_KEY:-}
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
+      - type: bind
+        source: ${HOPPER_MASTER_KEY_HOST_FILE:-/dev/null}
+        target: /run/hopper-master-key
+        read_only: true
+    # The key's file is not one SELinux lets a container open (Fedora and the like); without SELinux this changes nothing.
+    security_opt: [label=disable]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4791/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 30s

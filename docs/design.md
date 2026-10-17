@@ -91,7 +91,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
-| `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — and `install.html`, the install page; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/`; of `ui/` only `index.css` and `app/story.ts`; it links to the docs on GitHub |
+| `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — `install.html`, the install page, `guide.html`, the user guide (issue #556), and the **help pages** (issue #790): `help/*.md` rendered by `site/help.ts` into `help/<page>.html`, with each page's Markdown beside it, never copied into `site/`; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/` (it renders the help pages itself, with `marked`, the way `src/help/book.ts` does); of `ui/` only `index.css` and `app/story.ts`; of `help/` only its Markdown; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
 | `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
 | `scripts/kind-check.ts` | the kind check (issue #1281, docs/deploy.md "Check the chart on kind"): `kind`, `helm` and `kubectl` bring up a fresh kind cluster with the Helm chart, ask the hopper's health in its pod, and look in every pod for a Podman or Docker socket or runtime; run by `.github/workflows/kind.yml` | everything in `src/`; it never runs in the daemon |
@@ -261,7 +261,8 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
   the decision path and never gates a start. A question frees its lane in the transaction that
   pauses the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
-  - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option, default 4), scaled down
+  - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option: a machine added or joined takes
+    the machine defaults' lanes; only this machine, `local`, falls back to 4), scaled down
     past the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
   - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaks first; an approval ends a router hold;
@@ -806,7 +807,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   machine's default shell, and has no option to pick one per tab (herdr 0.8.2); on Windows that is
   PowerShell, which refuses `&&` (5.1) and has no `printf`, so the scratch marker never showed and
   every job there waited 60000 ms. The executor reads the pane after each wait, and when it shows a
-  PowerShell or cmd prompt (`windowsShellOf`, `screen.ts`) fails the job at once: `the shell of pane
+  PowerShell or cmd prompt (`windowsShellOf`, `windows-shell.ts`) fails the job at once: `the shell of pane
   <pane> on <machine> is PowerShell, and the hopper needs a POSIX shell …`, the pane closed. The
   hopper does not translate its commands per shell: the fix is on the machine, a POSIX shell as herdr's
   default for the hopper's session (README "A Windows computer").
@@ -1040,7 +1041,7 @@ and `agent read --source recent-unwrapped --lines 200`.
 watch the same turn) where
 `anchor` is the last line of what was sent as Claude echoes it — the footer's last line
 (`If the job cannot be done, …`) on the first turn, the answer's last line on a resume.
-Only output lines **after the last occurrence of the anchor** count. **Every** outcome
+Only output lines **after the last occurrence of the anchor** count, up to the rule above the input box (`transcriptEnd`, `screen.ts`; with no input box, the last rule, a dialog's top): a `─` rule in the agent's own words, a Markdown rule or table, is part of the turn, so a marker after it still counts (issue #850: a proposal with a rule ended on `HOPPER_PROPOSAL` and was taken as a status note). **Every** outcome
 below except `blocked`, agent gone and timeout requires status `idle`/`done` **and**
 `state_change_seq` greater than at send — or, **stalled** (issue #278), Claude waiting (`idle`, `done`
 or `blocked`) with `state_change_seq` unmoved since the send for `idleNudgeMs`: herdr never said the
@@ -1845,6 +1846,15 @@ count was already the ledger's (`failed` work items, issue #1067), which counts 
 For what the automatic path has not reached yet, **Dismiss many** (`POST /ui/api/jobs/dismiss`, operator):
 `{ jobIds }` dismisses each as one Dismiss does and answers each refusal with why, or `{ superseded: true }` runs
 the automatic pass now; the CLI's `hopper job dismiss <id>...` and `hopper job dismiss --superseded` (`src/cli-operator-dismiss.ts`).
+
+**A failure ends when its item's work ends** (issue #1461). An operator cleared failures by hand for hours: items whose
+work had landed, or whose pull request was closed, kept a hand-off open, because an item a person holds is `needs_you`
+and a merge or a close only marked its pull request. Now the item waits on no failure also when its pull request merged
+as the whole item (`mergedWhole`: not a part, not a culprit reverted from the landing branch) or closed without a merge
+(`itemEnded`, `src/failures/stale.ts`). The automatic pass also runs at each `job.pull_request_merged`,
+`job.pull_request_closed`, `job.pull_request_abandoned` and `landing_batch.promoted`: the hand-off closes
+(`item_closed`), its record settles, and the job is dismissed `by: "item_closed"`. The ledger then has the item `done`
+(merged) or `dropped` (closed). The sidebar's counts are issue #1457's.
 
 **Run again offered only where it is taken** (issues #362, #354). The UI never offers an action the
 daemon refuses: the Ended panel's Run again (`canRerun`) needs a failed or finished job, the newest of its
@@ -4144,7 +4154,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 
 | Part | Stands | Carried by |
 |------|--------|------------|
-| Container sandbox for agent jobs | built as the **sandbox box**: a person runs the Add machine line, the box joins as a client target and an instance of a template, and its jobs get only what that template is approved for ("Joining a machine", "Templates"). Not built: the hopper does not start or stop a box itself ("Joining a machine", option B), and the box's egress is open | #308; mechanisms compared in #315; a read-only box's egress allowlist: #849 |
+| Container sandbox for agent jobs | built: the hopper starts and stops each sandbox itself, through the sandbox module: a need box for each need step or box step, burned when the step ends, and a check box for the read-only check; each gets only what its template is approved for ("Sandboxes are burned after each step", "Templates"). The **sandbox box** an older build had join as a client target is gone (issue #1349). Not built: the box's egress is open | #308, #1349; mechanisms compared in #315; a read-only box's egress allowlist: #849 |
 | Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | built: claimed in the UI (status `operator_led`, event `job.claimed_by_operator`), its own `operator-led` row on the lane timeline ("Operator-led work") | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
@@ -8472,6 +8482,14 @@ from one source.
   so the pages are always those of the running build.
 - **Where a person finds them:** Help in the user menu (every role, every width) and a help icon in the top bar
   beside the API reference (not on a phone).
+- **On the project site too** (issue #790): `npm run build:site` renders the same `help/*.md` into the Pages site's
+  `help/` (`site/help.ts`), in the site's look, with each page's Markdown beside it, and the version and the branch it
+  was built from at the foot. The site imports nothing of `src/`, so it renders the pages itself, with the book's
+  heading ids and page order; `test/scripts/help-site.test.ts` holds the two together. `pages.yml` publishes from
+  `stable` and runs again when `help/**` changes, so the site's help is the stable version's. **One place for each help
+  text:** a part of the user guide (`site/guide.html`) or the README that a help page holds left it for a link to the
+  page: research and proposals (a help page of its own, `research-and-proposals.md`), phase shifts, Jev, priority, usage
+  limits and infra; the README's "Give it jobs" is a short summary and a table of help pages.
 
 ## Connecting GitHub: the gh CLI by default, an App of one's own (issue #108, 2026-10-05)
 
@@ -10564,18 +10582,18 @@ box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
   what its boxes run, so they are approved with its image (`approval.tools`, `imageApproved`): a change of tools waits for
   a person as a new image does, and `template.saved` and `vault.approved` carry `tools`. Templates are a JSON body: an old
   one has no `tools`, which is none. No migration.
-- **A launch's tools** (`params.tools`, `POST /ui/api/machines/sandbox`, `hopper sandbox launch --tool <name>`). A box of a
-  template gets all its tools, or the fewer the launch names; a tool it does not add is refused (400). A box of no template
-  may name any tool in the catalog: tools are software, not credentials. A launch with no tool runs the base image as
-  before. The sandbox record keeps the tools and the built image.
+- **A box's tools** (`boxImage`, `src/sandbox/box-image.ts`). A need box and a check box of a template run its image
+  with all the template's tools. Before issue #1349 a launch could name fewer (`params.tools`, the tool toggles on the
+  Add machine form, `hopper sandbox launch --tool <name>`), and the sandbox record kept the tools and the built image.
+  Since issue #1349 there is no launch: Add machine adds a computer only, and a template's tools are set on its form
+  (Settings → Vault) or with `hopper template save --tool <name>`.
 - **A template made on request** gets the tools its needs use (`toolsForNeeds`): `cluster` and `namespace` → `kubectl`,
   `helm`; `argocd-app` → `kubectl`; `aws-account` and `aws-role` → `aws`; `terraform-workspace` → `terraform`, `aws`. The
   read policy approves them with the template, as it approves the box image: they are the hopper's own pinned software.
   A template a job asked for before this has no tools, and a job does not add them (a job never widens a template).
 
 **Not built.** Removing old tools images: each new base or tool set leaves one in the runtime's storage, as pulled images
-do. A tool outside the four; a version per template. Tools on the Add machine form (the UI launch gets all the template's
-tools; the CLI and the API name fewer). A running box gets no new tools: launch another.
+do. A tool outside the four; a version per template. A step gets all its template's tools, never fewer.
 
 **Residual risk, stated.** The build fetches from the four release hosts and Debian's mirrors with the runtime's network.
 A compromised release host cannot change what is installed (the sums are pinned here), but it can make the build fail.
@@ -11505,6 +11523,15 @@ Two cases come before the rules and act on nothing (issue #517):
   its work may be stale, and a failure that old neither retries by itself nor opens or joins a problem that would
   hold other jobs.
 
+**The same failure twice in a row** (issue #1461). The record of its item's run before it — the same job's, when it
+was continued, else that of the job it ran again (`rerunOf`), by whatever ran it again — has the same signature
+(`repeatedOf`, `chain.ts`). A run again did not help, so the item stops: `person`, `repeated`, and no Jev pick (issue #550) runs it
+again. One the rules would run again gets the summary "Stopped: the same failure twice in a row"; one they give to a
+person already keeps its summary, with the repeat in its reasons. It is raised once, as one
+hand-off (`retry_limit` for a `transient` class, else `person`). Not a daemon restart, a timeout (its liveness
+decides) or a `shared` cause (its problem holds the job): they say nothing of the item's work. It comes after the rules,
+the two cases above, and a hopper bug the job reported (issue #1147).
+
 **hopper's own client errors** match known causes: `client <machine> is not dialled in` is `machine offline` (a
 problem, redirected or held, resolved by its online check); `no answer: its link closed` and `no answer within <n>
 ms, or its link closed` are `link closed`, transient — a link that drops for good fails the next run with `is not
@@ -11714,6 +11741,19 @@ the checks pass, open no new pull request, end done. No `hopper:failed` while it
 
 **Scope.** Within a run, the finish briefs still come first (`MAX_FINISH_BRIEFS`); this cause is the job's end after them.
 A PR waiting job's pull request that has conflicts later is tended ("Tending a waiting pull request").
+
+**Its work decides, not only its text** (issue #1522, 2026-10-16). A job that pushed to a pull request its issue only
+names, which neither closes nor references the issue, failed with the generic Not complete text, and Needs a person
+opened for plain merge conflicts. Two changes:
+
+- The job's own open pull requests (`ownOpenPullRequests`, `completion.ts`) take in one that only references its issue,
+  in its repository, with no closing keyword for another issue: the miss names it, as above.
+- Before a done-check miss is assessed, after it is looked at once more, its work is asked at its source (`workCause`,
+  `done-at-source.ts`, at most `PR_LOOKUP_MS`). Its item open, nothing shipped, and a pull request the job opened or
+  pushed to open with merge conflicts or as a draft: the cause is **Own PR unfinished**; else one open with failing checks
+  (`WorkPullRequest.checks`): **Own PR checks red** (`ownPullRequestCause`, `causes.ts`, pure). It replaces Not complete
+  only, and the record says why (`its work shows its own pull request …, whatever the failure text says`). The rules,
+  the retry limit and `auto.continue` are those of the cause. Not known in time: the text decides, as before.
 
 ## Needs a person (issue #516, 2026-10-08)
 
@@ -13910,6 +13950,16 @@ machine-resources.test.ts` (a client's link checked), `test/machines/windows-lin
 offline), `test/integration/machine-history.test.ts` (the snapshot carries it; the event), `test/ui/windows-link.test.ts`
 (the card's line, the fix by mode, the banner's machines).
 
+**The offline watch** (issue #1497). After a host restart (a reboot, `wsl --shutdown`), a container an ssh target
+names stays stopped, and nothing told a person: the Machines view showed it offline, and that was all. At each record
+the **offline watch** (`src/machines/offline-watch.ts`) is shown every machine. A machine offline at every record for two
+minutes is told once, `machine.offline` (`machineId`, `label`, `since`), and once more when it is online again,
+`machine.back_online`. Two minutes so that a machine not probed yet after the hopper's start, or one short drop, is not
+told. Kept in memory, as the memory alert: after a restart of the hopper a machine still offline is told again. Webhooks
+and notifiers take it (the Grok Bot notifier posts both). Nothing is configured: a machine a person keeps offline is told
+once, then not again until it was online. The service starts each **joined container** again itself (`docs/deploy.md`
+"The user service"); the watch is for one it cannot start, or a machine that is no joined container.
+
 **Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
 fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown
 sensible levels.
@@ -14337,9 +14387,10 @@ or written to its disk: the value is in memory, in the client and the helper, fo
 **On the box.** The hopper client (`src/client/vault.ts`) serves a Unix socket, `vault.sock` in its client dir (the
 dir 700, the socket 600), and writes the helper `hopper-secret` beside it at each start: a short sh script that runs
 the client's `secret.ts` with node, the socket named. The client's `/release` answer says the helper's path (`vault`);
-the hopper keeps it on the machine (`MachineSnapshot.client.vault`) and gives each job there `HOPPER_SECRET`, beside the
-GitHub proxy's `HOPPER_TOKEN_FILE` (`src/users/github-proxy.ts`, issue #563). A machine whose client says no helper (an
-ssh target, this machine, a client from before) gets none.
+the hopper keeps it on the machine (`MachineSnapshot.client.vault`). Since vault grants (issue #652), only a box of a
+template gets the helper: the hopper gives each job there `HOPPER_SECRET`, beside the GitHub proxy's
+`HOPPER_TOKEN_FILE` (`src/users/github-proxy.ts`, issue #563). Any other machine gets none: a machine of no template, a
+machine whose client says no helper (an ssh target, this machine, a client from before).
 
 | run | prints |
 |-----|--------|
@@ -14357,7 +14408,7 @@ dial-in), once, within 30 s. The hopper (`VaultService.deliver`) gives the value
 
 1. a client target holds the machine key, and the signature is its token's (else **401**);
 2. the proxy token is one this user's link key gives the job (issue #563): it dies with the job;
-3. the job is at work (`running`, `waiting_answer`): ended, failed or parked, nothing;
+3. the job is at work (`running`, `waiting_answer`, `waiting_on`; `AT_WORK`, `src/vault/box.ts`): ended, failed or parked, nothing;
 4. the job runs on that machine (its lane's, or where its pane waits);
 5. the machine is a box of a template, and the secret is in the template's approved scope now (`scopeOf`, slice 2);
 6. the vault holds the secret and the key provider opens it.
@@ -22832,3 +22883,41 @@ before the job starts, and asks a person for them up front.
 (the decider holds; the queue gate first; never a job resuming), `test/users/sandboxes-held.test.ts` (asked once, all at
 once; declined and skip sandbox approval do not hold; nothing asked for a job at the gate, not judged or resuming), and
 `test/integration/job-sandboxes.test.ts` (a held job starts once a person approves its request; `--template`).
+
+## A pane herdr restored (issue #1465, 2026-10-16)
+
+**The problem.** Jobs failed right after their Claude session resumed: in the resumed session `HOPPER_GH`, `HOPPER_URL`,
+the rest of the `HOPPER_*` variables and git's way to GitHub through the hopper (`GIT_CONFIG_*`) were unset, so git had no
+credential and the job could not reach the hopper. The hopper did not resume those sessions. herdr did: its
+`[session] resume_agents_on_restore` (on by default) restores every pane after a restart of its server and resumes each
+supported agent into its own session. A restored pane keeps its pane id but gets a new terminal (`terminal_id`) and a new
+shell, started with the server's environment, not the tab's: the variables the hopper gave with `herdr tab create --env`
+are gone (seen with herdr 0.8.2: a tab created with `--env` loses the variable after `herdr server stop` and a new server).
+The new shell is also outside the job's scope (the reap) and its sandbox (issue #1295), and never ran the job's start
+steps.
+
+**The change.** The hopper records the pane's terminal at its start (`PaneState.terminal`, from `tab create`'s
+`root_pane.terminal_id`), and the agent session there too (`PaneState.agentSession`). `herdr agent get` already says the
+agent's `terminal_id`, so each poll of the watch compares it at no extra call (`restoredByHerdr`,
+`src/executors/herdr/restored.ts`). Another terminal is a **restored pane**: the watch ends with `paneRestored`, and the
+executor stops that Claude and closes the pane as at a park (the reap without the scratch dir: worktree and session kept),
+then starts as a parked job's resume does — a new pane with the job's environment placed afresh (its credentials, its
+variables), the scope, the job's container runtime and sandbox, the same job worktree — and `claude --resume <session>`.
+It sends `RESTORED_NOTE`: what failed since the restart failed for want of the environment, and can run again. An answer
+to a job whose pane was restored while it waited on a question goes the same way, after that note. A job with no agent
+session recorded fails with the reason: a fresh session would lose what it did.
+
+**Not changed.** A pane saved before this change has no terminal and is not checked. The hopper does not change herdr's
+config: `resume_agents_on_restore` is the machine owner's, and herdr reads one config for the whole server.
+
+**Decisions:**
+- **Detect and start again, not prevent.** Turning `resume_agents_on_restore` off would need a write to the machine's herdr
+  config, which the hopper does not own ("Deployable": nothing leans on the machine), and would still
+  leave a restored pane with a plain shell and no Claude. Starting again also puts back the scope and the sandbox, which no
+  variable could.
+- **The terminal id, not a probe of the environment.** herdr says it with every `agent get`; reading the shell's variables
+  would need a command typed into a pane that Claude holds.
+
+**Verification:** `test/herdr/executor-herdr-restore.test.ts` (restored while watched; restored while it waited on a
+question; a pane saved with no terminal), `test/herdr/cli-client.test.ts` and `test/herdr/cli-client-ssh.test.ts`
+(`terminal_id` read from `tab create` and `agent get`), `test/herdr/executor-run.test.ts` (the terminal saved).

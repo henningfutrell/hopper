@@ -126,7 +126,8 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     async createTab({ workspaceId, cwd, label, env }) {
       const envArgs = Object.entries(env).flatMap(([k, v]) => ['--env', `${k}=${v}`]);
       const r = await run(['tab', 'create', '--workspace', workspaceId, '--cwd', cwd, '--label', label, ...envArgs, '--no-focus']);
-      return { tabId: (r.tab as { tab_id: string }).tab_id, paneId: (r.root_pane as { pane_id: string }).pane_id };
+      const pane = r.root_pane as { pane_id: string; terminal_id?: string };
+      return { tabId: (r.tab as { tab_id: string }).tab_id, paneId: pane.pane_id, ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}) };
     },
     async startAgent({ name, paneId, args, timeoutMs }) {
       try {
@@ -141,8 +142,8 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     async getAgent(name): Promise<AgentInfo | null> {
       try {
         const r = await run(['agent', 'get', name]);
-        const a = r.agent as { agent_status: AgentStatus; state_change_seq: number; pane_id: string };
-        return { status: a.agent_status, stateChangeSeq: a.state_change_seq, paneId: a.pane_id };
+        const a = r.agent as { agent_status: AgentStatus; state_change_seq: number; pane_id: string; terminal_id?: string };
+        return { status: a.agent_status, stateChangeSeq: a.state_change_seq, paneId: a.pane_id, ...(a.terminal_id ? { terminalId: a.terminal_id } : {}) };
       } catch (err) {
         if (err instanceof HerdrError && err.code === 'agent_not_found') return null;
         throw err;

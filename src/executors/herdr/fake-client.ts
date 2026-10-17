@@ -22,7 +22,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const panes = new Map<string, Pane>();
   const failures = new Map<string, string>();
   /** setUnreachable: every call rejects. */
-  let n = 0, unreachable = false;
+  let n = 0, unreachable = false, restarts = 0;
   let busyStarts = o.shellNotReadyStarts ?? 0;
   let timedOutStarts = o.startupTimeouts ?? 0;
   let droppedRuns = o.shellDropsRuns ?? 0;
@@ -133,6 +133,16 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     addTurns: (...more) => { turns.push(...more); },
     signIn: () => { signedIn = true; },
     dropPrompts: (count) => { droppedPrompts = count; },
+    restartServer() {
+      restarts++;
+      for (const p of panes.values()) {
+        if (p.closed) continue;
+        p.terminal = `term_${p.id}_${restarts}`;
+        p.lines.push('$ ', ...(p.agent ? ['✻ Welcome back to Claude Code'] : []));
+        p.turn = undefined;
+        if (p.agent) settle(p, 'idle');
+      }
+    },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
     wake(name) { const p = byAgent(name); if (p) wake(p); },
     lapseDialog(name) {
@@ -163,7 +173,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       n++;
       const id = `${args.workspaceId}:p${n}`;
       panes.set(id, newPane(id, `${args.workspaceId}:t${n}`, ['$ ']));
-      return { tabId: `${args.workspaceId}:t${n}`, paneId: id };
+      return { tabId: `${args.workspaceId}:t${n}`, paneId: id, terminalId: panes.get(id)!.terminal };
     },
     async startAgent(args) {
       record('startAgent', args);
@@ -206,7 +216,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       const p = byAgent(name);
       if (!p) return null;
       advance(p);
-      return p.agent ? { status: p.status, stateChangeSeq: p.seq, paneId: p.id } : null;
+      return p.agent ? { status: p.status, stateChangeSeq: p.seq, paneId: p.id, terminalId: p.terminal } : null;
     },
     async read(paneId, opts) {
       record('read', paneId, opts);

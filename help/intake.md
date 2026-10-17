@@ -74,6 +74,8 @@ Every later job of the same issue runs the snapshot, not the live issue. This in
 
 If you did all of these steps yourself, the issue has a trusted origin. The job goes into the queue.
 
+To tune the source, open the `github-account` instance in **Settings → Plugins → Job sources** and set its options. Which repositories it lists is no option: they are the job repositories you chose in Sources.
+
 ### Let other people start jobs
 
 1. Sign in as an admin.

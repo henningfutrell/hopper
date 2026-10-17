@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#121a26">
 <title>Using hopper</title>
-<meta name="description" content="What hopper does with your jobs once it runs, and what you can do: research and proposals, the blast-radius gate, Needs a person, parking, priority, client updates and usage limits.">
+<meta name="description" content="What hopper does with your jobs once it runs, and what you can do: the blast-radius gate, Needs a person, parking, failures and client updates. Every other feature has its own help page.">
 <link rel="icon" type="image/svg+xml" href="hopper-logo.svg">
 <script>
 // Light or dark as the reader's system says, before the first paint.
@@ -26,6 +26,7 @@
     <ul class="flex items-center gap-1 text-sm font-medium text-muted-foreground sm:gap-2">
       <li><a href="./" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Home</a></li>
       <li><a href="install.html" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Install</a></li>
+      <li><a href="help/" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Help</a></li>
       <li><a href="https://github.com/henningfutrell/hopper/blob/stable/README.md" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Docs</a></li>
       <li><a href="https://github.com/henningfutrell/hopper" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">GitHub</a></li>
     </ul>
@@ -43,142 +44,28 @@ see in the UI, what you can do there, and what happens next.</p>
 from your issues (<a href="install.html">Install guide</a>). The words used here are the ones the UI uses.</p>
 
 <ol class="toc">
-<li><a href="#research">Research reports</a></li>
-<li><a href="#proposals">Proposals</a></li>
-<li><a href="#where-they-show">Where proposals and research show</a></li>
-<li><a href="#phase-shifts">Phase shifts: research or a proposal from a question</a></li>
 <li><a href="#blast-radius">The blast-radius gate and actor machines</a></li>
-<li><a href="#jev">Jev for small decisions</a></li>
 <li><a href="#needs-a-person">Needs a person</a></li>
 <li><a href="#parking">Parking a job</a></li>
-<li><a href="#priority">High priority and priority lanes</a></li>
 <li><a href="#no-key-press">Claude never waits on a key press</a></li>
 <li><a href="#cleanup">Stale data clears itself</a></li>
 <li><a href="#failures">Failures: the assessor and problems</a></li>
 <li><a href="#client-update">How a computer's client updates</a></li>
-<li><a href="#usage">Usage limits</a></li>
-<li><a href="#infra">Infra: plans, applies and drift</a></li>
 </ol>
 
-<h2 id="research">Research reports</h2>
-<p>A job can research a question and report back, in place of doing the work. You read the report and decide.</p>
-<h3>Ask for research</h3>
+<h2 id="help-pages">In the help pages</h2>
+<p>Each feature has its own <a href="help/">help page</a>. A running hopper serves the same pages for its own version at
+<code>/help/</code>; this site shows them for the stable version.</p>
 <ul>
-<li>Give the issue the label <code>hopper:research</code>, or</li>
-<li>put a <code>## Research</code> heading in the issue body (any heading level; the word alone in the text does not count), or</li>
-<li>press <strong>Research</strong> on a job in the Queue that has not started yet, and confirm. The job then shows <em>research report asked</em>.</li>
+<li><a href="help/intake.html">How issues become jobs</a>: trusted actors, request cards, the queue gate.</li>
+<li><a href="help/jobs.html">The Jobs view</a> and <a href="help/needs-you.html">Needs you</a>.</li>
+<li><a href="help/questions.html">Questions and deciders</a>: the escalation levels, the risk check, Jev.</li>
+<li><a href="help/research-and-proposals.html">Research reports and proposals</a>, and phase shifts from a question.</li>
+<li><a href="help/pull-requests.html">Pull requests</a>: tending, Merge now, yolo mode.</li>
+<li><a href="help/lanes.html">Lanes and lane tuning</a>: usage limits, priority labels and priority lanes, specialty jobs that elbow in.</li>
+<li><a href="help/infra.html">Infra</a>: plans, applies, drift and out-of-band changes.</li>
+<li><a href="help/artifacts.html">Artifacts</a> and <a href="help/api-tokens.html">API tokens and grants</a>.</li>
 </ul>
-<p>An issue with both a Research and a Proposal heading (or both labels) is researched first, then proposed, in one job and one
-session.</p>
-<h3>The report</h3>
-<p>The agent writes six parts: <strong>Question</strong>, <strong>Findings</strong>, <strong>Sources and evidence</strong>,
-<strong>Confidence</strong>, <strong>Open threads</strong> and <strong>Next step</strong>. A part it left out shows as
-<em>Left out</em> on the card. The report comes to the <strong>Research</strong> view. While it waits, the job holds no lane
-and keeps its agent session; you can park it.</p>
-<h3>What you can do</h3>
-<div class="table-wrap"><table class="stack">
-<tr><th>Button</th><th>Note</th><th>Then</th></tr>
-<tr><td><strong>Accept</strong></td><td>optional</td><td>See below.</td></tr>
-<tr><td><strong>Dig deeper</strong></td><td>optional</td><td>The job writes the next version. Tick open threads under <em>Dig deeper on</em> to name them; none ticked means the whole report.</td></tr>
-<tr><td><strong>Steer</strong></td><td>required: the new direction</td><td>The job writes the next version, going the way you said.</td></tr>
-</table></div>
-<p>There is no Reject for research. Each round is a new version in the same job and session; earlier versions are kept,
-folded under <em>earlier versions</em>, and the <em>Review trail</em> lists every decision.</p>
-<h3>After Accept</h3>
-<ul>
-<li><strong>A job asked for research</strong> (label, heading or the Research button) ends as finished. If it was asked for a
-proposal too, it writes the proposal next, in the same session.</li>
-<li><strong>A job that researched as part of a bigger task</strong> (its issue asked for research along the way) does not end.
-It goes back in the queue in the same session, is told the report was accepted, with your notes, and goes on with the rest
-of the task, or finishes if nothing more is asked.</li>
-<li><strong>A job you switched into research</strong> from a question: you pick what it does next (<a href="#phase-shifts">Phase shifts</a>).</li>
-</ul>
-<h3>Review before you see it</h3>
-<p>By default a report comes straight to you. An admin can have escalation levels review it first, the same way as proposals:
-<strong>Research settings</strong>, at the bottom of the Research view (<a href="#proposals">Proposals</a> explains the settings).</p>
-<p class="warn"><strong>Not built yet:</strong> research run as an orchestrated loop — a workhorse model that keeps a task list,
-worker subagents that do the tasks, and a frontier model that adds tasks or signs off before the report reaches you. Today
-the job's own agent session researches and writes each report, and the reviewer levels above are the only review before
-you.</p>
-
-<h2 id="proposals">Proposals</h2>
-<p>A job can write a proposal in place of the work: what it would do, and how. Reviewer levels can check it before you do.</p>
-<h3>Ask for a proposal</h3>
-<ul>
-<li>Give the issue the label <code>hopper:proposal</code>, or</li>
-<li>put a <code>## Proposal</code> heading in the issue body, or</li>
-<li>press <strong>Propose</strong> on a job in the Queue that has not started yet, and confirm. The job then shows <em>proposal asked</em>.</li>
-</ul>
-<p>The agent writes a <strong>TL;DR</strong>, the <strong>Problem</strong>, one or more paths (each with <strong>Summary</strong>,
-<strong>Security</strong>, <strong>Effort</strong>, <strong>Risk</strong>, <strong>Friction</strong> and <strong>Creates</strong>), the
-<strong>Recommended</strong> path, and <strong>Context</strong> (what it read and relied on). While it waits the
-job holds no lane, keeps its session, and can be parked.</p>
-<h3>Reviewer levels and escalation</h3>
-<p>An admin sets these in <strong>Proposals settings</strong>, at the bottom of the Proposals view. They apply at once.</p>
-<ul>
-<li><strong>Reviewer levels</strong>: which of your escalation levels review, lowest first. Each level uses the model it has in
-Settings → Question gates. None (the default): a person reviews.</li>
-<li><strong>Who may accept</strong>: only a person (default), or the top reviewer level too.</li>
-<li><strong>Times the levels may send one back</strong>: 0 to 5, default 1.</li>
-</ul>
-<p>Each level approves (it goes up to the next level), asks for changes (it goes back to the job with the level's notes), or
-escalates. A level that fails, times out or answers wrongly escalates; it never decides. Once the levels have sent it back
-as often as allowed, it comes to you. Every verdict and its notes stay on the review trail.</p>
-<h3>What you can do</h3>
-<div class="table-wrap"><table class="stack">
-<tr><th>Button</th><th>Note</th><th>Then</th></tr>
-<tr><td><strong>Continue with selected</strong></td><td>optional, one per path</td><td>Signed off: who, when, which version. Each selected path continues as its own follow-on job.</td></tr>
-<tr><td><strong>Ask for more paths</strong></td><td>optional</td><td>The job writes the next version with more paths, which is reviewed from the first level again.</td></tr>
-<tr><td><strong>Steer</strong></td><td>required: what to change</td><td>The job writes the next version, which is reviewed from the first level again.</td></tr>
-<tr><td><strong>Reject all</strong></td><td>required: why</td><td>Asks you to confirm. The job ends.</td></tr>
-</table></div>
-<p>You can decide at any stage, also while a reviewer level still has it. A viewer sees the card but cannot decide; an
-operator or admin can.</p>
-<h3>What an accepted proposal leads to</h3>
-<p>The proposal stays linked to its job and issue, and the job ends. Each path you select continues as its own follow-on job, with the
-parent's spec and your note. The exception is a job you switched into a proposal from a
-question: it goes on as you picked at Accept, and a rejected proposal sends it back to its work
-(<a href="#phase-shifts">Phase shifts</a>).</p>
-
-<h2 id="where-they-show">Where proposals and research show</h2>
-<p>Proposals and research are sections of their own, beside questions. The menu lists them in this order:
-<strong>Questions</strong>, <strong>Proposals</strong>, <strong>Research</strong>, <strong>Logins</strong>,
-<strong>Failures</strong>.</p>
-<ul>
-<li>Each badge counts the items waiting on a person, seen or not, until they are decided. A ⇈ mark on a badge means one of them
-is high priority; those are listed first.</li>
-<li>Below the open items: <em>Earlier proposals</em> or <em>Earlier research reports</em>, then, for an admin, the section's
-settings.</li>
-<li>A card says where it came from when a question started it: <em>Forked from a question of …</em> or <em>Its job switched
-from its question to write this</em>.</li>
-<li>An open item whose job ended or was cancelled is cancelled with it.</li>
-<li>Webhooks get <code>proposal.*</code> and <code>research.*</code> events.</li>
-</ul>
-
-<h2 id="phase-shifts">Phase shifts: research or a proposal from a question</h2>
-<p>Sometimes a job's question cannot be answered until someone looks into it. A phase shift sends that part to research or a
-proposal. A job's <strong>phase</strong> is work, research or proposal; when it is not work, a small tag beside the job's
-title says <code>research</code>, <code>proposal</code>, or <code>fork: research</code> for a forked one.</p>
-<h3>From a question card</h3>
-<p>Press <strong>Research this</strong> or <strong>Propose this</strong>. Give an optional note naming the aspect, choose
-<em>How</em>, then press <strong>Research</strong> or <strong>Propose</strong>:</p>
-<div class="table-wrap"><table class="stack">
-<tr><th>How</th><th>What happens</th></tr>
-<tr><td><strong>Fork</strong></td><td>A separate job does the research or proposal. The first job waits on its question (holding no lane, with no time-out), or is parked, as the settings say. An accepted result answers the question; a rejected one opens the question again for a person. The fork has no issue of its own and takes its parent's priority.</td></tr>
-<tr><td><strong>Switch</strong></td><td>This job, in its own session, does the research or proposal first. At Accept you pick: it <em>goes back to the work, with it as context</em> (the default), it <em>ends here</em>, or, for research, it <em>writes a proposal next, in the same session</em>.</td></tr>
-</table></div>
-<p>A job can suggest research first itself (a line <code>Suggest: research — &lt;the aspect&gt;</code> before its question),
-and an escalation level can suggest it too. The card then shows <em>the job suggests research first</em> with a one-click
-button such as <strong>Research (fork)</strong>.</p>
-<h3>Settings</h3>
-<p>An admin sets these in <strong>Phase shifts</strong>, at the bottom of the Questions view:</p>
-<ul>
-<li>The default mode of Research this and Propose this: Fork (default) or Switch.</li>
-<li>While its fork runs, the job: waits on its question (default), or is parked where its executor can park.</li>
-<li>Which escalation levels may shift a job themselves when they suggest it. None (default): only a person.</li>
-</ul>
-<p class="note">A shift works only on an open question whose job still waits on it, and only where the job's executor can do
-research and proposals; otherwise the card says why not.</p>
 
 <h2 id="blast-radius">The blast-radius gate and actor machines</h2>
 <p>hopper finds out what each machine can reach, rates how much damage a job there could do, and keeps jobs off risky
@@ -225,43 +112,6 @@ decision.</li>
 </ul>
 <p class="note">Not rated yet: Helm, GCP, Azure, Vault and database clients (their credentials show as credential sources only).
 Handing a job to a person on an actor machine is not built.</p>
-
-<h2 id="jev">Jev for small decisions</h2>
-<p>Jev makes small, clear-cut decisions first, before a model or a person. It starts in shadow: it only records what it would
-pick, beside what was decided, so you can see whether to trust it.</p>
-<h3>The decisions</h3>
-<ul>
-<li><strong>Answering a question with listed options</strong>: a job's question lists two or more numbered options. Jev is asked
-before any escalation level.</li>
-<li><strong>A failed job no rule explains</strong>: Jev picks between running it again and handing it to a person.</li>
-<li><strong>How many lanes a machine runs</strong>: shadow by default.</li>
-<li><strong>The machine a waiting job goes to</strong>: shadow by default.</li>
-</ul>
-<h3>Shadow and active</h3>
-<p>Each decision has its own mode in <strong>Settings → Decider</strong> (admin):</p>
-<ul>
-<li><strong>Off</strong>: Jev is not asked.</li>
-<li><strong>Shadow: record only</strong> (the default): its pick is recorded; nothing else changes.</li>
-<li><strong>Active: Jev decides when sure</strong>: a pick at or above <em>Confidence needed (%)</em> (default 85) is applied. For a
-question, the picked option is the answer, shown as answered by <code>jev</code>. For a failure, run again re-runs the job.</li>
-</ul>
-<p>A pick that is not applied goes on as before: to the escalation levels or a person for a question, to Needs a person for a
-failure. Changes apply from the next decision.</p>
-<h3>Agreement</h3>
-<p>For each decision, over the last 30 days: <em>Asked</em>, <em>Picked</em>, <em>Applied</em>, <em>Compared</em>,
-<em>Agreement</em> and <em>Overridden</em>. A pick that was not applied is compared with what was decided later. Under
-<strong>Recent picks</strong> an operator can choose <em>What it should have been</em> and press <strong>Override</strong>: this
-changes nothing already done, only the comparison. When the agreement is high enough for you, set that decision to Active.</p>
-<h3>What always goes on to a model or a person</h3>
-<p>A decision whose text is about deleting, deploying or publishing, force-pushing, spending money, credentials or keys,
-sending a message, or changing permissions, and any decision for a job on a gated machine, is never decided by Jev. Its pick is
-recorded as <em>consequential</em> and not applied.</p>
-<h3>The key</h3>
-<p>Jev needs your TypeSafe API key. Paste it on this page, in the TypeSafe API key field, and select Save. The hopper checks
-the key once with TypeSafe, and keeps it only when TypeSafe accepts it. The key is kept encrypted in the hopper's vault and
-is never shown again: the page shows only that it is set, its last 4 characters, and when it was set. Replace and Remove
-change it. Jev uses the change from the next decision, so no restart is needed. Without a key the page says Jev is off,
-and every decision is made as before. From a terminal: <code>hopper typesafe-key set &lt; key-file</code>.</p>
 
 <h2 id="needs-a-person">Needs a person</h2>
 <p>A failed job that hopper stopped trying to fix by itself comes to <strong>Failures → Needs a person</strong>. It stays there
@@ -338,42 +188,6 @@ and press <strong>Answer and pick up</strong>. A job with no recorded session as
 fresh</strong> gives it a new session, told its task, the question and the answer. <strong>Cancel</strong> ends a parked
 job.</p>
 
-<h2 id="priority">High priority and priority lanes</h2>
-<h3>The labels</h3>
-<div class="table-wrap"><table class="stack">
-<tr><th>Label on the issue</th><th>Effect</th></tr>
-<tr><td><code>hopper:high</code></td><td>Priority 75: high priority.</td></tr>
-<tr><td>(none)</td><td>Priority 50.</td></tr>
-<tr><td><code>hopper:low</code></td><td>Priority 25: runs after the others.</td></tr>
-<tr><td><code>hopper:backburner</code></td><td>Not a priority: the issue is not taken. A waiting job whose issue gets it is cancelled; a running one finishes.</td></tr>
-</table></div>
-<p>A source can change the numbers in its settings. A label change applies at the next sync, also to a job that already runs.</p>
-<h3>What high priority does</h3>
-<ul>
-<li>A <strong>high</strong> tag on the job everywhere, and its questions, logins and Needs a person cards are listed first.</li>
-<li>The Questions, Logins and Failures badges show ⇈ when one of them is high priority.</li>
-<li>It runs again first after a failure.</li>
-<li>Near a usage limit the lowest-priority lanes slow down first, so high-priority work is cut back last (<a href="#usage">Usage limits</a>).</li>
-<li>It gets a free priority lane first.</li>
-</ul>
-<h3>Priority lanes</h3>
-<p>hopper keeps its most reliable lanes for high-priority jobs. The <strong>Priority lanes</strong> panel on
-<strong>Machines</strong> shows each lane's rank, reliability, median start time and why it was or was not chosen; the
-Dashboard marks a priority lane with a star.</p>
-<ul>
-<li><strong>How they are chosen</strong>: by reliability, the share of a lane's runs over the last 14 days that ended without a
-lane fault, newer runs counting more. A lane needs 5 runs and an online machine to be ranked. A priority lane is replaced only by
-one clearly more reliable.</li>
-<li><strong>How many</strong>: <em>Priority lanes</em>, default 1; 0 turns them off.</li>
-<li><strong>While a high-priority job waits</strong>: <em>only it takes a priority lane</em> (default), or <em>default jobs take
-one too</em> — then only low jobs leave it. A priority lane is held only while a high-priority job waits for one. While none
-waits, any job takes a priority lane, after the other lanes on that machine.</li>
-<li><strong>By hand</strong>: an admin ticks lanes and presses <strong>Use these lanes</strong>; <strong>Choose by
-reliability</strong> goes back to the automatic choice.</li>
-</ul>
-<p>A high-priority job never waits for a priority lane: when they are all busy it takes any free lane. No running job is
-stopped to make room.</p>
-
 <h2 id="no-key-press">Claude never waits on a key press</h2>
 <p>A job's Claude must never sit on a screen that waits for a key. hopper does two things.</p>
 <h3>It sets Claude up before it starts</h3>
@@ -423,7 +237,7 @@ top: the counts, <a href="#needs-a-person">Needs a person</a>, <strong>Open prob
 <p>A failure older than a day gets only a recommendation; one whose issue already ran again is recorded as superseded. Failures
 settings turn each automatic action on or off (<em>Retry transient failures</em>, <em>Hold jobs for open problems</em>,
 <em>Redirect jobs to another machine</em>), set the retries and grouping counts, and choose whether webhooks hear when a job needs a
-person. A failed job no rule explains can go to <a href="#jev">Jev</a> first.</p>
+person. A failed job no rule explains can go to <a href="help/questions.html#jev-and-the-decider">Jev</a> first.</p>
 <p class="note">There is no separate dead-letter list: a job no automatic action can handle is a Needs a person card.</p>
 
 <h2 id="client-update">How a computer's client updates</h2>
@@ -454,60 +268,6 @@ client release.</p>
 <p class="warn"><strong>Not built yet:</strong> update instructions that hopper serves for each release, and a repair job hopper
 starts by itself when a client cannot update. Today the line on Machines, above, is the way back.</p>
 
-<h2 id="usage">Usage limits</h2>
-<p>hopper keeps each machine inside its usage budgets. The <strong>Usage limits</strong> panel at the top of
-<strong>Usage</strong> shows how close you are and lets an admin move the limits.</p>
-<h3>The bands</h3>
-<div class="table-wrap"><table class="stack">
-<tr><th>Band</th><th>Usage</th><th>What hopper does</th></tr>
-<tr><td><strong>free</strong></td><td>below the soft limit (default 70%)</td><td>Every lane is open.</td></tr>
-<tr><td><strong>soft</strong></td><td>from the soft to the hard limit</td><td>Lanes scale down the closer usage gets to the hard limit. Lanes over the cap finish their job and take no new one, lowest priority first. No running job is stopped.</td></tr>
-<tr><td><strong>hard</strong></td><td>at or above the hard limit (default 95%)</td><td>Nothing new starts. Waiting jobs say <em>usage hard limit</em> and how much is used.</td></tr>
-</table></div>
-<p>The reading that counts is the highest of a machine's throttling budgets (the session and the week). A budget marked
-informational never throttles. Each budget throttles only its own agent's jobs. A job at the critical priority may take one lane
-past the cap, never at the hard limit, and week throttling lifts in the last hours before the week resets.</p>
-<h3>The graph</h3>
-<p>The panel shows the usage now, its band, and a graph of the last day's reading over the free, soft and hard bands, with each
-machine's lanes at the limits shown. An admin drags the <strong>Soft</strong> and <strong>Hard</strong> handles (or clicks the
-graph, or uses the arrow keys), sees the lanes each machine would have, and presses <strong>Save</strong>.
-<strong>Undo</strong> drops unsaved changes; <strong>Defaults</strong> goes back to the environment's values. Saved limits
-apply at once and win over <code>HOPPER_SOFT_LIMIT</code> and <code>HOPPER_HARD_LIMIT</code>; the panel says which applies.
-Others see the graph without handles.</p>
-<p>The Dashboard's <em>Usage over time</em> graph shows each account's session and week usage as lines; the Usage view's
-<em>Usage history</em> keeps 90 days by default.</p>
-
-<h2 id="infra">Infra: plans, applies and drift</h2>
-<p>hopper applies no infrastructure change without a plan. Everything about plans shows on <strong>Infra</strong>, in the
-menu. Every panel there shows always: while it loads, when it cannot load (with <strong>Try again</strong>), and when it is
-empty.</p>
-<h3>Plans</h3>
-<p>A job records the plan of each change before it applies it: the <code>terraform plan</code> (with its saved plan file),
-the <code>helm diff</code>, or the Argo CD diff, with the repository, branch and commit it was made at. It sends the plan to
-<code>POST /job/infra-plans</code>. Until a job does, the panel says <em>No plans yet</em>.</p>
-<p>Each plan shows what it changes in plain words, its risk (<em>low</em> or <em>high</em>), its risk callouts (destroys,
-IAM, prod, data, network), its blast radius and its checks. <strong>Show the plan</strong> opens the raw plan. Its state is
-one of these:</p>
-<div class="table-wrap"><table class="stack">
-<tr><th>State</th><th>What it means</th></tr>
-<tr><td><strong>Waits for an admin to approve it</strong></td><td>An admin presses <strong>Approve</strong>. A job never approves a plan.</td></tr>
-<tr><td><strong>Approved</strong></td><td>Until it is stale, the vault mints the credential for an apply that names it, when its branch is still at the plan's commit.</td></tr>
-<tr><td><strong>Stale</strong></td><td>A plan is stale one hour after it was made. Nothing applies it. The job plans again.</td></tr>
-<tr><td><strong>Failed its checks</strong></td><td>For example, a new AWS resource without the MAP tag. Nobody approves it. The job fixes the code and plans again.</td></tr>
-</table></div>
-<p>Under each plan, each apply shows: the operation, the asset, the job that asked, and until when the credential is valid.
-hopper never shows the credential.</p>
-<h3>Applies and drift</h3>
-<p>One timeline, newest first: each plan recorded and approved, each apply, each drift (a GitOps app out of sync, a
-non-empty <code>terraform plan</code> on unchanged code), each out-of-band write, and each mark a person set.</p>
-<h3>Out-of-band changes</h3>
-<p>A job's read-only check reports what it finds to <code>POST /job/infra-signals</code>; a collector outside hopper reports with an API token to <code>POST /ui/api/out-of-band/signals</code>. A change that no controller identity
-and no credential minted for an approved plan made is an out-of-band change. Each one goes to the notifiers. An admin marks
-it <strong>Adopted</strong> (brought back into git), <strong>Reverted</strong>, or <strong>Accept</strong> with a reason.
-hopper reverts nothing. An admin also sets the controller identities here: the principals whose writes are GitOps's, one
-per line; a trailing <code>*</code> names a group.</p>
-<p class="note">The same reads and acts are in the API, under the Infra tag: <code>GET /api/infra-plans</code>,
-<code>GET /api/out-of-band</code>, <code>POST /ui/api/infra-plans</code> and <code>POST /ui/api/out-of-band</code>.</p>
 </main>
 
 <footer class="border-t border-border">

@@ -60,11 +60,39 @@ Saved limits apply at once, with no restart. They win over `HOPPER_SOFT_LIMIT` a
 
 A usage reading marked informational never limits lanes. In the last hours before a week window resets (`HOPPER_BURN_WINDOW_HOURS`, default 18), that window stops limiting lanes unless it is spent.
 
+The reading that counts is the highest of a machine's limiting budgets (the session and the week). Each budget limits only its own agent's jobs. A job at the critical priority can take one lane past the cap, but never at the hard limit.
+
+The **Usage limits** panel shows the usage now, its band, and a graph of the last day's reading over the free, soft and hard bands, with each machine's lanes at the limits. You can also click the graph or use the arrow keys to move a handle. **Undo** drops changes you did not save. The panel says which limits apply: the saved ones or the environment's. People who are not admins see the graph without handles. The Dashboard's *Usage over time* graph shows each account's session and week usage as lines. The Usage view's *Usage history* keeps 90 days by default.
+
 ## Priority lanes
 
 A **high-priority** job has a priority at or above the high-priority threshold (default 75: the label `hopper:high`). Some lanes are **priority lanes**: high-priority jobs get them first.
 
-- The hopper chooses the most reliable lanes from its own history. A lane needs 5 runs in the window (default 14 days) to be ranked.
+### Priority labels
+
+A label on the issue sets the job's priority:
+
+| Label on the issue | Priority |
+|---|---|
+| `hopper:high` | 75: high priority. |
+| (none) | 50. |
+| `hopper:low` | 25: runs after the others. |
+| `hopper:backburner` | None: the issue is not taken. A waiting job whose issue gets it is cancelled. A running one finishes. |
+
+A source can change the numbers in its settings. A label change applies at the next sync, also to a job that already runs.
+
+A high-priority job:
+
+- has a **high** tag everywhere, and its questions, logins and Needs a person cards are listed first;
+- puts ⇈ on the Questions, Logins and Failures badges while one of its items waits there;
+- runs again first after a failure;
+- is cut back last near a usage limit (see "Usage limits");
+- gets a free priority lane first.
+
+### How priority lanes are chosen
+
+- The hopper chooses the most reliable lanes from its own history: the share of a lane's runs in the window that ended with no lane fault, newer runs counting more. A lane needs 5 runs in the window (default 14 days) and an online machine to be ranked. A priority lane is replaced only by one that is clearly more reliable.
+- The **Priority lanes** panel on **Machines** shows each lane's rank, reliability, median start time, and why it was or was not chosen.
 - A high-priority job takes a free priority lane first. When all are busy, it takes any free lane. It never waits for a priority lane.
 - No running job is stopped for a high-priority job.
 
