@@ -3,12 +3,13 @@
 // wait (`job.wait_ended { by: hopper }`): the job is queued again and told why. Not met: tried again later, the time between
 // doubling; past its deadline, overdue once (`job.wait_overdue`), a stuck item for a person, and checked each hour after.
 // Idempotent: a check is written only by the lease's holder, and only while the job is on the same wait. A hopper that stops
-// mid-check holds its lease until it ends (`LEASE_MS`); then any hopper on the same database takes the check.
+// mid-check holds its lease until it ends (`LEASE_MS`); then any hopper on the same database takes the check. Part 2: a
+// time the job named ends the wait at it, whatever its condition says; a wait on a pull request's checks reads them.
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import type { Clock, ExecutorRegistry, UserStore } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
-import { afterCheck, checkEndedNote, commandOutcome, conditionKey, newCheck, refLabel, type CheckOutcome, type WaitCheck } from '../domain/wait-checks.ts';
+import { afterCheck, checkEndedNote, checksOutcome, commandOutcome, conditionKey, newCheck, refLabel, type CheckOutcome, type WaitCheck, type WaitedChecks } from '../domain/wait-checks.ts';
 import { waitOnLabel } from '../domain/wait-on.ts';
 import { endedNote, NOT_FOUND, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
 import { recordEndWait } from './wait.ts';
@@ -16,8 +17,11 @@ import { recordEndWait } from './wait.ts';
 /** How long a hopper holds a wait check it tests. */
 export const LEASE_MS = 2 * 60_000;
 
-/** The reads a check of items needs: the items of `refs` that ended, as the job's source reads them; undefined, it cannot read now. */
-export interface WaitReads { endedWatched(job: Job, refs: WatchedRef[]): Promise<WatchedEnd[] | undefined> }
+/** The reads a check needs, as the job's source reads them; undefined, it cannot read now: the items of `refs` that ended; a pull request's checks (part 2). */
+export interface WaitReads {
+  endedWatched(job: Job, refs: WatchedRef[]): Promise<WatchedEnd[] | undefined>;
+  pullRequestChecks?(job: Job, repo: string, number: number): Promise<WaitedChecks | undefined>;
+}
 
 export interface WaitCheckDeps {
   store: UserStore;
@@ -58,7 +62,14 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
     });
   }
 
+  /** The check's condition, else the time the job named, when it passed. */
   async function test(job: Job, check: WaitCheck): Promise<CheckOutcome> {
+    const outcome = await testCondition(job, check);
+    if (outcome.met || !check.wakeAt || nowMs() < Date.parse(check.wakeAt)) return outcome;
+    return { met: true, note: `the time you named passed (${iso(nowMs())}); ${outcome.result}` };
+  }
+
+  async function testCondition(job: Job, check: WaitCheck): Promise<CheckOutcome> {
     const cond = check.condition;
     switch (cond.kind) {
       case 'items_ended': {
@@ -86,6 +97,12 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
         const runs = executor?.ownCommandRuns ? await executor.ownCommandRuns(job).catch(() => null) : null;
         return commandOutcome(job.wait!, { runs, lost }, nowMs(), c.ownCommandGraceMs);
       }
+      case 'pr_checks_ended': {
+        const pr = await c.waitReads?.pullRequestChecks?.(job, cond.repo, cond.number).catch(() => undefined);
+        return pr ? checksOutcome(pr, nowMs()) : { met: false, result: `the hopper cannot read ${cond.repo}#${cond.number} now` };
+      }
+      case 'time_passed':
+        return nowMs() >= Date.parse(cond.at) ? { met: true, note: `the time you named passed (${iso(nowMs())})` } : { met: false, result: `it waits until ${cond.at}` };
       case 'none':
         return { met: false, result: `the hopper has no check for ${job.wait?.on ? waitOnLabel(job.wait.on) : 'this wait'}` };
     }
