@@ -5379,7 +5379,9 @@ hand, and the hopper never saw that container. This is the path #704's machines 
   non-root user, the `io.hopper.box` label, a `hopper-sandbox-*` name) and no other field (so no `privileged`, no bind
   mount, no device, no added capability); start, stop, inspect and remove act only on a container that carries the
   `io.hopper.box` label (checked by an inspect first), and so do its one-shot stats for the stack resources (issue #947:
-  `stream=false` and no other query), and a volume is removed only by a box's home volume name. A
+  `stream=false` and no other query), and a volume is removed only by a box's home volume name. The image list answers
+  only the hopper's box builds, and only one of those is removed, by its id, never forced (issue #1202, "Hopper's own
+  disk use" → "On client targets"). A
   refusal answers 403 in the runtime's own shape, so the adapter reports it as the runtime's refusal. These checks
   restate the builder on purpose: the client imports nothing of the hopper's.
 - **Idempotent create.** Every box carries `io.hopper.sandbox` = its record's id. A create whose answer is lost (a link
@@ -20389,8 +20391,25 @@ removed either.
   another (it goes with its child, at once or at a later pass). One log line says how many it removed. No event: no job
   owns a box build.
 - **The runtime port** gains `listImages` (every image, intermediate ones too: `GET /images/json?all=…`) and
-  `removeImage` (`DELETE /images/<id>`, no query: gone or kept is false). Podman and Docker over their sockets only; the
-  remote runtime has neither, so a client target's builds stay (its client allows no image call).
+  `removeImage` (`DELETE /images/<id>`, no query: gone or kept is false). Podman and Docker over their sockets, and the
+  remote runtime through a client target's client (issue #1202, below).
+
+**On client targets** (issue #1202: `src/client/runtime.ts`, `src/sandbox/remote.ts`, `src/sandbox/service.ts`). The
+builds a box on a client target took stayed there: its client allowed no image call. It now allows two, each checked
+on the machine, as a second line behind the hopper's own rule:
+- **The image list** (`GET /images/json`, only with `all=true` for Podman or `all=1` for Docker, no filter): the client
+  answers only the hopper's box builds in it — each tag a tools image's (`localhost/hopper-box-tools:<16 hex>`), or no
+  tag and the fetch stage's label. The hopper learns nothing of the other images on the machine.
+- **A remove** (`DELETE /images/<id>`): only by a full image id (64 hex, `sha256:` or not), with no query, so never
+  forced; the client inspects the image first and refuses it unless its id is that id and it is a box build of the
+  hopper's, as above. A name is refused: in Docker a remove by name only untags. An image someone tags between the
+  inspect and the remove keeps that tag: the runtime refuses an unforced remove of an image with more than one name.
+- **The reconcile pass** runs the same removal on each client target it reached at that pass (dialled in, its boxes
+  listed), with the same rules: 7 days, no container there uses it, no sandbox record names it, never forced, at most
+  once an hour. A target not dialled in keeps its builds until a later pass. A client of an older release refuses the
+  calls; the pass logs that, and the builds stay until the client updates.
+- **Residual risk.** A compromise of the hopper's process can remove, on a machine, an image of the hopper's box builds
+  that no container uses; the hopper rebuilds it when a box needs it. It cannot remove or read anyone else's image.
 
 **Part 5: the shared checkouts in the disk use** (`src/client/reap.ts` survey). A job worktree is made of its repository's
 checkout in the workspace (`workspace/<name>`, cloned there once, issue #1103), and the checkout's git objects grow with
@@ -20407,8 +20426,7 @@ each fetch. The measure left it out, so a machine could be over its disk budget 
   (each start fetches under the start lock with gc in the foreground, issue #1075). Over the budget, the checkouts are in
   `machine.disk_over_budget`'s `paths`, so a person sees why it stays over.
 
-**Not done here, each a follow-up of its own:** the box builds on client targets (the client allows no image call; to
-allow one is a security change of its own); and the Grok Bot routine posting the disk budget's events (it posts only
+**Not done here, each a follow-up of its own:** the Grok Bot routine posting the disk budget's events (it posts only
 questions that reach a person and intake stops; webhooks take the events). **Not the hopper's to know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
 part 4 (untagged and unlabelled: `podman image prune` once removes them). **Bounded already:** database backups and
