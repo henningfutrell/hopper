@@ -124,8 +124,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
   const store = openInstanceStore({ url: config.databaseUrl, clock });
-  // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
-  if (!store.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
+  // Held shared while the daemon runs, so several hoppers share one database (issue #1662): the operator CLI refuses
+  // `user transfer` while any daemon runs (issue #212).
+  if (!store.holdDaemonLock()) logger.warn('hopper: an operator command holds this database alone (hopper user transfer?)');
   const env = seams.env ?? process.env;
   // The master key (issue #659): from the launch (its variable or a mounted Secret file, issue #1288), checked against the database's fingerprint before anything opens a
   // secret; a wrong key, or none while the database keeps secrets, stops the start (issue #1296: never limited).

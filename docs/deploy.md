@@ -1282,6 +1282,11 @@ class, and the assessor's decision), `hopper_job_retries_total`, `hopper_questio
 `hopper_handoffs_total`, `hopper_sandbox_requests_total` and `hopper_sandbox_spin_up_duration_seconds`, and
 `hopper_landing_batch_ended_total` by outcome.
 
+Each sync of a job source, and each batch of GitHub changes the outbox sends, is a trace of its own (docs/design.md
+"Telemetry: the outbox and the sync"): `hopper.source.sync` and `hopper.outbox.flush` in Tempo, with their GitHub calls,
+and a link to the request that asked for them. The metrics are `hopper_source_sync_duration_seconds` by source and
+outcome, `hopper_outbox_batch_size`, `hopper_outbox_calls_total` by result, and `hopper_outbox_rows_coalesced_total`.
+
 On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
 
 ```sh
@@ -1297,6 +1302,11 @@ helm upgrade hopper deploy/helm/hopper --reuse-values --set telemetry.envFromSec
 
 `--set telemetry.viewer.enabled=true` adds the same viewer in the release; the hopper then exports to it. Only the hopper
 reaches its OTLP port. Open Grafana with `kubectl port-forward svc/hopper-telemetry 3000`, then http://127.0.0.1:3000.
+
+While telemetry is on, a job runs with `TRACEPARENT`: its run span (docs/design.md "Telemetry: a job's trace on its
+machine"). A tool in the job that reads it, and is set to export, puts its spans in the job's trace. The job's requests
+to the hopper through `hopper-gh`, `hopper-skill`, `hopper-login` and `hopper-artifact` are spans of that trace too. The
+job is given no `OTEL_*` variable: to export from inside a job, give the variables to its machine yourself.
 
 ## Optional services
 

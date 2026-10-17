@@ -85,8 +85,10 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
       settings.setMasterKeyRotation({ from: fingerprintOf(keys.from.key), at: o.clock.now().toISOString() });
       return done;
     }),
-    // Session-level: held while this connection lives, one key per instance schema.
-    holdDaemonLock: () => db.get("SELECT pg_try_advisory_lock(hashtext('hopper daemon ' || current_schema())) AS held")!.held === true,
+    // Session-level: held while this connection lives, one key per instance schema. Each daemon holds it shared, so several
+    // hoppers run on one database (issue #1662); an operator command that needs the database alone holds it exclusive.
+    holdDaemonLock: () => db.get("SELECT pg_try_advisory_lock_shared(hashtext('hopper daemon ' || current_schema())) AS held")!.held === true,
+    holdSoleLock: () => db.get("SELECT pg_try_advisory_lock(hashtext('hopper daemon ' || current_schema())) AS held")!.held === true,
     tx: ctx.tx,
     close: () => db.close(),
   };

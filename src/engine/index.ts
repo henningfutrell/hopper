@@ -24,7 +24,7 @@ import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limit
 import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
-import { soleLease } from '../domain/leases.ts';
+import { createPassLeases } from './pass-leases.ts';
 import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
@@ -134,7 +134,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: drainedMachines(o.machines, { store }), configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
+    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), traceContext: o.traceContext ?? (() => ({})), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
     jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}),
@@ -145,9 +145,16 @@ export function createEngine(o: EngineOptions): Engine {
   const cleanups = createCleanups(c);
   const cleanup = cleanups.run;
   const runner = createRunner(c, cleanup);
-  const leases = createLeaseKeeper(c, runner, cleanup);
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanups);
+  // A person's act another hopper relayed (issue #1662): a cancel as that hopper's would be; a park parks the run here, and
+  // a preempted job not run here loses its mark.
+  const leases = createLeaseKeeper(c, runner, cleanup, (jobId, act) => {
+    if (act.kind === 'cancel') { commands.cancel(jobId, act.reason, act.note); return; }
+    if (runner.park(jobId)) return;
+    console.warn(`hopper: job ${jobId}: another hopper relayed its park, but it does not run here`);
+    preemptRunning(c, runner, jobId, false);
+  });
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
   const checkpoints = createCheckpoints(c);
@@ -162,11 +169,14 @@ export function createEngine(o: EngineOptions): Engine {
   const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes, credentialHeld: (m: MachineSnapshot) => credentialHeldOf(c, [m]).length > 0 };
   const laneTuning = createLaneTuning(c, laneCalls);
   const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
+  // Several hosts on one database (issues #1627, #1662): each pass over every job or machine runs on its lease's holder.
+  const passes = createPassLeases(o.lease);
   // Issue #1571: a wake a stop lost, at start, and on each tick.
   const missedWakes = createMissedWakes(c);
   // Issue #1694: each job's own wait gets its wait check, tested on each tick when due.
   const waitChecks = createWaitChecks(c);
   const wakeMissed = (): void => {
+    if (!passes.held('missedWakes')) return;
     try {
       if (store.tx(() => missedWakes.run()).length > 0) c.trigger('job.wait_ended');
     } catch (e) {
@@ -207,16 +217,17 @@ export function createEngine(o: EngineOptions): Engine {
       // Each cleanup a record says is due (issue #1570) — of a job recovery ended, or one whose end a stop cut off from
       // its cleanup — and each deferred one (issue #371), then the sweep of every machine (issue #410): what a hopper
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
-      // On two hosts on one database (issue #1627), only the sweep lease's holder sweeps; a host that takes it sweeps every machine.
-      const sweepLease = o.sweepLease ?? soleLease();
-      const sweepIfHeld = (): Promise<void> => { const h = sweepLease.hold(); return h.held ? sweep.run(h.taken) : Promise.resolve(); };
-      void cleanups.resume().then(sweepIfHeld);
+      // On several hosts on one database (issues #1627, #1662), only the sweep lease's holder sweeps; a host that takes it
+      // sweeps every machine. Only the cleanups lease's holder does the owed cleanups, at its start and when it takes the lease.
+      const sweepIfHeld = (): Promise<void> => { const h = passes.hold('sweep'); return h.held ? sweep.run(h.taken) : Promise.resolve(); };
+      const resumeIfHeld = (): Promise<void> => { const h = passes.hold('cleanups'); return h.taken ? cleanups.resume() : Promise.resolve(); };
+      void resumeIfHeld().then(sweepIfHeld);
       sweepTimer = setInterval(() => { void sweepIfHeld(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
       // Discovery (issue #542): each machine again every `everyMinutes`; one that comes online, at the next Decision.
-      discoverTimer = setInterval(() => { void blastRadius.run(); }, DISCOVER_CHECK_MS);
+      discoverTimer = setInterval(() => { if (passes.held('discovery')) void blastRadius.run(); }, DISCOVER_CHECK_MS);
       // Checkpoints (issue #921): one pass at a time; a pass still reading machines skips this one.
       checkpointTimer = setInterval(() => {
-        if (checkpointing) return;
+        if (checkpointing || !passes.held('checkpoints')) return;
         checkpointing = true;
         void checkpoints.run().catch((e: unknown) => console.error('hopper: checkpoints failed', e)).finally(() => { checkpointing = false; });
       }, CHECKPOINT_CHECK_MS);
@@ -253,26 +264,28 @@ export function createEngine(o: EngineOptions): Engine {
       timer = setInterval(() => {
         wakeMissed();
         leases.tick();
-        classifier.sweep();
-        void paneAnswers.sweep();
+        if (passes.held('classifier')) classifier.sweep();
+        if (passes.held('paneAnswers')) void paneAnswers.sweep();
         void waitChecks.run();
+        // Each host tries again the cleanups it deferred; a host that takes the cleanups lease does every one owed.
         cleanups.retry();
+        void resumeIfHeld();
         o.logins.sweep();
         o.questions.sweep();
         for (const k of REVIEW_KINDS) o.reviews[k].sweep();
         placementPicks.sweep();
         // Auto-park (issue #650): one pass at a time; a pass still ending panes skips this tick.
-        if (!autoParking) {
+        if (!autoParking && passes.held('autoPark')) {
           autoParking = true;
           void autoPark(c).catch((e: unknown) => console.error('hopper: auto-park failed', e)).finally(() => { autoParking = false; });
         }
-        if (!moving) {
+        if (!moving && passes.held('signedOutMove')) {
           moving = true;
           void signedOutMove().catch((e: unknown) => console.error('hopper: the signed-out move failed', e)).finally(() => { moving = false; });
         }
         c.trigger('tick');
       }, o.tickMs);
-      classifier.sweep();
+      if (passes.held('classifier')) classifier.sweep();
       c.trigger('startup');
     },
     trigger: (reason) => { if (!stopping) c.trigger(reason); },

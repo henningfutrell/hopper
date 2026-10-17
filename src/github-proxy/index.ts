@@ -10,6 +10,6 @@ export { isPullRequest, itemOf, knownPullRequest, prSettled, prWaitOver, type Kn
 export { createPollWatch, POLL_READS, POLL_WINDOW_MS, polledOn, pollNote, type PollWatch } from './polls.ts';
 export { createPrWaits, GITHUB_STREAM_TYPES, PR_WAIT_OWNER, type PrWaits, type PrWaitUser } from './pr-waits.ts';
 export * from './script.ts';
-export { HCURL_SH, RETRY_AFTER_TRIES } from './retry-after.ts';
+export { HCURL_SH, RETRY_AFTER_TRIES, TRACE_HEADER_SH } from './retry-after.ts';
 export { createSubIssueLinker, createSubIssueLinks, replayOf, SUB_ISSUE_LINK_MS, type LineageEvents, type ProxyReplay, type SubIssueLinks } from './sub-issue-links.ts';
 export { holdsProxyToken, parseProxyToken, proxyToken, type ProxyTokenParts } from './token.ts';

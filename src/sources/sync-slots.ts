@@ -4,6 +4,7 @@
 // until the sync loop finds nothing of its own left to report.
 import type { Clock, JobSource, UserStore } from '../domain/ports.ts';
 import type { SourceStatus } from '../domain/types.ts';
+import type { Cause } from '../telemetry/sources.ts';
 import type { SyncAsk } from './after-answer-timings.ts';
 
 /** Why a removed source pulls nothing more (issue #356): it only finishes its own jobs. */
@@ -16,7 +17,7 @@ export interface Slot {
   status: SourceStatus;
   chain: Promise<void>;
   /** The sync queued on the chain that has not started yet (issue #1019): a sync asked for meanwhile joins it. */
-  queued?: { asked: boolean; done: Promise<void>; asks: SyncAsk[] };
+  queued?: { asked: boolean; done: Promise<void>; asks: SyncAsk[]; causes: Cause[] };
   timer?: NodeJS.Timeout;
   /** Last transient report error per job, shown as detail.reportRetries. */
   retrying: Map<string, string>;
@@ -47,16 +48,19 @@ export interface Slot {
   answered?: string;
   /** The outbox send an intake action asked for (issue #1238), once its batch window ends. */
   outboxSoon?: NodeJS.Timeout;
+  /** The actions that asked for that send (issue #1486 part 5): its span is linked to them. */
+  outboxCauses?: Cause[];
 }
 
 /**
  * A sync asked for while one waits to start joins it (issue #1019): what it is answered, or undefined when none waits.
  * Its asks are timed with that sync (issue #1194).
  */
-export function joined(slot: Slot, asked: boolean, asks: readonly SyncAsk[]): Promise<void> | undefined {
+export function joined(slot: Slot, asked: boolean, asks: readonly SyncAsk[], causes: readonly Cause[] = []): Promise<void> | undefined {
   if (!slot.queued) return undefined;
   slot.queued.asked ||= asked;
   slot.queued.asks.push(...asks);
+  slot.queued.causes.push(...causes);
   return slot.queued.done;
 }
 

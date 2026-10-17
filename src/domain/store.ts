@@ -583,8 +583,11 @@ export interface InstanceStore {
    * open is counted, and left. Throws, and changes nothing, when a write fails.
    */
   rotateMasterKey(o: { from: { key: string; previous: readonly string[] }; to: string }): MasterKeyResealed;
-  /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
-  holdDaemonLock(): boolean;
+  /**
+   * The daemon lock, for this store's life: `holdDaemonLock` shared, as each daemon on the database holds it (issue #1662),
+   * false while an operator command holds it alone; `holdSoleLock` alone, false while a daemon or another command holds it.
+   */
+  holdDaemonLock(): boolean; holdSoleLock(): boolean;
   tx<T>(fn: () => T): T;
   close(): void;
 }

@@ -116,7 +116,7 @@ describe('a sandbox request is a job span (issue #1486)', () => {
 
   it('from its ask to its box or its end, one per request, a child of the job\'s root, with its approval as an event', () => {
     const b = bus();
-    const stop = traceJobs({ subscribe: b.subscribe, job: () => job });
+    const { stop } = traceJobs({ subscribe: b.subscribe, job: () => job });
     b.emit('job.started');
     b.emit('vault.sandbox_requested', { request: 's1', template: 'SECRET-TEMPLATE' });
     b.emit('vault.sandbox_requested', { request: 's2', template: 'SECRET-TEMPLATE' });

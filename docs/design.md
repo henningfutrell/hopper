@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the dedupe keys, hashed, through `OutboundKeyRepository` in the database (issue #1627); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads, its deliveries kept in memory when the feed gives no store; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `turn.ts` (a print-mode agent's turn, `POST /turn`, issue #865), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`, in `container-probe.ts`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key (`lane-pool.ts`, issue #1284), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
@@ -57,7 +57,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, and a job whose lease ended taken over by any hopper on the database (`leases.ts`, issue #1662) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
@@ -92,7 +92,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name as steps, find what a mint cut short made, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`, issue #1609) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
-| `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, off unless they name an exporter (`sdk.ts`, `start.ts`); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events (`jobs.ts`); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
+| `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, off unless they name an exporter (`sdk.ts`, `start.ts`); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**), its side of the cloud link's registration messages (`link.ts`, transport-free: a registration kept on the instance's `registered`, a tombstone answered `unregister` at the hello), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
@@ -4146,7 +4146,14 @@ anything but a signed `POST /herdr` (401, 404, 400, 413 over 1 MB). The daemon k
 session per socket (`src/executors/client.ts`); `createHerdrCliClient({ client })` maps the answer as
 the CLI's exit codes map (2 → usage, JSON on stderr → herdr's error). herdr-claude runs there like on an
 ssh target and records `client: { machine, tokenEnv }` in its pane state, so resume, reattach and
-cleanup reach the same client. The command executor refuses a client target (it serves herdr only).
+cleanup reach the same client. The command executor refuses a client target (it runs no job body there).
+`POST /turn {script, timeoutMs}` → `{code, stdout, stderr, timedOut?}` (issue #865, `src/client/turn.ts`): a
+print-mode agent's turn ("Print-mode agent executors"), the script the hopper built for it, run as `sh -c`
+with stdin closed in its own process group, at most a day; at its timeout it is stopped and answers code 124
+with `timedOut`. The hopper closing the call (a cancel), or the link ending, stops the whole process group.
+The script is the one the hopper runs on this machine or over ssh, so the job's own container runtime and
+its sandbox are around the agent there too. The signed `POST /herdr` already types any command into a pane
+on the machine, so the route gives the hopper no power it did not have.
 `POST /claude {args, timeoutMs}` → `{code, stdout, stderr}` (issue #366): the client runs its own
 `claude` (on its PATH; `ClientOptions.claudeBin`) for `claude-plan`'s usage read — exactly
 `-p /usage --output-format json --no-session-persistence` or `auth status --json`, any other argv 400 —
@@ -4340,7 +4347,8 @@ mode that answers in JSON, as Cursor's does, so they are built the way `cursor-a
 pane (whose screen protocol parses Claude Code's TUI, "6d. Backends are configuration").
 
 A **print-mode agent executor** runs an agent CLI in print mode on the job's machine — this one or an ssh
-target, never a container or client target — in the job's work tree, one run per turn
+target or a client target (issue #865, its client's `POST /turn`, "Client targets"), never a container
+target — in the job's work tree, one run per turn
 (`src/executors/print-agent.ts`): the payload is herdr-claude's (`prompt`, `cwd`, `model`, `env`,
 `timeoutMs`), the first turn's text the prompt and `protocolFooter(cwd)`, the job's credentials
 (`GH_TOKEN`, issue #214 — which `cursor-agent` did not pass before) and `HOPPER_JOB_ID` and `TMPDIR` in
@@ -4353,9 +4361,11 @@ Like a herdr-claude job (issue #410, "Work tree"): its `TMPDIR` is the temp link
 `<cwd>/.worktrees/@scratch/<job id>` (issues #506, #1188), the scratch dir named in the footer; each turn runs in the job's scope
 `hopper-job-<job id>` where the machine has a systemd user manager (`systemd-run --user --scope … --
 env … <agent> </dev/null`; the scope a turn before left is stopped first, since a print-mode turn never
-waits on background work); the job keeps `{ cwd, ssh? }` from its start; and when it ends its `cleanup`
-reaps it through the machine's connection — scope, processes, scratch dir — as the reap does. The sweep
-reaches this machine and ssh targets through it.
+waits on background work); the job keeps `{ cwd, ssh? }` from its start — `{ cwd, client }` on a client
+target, its machine id (issue #865) —; and when it ends its `cleanup` reaps it through the machine's
+connection — scope, processes, scratch dir — as the reap does. The sweep reaches this machine, ssh targets and
+client targets through it. On a client target the turn's output comes only when the turn ends, so a device code
+the agent's tools print is not seen while the turn waits on it (issue #476 watches it on this machine and over ssh).
 
 Only the call and the reading differ (`src/executors/print-agents.ts`), taken from the real CLIs:
 
@@ -8837,8 +8847,8 @@ supported; defaults must be configurable. Read as three changes; none breaks a d
   text is progress and the chat is resumed with the nudge, at most three in a row, then the job fails. A question saves `{ chatId, cwd }`; `resume` runs
   the next turn with `--resume <chatId>`. A non-zero exit, an error result, no JSON or no chat id fails the
   job with what Cursor said.
-- **Where it runs**: this machine and ssh targets, with or without herdr. A container target (no agent,
-  issue #58) and a client target (serves herdr only) are refused with the reason.
+- **Where it runs**: this machine, ssh targets and client targets (issue #865), with or without herdr. A
+  container target (no agent, issue #58) is refused with the reason.
 - **Not idempotent, nothing to reattach**: the process ends with its turn, so a restart fails a running job
   and never runs the agent twice; a job on a question resumes its chat after a restart. Cancel kills the client process.
 - **Detection** is `which` only and always `available`: absent here, its detail says jobs run only on
@@ -25563,7 +25573,7 @@ key refused), `test/client/keyed-creates.test.ts` (a box create and a tab create
 failed create runs again), `test/vault/mint-bindings.test.ts` (a stop while the minter makes the Secret: the next start's
 reconcile pass deletes that one Secret, once).
 
-## Several hoppers on one database (issue #1662 part 1, 2026-10-17)
+## Several hoppers on one database (issue #1662 parts 1 to 3, 2026-10-17)
 
 The problem: a running job was held only by the memory of the hopper that drove it. A second hopper on the same database
 saw the job `running` with nobody driving it after the first stopped, and at its own start it requeued or failed the first
@@ -25602,20 +25612,50 @@ pid and a nonce) and until when.
 - **The lease, not the job-run saga, in this part.** The issue's test — stop the hopper that drives a running job, the other
   takes it with no task sent twice — passes with the lease and the takeover.
 
+**A relayed act** (issue #1662 part 2). A person's cancel or park — or a preemption the Decision made — of a job that
+another live hopper drives is written on the job's lease (`job_leases.relayed`, tenant migration 78; `JobLeases.relay`).
+The request answers the job as it is, `running`, as a cancel of a job this hopper drives does. The hopper that holds the
+lease takes each act relayed to it at its next tick, once (`JobLeases.relayed`), and acts on it as on its own request: the
+cancel ends the run `cancelled` with the person's reason and note; the park parks it and frees its lane. An act relayed to a
+hopper that crashed goes to the hopper that takes the job over; a claim of the job drops it. A job with no live lease is
+cancelled in the store at once, as before.
+- **Decision: the lease row, not a new table.** The act is for the hopper that holds the lease, and it lives as long as the
+  lease does. A later act replaces an earlier one not yet taken: a cancel after a park wins.
+- **Decision: taken at the tick, not pushed.** The hopper has no channel to another hopper but the database. A tick is a
+  few seconds at most; a job's executor ends its run in the same way as for a local request.
+
+**Each engine pass on one hopper** (issue #1662 part 3, `src/engine/pass-leases.ts`). Issue #1627 put the machine sweep, the
+question timers, the failure sweep, the TL;DR sweep and the artifacts' sweep under sweep leases. The other passes the engine
+runs over every job or machine of the user, on its tick or a timer, still ran on each hopper: two hoppers parked one job
+twice, read each waiting job's pane twice, took its checkpoint twice, moved a signed-out job twice and did a stopped
+hopper's owed cleanups twice. Each such pass now runs only on the holder of its own sweep lease (`PASS_LEASES`; the table in
+"Sweep leases: one host per sweep" lists them): auto-park, the signed-out move, the checkpoint pass, the read of waiting
+jobs' panes, the classifier's sweep, discovery, the missed wakes, and the owed cleanups (`Cleanups.resume`) at the start
+and when a hopper takes that lease from another.
+- **Left on each hopper, by decision:** the Decision (the claim lock makes it safe); the relayed acts and the takeover (the
+  job lease); a job's own work — its run, its cleanup and the retry of a cleanup it deferred, its park's and its missed
+  heartbeat's checkpoint, its classification when it is queued here (the event feed is in memory); the wait checks (a lease
+  per check, issue #1694); the placement picks (each hopper's Decision reads its own, kept in memory: a pick asked on both
+  costs a second ask, never a second claim); the sign-in sweep (each sign-in is its host's, issue #1627).
+
+**The daemon lock is shared** (`holdDaemonLock`, issue #1662 part 3). Each daemon holds it shared, so a second daemon on the
+same database starts with no warning. An operator command that needs the database alone (`hopper user transfer`, issue
+#212) takes it exclusive (`holdSoleLock`), and refuses while any daemon runs.
+
 **Not built yet (left on issue #1662):**
 - **The job run as a saga kind `job-run`** (claim, credentials, pane, run, checkpoint, end, keyed by the job and its
   attempt, the executor's session state in its data). The runner and the executors must change first: one executor call
   places the credentials, opens the pane and runs.
 - **Audit gap 17 (issue #1627)**: done, "Sweep leases: one host per sweep" below.
-- **A person's act on a job another hopper drives.** Cancel and park reach the runner of the hopper that took the request;
-  on another, they change the store and the driving hopper's run goes on until it ends.
-- **The daemon lock** (`holdDaemonLock`) still warns at a second daemon's start; it stops being a single-writer rule once the
-  parts above are done.
 
 **Verification:** `test/integration/two-hoppers.test.ts` (two daemons on one database: the second leaves the first's running
 job and its lane alone, takes it over once the first stops and reattaches its live pane, the task sent once; two hoppers
 deciding at once claim each of four jobs once), `test/store/job-leases.test.ts` (a lease held until it ends, a crashed
-hopper's lease taken after its time, a lost lease seen at the renewal, a claim's take, a release).
+hopper's lease taken after its time, a lost lease seen at the renewal, a claim's take, a release). Part 2: a cancel and a park
+on the other hopper reach the run of the hopper that drives the job (two-hoppers); an act relayed once, to the live holder
+only, to the hopper that takes over a crashed one's job, and dropped at a claim (job-leases). Part 3: a waiting job's pane is
+read by one hopper at a time, and by the other once the first stops (two-hoppers); two daemons both hold the daemon lock, and
+`hopper user transfer` refuses until both stopped (`test/cli.test.ts`).
 
 ## The cleanup record (issue #1570, follow-up of #1524, 2026-10-17)
 
@@ -25746,7 +25786,7 @@ adds a table only.
 - **A time beside a condition does not replace it.** The hopper still tests the condition at each check; the time is a
   latest wake. A wait the hopper cannot test waits for the time alone.
 - **The line is not on `job.waiting`.** It is kept with the wait in the job; the event and its schema stay as they are.
-- **A review is still tested as the pull request's end.** No read of a review decision is added here.
+- **A review is still tested as the pull request's end.** No read of a review decision is added here. (Part 3 adds it.)
 
 **Not built (later parts).** A model-based condition (only where no deterministic kind fits, with its reason); a test of
 a pull request's review; the last output of an own command in what the job is told; stalled running jobs; the tailnet
@@ -25761,6 +25801,59 @@ know as failed at each pass and leaves the wait as it is, and End the wait still
 and two passes at once read and end a wait once; a hopper stopped mid-check is taken over once its lease ends, and its late
 answer writes nothing; a wait on a job; overdue once; a repeat not woken again), `test/integration/job-wait.test.ts` (a wait
 flagged stuck before is ended, and the job goes on), `test/ui/job-wait-view.test.ts` and `test/ui/board.test.ts` (the card).
+
+### Part 3: a pull request's review (2026-10-17)
+
+- **A pull request's review** (`pr_review_ended`). A wait on `pr <N> review` is tested on its reviews, not only on its end.
+  The job's source reads the pull request and its reviews (`JobSource.waitedReviews`; GitHub: `waitedReviews`,
+  `src/sources/github/watched.ts`, through `GitHubApi.pullRequestReviews`, REST `GET /repos/{owner}/{repo}/pulls/{n}/reviews`,
+  a review not yet sent left out). `reviewOutcome` says: a review sent at or after the wait began, met, and the newest one
+  says what (approved, asks for changes, comments, dismissed); none since, not met; the reviews not readable, not met;
+  merged or closed, met; no pull request of that number, met (the job names the right one).
+- **The job card** names the condition: "the hopper checks whether `<repo>#<N>` got a review".
+
+**Decisions:**
+- **Only a review after the wait began counts.** A review from before is the one the job read before it waited. A job that
+  pushed a fix and waits for a new review is not woken at once by the old "changes requested", again and again.
+- **Any review counts, a comment too.** The job reads it and decides. A wait that wants only an approval waits again.
+- **The last output of an own command is not put in what the job is told.** The hopper wakes the job in its own pane, where
+  the command's output already is, and the note tells it to read it. A pane that is lost has no output to give.
+
+**Not built (later parts).** A model-based condition (only where no deterministic kind fits, with its reason); stalled
+running jobs; the tailnet observation in the issue.
+
+**Persisted state.** `pr_review_ended` is a new condition kind in the job's JSON, and no migration is needed. A build before
+this one logs a check of that kind as failed at each pass and leaves the wait as it is; End the wait still ends it.
+
+**Verification:** `test/domain/wait-checks.test.ts` (`reviewOutcome`, the condition and its key),
+`test/engine/wait-checks.test.ts` (the real database: an old review does not end the wait, a new one does),
+`test/sources/waited-checks.test.ts` (`waitedReviews`), `test/ui/board.test.ts` (the card).
+
+### Part 4: what is left, closed (2026-10-17)
+
+Part 3 left three items. Each is closed here by a decision. No code changes.
+
+- **Stalled running jobs are re-checked already.** A running job with no progress is never left to a person by itself:
+  - **The turn timeout.** Each turn of a job runs under its executor's timeout (herdr-claude: the payload's `timeoutMs`, an
+    hour unless set, `src/executors/herdr/payload.ts`). The quiet watch after the nudges stopped (issue #491) runs under the
+    same timeout (`startedAt` of the turn), so a Claude that sits quiet ends the turn as `timed out`.
+  - **The timeout's assessment** (issue #630). The assessor reads the job's **liveness** (when its pane output last changed,
+    whether it pushed, whether its pull request is open) and continues a job that still works, else retries it or hands it
+    off by the rules. This is the scheduled re-check of a running job, once each turn timeout.
+  - **The job lease** (issue #1662). A running job that no runner drives loses its lease at the next renewal
+    (`renew` releases a lease of a job not in `driving`), and any hopper on the database takes it over (`takeOver`) as at a
+    restart. A hopper that stops holds its jobs for `JOB_LEASE_MS` at most.
+  - A second check beside these would only nudge the job again or time it out sooner. Each nudge costs the job a turn.
+- **No model-based condition.** Every condition the issue names has a deterministic kind: a pull request (its end, checks or
+  review), an issue, a workflow run, a job, a question, its own command, a time. An outside event that names nothing waits for
+  the time the job names on its `check:` line (part 2), else its deadline, then the Failures view. A model call at each check
+  costs money and gives a different answer on each run, and the hopper cannot test it.
+- **The tailnet observation** in the issue (the API did not answer over the tailnet address, but answered on the host) is no
+  part of the wait checks. It is the follow-up issue #1756.
+
+**Verification:** read of `src/executors/herdr/executor.ts` (`watch`, the quiet watch's `startedAt`),
+`src/executors/herdr/monitor.ts` (`timeoutMs`), `src/failures/chain.ts` (`livenessOf`), `src/engine/leases.ts` (`renew`),
+`src/engine/recovery.ts` (`takeOver`). Their tests are those of issues #491, #630 and #1662.
 
 ## A labelled issue not assigned to the user is said (issue #1614, 2026-10-17)
 
@@ -25803,7 +25896,10 @@ this host holds it. `hold()` also says whether the host took it just now (`taken
 first ask. The host's **host leases** (`createHostLeases`, `src/sagas/leases.ts`) renew every lease the host holds every 10 s,
 to 30 s on; the host releases them all when it stops. A host that stops without that renews nothing, so 30 s on its leases
 end and another host takes each at its next pass. The owner is the saga coordinator's (`sagaOwner`). A part built with no
-database of its own (a test) takes `soleLease()`: always held.
+database of its own (a test) takes `soleLease()`: always held. The engine's passes ask their leases on each tick (issue
+#1662), so a lease asks the database once a second at most (`LEASE_ASK_MS`): between asks its last answer stands. A
+statement per pass on each tick held the event loop of a busy hopper. A held lease stays held by the renewal; a host that
+does not hold one takes it at most a second after its holder released it.
 
 The leases, each one per user (`<user id>/<name>`):
 
@@ -25814,6 +25910,14 @@ The leases, each one per user (`<user id>/<name>`):
 | `failures` | the failure assessor's sweep | assesses the backlog and catches the hand-offs up, as at a start |
 | `tldr` | the TL;DR sweep | — |
 | `artifacts` | the retention sweep | — |
+| `cleanups` | the cleanups a record says are owed (issue #1662) | does every one owed, as at a start |
+| `auto-park` | auto-park (issue #1662) | — |
+| `signed-out-move` | the signed-out move (issue #1662) | — |
+| `checkpoints` | the checkpoint pass (issue #1662) | — |
+| `pane-answers` | the read of each waiting job's pane (issue #1662) | — |
+| `classifier` | the classifier's sweep (issue #1662) | — |
+| `discovery` | each machine's discovery (issue #1662) | — |
+| `missed-wakes` | the wakes a stop lost (issue #1662) | — |
 
 A question with no timers and no fork is one the host before armed: the new holder arms it with its times kept. One whose
 fork ended without a decision waits on a person again, as before (issue #570).
@@ -25968,3 +26072,77 @@ ETag fetches; concurrent sandboxes, the outbox's batch size and coalescing, and 
 
 **Tests.** `test/telemetry/outcomes.test.ts` (in-memory exporters, times from the events, no event text exported) and
 `test/scripts/helm-chart-telemetry.test.ts` (what `helm template` renders).
+
+## Telemetry: a job's trace on its machine (issue #1486, part 4, 2026-10-17)
+
+Parts 1–3 traced a job from its events, in the hopper. The issue also asks that the work on machines, client targets and
+lane pods carries the trace context from the server. A job's work runs there, outside the hopper's process, so its trace
+stopped at the hopper.
+
+**The change.**
+- **A job's trace context** (`src/telemetry/jobs.ts`, `traceContext`): the variables its processes run with —
+  `TRACEPARENT`, and `TRACESTATE` when there is one —, OpenTelemetry's environment carrier, made by the propagator the
+  SDK uses (W3C trace context unless `OTEL_PROPAGATORS` names another). It names the job's open `run` job span, else its
+  root span while the job is open. An ended job, a job not traced, and telemetry off give none: no variable is set.
+- **Given with the job's variables** (`src/engine/runner.ts`, the engine port `traceContext`): the runner adds it to
+  what `credentials` answers at each start, resume and turn. So it reaches every executor that asks for the job's
+  variables: herdr on this machine, on an ssh target and on a client target, the print-mode agents, and the lane pods
+  and job pods of the kubernetes executor. Each run is a new run span, so each start gets its own context.
+- **The job's scripts send it back** (`TRACE_HEADER_SH`, `src/github-proxy/retry-after.ts`): `hopper-gh`, `hopper-skill`,
+  `hopper-login` and `hopper-artifact` add a `traceparent` header from `TRACEPARENT`, only when the value is lowercase hex
+  and dashes, as a W3C trace parent is: the variable cannot add a header. The request hook (`http.ts`) already takes a
+  caller's `traceparent` as the parent, and the client door passes the header on. So a job's GitHub request through the
+  hopper, and the GitHub calls it makes, are children of the job's run span.
+
+No credential and no text goes in the context: a trace id, a span id and the sampled flag. A job is given no `OTEL_*`
+variable: the hopper's exporter and its headers stay the hopper's. A tool in the job that reads `TRACEPARENT` and exports
+on its own (set up on its machine) joins the trace.
+
+**Left for the next parts** (the pull request lists them): the settings in the UI; git through the hopper and the
+Windows step script with the header; a box's own processes; spans for work tree setup, tend, rebase, merge and deploy,
+the outbox flush and the sync with its ETag fetches; concurrent sandboxes, the outbox's batch size and coalescing, and
+the store's pool.
+
+**Tests.** `test/telemetry/trace-context.test.ts` (in-memory exporter: the run span, the root, ended, off),
+`test/github-proxy/trace-header.test.ts` (the real scripts against a stand-in: the header, and none for a bad value) and
+`test/integration/job-trace-context.test.ts` (the real daemon: a job's `TRACEPARENT` is its run span, and its `hopper-gh`
+request is a child of it).
+
+## Telemetry: the outbox and the sync (issue #1486, part 5, 2026-10-17)
+
+The issue asks for spans for the outbox flush and the sync with its ETag fetches, linked to the action that caused them,
+and for the outbox's batch size and coalescing savings as metrics. A sync and an outbox send run on the sync loop's chain
+and timers, after the request that asked for them answered. Under the context manager, the work inherited the context
+of whoever started it: a sync after an intake action was a child of that request, long after the request ended, and a
+timer's next sync was a child of the sync before it.
+
+**The change.**
+- **An outbox flush is a span** (`src/telemetry/sources.ts`, `traceOutboxFlush`; `src/sources/outbox-flush.ts`),
+  `hopper.outbox.flush`: the root of a trace of its own, with `hopper.job.source`, `hopper.outbox.due` (the rows due)
+  and `hopper.outbox.calls` (the calls planned after coalescing). It has a **cause link** to each action that asked for it
+  in its batch window: the span active then, a person's request. The GitHub calls it makes are its children.
+- **A sync is a span** (`traceSync`, `src/sources/sync.ts` `runSync`), `hopper.source.sync`: a root span with
+  `hopper.job.source`, `hopper.sync.asked` (it reads everything again) and `hopper.sync.outcome` (`ok`, `error`). A sync
+  asked for while one waits joins it, and so do its cause links. Its GitHub calls are its children, conditional reads
+  answered from the cache (304) included, with `hopper.github.cache` `hit`. The sync after an outbox send is linked to the
+  action that asked for the send. A sync is never linked to the sync before it (`causeNow` skips a sync span): that sync
+  only set the timer.
+- **Metrics**: `hopper.source.sync.duration` by source and outcome; `hopper.outbox.batch.size`, the rows due in each
+  batch sent; `hopper.outbox.calls` by `hopper.outbox.result` (`sent`, `failed`); `hopper.outbox.rows.coalesced`, the rows
+  sent with no call of their own (coalesced into another row's call, or cancelled by a later row).
+
+The attributes are the source's name, counts and enums. A row's change, comment text, an error message and a key do not
+go out. A failed sync records only its outcome.
+
+**Why a root span and a link, not a child.** A flush or a sync can serve many actions (a burst of clicks in one batch, a
+sync joined by many asks), and it runs after the request answered. A child of one request would hide the others, and
+stretch that request's trace. A link is OpenTelemetry's way to say "caused by" across traces.
+
+**Left for the next parts** (the pull request lists them): the settings in the UI; git through the hopper and the
+Windows step script with the trace header; a box's own processes; spans for work tree setup, tend, rebase, merge and
+deploy; concurrent sandboxes and the store's pool.
+
+**Tests.** `test/telemetry/sources.test.ts` (in-memory exporters, a fake source in the real sync loop, no timing
+asserted): an intake action's flush and the sync after it are root spans linked to the request, their GitHub calls their
+children; a sync at start and one asked for with no span are linked to nothing; a failed sync is an error outcome with no
+error text exported; a batch's rows, calls sent and failed, and rows coalesced are counted, with no row text exported.
