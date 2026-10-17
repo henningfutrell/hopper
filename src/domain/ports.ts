@@ -9,8 +9,7 @@ import type {
 } from './types.ts';
 import type { UserStore } from './store.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
-import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
-export type { SourceItem, SourceRef } from './source-item.ts';
+import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts'; export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
 export type * from './escalation-ports.ts'; export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts'; export type { CredentialMinter } from './minting.ts';
@@ -213,6 +212,11 @@ export interface Executor extends ExecutorTerminal {
    * that machine. Absent → the sweep reaches no machine through it.
    */
   machineShell?(machine: MachineSnapshot): MachineShell | undefined;
+  /**
+   * Removes what it started outside any machine for a job that `ended` says ended (issue #1570: a job pod), for the
+   * sweep: the jobs it removed something of. Rejects when it cannot tell (its API not reached). Absent → nothing to sweep.
+   */
+  sweep?(ended: (jobId: string) => boolean): Promise<string[]>;
 }
 
 import type { MachineShell, Reaped } from './machine-shell.ts';
@@ -865,5 +869,5 @@ export type { SearchIndex } from './search.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
-export type * from './store.ts'; export type * from './local-accounts.ts'; // local accounts (issue #1380)
+export type * from './store.ts'; export type * from './local-accounts.ts'; export type * from './event-cursors.ts'; // local accounts (issue #1380), event cursors (issue #1572)
 export { CONFIG_NAMES, INSTANCE_CONFIG, USER_CONFIG } from './store.ts';

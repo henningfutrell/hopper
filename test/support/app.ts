@@ -166,6 +166,9 @@ export async function startTestApp(o: {
     authorizationServer: createFakeAuthorizationServer(),
     // No tailnet (issue #1024): a test never reads this machine's tailscaled; a test that wants one puts a double here.
     tailnet: null,
+    // No held-loop thread (issue #1717): it pauses the main thread through the inspector, and a test process starts and
+    // stops many daemons; test/http/event-loop.test.ts tests it.
+    held: null,
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     // Each user's own manual source and fake usage; the seams' sources run for admin only.

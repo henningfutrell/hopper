@@ -7,7 +7,7 @@
 // active on. Without Jev (no TypeSafe API key, issue #657) nothing is asked and nothing recorded: each decision is made as before.
 // The risk call on a level's answer (issue #679) is a typed decision of its own, in ./risk.ts; the Decider answers no question.
 import { randomUUID } from 'node:crypto';
-import type { Clock, UserStore } from '../domain/ports.ts';
+import type { Clock, EventFollower, UserStore } from '../domain/ports.ts';
 import {
   DECISION_POINTS, DEFAULT_MINOR_DECISION_SETTINGS, MINOR_DECISION_WINDOW_DAYS, type DecisionPoint, type DecisionPointPatch, type DecisionPointSettings,
   type DomainEvent, type JevChooser, type JevPick, type MinorDecisionInput, type MinorDecisionOutcome, type MinorDecisionPickView,
@@ -53,7 +53,9 @@ const FOLLOWED: ReadonlySet<string> = new Set(['handoff.closed', 'job.claimed', 
 
 export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
   const { store, clock } = o;
-  let unsubscribe: (() => void) | undefined;
+  let follower: EventFollower | undefined;
+  /** The followed events handed and not compared yet, by seq: the cursor stays before the oldest (issue #1572). */
+  const due = new Set<number>();
   let stopped = false;
 
   const settings = (): MinorDecisionSettings => {
@@ -150,16 +152,27 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
       const s = settings()['question-risk'];
       return s.mode === 'off' ? { asked: false as const, why } : { asked: true as const, mode: s.mode, threshold: s.threshold, error: why };
     }),
+    // From the comparisons' event cursor (issue #1572): what was decided while they were stopped is compared at the next
+    // start, each comparison kept with the cursor in one transaction.
     start() {
-      unsubscribe ??= store.events.subscribe((e) => {
+      follower ??= store.eventCursors.follow('minor-decisions', (e) => {
         if (stopped || !FOLLOWED.has(e.type)) return;
+        due.add(e.seq);
         setImmediate(() => {
           if (stopped) return;
-          try { follow(e); } catch (err) { o.logger.warn(`hopper: comparing a decider call failed: ${err instanceof Error ? err.message : String(err)}`); }
+          due.delete(e.seq);
+          try {
+            store.tx(() => { follow(e); follower?.save(due.size > 0 ? Math.min(...due) - 1 : undefined); });
+          } catch (err) { o.logger.warn(`hopper: comparing a decider call failed: ${err instanceof Error ? err.message : String(err)}`); }
         });
       });
     },
-    stop() { stopped = true; unsubscribe?.(); },
+    stop() {
+      stopped = true;
+      follower?.stop();
+      // The events not followed since the last comparison are passed; a comparison not made yet is made at the next start.
+      try { follower?.save(due.size > 0 ? Math.min(...due) - 1 : undefined); } catch (err) { o.logger.warn(`hopper: keeping the comparisons' event cursor failed: ${err instanceof Error ? err.message : String(err)}`); }
+    },
     view: () => viewOf(windowEvents(), settings(), o.jev.available(), o.typesafeKey()),
     settings,
     setPoint(point, patch) {

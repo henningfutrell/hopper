@@ -4,7 +4,8 @@
 // merged —, read and closed when its checks end; then the culprit. For the culprit (`culpritPass`): GitHub's revert of
 // its pull request on the landing branch, merged once GitHub lets it, and a fix issue with the hopper label, assigned
 // to the user, so Intake takes it. Each step an event, with the user's own GitHub connection; the rules and the text are
-// `src/domain/landing-bisect.ts`.
+// `src/domain/landing-bisect.ts`. A bisect run's end is recorded before its close; its pull request, the revert and the
+// fix issue are found before they are made again (issue #1589, `once.ts`).
 import { batchChecks, type LandingBatchState } from '../domain/landing-batches.ts';
 import {
   batchPoints, bisectBody, bisectBranch, bisectNext, bisectTitle, fixIssueText, linkedIssue, logTail, revertText,
@@ -12,6 +13,7 @@ import {
 } from '../domain/landing-bisect.ts';
 import type { NewEvent } from '../domain/types.ts';
 import { JOB_LABEL } from '../repo-checks/service.ts';
+import { fileOnce, openOnce } from './once.ts';
 import type { LandingBatchGitHub } from './runner.ts';
 
 /** One repository's pass, as the runner gives it. */
@@ -31,16 +33,18 @@ export interface RedPass {
 
 const short = (sha: string): string => sha.slice(0, 12);
 
-/** After a batch run at `tip` failed its checks: a bisect of its points, or the culprit at once when it had one. */
-export async function startBisect(p: RedPass, f: { tested: string; tip: string; checks: FailedCheck[]; reason: string; pullRequest: number; url: string }): Promise<void> {
+/**
+ * After a batch run at `tip` failed its checks: the event that starts a bisect of its points, or the culprit at once when
+ * it had one. The runner records it with the failure.
+ */
+export async function bisectStart(p: RedPass, f: { tested: string; tip: string; checks: FailedCheck[]; reason: string; pullRequest: number; url: string }): Promise<NewEvent> {
   const cmp = await p.gh.compare(p.repo, f.tested, f.tip);
   const points = batchPoints(cmp.commits, f.tip);
   if (points.length <= 1) {
     const point = points[0] ?? { sha: f.tip };
-    p.record({ type: 'landing_batch.culprit', data: { repo: p.repo, tested: f.tested, tip: f.tip, index: 0, ...point, checks: f.checks, reason: f.reason, results: [], batch: f.pullRequest } });
-    return;
+    return { type: 'landing_batch.culprit', data: { repo: p.repo, tested: f.tested, tip: f.tip, index: 0, ...point, checks: f.checks, reason: f.reason, results: [], batch: f.pullRequest } };
   }
-  p.record({ type: 'landing_batch.bisect_started', data: { repo: p.repo, tested: f.tested, tip: f.tip, points, checks: f.checks, reason: f.reason, pullRequest: f.pullRequest, url: f.url } });
+  return { type: 'landing_batch.bisect_started', data: { repo: p.repo, tested: f.tested, tip: f.tip, points, checks: f.checks, reason: f.reason, pullRequest: f.pullRequest, url: f.url } };
 }
 
 /** One step of the bisect: read the bisect run at work, or start the next one, or record the culprit. */
@@ -48,14 +52,15 @@ export async function bisectPass(p: RedPass, b: Bisect): Promise<void> {
   const run = b.running;
   if (run) {
     const pr = await p.gh.pullRequest(p.repo, run.pullRequest);
+    // Recorded before the close (issue #1589): a later pass closes a bisect run that ended and stays open.
     const end = async (outcome: 'good' | 'bad' | 'unknown', why: string, checks: FailedCheck[] = []): Promise<void> => {
-      if (pr.state === 'open') await p.gh.close(p.repo, run.pullRequest);
-      await p.gh.deleteBranch(p.repo, run.branch).catch((e: unknown) => p.log(`hopper: landing batches: ${run.branch} of ${p.repo} not removed: ${(e as Error).message}`));
       p.record({
         type: 'landing_batch.bisect_tested',
         data: { repo: p.repo, tested: b.tested, tip: b.tip, index: run.index, sha: run.sha, pullRequest: run.pullRequest, url: run.url, outcome, ...(outcome === 'unknown' ? { reason: why } : {}), ...(checks.length > 0 ? { checks } : {}) },
       });
       p.note({ why: outcome === 'unknown' ? `the bisect ended: ${why}` : `bisect run #${run.pullRequest}: ${short(run.sha)} ${why}` });
+      if (pr.state === 'open') await p.gh.close(p.repo, run.pullRequest).catch((e: unknown) => p.log(`hopper: landing batches: #${run.pullRequest} of ${p.repo} not closed: ${(e as Error).message}`));
+      await p.gh.deleteBranch(p.repo, run.branch).catch((e: unknown) => p.log(`hopper: landing batches: ${run.branch} of ${p.repo} not removed: ${(e as Error).message}`));
     };
     if (pr.merged) return end('good', 'passed');
     if (pr.state === 'closed') return end('unknown', 'its pull request was closed without a merge');
@@ -71,7 +76,7 @@ export async function bisectPass(p: RedPass, b: Bisect): Promise<void> {
     const branch = bisectBranch(point.sha);
     await p.gh.createBranch(p.repo, branch, point.sha);
     const t = { landing: p.landing, tested: b.tested, sha: point.sha, tip: b.tip, ...(point.pullRequest !== undefined ? { pullRequest: point.pullRequest } : {}) };
-    const pr = await p.gh.openPullRequest(p.repo, { head: branch, base: b.tested, title: bisectTitle(t), body: bisectBody(t) });
+    const pr = await openOnce(p.gh, p.repo, { head: branch, base: b.tested, title: bisectTitle(t), body: bisectBody(t) });
     p.record({ type: 'landing_batch.bisect_run', data: { repo: p.repo, tested: b.tested, tip: b.tip, index: next.index, sha: point.sha, branch, pullRequest: pr.number, url: pr.url } });
     p.note({ why: `bisect run #${pr.number} tests ${short(point.sha)}` });
     return;
@@ -93,7 +98,9 @@ export async function culpritPass(p: RedPass, c: Culprit): Promise<void> {
       p.record({ type: 'landing_batch.revert_failed', data: { ...at, reason: 'the culprit is a direct commit, not a pull request: revert it by hand' } });
     } else {
       try {
-        const r = await p.gh.revert(p.repo, n, revertText({ landing: p.landing, tested: p.tested, tip: c.tip, culprit: n, checks: c.checks.map((x) => x.name), ...(c.batch !== undefined ? { batch: c.batch } : {}) }));
+        const text = revertText({ landing: p.landing, tested: p.tested, tip: c.tip, culprit: n, checks: c.checks.map((x) => x.name), ...(c.batch !== undefined ? { batch: c.batch } : {}) });
+        // The revert a pass opened before it was recorded (issue #1589): GitHub would revert it a second time.
+        const r = (await p.gh.openPullRequests(p.repo, p.landing)).find((x) => x.title === text.title) ?? await p.gh.revert(p.repo, n, text);
         p.record({ type: 'landing_batch.revert_opened', data: { ...at, culpritPullRequest: n, pullRequest: r.number, url: r.url } });
       } catch (e) {
         p.record({ type: 'landing_batch.revert_failed', data: { ...at, reason: (e as Error).message } });
@@ -134,7 +141,7 @@ async function fileFix(p: RedPass, c: Culprit): Promise<void> {
       ...(c.pullRequest !== undefined ? { pullRequest: c.pullRequest } : {}), ...(issue !== undefined ? { issue } : {}),
       revert: c.revert ? { pullRequest: c.revert.pullRequest } : { problem: c.revertProblem ?? 'the revert is not open yet' },
     });
-    const filed = await p.gh.fileIssue(p.repo, { ...text, labels: [JOB_LABEL], assignees: [login] });
+    const filed = await fileOnce(p.gh, p.repo, { ...text, labels: [JOB_LABEL], assignees: [login] }, c.at);
     p.record({ type: 'landing_batch.fix_filed', data: { repo: p.repo, tip: c.tip, sha: c.sha, issue: filed.number, url: filed.url } });
   } catch (e) {
     p.note({ problem: `the fix issue for ${short(c.sha)} was not filed: ${(e as Error).message}` });

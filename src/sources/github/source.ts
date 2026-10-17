@@ -27,7 +27,7 @@ import { checkJobs } from './check.ts';
 import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type WaitsOnBatch } from './completion.ts';
 import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
-import { endedWatched } from './watched.ts';
+import { endedWatched, waitedChecks } from './watched.ts';
 import { endedPullRequests, followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
@@ -43,7 +43,7 @@ import { createApprovals } from './approvals.ts'; import { autoOutcome } from '.
 import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { awaitingBatch, closePromoted, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
+import { awaitingBatch, closePromoted, declinedOutcome, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { ensureLabels, keepResolution, reportToGitHub, takeBack } from './report.ts';
@@ -184,7 +184,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     intake: () => outbox.on(approvals.on(outcomes)), afterAnswerTimings: outbox.timings, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
     pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
     giveBackAct: (job, act, acting, more) => (job.source?.repo ? outbox.giveBackAct(job.source.key, job.source.repo, act, job.id, acting, more) : undefined),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: approvals.on(outcomes), listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, resolve: approvals.resolve, label: config.label, takeIn: census.takeIn(), outbox }, a),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: approvals.on(outcomes), listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, resolve: approvals.resolve, label: config.label, priorityLabels: Object.keys(config.priorityLabels), takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -255,6 +255,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       }
       // A card a rule approves (issue #1268) is the hopper's approval, no card: the next sync takes it.
       const autos = await approvals.auto(requests, [...taken, ...found.seen]); next = next.map((x) => autoOutcome(x, autos.get(x.key)) ?? requestOutcome(x, requests.get(x.key), o.trust));
+      next = next.map((x) => (outbox.declining(x.key) ? declinedOutcome(x) : x));
       if (intake) { openRequests(o.name, intake, requests, opened); withdrawRequests(o.name, intake, requests, { repos, repoErrors: found.repoErrors }, opened); }
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
@@ -307,7 +308,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     follow: (job, act, at) => followPullRequest(followContext(), job, act, at),
     housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
-    readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs),
+    readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs), waitedChecks: (repo, number) => waitedChecks(api, repo, number),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo, kind) => mergesOnReady(o.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode?.(repo) ?? false, kind),
     issueState: (job) => issueState(api, job),

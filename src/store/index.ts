@@ -14,7 +14,10 @@ import { resealUnderNewKey } from './rotate-master-key.ts';
 import { createSandboxRepository } from './sandboxes.ts';
 import { createSandboxRunRepository } from './sandbox-runs.ts';
 import { createNeedStepRepository } from './need-steps.ts';
+import { createWindowsStepRepository } from './windows-steps.ts';
 import { createSagaRepository } from './sagas.ts';
+import { createSweepLeaseRepository } from './sweep-leases.ts';
+import { createOutboundKeyRepository } from './outbound-keys.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
 import { createSignInConfigRepository } from './sign-in-config.ts';
 import { userSchemaName } from './tenant-migrations.ts';
@@ -62,7 +65,10 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     sandboxes: createSandboxRepository(ctx),
     sandboxRuns: createSandboxRunRepository(ctx),
     needSteps: createNeedStepRepository(ctx),
+    windowsSteps: createWindowsStepRepository(ctx),
     sagas: createSagaRepository(ctx),
+    sweepLeases: createSweepLeaseRepository(ctx),
+    outboundKeys: createOutboundKeyRepository(ctx),
     config,
     signInConfig: createSignInConfigRepository(ctx, config),
     settings,

@@ -32,8 +32,8 @@ export const PROMOTED_CLOSED = 'done: promoted to the tested branch with its bat
 export const PROMOTED_OPEN = 'done: promoted to the tested branch with its batch; closing the issue failed, asked again at the next sync';
 /** Why a card is a request when Access cannot be asked: no auto-approval holds then (issue #1268). */
 export const UNCHECKED = 'trusted actors cannot be checked';
-/** A request card a person declined (issue #1035). */
-export const DECLINED_REASON = 'a request you declined: an edit to its title or body shows it again';
+/** A request card a person declined (issue #1035), while GitHub takes the decline's writes (issue #1710). */
+export const DECLINED_REASON = 'a request you declined';
 
 export type Act = Omit<OriginActor, 'trusted'>;
 
@@ -96,11 +96,17 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
 }
 
 /** An outcome with its request, if it has one: a request card, or a text a person declined (issue #1035), which waits for
- *  nobody and is offered nothing until an edit makes it a new request. */
+ *  nobody and is offered nothing; once GitHub took the decline (issue #1710) no listing has it until a person labels it again. */
 export function requestOutcome(x: IntakeOutcome, r: IntakeRequest | undefined, trust: Pick<IntakeTrust, 'declined'>): IntakeOutcome {
   if (!r) return x;
   if (trust.declined(x.key, r.hash)) return { ...x, reason: DECLINED_REASON, group: 'declined' };
   return { ...x, reason: r.reopened ? REOPENED_REASON : REQUEST_REASON, action: 'approve', group: 'request', request: r };
+}
+
+/** An item whose decline's GitHub writes are not sent (issue #1710): declined, whatever the sync made of it, and offered nothing. */
+export function declinedOutcome(x: IntakeOutcome): IntakeOutcome {
+  const { action: _action, request: _request, jobId: _jobId, jobStatus: _jobStatus, ...rest } = x;
+  return { ...rest, reason: DECLINED_REASON, group: 'declined' };
 }
 
 /**
@@ -186,13 +192,14 @@ const repoOfKey = (key: string): string | undefined => /^https?:\/\/[^/]+\/([^/]
  * Record `source.request_withdrawn` for each request card of this source the work-item ledger has waiting for approval that
  * this sync no longer offers (issue #1067, part 4): its issue closed, its label or assignee went, or it is of a trusted
  * origin now. Only for an issue of a repository the sync listed (`repos`, none in `repoErrors`): an issue not listed is not
- * known to be gone. `seen` forgets the withdrawn texts, so a card back in Intake opens again.
+ * known to be gone. `repoOf`: a key's repository, lowercased (a GitLab source's reads its project, issue #1642). `seen` forgets the withdrawn texts, so a card back in Intake opens again.
  */
-export function withdrawRequests(source: string, intake: IntakeContext, offered: ReadonlyMap<string, IntakeRequest>, listed: { repos: readonly string[]; repoErrors: Record<string, string> }, seen: Set<string>): void {
+export function withdrawRequests(source: string, intake: IntakeContext, offered: ReadonlyMap<string, IntakeRequest>, listed: { repos: readonly string[]; repoErrors: Record<string, string> }, seen: Set<string>,
+  repoOf: (key: string) => string | undefined = repoOfKey): void {
   const errored = new Set(Object.keys(listed.repoErrors).map((r) => r.toLowerCase()));
   const read = new Set(listed.repos.map((r) => r.toLowerCase()).filter((r) => !errored.has(r)));
   for (const key of intake.requestsWaiting()) {
-    const repo = repoOfKey(key);
+    const repo = repoOf(key);
     if (offered.has(key) || repo === undefined || !read.has(repo)) continue;
     intake.record('source.request_withdrawn', { source, key });
     for (const id of [...seen]) if (id.startsWith(`${key} `)) seen.delete(id);

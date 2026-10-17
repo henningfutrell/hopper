@@ -104,10 +104,14 @@ export interface WebhookRepository {
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
   delete(id: string): boolean;
   /** status `pending`, attempts 0, nextAttemptAt = now. */
-  createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery;
+  createDelivery(subscriptionId: string, event: DomainEvent): WebhookDelivery; hasDelivery(subscriptionId: string, eventSeq: number): boolean; // a delivery of the event with this seq: one handed again at a catch-up (issue #1572)
   updateDelivery(id: string, patch: Partial<Omit<WebhookDelivery, 'id' | 'subscriptionId' | 'eventSeq' | 'eventType' | 'createdAt'>>): WebhookDelivery;
-  /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
-  dueDeliveries(now: Date): WebhookDelivery[];
+  /**
+   * `dueDeliveries`: the deliveries due at or before `now` (status pending|retrying and nextAttemptAt <= now).
+   * `claimDelivery` claims a due delivery for one attempt (issue #1627): compare-and-set, its nextAttemptAt moved to `until`
+   * only while it is still due at `now`, so of two hosts that ask at once one gets it. The claimed delivery, else undefined.
+   */
+  dueDeliveries(now: Date): WebhookDelivery[]; claimDelivery(id: string, now: Date, until: string): WebhookDelivery | undefined;
   listDeliveries(filter?: { subscriptionId?: string; limit?: number }): WebhookDelivery[];
 }
 
@@ -488,10 +492,11 @@ export interface ConnectedAccountRepository {
 }
 
 export interface UserStore {
-  jobs: JobRepository;
+  /** The jobs; the job leases (issue #1662): the hopper that drives each claimed or running job. */
+  jobs: JobRepository; jobLeases: import('./job-leases.ts').JobLeaseRepository;
   lanes: LaneRepository;
   decisions: DecisionRepository;
-  events: EventLog;
+  events: EventLog; eventCursors: import('./event-cursors.ts').EventCursorRepository; // event cursors (issue #1572)
   webhooks: WebhookRepository;
   /** The vault (issue #558). */
   vault: VaultRepository;
@@ -509,7 +514,7 @@ export interface UserStore {
   logins: LoginRepository; lastAccounts: import('./logins.ts').LastAccountRepository; // the last accounts (issue #1269)
   failures: FailureRepository;
   problems: ProblemRepository;
-  handoffs: HandoffRepository;
+  handoffs: HandoffRepository; waitCheckLeases: import('./wait-checks.ts').WaitCheckLeases; // the wait checks' leases (issue #1694)
   itemSnapshots: ItemSnapshotRepository;
   vaultGrants: VaultGrantRepository;
   bugReports: BugReportRepository;
@@ -557,7 +562,7 @@ export interface InstanceStore {
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
   /** The sandbox records (issue #708). */
-  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; needSteps: import('./need-steps.ts').NeedStepRepository; sagas: import('./sagas.ts').SagaRepository; // the sandbox runs: each sandbox made for one step (issue #1349); the sandbox steps: each need or box step from the job's ask to its result (issue #1568); the sagas: work across a boundary, kept step by step, that goes on after a stop on any host (issue #1524)
+  sandboxes: SandboxRepository; sandboxRuns: import('./sandbox-runs.ts').SandboxRunRepository; needSteps: import('./need-steps.ts').NeedStepRepository; windowsSteps: import('./windows-steps.ts').WindowsStepRepository; sagas: import('./sagas.ts').SagaRepository; sweepLeases: import('./leases.ts').SweepLeaseRepository; outboundKeys: import('./outbound.ts').OutboundKeyRepository; // the sandbox runs: each sandbox made for one step (issue #1349); the sandbox steps: each need or box step from the job's ask to its result (issue #1568); the Windows steps, likewise, with each host's hold (issue #1611); the sagas: work across a boundary, kept step by step, that goes on after a stop on any host (issue #1524); the sweep leases and the outbound dedupe keys: what makes two hosts on one database run each sweep and send each send once (issue #1627)
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */

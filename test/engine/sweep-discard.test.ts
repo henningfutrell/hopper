@@ -61,4 +61,19 @@ describe('discarding kept work (issue #1010)', () => {
     expect(r.events.map((e) => e.type)).toEqual(['job.work_kept', 'job.work_discard_failed']);
     expect(r.events.at(-1)!.data).toEqual({ error: why, person: 'Pat', via: 'ui' });
   });
+
+  // Issue #1570: the discard is a record on the job until its removal ends.
+  it('a discard a stop cut short is done by the next sweep of its machine, before its reaps; one that failed is not', async () => {
+    const r = rig({ kept: ['old', 'done'] });
+    const scratch = '/w/.worktrees/@scratch/old';
+    r.jobs[r.jobs.findIndex((j) => j.id === 'old')]!.discard = { at: '', scratch, by };
+    r.jobs[r.jobs.findIndex((j) => j.id === 'done')]!.discard = { at: '', scratch: '/w/.worktrees/@scratch/done', by, error: 'the machine m is out of reach' };
+    expect(r.sweep.discarding('old')).toEqual({ state: 'removing' });
+    await r.sweep.run(true);
+    expect(r.reaps.filter((x) => x.discard)).toEqual([{ jobId: 'old', scratch, discard: true }]);
+    expect(r.events.filter((e) => e.type === 'job.work_removed')).toEqual([{ type: 'job.work_removed', jobId: 'old', data: { paths: [scratch], discarded: true, person: 'Pat', via: 'ui' } }]);
+    expect(r.jobs.find((j) => j.id === 'old')!.discard).toBeUndefined();
+    expect(r.sweep.discarding('old')).toBeUndefined();
+    expect(r.sweep.discarding('done')).toEqual({ state: 'failed', error: 'the machine m is out of reach' });
+  });
 });

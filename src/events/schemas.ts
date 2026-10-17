@@ -144,7 +144,7 @@ export const EVENT_SCHEMAS = {
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
-  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }), 'job.waited_items_ended': strict({ items: z.array(strict({ url: z.string(), state: z.string() })).min(1) }),
+  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional(), check: z.string().optional() }), 'job.wait_overdue': strict({ deadline: z.string(), result: z.string() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }), 'job.waited_items_ended': strict({ items: z.array(strict({ url: z.string(), state: z.string() })).min(1) }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
@@ -218,7 +218,7 @@ export const EVENT_SCHEMAS = {
   'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), reason: z.enum(WORK_DISCARD_REASONS).optional(), ...actingIfPerson }),
   // Issue #371: the job's cleanup could not reach its machine; it is tried again until it goes through.
   'job.cleanup_deferred': strict({ error: z.string() }),
-  'job.cleaned_up': strict({ deferredAt: z.string(), by: z.enum(['user']).optional() }),
+  'job.cleaned_up': strict({ deferredAt: z.string().optional(), dueAt: z.string().optional(), by: z.enum(['user']).optional() }),
   // Assignment drift (issue #387): the started job's item is no longer, or again, assigned to the account it was taken for.
   'job.unassigned': strict({ assignee: z.string() }),
   'job.reassigned': strict({ assignee: z.string() }),

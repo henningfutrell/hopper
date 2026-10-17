@@ -11,6 +11,7 @@ import { createDecisionRepository } from './decisions.ts';
 import { createConfigRecords } from './config.ts';
 import { createConnectedAccountRepository } from './connected-accounts.ts';
 import { createEventLog } from './events.ts';
+import { createEventCursorRepository } from './event-cursors.ts';
 import { createJobRepository } from './jobs.ts';
 import { createJobStreamRepository } from './job-stream.ts';
 import { createLaneRepository } from './lanes.ts';
@@ -30,6 +31,7 @@ import { createSourceCallLog } from './source-calls.ts';
 import { createGitHubOutboxRepository } from './github-outbox.ts';
 import { createNotifierDeliveryRepository } from './notifier-deliveries.ts';
 import { createCheckpointRepository } from './checkpoints.ts';
+import { createJobLeaseRepository } from './job-leases.ts';
 import { createOutboundSendRepository } from './outbound-sends.ts';
 import { createSearchPendingRepository } from './search-pending.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
@@ -44,6 +46,7 @@ import { createMachineHistoryRepository } from './machine-history.ts';
 import { createVaultRepository } from './vault.ts';
 import { createWebhookRepository } from './webhooks.ts';
 import { createCredentialAcceptanceRepository } from './machine-credentials.ts';
+import { createWaitCheckLeases } from './wait-check-leases.ts';
 
 /** The database URL with `?schema=<schema>`: the user schema, created when absent. */
 export function schemaUrl(url: string, schema: string): string {
@@ -79,6 +82,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     lanes: createLaneRepository(ctx),
     decisions: createDecisionRepository(ctx),
     events,
+    eventCursors: createEventCursorRepository(ctx, events),
     webhooks: createWebhookRepository(ctx),
     vault: createVaultRepository(ctx),
     jobStream,
@@ -107,6 +111,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     repoChecks: createRepoChecksReadRepository(ctx),
     appInstallations: createAppInstallationsReadRepository(ctx),
     checkpoints: createCheckpointRepository(ctx),
+    jobLeases: createJobLeaseRepository(ctx),
     outboundSends: createOutboundSendRepository(ctx),
     notifierDeliveries: createNotifierDeliveryRepository(ctx),
     searchPending: createSearchPendingRepository(ctx),
@@ -116,6 +121,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     machineHistory: createMachineHistoryRepository(ctx),
     config: createConfigRecords(ctx, USER_CONFIG),
     credentialAcceptances: createCredentialAcceptanceRepository(ctx),
+    waitCheckLeases: createWaitCheckLeases(ctx),
     tx: ctx.tx,
     close: () => db.close(),
   };

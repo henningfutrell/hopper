@@ -103,8 +103,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   box step (issue #1004, `docs/design.md` "Box steps"): the same routes with `box=`, run one command in a sandbox box the job's own
   sandbox request started, through that box's container runtime beside the hopper, and answer its output, exit code and outputs; it
   changes no job, question, webhook or setting, only records the step. While it runs, the box's vault helper asks for that job, as for
-  a job on the box, after the same checks and the job's vault grant; a box step takes no `--secret`. A need or box step is kept
-  (issue #1568, `docs/design.md` "Need steps kept as sagas"): its ask carries the job's key and is answered 202, its saga runs it on
+  a job on the box, after the same checks and the job's vault grant; a box step takes no `--secret`. A Windows, need or box step is kept
+  (issues #1568, #1611, `docs/design.md` "Need steps kept as sagas", "Windows steps kept as sagas"): its ask carries the job's key and is answered 202, its saga runs it on
   any host, and the job reads `GET /job/step/:id/log` and stops it with `DELETE /job/step/:id`, its own step only. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) or an **API token** (issue #718, `docs/design.md` "API tokens":
@@ -133,20 +133,20 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   and assigned it, not through an app or as a bot, and no job filed it; any other is a request card a person approves, and
   its job runs the approved text. A GitLab issue (issue #1448, `docs/design.md` "Jobs through GitLab") becomes a job only when
   the user's GitLab account — Access decides (`intake#can_start_jobs`, a `gitlab_account` by its GitLab and user id) — wrote,
-  labelled and assigned it, and nobody else edited its title or description; any other is listed with why, never taken. Approve is a person's act through the UI session, never a job's. One exception, the
+  labelled and assigned it, and nobody else edited its title or description; any other is a request card a person approves, as on GitHub, and its job runs the approved text (issue #1642). Approve is a person's act through the UI session, never a job's. One exception, the
   user's own setting: **auto-approval** (issue #1268, `docs/design.md` "Auto-approval", on by default) approves a card a
   trusted actor reopened, wrote or labelled `hopper:high`, or a listed app wrote, and records it as an approval; a card a
-  job filed, that someone else edited, or that a person took into Intake still waits. The origin gates the job,
+  job filed, that someone else edited, or that a person took into Intake still waits; a GitLab card only when a trusted actor wrote it or labelled it `hopper:high` (issue #1642). The origin gates the job,
   not its merge: yolo mode merges a job's ready pull request whatever its origin (issue #805). No OpenFGA trusts nobody.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
   one (the merge of a job's pull request does), and posts no comments. On GitLab (issue #1448) it writes only its labels to an
-  issue, with no exception, and a GitLab job's merge request text is under the publishing rule. Ten exceptions, each the user's own act or setting: with
+  issue, with no exception, and a GitLab job's merge request text is under the publishing rule; with yolo mode on (issue #1642), the hopper merges a done GitLab job's ready merge request it follows — not a draft, no merge conflicts, its pipeline passed, or none started within two minutes of its last change —, at the head it read. Eleven exceptions, each the user's own act or setting: with
   yolo mode on for a repository (issue #637), the hopper merges a done job's ready pull request that it follows — not a draft, no
   merge conflicts, its checks passed — or it has none, and none started within two minutes of its last push (issue #677; issue #652 had none wait) —, a merge commit, and that merge closes the issue as a person's would; Merge now and Close PR on a Pull requests card or `hopper pr merge|close`
   (issue #677) merge, on the same path whatever yolo mode and the checks say, or close without a merge, a job's open pull request, as a person's act; after either merge — yolo mode or Merge now — of a pull request that did not close its issue and is no part ("Part of #N"), the hopper closes the issue as completed and posts one comment that links the pull request (issue #677), so the merge finishes the issue as the user's setting or act asked; Run again
   (issue #354) reopens the job's closed issue, so the new job can finish against it, and assigns it to the user's connected account when it is no longer (issue #1010) — so does tending, which runs it again; Assign to me in Sources (issue #440)
-  assigns a labelled issue to the user's connected account; Take into Intake on a Not tracked pull request (issue #1176) gives the issue it closes, which is no work item, the hopper label and assigns it so, and Intake lists it as a request card; resolving a hand-off in Needs a person (issue #551) posts one
+  assigns a labelled issue to the user's connected account; Take into Intake on a Not tracked pull request (issue #1176) gives the issue it closes, which is no work item, the hopper label and assigns it so, and Intake lists it as a request card; Decline on a request card (issue #1710, `docs/design.md` "Decline") takes the source's label off the issue — with the person's choice Close, also its priority labels and `hopper:done`, and closes it as not planned — and posts one fixed comment that says what the hopper did and how to queue it again, naming no person and never quoting the issue; resolving a hand-off in Needs a person (issue #551) posts one
   short comment — what was done, the person's note and link, naming no person, the resolver included — and sets the end
   label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`; Report a bug (issue #694) files the person's own bug report on the hopper's repository through their own connection — an issue labelled `user-report`, no assignee, or a comment on a similar open one —, its text theirs, as they read and edited it, the report context masked first; a running job's report on itself (`hopper-gh report bug`) goes the same way through its user's connection, its text masked whole, marked as the job's; File an issue (issue #471, `docs/design.md` "File an issue") files the person's own issue, drafted by their own signed-in Claude and read, edited and confirmed by them, on one of their job repositories through their own connection (the account of the repository), with no label and no assignee, its text scanned first as Promote to GitHub's (never a secret; personal data only on a private repository they allow it for; a public repository only when they confirm it) and ending with a fixed note that names no person; Queue job for a job repository with no checks (issue #677) files "Add PR checks to <repo>" on that repository through the person's own connection — an issue with the hopper label, assigned to their connected account, its text fixed —, once: an open one of that title is answered instead. Promote to GitHub (issue #946, `docs/design.md` "Promote to GitHub") posts a finished direct job as an issue, or a comment on an issue the person picks, on a repository they choose, through their own connection, never a job's — the text they read, edited and confirmed in a preview, scanned first: never a secret, personal data only on a private repository they allow it for, a public repository only when they confirm it; it names who promoted it, and the requester only when they ask; its links need a hopper sign-in, but a small text artifact the person ticks, scanned the same way, is committed to the promotion's own branch `hopper-promotion/<direct job>` (never the default branch) and linked there; promoted again it edits what it posted and updates what it committed. With the user's **drift issues** setting on (issue #1077,
 `docs/design.md` "Component watchers"), a **component watcher** files one issue per kind of drift on the hopper's own repository through
@@ -229,8 +229,13 @@ hopper's note naming the job and the request by id only, and gets no label or as
   names them with closing keywords, issue #1175); a red batch's culprit is reverted from `main`, and the rest of the batch moves on;
   `beta` and `canary` move only by `scripts/promote.sh`, one step at a time; `stable` moves to the canary's candidate
   when its canary window passes with no bug report that names it (the batch runner, part 5), or by `scripts/promote.sh stable`.
-- **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
-  by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+- **The UI is the daemon's one built part; `cloud/` is the second part, and not the daemon's.** `ui/` → `npm run build:ui`
+  → `ui/dist` (gitignored), served by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
+  `cloud/` is **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), its own service with its own database, run by Node
+  as the daemon is (`npm run cloud`): the daemon never serves it, its image does not carry it, and nothing in `src/` imports
+  it. It imports of `src/` only the GitHub sign-in it shares with an instance (`src/connected-accounts/hopper-app.ts`,
+  `web-flow.ts`, `identity.ts`) and `src/secrets/runtime.ts`; `test/cloud/config.test.ts` checks both ways. It signs in
+  through a GitHub App of its own, never the shipped one, and keeps no GitHub token.
   The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,
   never served by the daemon; it takes its look from `ui/src/index.css` and nothing of `src/`.
 - **What's new.** A change people who use the hopper would notice adds one line in a new file

@@ -12,23 +12,31 @@ import { DETAIL, SOURCES, boot, button, click, daemon, group, navLink, posts, re
 afterEach(unmount);
 
 describe('Intake: the issues a source listed, grouped by why (issues #798, #897)', () => {
-  it('the nav entry is badged with the cards the page shows under Needs approval, whatever the ledger counts (issue #1193)', async () => {
+  it('the nav entry is badged with the cards the page shows under Needs approval, whatever the ledger counts (issue #1193), and Not assigned to you (issue #1614)', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
-    const shown = group(view()!, 'request').querySelector('[data-intake-group-count]')!.textContent;
-    expect(shown).toBe('2');
-    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe(shown));
+    const shown = (g: string) => Number(group(view()!, g).querySelector('[data-intake-group-count]')!.textContent);
+    expect([shown('request'), shown('not-assigned')]).toEqual([2, 1]);
+    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3'));
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('2 requests wait for approval; 1 labelled issue waits to be assigned to you');
     expect(navLink('#intake').textContent).toContain('Intake');
+  });
+
+  it('Needs you counts a labelled issue not assigned to you with the request cards, and says so (issue #1614)', async () => {
+    await boot('#needs-you');
+    const row = () => document.querySelector<HTMLElement>('[data-needs-you="intake"]');
+    await vi.waitFor(() => expect(row()?.querySelector('[data-needs-you-count]')?.textContent).toBe('3'));
+    expect(row()!.textContent).toContain('labelled issues not assigned to you');
   });
 
   it('a reopened card (issue #1126) counts on the page and in the badge at the same moment (issue #1193)', async () => {
     await boot('#intake');
-    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
+    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3'));
     const reopened = { key: url(11), title: 'Done, still open', repo: 'octo-user/hopper', reason: 'reopened after its job was done: approve it to run it again', action: 'approve', group: 'request',
       request: { ...request(11), why: ['reopened after its job was done'], reopened: { jobs: [{ id: 'j-11', status: 'finished' }] } } };
     await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify({ ...SOURCES[0], detail: { ...DETAIL, intake: [...DETAIL.intake, reopened] } }) }); });
     expect(group(view()!, 'request').querySelector('[data-intake-group-count]')!.textContent).toBe('3');
-    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3');
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('4');
   });
 
   it('groups the issues waiting on an intake decision by why, with counts, requests first', async () => {
@@ -79,25 +87,45 @@ describe('Intake leaves job progress to Jobs (issue #1035)', () => {
   });
 });
 
-describe('Decline on a request card (issue #1035)', () => {
-  it('Decline sends the text as read, and the card says it was declined', async () => {
+describe('Decline on a request card (issues #1035, #1710)', () => {
+  const choice = (el: ParentNode, c: string) => el.querySelector<HTMLInputElement>(`[data-decline-choice="${c}"] input`)!;
+
+  it('Decline first says what each choice does on GitHub, the setting\'s default chosen; it sends the choice and the card says what was done', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
-    await click(button(row(view()!, url(9)), 'Decline'));
+    await click(button(row(view()!, url(9)), 'Decline…'));
+    expect(posts).toEqual([]);
+    const confirm = row(view()!, url(9)).querySelector('[data-slot="decline-confirm"]')!;
+    expect(confirm.querySelector('[data-decline-effect="close"]')!.textContent).toContain('closes the issue as not planned');
+    expect(confirm.querySelector('[data-decline-effect="open"]')!.textContent).toContain('The issue stays open');
+    await vi.waitFor(() => expect(choice(confirm, 'close').checked).toBe(true));
+    await act(async () => { choice(confirm, 'open').click(); });
+    await click(button(row(view()!, url(9)), 'Decline: leave it open'));
     await vi.waitFor(() => expect(posts).toHaveLength(1));
-    expect(posts).toEqual([{ path: '/ui/api/sources/github-account/intake', body: { kind: 'decline', keys: [url(9)], hash: request(9).hash } }]);
+    expect(posts).toEqual([{ path: '/ui/api/sources/github-account/intake', body: { kind: 'decline', keys: [url(9)], hash: request(9).hash, choice: 'open' } }]);
     await vi.waitFor(() => expect(row(view()!, url(9)).querySelector('[data-slot="request-declined"]')).not.toBeNull());
+    expect(row(view()!, url(9)).querySelector('[data-slot="request-declined"]')!.textContent).toContain('The issue stays open without the hopper label');
     expect(button(row(view()!, url(9)), 'Approve')).toBeUndefined();
   });
 
+  it('Cancel closes the confirm step and sends nothing', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await click(button(row(view()!, url(9)), 'Decline…'));
+    await click(button(row(view()!, url(9)), 'Cancel'));
+    expect(row(view()!, url(9)).querySelector('[data-slot="decline-confirm"]')).toBeNull();
+    expect(button(row(view()!, url(9)), 'Approve')).toBeDefined();
+    expect(posts).toEqual([]);
+  });
+
   it('a declined request is no row: Intake counts it in one line', async () => {
-    const declined = { key: url(11), title: 'No thanks', repo: 'octo-user/hopper', reason: 'a request you declined: an edit to its title or body shows it again', group: 'declined' };
+    const declined = { key: url(11), title: 'No thanks', repo: 'octo-user/hopper', reason: 'a request you declined', group: 'declined' };
     await boot('#intake');
     await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify({ ...SOURCES[0], detail: { ...DETAIL, intake: [...DETAIL.intake, declined] } }) }); });
     await vi.waitFor(() => expect(view()!.querySelector('[data-intake-declined]')).not.toBeNull());
     expect(row(view()!, url(11))).toBeNull();
     expect(view()!.querySelector('[data-intake-group="declined"]')).toBeNull();
-    expect(view()!.querySelector('[data-intake-declined]')!.textContent).toBe('1 request declined');
+    expect(view()!.querySelector('[data-intake-declined]')!.textContent).toBe('1 request declined, written to GitHub soon');
     expect(view()!.querySelector('[data-intake-summary]')!.textContent).toContain('6 waiting for intake');
   });
 });
@@ -107,7 +135,7 @@ describe('the backburner is always visible (issue #808)', () => {
     await boot('#dashboard');
     await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
     expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
-    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2');
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3');
   });
 
   it('each row says its issue number; a backburner row says since when and by whom, and looks unlike a taken one', async () => {

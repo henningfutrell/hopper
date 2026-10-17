@@ -11,6 +11,9 @@
     },
     "note": {
       "type": "string"
+    },
+    "check": {
+      "type": "string"
     }
   },
   "required": [

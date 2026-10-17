@@ -3,11 +3,11 @@
 // per sandbox box, labelled by its service — CPU, memory against its limit, network, disk, restarts and uptime —, and
 // the hopper's Postgres: connections against the most it allows, size, cache hits, locks, long transactions and
 // statement latency; OpenFGA's checks; and Solr's queries, index and the documents waiting to be indexed. What cannot
-// be read says why.
+// be read says why. Below, the telemetry summary (issue #1486): the slowest actions, the job spans and the GitHub calls.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { StackHistory, StackResources } from '../../src/domain/types.ts';
+import type { StackHistory, StackResources, TelemetrySummary } from '../../src/domain/types.ts';
 
 type El = ReturnType<typeof createElement>;
 let root: Root | undefined;
@@ -48,13 +48,25 @@ const HISTORY: StackHistory = {
   ],
 };
 
+const TELEMETRY: TelemetrySummary = {
+  since: '2026-10-12T09:00:00.000Z', exporting: false,
+  actions: [
+    { name: 'POST /ui/api/jobs/:id/discard', count: 3, meanMs: 820, p95Ms: 1500, maxMs: 1500 },
+    { name: 'POST /ui/api/jobs/:id/approve', count: 12, meanMs: 40.5, p95Ms: 95, maxMs: 120 },
+  ],
+  jobSpans: [{ name: 'run', count: 4, meanMs: 3_600_000, p95Ms: 5_400_000, maxMs: 5_400_000 }, { name: 'queue', count: 5, meanMs: 2000, p95Ms: 3000, maxMs: 3000 }],
+  github: [{ name: 'GET /repos/{owner}/{repo}/pulls', count: 40, meanMs: 120, p95Ms: 300, maxMs: 410, cacheHits: 30, errors: 1 }],
+  githubCalls: 50, githubCacheHits: 30,
+};
+
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-async function render(read: StackResources | { status: number; error: string } = READ) {
+async function render(read: StackResources | { status: number; error: string } = READ, telemetry: TelemetrySummary | { status: number; error: string } = TELEMETRY) {
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => ('status' in read ? json({ error: read.error }, read.status)
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => (String(url).startsWith('/api/telemetry') ? ('status' in telemetry ? json({ error: telemetry.error }, telemetry.status) : json(telemetry))
+    : 'status' in read ? json({ error: read.error }, read.status)
     : String(url).startsWith('/api/resources/history') ? json(HISTORY) : json(read))));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
@@ -71,6 +83,7 @@ const rows = () => [...document.querySelectorAll('[data-slot="container-row"]')]
 const postgres = () => document.querySelector('[data-slot="postgres-reading"]')?.textContent ?? '';
 const openfga = () => document.querySelector('[data-slot="openfga-reading"]')?.textContent ?? '';
 const solr = () => document.querySelector('[data-slot="solr-reading"]')?.textContent ?? '';
+const telemetryRows = (slot: string) => [...document.querySelectorAll(`[data-slot="${slot}"] tbody tr`)].map((r) => [...r.querySelectorAll('td')].map((c) => c.textContent ?? ''));
 const legend = () => [...document.querySelectorAll('[data-slot="usage-graph-legend"] button')].map((b) => [b.textContent ?? '', b.getAttribute('aria-pressed')]);
 
 afterEach(async () => {
@@ -178,5 +191,36 @@ describe('the Resources page', () => {
   it('a read the daemon refuses says why', async () => {
     await render({ status: 403, error: 'only the hopper\'s admin may do this' });
     expect(document.body.textContent).toContain('only the hopper\'s admin may do this');
+  });
+
+  it('shows the telemetry summary: the slowest actions, the job spans and the GitHub calls (issue #1486)', async () => {
+    await render();
+    expect(telemetryRows('telemetry-actions')).toEqual([
+      ['POST /ui/api/jobs/:id/discard', '3', '820 ms', '1.5 s', '1.5 s'],
+      ['POST /ui/api/jobs/:id/approve', '12', '40.5 ms', '95 ms', '120 ms'],
+    ]);
+    expect(telemetryRows('telemetry-job-spans')).toEqual([
+      ['run', '4', '1h 0m', '1h 30m', '1h 30m'],
+      ['queue', '5', '2 s', '3 s', '3 s'],
+    ]);
+    expect(telemetryRows('telemetry-github')).toEqual([['GET /repos/{owner}/{repo}/pulls', '40', '30', '1', '120 ms', '300 ms']]);
+    const panel = document.querySelector('[data-slot="telemetry-summary"]')?.textContent ?? '';
+    expect(panel).toContain('50 GitHub calls, 30 from the cache (60%)');
+    expect(panel).toContain('not exported');
+  });
+
+  it('the telemetry summary with nothing yet says so, and says when it is exported', async () => {
+    await render(READ, { since: '2026-10-12T09:00:00.000Z', exporting: true, actions: [], jobSpans: [], github: [], githubCalls: 0, githubCacheHits: 0 });
+    const panel = document.querySelector('[data-slot="telemetry-summary"]')?.textContent ?? '';
+    expect(panel).toContain('No action yet');
+    expect(panel).toContain('No job span ended yet');
+    expect(panel).toContain('No GitHub call yet');
+    expect(panel).toContain('also exported');
+  });
+
+  it('a telemetry summary the daemon refuses says why, and the rest of the page still shows', async () => {
+    await render(READ, { status: 403, error: 'only the hopper\'s admin may do this' });
+    expect(document.querySelector('[data-slot="telemetry-summary"]')?.textContent).toContain('only the hopper\'s admin may do this');
+    expect(rows()).toHaveLength(3);
   });
 });

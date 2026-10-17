@@ -32,8 +32,8 @@ export type WaitOn =
 
 export type WaitOnKind = WaitOn['kind'];
 
-/** What a job wrote after HOPPER_WAITING. */
-export interface WaitAsked { for: string; until?: string; on?: string }
+/** What a job wrote after HOPPER_WAITING. `check` (issue #1694): its `check:` line, when the hopper checks next or a time to wake it at. */
+export interface WaitAsked { for: string; until?: string; on?: string; check?: string }
 
 const REPO = String.raw`([\w.-]+\/[\w.-]+)`;
 const PR_AT = new RegExp(String.raw`(?:${REPO}#|\b(?:pr|pull\s+request)\s*#?)(\d+)`, 'i');

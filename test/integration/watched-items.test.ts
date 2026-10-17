@@ -84,6 +84,19 @@ describe('a job waiting on other items (issue #1508)', () => {
     expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${first.url} was closed; ${second.url} was closed` }]);
   });
 
+  it('an item that does not exist (issue #1691): woken at once at the next sync, told so, though another item is still open', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const open = gh.createIssue({ repo: 'owner/ops-tools' });
+    const job = waitingOn(app, gh, `until gss#330 and ops-tools#${open.number} close`);
+
+    await app.sync();
+    await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
+    const missing = 'https://github.com/owner/gss/issues/330';
+    expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${missing} was not found: no such repository or item, so the wait never ends on it` }]);
+    expect((await app.events('types=job.waited_items_ended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { items: [{ url: missing, state: 'not_found' }] }]]);
+  });
+
   it('a workflow run: waiting for a deployment decision, it still waits; completed, it is woken', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);

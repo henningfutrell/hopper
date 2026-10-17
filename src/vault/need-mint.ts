@@ -12,6 +12,7 @@ import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '
 import { AT_WORK } from './box.ts';
 import { principalOf, type MintFrom, type MintingOptions } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
+import { appliesRefusal } from '../domain/infra-plans.ts';
 
 /** A need box `step` of `template`, run for the job `job`, asks for the credential of one need; `plan`: the approved plan a change applies. */
 export interface NeedMintAsk { template: string; step: string; job: string; profile: OperationProfile; plan?: string }
@@ -24,7 +25,7 @@ export interface NeedMinting {
   mintForNeedStep(ask: NeedMintAsk, from?: MintFrom): Promise<NeedMintAnswer>;
 }
 
-export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; plans?: MintingOptions['plans']; bindings?: MintBindings }): NeedMinting {
+export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; plans?: MintingOptions['plans']; applies?: MintingOptions['applies']; bindings?: MintBindings }): NeedMinting {
   const { vault, events } = store;
   return {
     async mintForNeedStep({ template, step, job, profile, plan }, from = o.mintFrom) {
@@ -42,6 +43,8 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       if (!atWork()) return refuse('the job is not at work: the vault mints for a step only while its job runs');
       const named = mintTarget(kind, profile);
       if (typeof named === 'string') return refuse(named);
+      const off = appliesRefusal(profile, o.applies?.() ?? true);
+      if (off) return refuse(off);
       // A need box's token ends with it (issue #1371): bound to a Secret its step's end deletes.
       const target = named.kind === 'kube' && o.bindings ? { ...named, bindTo: o.bindings.name() } : named;
       if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');

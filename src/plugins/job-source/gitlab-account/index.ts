@@ -1,6 +1,7 @@
 // gitlab-account: GitLab issues labelled hopper in the projects picked for the GitLab account the user attached (issue #1448
 // part 2, design.md "A GitLab source"), read through that account's personal access token, listed in Intake; one assigned to
-// the account and of a trusted origin is a job (part 3, "Jobs through GitLab"). Paused until the user connects GitLab
+// the account and of a trusted origin is a job (part 3, "Jobs through GitLab"); its merge request is followed, and merged in
+// yolo mode (issue #1642); one of another origin is a request card a person approves (issue #1642). Paused until the user connects GitLab
 // (Sources → GitLab) and picks projects; nothing to set up here. The hopper adds its instance,
 // `gitlab-account`, while a GitLab account is attached: never the plugins config.
 import { createGitLabSource } from '../../../gitlab/source.ts';
@@ -29,9 +30,11 @@ export function gitlabAccountPlugin(): PluginDefinition<'job-source', GitLabAcco
     detect: async () => ({ status: 'available', detail: 'the GitLab account connected in Sources' }),
     create(ctx, o) {
       if (!o.enabled || !ctx.gitlabAccount) return { disabled: { kind: 'gitlab-account', detail: {} } };
+      const intake = ctx.intake(ctx.instanceName);
       const source = createGitLabSource({
         name: ctx.instanceName, account: ctx.gitlabAccount, label: o.label, priorityLabels: o.priorityLabels, defaultPriority: o.defaultPriority,
-        executor: o.executor, ...(o.model ? { model: o.model } : {}),
+        executor: o.executor, ...(o.model ? { model: o.model } : {}), yoloMode: (project) => ctx.yoloMode(project),
+        trust: ctx.intakeTrust, ...(intake ? { intake } : {}),
       });
       return { source, pollMs: o.pollSeconds * 1000 };
     },

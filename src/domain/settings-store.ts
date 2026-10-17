@@ -4,6 +4,7 @@
 import type { RateLimiterSettings } from './github-rate-limit.ts';
 import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeAutoApproval } from './intake-auto-approve.ts';
+import type { IntakeDeclineDefaults } from './intake-decline.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
 import type { GitLabAccountRecord } from './gitlab-account.ts';
@@ -149,6 +150,9 @@ export interface UserSettingsRepository {
   /** Auto-approval at intake (issue #1268); undefined: never set, so on, with no app listed. */
   getIntakeAutoApproval(): IntakeAutoApproval | undefined;
   setIntakeAutoApproval(settings: IntakeAutoApproval): void;
+  /** The choice Decline offers first (issue #1710); undefined: never set. */
+  getIntakeDecline(): IntakeDeclineDefaults | undefined;
+  setIntakeDecline(settings: IntakeDeclineDefaults): void;
   /** The job repositories whose "Add PR checks" recommendation the person dismissed (issue #677), `owner/repo` lowercased; none: []. */
   getRepoChecksDismissed(): string[];
   setRepoChecksDismissed(repos: string[]): void;
@@ -203,6 +207,9 @@ export interface InstanceSettingsRepository {
   /** The source email match (issue #1380): an account connected from Sources must have its person's email verified; never set: on. */
   getSourceEmailMatch(): boolean;
   setSourceEmailMatch(on: boolean): void;
+  /** Infra applies (issue #1722): whether the vault mints a write, sync or apply for an approved plan, and steps apply; never set: on. */
+  getInfraApplies(): boolean;
+  setInfraApplies(on: boolean): void;
   /** The cloud link (issue #467): this install linked to a hopper.io account; undefined: not linked. */
   getCloudLink(): CloudLinkSettings | undefined;
   setCloudLink(link: CloudLinkSettings): void;

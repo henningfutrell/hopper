@@ -153,6 +153,18 @@ export function applyRefusal(profile: OperationProfile, planId: string | undefin
   return undefined;
 }
 
+/**
+ * Why the vault mints nothing for `profile` while **infra applies** are off (issue #1722), or undefined: on, or a read.
+ * Off, the hopper is read-only on infrastructure: no write, sync or apply is minted, plan or not, and no step applies.
+ */
+export function appliesRefusal(profile: OperationProfile, on: boolean): string | undefined {
+  if (on || profile.operation === 'read') return undefined;
+  return `infra applies are off on this hopper: it mints no credential for ${profileInWords(profile)}. ${THROUGH_CI}. Ask for read only`;
+}
+const THROUGH_CI = 'An infrastructure change goes through CI: push it to the infrastructure repository, and its pipeline applies it after its environment approval';
+/** Why a need or box step that applies (a plan, or a need but read) does not run while infra applies are off (issue #1722). */
+export const APPLY_STEP_OFF = `infra applies are off on this hopper: it runs no step that applies (one with a plan, or with a need of write, sync or apply). ${THROUGH_CI}. Run read steps only`;
+
 /** The words of the checks a plan failed (the MAP tag), or undefined: such a plan is never approved or applied. */
 export const failedChecks = (plan: Pick<InfraPlan, 'summary'>): string | undefined =>
   (plan.summary?.failed ? plan.summary.checks.filter((c) => !c.ok).map((c) => c.words).join('; ') : undefined);

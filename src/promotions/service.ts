@@ -6,12 +6,16 @@
 // when the person allows it; a public repository only when they confirm it. `revoke` ends the link in the hopper and
 // leaves GitHub as it is. Each is an event of the user's, never with the text. Part 2: a small text artifact the person
 // ticks is scanned as the text is, then committed to the promotion's own branch (`hopper-promotion/<id>`, made from the
-// default branch, never the default branch itself) and linked there, so it opens with no hopper sign-in.
+// default branch, never the default branch itself) and linked there, so it opens with no hopper sign-in. Posted once
+// (issue #1591): a new issue or comment is kept as a send before GitHub is asked, its post key at the end of the text;
+// the next promotion of the direct job, and the next start (`recover`), look for that key first, so a stop or a lost
+// answer links what GitHub made, never posts a second. One promotion of a direct job at a time.
 import { directKey, type DirectJob } from '../domain/direct-jobs.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
+import { postKeySince, withPostKey } from '../domain/post-key.ts';
 import {
   carriedLabels, commitMessage, commitRefusal, promotionBranch, promotionPath, promotionDraftBody, promotionFooter, promotionText, resultSummary, REVOKE_NOTE,
-  type CommittedFile, type DraftArtifact, type Promotion, type PromotionDraft, type PromotionRepository, type PromotionRequest, type PromotionTarget, type RepoVisibility,
+  type CommittedFile, type DraftArtifact, type Promotion, type PromotionDraft, type PromotionRepository, type PromotionRequest, type PromotionSend, type PromotionTarget, type RepoVisibility,
 } from '../domain/promotions.ts';
 import type { Artifact, Job, NewEvent } from '../domain/types.ts';
 import { PromotionGitHubError, type PromotionGitHub } from './github.ts';
@@ -51,6 +55,8 @@ export interface Promotions {
   preview(directJobId: string, r: PreviewRequest): Promise<PromotionDraft>;
   promote(directJobId: string, r: PromotionRequest, by: string): Promise<Promotion>;
   revoke(directJobId: string, by: string): { revoked: true; note: string };
+  /** At start: each send a stop left becomes the promotion GitHub has by its post key, or goes when GitHub has none. */
+  recover(): Promise<void>;
 }
 
 const ENDED = new Set(['finished', 'failed']);
@@ -67,6 +73,24 @@ const github = async <T>(fn: () => Promise<T>): Promise<T> => {
 };
 
 export function createPromotions(o: PromotionsOptions): Promotions {
+  /** The direct jobs being promoted now: a second promotion of one waits for the first to end. */
+  const busy = new Set<string>();
+  /**
+   * A send a stop or a lost answer left: the promotion GitHub has by its post key, kept with `direct_job.promoted`, or
+   * nothing when GitHub has none, and the send goes. A direct job promoted since keeps its promotion.
+   */
+  const settle = async (api: PromotionGitHub, login: string, s: PromotionSend): Promise<Promotion | undefined> => {
+    if (o.promotions.live(s.directJobId)) { o.promotions.sent(s.id); return undefined; }
+    const found = await api.find(s.repo, s.id, s.target.kind === 'comment' ? s.target : { kind: 'issue', creator: login }, postKeySince(s.at));
+    if (!found) { o.promotions.sent(s.id); return undefined; }
+    const at = o.now();
+    const p = o.promotions.sent(s.id, {
+      directJobId: s.directJobId, repo: s.repo, kind: s.target.kind, number: found.number, url: found.url, ...(found.commentId !== undefined ? { commentId: found.commentId } : {}),
+      artifacts: s.artifacts, promotedBy: s.promotedBy, promotedAt: s.at, updatedAt: at,
+    })!;
+    o.record({ type: 'direct_job.promoted', jobId: s.jobId, data: { id: s.directJobId, repo: s.repo, kind: p.kind, number: p.number, url: p.url, by: s.promotedBy, artifacts: s.artifacts.length, update: false } });
+    return p;
+  };
   /** The direct job, its job ended, the person's GitHub, and the repository's facts: what both preview and promote need. */
   const ready = async (id: string, repo: string | undefined) => {
     const d = o.directJob(id);
@@ -113,70 +137,9 @@ export function createPromotions(o: PromotionsOptions): Promotions {
     },
 
     async promote(id, r, by) {
-      const { d, job, live, repo, gh, visibility, defaultBranch } = await ready(id, r.repo);
-      if (live && !sameTarget(live, repo, r.target)) throw new PromotionRefused(409, `direct job ${id} is promoted to ${where(live)}: promote it there again to update it, or revoke it first`);
-      const own = o.artifacts(job.id);
-      const picked = r.artifacts.map((a) => own.find((x) => x.id === a) ?? (() => { throw new PromotionRefused(400, `artifact ${a} is not of this direct job's job`); })());
-      const labels = carriedLabels(r.labels);
-      const allow = { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) };
-      const commits = (r.commit ?? []).map((cid) => {
-        const a = picked.find((x) => x.id === cid);
-        if (!a) throw new PromotionRefused(400, `artifact ${cid} is not linked: link an artifact to commit it`);
-        const no = commitRefusal(a);
-        if (no) throw new PromotionRefused(400, `${a.name}: ${no}`);
-        const content = o.content(a.id);
-        if (!content) throw new PromotionRefused(409, `${a.name} has no content to commit`);
-        const why = postRefusal(scanText(`${a.name}\n${content.toString('utf8')}`), allow);
-        if (why) throw new PromotionRefused(422, `${a.name}, to commit: ${why}`);
-        return { a, content, file: { branch: promotionBranch(d.id), path: promotionPath(d.id, a) } as CommittedFile };
-      });
-      const textWith = (committed: ReadonlyMap<string, CommittedFile>): string => promotionText({
-        body: r.body, directJobId: d.id, promotedBy: gh.login, ...(o.publicUrl() ? { publicUrl: o.publicUrl()! } : {}),
-        ...(r.includeRequester ? { requester: d.submittedBy.person } : {}),
-        artifacts: picked.map((a) => ({ id: a.id, title: a.title, revision: a.revision, ...(a.summary ? { summary: a.summary } : {}), ...(committed.has(a.id) ? { committed: committed.get(a.id)! } : {}) })),
-      });
-      const refusal = postRefusal(scanText(`${r.title}\n${textWith(new Map(commits.map((c) => [c.a.id, c.file])))}`), allow);
-      if (refusal) throw new PromotionRefused(422, refusal);
-      if (visibility === 'public' && !r.confirmPublic) throw new PromotionRefused(409, `${repo} is public: anybody can read what is posted. Confirm it to post there`);
-
-      const committed = new Map<string, CommittedFile>();
-      if (commits.length > 0) {
-        await github(async () => {
-          await gh.api.branch(repo, promotionBranch(d.id), defaultBranch);
-          for (const c of commits) {
-            const put = await gh.api.putFile(repo, { ...c.file, message: commitMessage(c.a), content: c.content });
-            committed.set(c.a.id, { ...c.file, url: put.url });
-          }
-        });
-      }
-      const text = textWith(committed);
-
-      const posted = await github(async (): Promise<Pick<Promotion, 'kind' | 'number' | 'url' | 'commentId'>> => {
-        if (live?.kind === 'comment' && live.commentId !== undefined) return { kind: 'comment', number: live.number, commentId: live.commentId, url: (await gh.api.editComment(repo, live.commentId, text)).url };
-        if (live?.kind === 'issue') {
-          const e = await gh.api.edit(repo, live.number, { title: r.title, body: text });
-          if (labels.length > 0) await gh.api.addLabels(repo, live.number, labels);
-          return { kind: 'issue', number: e.number, url: e.url };
-        }
-        if (r.target.kind === 'comment') {
-          const n = r.target.number;
-          await gh.api.issue(repo, n).catch((e: unknown) => {
-            if (e instanceof PromotionGitHubError && e.status === 404) throw new PromotionRefused(409, `${repo} has no issue #${n}: pick an issue that is there`);
-            throw e;
-          });
-          const c = await gh.api.comment(repo, n, text);
-          return { kind: 'comment', number: n, commentId: c.id, url: c.url };
-        }
-        const c = await gh.api.create(repo, { title: r.title, body: text, labels });
-        return { kind: 'issue', number: c.number, url: c.url };
-      });
-      const at = o.now();
-      const artifacts = picked.map((a) => ({ id: a.id, title: a.title, revision: a.revision, ...(committed.has(a.id) ? { committed: committed.get(a.id)! } : {}) }));
-      const p = live
-        ? (() => { const next = { ...live, ...posted, artifacts, updatedAt: at }; o.promotions.update(next); return next; })()
-        : o.promotions.add({ directJobId: d.id, repo, ...posted, artifacts, promotedBy: by, promotedAt: at, updatedAt: at });
-      o.record({ type: 'direct_job.promoted', jobId: job.id, data: { id: d.id, repo, kind: p.kind, number: p.number, url: p.url, by, artifacts: artifacts.length, update: live !== undefined } });
-      return p;
+      if (busy.has(id)) throw new PromotionRefused(409, `direct job ${id} is being promoted now: promote it again once that ended`);
+      busy.add(id);
+      try { return await promoteNow(id, r, by); } finally { busy.delete(id); }
     },
 
     revoke(id, by) {
@@ -186,7 +149,96 @@ export function createPromotions(o: PromotionsOptions): Promotions {
       o.record({ type: 'direct_job.promotion_revoked', data: { id, repo: live.repo, kind: live.kind, number: live.number, by } });
       return { revoked: true, note: REVOKE_NOTE };
     },
+
+    async recover() {
+      const sends = o.promotions.sends();
+      if (sends.length === 0) return;
+      const gh = o.github();
+      if ('problem' in gh) return;
+      for (const s of sends) {
+        // A promotion of the direct job now settles its send itself.
+        if (busy.has(s.directJobId)) continue;
+        busy.add(s.directJobId);
+        try { await settle(gh.api, gh.login, s); } catch (e) {
+          if (!(e instanceof PromotionGitHubError)) throw e;
+        } finally { busy.delete(s.directJobId); }
+      }
+    },
   };
+
+  async function promoteNow(id: string, r: PromotionRequest, by: string): Promise<Promotion> {
+    const { d, job, live: was, repo, gh, visibility, defaultBranch } = await ready(id, r.repo);
+    // A send a stop or a lost answer left: what GitHub made of it is the live promotion, edited below.
+    const left = o.promotions.sendOf(id);
+    const live = was ?? (left ? await github(() => settle(gh.api, gh.login, left)) : undefined);
+    if (live && !sameTarget(live, repo, r.target)) throw new PromotionRefused(409, `direct job ${id} is promoted to ${where(live)}: promote it there again to update it, or revoke it first`);
+    const own = o.artifacts(job.id);
+    const picked = r.artifacts.map((a) => own.find((x) => x.id === a) ?? (() => { throw new PromotionRefused(400, `artifact ${a} is not of this direct job's job`); })());
+    const labels = carriedLabels(r.labels);
+    const allow = { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) };
+    const commits = (r.commit ?? []).map((cid) => {
+      const a = picked.find((x) => x.id === cid);
+      if (!a) throw new PromotionRefused(400, `artifact ${cid} is not linked: link an artifact to commit it`);
+      const no = commitRefusal(a);
+      if (no) throw new PromotionRefused(400, `${a.name}: ${no}`);
+      const content = o.content(a.id);
+      if (!content) throw new PromotionRefused(409, `${a.name} has no content to commit`);
+      const why = postRefusal(scanText(`${a.name}\n${content.toString('utf8')}`), allow);
+      if (why) throw new PromotionRefused(422, `${a.name}, to commit: ${why}`);
+      return { a, content, file: { branch: promotionBranch(d.id), path: promotionPath(d.id, a) } as CommittedFile };
+    });
+    const textWith = (committed: ReadonlyMap<string, CommittedFile>): string => promotionText({
+      body: r.body, directJobId: d.id, promotedBy: gh.login, ...(o.publicUrl() ? { publicUrl: o.publicUrl()! } : {}),
+      ...(r.includeRequester ? { requester: d.submittedBy.person } : {}),
+      artifacts: picked.map((a) => ({ id: a.id, title: a.title, revision: a.revision, ...(a.summary ? { summary: a.summary } : {}), ...(committed.has(a.id) ? { committed: committed.get(a.id)! } : {}) })),
+    });
+    const refusal = postRefusal(scanText(`${r.title}\n${textWith(new Map(commits.map((c) => [c.a.id, c.file])))}`), allow);
+    if (refusal) throw new PromotionRefused(422, refusal);
+    if (visibility === 'public' && !r.confirmPublic) throw new PromotionRefused(409, `${repo} is public: anybody can read what is posted. Confirm it to post there`);
+
+    const committed = new Map<string, CommittedFile>();
+    if (commits.length > 0) {
+      await github(async () => {
+        await gh.api.branch(repo, promotionBranch(d.id), defaultBranch);
+        for (const c of commits) {
+          const put = await gh.api.putFile(repo, { ...c.file, message: commitMessage(c.a), content: c.content });
+          committed.set(c.a.id, { ...c.file, url: put.url });
+        }
+      });
+    }
+    const text = textWith(committed);
+    const artifacts = picked.map((a) => ({ id: a.id, title: a.title, revision: a.revision, ...(committed.has(a.id) ? { committed: committed.get(a.id)! } : {}) }));
+    // A new issue or comment is kept as a send before GitHub is asked: its id is the post key at the end of the text.
+    let kept: PromotionSend | undefined;
+    const send = (): PromotionSend => (kept ??= o.promotions.sending({ directJobId: d.id, jobId: job.id, repo, target: r.target, artifacts, promotedBy: by, at: o.now() }));
+
+    const posted = await github(async (): Promise<Pick<Promotion, 'kind' | 'number' | 'url' | 'commentId'>> => {
+      if (live?.kind === 'comment' && live.commentId !== undefined) return { kind: 'comment', number: live.number, commentId: live.commentId, url: (await gh.api.editComment(repo, live.commentId, text)).url };
+      if (live?.kind === 'issue') {
+        const e = await gh.api.edit(repo, live.number, { title: r.title, body: text });
+        if (labels.length > 0) await gh.api.addLabels(repo, live.number, labels);
+        return { kind: 'issue', number: e.number, url: e.url };
+      }
+      if (r.target.kind === 'comment') {
+        const n = r.target.number;
+        await gh.api.issue(repo, n).catch((e: unknown) => {
+          if (e instanceof PromotionGitHubError && e.status === 404) throw new PromotionRefused(409, `${repo} has no issue #${n}: pick an issue that is there`);
+          throw e;
+        });
+        const c = await gh.api.comment(repo, n, withPostKey(text, send().id));
+        return { kind: 'comment', number: n, commentId: c.id, url: c.url };
+      }
+      const c = await gh.api.create(repo, { title: r.title, body: withPostKey(text, send().id), labels });
+      return { kind: 'issue', number: c.number, url: c.url };
+    });
+    const at = o.now();
+    const p = live
+      ? (() => { const next = { ...live, ...posted, artifacts, updatedAt: at }; o.promotions.update(next); return next; })()
+      : o.promotions.sent(send().id, { directJobId: d.id, repo, ...posted, artifacts, promotedBy: by, promotedAt: at, updatedAt: at })!;
+    if (live && kept) o.promotions.sent(kept.id);
+    o.record({ type: 'direct_job.promoted', jobId: job.id, data: { id: d.id, repo, kind: p.kind, number: p.number, url: p.url, by, artifacts: artifacts.length, update: live !== undefined } });
+    return p;
+  }
 }
 
 /**

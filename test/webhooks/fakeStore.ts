@@ -48,6 +48,8 @@ export function createFakeStore(): FakeStore {
         deliveries.set(d.id, d);
         return { ...d };
       },
+      hasDelivery: (subscriptionId: string, eventSeq: number) =>
+        [...deliveries.values()].some((d) => d.subscriptionId === subscriptionId && d.eventSeq === eventSeq),
       updateDelivery(id: string, patch: Partial<WebhookDelivery>): WebhookDelivery {
         const d = { ...deliveries.get(id)!, ...patch, updatedAt: iso() };
         deliveries.set(id, d);
@@ -57,8 +59,20 @@ export function createFakeStore(): FakeStore {
         [...deliveries.values()].filter(
           (d) => (d.status === 'pending' || d.status === 'retrying') && new Date(d.nextAttemptAt!) <= now,
         ).map((d) => ({ ...d })),
+      claimDelivery(id: string, now: Date, until: string): WebhookDelivery | undefined {
+        const d = deliveries.get(id);
+        if (!d || (d.status !== 'pending' && d.status !== 'retrying') || new Date(d.nextAttemptAt!) > now) return undefined;
+        const next = { ...d, nextAttemptAt: until, updatedAt: iso() };
+        deliveries.set(id, next);
+        return { ...next };
+      },
       listDeliveries: () => [...deliveries.values()],
     },
+    // No cursor kept: the fake follows from now on.
+    eventCursors: {
+      follow: (_consumer: string, handle: (e: DomainEvent) => void) => ({ save: () => {}, stop: store.events.subscribe(handle) }),
+    },
+    tx: <T>(fn: () => T): T => fn(),
   } as unknown as UserStore;
 
   const fakeStore: FakeStore = {

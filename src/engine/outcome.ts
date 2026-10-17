@@ -10,6 +10,7 @@ import type { Job, JobLiveness, Lane, LaneId, MachineSnapshot, ReviewKind } from
 import { settledAlready, waitOnOf, type WaitAsked } from '../domain/wait-on.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
+import { cleanupDue } from './cleanup.ts';
 import { recordReport } from './reviews.ts';
 import { wakeOn } from './wait.ts';
 
@@ -24,7 +25,7 @@ const TAIL_CHARS = 2000;
 function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string, tail?: string, liveness?: JobLiveness): Recorded {
   const maskedError = maskGitHubTokens(error);
   const maskedTail = tail ? maskGitHubTokens(tail.slice(-TAIL_CHARS)) : undefined;
-  c.store.jobs.update(job.id, { status: 'failed', error: maskedError, finishedAt: at, pendingAnswer: undefined, liveness, ...(maskedTail ? { errorTail: maskedTail } : {}) });
+  c.store.jobs.update(job.id, { status: 'failed', error: maskedError, finishedAt: at, pendingAnswer: undefined, liveness, ...cleanupDue(c), ...(maskedTail ? { errorTail: maskedTail } : {}) });
   c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error: maskedError, ...priorityTagOf(c, job.id) } });
   return TERMINAL;
 }
@@ -63,8 +64,10 @@ function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId
   const asked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}), ...(w.on ? { on: maskGitHubTokens(w.on) } : {}) };
   // What it waits on (issue #1245), typed: never none.
   const masked = { for: asked.for, ...(asked.until ? { until: asked.until } : {}), on: waitOnOf(asked), ...(namesOwnCommand(w) ? { ownCommand: true as const } : {}) };
+  // Its `check:` line (issue #1694): kept with the wait for its wait check; not on `job.waiting`.
+  const checkLine = w.check ? maskGitHubTokens(w.check) : undefined;
   c.store.jobs.update(job.id, {
-    status: 'waiting_on', wait: { ...masked, since: at }, laneId: undefined, pendingAnswer: undefined,
+    status: 'waiting_on', wait: { ...masked, since: at, ...(checkLine ? { checkLine } : {}) }, laneId: undefined, pendingAnswer: undefined,
     resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId,
   });
   c.store.events.append({ type: 'job.waiting', jobId: job.id, laneId, data: masked });
@@ -99,12 +102,12 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
     if (job.parked || job.continued) store.jobs.update(job.id, { parked: undefined, continued: undefined });
     let recorded: Recorded = TERMINAL;
     if (cancelled !== undefined) {
-      store.jobs.update(job.id, { status: 'cancelled', finishedAt: at, pendingAnswer: undefined });
+      store.jobs.update(job.id, { status: 'cancelled', finishedAt: at, pendingAnswer: undefined, ...cleanupDue(c) });
       store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: cancelled });
     } else if (outcome.kind === 'finished') {
       const part = outcome.partlyDone ? { partlyDone: outcome.partlyDone } : {};
       const maskedResult = typeof outcome.result === 'string' ? maskGitHubTokens(outcome.result) : outcome.result;
-      store.jobs.update(job.id, { status: 'finished', result: maskedResult, finishedAt: at, pendingAnswer: undefined, ...part });
+      store.jobs.update(job.id, { status: 'finished', result: maskedResult, finishedAt: at, pendingAnswer: undefined, ...part, ...cleanupDue(c) });
       store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { ...(maskedResult !== undefined && maskedResult !== null ? { result: maskedResult } : {}), ...part } });
     } else if (outcome.kind === 'failed') {
       fail(c, job, laneId, outcome.error, at, outcome.tail, outcome.liveness);

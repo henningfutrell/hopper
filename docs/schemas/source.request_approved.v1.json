@@ -36,7 +36,8 @@
             "enum": [
               "author",
               "labelled",
-              "assigned"
+              "assigned",
+              "edited"
             ]
           },
           "login": {

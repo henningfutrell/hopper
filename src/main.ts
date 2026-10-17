@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createAllowedHosts, createCloudLink, createDisplayName, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld } from './http/event-loop-held.ts';
+import { createAllowedHosts, createCloudLink, createDisplayName, createInfraApplies, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld, type HeldWatch } from './http/event-loop-held.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts'; import { inCluster } from './client/cluster.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -38,7 +38,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
 import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runtime.ts'; import { createPlayground, type Playground } from './sandbox/playground.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts'; import { createEgress } from './sandbox/egress.ts';
-import { createSagas } from './sagas/index.ts'; import { NEED_STEP_SAGA, needStepSaga } from './sandbox/need-step-saga.ts'; import { jobMoveSaga } from './engine/job-move-saga.ts'; import { JOB_MOVE_SAGA } from './engine/lost-move.ts';
+import { createHostLeases, createSagas, sagaOwner } from './sagas/index.ts'; import { NEED_STEP_SAGA, needStepSaga } from './sandbox/need-step-saga.ts'; import { jobMoveSaga } from './engine/job-move-saga.ts'; import { JOB_MOVE_SAGA } from './engine/lost-move.ts'; import { WINDOWS_STEP_SAGA, windowsStepSaga } from './windows-steps/step-saga.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 import { observeQueueOf } from './telemetry/queue.ts'; import { startProcessTelemetry } from './telemetry/start.ts';
 
@@ -93,7 +93,7 @@ export interface AppSeams extends UserSeams {
   containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter; solrMeter?: import('./domain/stack-resources.ts').SolrMeter;
   /** The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
    * Cloudflare's and ngrok's APIs, which remote access mints the tunnel at (issue #968); default the real ones. */
-  searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string;
+  searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string; /** The thread that reads a held event loop, with the health port (issue #1383); default watchHeld's; null: none (a test process starts many daemons, issue #1717). */ held?: HeldWatch | null;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -115,7 +115,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, held: _held, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -213,12 +213,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Search (issue #945): one Solr core for the hopper, each user's documents apart by the instance id and the user id.
   // One outbound guard for the process (issue #1014): every user's sends to one destination share its limits. The shared
   // secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
-  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { needStep: (userId, box, io, run) => sandboxes.needStep(userId, box, io, run), steps: instance.needSteps, ran: (step) => instance.sandboxRuns.get(step) !== undefined, sagas: { begin: (step, userId) => sagas.begin(NEED_STEP_SAGA, step, { step }, { userId }).id, abort: (saga, reason) => sagas.abort(saga, reason) } }; // a job's need and box steps, each in a sandbox burned after it (issue #1349), through the sandbox module made below; each kept in the database and run by its saga (issue #1568)
+  const leases = createHostLeases({ repo: instance.sweepLeases, owner: sagaOwner(instance.settings.instanceId()), clock, logger }), outboundGuard = createOutboundGuard({ clock, logger, keys: instance.outboundKeys }), minter = createCredentialMinter(), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { needStep: (userId, box, io, run) => sandboxes.needStep(userId, box, io, run), steps: instance.needSteps, ran: (step) => instance.sandboxRuns.get(step) !== undefined, sagas: { begin: (step, userId) => sagas.begin(NEED_STEP_SAGA, step, { step }, { userId }).id, abort: (saga, reason) => sagas.abort(saga, reason) } }; // a job's need and box steps, each in a sandbox burned after it (issue #1349), through the sandbox module made below; each kept in the database and run by its saga (issue #1568)
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), sandboxes: sandboxLauncher, jobMoves: { begin: (userId, key, data) => { sagas.begin(JOB_MOVE_SAGA, key, { ...data }, { userId }); } }, outboundGuard, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
-      installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), sourceEmailMatch: () => instance.settings.getSourceEmailMatch(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
+      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), wslHopperUrl: () => wslHopperUrl({ wsl, hostLinkBase: instance.settings.getHostLinkBase(), port }), ...(inPod ? {} : { network: hopperNetwork(config) }), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), sandboxes: sandboxLauncher, windowsSteps: { steps: instance.windowsSteps, sagas: { begin: (step, userId) => sagas.begin(WINDOWS_STEP_SAGA, step, { step }, { userId }).id, abort: (saga, reason) => sagas.abort(saga, reason) } }, jobMoves: { begin: (userId, key, data) => { sagas.begin(JOB_MOVE_SAGA, key, { ...data }, { userId }); } }, outboundGuard, leases, jobPods: { join: (pod) => mintJoinCode(instance, clock, user.id, { pod }).code, instanceId: () => instance.settings.instanceId() }, // a job pod's join code, naming it (issue #1283)
+      installedDir: installedDirOf(workDir), installedAt: () => updater.status().installed?.installedAt, pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(), sourceEmailMatch: () => instance.settings.getSourceEmailMatch(), infraApplies: () => instance.settings.getInfraApplies(), ...(user.id === instance.users.list()[0]?.id ? { stack: () => stack.resources.read() } : {}), // the stack (issue #1077): only the oldest user's watcher checks it
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {
@@ -294,7 +294,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     ...(config.egress && (sandboxRuntime?.kind === 'podman' || sandboxRuntime?.kind === 'docker') ? { egress: createEgress(config.egress) } : {}),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
-  const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps }), jobMoveSaga({ engine: (userId) => runtimes.get(userId)?.engine }), ...remoteAccess.sagas], instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
+  const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps }), windowsStepSaga({ steps: (userId) => runtimes.get(userId)?.windowsSteps }), jobMoveSaga({ engine: (userId) => runtimes.get(userId)?.engine }), ...remoteAccess.sagas], owner: leases.owner, clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
   const playground = createPlayground({ runtime: sandboxRuntime, noRuntime: inPod ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME, instanceId: instance.settings.instanceId(), network: hopperNetwork(config), limits: config.playground, clock, logger }); // the sandbox playground (issue #1410): many sandboxes at once, on the same runtime, none a machine
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
@@ -324,9 +324,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         return id === undefined ? undefined : instance.users.get(id);
       },
     },
-    port: () => port, signIn, signInEnvironment, events: runtimes.events, held: watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }), // issue #1383: where a held loop runs, and the health port
+    port: () => port, signIn, signInEnvironment, events: runtimes.events, held: seams.held === undefined ? watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }) : seams.held ?? undefined, // issue #1383: where a held loop runs, and the health port
     // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), cloudLink: createCloudLink({ settings: instance.settings, secrets: secrets.system, events: runtimes.events, now: () => clock.now() }), displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), infraApplies: createInfraApplies({ settings: instance.settings, events: runtimes.events }), cloudLink: createCloudLink({ settings: instance.settings, secrets: secrets.system, events: runtimes.events, now: () => clock.now() }), displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8'), poolKey: () => { try { return secret(LANE_POOL_KEY_VARIABLE); } catch { return undefined; } } }, // the lane pool key (issue #1284)
   });
 
@@ -369,7 +369,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         links.closeAll(); allowedHosts.stop();
         await Promise.all([server.close(), passes, remoteAccess.stop()]);
         await runtimes.stop();
-        instance.close();
+        leases.stop(); instance.close();
       })();
       return stopped;
     },

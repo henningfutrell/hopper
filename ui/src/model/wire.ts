@@ -7,7 +7,7 @@ import type {
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, LocalAccountView, LocalAccountsView, LocalAccountsEdit, PasskeyView, PasskeysView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
-  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, Leftover, LeftoverView, MachineLeftovers, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
+  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, Leftover, LeftoverView, MachineLeftovers, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries, TelemetrySummary, TimingStat, GitHubUseStat,
   LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
   LastAccount, Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, KeptWorkView, StuckActResult, StuckCause, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
@@ -26,7 +26,7 @@ import type {
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
   MasterKeyRotated, MasterKeyView,
-  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval,
+  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval, DeclineChoice, IntakeDeclineDefaults,
   BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
 import type { GitLabAccountStatus } from '../../../src/domain/gitlab-account.ts';
@@ -39,7 +39,7 @@ export type {
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, LocalAccountView, LocalAccountsView, LocalAccountsEdit, PasskeyView, PasskeysView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
-  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, Leftover, LeftoverView, MachineLeftovers, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries,
+  MachineHistory, MachineResource, MemoryAlert, DiskBudget, HopperDisk, HopperDiskPath, Leftover, LeftoverView, MachineLeftovers, ResourceReading, WindowsLink, ResourceSeries, ContainerReading, ContainerReadings, MachineBoxes, PostgresReading, OpenFgaReading, SolrPart, StackResources, StackHistory, StackMetric, StackSeries, TelemetrySummary, TimingStat, GitHubUseStat,
   LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
   LastAccount, Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, KeptWorkView, StuckActResult, StuckCause, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
@@ -55,7 +55,7 @@ export type {
   ApiGrantMinted, ApiGrantView, GrantLimits, DeviceGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, SandboxApprovals, SandboxRequestState, SandboxRequestView, RememberedWriteView, VaultBackendView, VaultSecret, VaultView, ProfileAsk, InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, LandingBatchesView, LandingBatchRepoView, LandingBatchSettings, ChangeKind, ChangeKindSettings, ChangeRule, MergeGate, ContributionSettings, ShrinkGuardSettings, LandingCard, ChecksProblem, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView, UntrackedPullRequest, UntrackedReason,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   MasterKeyRotated, MasterKeyView,
-  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval,
+  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval, DeclineChoice, IntakeDeclineDefaults,
   BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView, HostLinkView,
   Tldr, TldrSettings,
@@ -139,5 +139,5 @@ export type { CloudLinkView, RegistrationCodeMinted } from '../../../src/domain/
 export type { HopperIoState } from '../../../src/domain/hopper-io-state.ts';
 export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work-items.ts';
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
-export type { WaitOn } from '../../../src/domain/types.ts';
+export type { WaitOn, WaitCheck } from '../../../src/domain/types.ts';
 export type { PullRequestDiff, PullRequestDiffFile } from '../../../src/domain/pull-request-diff.ts';

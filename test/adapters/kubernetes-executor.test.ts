@@ -31,6 +31,7 @@ function setup(o: { alive?: boolean; credential?: Answer; fails?: string } = {})
     machine: async () => (o.alive === false ? undefined : pod),
     alive: async () => o.alive !== false,
     remove: async () => { calls.push('remove'); },
+    sweep: async () => [],
   };
   const ctx = {
     job, laneId: 'cluster/lane-1', machine: cluster, signal: new AbortController().signal, progress: () => undefined, saveState: () => undefined, workTree: () => undefined,

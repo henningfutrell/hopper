@@ -76,6 +76,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; installUrl?: string 
     issuesChangedSince: (repo, since) => call(`changes of ${repo}`, (t) => rest.issuesChangedSince(changes, t, repo, since)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, (t) => rest.reopenIssue(req, t, repo, number)),
     closeAsCompleted: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closeIssue(req, t, repo, number)),
+    closeAsNotPlanned: (repo, number) => call(`close ${repo}#${number} as not planned`, (t) => rest.closeIssue(req, t, repo, number, 'not_planned')),
     postComment: (repo, number, body) => call(`comment on ${repo}#${number}`, (t) => rest.postComment(req, t, repo, number, body)),
     closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, (t) => closingPullRequest(ask, t, repo, number)),
     openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, (t) => openClosingPullRequests(ask, t, repo, number)),

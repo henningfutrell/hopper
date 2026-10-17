@@ -83,6 +83,11 @@ describe('waking on what it watches (issue #1508)', () => {
     expect(endedNote(ended)).toBe('https://github.com/acme/identity/issues/199 was closed; https://github.com/acme/platform/actions/runs/42 completed (failure)');
   });
 
+  it('says an item that does not exist was not found (issue #1691)', () => {
+    expect(endedNote([{ url: 'https://github.com/acme/gss/issues/330', state: 'not_found' }]))
+      .toBe('https://github.com/acme/gss/issues/330 was not found: no such repository or item, so the wait never ends on it');
+  });
+
   it('job.waited_items_ended wakes that job only', () => {
     const s = settledBy({ type: 'job.waited_items_ended', jobId: 'a', data: { items: ended.map(({ url, state }) => ({ url, state })) } });
     expect(s).toEqual({ kind: 'watched', jobId: 'a', note: endedNote(ended) });

@@ -225,7 +225,7 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 
 ## `job.reattached`
 
-Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane. `reason` `link restored` (issue #752): the machine's link is back after `job.link_lost` and the job's pane is alive; it goes on from its saved turn.
+Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane. `reason` `link restored` (issue #752): the machine's link is back after `job.link_lost` and the job's pane is alive; it goes on from its saved turn. `reason` `its hopper stopped` (issue #1662): another hopper on the same database took over a running job whose lease ended.
 
 | field | type | required |
 |---|---|---|
@@ -992,16 +992,31 @@ Version 1 (`docs/schemas/job.cleanup_deferred.v1.json`). The job ended, but its 
 
 ## `job.cleaned_up`
 
-Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went through: the job's pane is closed and its work reaped. `deferredAt` is when it was deferred. `by: "user"`: the user marked it cleaned up (they closed the pane by hand, or its machine is gone for good), and it is no longer tried. Recorded only for a deferred cleanup.
+Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went through: the job's pane is closed and its work reaped. `deferredAt` is when it was deferred. `by: "user"`: the user marked it cleaned up (they closed the pane by hand, or its machine is gone for good), and it is no longer tried. `dueAt` (issue #1570): a stop of the hopper came between the job's end and its cleanup, which the next start did from its record; `dueAt` is when the record was written, at the job's end. Recorded only for a deferred cleanup, or one done after a stop.
 
 | field | type | required |
 |---|---|---|
-| `deferredAt` | string | yes |
+| `deferredAt` | string | no |
+| `dueAt` | string | no |
 | `by` | `user` | no |
 
 ```json
 {
   "deferredAt": "2026-10-07T21:31:00.000Z"
+}
+```
+
+## `job.pod_removed`
+
+Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at startup and then every 10 minutes, deleted the job's pod and removed its machine: the job ended, no cleanup was still owed, and its pod was still there with this hopper's instance label (a delete that failed, or a hopper older than the cleanup record). `executor` is the executor that started it.
+
+| field | type | required |
+|---|---|---|
+| `executor` | string | yes |
+
+```json
+{
+  "executor": "kubernetes"
 }
 ```
 
@@ -1082,12 +1097,13 @@ Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it na
 
 ## `job.wait_ended`
 
-Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any.
+Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any. `check` (issue #1694): the hopper's wait check ended it — its condition, as a key (`items_ended:…`, `job_ended:<id>`, `question_settled:<id>`, `command_exited`) —; a later wait of the job on the same items is not woken for them again.
 
 | field | type | required |
 |---|---|---|
 | `by` | `person` \| `hopper` | yes |
 | `note` | string | no |
+| `check` | string | no |
 
 ```json
 {
@@ -1112,7 +1128,7 @@ Version 1 (`docs/schemas/job.own_command_nudged.v1.json`). A job waiting on its 
 
 ## `job.own_command_stuck`
 
-Version 1 (`docs/schemas/job.own_command_stuck.v1.json`). A job waiting on its own background command (issue #1037) did not go on within the grace after its nudge: its wait is flagged stuck (`stuckAt`). It now waits on a person: end the wait or cancel the job.
+Version 1 (`docs/schemas/job.own_command_stuck.v1.json`). A job waiting on its own background command (issue #1037) did not go on within the grace after its nudge: its wait was flagged stuck (`stuckAt`). Before issue #1694 only; now its wait check ends such a wait.
 
 `data` is `{}`.
 
@@ -1157,7 +1173,7 @@ Version 1 (`docs/schemas/job.waited_pull_request_ended.v1.json`). A pull request
 
 ## `job.waited_items_ended`
 
-Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, or the run's conclusion).
+Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. Also at once when one of them does not exist (issue #1691): then `items` holds only those, `state` `not_found`, so the job rewrites its wait. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, the run's conclusion, or `not_found`).
 
 | field | type | required |
 |---|---|---|
@@ -1175,6 +1191,22 @@ Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's ow
       "state": "failure"
     }
   ]
+}
+```
+
+## `job.wait_overdue`
+
+Version 1 (`docs/schemas/job.wait_overdue.v1.json`). A job's own wait passed the deadline of its wait check (issue #1694): a day after it began, four hours for a wait on its own command. Once per wait. The job stays on its wait and is listed as stuck on its own wait for a person; the hopper checks it each hour after. `deadline`: the deadline; `result`: what the last check found.
+
+| field | type | required |
+|---|---|---|
+| `deadline` | string | yes |
+| `result` | string | yes |
+
+```json
+{
+  "deadline": "2026-10-18T10:00:00.000Z",
+  "result": "not ended yet: octo/tools#9"
 }
 ```
 
@@ -1453,7 +1485,7 @@ Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned the
 
 ## `source.request_approved`
 
-Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a request card (issue #652): an issue not of a trusted origin — `actors` says who wrote, labelled and assigned it, and whether each is a trusted actor —, whose title and body hash as `hash`. Its text is the item's snapshot (`approved`): the next sync takes it, and its job runs that text. `person` and `via`: who approved it. Never the text.
+Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a request card (issue #652): an issue not of a trusted origin — `actors` says who wrote, labelled and assigned it (on GitLab also who edited its title or description, `edited`, issue #1642), and whether each is a trusted actor —, whose title and body hash as `hash`. Its text is the item's snapshot (`approved`): the next sync takes it, and its job runs that text. `person` and `via`: who approved it. Never the text.
 
 | field | type | required |
 |---|---|---|
@@ -1495,7 +1527,7 @@ Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a 
 
 ## `source.request_auto_approved`
 
-Version 1 (`docs/schemas/source.request_auto_approved.v1.json`). The hopper approved a request card a rule of the user's auto-approval matched (issue #1268), as a person's approval does: its text is the item's snapshot (`approved`), the next sync takes it, and its job runs that text. `rule`: `reopened` (a trusted actor or a listed app reopened the issue after its job was done), `author` (a trusted actor wrote it), `app` (a listed app or bot wrote it) or `high-label` (a trusted actor or a listed app added `hopper:high`); `actor`: who did that act. `actors`: who wrote, labelled and assigned it, as on `source.request_approved`. Never the text.
+Version 1 (`docs/schemas/source.request_auto_approved.v1.json`). The hopper approved a request card a rule of the user's auto-approval matched (issue #1268), as a person's approval does: its text is the item's snapshot (`approved`), the next sync takes it, and its job runs that text. `rule`: `reopened` (a trusted actor or a listed app reopened the issue after its job was done), `author` (a trusted actor wrote it), `app` (a listed app or bot wrote it) or `high-label` (a trusted actor or a listed app added `hopper:high`); `actor`: who did that act. A GitLab card (issue #1642) by `author` or `high-label` only. `actors`: who wrote, labelled and assigned it, as on `source.request_approved`. Never the text.
 
 | field | type | required |
 |---|---|---|
@@ -1572,6 +1604,30 @@ Version 1 (`docs/schemas/intake.auto_approval_changed.v1.json`). An admin change
     "apps": [
       "octo-helper"
     ]
+  },
+  "by": "octocat"
+}
+```
+
+## `intake.decline_changed`
+
+Version 1 (`docs/schemas/intake.decline_changed.v1.json`). An admin changed the choice Decline offers first in Settings → Intake (issue #1710): `request` for a request card, `reopened` for a reopened card, each `close` or `open`. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "request": "open",
+    "reopened": "close"
+  },
+  "to": {
+    "request": "close",
+    "reopened": "close"
   },
   "by": "octocat"
 }
@@ -1655,7 +1711,7 @@ Version 1 (`docs/schemas/source.issue_taken_in.v1.json`). A person took an issue
 
 ## `source.request_declined`
 
-Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a request card (issue #1035): an issue not of a trusted origin, whose title and body hash as `hash`. It makes no job and leaves the request cards waiting in Intake; an edit to its title or body makes it a request card again. Nothing is written to GitHub. `person` and `via`: who declined it. Never the text.
+Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a request card (issue #1035): an issue not of a trusted origin, whose title and body hash as `hash`. It makes no job and leaves the request cards waiting in Intake. `choice` (issue #1710): `close`, the hopper closes the issue as not planned and takes off the source's label, its priority labels and `hopper:done`; `open`, the issue stays open and loses the source's label. Either way one comment on the issue says what the hopper did; these writes are rows in the GitHub outbox, and `source.request_decline_written` follows once GitHub took them. Then the issue comes back only when a person adds the label again. With no `choice` (before issue #1710, or a GitLab card), nothing is written, and an edit to its title or body makes it a request card again. `person` and `via`: who declined it. Never the text.
 
 | field | type | required |
 |---|---|---|
@@ -1665,6 +1721,7 @@ Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a 
 | `author` | string | yes |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
+| `choice` | `close` \| `open` | no |
 
 ```json
 {
@@ -1673,7 +1730,28 @@ Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a 
   "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "author": "stranger",
   "person": "octocat",
-  "via": "ui"
+  "via": "ui",
+  "choice": "open"
+}
+```
+
+## `source.request_decline_written`
+
+Version 1 (`docs/schemas/source.request_decline_written.v1.json`). GitHub took the writes of a person's decline (issue #1710): the labels came off, the comment was posted and, for `choice` `close`, the issue was closed as not planned. From now on the issue's labels and state are the record of the decline, the same on every hopper.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `choice` | `close` \| `open` | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "choice": "open"
 }
 ```
 
@@ -6219,6 +6297,22 @@ Version 1 (`docs/schemas/infra.settings_changed.v1.json`). An admin turned auto-
 }
 ```
 
+## `infra.applies_changed`
+
+Version 1 (`docs/schemas/infra.applies_changed.v1.json`). The hopper's admin turned infra applies on or off (issue #1722): off, the vault mints only read credentials, and no need or box step that applies runs; an infrastructure change goes through CI. `on`, the new setting; `by`, who. It applies to the next mint and the next step. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `on` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "on": false,
+  "by": "admin"
+}
+```
+
 ## `infra.watchers_changed`
 
 Version 1 (`docs/schemas/infra.watchers_changed.v1.json`). An admin named the environment watchers (issue #870 part 4): who is told of each plan, approval and apply, by the environments the plan names (`prod`, `uat`, `staging`, `dev`, `qa`), and of every plan (`*`). Names as the notifier's receiver knows them. `from` and `to` are the whole lists; `by`, who.
@@ -6482,6 +6576,40 @@ Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows s
 }
 ```
 
+## `landing_batch.due`
+
+Version 1 (`docs/schemas/landing_batch.due.v1.json`). A batch run of a repository's landing branch is due (issue #1589): recorded before the hopper makes its `branch` at the `tip` and opens its pull request into the `tested` branch, with the text it carries (`merges`, the issues it `closes`) and `why`. A pass that stops before `landing_batch.started` starts the same batch run, and takes the pull request it finds on that branch in place of a second one.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `landing` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `branch` | string | yes |
+| `merges` | integer[] | yes |
+| `closes` | string[] | yes |
+| `why` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "landing": "main",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "branch": "hopper-batch/0123456789ab",
+  "merges": [
+    1088,
+    1090,
+    1093
+  ],
+  "closes": [
+    "#1087"
+  ],
+  "why": "3 merges since the last batch run"
+}
+```
+
 ## `landing_batch.started`
 
 Version 1 (`docs/schemas/landing_batch.started.v1.json`). The hopper started a batch run of a repository's landing branch (issue #1073, design.md "Landing batches"): `branch` made at the landing branch's `tip`, and a pull request of it (`pullRequest`, `url`) into the `tested` branch, so the full test suite runs on it. `merges`: the pull requests the batch carries, from their merge commits. `why`: the trigger (N merges, the timer, or no batch run before).
@@ -6542,7 +6670,7 @@ Version 1 (`docs/schemas/landing_batch.promoted.v1.json`). A batch run passed ev
 
 ## `landing_batch.failed`
 
-Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert.
+Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). `conflicts` true: merge conflicts with the tested branch, and a back-merge is due. Recorded before the hopper closes the pull request (issue #1589): a pass closes it while it stays open. The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert.
 
 | field | type | required |
 |---|---|---|
@@ -6554,6 +6682,7 @@ Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pas
 | `reason` | string | yes |
 | `checks` | string[] | yes |
 | `checkRuns` | object[] | no |
+| `conflicts` | boolean | no |
 
 ```json
 {

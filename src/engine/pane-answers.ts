@@ -10,7 +10,7 @@
 // woke it) ends the wait, and it is reattached, `reason: "the wait ended in the pane"`.
 // A job on a wait for its own background command (issue #1037) that has not gone on is watched too (`ownCommandRuns`): its
 // pane shows no background work for the grace, it is nudged once (`job.own_command_nudged`); the grace after that, still
-// not gone on, its wait is flagged stuck (`job.own_command_stuck`) and it waits on a person.
+// not gone on, its wait check ends the wait (issue #1694, wait-checks.ts): it is never left stuck for a person.
 // A job on a wait only its pane can end (issue #1508, `paneCarriesWait`: its own command, or a background poll for an outside
 // event the hopper watches nothing of) whose pane is lost — its machine or herdr restarted — is woken by the hopper, told so
 // (`job.wait_ended { by: hopper }`): its resume opens a new pane. Asked on every tick, so after a start and a seat's restart too.
@@ -75,7 +75,8 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
   function adopt(jobId: string, questionId: string, seen: PaneAnswer): Claim | undefined {
     return store.tx(() => {
       const job = store.jobs.get(jobId);
-      if (job?.status !== 'waiting_answer' || job.questionId !== questionId) return undefined;
+      // Another hopper adopts it now (issue #1662): it holds the job's lease.
+      if (job?.status !== 'waiting_answer' || job.questionId !== questionId || !c.leases.take(jobId)) return undefined;
       const settled = seen.lapsed ? c.questions.lapsedInPane(questionId) : c.questions.answeredInPane(questionId, seen.answer ?? ANSWERED_IN_PANE);
       if (!settled) return undefined;
       return onLane(job, seen, seen.lapsed ? LAPSED_REASON : REATTACH_REASON, questionId);
@@ -86,7 +87,7 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
   function adoptWait(jobId: string, seen: PaneAnswer): Claim | undefined {
     return store.tx(() => {
       const job = store.jobs.get(jobId);
-      return job?.status === 'waiting_on' ? onLane(job, seen, WAIT_ENDED_REASON) : undefined;
+      return job?.status === 'waiting_on' && c.leases.take(jobId) ? onLane(job, seen, WAIT_ENDED_REASON) : undefined;
     });
   }
 
@@ -98,7 +99,7 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
     return true;
   }
 
-  /** A job waiting on its own command that has not gone on (issue #1037): its command gone for the grace, a nudge; the grace after it, stuck. */
+  /** A job waiting on its own command that has not gone on (issue #1037): its command gone for the grace, a nudge. Its wait check ends the wait after (issue #1694). */
   async function watchOwnCommand(job: Job): Promise<void> {
     const w = job.wait;
     const executor = c.executors.get(job.spec.executor);
@@ -115,17 +116,10 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
       store.tx(() => patchWait(job, { goneSince: at }));
       return;
     }
-    if (!w.nudgedAt) {
-      if (!passed(w.goneSince)) return;
-      const delivered = executor.nudgeInPane ? await executor.nudgeInPane(job, ownCommandNudge(w)).catch(() => false) : false;
-      store.tx(() => {
-        if (patchWait(job, { nudgedAt: at })) store.events.append({ type: 'job.own_command_nudged', jobId: job.id, data: { delivered } });
-      });
-      return;
-    }
-    if (!passed(w.nudgedAt) || !passed(w.goneSince)) return;
+    if (w.nudgedAt || !passed(w.goneSince)) return;
+    const delivered = executor.nudgeInPane ? await executor.nudgeInPane(job, ownCommandNudge(w)).catch(() => false) : false;
     store.tx(() => {
-      if (patchWait(job, { stuckAt: at })) store.events.append({ type: 'job.own_command_stuck', jobId: job.id, data: {} });
+      if (patchWait(job, { nudgedAt: at })) store.events.append({ type: 'job.own_command_nudged', jobId: job.id, data: { delivered } });
     });
   }
 

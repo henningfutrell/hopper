@@ -239,6 +239,8 @@ export interface GitHubApi {
    * pull request that did not close it and ships no part.
    */
   closeAsCompleted(repo: string, number: number): Promise<void>;
+  /** Close an issue as not planned (issue #1710): only a person's Decline of its request card with the choice Close. A closed one stays closed. */
+  closeAsNotPlanned(repo: string, number: number): Promise<void>;
   /**
    * Post a comment on an issue: only a person's resolution of a hand-off (issue #551), the user's own act, and the one
    * that links the merged pull request when the hopper closes the issue after its merge (issue #677), and a question asked on

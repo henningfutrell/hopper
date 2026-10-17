@@ -41,6 +41,17 @@ export interface OutboundSendRepository {
   prune(before: string): number;
 }
 
+/**
+ * The dedupe keys asked, kept in the instance's `outbound_keys` table (issue #1627), so a restart or a second host knows
+ * a send held before. `key` is a hash of the destination and the send's key: the URL stays in memory.
+ */
+export interface OutboundKeyRepository {
+  /** Records `key` until `until`, when it is not known after `now`: whether it was new (not a duplicate). */
+  claim(key: string, until: string, now: string): boolean;
+  /** Removes the keys that ended by `now`: how many. */
+  prune(now: string): number;
+}
+
 /** A destination whose circuit is open: nothing is sent to it until `until`. */
 export interface OutboundCircuit { host: string; until: string }
 

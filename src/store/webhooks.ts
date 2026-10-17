@@ -79,6 +79,8 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
       saveDelivery(d, true);
       return d;
     },
+    hasDelivery: (subscriptionId, eventSeq) =>
+      c.db.get("SELECT 1 AS x FROM deliveries WHERE subscription_id = ? AND (body::jsonb->>'eventSeq')::bigint = ? LIMIT 1", subscriptionId, eventSeq) !== undefined,
     updateDelivery(id, patch) {
       const cur = getDelivery(id);
       if (!cur) throw new Error(`delivery not found: ${id}`);
@@ -90,6 +92,16 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
       return c.db.all(
         "SELECT body FROM deliveries WHERE status IN ('pending', 'retrying') AND next_attempt_at <= ? ORDER BY next_attempt_at, seq",
         now.toISOString()).map((r) => parse<WebhookDelivery>(r.body));
+    },
+    claimDelivery(id, now, until) {
+      return c.tx(() => {
+        const r = c.db.get("UPDATE deliveries SET next_attempt_at = ? WHERE id = ? AND status IN ('pending', 'retrying') AND next_attempt_at <= ? RETURNING body",
+          until, id, now.toISOString());
+        if (!r) return undefined;
+        const d: WebhookDelivery = { ...parse<WebhookDelivery>(r.body), nextAttemptAt: until, updatedAt: c.clock.now().toISOString() };
+        saveDelivery(d, false);
+        return d;
+      });
     },
     listDeliveries(filter) {
       const where = filter?.subscriptionId !== undefined ? 'WHERE subscription_id = ?' : '';

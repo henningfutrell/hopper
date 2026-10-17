@@ -9,7 +9,7 @@ import type { SignedOutTool, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
 import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
-import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
+import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
@@ -47,11 +47,12 @@ export const JOBS_DIR = '~/hopper-jobs';
  * review); `until`, how it will know it happened (a check it runs in the background, an event), as it wrote it.
  * `ownCommand` (issue #1037): `until` names the job's own background command, so it waits on nothing outside the job and
  * shows as running. Then, while its pane shows no background work: `goneSince`, when that was first seen; `nudgedAt`, when
- * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge. `on` (issue #1245): what it
- * waits on, typed; every wait since has one, and one without is a legacy wait, stuck work. `polledAt` (issue #1210): when the
- * hopper first saw its own command poll hopper state; `on` then says what it polls.
+ * the hopper nudged its agent (once); `stuckAt`, when it was flagged stuck, a grace after the nudge (a wait from before issue
+ * #1694: its wait check ends it now). `on` (issue #1245): what it waits on, typed; every wait since has one, and one without is
+ * a legacy wait, stuck work. `polledAt` (issue #1210): when the hopper first saw its own command poll hopper state; `on` then
+ * says what it polls. `check` (issue #1694): what the hopper tests of the wait and when, kept with it (wait-checks.ts).
  */
-export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
@@ -143,15 +144,13 @@ export interface Job extends JobPhaseFields, JobMachineLink {
   laneId?: LaneId;
   /** Its task count (issue #794): done of total, as it last reported it. None before it has a task list. */
   tasks?: TaskCount;
-  progressMessage?: string;
-  result?: unknown;
+  progressMessage?: string; result?: unknown;
   /** Finished partly done (issue #579): the URL of its own pull request that ships part of its item. */
   partlyDone?: string;
   error?: string;
   createdAt: string; // ISO
   updatedAt: string;
-  startedAt?: string;
-  finishedAt?: string;
+  startedAt?: string; finishedAt?: string;
   /** Incremented on every claim. */
   attempts: number;
   /** The job's work tree on its machine, as its executor reported it (issue #166); absent for an executor with none. */
@@ -221,6 +220,16 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * again on every tick until it goes through; meanwhile a waiting job of the same item is held.
    */
   cleanupDeferred?: { at: string; error: string };
+  /**
+   * Its cleanup's record (issue #1570): written in the transaction that recorded its end, removed once the cleanup went
+   * through. A hopper that stops before then does the cleanup from it at its next start.
+   */
+  cleanupDue?: { at: string };
+  /**
+   * A person's discard of its kept work (issue #1570): kept until the removal on its machine ends. With no `error` it is
+   * under way, and a sweep of its machine does it again after a stop; with one it failed (`job.work_discard_failed`).
+   */
+  discard?: { at: string; scratch: string; by: ActingPerson; error?: string };
   /** The output tail its executor gave when it failed (issue #509), codes hidden; the assessor's evidence. */
   errorTail?: string;
   /** What it showed of its progress when it timed out (issue #630): its executor's facts, and its source's. The assessor's evidence. */
@@ -510,12 +519,12 @@ export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
 export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
 export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
-export * from './stack-resources.ts';
+export * from './stack-resources.ts'; export * from './telemetry-summary.ts';
 export * from './lane-tuning.ts';
-export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts';
+export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
-export * from './check-logs.ts';
+export * from './check-logs.ts'; export type { WaitCheck, WaitCondition } from './wait-checks.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 

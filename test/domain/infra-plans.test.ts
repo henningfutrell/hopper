@@ -23,8 +23,11 @@
 //   Scenario: an Argo CD app takes sync only, and names its cluster
 //   Scenario: a plan for an Argo CD app is a GitOps plan
 //   Scenario: a sync of an Argo CD app with no plan, or with a plan of another app, is refused
+//
+// Feature: infra applies off (issue #1722): changes go through the infrastructure repository's CI only
+//   Scenario: with infra applies off, write, sync and apply are refused, plan or not, and the refusal names CI; a read is let through
 import { describe, expect, it } from 'vitest';
-import { applyRefusal, approveRefusal, approverOf, headRefusal, planInputProblem, readProfileOf, readRefusal, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
+import { applyRefusal, appliesRefusal, approveRefusal, approverOf, headRefusal, planInputProblem, readProfileOf, readRefusal, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
 import type { OperationProfile } from '../../src/domain/access.ts';
 import type { PlanSummary } from '../../src/domain/infra-plan-summary.ts';
 import { mintTarget } from '../../src/domain/minting.ts';
@@ -179,5 +182,15 @@ describe('Argo CD syncs through the plan gate (issue #959)', () => {
     const gitops: InfraPlan = { ...plan, tool: 'gitops', asset: { kind: 'argocd-app', name: 'lab/shop' } };
     expect(applyRefusal(sync, plan.id, gitops, approval, now)).toMatch(/is a plan for argocd-app lab\/shop, not argocd-app lab\/web/);
     expect(applyRefusal(sync, plan.id, { ...gitops, asset: WEB }, approval, now)).toBeUndefined();
+  });
+});
+
+describe('infra applies off (issue #1722)', () => {
+  it('refuses write, sync and apply, and says that changes go through CI; lets a read through', () => {
+    expect(appliesRefusal({ operation: 'read', asset: ROLE }, false)).toBeUndefined();
+    for (const operation of ['write', 'sync', 'apply'] as const) {
+      expect(appliesRefusal({ operation, asset: ROLE }, false)).toMatch(/^infra applies are off on this hopper: it mints no credential for .* on aws-role 123456789012\/deploy\. An infrastructure change goes through CI/);
+    }
+    expect(appliesRefusal(apply, true)).toBeUndefined();
   });
 });

@@ -1,0 +1,1 @@
+- A waiting job can now say when it wants to be checked again, or a time to wake it at. A job that waits on the checks of a pull request now goes on as soon as those checks pass or fail.

@@ -5,6 +5,8 @@ import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type JevFir
 import type { Logins } from '../logins/index.ts';
 import type { Checkpoints } from './checkpoints.ts';
 import type { JobMoveData } from './lost-move.ts';
+import type { JobLeases } from './leases.ts';
+import type { WaitReads } from './wait-checks.ts';
 
 export interface EngineOptions {
   store: UserStore;
@@ -30,6 +32,8 @@ export interface EngineOptions {
   tickMs: number;
   /** How often the engine looks for a machine whose sweep is due (issue #410). Default a minute. */
   sweepCheckMs?: number;
+  /** The sweep's lease (issue #1627): on two hosts on one database, only its holder sweeps the machines. Absent: this host alone. */
+  sweepLease?: import('../domain/leases.ts').SweepLease;
   /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
   /** Each review section's review (issues #537, #543). Their onDecided/onRevise must call the engine's; swept on each tick. */
@@ -85,18 +89,24 @@ export interface EngineOptions {
    * job whose machine stays away fails, as nothing would end the agent it left there.
    */
   jobMoves?: { begin(key: string, data: JobMoveData): void };
+  /** How long a job lease holds without a renewal (issue #1662): the most a hopper that crashed keeps its jobs from the others. Default a minute. */
+  jobLeaseMs?: number;
+  /** What a wait check of items reads (issue #1694, wait-checks.ts): the job's source. Absent: such a check reads nothing, and waits for its deadline. */
+  waitReads?: WaitReads;
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'jobMoves'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs' | 'sweepLease' | 'jobMoves' | 'jobLeaseMs' | 'waitReads'>> {
   fakeUsage?: SettableUsageSource;
-  jobMoves?: EngineOptions['jobMoves'];
+  jobMoves?: EngineOptions['jobMoves']; waitReads?: WaitReads;
   /** Ask for a Decision; coalesces with one already running. */
   trigger(reason: string): void;
   /** True once stop() began: nothing may write to the store after this. */
   stopping(): boolean;
   /** The job checkpoints (issue #921); set once the engine made them. */
   checkpoints?: Checkpoints;
+  /** This hopper's job leases (issue #1662). */
+  leases: JobLeases;
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();

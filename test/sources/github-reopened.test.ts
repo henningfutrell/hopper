@@ -8,6 +8,7 @@ import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/i
 import { DONE_OPEN } from '../../src/sources/github/discover.ts';
 import { AWAITS_BATCH, PROMOTED_CLOSED, REOPENED_REASON } from '../../src/sources/github/origin.ts';
 import { REPO, githubConfig, testTrust } from './fixtures/github-support.ts';
+import { declineNote } from '../../src/domain/intake-decline.ts';
 
 const url = (n: number) => `https://github.com/${REPO}/issues/${n}`;
 const PR = `https://github.com/${REPO}/pull/9`;
@@ -109,5 +110,22 @@ describe('a reopened issue re-enters Intake (issue #1126)', () => {
     await source.discover();
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
     expect(trust.approvals.size).toBe(0);
+  });
+
+  it('Decline with no choice closes a reopened issue again: hopper:done and the source label go, and the comment says it was reopened (issue #1710)', async () => {
+    const { gh, source, trust, events } = setup();
+    gh.createIssue({ repo: REPO, body: 'It is still broken.', labels: ['hopper', 'hopper:done', 'hopper:low'] });
+    await source.discover();
+    const hash = source.intake!()[0]!.request!.hash;
+    expect(await source.intakeAction!({ kind: 'decline', keys: [url(1)], hash, acting: { person: 'owner', via: 'ui' } })).toEqual({ done: [url(1)], failed: {} });
+    expect(trust.declines.get(url(1))?.choice).toBe('close');
+    expect(events.filter((e) => e.type === 'source.request_decline_written')).toEqual([]);
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', stateReason: 'not_planned', labels: [] });
+    expect((await gh.listComments(REPO, 1)).map((c) => c.body.split('\n').at(-1))).toEqual([declineNote('close', true, 'hopper')]);
+    expect(declineNote('close', true, 'hopper')).toContain('after the issue was reopened');
+    expect(events.filter((e) => e.type === 'source.request_decline_written').map((e) => e.data)).toEqual([{ source: 'github', key: url(1), hash, choice: 'close' }]);
+    expect(await source.discover()).toEqual([]);
+    expect(source.intake!()).toEqual([]);
   });
 });

@@ -13,6 +13,7 @@
   },
   "scripts": {
     "start": "node src/main.ts",
+    "cloud": "node cloud/main.ts",
     "test": "vitest run",
     "test:e2e:sse-vault": "bash test/e2e/sse-vault-wiremock/run.sh",
     "lint": "eslint .",

@@ -1,7 +1,7 @@
 // The dashboard's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, ownWaitOf, waitOnLink, waitOnLinkOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, ownWaitOf, waitCheckText, waitOnLink, waitOnLinkOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineLaneEffect, MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -257,5 +257,22 @@ describe('waitOnLinkOf (issue #1245): the job graph\'s node and the job view say
     expect(waitOnLinkOf({ kind: 'pull_request', number: 12, about: 'checks' }, 'o/r')).toEqual({ label: 'PR #12 checks to end', href: 'https://github.com/o/r/pull/12' });
     expect(waitOnLinkOf({ kind: 'question', questionId: 'q1' }, undefined)).toEqual({ label: 'a person\'s answer to question q1', href: '#question-q1' });
     expect(waitOnLinkOf(undefined, 'o/r')).toEqual({ label: 'nothing recorded' });
+  });
+});
+
+describe('a wait check, in words (issue #1694)', () => {
+  const T = Date.parse('2026-10-17T10:00:00.000Z');
+  const check = (o: object = {}) => ({ condition: { kind: 'none' as const }, nextCheckAt: new Date(T + 4 * 60_000).toISOString(), everyMs: 60000, attempts: 0, deadline: new Date(T + 3600_000).toISOString(), ...o });
+  it('what it checks, when it checks next, and the last result', () => {
+    expect(waitCheckText(check({ condition: { kind: 'job_ended', jobId: 'j9' } }), T)).toEqual({ what: 'the hopper checks whether job j9 ended', next: 'next check in 4 min' });
+    expect(waitCheckText(check({ condition: { kind: 'question_settled', questionId: 'q1' }, result: 'question q1 is open' }), T)).toMatchObject({ what: 'the hopper checks whether question q1 is settled', last: 'question q1 is open' });
+    expect(waitCheckText(check({ nextCheckAt: new Date(T - 1000).toISOString() }), T)).toEqual({ what: 'the hopper has no check for it: only its deadline counts', next: 'next check now' });
+    expect(waitCheckText(check({ overdueAt: new Date(T).toISOString() }), T)).toMatchObject({ overdue: true });
+  });
+
+  it('a pull request\'s checks, a time the job named, and a time beside a condition (part 2)', () => {
+    expect(waitCheckText(check({ condition: { kind: 'pr_checks_ended', repo: 'o/r', number: 8 } }), T).what).toBe('the hopper checks whether the checks of o/r#8 ended');
+    expect(waitCheckText(check({ condition: { kind: 'time_passed', at: '2026-10-17T12:00:00.000Z' } }), T).what).toBe('the hopper wakes it at 2026-10-17 12:00 UTC');
+    expect(waitCheckText(check({ condition: { kind: 'job_ended', jobId: 'j9' }, wakeAt: '2026-10-17T12:00:00.000Z' }), T).what).toBe('the hopper checks whether job j9 ended, and wakes it at 2026-10-17 12:00 UTC');
   });
 });

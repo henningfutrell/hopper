@@ -8,6 +8,7 @@ export const LANDING_BATCH_EXAMPLES: Record<Extract<EventType, `landing_batch${s
   'landing_batch.stuck': { repo: 'owner/repo', error: 'the start of a batch run: GitHub answered 422', since: '2026-10-15T13:44:00.000Z', passes: 3 },
   'landing_batch.restarted': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', by: 'admin', closed: [1261] },
   'landing_batch.canary_promoted': { repo: 'owner/repo', canary: 'canary', stable: 'stable', tip: '0123456789abcdef0123456789abcdef01234567', why: 'no bug report named it in 24 hours' },
+  'landing_batch.due': { repo: 'owner/repo', landing: 'main', tested: 'dev', tip: '0123456789abcdef0123456789abcdef01234567', branch: 'hopper-batch/0123456789ab', merges: [1088, 1090, 1093], closes: ['#1087'], why: '3 merges since the last batch run' },
   'landing_batch.started': { repo: 'owner/repo', landing: 'main', tested: 'dev', tip: '0123456789abcdef0123456789abcdef01234567', branch: 'hopper-batch/0123456789ab', pullRequest: 1101, url: 'https://github.com/owner/repo/pull/1101', merges: [1088, 1090, 1093], why: '3 merges since the last batch run' },
   'landing_batch.pending': { repo: 'owner/repo', landing: 'main', tested: 'dev', tip: '0123456789abcdef0123456789abcdef01234567', merges: [1088, 1090] },
   'landing_batch.promoted': { repo: 'owner/repo', tested: 'dev', tip: '0123456789abcdef0123456789abcdef01234567', pullRequest: 1101, url: 'https://github.com/owner/repo/pull/1101', merge: '89abcdef0123456789abcdef0123456789abcdef' },
