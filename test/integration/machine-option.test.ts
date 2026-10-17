@@ -28,7 +28,7 @@ async function start(plugins: object): Promise<{ a: TestApp; token: string }> {
 const report = async (a: TestApp): Promise<PluginsReport> => (await a.api('GET', '/api/plugins')).body as PluginsReport;
 const read = (a: TestApp) => readConfig(a.dbPath, 'plugins') as Record<string, { name: string; options?: Record<string, unknown> }[]>;
 
-const MACHINES = { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }, { name: 'box', plugin: 'docker', options: { docker: 'box' } }], escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } }], usageSources: [] };
+const MACHINES = { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }, { name: 'box', plugin: 'container' }], escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } }], usageSources: [] };
 
 describe('a machine option is picked from the known machines (#174)', () => {
   it('GET /api/plugins marks it a machine option and lists every configured machine as its choices; a stored config may lack it (#442)', async () => {

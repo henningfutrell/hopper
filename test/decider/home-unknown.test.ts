@@ -34,7 +34,7 @@ describe('a machine whose home is not known yet', () => {
   });
 
   it('this machine and a container target need no probed home', () => {
-    const box = machine({ id: 'box', label: 'box', docker: 'box' });
+    const box = machine({ id: 'box', label: 'box', containerImage: 'box' });
     const d = decide(inputs({ machines: [box], waiting: [job('a')] }), 'd1');
     expect(d.start.map((s) => s.machineId)).toEqual(['box']);
   });

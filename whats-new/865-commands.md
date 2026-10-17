@@ -1,0 +1,1 @@
+- A machine that only runs commands now runs each command in a new sandbox, with no network, and needs no extra setup scripts. Your saved machines of that kind move over by themselves.

@@ -1,4 +1,4 @@
-// What the attached-machine plugins share (design.md "Attached machines", issue #74): `ssh`, `docker`
+// What the attached-machine plugins share (design.md "Attached machines", issue #74): `ssh`, `container`
 // and `client` each make one attached machine of their instance, named after it. Its lanes, executors
 // and label are plain options; how it is reached is command-bearing. The hopper
 // reaches it through the machine-source context's `target`, never on its own.

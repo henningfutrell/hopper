@@ -6,9 +6,9 @@
 import type { InstanceSpec, InstanceStatus, MachineSnapshot } from './types.ts';
 
 /**
- * Where a part can run claude. `no-container`: this machine, an ssh target or a client target (claude-cli:
- * a client runs it through its `/level` call, issue #482; `docker exec` passes no stdin). `any`: every
- * machine, through its connection (claude-plan).
+ * Where a part can run claude: this machine, an ssh target or a client target, never a container target, whose one-shot
+ * boxes run commands only, on no network (issue #865). `no-container`: a question gate's (claude-cli: a client runs it
+ * through its `/level` call, issue #482). `any`: a usage read's (claude-plan); a part it names keeps no note.
  */
 export type MachineReach = 'no-container' | 'any';
 
@@ -18,7 +18,7 @@ export const RUNS_CLAUDE: Readonly<Record<string, MachineReach>> = { 'claude-cli
 /** The machine-source plugins each reach can run claude on. */
 const REACHED: Record<MachineReach, ReadonlySet<string>> = {
   'no-container': new Set(['local', 'ssh', 'client']),
-  any: new Set(['local', 'ssh', 'docker', 'client']),
+  any: new Set(['local', 'ssh', 'client']),
 };
 
 export const NO_MACHINE_FOR_LEVEL = 'No machine can run claude for this level. Pick a machine for it in Settings → Question gates, '
@@ -46,8 +46,8 @@ export const WHY_ONLY = 'the only machine that can run claude';
 export const WHY_DEFAULT = 'the default escalation machine';
 
 /** Whether claude can run on `m` now. */
-export function canRunClaude(reach: MachineReach, m: MachineSnapshot): boolean {
-  return m.online && (reach === 'any' || !m.docker);
+export function canRunClaude(m: MachineSnapshot): boolean {
+  return m.online && !m.containerImage;
 }
 
 export type MachinePick = { machine: string; why: string } | { none: string };
@@ -66,7 +66,7 @@ const nothing = (reach: MachineReach): string => (reach === 'no-container' ? NO_
  * machine (`fallback`, a level's). None: why, and how to fix it.
  */
 export function pickMachine(o: { reach: MachineReach; jobMachine?: string; machines: readonly MachineSnapshot[]; fallback?: string }): MachinePick {
-  const able = o.machines.filter((m) => canRunClaude(o.reach, m));
+  const able = o.machines.filter(canRunClaude);
   if (o.jobMachine !== undefined && able.some((m) => m.id === o.jobMachine)) return { machine: o.jobMachine, why: WHY_JOB };
   if (able.length === 1) return { machine: able[0]!.id, why: WHY_ONLY };
   if (o.fallback) return { machine: o.fallback, why: WHY_DEFAULT };

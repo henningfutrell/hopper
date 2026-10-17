@@ -35,14 +35,14 @@ describe('systemd/hopper.service', () => {
     expect(text).toMatch(/^RestartForceExitStatus=75$/m);
   });
 
-  it('hides the root docker socket from the daemon: docker only through a socket only it may open (issue #59)', () => {
+  it('hides the root docker socket from the daemon (issue #59)', () => {
     const text = readFileSync(UNIT, 'utf8');
     expect(text).toMatch(/^InaccessiblePaths=-\/run\/docker\.sock -\/var\/run\/docker\.sock$/m);
   });
 
-  it('the daemon reads the hopper\'s ssh key and its docker socket without warning about them (issue #59)', () => {
+  it('the daemon reads the hopper\'s ssh key without warning about it (issue #59); a docker socket for container targets is read no more (issue #865)', () => {
     const c = loadConfig({ HOPPER_DATABASE_URL: 'postgres://u:p@db:5432/jh', HOPPER_SSH_KEY_FILE: '/run/creds/key', HOPPER_DOCKER_HOST: 'unix:///run/x.sock' });
-    expect(c.leftoverEnv).toEqual({});
+    expect(c.leftoverEnv).toEqual({ HOPPER_DOCKER_HOST: 'unix:///run/x.sock' });
   });
 
   it('the GitHub App\'s client secret is read by sign-in, never warned about or kept in the config (issue #258)', () => {

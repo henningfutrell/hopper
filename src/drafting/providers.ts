@@ -150,7 +150,7 @@ function notSignedIn(provider: DraftProvider, on: string, said: string): string 
 export function draftRefusal(provider: DraftProvider, id: string, m: MachineSnapshot | undefined, o: { addedUser: boolean }): string | undefined {
   if (!m) return `machine ${id} is not configured. Pick another machine.`;
   if (!m.online) return `machine ${id} is offline. Bring it back, or pick another machine.`;
-  if (m.docker) return `machine ${id} is a container target: a draft cannot run there (docker exec passes no stdin). Pick another machine.`;
+  if (m.containerImage) return `machine ${id} is a container target: a draft cannot run there (it runs commands only). Pick another machine.`;
   if (m.client && provider !== 'claude') return `machine ${id} is a joined machine: its client runs only claude for a draft. Pick claude, or an ssh machine for ${provider}.`;
   if (!m.ssh && !m.client && o.addedUser && provider !== 'claude') {
     return `on this machine the hopper keeps only your own claude login: ${provider} here would run on another account. Pick one of your machines for ${provider}.`;

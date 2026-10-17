@@ -19,7 +19,7 @@ const CLAUDE = join(import.meta.dirname, 'fake-claude.mjs');
 const TOKEN = mintToken();
 const STUDIO: MachineSnapshot = { id: 'studio', label: 'studio', maxLanes: 1, online: true, executors: ['herdr-claude'], client: {} };
 const DESK: MachineSnapshot = { id: 'desk', label: 'desk', maxLanes: 1, online: true, executors: ['herdr-claude'], ssh: 'desk.example' };
-const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], docker: 'box' };
+const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], containerImage: 'box' };
 
 const question = { id: 'q1', jobId: 'j1', text: 'Which database?', recentOutput: '', detectedBy: 'marker', status: 'open', tier: 'level-1', attempts: [], notifyCount: 0, createdAt: '', updatedAt: '' } as Question;
 const req = (over: Partial<AnswerRequest> = {}): AnswerRequest => ({ question, jobPrompt: 'Build it', jobGoal: 'it', rules: 'RULE: prefer sqlite', previous: [], level: { number: 1, of: 2 }, ...over });

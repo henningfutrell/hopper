@@ -39,13 +39,13 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
-| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
+| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the dedupe keys, hashed, through `OutboundKeyRepository` in the database (issue #1627); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads, its deliveries kept in memory when the feed gives no store; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
-| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/container/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads, its deliveries kept in memory when the feed gives no store; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `turn.ts` (a print-mode agent's turn, `POST /turn`, issue #865), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`, in `container-probe.ts`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key and the keys the hopper issues (`lane-pool.ts`, issues #1284, #1454), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; a container target is online while a command box can start, issue #865), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key and the keys the hopper issues (`lane-pool.ts`, issues #1284, #1454), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
@@ -1211,7 +1211,7 @@ container hopper whose only machine joined as a client: there is no `local` and 
 release without the call is replaced by the keeper as for any release change ("Client releases").
 The level finds the machine by id through `RoleContext['escalation-level'].machine` (`MachineLookup`,
 as a usage source does) and reaches a client through `client` (`ExecutorContext['client']`); a machine
-not configured, offline, a client not dialled in or a container target (`docker exec` passes no stdin)
+not configured, offline, a client not dialled in or a container target (it runs commands only)
 is `{ error }` with why and how to fix it, so the question escalates. `machine` is not
 command-bearing: the owner designates it in the Question gates panel; it can only name a machine
 already configured.
@@ -3885,7 +3885,7 @@ applies live since issue #18, "Machines from the UI").
 Owner request: attach other machines to the hopper and run jobs on them, for example a laptop
 reached over ssh that has herdr, as a target.
 
-An **attached machine** is a target beside this machine. An ssh target runs jobs in its own herdr session, reached over ssh; a container target is reached over docker exec ("Container targets" below).
+An **attached machine** is a target beside this machine. An ssh target runs jobs in its own herdr session, reached over ssh; a container target runs each command in a command box, a one-shot sandbox box ("Container targets" below).
 It is a machine beside `local`: the decider sees it in `DecisionInputs.machines` and assigns jobs
 to it by the unchanged rule (online, runs the executor, most remaining room). Nothing else in the
 decider changes.
@@ -3996,63 +3996,76 @@ Claude and no other agentic AI in the container; it is a plain machine that only
 hopper runs plain commands in it and gets their results. Its role is a **target** (never
 "consumer").
 
-A **container target** is an attached machine whose entry names a `docker` container in place of an
-`ssh` destination. Its **connection** is `docker exec` through this machine's docker CLI, which speaks
-the Docker Engine API over the docker socket. Nothing of the hopper is installed in the container,
-and it runs no sshd and no herdr.
+A **container target** is an attached machine that runs commands only. Since issue #865 part C
+(2026-10-17) it is plugin `container`, and each command runs in a **command box**: a one-shot sandbox
+box of the target's `image` that the sandbox module starts and burns ("The sandbox module", "Need
+steps"). Nothing of the hopper is installed in it, and it runs no sshd, no herdr and no agent. Before
+part C it was plugin `docker`, a running container reached with `docker exec` through a docker socket
+proxy; tenant migration 81 turned each such instance into a `container` instance of the same name.
 
 ```yaml
 executors:
   - { name: command, plugin: command }
 machines:
   - { name: local, plugin: local, options: { lanes: 4, executors: [test, herdr-claude] } }
-  - { name: box, plugin: docker, options: { docker: hopper-target, lanes: 1 } }   # executors default: [command]
+  - { name: box, plugin: container, options: { lanes: 1 } }   # executors default: [command]
 routing:
   - { name: commands to the box, match: { label: on-box }, set: { machine: box, executor: command } }
 ```
 
 | field | default | |
 |---|---|---|
-| `docker` | — | the container's name or id; must not start with `-` (plugin `docker`) |
+| `image` | `ghcr.io/henningfutrell/hopper:box-claude` | the image each command box runs; it must run as a user other than root (plugin `container`) |
 | `executors` | `[command]` | `[herdr-claude]` for an ssh target |
-| `session`, `hostKey` | — | refused (unknown options of `docker`): it has no herdr |
+| `session`, `hostKey`, `docker` | — | refused (unknown options of `container`): it has no herdr and no container of its own |
 
-**Reached** only through the hopper's **docker socket** (`HOPPER_DOCKER_HOST`, "Target authentication"):
-`docker --host <it> exec …`; without it a container target stays offline.
+The default image is the published box image a template starts from, which carries the claude CLI. Nothing in a command
+box runs it, and with no network and no credential it reaches no model: the owner's rule of issue #58, no agent on the
+target, holds. A person who wants no agent CLI in the box names an image without one.
 
-**Online** while `docker container inspect` says the container runs; a missing container is
-offline, not an error. Same background probe as an ssh target (at most every 30 s, `list()` never
+**The command box** (`src/users/command-boxes.ts`, through `Sandboxes.needStep`). The need box's script
+(`NEED_BOX_SCRIPT`) runs the command with `sh -c` in `$HOME/work`, under the sandbox flags: every
+capability dropped, `no-new-privileges`, a read-only root, `/tmp` a tmpfs, a home volume of its own.
+Its network is **none** (`NO_NETWORK`): the box reaches nothing, the hopper included, so its job gets
+no `HOPPER_URL`. No credential is minted for it. It runs beside the hopper, else on a client target of
+the user's with a container runtime, as a need step does. The box and its home are burned when the
+command ends, and the sandbox runs ledger keeps the run, the image as its template; the sweep burns a
+box a stopped hopper left. A Kubernetes runtime starts none: a pod always joins the pod network
+(`NO_OFFLINE_POD`).
+
+**Online** while `Sandboxes.stepProblem` says a box with no network can start for the user: a runtime
+is there and answers. Same background probe as an ssh target (at most every 30 s, `list()` never
 waits). A pinned job waits while its target is offline (`pinned machine box offline`).
 
 **The command executor** (built-in plugin `command`, opt-in: not in the built-in instances) runs a
-job's `body` on the job's machine through that machine's connection: `docker exec -- <container>
-env K=V… sh -c <script>` on a container target, the same argv POSIX-quoted over ssh on an ssh
-target, directly on this machine. The script is the body's first fenced code block, else the whole
-body. The body is the issue's own text, without the issue context block: the job source puts it in
-the payload as `body` beside `prompt`. The job's issue variables (`HOPPER_ISSUE_URL`, …) and
-`HOPPER_JOB_ID` are set. The working directory is the connection's default (the container's
-workdir; the ssh login's home): a job's `cwd` names a path on this machine. Exit 0 → finished with
-`{ machine, exitCode, stdout, stderr }` (each stream's last 16000 characters); anything else → failed
-with the exit code and the output's tail. `timeoutMs` (default 600000) and a cancel kill the client
-process; a `docker exec` already started in the container may outlive it. Not idempotent, no
-questions, nothing to reattach: a restart fails a running command job, never re-runs it.
+job's `body` on the job's machine through that machine's connection: in a command box on a container
+target, POSIX-quoted over ssh on an ssh target, directly on this machine. The script is the body's
+first fenced code block, else the whole body. The body is the issue's own text, without the issue
+context block: the job source puts it in the payload as `body` beside `prompt`. The job's issue
+variables (`HOPPER_ISSUE_URL`, …) and `HOPPER_JOB_ID` are set. The working directory is the
+connection's default (the box's `$HOME/work`; the ssh login's home): a job's `cwd` names a path on
+this machine. Exit 0 → finished with `{ machine, exitCode, stdout, stderr }` (each stream's last
+16000 characters; a command box's output is one stream, on a terminal, so it is all `stdout`);
+anything else → failed with the exit code and the output's tail. `timeoutMs` (default 600000) and a
+cancel stop the command, and a command box with it. Not idempotent, no questions, nothing to
+reattach: a restart fails a running command job, never re-runs it.
 
 **Where commands may run.** The command executor runs anything written in an issue assigned to the user (issue #387),
-like herdr-claude with `--dangerously-skip-permissions`. To keep command jobs on the container,
+like herdr-claude with `--dangerously-skip-permissions`. To keep command jobs on the container target,
 this machine's `local` instance takes an `executors` option that narrows what runs here (absent:
 every registered executor); with `command` left out, an unpinned command job can only go to a target
-that lists it. herdr-claude refuses a container target outright (`herdr-claude does not run on
-container target …`): with no `ssh` it would otherwise drive this machine's herdr.
+that lists it. herdr-claude and the print-mode executors refuse a container target outright
+(`herdr-claude does not run on container target …`): it has no agent.
 
-**Preparing it:** `bash scripts/container-target.sh <container> [lanes]` — alpine, `--network none`,
-read-only root, every capability dropped, `no-new-privileges`, `/tmp` a tmpfs, `--restart
-unless-stopped`; the main process is `sleep infinity`. Re-running keeps a running container. Prints
-the plugins.yaml lines. A machine edit can change a container target's lanes, executors and label;
-adding one from the UI is not built (the add form attaches ssh targets).
+**Preparing it:** nothing beyond the sandbox module's runtime ("Sandboxes the hopper starts" in
+docs/deploy.md). Add a `container` instance in Settings → Plugins. A machine edit can change a
+container target's lanes, executors, label and image; adding one from the UI's Add machine form is
+not built (the add form attaches ssh targets).
 
-**Verification:** `test/integration/container-target.test.ts` — a real container, the real probe, a
-GitHub issue routed there runs and finishes with the container's output; `test/adapters/command-executor.test.ts`
-— the executor over docker, ssh and here.
+**Verification:** `test/integration/container-target.test.ts` — the real composition root, a container
+runtime double at its port: a GitHub issue routed there runs in a command box with no network,
+finishes with its output, and the box is burned; with no runtime, the target is offline and the job
+waits. `test/adapters/command-executor.test.ts` — the executor in a command box, over ssh and here.
 
 ## Target authentication (issue #59, 2026-10-04)
 
@@ -4064,7 +4077,7 @@ hopper, and connect back to it over a reverse tunnel ("Client targets" below).
 | target | the hopper proves itself by | the target proves itself by | refused |
 |---|---|---|---|
 | ssh target | the **hopper's ssh key**, alone | its **pinned host key** | passwords, keyboard-interactive, GSSAPI, host-based, the user's agent and other keys, an unpinned or changed host key, jump hosts, forwarding |
-| container target | holding a **docker socket** only its user may open, which lets through only its targets | — (this machine's docker) | the root daemon's socket, a group- or world-openable socket, a TCP daemon, any `DOCKER_*` variable |
+| container target | nothing to prove: since issue #865 its command boxes start through the sandbox module's own runtime socket, as every sandbox box ("The sandbox module") | — (a box the hopper started) | the root daemon's socket, a rootful runtime |
 | client target | an HMAC of the **client token** on every request — the token derived from the link keys (issue #308) | an HMAC of the token on every answer; the same token on its dial-in | an unsigned, stale (30 s), replayed or altered request; an answer it did not sign; a dial-in no client target's key signs |
 
 **ssh** (`src/executors/ssh.ts`; every ssh call: herdr over ssh, the probe, the command executor, adding
@@ -4090,20 +4103,10 @@ target, never one learned from a connection. Adding a machine from the UI pins t
 sshd may still accept passwords from others; the hopper never offers one (proven against a real sshd
 that does: `test/integration/ssh-auth-real.test.ts`).
 
-**docker** (`src/executors/docker.ts`). Docker's socket has no authentication: whoever opens it is root
-on this machine, and the root daemon's socket opens to the whole docker group. So the hopper uses only
-`HOPPER_DOCKER_HOST=unix://<path>`, checked before every call: a socket owned by its user, mode
-without group or other bits, in a directory owned by its user that others may not write. There is no
-default. Every call is `docker --host <it> …` with no `DOCKER_*` variable in its environment. The
-daemon's unit makes the root socket inaccessible (`InaccessiblePaths=-/run/docker.sock
--/var/run/docker.sock`). In practice the socket is the **docker socket proxy**: `bash
-scripts/docker-proxy.sh <container>...` runs `wollomatic/socket-proxy` (pinned by digest; no network,
-read-only, no capabilities, restarted with docker) on `~/.local/state/hopper/docker/docker.sock`
-(mode 600), allowing `HEAD /_ping`, `GET /_ping`, `GET /v1.N/containers/<target>/json`,
-`POST /v1.N/containers/<target>/exec`, `POST /v1.N/exec/<id>/start`, `GET /v1.N/exec/<id>/json` —
-everything else is 403. Re-run it with every container target when one is added. **Residual risk:**
-the proxy checks paths, not bodies, so an exec it lets through could ask for `Privileged` or another
-user in that container; only the hopper's own code writes those requests.
+**container** (issue #865 part C). No connection of its own: the docker socket proxy (`scripts/docker-proxy.sh`,
+`HOPPER_DOCKER_HOST`) went with the docker exec path. A command box starts as every sandbox box does, through the runtime
+`selectRuntime` chose, which refuses a rootful daemon. The daemon's unit still makes the root socket inaccessible
+(`InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock`).
 
 **client** ("Client targets"): HMAC-SHA256 over method, path, timestamp, nonce and the body's hash,
 keyed with the client token; the client accepts it within 30 s and once, and signs its answer over the
@@ -4111,8 +4114,8 @@ request's nonce, status and body. The token itself never crosses the wire. node:
 `timingSafeEqual`), not a library: the client installs as plain files with no `node_modules`, and the
 construction is a few lines over node's own primitives.
 
-**Configuration** (daemon.env, beside the other secrets): `HOPPER_SSH_KEY_FILE`,
-`HOPPER_DOCKER_HOST`, and each client target's token (`<tokenEnv>` or `<tokenEnv>_FILE`).
+**Configuration** (daemon.env, beside the other secrets): `HOPPER_SSH_KEY_FILE`, and each client
+target's token (`<tokenEnv>` or `<tokenEnv>_FILE`). `HOPPER_DOCKER_HOST` is read no more (issue #865).
 
 ## Client targets (issue #59, 2026-10-04)
 
@@ -5017,8 +5020,8 @@ deleted the home volume.
 
 - **One module, `src/sandbox/`.** Everything that creates, inspects, stops or removes a box the hopper starts goes
   through it: `POST /ui/api/machines/sandbox` and the reconcile loop. `scripts/agent-boxes.sh`, `container-target.sh`
-  and `docker-proxy.sh` are deprecated (a header says so); a follow-up deletes them once nothing uses them (issue
-  #865: `agent-boxes.sh` went in its part B, once every harness had a box image).
+  and `docker-proxy.sh` were deprecated, then deleted (issue #865: `agent-boxes.sh` in its part B, once every harness
+  had a box image; the other two in part C, once a container target ran its commands in command boxes).
 - **One runtime interface**, `ContainerRuntime` (`src/domain/sandboxes.ts`): `problem`, `pull` (answers the image's
   user), `createVolume` (answers whether it made one), `removeVolume`, `create` (answers the id), `start`, `inspect`,
   `stop`, `remove` (its volumes stay), `list` by label. Adapters: **Podman** (primary; libpod `/v5.0.0`) and **Docker**
@@ -6163,7 +6166,7 @@ holds no credential. Prior art: `a status-bar script`.
   `sshBin` and `dockerBin` (command-bearing, default `ssh`, `docker`). Detection: none — never a
   call to claude; claude is on that machine, and the source's state says whether it runs.
 - **On an attached machine** (issue #139): on one, both calls run there through its
-  connection — `commandOn`, as the command executor: ssh with the hopper's ssh key, or `docker exec` —
+  connection — `commandOn`, as the command executor: ssh with the hopper's ssh key; never a container target (issue #865) —
   in a fresh `mktemp -d` dir there, removed after with the project dir claude keeps for it. **A client
   target** (issue #366) runs no command for the hopper, so both calls go to its client as `POST /claude`
   ("Client targets"), found through the usage-source context's `client(id)`: the client runs its own
@@ -14203,7 +14206,7 @@ memory total and available (available, not free), and swap total and used where 
   wait is in the probe's background call, never in a Decision.
 - **in a container**: a meter whose cgroup (v2) sets a memory limit reads the limit as its total and its own use less
   the page cache it could drop (`inactive_file`); a CPU quota is its cores, and CPU busy is its own `usage_usec` against
-  the quota. `container: true` says so; the card says "container limit". A container target (docker exec) is not read,
+  the quota. `container: true` says so; the card says "container limit". A container target (a command box per command) is not read,
   as its disk is not.
 - Per lane (an agent's process tree): not built.
 
@@ -21336,8 +21339,7 @@ terminal there. Now a person signs it in again from the hopper — the UI, a pho
 
 - **Who starts it.** The usage source that reads the tool on that machine (`UsageSource.signIn`, optional, in the port): it
   already knows how to run the tool there. `claude-plan` runs `claude auth login --claudeai [--email <email>]` on its machine the
-  way it runs a read: this machine (in its probe dir), an ssh target (`sh -c ON_MACHINE`, ssh passes stdin), a container
-  (`docker exec -i`), or a client target, whose client runs its own claude (`POST /sign-in`, `src/client/sign-in.ts`: `start`
+  way it runs a read: this machine (in its probe dir), an ssh target (`sh -c ON_MACHINE`, ssh passes stdin), or a client target, whose client runs its own claude (`POST /sign-in`, `src/client/sign-in.ts`: `start`
   answers `{id, url}`, `paste` writes the code and answers how it ended, `cancel`; one at a time; the argv is the client's own,
   the request names only the account). A source that has it says `signIn: true` in its state; the tool accounts carry it per
   machine (`ToolAccountMachine.signIn`).
@@ -24700,7 +24702,7 @@ in on. The hopper holds no model key for it.
   its first `{` and last `}`. `draftIssueWith` (`src/run-skills/draft.ts`) checks every provider's answer in the same
   form (`ISSUE_DRAFT`), then against the draft constraints.
 - **The machine** is the user's pick (`src/drafting/run.ts` `draftOn`), never a default. Refused before anything runs,
-  each in plain words: not configured, offline, a container target (`docker exec` passes no stdin), a client target for
+  each in plain words: not configured, offline, a container target (it runs commands only), a client target for
   a provider other than claude, and this machine for a user added later with a provider other than claude.
 - **Client targets** (issue #470 D3): claude runs through the client's signed `POST /level` (issue #482), which builds
   the same argv. No new client call: `/level` runs claude only, and the other CLIs are refused there.
