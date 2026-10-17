@@ -237,7 +237,9 @@ When the image the hopper runs is of another channel than the one in Settings â†
 4. Restart: `systemctl --user restart hopper`.
 5. Keep the services running after you log out: `sudo loginctl enable-linger "$USER"`.
 
-The host install does not start OpenFGA. Until you run one and set `HOPPER_OPENFGA_URL`, access checks are off and every credential is denied. See docs/deploy.md, "Access: OpenFGA".
+The host install also sets up OpenFGA, which the access checks need. It downloads the OpenFGA release that the container install runs, and checks its SHA-256. It runs it as the service `hopper-openfga`, on this computer only, with its tables in the hopper's database. It adds `HOPPER_OPENFGA_URL` and `HOPPER_OPENFGA_KEY_FILE` to `~/.config/hopper/daemon.env`. An install from before gets OpenFGA when you run the install line again.
+
+To use your own OpenFGA, set `HOPPER_OPENFGA_URL` (and its key) in `daemon.env` before you install. The install then sets up none. See docs/deploy.md, "Access: OpenFGA".
 
 ### Update a host install
 
@@ -245,7 +247,7 @@ The host install does not start OpenFGA. Until you run one and set `HOPPER_OPENF
 2. Click **Update now** when an update is available. Or turn on **Auto-update**. Only the hopper's admins can do this.
 3. The hopper builds the update beside the running install and checks that it loads. It waits until no restart blocker is left, swaps the install in, and restarts. Running jobs that can reattach keep running.
 
-To update by hand, run the install line again.
+To update by hand, run the install line again. Run it again too to update OpenFGA: an update in Settings â†’ Version does not change the OpenFGA version.
 
 ## Back up
 
@@ -282,4 +284,5 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 | `postgres: another container runs on this data volume` | A second stack runs on the same data. Its Postgres does not start, and the first one keeps running. Remove the second stack with the tool that made it (`docker-compose down` or `podman-compose down`). Do not add `-v`: it removes the data. |
 | `unrecognized command "podman compose"` | Your Podman is older than 4.7. Use `podman-compose`, or install a newer Podman. |
 | Host install: `did not answer /api/health` | Read `journalctl --user -u hopper -n 50`. |
+| Host install: "Access checks are off" | Read `journalctl --user -u hopper-openfga -n 50`. Restart it: `systemctl --user restart hopper-openfga`. |
 | A **stalled** badge in the top bar | The hopper stopped answering for more than 2 s. Point at the badge to see how long, and the requests in flight. Read the log line `the event loop stalled` (`podman compose logs hopper`). The badge goes after 10 minutes. |

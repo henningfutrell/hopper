@@ -16,8 +16,11 @@ echo "WARNING: stopping hopper-herdr closes every pane in herdr session 'hopper'
 step "systemctl --user disable --now hopper-herdr"
 systemctl --user disable --now hopper-herdr || echo "  (not enabled or not running)"
 
-step "remove $UNIT_DIR/hopper.service and $UNIT_DIR/hopper-herdr.service"
-rm -f "$UNIT_DIR/hopper.service" "$UNIT_DIR/hopper-herdr.service"
+step "systemctl --user disable --now hopper-openfga"
+systemctl --user disable --now hopper-openfga 2>/dev/null || echo "  (not installed, not enabled or not running)"
+
+step "remove $UNIT_DIR/hopper.service, $UNIT_DIR/hopper-herdr.service and $UNIT_DIR/hopper-openfga.service"
+rm -f "$UNIT_DIR/hopper.service" "$UNIT_DIR/hopper-herdr.service" "$UNIT_DIR/hopper-openfga.service"
 
 step "systemctl --user daemon-reload"
 systemctl --user daemon-reload
@@ -26,6 +29,7 @@ step "remove $DEST"
 rm -rf "$DEST"
 
 echo "Kept the database HOPPER_DATABASE_URL names — the queue and every config document are your data. Drop it by hand to discard them."
-echo "Kept $CONFIG_DIR — daemon.env and the secret files it names."
+echo "Kept $CONFIG_DIR — daemon.env and the secret files it names, and OpenFGA's config and key in $CONFIG_DIR/openfga."
+echo "Kept OpenFGA's tables, the openfga schema of that database."
 echo "The GitHub App itself stays on GitHub; delete it at https://github.com/settings/apps if you no longer want it."
 echo "The herdr session directory ~/.config/herdr/sessions/hopper is kept; remove it with: herdr session delete hopper"

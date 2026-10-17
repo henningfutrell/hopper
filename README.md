@@ -125,7 +125,7 @@ HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 `install.sh` writes the database URL to `~/.config/hopper/daemon.env` (mode 600); put secrets
 there too. The first start makes the master key and shows it once, in the UI only (**Show the key (once)**), never in the log:
 save it in your password manager and add `HOPPER_MASTER_KEY=<it>` to `daemon.env` (`docs/deploy.md` "The master key").
-The host install runs no OpenFGA: until `HOPPER_OPENFGA_URL` names one, every credential is denied (`docs/deploy.md` "Access: OpenFGA"). Run it again to update. Remove with `scripts/uninstall.sh`.
+The host install runs OpenFGA too, as the `hopper-openfga` user service on loopback, unless `daemon.env` already names one in `HOPPER_OPENFGA_URL` (`docs/deploy.md` "Access: OpenFGA"). Run it again to update. Remove with `scripts/uninstall.sh`.
 
 ### From a checkout, in the foreground
 

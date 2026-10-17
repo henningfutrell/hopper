@@ -136,6 +136,16 @@ The hopper decides *whether* a job gets the credential. The role's IAM policy or
    - Kubernetes: `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`. The token needs `create` on `serviceaccounts/token`, and `create` and `delete` on `secrets` in the same namespace: each token a sandbox gets is bound to a Secret the hopper deletes when the sandbox ends, so the token stops working at once.
 4. In a template, add the operation profile, for example `read` on `aws-role` `123456789012/diag`. Approve it (see [Sandboxes](sandboxes.md)).
 
+From the command line, `--mints` sets **Mints for**. The value comes from standard input:
+
+```sh
+hopper vault set AWS_UAT --mints aws-account/123456789012 < aws-credential.json
+hopper vault set LAB_KUBE --mints cluster/lab < kube-credential.json
+hopper vault set AWS_UAT --mints none < aws-credential.json   # a plain secret again
+```
+
+A `set` without `--mints` keeps what the secret mints for. A shared secret mints nothing: `--mints` with `--shared` is refused.
+
 A minting credential is never given to a box. No template can list it in its scope.
 
 ### Session names
