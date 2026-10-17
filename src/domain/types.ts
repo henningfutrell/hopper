@@ -51,8 +51,10 @@ export const JOBS_DIR = '~/hopper-jobs';
  * #1694: its wait check ends it now). `on` (issue #1245): what it waits on, typed; every wait since has one, and one without is
  * a legacy wait, stuck work. `polledAt` (issue #1210): when the hopper first saw its own command poll hopper state; `on` then
  * says what it polls. `check` (issue #1694): what the hopper tests of the wait and when, kept with it (wait-checks.ts).
+ * `strandedAt` (issue #1779): a wait the hopper watches, not its pane, whose agent session ended — when that was first seen;
+ * cleared when the agent is seen again. Only a person, or what it waits on, wakes it: stuck work, `stranded`.
  */
-export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; strandedAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
@@ -522,7 +524,7 @@ export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, Signe
 export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
 export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
 export * from './stack-resources.ts'; export * from './telemetry-summary.ts';
-export * from './lane-tuning.ts';
+export * from './lane-tuning.ts'; export type { GraphNode, LinkKind, NodeKind, SourceView, TopologyGraph, TopologyLink } from './topology.ts';
 export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts'; export type { IntakeStrictness, Strictness } from './intake-strictness.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';

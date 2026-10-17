@@ -40,7 +40,7 @@ export const TAGS: Record<Tag, string> = {
   'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
   Webhooks: 'Subscribers to the event log, kept in the database.',
   Vault: 'Write-only secrets for jobs: set once, never read back. The master key every kept secret is sealed under: given at launch, as a variable or a mounted Secret file, never from a volume of its own.',
-  Infra: 'Plans and applies of infrastructure changes (issues #870, #896): the plans jobs recorded, their approval, the applies minted against them, and the out-of-band changes (issue #871). The Infra view in the UI.',
+  Infra: 'Plans and applies of infrastructure changes (issues #870, #896): the plans jobs recorded, their approval, the applies minted against them, the out-of-band changes (issue #871) and the infrastructure topology (issue #1781). The Infra view in the UI.',
   Events: 'The event log, read back or streamed.',
   'Self-update': 'The install and the update repository.',
   Users: 'The people one hopper works for, each with their own work, kept apart.',

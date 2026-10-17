@@ -109,6 +109,21 @@ export function scratchOf(paths: readonly string[], jobId: string): string | und
   return undefined;
 }
 
+/** The job worktree kept work names, and the work tree it is of: where a job with no recorded executor state reopens (issue #1472). */
+export interface KeptTree { cwd: string; jobWorktree: string }
+
+/**
+ * Pure: the job's own worktree among its kept repositories (`<work tree>/.worktrees/<name>/<job id>`, issue #1188), and its
+ * work tree. Undefined when it kept none: a clone in its scratch dir alone names no work tree its agent ran in.
+ */
+export function keptTreeOf(kept: KeptWork | undefined): KeptTree | undefined {
+  for (const p of kept?.paths ?? []) {
+    const tree = worktreeParts(p);
+    if (tree && !tree.old && tree.name === kept!.jobId) return { cwd: tree.workTree, jobWorktree: p };
+  }
+  return undefined;
+}
+
 /** Its scratch dir: by its kept repositories, else by its work tree. */
 export function keptScratchOf(kept: KeptWork, job: Job): string | undefined {
   const cwd = (job.executorState as { cwd?: unknown } | undefined)?.cwd;

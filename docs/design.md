@@ -80,7 +80,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -10738,8 +10738,8 @@ may not assume, with nothing to tell them.
   `src/skills/template-request.ts`): it names each unminted need and the vault's reason, and the read needs on the same
   account or cluster that a check of another template passed with, to ask for in its place. `template.checked` asks a
   waiting request again, so a job on its own wait is woken with that refusal.
-- **Not built (left on the issue).** A job on its own wait whose agent session ended is not yet shown as stranded in the
-  operator CLI and the UI.
+- **A stranded wait (part 2).** A job on a wait the hopper watches whose agent session ended — its pane a bare shell —
+  is marked stranded and counted as stuck work (`stranded`, Wake all): "Stuck work" and "Watched items" below.
 
 Tests: `test/integration/read-only-check-unminted.test.ts` (the real daemon and `hopper-skill`: the check fails on a
 cluster with no minting credential, the job's wait ends with the refusal, a credential for another cluster keeps the
@@ -12099,8 +12099,18 @@ hopper push the work from any state with no click. This part does it for the cas
   fresh turn in the saved work tree, never the old chat: its task, then `pushBrief` with `fresh` (it is never
   `resumable`), then the protocol. The same job id keeps the same scratch dir, so the turn sees the kept work.
 
-Left of issue #1472 part 2: a herdr-claude job whose pane state was never recorded (its work tree is not known; Push it
-is refused, "its work tree cannot reopen"), and a push to a repository other than the job's own (refused, issue #1470).
+- **A job with no pane state** (`keptTreeOf`, `src/domain/kept-work.ts`). A herdr-claude job whose pane state was never
+  recorded (a state save is dropped while the hopper stops) left no work tree in its state. Its kept work does name one:
+  the sweep records `job.work_kept` with each repository it kept, and the job's own worktree is
+  `<work tree>/.worktrees/<name>/<job id>`. `Engine.reopens` takes such a job when its executor parks and its newest
+  `job.work_kept` names its job worktree. The runner gives a job Push it continued that tree (`ExecutionContext.keptTree`);
+  the executor's reopen uses it when it has no pane state: a new pane in that work tree, a fresh session (never a
+  recorded one: with no state the job is not `resumable`, so the brief says fresh), its task, then `pushBrief`. Kept
+  work that names only a clone in the scratch dir names no tree the agent ran in: Push it is still refused, "its work
+  tree cannot reopen". Running the agent in the shared work tree beside the clone could change another job's files.
+
+Left of issue #1472 part 2: a push to a repository other than the job's own and not one of its user's job repositories
+(refused, issue #1470). Which repositories a job may push to is a security decision for a person.
 
 **Verification:** `test/integration/auto-push.test.ts` (a finished job pushed by itself once, with `auto`; not again when
 its work is kept again; `auto.push` off; a failed job not pushed by itself), `test/integration/kept-work.test.ts` (a
@@ -12108,7 +12118,9 @@ person's Push it, with `auto.push` off), and in `auto-push.test.ts` a finished j
 a fresh session in its kept work tree. `auto-push.test.ts` also: a finished job of an executor that `reopensKept` goes
 on in a fresh turn, and one of an executor that neither parks nor reopens is refused with why;
 `test/adapters/print-agent-executors.test.ts`: each print-mode agent, continued, starts a fresh turn in its saved work
-tree, its task first, never its old session.
+tree, its task first, never its old session. `auto-push.test.ts` also: a finished job with no pane state goes on in a
+fresh session in the job worktree its kept work names, and is refused with why when its kept work names none;
+`test/herdr/executor-park.test.ts`: the reopen of a continued job with no pane state opens that job worktree, fresh.
 
 ### Actions answer at once (issue #1194, 2026-10-14)
 
@@ -12379,12 +12391,13 @@ one press per cause where the hopper can move each item.
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
   tend its source refused (`tend_refused`); a parked job (`parked`); a job on a wait that names nothing it waits on (`wait_unnamed`,
-  "waiting on nothing recorded", issue #1245); a job stuck on its own command wait (`own_wait`); an
+  "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
   item left in PR open with no pull request to wait on (`pr_open_stale`, issue #1231).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
-  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed` (else 400;
-  `wait_unnamed`, Resume all, ends each such wait with a note that tells the job to go on or name what it waits on, issue #1245).
+  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed`, `stranded` (else 400;
+  `wait_unnamed`, Resume all, ends each such wait with a note that tells the job to go on or name what it waits on, issue #1245;
+  `stranded`, Wake all, ends each such wait as a person's End the wait, issue #1779).
   It reads the view at the press and runs the cause's action on each item, through the same path as its own button, with
   who pressed it, answered once each is checked, its give-back running after (issue #1194, "Actions answer at once"): the hand-off's resolution (Won't do with its card's why as the note, so the
   source is told why), the failure's Run again, Push it, Tend again. An item refused meanwhile is skipped and said with
@@ -22458,6 +22471,18 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   start the poll again. So a job is woken after a daemon start and after a seat's restart alike. Before, a wait on its own
   command whose pane was gone was nudged, then flagged stuck: now it is woken. A wait the hopper watches (a pull request, an
   item, a job, a question, a grant, watched items) is left to that watch.
+- **A stranded wait** (issue #1779). A wait the hopper watches is asked `paneLost` on the same tick too. Its agent session
+  ended (Claude exited and the pane shows a bare shell, or the pane is gone): the wait is marked `strandedAt`, not ended,
+  and the mark goes when its agent is seen again. Reported from a real run: two jobs waited on a template approval that
+  could not come, their panes at a shell prompt; nothing showed it, and the only way out was cancel and run again. What it
+  waits on still wakes it (its resume opens a new pane, below). Meanwhile it is stuck work, `stranded`, "Jobs on a wait
+  whose agent session ended": **Wake all** ends each such wait as a person's End the wait. The Dashboard's wait row shows
+  "stranded: its agent session ended". A person's end of a stranded wait tells the job that its session ended while it
+  waited, so what it waited for may not have happened: check it, wait again, or ask for something that can happen. The
+  operator CLI: `hopper failure stuck` lists the stuck causes, `hopper failure stuck <cause>` runs a cause's bulk action,
+  and `hopper job end-wait <id> [--note <text>]` ends one job's wait; `hopper queue list` and `hopper job show` give a stranded
+  wait's `strandedSince` (issue #1780's words for a wait). No event: the mark is on the wait, read by the views.
+  Tests: `test/integration/job-wait-stranded.test.ts`, `test/domain/stuck.test.ts`, `test/ui/job-wait-view.test.ts`.
 - **Resumed in a new pane.** A job resumed whose pane is gone (`resume`, herdr-claude) no longer fails `pane lost`: as for a
   pane herdr restored (issue #1465), what is left of the job is reaped, a new pane opens as at the start, Claude resumes the
   agent session, told `LOST_NOTE` and then its answer (`resumeLostPane`, `src/executors/herdr/restored.ts`). With no agent
@@ -26302,3 +26327,60 @@ online as a lane pod, a replaced or revoked key is refused, only the hash is kep
 hopper, by its URL, with a key from `hopper pool-key`, and checks the machine online and ready, no host path, no
 credential and no hopper restart. **Not done in CI:** a compose hopper with a cluster, and a job on the pod: no runner has
 both, and a job needs a job source. `docs/deploy.md` "Lane pods of another release" has the manual check.
+
+## The infrastructure topology (issue #1781, part 1, 2026-10-17)
+
+Goal: show **which services exist** across the user's AWS accounts and Kubernetes clusters, and **what is linked to
+what**, as one graph. A list of accounts or credentials is not enough. Read-only: nothing here writes to a cloud or a
+cluster.
+
+- **Topology sources.** A source is one AWS account in one region (`aws/<account>/<region>`) or one Kubernetes cluster
+  (`kubernetes/<cluster>`, the cluster node's id: an EKS cluster's ARN, so it joins the cluster AWS reported). A
+  read-only check reports one or more sources, each as a whole: `ok: true` with its `nodes` and `links`, or `ok: false`
+  with the `error` that kept it from being read (`sourceReportProblem`, `src/domain/topology.ts`). A report that is not
+  whole, or names a source twice, is refused whole (400, saying which and why): no half snapshot is kept.
+- **Last good snapshot.** Each source is a row (`infra_topology_sources`, tenant migration 80): its last good snapshot
+  with when it was read, and its last read. A good report replaces the snapshot; a failed one keeps it and says why
+  (`afterReport`). So one account or cluster out of reach loses nothing of the rest of the graph, and its nodes stay with
+  the time they were read.
+- **One graph** (`joinGraph`, pure). The snapshots joined: a node two sources name is one node (the EKS cluster). A link
+  names a node by its id (an ARN, `aws-account:<id>`, `k8s:<cluster>/<namespace>[/<kind>/<name>]`), or by an alias
+  another source's node holds (`dns:<host>`: a load balancer, a database endpoint; `url:<queue URL>`). A link to an alias
+  no node holds is dropped; a link to an id no source read gets a node of its own, **not seen**, when its id says what it
+  is (an IAM role of another account, an account): so cross-account links show.
+- **What AWS and Kubernetes answer, as nodes and links** (`src/domain/topology-discover.ts`, pure). The input is their
+  answers as they give them: the AWS CLI's JSON (the SDK's shapes) and `kubectl get -o json`'s items, so a check outside
+  the hopper and a discovery run inside it map the same way.
+  - AWS (`awsTopology`): the account; VPCs; EKS clusters (`in` their VPC); load balancers and RDS databases (`in` their
+    VPC, each with its DNS name as an alias); SQS queues (their ARN from the URL, the URL an alias); IAM roles, and each
+    AWS principal of a role's trust policy `can-assume` it (an account root as the account).
+  - Kubernetes (`kubeTopology`): namespaces `in` the cluster; deployments, services, ingresses and service accounts `in`
+    their namespace; a service `selects` each deployment its selector matches; a deployment `runs-as` its service account
+    and `uses` each AWS host name and queue URL its containers' environment names; a service or an ingress is behind
+    (`routes-to` from) the load balancer whose host name its status names; an ingress `routes-to` its backend services;
+    a service account `assumes` the IAM role its `eks.amazonaws.com/role-arn` annotation names (IRSA).
+- **Who reports.** `POST /ui/api/topology/report`, JSON `{ sources }`, 1 to 100, each at most 20000 nodes and 50000
+  links, least role operator; meant for an API token whose grant has the scope `topology:report` (area `topology`, in
+  the Infra changes section of the scope registry). The reporter is the API token's label, else who signed in. Each report
+  is `infra.topology_reported`: each source's key, `ok`, its counts or its error; never a node; on no job's timeline.
+- **Infra → Topology** (`ui/src/views/topology.tsx`, pure model `ui/src/model/topology.ts`). The graph, drawn with d3's
+  force layout (run to its end, so the same graph is drawn the same way), at most 400 nodes; filters by account, cluster,
+  region and kind; a click on a node shows its id, where it is, its attrs, the sources that found it, its neighbours with
+  the link in words, and the out-of-band changes whose target names it (its id, name, an alias or an attr, as `vpc-1`).
+  Each source says what its snapshot holds and when it was read; a stale one says why. Every node is also listed by kind.
+  `GET /api/topology` reads the graph; the page reads it once, with Try again on an error.
+
+**Not built in part 1** (left for the next parts of issue #1781):
+- Discovery inside the hopper with the read-only roles the vault mints, kept as a saga ("Sagas: work that survives a
+  stop"), on a schedule and on demand; it feeds the same report (`afterReport`) with the same mappers. It reads each AWS
+  account with the minting credential of that account (issue #1761) and the clusters cluster discovery finds (issue #1766).
+- A ready-made topology collector script, as `scripts/out-of-band-collector.ts` is for signals.
+- Links from the Infra changes feed (plans, applies, drift) to the nodes they touched; part 1 links a node to the
+  out-of-band changes that name it, on the node's details only.
+
+Tests: `test/domain/topology.test.ts` (the mappers, the join across AWS and Kubernetes, IRSA and trust across accounts,
+a failed source keeps its snapshot, refusals), `test/integration/topology.test.ts` (the real daemon and database: an API
+token reports a test account and a test cluster, the graph holds both and the links between them, a cluster out of reach
+keeps its snapshot, the event, the scope and the refusals), `test/ui/topology.test.ts` (filters, neighbours, changes of a
+node, source words, the layout), `test/ui/topology-view.test.ts` (the panel draws, a click shows a node, a stale source,
+an empty topology).

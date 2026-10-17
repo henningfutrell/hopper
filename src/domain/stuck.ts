@@ -1,6 +1,6 @@
 // Stuck work (issue #1010, design.md "Stuck work"): every item that waits on a person — an open hand-off, a failure, work
 // not pushed, a pull request the hopper gave up on, a parked job, a job stuck on its own wait, an item left in PR open
-// with no pull request to wait on (issue #1231), a job on a wait that names nothing it waits on (issue #1245) — in exactly one stuck cause, with its count, and one bulk action when the hopper takes it now for each item of the cause, else what a person
+// with no pull request to wait on (issue #1231), a job on a wait that names nothing it waits on (issue #1245), a job on a wait whose agent session ended (issue #1779) — in exactly one stuck cause, with its count, and one bulk action when the hopper takes it now for each item of the cause, else what a person
 // does. The Failures view shows them first; `POST /ui/api/failures/stuck/:cause` runs a cause's bulk action. Pure.
 // Re-exported from types.ts.
 import type { Allowed, FailureRecordView, HandoffResolutionAction, HandoffView } from './failures.ts';
@@ -11,13 +11,13 @@ import { waitsOnNothing } from './wait-on.ts';
 
 /** The causes, bulk ones first, in the order the view shows them. */
 export const STUCK_CAUSES = [
-  'continue', 'run_again', 'wont_do', 'retry', 'push', 'tend', 'wait_unnamed',
+  'continue', 'run_again', 'wont_do', 'retry', 'push', 'tend', 'wait_unnamed', 'stranded',
   'done_by_hand', 'taken_soon', 'kept_work', 'checks', 'tend_refused', 'parked', 'own_wait', 'pr_open_stale',
 ] as const;
 export type StuckCauseId = typeof STUCK_CAUSES[number];
 
 /** The causes with a bulk action. */
-export const STUCK_BULK = ['continue', 'run_again', 'wont_do', 'retry', 'push', 'tend', 'wait_unnamed'] as const satisfies readonly StuckCauseId[];
+export const STUCK_BULK = ['continue', 'run_again', 'wont_do', 'retry', 'push', 'tend', 'wait_unnamed', 'stranded'] as const satisfies readonly StuckCauseId[];
 export type StuckBulkCause = typeof STUCK_BULK[number];
 
 /**
@@ -48,6 +48,7 @@ const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> 
   push: { what: 'Jobs with work not pushed that can push it', act: 'Push it all' },
   tend: { what: 'Pull requests the hopper stopped tending', act: 'Tend again all' },
   wait_unnamed: { what: 'Jobs waiting on nothing recorded', act: 'Resume all' },
+  stranded: { what: 'Jobs on a wait whose agent session ended', act: 'Wake all' },
   done_by_hand: { what: 'Failed jobs with a ready PR or work done by hand', todo: 'Review and merge the PR, or do the work. Then press Done on its card in Needs a person.' },
   taken_soon: { what: 'Failed jobs the hopper runs again soon', todo: 'Nothing to do now. Look again in a minute.' },
   kept_work: { what: 'Jobs with work not pushed that cannot go on', todo: 'Open its work tree on its machine and push it, or press Discard in Work not pushed.' },
@@ -94,6 +95,7 @@ export function stuckOf(i: StuckInputs): StuckCause[] {
   for (const j of i.jobs) {
     if (j.status === 'parked') add('parked', j.id);
     else if (waitsOnNothing(j)) add('wait_unnamed', j.id);
+    else if (j.status === 'waiting_on' && j.wait?.strandedAt) add('stranded', j.id);
     else if (j.status === 'waiting_on' && (j.wait?.stuckAt || j.wait?.check?.overdueAt)) add('own_wait', j.id);
   }
   for (const id of i.prOpen) add('pr_open_stale', id);

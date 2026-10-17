@@ -7,7 +7,7 @@
 // once. Without the saga (no coordinator), the runner drives the same steps itself, in memory.
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { TaskCount } from '../domain/task-count.ts';
-import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
+import { keptTreeOf, keptWorkOf, WORK_EVENTS, type Job, type KeptTree, type LaneId, type MachineSnapshot } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
 import { repoJobRulesFor, withRepoJobRules } from '../job-rules/repo-rules.ts';
 import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
@@ -172,11 +172,15 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
     notes: runNotes(c, j.id),
     saveState: (state) => { if (!left(c, e)) store.jobs.update(j.id, { executorState: state }); },
     workTree: (path) => { if (!left(c, e)) store.jobs.update(j.id, { workTree: path }); },
+    // Push it (issue #1472): the job worktree its kept work names, for a job that recorded no state.
+    ...(j.continued && 'keptWork' in j.continued ? withKeptTree(keptTreeOf(keptWorkOf(store.events.recent(1, [...WORK_EVENTS], j.id))[0])) : {}),
     agentSession: (id) => { if (!left(c, e)) store.jobs.update(j.id, { agentSession: id }); },
     // A missed heartbeat of its machine (issue #1569): its checkpoint now, while the machine may still answer.
     missedHeartbeat: () => c.checkpoints?.soon(j.id),
   };
 }
+
+const withKeptTree = (keptTree: KeptTree | undefined): { keptTree?: KeptTree } => (keptTree ? { keptTree } : {});
 
 /** The job this step works on, when it is still the claimed or running job of this run's lane and attempt. */
 export function runJob(c: EngineContext, d: JobRunData): Job | undefined {

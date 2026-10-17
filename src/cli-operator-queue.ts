@@ -13,11 +13,11 @@ export const QUEUE_USAGE = `  hopper queue list                                 
 
 /**
  * What a job on its own wait waits on, in words (issue #1780): `waitsOn`, its typed `wait.on`; `waitsFor`, its `for:` text;
- * `waitingSince`. None for any other job.
+ * `waitingSince`; `strandedSince`, when its agent session ended (issue #1779). None for any other job.
  */
 export function ownWaitOf(job: Job): Record<string, string> {
   const w = job.status === 'waiting_on' ? job.wait : undefined;
-  return w ? { waitsOn: w.on ? waitOnLabel(w.on) : 'nothing recorded', waitsFor: w.for, waitingSince: w.since } : {};
+  return w ? { waitsOn: w.on ? waitOnLabel(w.on) : 'nothing recorded', waitsFor: w.for, waitingSince: w.since, ...(w.strandedAt ? { strandedSince: w.strandedAt } : {}) } : {};
 }
 
 /** A waiting job in short (issue #874): what it is, where it stands, and why it is held (`holdReason`), waits (`waitReason`) or what it waits on. */

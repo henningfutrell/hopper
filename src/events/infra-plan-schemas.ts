@@ -3,7 +3,7 @@
 // watchers an admin named (part 4). On the job's
 // timeline. Part of EVENT_SCHEMAS (schemas.ts). Never the plan's text or file.
 // Out-of-band changes (issue #871, design.md "Out-of-band changes"): a change a job's check reported, a person's mark on
-// it, the controller identities changed. Never the signal's detail. A person's confirmation asked for (issue #909, design.md
+// it, the controller identities changed. A topology report (issue #1781): its sources' counts, never their nodes. Never the signal's detail. A person's confirmation asked for (issue #909, design.md
 // "A person confirms what an agent asks"): an API token's approval of a high-risk plan or a write profile, not done.
 import { z } from 'zod';
 import { ASSET_KINDS, OPERATIONS } from '../domain/access.ts';
@@ -36,6 +36,11 @@ export const INFRA_PLAN_EVENT_SCHEMAS = {
     change: z.string(), source: z.enum(SIGNAL_SOURCES), target: z.string(), what: z.string(), mark: z.enum(MARKS), reason: z.string().optional(), by: z.string(),
   }),
   'infra.controllers_changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  // The infrastructure topology (issue #1781): each source a read-only check reported, with its counts or why it failed; never a node.
+  'infra.topology_reported': strict({
+    reporter: z.string(),
+    sources: z.array(strict({ key: z.string(), ok: z.boolean(), error: z.string().optional(), nodes: z.number().int().min(0).optional(), links: z.number().int().min(0).optional() })),
+  }),
   'approval.confirmation_asked': strict({
     kind: z.enum(CONFIRMATION_KINDS), ref: z.string(), words: z.string(), asker: z.string(),
     plan: z.string().optional(), template: z.string().optional(), operation: z.enum(OPERATIONS).optional(), asset: asset.optional(),

@@ -39,6 +39,8 @@ export interface ExecutionContext {
   saveState(state: Record<string, unknown>): void;
   /** Report the job's work tree (its cwd on the lane's machine) once resolved: `job.workTree`, shown on its lane. */
   workTree(path: string): void;
+  /** A job Push it continued (issue #1472): the job worktree its kept work names, where it reopens when it recorded no state. */
+  keptTree?: import('./kept-work.ts').KeptTree;
   /** Report the agent session the job's agent runs in, once its agent is up (`job.agentSession`, issue #501): a parked job resumes it. */
   agentSession?(id: string): void;
   /**
