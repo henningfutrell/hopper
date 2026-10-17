@@ -15408,6 +15408,14 @@ takes nothing new says why too — `sync pass <name> (nothing new taken: <the se
 source: it is an admin's own app, with its own id, slug and key (`help/github-app-setup.md`); without them, take the issues
 through the GitHub account source.
 
+**A job is told why too** (issue #1279, `src/github-proxy/api.ts`). A job's `pr status` and `pr wait` read on GitHub
+take a refused check-runs read (403, 404, not a rate limit) as `unknown` with `checksWhy` — the connected GitHub account,
+the permission it lacks, and the fix (`checksLack`, the fallback's own words) —; one answered from the hopper's records
+carries the card's `checksWhy`. `pr checks` reads the check runs and the statuses side by side: one refused, it answers the
+other with `unreadable` and `checksWhy`; both refused, it fails with GitHub's message and `checksWhy`. Every other
+"Resource not accessible by integration" a job's request gets says what the app needs and the fix (`explained`, as below).
+A `pr wait` cannot wait on checks it may not read: it answers at once, and the help says to pass `checksWhy` to a person.
+
 **Checks read problem** (issue #1244, part 2). A refusal marks the checks `checksRefused` (on `OpenPullRequest`,
 `PullRequestState` and `PullRequestSeen`); a read that failed otherwise does not. The Pull requests list
 (`src/domain/pull-request-list.ts`) makes one **checks read problem** per repository of its open cards that wait on
