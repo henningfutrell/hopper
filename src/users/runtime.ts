@@ -384,12 +384,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     store, clock, logger, sweepMs: config.tickMs, lease: lease('failures'),
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
-    resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
+    resumable: (job) => engine.resumable(job), reopens: (job) => engine.reopens(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
     // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source; Own PR unfinished (issue #1265): the step that finishes it.
     workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs, unfinishedPullRequest: async (job) => sourceOf(job)?.unfinishedPullRequest?.(job),
     trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
-  sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
+  sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), reopens: (job) => engine.reopens(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   // Each job one trace (issue #1486, design.md "Telemetry"): built from its events; a no-op while telemetry is off.
   const stopFailureLog = logFailures(store), jobTraces = traceJobs({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) }), stopOutcomes = recordOutcomes({ subscribe: (l) => store.events.subscribe(l) });

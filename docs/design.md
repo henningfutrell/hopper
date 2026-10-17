@@ -12186,12 +12186,21 @@ hopper push the work from any state with no click. This part does it for the cas
   "Push work a finished job did not push"). Off, the work waits for a person as before. A settings record saved before the
   field existed reads it on, field by field (`failureSettingsOf`).
 
-Left of issue #1472 part 2: a job whose session cannot resume (its work needs a new job in the kept work tree), and a push
-to a repository other than the job's own (refused, issue #1470).
+- **A fresh session when none was recorded** (`Engine.reopens`). Push it, by a person or by itself, takes a job whose
+  executor parks and whose pane state is known, whether or not its agent session was recorded (`Engine.resumable` asks
+  for both). With no session, herdr-claude reopens the job in its kept work tree as a parked job's fresh start does
+  (issue #530): a new pane, a new `--session-id`, then its task and `pushBrief` with `fresh`, which says it has none of
+  the earlier session's history. Through an open hand-off only when its own session resumes: else the hand-off's
+  Continue runs a new job, away from the kept work, so Push it is refused with why.
+
+Left of issue #1472 part 2: a job whose executor cannot park (a print-mode agent's), or whose pane state was never
+recorded (its work needs a new job in the kept work tree), and a push to a repository other than the job's own (refused,
+issue #1470).
 
 **Verification:** `test/integration/auto-push.test.ts` (a finished job pushed by itself once, with `auto`; not again when
 its work is kept again; `auto.push` off; a failed job not pushed by itself), `test/integration/kept-work.test.ts` (a
-person's Push it, with `auto.push` off).
+person's Push it, with `auto.push` off), and in `auto-push.test.ts` a finished job with no recorded agent session pushed in
+a fresh session in its kept work tree.
 
 ### Actions answer at once (issue #1194, 2026-10-14)
 

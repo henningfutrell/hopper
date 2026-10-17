@@ -8,7 +8,7 @@ import type { UserStore } from '../domain/ports.ts';
 import { DEFAULT_YOLO_MODE, following, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { HANDOFF_WAIT, prOpenStuck } from '../domain/work-items.ts';
 import { handoffCard, takenCard } from './card.ts';
-import { keptWorkViews } from './kept-work.ts';
+import { keptWorkViews, type Sessions } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
@@ -161,7 +161,7 @@ function prOpenStale(store: Reads, now: Date): string[] {
   return store.workItems.list({ state: ['pr_open'] }).filter((i) => prOpenStuck(i, follows(i.jobId), now.getTime())).map((i) => i.jobId ?? i.key);
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts'>, settings: FailureSettings, now: Date, sessions: Sessions, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
@@ -171,8 +171,8 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 
   const tag = (jobId: string) => jobPriorityTag(store.jobs, saved, jobId);
   const tldr = tldrSettings(store);
   const recordView = (r: FailureRecord) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r, takesBack) } });
-  const shownHandoffs = highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable, takesBack), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true);
-  const keptWork = keptWorkViews(store, resumable, takesBack, discarding);
+  const shownHandoffs = highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), sessions.resumable, takesBack), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true);
+  const keptWork = keptWorkViews(store, sessions, takesBack, discarding);
   const recent = store.failures.list({ limit: SCAN, notOutcome: [...SETTLED, ...RAN_AGAIN] }).filter((r) => endedAt(store, r) === undefined).slice(0, RECENT).map(recordView);
   return {
     now: now.toISOString(),
