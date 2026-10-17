@@ -25,7 +25,7 @@ function fakeDaemon() {
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
     '/api/usage': () => ({ readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }), '/api/accounts': () => ({ accounts: [] }),
-    '/api/connected-accounts': () => ({ accounts: [{ provider: 'github', via: 'device', state: 'connected', account: 'connected-login', connectedAt: T, jobRepositories: ['acme/app'] }] }),
+    '/api/connected-accounts': () => ({ accounts: [{ provider: 'github', key: 'github', via: 'device', state: 'connected', account: 'connected-login', connectedAt: T, jobRepositories: ['acme/app'] }] }),
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string) => {

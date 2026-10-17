@@ -22,17 +22,19 @@ function fakeDaemon(over: Record<string, unknown> = {}) {
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: SOURCES },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
-    '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'not-connected' }] },
-    '/ui/api/connected-accounts': { provider: 'github', via: 'the hopper\'s app', state: 'waiting', userCode: 'WDJB-MJHT', verificationUri: 'https://github.com/login/device', expiresAt: '2099-01-01T00:00:00.000Z' },
+    '/api/connected-accounts': { accounts: [{ provider: 'github', key: 'github', via: 'the hopper\'s app', state: 'not-connected' }] },
+    '/ui/api/connected-accounts': { provider: 'github', key: 'github', via: 'the hopper\'s app', state: 'waiting', userCode: 'WDJB-MJHT', verificationUri: 'https://github.com/login/device', expiresAt: '2099-01-01T00:00:00.000Z' },
     ...over,
   };
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init?: RequestInit) => {
     const path = String(input).split('?')[0]!;
-    // Connecting starts a device code: the daemon's GET answers it from then on.
+    // Connecting starts a device code: the daemon's GET answers it from then on. An account of a new key (issue #1448: one
+    // added) joins the list.
     if (init?.method === 'POST' && path === '/ui/api/connected-accounts') {
-      const accounts = (routes['/api/connected-accounts'] as { accounts: { provider: string }[] }).accounts;
-      routes['/api/connected-accounts'] = { accounts: accounts.map((a) => (a.provider === 'github' ? routes[path] : a)) };
+      const accounts = (routes['/api/connected-accounts'] as { accounts: { key: string }[] }).accounts;
+      const answer = routes[path] as { key: string; state: string };
+      routes['/api/connected-accounts'] = { accounts: accounts.some((a) => a.key === answer.key) ? accounts.map((a) => (a.key === answer.key ? answer : a)) : answer.state === 'connected' ? [...accounts, answer] : accounts };
     }
     if (path === '/ui/api/session') {
       const s = routes[path] ?? LOGIN_CODE_SESSION;

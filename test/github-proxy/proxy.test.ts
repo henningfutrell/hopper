@@ -247,3 +247,40 @@ describe('a job acts with its own user\'s GitHub connection (issue #1380)', () =
     expect(sent).toEqual([]);
   });
 });
+
+// Issue #1448: one user with two GitHub accounts. A request acts with the account whose job repositories hold the repository
+// it names; for any other repository (a repo query, its fork), the account of the job's own repository.
+describe('a job acts with the account of its repository (issue #1448)', () => {
+  const key = mintLinkKey().privateKey;
+  const recorded: NewEvent[] = [];
+  const jobOn = (repo: string) => ({ id: `job-${repo.replace('/', '-')}`, status: 'running', laneId: 'm/lane-1', source: { source: 's', kind: 'k', key: 'x', repo } } as Job);
+  const jobs = [jobOn('home/tools'), jobOn('acme/api')];
+  const user: ProxyUser = { id: 'u1', holds: (p) => holdsProxyToken(key, p), job: (j) => jobs.find((x) => x.id === j), machineOf: () => 'm', record: (e) => { recorded.push(e); } };
+  const accounts: Record<string, { login: string; repos: string[] }> = { github: { login: 'ada-home', repos: ['home/tools'] }, 'github-2': { login: 'ada-work', repos: ['acme/api', 'acme/web'] } };
+  const keyFor = (repo?: string) => Object.keys(accounts).find((k) => repo !== undefined && accounts[k]!.repos.some((r) => r.toLowerCase() === repo.toLowerCase())) ?? 'github';
+  const sent: { as: string; op: string; repo: string }[] = [];
+  const connection: ProxyConnection = {
+    jobRepositories: () => Object.values(accounts).flatMap((a) => a.repos), contribution: () => false,
+    login: (repo) => accounts[keyFor(repo)]!.login,
+    api: (repo) => ({
+      perform: async (req) => { sent.push({ as: accounts[keyFor(repo)]!.login, op: req.op, repo: req.repo }); return { number: 1, url: `https://github.example/${req.repo}/issues/1` }; },
+      repo: async () => { throw new Error('not read'); }, head: async () => { throw new Error('not read'); }, pullRequestBase: async () => { throw new Error('not read'); },
+    }),
+  };
+  const proxy = createGitHubProxy({ user: (id) => (id === 'u1' ? user : undefined), connection: () => connection, limiter: createProxyLimiter({ now: () => new Date() }), log: () => {} });
+  const ask = (repo: string, body: Record<string, unknown>) => proxy.handle(`Bearer ${proxyToken(key, 'u1', `job-${repo.replace('/', '-')}`)}`, body);
+
+  it('a job of the further account\'s repository acts as that account, and its events name it', async () => {
+    expect(await ask('acme/api', { op: 'issue.comment', repo: 'acme/api', number: 1, body: 'b' })).toMatchObject({ status: 200, body: { as: 'ada-work' } });
+    expect(await ask('home/tools', { op: 'issue.comment', repo: 'home/tools', number: 1, body: 'b' })).toMatchObject({ status: 200, body: { as: 'ada-home' } });
+    expect(sent).toEqual([{ as: 'ada-work', op: 'issue.comment', repo: 'acme/api' }, { as: 'ada-home', op: 'issue.comment', repo: 'home/tools' }]);
+    expect(recorded.map((e) => [e.jobId, e.data.as])).toEqual([['job-acme-api', 'ada-work'], ['job-home-tools', 'ada-home']]);
+  });
+
+  it('another job repository acts as its own account; a repository of no account as the job\'s own repository\'s', async () => {
+    sent.length = 0;
+    await ask('acme/api', { op: 'issue.create', repo: 'home/tools', title: 't', body: 'b' });
+    await ask('acme/api', { op: 'issue.view', repo: 'else/where', number: 3 });
+    expect(sent).toEqual([{ as: 'ada-home', op: 'issue.create', repo: 'home/tools' }, { as: 'ada-work', op: 'issue.view', repo: 'else/where' }]);
+  });
+});
