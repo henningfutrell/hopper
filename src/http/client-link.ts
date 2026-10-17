@@ -3,7 +3,8 @@
 //
 //   POST /client/join      a one-time join code (minted through an admin's UI session, or the operator CLI)
 //                          and the machine's key: the machine is added as a client target. The code is
-//                          what authorizes the write; it is spent by it.. Or the lane pool key (issue #1284), never
+//                          what authorizes the write; it is spent by it, and that machine's join sent again
+//                          is answered as the first until the code expires (issue #1628). Or the lane pool key (issue #1284), never
 //                          spent: a lane pod joins as the first user's machine, under its own name.
 //   POST /client/leave     a machine's say that it leaves (issue #1284), signed with its client token over its
 //                          user and machine key: it takes no new job; a lane pod with no job left is retired.
@@ -83,8 +84,8 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
   app.post(JOIN_PATH, async (req) => {
     const b = parseWith(joinBody, req.body);
     const pool = isLanePoolKey(o.poolKey?.(), b.code);
-    const taken: ({ userId: string } & JoinCodePlace) | undefined = pool ? { userId: LANE_POOL_USER } : useJoinCode(o.instance, o.clock, b.code);
-    if (taken === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');
+    const taken: ({ userId: string } & JoinCodePlace) | undefined = pool ? { userId: LANE_POOL_USER } : useJoinCode(o.instance, o.clock, b.code, b.key);
+    if (taken === undefined) throw new HttpError(403, 'the join code is not valid: another machine used it, it expired, or it was never minted. Add machine shows a fresh line');
     const { userId, template, pod } = taken;
     const tenant = o.tenants.user(userId);
     if (!tenant && pool) throw new HttpError(409, 'the lane pods are the machines of the first person to sign in, and nobody has signed in yet: sign in, and the pod joins at its next try');

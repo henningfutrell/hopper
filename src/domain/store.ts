@@ -305,8 +305,12 @@ export interface JoinCodePlace { template?: string; pod?: string }
 
 export interface JoinCodeRepository {
   create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
-  /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
-  take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
+  /**
+   * The code's user (and what it names), when it exists and `expiresAt > now`: the code is spent by `machineKey`, and
+   * taken again by that key only, until it expires (issue #1628: a join whose answer was lost is sent again). Else
+   * undefined. Expired codes are deleted first.
+   */
+  take(codeHash: string, now: string, machineKey: string): ({ userId: string } & JoinCodePlace) | undefined;
 }
 
 /** The sandbox records (issue #708, instance migration 34): one per sandbox box an older build launched, by id; names are unique. */

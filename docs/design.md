@@ -4843,8 +4843,8 @@ any machine. Never an agent box's name (`hopper-box-<agent>`): the line must not
 | A sandbox box | `<podman\|docker> run -d --name hopper-sandbox-claude --restart unless-stopped --network hopper_default --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v hopper-sandbox-claude-home:/home/agent -e HOPPER_CLIENT_NAME=hopper-sandbox-claude -e HOPPER_JOIN='http://hopper:<port>#<code>' ghcr.io/henningfutrell/hopper:box-claude` | the computer the hopper runs on; a hopper installed on the host gives `--network host` and `http://127.0.0.1:<port>` |
 
 **Join code.** `POST /ui/api/machines/join` (admin) mints one for the session's user: 32 random bytes,
-hex, kept only as its SHA-256 in the instance's `join_codes` (migration 25), for 10 minutes, taken once
-— the login code's shape (`src/machines/join-code.ts`). `hopper join-code [--user <id>]` mints one for a
+hex, kept only as its SHA-256 in the instance's `join_codes` (migration 25), for 10 minutes, taken by one
+machine (issue #1628: its join sent again is answered as the first) — the login code's shape (`src/machines/join-code.ts`). `hopper join-code [--user <id>]` mints one for a
 script (the bulk form, #310's option C). Owner question #312 left open — one code for many machines — is
 answered *one*: a script asks for one per machine.
 
@@ -19648,7 +19648,7 @@ nothing and worked to its expiry (10 minutes), and an AWS session to its own (15
   (`bindTo`). The minter (`minter.ts`) makes it, empty and labelled `io.hopper.mint`, in the service account's namespace,
   then asks for the token with `boundObjectRef` to it. When the cluster refuses the token, the Secret is deleted at once.
   The mint's event records the binding (`bound` on `vault.minted` and `vault.check_minted`), and the vault holds it for
-  the sandbox.
+  the sandbox. Since issue #1628 the vault holds and records it (`vault.binding_named`) before the minter runs.
 - **The sandbox's end deletes it.** A need step releases its sandbox's bindings (`releaseMints`) after its box is burned,
   whatever the outcome — it succeeded, failed, timed out, was cancelled, or its run threw —, and also when a later mint
   of the step is refused or the job drops the step before it runs. The check pass releases a check box's bindings after
@@ -25199,3 +25199,47 @@ second start: one tunnel and one DNS record (one credential and one domain), rem
 instead: none, remote access off, no token. A change on the next start ends the mint a stop left first. A saga the settings
 do not ask for undoes itself. `test/remote-access/providers.test.ts`: a mint tried again makes nothing twice; `find` names
 what a mint cut short made.
+
+## Idempotent client calls (issue #1628, 2026-10-17)
+
+**The problem.** Three calls of the hopper's to a machine, or to a minter, were not safe to send again:
+- A join code was deleted when `POST /client/join` took it. When the answer was lost, the machine sent the join again,
+  and got 403: it could not join.
+- A create through the client (a box through `POST /runtime`, a herdr tab through `POST /herdr`) had no key. A create
+  sent again is signed with a new nonce, so the client ran it again: a second pane, or a refusal of the box's name.
+- A need box's or check box's mint binding was held in memory only after the minter made its Secret, and was recorded
+  only in the mint's event. A hopper that stopped between the two left a Secret that the reconcile pass never saw.
+
+**The change.**
+- **The join is idempotent on (code, machine key).** `join_codes` gives a spent code to `join_codes_spent` (instance
+  migration 48) with the machine key that spent it, until the code expires. A join with that code and that key is
+  answered as the first: the hopper already answers a key that joined with its machine, unchanged. A join with another
+  key is refused, as before. A build before this one reads only `join_codes`, so it never takes a spent code again.
+- **A create through the client is a keyed create** (`src/client/once.ts`). The key is the name the call makes (the
+  box's container name; the tab's workspace and label) and a SHA-256 of the whole call. The client keeps the first
+  answer that created something for 10 minutes, and answers a call with that key with it. A second call while the first
+  runs waits for it. A create that failed or was refused is not kept.
+- **The mint binding is recorded before the minter.** The vault holds the binding in memory, then appends
+  `vault.binding_named` (`box`, `job`, `credential`, `namespace`, `secret`), then asks the minter. The reconcile pass reads
+  `vault.binding_named` with the mints' events. A binding a running sandbox holds is left to it, as before.
+
+**Decisions:**
+- **A separate table for spent codes, not a column.** A column would let a build before this one take a spent code
+  again, with any key, until it expires. The separate table keeps a rollback as strict as before.
+- **The key includes a hash of the whole call.** A different create under the same name is a different call: the client
+  checks and runs it, and the runtime refuses a name in use. Only the same call gets the first answer, so a cached answer
+  never skips the client's checks.
+- **The keys are in the client's memory.** A client that starts again forgets them. Then a box create sent again is
+  refused by the runtime (the name is in use), and a tab create sent again is found by its **pane key** (issue #1569). A
+  record on the machine's disk would cost more than it saves.
+- **An intent event, not a list of the cluster's Secrets.** The issue offered both. Listing Secrets by the
+  `io.hopper.mint` label needs a new call on every minting credential, here and in the vault's own container. The event
+  needs no new call, and the reconcile pass already reads events.
+- **The hold comes before the event.** A reconcile pass that runs while the minter works sees the event, and also the
+  hold, so it leaves the Secret to its sandbox. When the minter refuses, the sandbox's end releases the binding; the
+  minter's delete of a Secret that is not there is no error.
+
+**Verification.** `test/integration/machine-join.test.ts` (a join sent again with the same key: one machine; another
+key refused), `test/client/keyed-creates.test.ts` (a box create and a tab create sent again: one container, one tab; a
+failed create runs again), `test/vault/mint-bindings.test.ts` (a stop while the minter makes the Secret: the next start's
+reconcile pass deletes that one Secret, once).

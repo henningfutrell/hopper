@@ -98,9 +98,10 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events'>; acc
     const { mintsFor } = target;
     const credential = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
     if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision.id);
+    // Held and recorded before the minter makes the Secret (issue #1628), as a need step's.
+    if (target.kind === 'kube' && target.bindTo) o.bindings?.named(check, { credential: credential.name, namespace: target.namespace, secret: target.bindTo });
     const made = await from(credential.name, target, CHECK_MINT_ID);
     if ('refused' in made) return refuse(made.refused, decision.id);
-    if (made.bound) o.bindings?.hold(check, { credential: credential.name, ...made.bound });
     events.append({
       type: 'vault.check_minted',
       data: { kind, operation: profile.operation, asset: profile.asset, template, check, credential: credential.name, decision: decision.id, expiresAt: expiryOf(made.minted), ...(made.bound ? { bound: made.bound } : {}) },
