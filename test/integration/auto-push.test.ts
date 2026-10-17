@@ -71,6 +71,29 @@ describe('Push it by itself (issue #1472)', () => {
     expect(await continuedOf(a, job.id)).toEqual([]);
   });
 
+  it('a finished job whose agent session was not recorded goes on in a fresh session in its kept work tree', { timeout: 30_000 }, async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE, DONE], reapKeeps: [KEPT] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    await a.ui<FailureSettings>('/ui/api/failures/settings', { auto: { push: false } }, { token });
+    const job = await a.pull({}, herdrItem);
+    await a.waitForStatus(job.id, 'finished', 8000);
+    await waitFor(async () => (await failuresOf(a)).keptWork.find((k) => k.jobId === job.id), { what: 'its work kept' });
+    // As a job whose session never came up to be recorded: its pane state is known, its agent session is not.
+    a.user().store.jobs.update(job.id, { agentSession: undefined });
+    expect((await failuresOf(a)).keptWork.find((k) => k.jobId === job.id)).toMatchObject({ actions: { push: { ok: true } } });
+
+    await a.ui<FailureSettings>('/ui/api/failures/settings', { auto: { push: true } }, { token });
+    await waitFor(() => herdr.prompts.length === 2, { what: 'the push brief sent by itself' });
+    expect(herdr.agentStarts[1]!.args).not.toContain('--resume');
+    const told = herdr.prompts[1]!.text;
+    expect(told).toContain('Paint the shed');
+    expect(told).toContain('was not pushed');
+    expect(told).toContain('fresh session');
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(await continuedOf(a, job.id)).toEqual([expect.objectContaining({ data: { keptWork: true, auto: true } })]);
+  });
+
   it('a failed job whose work was kept is not pushed by itself: its failure goes to the assessor and a person', { timeout: 30_000 }, async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [FAIL, DONE], reapKeeps: [KEPT] });
     const a = await boot(herdr);
