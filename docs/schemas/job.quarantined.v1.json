@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "was": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    }
+  },
+  "required": [
+    "person",
+    "via"
+  ],
+  "additionalProperties": false
+}

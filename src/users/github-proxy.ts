@@ -173,7 +173,12 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
   const user: ProxyUser = {
     id: o.user.id,
     // A job moved off a lost machine (issue #1569) holds the token of its newest move only: the agent left there is refused.
-    holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts, o.store.jobs.get(parts.jobId)?.movedAway ?? 0),
+    // Gate 2's first step (issue #655): a job quarantined, or whose trust stamp does not verify, opens no door with it.
+    holds: (parts) => {
+      if (parts.userId !== o.user.id) return false;
+      const job = o.store.jobs.get(parts.jobId);
+      return holdsProxyToken(o.linkPrivateKey, parts, job?.movedAway ?? 0) && (job === undefined || o.store.jobs.opensDoors(job));
+    },
     job: (id) => o.store.jobs.get(id),
     machineOf: (job) => o.store.lanes.list().find((l) => l.id === job.laneId)?.machineId,
     record: (event) => { o.store.events.append(event); },

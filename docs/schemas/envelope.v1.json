@@ -87,6 +87,8 @@
         "job.note_added",
         "job.note_delivered",
         "job.note_carried",
+        "job.quarantined",
+        "job.unquarantined",
         "terminal.opened",
         "terminal.typed",
         "source.stalled",

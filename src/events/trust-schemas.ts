@@ -1,0 +1,13 @@
+// Payload schemas of a job's trust stamp (issue #655, design.md "Trust stamps"), split from schemas.ts for its line
+// budget: a person quarantined a job, or lifted its quarantine.
+import { z } from 'zod';
+import { ACTION_VIAS } from '../domain/types.ts';
+import { TRUST_LEVELS } from '../domain/trust-stamp.ts';
+
+const strict = z.strictObject;
+const acting = { person: z.string(), via: z.enum(ACTION_VIAS) };
+
+export const TRUST_EVENT_SCHEMAS = {
+  'job.quarantined': strict({ was: z.enum(TRUST_LEVELS).optional(), ...acting }),
+  'job.unquarantined': strict({ level: z.enum(TRUST_LEVELS), ...acting }),
+};

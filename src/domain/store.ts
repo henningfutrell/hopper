@@ -41,17 +41,18 @@ export interface JobRepository {
    * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`.
    */
   getMany(ids: readonly JobId[]): Map<JobId, Job>; newestOfItems(keys: readonly string[]): Map<string, Job>;
-  /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
-  update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt' | 'stamp'>>): Job;
+  /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */ update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt' | 'stamp'>>): Job;
   /** Replace the spec of a job that has not started (issue #375); stamped again at its verified level or lower (issue #655). Bumps updatedAt. */
   respecify(id: JobId, spec: JobSpec): Job;
   /**
    * Trust stamps (issue #655). `useStampKey`: the user's stamp key, given once at the start: from then each job made is
    * stamped; it stamps, by the rules, each job that has not ended and has no stamp (the backfill), and answers their ids.
    * `stampHold`: why the job's stamp holds it; undefined: it may start, or the store has no stamp key. `restamp`: the job
-   * stamped again by the rules, for an origin judged after it was made (issue #652, the backfill).
+   * stamped again by the rules, for an origin judged after it was made (issue #652, the backfill); a quarantine stays.
+   * Quarantine: `quarantine` stamps the job `quarantined`, its level before kept; `liftQuarantine` gives that level back
+   * (the rules' with none). `trustLevel`: its verified level. `opensDoors`: its proxy token opens the hopper's doors.
    */
-  useStampKey(key: Buffer): string[]; stampHold(job: Job): string | undefined; restamp(id: JobId): Job;
+  useStampKey(key: Buffer): string[]; stampHold(job: Job): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean;
 }
 
 export interface LaneRepository {

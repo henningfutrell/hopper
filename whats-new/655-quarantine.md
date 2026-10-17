@@ -1,0 +1,1 @@
+- You can quarantine a job on its page: it waits, and it can no longer reach GitHub, secrets or tools through the hopper until you lift the quarantine.

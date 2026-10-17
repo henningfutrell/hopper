@@ -1,6 +1,6 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
-import { childLevel, lowest, ruleCeiling, signStamp, stampHold, verifiedLevel, type StampedBy } from '../domain/trust-stamp.ts';
+import { childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampHold, verifiedLevel, type StampedBy } from '../domain/trust-stamp.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
 import type { Row } from './db.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
@@ -156,10 +156,30 @@ export function createJobRepository(c: StoreContext): JobRepository {
     },
     restamp(id) {
       const key = stampKey;
-      return key ? write(id, (cur) => ({ ...cur, stamp: stampByRules(key, cur, 'intake') })) : get(id)!;
+      if (!key) return get(id)!;
+      return write(id, (cur) => {
+        const stamp = stampByRules(key, cur, 'intake');
+        // A quarantine stays: the rules' level is the one its lift gives back (issue #655, part 2).
+        if (verifiedLevel(key, cur) !== 'quarantined') return { ...cur, stamp };
+        return { ...cur, stamp: quarantinedStamp(key, { ...cur, stamp }, c.clock.now().toISOString()) };
+      });
     },
     stampHold(job) {
       return stampKey ? stampHold(stampKey, job) : undefined;
+    },
+    quarantine(id) {
+      const key = stampKey;
+      return key ? write(id, (cur) => ({ ...cur, stamp: quarantinedStamp(key, cur, c.clock.now().toISOString()) })) : get(id)!;
+    },
+    liftQuarantine(id) {
+      const key = stampKey;
+      return key ? write(id, (cur) => ({ ...cur, stamp: liftedStamp(key, cur, c.clock.now().toISOString()) })) : get(id)!;
+    },
+    trustLevel(job) {
+      return stampKey ? verifiedLevel(stampKey, job) : undefined;
+    },
+    opensDoors(job) {
+      return stampKey ? opensDoors(stampKey, job) : true;
     },
   };
 }
