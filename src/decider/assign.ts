@@ -213,13 +213,15 @@ export function cleanupHold(job: Job, due: readonly CleanupDue[]): string | unde
  * sorter and the decider agree on one notion.
  */
 export function effectivePriority(job: Job, policy: DeciderPolicy): number {
+  // A preempted job (issue #1525) waits at its own priority: a boost would take the lane back from the job that preempted it.
+  if (job.preempted !== undefined) return job.priority;
   if (job.pendingAnswer !== undefined) return job.priority + policy.resumeBoost;
   return job.priority + routerVerdict(job, policy.routerCheapBoost).boost;
 }
 
 /**
  * Step 6: by the queue order when there is one — the jobs it names first, in its order; the rest
- * after them — and otherwise (and among the rest) priority desc, createdAt asc, id.
+ * after them — and otherwise (and among the rest) priority desc, a preempted job first (issue #1525), createdAt asc, id.
  */
 export function order(candidates: Candidate[], queueOrder?: readonly JobId[]): Candidate[] {
   const rank = new Map<JobId, number>();
@@ -235,6 +237,7 @@ export function order(candidates: Candidate[], queueOrder?: readonly JobId[]): C
   return [...candidates].sort((a, b) =>
     byRank(a, b)
     || b.effectivePriority - a.effectivePriority
+    || Number(b.job.preempted !== undefined) - Number(a.job.preempted !== undefined)
     || a.job.createdAt.localeCompare(b.job.createdAt)
     || a.job.id.localeCompare(b.job.id));
 }
@@ -295,7 +298,7 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
 }
 
 /** State with whether the credential check holds the machine (`credentialHolds`, issue #1467). */
-interface MachineStateWithCredentialHold extends MachineState {
+export interface MachineStateWithCredentialHold extends MachineState {
   credentialHeld: boolean;
 }
 
@@ -315,7 +318,8 @@ function holdFor(states: MachineStateWithCredentialHold[], ahead: Job[], job: Jo
   for (const s of states) s.slots.wanted = ahead.filter((h) => eligible(s, h) && roomFor(s, h.spec.executor) > 0).length;
 }
 
-const fitsLane = (s: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
+export const fitsLane = (s: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
+
 
 /**
  * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible
