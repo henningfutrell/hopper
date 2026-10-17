@@ -110,7 +110,7 @@ describe('a cluster that signs in through EKS, and its mint test (issue #854)', 
     const answer = JSON.parse(r.out) as Record<string, unknown>;
     expect(answer).toEqual({
       kind: 'kube', asset: { kind: 'cluster', name: 'uat' }, credential: 'EKS_UAT', server: kube.url, expiresAt: expect.any(String),
-      roleArn: ROLE, sessionName: 'p2zapwin', user: KUBE_USER, namespaces: KUBE_NAMESPACES,
+      roleArn: ROLE, account: '123456789012', sessionName: 'p2zapwin', user: KUBE_USER, namespaces: KUBE_NAMESPACES,
     });
     expect(Date.parse(answer.expiresAt as string) - Date.now()).toBeLessThanOrEqual(14 * 60_000);
 

@@ -52,6 +52,8 @@ const clean: Pod[] = [
   { metadata: { namespace: 'hopper', name: 'hopper-6f9d' }, spec: { containers: [{ name: 'hopper', image: 'ghcr.io/henningfutrell/hopper:dev', env: [{ name: 'HOPPER_SANDBOX_RUNTIME', value: 'kubernetes' }] }], initContainers: [{ name: 'wait-for-postgres', image: 'postgres:17-alpine' }] } },
   { metadata: { namespace: 'hopper', name: 'hopper-openfga-1a' }, spec: { containers: [{ name: 'openfga', image: 'docker.io/openfga/openfga:v1.22.0' }] } },
   { metadata: { namespace: 'hopper', name: 'hopper-lanes-0' }, spec: { containers: [{ name: 'lane', image: 'ghcr.io/henningfutrell/hopper:box-claude-dev' }], initContainers: [{ name: 'join', image: 'ghcr.io/henningfutrell/hopper:box-claude-dev' }] } },
+  // The runner-only release's lane pod (issue #1454), in a namespace of its own.
+  { metadata: { namespace: 'hopper-runner', name: 'runner-hopper-lanes-0' }, spec: { containers: [{ name: 'lane', image: 'ghcr.io/henningfutrell/hopper:box-claude-dev' }], initContainers: [{ name: 'join', image: 'ghcr.io/henningfutrell/hopper:box-claude-dev' }] } },
   { metadata: { namespace: 'kube-system', name: 'kube-proxy-x' }, spec: { volumes: [{ name: 'lib-modules', hostPath: { path: '/lib/modules' } }], containers: [{ name: 'kube-proxy', image: 'registry.k8s.io/kube-proxy:v1.34.0' }] } },
 ];
 
@@ -66,6 +68,8 @@ const status = (fingerprint: string, source = 'given'): string => `hopper: maste
 
 // What the sign-in in the pod prints (scripts/kind-check.ts SIGN_IN_AND_GRANT), and how the CLI and it end.
 const SIGNED_IN = '{"realm":"local-accounts","role":"admin","holders":["kind-check"]}';
+const POOL_KEY = 'ab'.repeat(32);
+const RUNNER_MACHINE = [{ id: 'runner-hopper-lanes-0', online: true, infraCredentials: [] }];
 interface SignIn { out?: string; status?: number; addStatus?: number }
 
 function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}', migrations = ['uid-1', 'uid-1'], keys = [status(FINGERPRINT)], signIn: SignIn = {}): void {
@@ -82,6 +86,11 @@ function fakes(pods: Pod[], health = '{"ok":true,"version":"1.0.0","uptimeS":3}'
     `  *" logs deploy/hopper "*) echo 'hopper: listening'; head -n 1 "${join(dir, 'keys')}"; if [ "$(wc -l < "${join(dir, 'keys')}")" -gt 1 ]; then sed -i 1d "${join(dir, 'keys')}"; fi ;;`,
     // The CLI in the pod keeps what came on its stdin; the sign-in script too, and answers what it read.
     `  *" exec -i deploy/hopper -c hopper -- hopper local-account add "*) cat > "${join(dir, 'cli-stdin')}"; exit ${signIn.addStatus ?? 0} ;;`,
+    // The lane pool key the hopper issues, the machines it shows, and the runner's Secret (scripts/kind-check.ts
+    // runnerOnly, READ_MACHINES). Each reads its stdin to the end: a write to a closed pipe fails the script (EPIPE).
+    `  *" exec -i deploy/hopper -c hopper -- hopper pool-key"*) cat > /dev/null; echo ${POOL_KEY} ;;`,
+    `  *" exec -i deploy/hopper -c hopper -- node -e "*"/api/machines"*) cat > /dev/null; echo '${JSON.stringify(RUNNER_MACHINE)}' ;;`,
+    '  *" create -f -"*) cat > /dev/null ;;',
     `  *" exec -i deploy/hopper -c hopper -- node -e "*) cat > "${join(dir, 'signin-stdin')}"; cat "${join(dir, 'signin.json')}"; exit ${signIn.status ?? 0} ;;`,
     `  *" exec "*) cat "${join(dir, 'health.json')}" ;;`,
     `  *"get pods --all-namespaces -o json"*) cat "${join(dir, 'pods.json')}" ;;`,
@@ -121,7 +130,7 @@ describe('scripts/kind-check.ts', () => {
       + "fetch('http://127.0.0.1:4790/api/health').then(async (r) => { process.stdout.write(await r.text()); process.exit(r.ok ? 0 : 1); }, () => process.exit(1))");
     expect(r.calls).toContain('kubectl --context kind-hopper-check get pods --all-namespaces -o json');
     expect(r.calls.at(-1)).toBe('kind delete cluster --name hopper-check');
-    expect(r.stdout).toContain('4 pods, no container runtime socket');
+    expect(r.stdout).toContain('5 pods, no container runtime socket');
   });
 
   it('then brings up the machines as pods, asks the health again, and checks the cluster again for a container runtime', () => {
@@ -153,6 +162,18 @@ describe('scripts/kind-check.ts', () => {
     expect(r.stdout).toContain(`a new hopper pod runs on the same master key (fingerprint ${FINGERPRINT})`);
     expect(r.calls.slice(created).some((c) => c === 'kubectl --context kind-hopper-check get pods --all-namespaces -o json')).toBe(true);
     expect(r.stdout).toContain('machines as pods: sandbox boxes on, lane pod hopper-lanes-0');
+  });
+
+  it('then installs a runner-only release with the lane pool key the hopper issued, and its lane pod joins (issue #1454)', () => {
+    fakes(clean);
+    const r = run('--tag', 'dev');
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const install = r.calls.find((c) => c.startsWith('helm install runner '));
+    expect(install).toContain('--namespace hopper-runner --wait');
+    expect(install).toContain('--set hopper.enabled=false --set lanes.replicas=1');
+    expect(install).toContain('--set lanes.existingSecret=runner-pool-key');
+    expect(r.calls).toContain('kubectl --context kind-hopper-check --namespace hopper-runner create -f -');
+    expect(r.stdout).toContain('runner-only release: runner-hopper-lanes-0 joined the hopper');
   });
 
   it('waits for the new hopper pod after the delete, then asks its health and its key', () => {

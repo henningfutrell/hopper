@@ -19,6 +19,7 @@ import { createVaultService, type VaultService } from './service.ts';
 import type { StepSecretAsk } from './step-delivery.ts';
 import { createCredentialMinter } from './minter.ts';
 import type { MintBinding, MintTarget } from '../domain/minting.ts';
+import type { ClusterDiscovery } from '../domain/cluster-discovery.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, vaultOps, type VaultOp } from './wire.ts';
 import type { AgentCredentialAsk, PodCredentialAsk } from './agent-credential.ts';
 
@@ -115,7 +116,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
 function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unknown {
   const body = b as never as {
     by: string; name: string; secret: { name: string; scope?: string; value: string; mints?: { kind: 'aws-account' | 'cluster'; name: string } | null }; ask: { name: string; token: string }; machine?: { key: string };
-    credential: string; target: MintTarget; jobId: string; identify?: boolean;
+    credential?: string; discover?: ClusterDiscovery; target: MintTarget; jobId: string; identify?: boolean;
   };
   switch (op) {
     case 'status': return vault.view().problem;
@@ -123,7 +124,7 @@ function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unkn
     case 'remove': return vault.remove(body.name, body.by);
     case 'deliver': return vault.deliver(body.ask, body.machine?.key ?? '');
     case 'step-deliver': return vault.forStep((b as { ask: StepSecretAsk }).ask);
-    case 'mint': return vault.mintFrom(body.credential, body.target, body.jobId, body.identify);
+    case 'mint': return vault.mintFrom(body.discover ?? body.credential ?? '', body.target, body.jobId, body.identify);
     case 'unbind': return vault.unbindFrom((b as { binding: MintBinding }).binding);
     case 'agent-credential': return vault.agentCredential((b as { ask: AgentCredentialAsk }).ask);
     case 'pod-credential': return vault.podCredential((b as { ask: PodCredentialAsk }).ask);
