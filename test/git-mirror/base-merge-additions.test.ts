@@ -7,6 +7,8 @@
 // Feature: additions files
 //   Scenario: both sides added a migration at the end of a file the base branch marks
 //     Then the hopper pushes a merge commit, the base branch's migration first, the pull request's after it
+//   Scenario: the hopper's git is the container image's, git 2.39 (issue #1624)
+//     Then the hopper pushes the same merge commit
 //   Scenario: one side changed a line of a marked file
 //     Then nothing is pushed: a real conflict
 //   Scenario: only the pull request marks the file
@@ -17,8 +19,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
-import { createGitMirrors } from '../../src/git-mirror/mirrors.ts';
-import { git } from './support.ts';
+import { createGitMirrors, type GitRun } from '../../src/git-mirror/mirrors.ts';
+import { git, gitOfTheImage } from './support.ts';
 
 const MARK = 'migrations.ts hopper-merge=additions\n';
 const list = (...entries: string[]): string => `export const MIGRATIONS = [\n${entries.map((e) => `  '${e}',\n`).join('')}];\n`;
@@ -53,9 +55,9 @@ function origin(marked = true) {
   return { root, bare, url: `file://${bare}`, heads, dev };
 }
 
-function mirrors(root: string) {
+function mirrors(root: string, git?: GitRun) {
   const traffic = createGitHubTraffic({ log: () => undefined });
-  return { m: createGitMirrors({ dir: join(root, 'mirrors'), traffic, log: () => undefined }), traffic };
+  return { m: createGitMirrors({ dir: join(root, 'mirrors'), traffic, log: () => undefined, ...(git ? { git } : {}) }), traffic };
 }
 
 const show = (bare: string, rev: string): string => execFileSync('git', ['--git-dir', bare, 'show', rev], { encoding: 'utf8' });
@@ -69,6 +71,14 @@ describe("the base merge's additions files (issue #967)", () => {
     const commit = (said as { commit: string }).commit;
     expect(git(o.root, '--git-dir', o.bare, 'rev-parse', 'refs/heads/issue-1')).toBe(commit);
     expect(show(o.bare, `${commit}:migrations.ts`)).toBe(list('one', 'two', 'from dev', 'from the pull request'));
+  });
+
+  it("keeps both sides' added entries with the container image's git 2.39 too (issue #1624)", async () => {
+    const o = origin();
+    const { m, traffic } = mirrors(o.root, gitOfTheImage);
+    const said = await traffic.pass('github', () => m.baseMerge('acme/app', async () => ({ url: o.url }), { number: 1, base: 'dev', headRef: 'issue-1' }));
+    expect(said).toEqual({ outcome: 'pushed', commit: expect.stringMatching(/^[0-9a-f]{40}$/), resolved: ['migrations.ts'] });
+    expect(show(o.bare, `${(said as { commit: string }).commit}:migrations.ts`)).toBe(list('one', 'two', 'from dev', 'from the pull request'));
   });
 
   it('pushes nothing when one side changed a line of a marked file', async () => {
