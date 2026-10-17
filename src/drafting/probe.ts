@@ -11,7 +11,7 @@ import type { OptionChoice } from '../domain/plugins.ts';
 import { commandOn } from '../executors/command.ts';
 import { userProcessEnv } from '../executors/env.ts';
 import { hopperSshAuth } from '../executors/ssh.ts';
-import { ON_MACHINE, scrubbedEnv } from '../plugins/claude-print.ts';
+import { leftOf, leftReason, ON_MACHINE, reapRun, runMarkOf, scrubbedEnv, withoutRunMarks } from '../plugins/claude-print.ts';
 import { draftRefusal, failureOf, modelsCall, modelsOf, notSignedInReason, signedOut, statusCall, type DraftProvider, type ProbeCall } from './providers.ts';
 import type { DraftHost } from './run.ts';
 
@@ -24,7 +24,7 @@ export interface ProbeChoice { provider: DraftProvider; machine: string; bin?: s
 /** Default time each probe call may take. */
 export const PROBE_TIMEOUT_MS = 20_000;
 
-type Ran = { code: number; stdout: string; stderr: string } | { error: string };
+type Ran = { code: number; stdout: string; stderr: string } | { error: string; stderr?: string };
 
 /** One program to its end, `stdin` on its stdin. Never throws. */
 function ran(file: string, args: string[], stdin: string, env: NodeJS.ProcessEnv, timeoutMs: number, signal: AbortSignal): Promise<Ran> {
@@ -43,7 +43,7 @@ function ran(file: string, args: string[], stdin: string, env: NodeJS.ProcessEnv
     const child = spawn(file, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
     const onAbort = () => {
       child.kill('SIGKILL');
-      finish({ error: timeout.aborted ? `timed out after ${timeoutMs} ms` : 'cancelled' });
+      finish({ error: timeout.aborted ? `timed out after ${timeoutMs} ms` : 'cancelled', stderr });
     };
     if (stop.aborted) return onAbort();
     stop.addEventListener('abort', onAbort);
@@ -70,17 +70,29 @@ export async function probeOn(host: DraftHost, choice: ProbeChoice, signal: Abor
   const bin = choice.bin ?? provider;
   const timeoutMs = choice.timeoutMs ?? PROBE_TIMEOUT_MS;
   const env = scrubbedEnv(userProcessEnv(m!.ssh ? {} : host.userEnv));
+  const wrap = (argv: string[]): [string, string[]] => {
+    if (!m!.ssh) return [argv[0]!, argv.slice(1)];
+    const sshControlDir = join(host.dataDir, 'ssh');
+    mkdirSync(sshControlDir, { recursive: true, mode: 0o700 });
+    return commandOn(m!, argv, {
+      ...(host.sshBin ? { sshBin: host.sshBin } : {}), sshControlDir, sshAuth: host.sshAuth ?? (() => hopperSshAuth({ env: host.env, dataDir: host.dataDir })),
+      dockerHost: () => { throw new Error('no docker'); },
+    });
+  };
+  // A call stopped by its timeout or a cancel is reaped on the machine (issue #472), as a draft run is. The lines
+  // `ON_MACHINE` says never reach a reason or a status read, and a call that left files there fails.
   const call = async (c: ProbeCall): Promise<Ran> => {
-    const there = ['sh', '-c', ON_MACHINE, 'sh', ...c.argv];
     try {
-      if (!m!.ssh) return await ran(there[0]!, there.slice(1), c.stdin, env, timeoutMs, signal);
-      const sshControlDir = join(host.dataDir, 'ssh');
-      mkdirSync(sshControlDir, { recursive: true, mode: 0o700 });
-      const [file, args] = commandOn(m!, there, {
-        ...(host.sshBin ? { sshBin: host.sshBin } : {}), sshControlDir, sshAuth: host.sshAuth ?? (() => hopperSshAuth({ env: host.env, dataDir: host.dataDir })),
-        dockerHost: () => { throw new Error('no docker'); },
-      });
-      return await ran(file, args, c.stdin, env, timeoutMs, signal);
+      const [file, args] = wrap(['sh', '-c', ON_MACHINE, 'sh', ...c.argv]);
+      const r = await ran(file, args, c.stdin, env, timeoutMs, signal);
+      if ('error' in r) {
+        const mark = r.stderr !== undefined ? runMarkOf(r.stderr) : undefined;
+        const left = mark ? await reapRun(wrap, mark, env, process.cwd()) : [];
+        return { error: left.length ? `${r.error}; ${leftReason(left)}` : r.error };
+      }
+      const left = leftOf(r.stderr);
+      if (left.length) return { error: leftReason(left) };
+      return { ...r, stderr: withoutRunMarks(r.stderr) };
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }
