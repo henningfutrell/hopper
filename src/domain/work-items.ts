@@ -323,12 +323,12 @@ export function isFailureOf(item: Pick<WorkItem, 'state' | 'failedJobId'> | unde
 
 /**
  * The jobs of the item whose kept work still waits on a person (issue #1067): none once the item is done or its issue
- * closed; while a newer job works it or its pull request is open, only that job's own.
+ * closed; else only its newest job's own. A newer job of the item took the place of an older one, so the older job's kept
+ * work is history even when the newer job failed too (issue #1457).
  */
 export function keptWorkShown(item: Pick<WorkItem, 'state' | 'jobId' | 'issueState' | 'keptWork'>): string[] {
   if (item.state === 'done' || item.issueState === 'closed') return [];
-  const settledOn = item.state === 'failed' || item.state === 'needs_you' || item.state === 'dropped';
-  return item.keptWork.filter((j) => settledOn || j === item.jobId);
+  return item.keptWork.filter((j) => j === item.jobId);
 }
 
 /**

@@ -802,7 +802,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   aborted at startup in every job. `/tmp/hopper-` and a UUID job id take 48. (The print agents get the
   same link as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
-  the owner. A payload cannot turn the countdown back on.
+  the owner. A payload cannot turn the countdown back on. It also gets `CHECKPOINT_DISABLE=1` (`JOB_TOOL_ENV`, issue #1502): terraform's
+  version check writes `~/.terraform.d` on the machine, which the credential check reads as infra credentials.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows
@@ -3002,7 +3003,9 @@ and the test event are sent at once, in memory only.
   watchers": the plan's notice from `NotifierEvents.infraPlan`, with the watchers of its environments; `infra.plan_applied`
   is a `vault.minted` that names a plan and is no renewal); `machine.memory_low` and `machine.memory_recovered` (issue
   #868, "Machine resources over time" → "WSL and the memory alert": body adds `machineId`, `of`, `freeBytes`,
-  `totalBytes`, `thresholdBytes`, and `since` for a low).
+  `totalBytes`, `thresholdBytes`, and `since` for a low); `machine.offline` and `machine.back_online` (issue #1497: body
+  adds `machineId`, `label`, `since`); `machine.disk_over_budget` and `machine.disk_within_budget` (issue #1203, "Hopper's own
+  disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -11971,6 +11974,7 @@ again, resolved, superseded, its item closed, its job finished — or when its j
 in the last day and the records that ended in the last day are history: Failures shows them under **Ended in the last
 day** (`handoffs` with `status: closed`, `ended` in `GET /api/failures`), out of the counts and the badge. The same rule clears questions and
 logins: an open question whose job ended or is gone is cancelled at `recover` and on each tick (`QuestionService.sweep`),
+with `question.cancelled`, so the UI's open questions and the Needs you count drop it (issue #1457),
 and a login, below in "Logins".
 
 **Events.** `handoff.opened` (reason, summary, `notify`), `handoff.closed` (end, `nextJobId`) and `handoff.checked`
@@ -12099,7 +12103,8 @@ Now Failures lists it, and each has an action that moves it.
 - **The list** (`src/domain/kept-work.ts`, pure; `src/failures/kept-work.ts`). An ended job whose newest work event is
   `job.work_kept` is **work not pushed** while its work item still waits on it (issue #1067, `keptWorkLeft`): the
   work-item ledger's items name their jobs with kept work, and `keptWorkShown` leaves out an item done or closed and an
-  older job's of an item a newer job works. So a merged or closed item lists none, however old: `keptWork` in `GET /api/failures`,
+  older job's of an item a newer job took over, even when the newer job failed too; `keptWorkLeft` leaves out a job a
+  person dismissed (issue #1457: nothing waits on it). So a merged or closed item lists none, however old: `keptWork` in `GET /api/failures`,
   newest first, each with its paths, its machine (`machineRanOn`), its open hand-off, and `actions.push` and
   `actions.discard` (`{ ok }` or `{ ok: false, why }`). The Failures badge and `GET /api/sections` count each one that
   no open hand-off counts already.
@@ -21142,8 +21147,8 @@ each fetch. The measure left it out, so a machine could be over its disk budget 
   (each start fetches under the start lock with gc in the foreground, issue #1075). Over the budget, the checkouts are in
   `machine.disk_over_budget`'s `paths`, so a person sees why it stays over.
 
-**Not done here, each a follow-up of its own:** the Grok Bot routine posting the disk budget's events (it posts only
-questions that reach a person and intake stops; webhooks take the events). **Not the hopper's to know:** a container a
+The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
+know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
 part 4 (untagged and unlabelled: `podman image prune` once removes them). **Bounded already:** database backups and
 update logs (the update keeps one backup, `hopper-backup.dump`, and one build log, each replaced).
@@ -21385,6 +21390,15 @@ jobs** with why (strict mode, or an admin's stop), the fix steps first, and Use 
 and each warning no admin acknowledged. Tests: `test/decider/infra-credentials.test.ts` (the rule, held and not held),
 `test/ui/machine-infra-credentials.test.ts` (each card state), `test/ui/machine-credential-card.test.ts` (each state rendered,
 no contradicting text), `test/integration/machine-credential-acceptance.test.ts` (default, strict, stop, restart).
+
+**Infrastructure tools stay off the machine** (issue #1502, 2026-10-17). A job that wrote terraform ran `terraform` on the
+machine. terraform's version check then wrote `~/.terraform.d` with only `checkpoint_cache` and `checkpoint_signature`, and the
+credential check flagged it. Three parts: every job's tools get `CHECKPOINT_DISABLE=1` (`JOB_TOOL_ENV`,
+`src/executors/herdr/start.ts`; the herdr tab and the print agents, after the payload, so a payload cannot turn the version check
+back on); the read counts a `.terraform.d` folder only when it holds more than those two files (a file of that name still
+counts; the ssh probe applies the same rule); and one protocol line (`INFRA_TOOLS_LINE`, `src/job-rules/`) tells every job
+to run terraform, aws, kubectl, helm and the like only in a sandbox the hopper starts for it, never on the machine itself.
+Tests: `test/client/infra-credentials.test.ts`, `test/herdr/executor-dialog.test.ts`, `test/job-rules/infra-tools.test.ts`.
 
 **Reach is the address hold.** An ssh target's probe already asks which of the hopper's addresses it reaches (#698); one
 that reaches none has an address problem and takes no new job. A client target reaches the hopper through its door, at the

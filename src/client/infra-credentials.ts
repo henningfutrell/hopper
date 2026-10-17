@@ -4,7 +4,8 @@
 // and a client target (its `/release` answer) with a read of the home and the environment here, an ssh target with what
 // INFRA_CREDENTIALS_COMMAND prints in its probe. Only the names: no value is read, printed or sent. A machine that holds any is
 // not ready and takes no new job (src/decider/assign.ts `credentialHolds`). Shared with the hopper's machine sources (src/machines/).
-import { existsSync, readFileSync } from 'node:fs';
+// A `.terraform.d` that holds only terraform's checkpoint files (its version check's cache) is no credential (issue #1502).
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** The places under the job user's home, folder or file, that hold credentials. */
@@ -13,6 +14,17 @@ export const INFRA_CREDENTIAL_PATHS = [
   '.config/gh/hosts.yml', '.git-credentials', '.config/git/credentials', '.netrc',
   '.ssh/id_rsa', '.ssh/id_ecdsa', '.ssh/id_ecdsa_sk', '.ssh/id_ed25519', '.ssh/id_ed25519_sk', '.ssh/id_dsa',
 ] as const;
+
+/** What terraform's version check writes into `.terraform.d` (issue #1502): a cache, no credential. */
+const TERRAFORM_CHECKPOINT = ['checkpoint_cache', 'checkpoint_signature'];
+
+/** Whether `path` under the home holds a credential: there, and for `.terraform.d` more than its checkpoint files. */
+const holds = (home: string, path: string): boolean => {
+  const at = join(home, path);
+  if (!existsSync(at)) return false;
+  if (path !== '.terraform.d') return true;
+  try { return !statSync(at).isDirectory() || readdirSync(at).some((n) => !TERRAFORM_CHECKPOINT.includes(n)); } catch { return true; }
+};
 
 /** A credential helper in the job user's global git config: git would hand a job the host's credentials. */
 export const GIT_CREDENTIAL_HELPER = 'git credential helper';
@@ -41,14 +53,15 @@ export function infraCredentialsAt(home: string, env: NodeJS.ProcessEnv = proces
   const xdg = env.XDG_CONFIG_HOME || join(home, '.config');
   const helper = hasHelper(join(home, '.gitconfig')) || hasHelper(join(xdg, 'git/config'));
   return [
-    ...INFRA_CREDENTIAL_PATHS.filter((n) => existsSync(join(home, n))),
+    ...INFRA_CREDENTIAL_PATHS.filter((n) => holds(home, n)),
     ...(helper ? [GIT_CREDENTIAL_HELPER] : []),
     ...INFRA_CREDENTIAL_VARIABLES.filter((v) => env[v]).map((v) => `$${v}`),
   ];
 }
 
 /** What an ssh target's probe runs: a line that it read, then one per credential there. printenv's value goes to /dev/null. */
-export const INFRA_CREDENTIALS_COMMAND = `echo ${READ}; for d in ${INFRA_CREDENTIAL_PATHS.join(' ')}; do [ -e "$HOME/$d" ] && echo "${MARK}$d"; done;`
+export const INFRA_CREDENTIALS_COMMAND = `echo ${READ}; for d in ${INFRA_CREDENTIAL_PATHS.filter((d) => d !== '.terraform.d').join(' ')}; do [ -e "$HOME/$d" ] && echo "${MARK}$d"; done;`
+  + ` t="$HOME/.terraform.d"; { [ -e "$t" ] && ! [ -d "$t" ] || [ -n "$(ls -A "$t" 2>/dev/null | grep -vx${TERRAFORM_CHECKPOINT.map((n) => ` -e ${n}`).join('')})" ]; } && echo '${MARK}.terraform.d';`
   + ` git config --global --get-regexp '^credential\\..*helper$' >/dev/null 2>&1 && echo '${MARK}${GIT_CREDENTIAL_HELPER}';`
   + ` for v in ${INFRA_CREDENTIAL_VARIABLES.join(' ')}; do [ -n "$(printenv "$v" 2>/dev/null)" ] && echo "${MARK}\\$$v"; done; true`;
 
