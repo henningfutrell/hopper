@@ -4925,8 +4925,11 @@ before each step. Every remote command is `powershell -NoProfile -NonInteractive
 3. ssh: in the working directory, Windows' own `tar -xf` extracts the inputs (it refuses absolute paths and `..`); the
    step runs as `powershell -File step.ps1`, its stdout and stderr streamed back; the outputs that are there are packed
    with `tar -cf`, a missing one said on stderr; the exit code is the step's (`$LASTEXITCODE`, or 1 when its last
-   statement failed).
-4. scp: `outputs.tar` back, when the step asked for outputs.
+   statement failed). A `tar` that fails is said on stderr and its archive removed, so no part of one is taken as the
+   outputs; one that packs says the archive's size on stderr (`hopper-step: outputs packed, <n> bytes`, issue #1255).
+4. scp: `outputs.tar` back, when the step asked for outputs. A copy of another size than the one the host said is no
+   outputs: the step's problem says `the outputs came back cut short: <got> of <packed> bytes`. `GET /job/step/:id`
+   sends the archive with its `content-length`, so the job's copy that ends short fails in curl, not in `tar -xf`.
 5. ssh: the scratch directory is removed, whatever came before. The inputs stay in the working directory: that is
    where the build runs.
 

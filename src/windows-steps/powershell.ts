@@ -19,6 +19,16 @@ export const scpPath = (windowsPath: string): string => windowsPath.replaceAll('
 
 const scratchOf = (workDir: string): string => `${workDir.replace(/[\\/]+$/, '')}\\${STEP_SCRATCH}`;
 
+/** How the step's run says the outputs archive it packed, on stderr: this, its size in bytes, then ` bytes`. */
+export const OUTPUTS_PACKED = 'hopper-step: outputs packed, ';
+const PACKED = /hopper-step: outputs packed, (\d+) bytes/g;
+
+/** The size of the outputs archive the run's log says it packed, the last one said; undefined when it says none. */
+export function packedBytes(log: string): number | undefined {
+  const last = [...log.matchAll(PACKED)].at(-1);
+  return last ? Number(last[1]) : undefined;
+}
+
 /** Before the copy: the working directory exists, and the step's scratch directory is there and empty. */
 export function prepareScript(workDir: string): string {
   const scratch = psQuote(scratchOf(workDir));
@@ -38,6 +48,7 @@ export function prepareScript(workDir: string): string {
  */
 export function runScript(o: { workDir: string; inputs: boolean; outputs: string[]; secrets?: boolean }): string {
   const scratch = scratchOf(o.workDir);
+  const outputsTar = psQuote(`${scratch}\\outputs.tar`);
   return [
     '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     ...(o.secrets ? [
@@ -62,7 +73,13 @@ export function runScript(o: { workDir: string; inputs: boolean; outputs: string
       "$missing = @($outputs | Where-Object { -not (Test-Path -LiteralPath $_) })",
       "foreach ($m in $missing) { [Console]::Error.WriteLine('hopper-step: output ' + $m + ' is not there') }",
       "$present = @($outputs | Where-Object { Test-Path -LiteralPath $_ })",
-      `if ($present.Count -gt 0) { tar -cf ${psQuote(`${scratch}\\outputs.tar`)} -- @present }`,
+      // Issue #1255: a tar that failed is said, and leaves no archive to be taken as the outputs; one that packed
+      // says the archive's size, so the hopper knows when its copy came back cut short.
+      `if ($present.Count -gt 0) {`,
+      `  tar -cf ${outputsTar} -- @present`,
+      `  if ($LASTEXITCODE) { [Console]::Error.WriteLine('hopper-step: the outputs could not be packed on the host: tar exited ' + $LASTEXITCODE); Remove-Item -LiteralPath ${outputsTar} -Force -ErrorAction SilentlyContinue }`,
+      `  else { [Console]::Error.WriteLine('${OUTPUTS_PACKED}' + (Get-Item -LiteralPath ${outputsTar}).Length + ' bytes') }`,
+      '}',
     ] : []),
     'exit $code',
   ].join('\n');

@@ -24,7 +24,7 @@
 // `secret` the host gives goes to the step, after the job's vault grant; a credential minted
 // for a need step goes to its need box only; never in an answer to the job. A template a need step asks for is saved and
 // approved only as a template request is (job-skill.ts).
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, statSync } from 'node:fs';
 import { PassThrough, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -178,7 +178,9 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
       if (!r) return no(reply, 404, `no step ${id} of this job's: a step's result is kept for an hour after it ends`);
       reply.header(STEP_HEADER.exit, String(r.result.exit)).type('application/x-tar');
       if (r.result.problem) reply.header(STEP_HEADER.problem, headerSafe(r.result.problem));
-      return r.outputs ? reply.send(createReadStream(r.outputs)) : reply.send(Buffer.alloc(0));
+      if (!r.outputs) return reply.send(Buffer.alloc(0));
+      // Its length said (issue #1255): a job whose copy ends short knows it, instead of unpacking part of it.
+      return reply.header('content-length', String(statSync(r.outputs).size)).send(createReadStream(r.outputs));
     });
   });
 }
