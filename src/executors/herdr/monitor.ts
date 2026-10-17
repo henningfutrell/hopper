@@ -139,7 +139,23 @@ export async function blockedQuestion(w: Pick<TurnWatch, 'herdr' | 'paneId' | 'c
   return { kind: 'question', question: { text: hideCodes(text, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'blocked', ...lapsesAt } };
 }
 
-export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed | NotesWaiting | PaneRestored> {
+type Watched = ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed | NotesWaiting | PaneRestored;
+
+/**
+ * Watches the turn. A missed heartbeat while it does (issue #1569) — a poll that failed on a live link, or a PING of the
+ * machine's link not answered in time — is told to the engine, which takes the job's checkpoint while the machine may
+ * still answer.
+ */
+export async function watchTurn(w: TurnWatch): Promise<Watched> {
+  const off = w.herdr.onLinkLate?.(() => w.ctx.missedHeartbeat?.());
+  try {
+    return await watch(w);
+  } finally {
+    off?.();
+  }
+}
+
+async function watch(w: TurnWatch): Promise<Watched> {
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
@@ -249,6 +265,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       // The machine's link is down (issue #752): the engine holds the job until it is back. Only errors on a live link count.
       if (herdr.linkDown?.()) return { kind: 'failed', error: `herdr: ${(err as Error).message}`, linkLost: true };
       if (++errors >= MAX_CONSECUTIVE_ERRORS) return { kind: 'failed', error: `herdr: ${(err as Error).message}` };
+      ctx.missedHeartbeat?.();
     }
     await w.sleep(w.pollMs, ctx.signal);
   }

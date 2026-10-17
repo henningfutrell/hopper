@@ -11,9 +11,7 @@ import { listedPanes, newPane, type Pane } from './fake-panes.ts';
 import type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-options.ts';
 import { WINDOWS_SHELLS, enterGoesOn, paneScreen, startupScreen, startupScreens, wrap } from './fake-screens.ts';
 
-export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn };
-
-export { CTRL_END };
+export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn }; export { CTRL_END };
 
 
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {
@@ -21,7 +19,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const width = o.width ?? 100;
   const panes = new Map<string, Pane>();
   const failures = new Map<string, { code: string; times: number }>();
-  const lostAnswers = new Set<string>();
+  const lostAnswers = new Set<string>(), lateListeners = new Set<() => void>();
   /** setUnreachable: every call rejects. */
   let n = 0, unreachable = false, restarts = 0;
   let busyStarts = o.shellNotReadyStarts ?? 0;
@@ -157,6 +155,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     loseNextAnswer(method) { lostAnswers.add(method); },
     setUnreachable(on) { unreachable = on; },
     linkDown: () => unreachable,
+    onLinkLate(fn) { lateListeners.add(fn); return () => { lateListeners.delete(fn); }; }, lateLink() { for (const fn of [...lateListeners]) fn(); },
     screen: (id) => paneScreen(panes.get(id), signedIn),
     openPane({ title, lines }) {
       n++;

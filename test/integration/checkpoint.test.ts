@@ -176,3 +176,40 @@ describe('resuming elsewhere', () => {
     expect((await get('patch', `${proxy.slice(0, -2)}xx`)).status).toBe(401);
   });
 });
+
+describe('a checkpoint at a missed heartbeat (issue #1569)', () => {
+  it('is taken at once when a watch of the job\'s pane fails, not ten minutes later, and at most once a minute', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [tree()], checkpoint: CAPTURE });
+    const a = await boot(herdr);
+    const job = await runningJob(a, herdr);
+    expect(herdr.checkpoints).toHaveLength(0);
+
+    herdr.failNext('getAgent', 'server_error');
+    await waitFor(() => herdr.checkpoints.length === 1, { what: 'the checkpoint at the missed heartbeat' });
+    await waitFor(async () => (await a.job(job.id)).checkpoint !== undefined, { what: 'the checkpoint kept' });
+
+    // A second missed heartbeat within the minute takes none; the job works on.
+    herdr.failNext('getAgent', 'server_error');
+    await new Promise((r) => setTimeout(r, 300));
+    expect(herdr.checkpoints).toHaveLength(1);
+    expect((await a.job(job.id)).status).toBe('running');
+  });
+
+  it('is taken at once when a PING of its machine\'s link is not answered in time', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [tree()], checkpoint: CAPTURE });
+    const a = await boot(herdr);
+    const job = await runningJob(a, herdr);
+    herdr.lateLink();
+    await waitFor(() => herdr.checkpoints.length === 1, { what: 'the checkpoint at the late PING' });
+    expect(herdr.checkpoints[0]!.jobId).toBe(job.id);
+  });
+
+  it('is not taken when the watch fails on a link that is down: the machine cannot be read', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [tree()], checkpoint: CAPTURE });
+    const a = await boot(herdr);
+    await runningJob(a, herdr);
+    herdr.setUnreachable(true);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(herdr.checkpoints).toHaveLength(0);
+  });
+});
