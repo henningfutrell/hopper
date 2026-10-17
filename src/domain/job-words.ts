@@ -29,7 +29,24 @@ export interface Worded {
   handedOff?: true;
   /** An issue that waits on its batch (issue #1337). */
   awaitsBatch?: true;
+  /** A job queued or parked because a job of higher priority took its lane (issue #1525): that job, as people read it. */
+  preemptedBy?: string;
 }
+
+/** The statuses a preempted job shows it in (issue #1525): parked, then queued again until it runs. */
+const PREEMPT_SHOWN: ReadonlySet<JobStatus> = new Set<JobStatus>(['parked', 'queued', 'held']);
+
+/** The job that took a preempted job's lane, as people read it: its issue number and title, else its goal, else its id. */
+export function preempterLabel(job: Job | undefined, id: string): string {
+  const s = job?.source;
+  const title = s?.title || job?.spec.goal;
+  if (s?.number !== undefined) return title ? `#${s.number} ${title}` : `#${s.number}`;
+  return title || `job ${id}`;
+}
+
+/** Whether the job shows that it was preempted, and by whom: `label` names the job that took its lane (issue #1525). */
+export const preemptedByOf = (job: Pick<Job, 'preempted' | 'status'>, label: (id: string) => string): { preemptedBy: string } | Record<string, never> =>
+  job.preempted && PREEMPT_SHOWN.has(job.status) ? { preemptedBy: label(job.preempted.by) } : {};
 
 const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person works on it', parked: 'Parked' };
 
@@ -69,7 +86,7 @@ export function stageWords(n: Worded): string {
   if (you) return `Waiting on you: ${you}`;
   if (n.kind === 'pull_request' && n.pullRequest) return pullRequestWords(n.pullRequest);
   switch (n.stage) {
-    case 'queued': return 'Queued';
+    case 'queued': return n.preemptedBy ? `Queued: preempted by ${n.preemptedBy}` : 'Queued';
     case 'running': {
       if (n.ownWait === 'command') return 'Running: waiting on its own command';
       if (n.phase === 'proposal') return 'Plan';
@@ -78,6 +95,7 @@ export function stageWords(n: Worded): string {
     }
     case 'waiting':
       if (n.status === 'waiting_on') return `Waiting on ${n.waitOn ? waitOnLabel(n.waitOn) : 'nothing recorded'}`;
+      if (n.status === 'parked' && n.preemptedBy) return `Parked: preempted by ${n.preemptedBy}`;
       return (n.status && WAITING[n.status]) ?? 'Waiting';
     case 'pr_open': return n.pullRequest ? pullRequestWords(n.pullRequest) : PR_OPEN_WAIT;
     case 'partly_done': return 'Part shipped: the rest runs after the merge';
@@ -97,9 +115,9 @@ export function nextWords(n: Worded, tasks?: { done: number; total: number }): s
   if (n.ownWait === 'command') return 'It goes on when its own command ends.';
   if (you) return `You: ${you}.`;
   switch (n.stage) {
-    case 'queued': return 'It starts when a lane is free.';
+    case 'queued': return n.preemptedBy ? 'It resumes from where it stopped when a lane is free.' : 'It starts when a lane is free.';
     case 'running': return tasks ? `The agent works on it: ${tasks.done} of ${tasks.total} tasks done.` : 'The agent works on it.';
-    case 'waiting': return n.status === 'operator_led' ? 'A person finishes it.' : 'It goes on when what it waits for happens.';
+    case 'waiting': return n.status === 'operator_led' ? 'A person finishes it.' : n.preemptedBy ? 'It goes back in the queue, and resumes from where it stopped.' : 'It goes on when what it waits for happens.';
     case 'pr_open': return n.pullRequest?.checks === 'failing' ? 'Fix the failed checks, or run it again.' : n.pullRequest?.checks === 'pending' ? 'It goes on to the merge once its checks pass.' : 'Merge the pull request, or yolo mode merges it.';
     case 'partly_done': return 'Merge the pull request: then the next part runs.';
     case 'done': return n.awaitsBatch ? 'Nothing: its batch run closes the issue.' : 'Nothing: it is done.';
