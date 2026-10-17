@@ -22418,7 +22418,8 @@ shape — and gives it to the hopper (`HOPPER_LANE_POOL_KEY`, or the file `HOPPE
 join, a preshared key of the install's as `HOPPER_TUNNEL_KEY` is) and to the pods' join step (a Secret). `POST /client/join`
 takes it as it takes a join code (`src/machines/lane-pool.ts`, constant time), and never spends it.
 
-- A lane pod is a machine of the hopper's first user, `admin` — the first person who signed in. Before anyone has,
+- A lane pod is a machine of the hopper's first user — the first person who signed in, the oldest user (by seq), whatever
+  its id (issue #1767): the first GitHub user, or the operator CLI's local account (issue #1380). Before anyone has,
   the join is refused (409) and the join step tries again (every 10 s, part 2).
 - It joins under its pod's name (`hopper-lanes-0`), with `pool: true` on its `client` instance. A key a machine
   holds joins as that machine, as before. **A pod that lost its volume** joins with a new key under its name: a lane

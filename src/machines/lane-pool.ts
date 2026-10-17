@@ -3,7 +3,9 @@
 // key the install makes and gives both the hopper (HOPPER_LANE_POOL_KEY, or the file HOPPER_LANE_POOL_KEY_FILE names)
 // and the pods' join step. Unlike a join code it is not spent: every pod, and every restart of one, joins with it.
 // It has a join code's shape (64 hex: `openssl rand -hex 32`), so the join line is the same `<hopper URL>#<key>`.
-// The pods are the machines of the hopper's first user, `admin`: the person who signed in first.
+// The pods are the machines of the hopper's first user: the person who signed in first (issue #1767), whatever their id —
+// the first GitHub user, or the operator CLI's local account (issue #1380). The oldest user, as the instance admin's
+// fallback reads it.
 //
 // The hopper also issues a lane pool key (issue #1454, design.md "Lane pods of another release"): Add machine's Pod /
 // Kubernetes, for lane pods of a chart release that is not this hopper's own — a compose hopper's, or a hopper on another
@@ -16,8 +18,8 @@ import type { AgentCredentialAnswer, PodCredentialAsk } from '../vault/agent-cre
 
 export const LANE_POOL_KEY_VARIABLE = 'HOPPER_LANE_POOL_KEY';
 
-/** The user whose machines the lane pods are: the hopper's first user. */
-export const LANE_POOL_USER = 'admin';
+/** The user whose machines the lane pods are: the hopper's first user, by seq; undefined while it has none. */
+export const lanePoolUser = (users: { list(): readonly { id: string }[] }): string | undefined => users.list()[0]?.id;
 
 const KEY = /^[0-9a-f]{64}$/;
 const digest = (s: string): Buffer => createHash('sha256').update(s).digest();
