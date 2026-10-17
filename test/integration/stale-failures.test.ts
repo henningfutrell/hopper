@@ -61,6 +61,41 @@ describe('a failed job nothing waits on is dismissed by itself (issue #1123)', (
     expect(await openFailures(a)).not.toContain(failed.id);
   });
 
+  // Issue #1461: a failure resolves when its item's pull request merges or closes, with no person's dismissal.
+  it('its item\'s pull request merged as the whole item dismisses it and closes its hand-off; the item counts as done', async () => {
+    const a = await boot();
+    const failed = await failedJob(a);
+    const parts = a.user();
+    expect(parts.store.workItems.counts()).toMatchObject({ needs_you: 1 });
+    parts.store.events.append({ type: 'job.pull_request_merged', jobId: failed.id, data: { pullRequest: 'https://github.com/owner/repo/pull/12', part: false } });
+    await waitFor(async () => (await a.job(failed.id)).dismissedAt !== undefined, { what: 'the failure of a merged item dismissed' });
+    expect(await dismissals(a)).toEqual([[failed.id, { by: 'item_closed' }]]);
+    expect(parts.store.workItems.counts()).toMatchObject({ needs_you: 0, failed: 0, done: 1 });
+    expect(parts.store.handoffs.forJob(failed.id)).toMatchObject({ status: 'closed', end: 'item_closed' });
+    expect(await openFailures(a)).not.toContain(failed.id);
+  });
+
+  it('its item\'s pull request closed without a merge dismisses it and closes its hand-off; the item is dropped', async () => {
+    const a = await boot();
+    const failed = await failedJob(a);
+    const parts = a.user();
+    parts.store.events.append({ type: 'job.pull_request_closed', jobId: failed.id, data: { pullRequest: 'https://github.com/owner/repo/pull/13', part: false } });
+    await waitFor(async () => (await a.job(failed.id)).dismissedAt !== undefined, { what: 'the failure of an item whose pull request closed dismissed' });
+    expect(await dismissals(a)).toEqual([[failed.id, { by: 'item_closed' }]]);
+    expect(parts.store.workItems.counts()).toMatchObject({ needs_you: 0, failed: 0, dropped: 1 });
+    expect(parts.store.handoffs.forJob(failed.id)).toMatchObject({ status: 'closed', end: 'item_closed' });
+  });
+
+  it('a part merged does not end it: the rest of the item is still to do', async () => {
+    const a = await boot();
+    const failed = await failedJob(a);
+    const parts = a.user();
+    parts.store.events.append({ type: 'job.pull_request_merged', jobId: failed.id, data: { pullRequest: 'https://github.com/owner/repo/pull/14', part: true } });
+    await parts.failures.sweep();
+    expect((await a.job(failed.id)).dismissedAt).toBeUndefined();
+    expect(parts.store.handoffs.forJob(failed.id)).toMatchObject({ status: 'open' });
+  });
+
   it('a live failure stays: the newest job of an open item is not dismissed', async () => {
     const a = await boot();
     const failed = await failedJob(a);
@@ -108,5 +143,28 @@ describe('dismiss many failed jobs at once (issue #1123)', () => {
     const token = await a.login();
     expect((await a.ui('/ui/api/jobs/dismiss', {}, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/jobs/dismiss', { jobIds: ['x'], superseded: true }, { token })).status).toBe(400);
+  });
+});
+
+// Issue #1461: the same failure on the same item twice in a row stops the item and raises it once, in place of a run again.
+describe('the same failure twice in a row', () => {
+  it('a run again that fails as the run before it goes to a person, with no retry', async () => {
+    const a = await boot();
+    const token = await a.login();
+    // The first failure's retry waits: only the person's Run again runs the item again here.
+    a.user().failures.setSettings({ backoffSec: 3600, backoffMaxSec: 3600 });
+    const first = await a.pull({ op: 'fail', message: 'read ECONNRESET' });
+    await a.waitForStatus(first.id, 'failed');
+    await waitFor(async () => (await a.job(first.id)).assessment, { what: 'the first failure assessed' });
+    expect((await a.job(first.id)).assessment).toMatchObject({ decision: 'retry' });
+    await waitFor(async () => (await a.job(first.id)).sourceState?.sync?.finalReported === true, { what: 'the failure reported' });
+    const again = await runAgain(a, first.id, token);
+    expect(again.status).toBe(200);
+    await a.waitForStatus(again.body.id, 'failed');
+    const assessed = await waitFor(async () => (await a.job(again.body.id)).assessment, { what: 'the second failure assessed' });
+    expect(assessed).toMatchObject({ decision: 'person' });
+    expect(assessed.reasons.join(' ')).toMatch(/the same failure as the run before it/);
+    expect(a.user().store.failures.forJob(again.body.id)).toMatchObject({ pending: undefined, outcome: 'surfaced' });
+    expect(a.user().store.handoffs.list({ status: 'open', limit: 100 }).map((h) => h.jobId)).toEqual([again.body.id]);
   });
 });

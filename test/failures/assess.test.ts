@@ -291,3 +291,38 @@ describe('assess: a timed-out job, from its liveness (issue #630)', () => {
     expect(a.summary).toMatch(/^Continue recommended\./);
   });
 });
+
+// Issue #1461: the same failure on the same item twice in a row stops the item. It goes to a person once, and nothing runs it
+// again by itself: no retry, no Continue, no Jev pick.
+describe('assess: the same failure as its run before', () => {
+  it('a transient failure under the retry limit stops, for a person', () => {
+    const a = assess(input('read ECONNRESET', { attempt: 2, repeated: true }));
+    expect(a).toMatchObject({ decision: 'person', auto: true, repeated: true });
+    expect(a.retryInMs).toBeUndefined();
+    expect(a.reasons.join(' ')).toMatch(/the same failure as the run before it/);
+    expect(a.summary).toMatch(/^Stopped: the same failure twice in a row\./);
+  });
+
+  it('a failure the rules give to a person is marked, so that Jev does not run it again', () => {
+    expect(assess(input('HOPPER_FAILED the tests do not pass', { repeated: true }))).toMatchObject({ decision: 'person', repeated: true });
+  });
+
+  it('red checks of its own pull request stop too: the fix before did not help', () => {
+    const a = assess(input('not complete: PR #12: checks failed: test', { repeated: true, checksFixes: 1 }));
+    expect(a).toMatchObject({ decision: 'person', repeated: true });
+  });
+
+  it('a daemon restart, a timeout and a shared cause are not stopped: they say nothing of the work', () => {
+    expect(assess(input('interrupted by daemon restart', { attempt: 2, repeated: true })).decision).toBe('retry');
+    expect(assess(input('write: ENOSPC: no space left on device', { repeated: true })).decision).toBe('redirect');
+    expect(assess(input('timed out', { repeated: true, liveness: { pushed: true } })).decision).toBe('continue');
+  });
+
+  it('not repeated: as before', () => {
+    expect(assess(input('read ECONNRESET', { attempt: 2, repeated: false })).decision).toBe('retry');
+  });
+
+  it('superseded first: a newer job of its item exists', () => {
+    expect(assess(input('read ECONNRESET', { repeated: true, newer: 'j2' }))).toMatchObject({ superseded: 'j2' });
+  });
+});
