@@ -6,6 +6,7 @@
 //   Scenario: an operator quarantines a running job, after a confirm
 //   Scenario: an operator lifts a quarantine
 //   Scenario: a viewer reads the level and gets no button; an ended job offers none
+//   Scenario: a job Jev's trust check lowered says why; an operator approves its trust, after a confirm (part 4)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -19,19 +20,24 @@ const running = {
 } as unknown as Job;
 const quarantined = { ...running, id: 'q1', stamp: { ...stamp('quarantined'), was: 'trusted', by: 'person' } } as unknown as Job;
 const ended = { ...running, id: 'e1', status: 'finished', finishedAt: T, laneId: undefined } as unknown as Job;
+const lowered = {
+  ...running, id: 'l1', status: 'held', laneId: undefined, startedAt: undefined,
+  stamp: { ...stamp('untrusted'), reasons: ['origin:approved', 'jev:touches_ci'], by: 'jev', check: { pick: 'lower:untrusted:touches_ci', confidence: 0.9, applied: true } },
+} as unknown as Job;
 
 let calls: { method: string; path: string; body?: unknown }[] = [];
 
 function fakeDaemon(role: 'operator' | 'viewer') {
   const routes: Record<string, () => unknown> = {
     '/api/health': () => ({ ok: true, version: '0', router: 'pass-through', fallback: false, executors: ['herdr-claude'], uptimeS: 1 }),
-    '/api/queue': () => ({ waiting: [], running: [running, quarantined], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [ended], locked: [] }),
+    '/api/queue': () => ({ waiting: [lowered], running: [running, quarantined], operatorLed: [], parked: [], waitingAnswer: [], waitingOn: [], ended: [ended], locked: [] }),
     '/api/machines': () => ({ machines: [] }), '/api/decisions': () => ({ decisions: [] }), '/api/events': () => ({ events: [] }),
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
     '/api/usage': () => ({ readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }), '/api/accounts': () => ({ accounts: [] }),
     '/ui/api/jobs/r1/quarantine': () => ({ ...running, stamp: { ...stamp('quarantined'), was: 'trusted' } }),
     '/ui/api/jobs/q1/unquarantine': () => ({ ...quarantined, stamp: stamp('trusted') }),
+    '/ui/api/jobs/l1/approve-trust': () => ({ ...lowered, stamp: { ...stamp('approved'), by: 'person' } }),
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -106,5 +112,22 @@ describe('trust on the job view (issue #655)', () => {
     act(() => root?.unmount());
     await boot('e1');
     expect(button(/^Quarantine$/)).toBeUndefined();
+  });
+
+  it('a job Jev\'s trust check lowered says why; Approve trust asks first, then posts', async () => {
+    await boot('l1');
+    expect(trust().dataset.level).toBe('untrusted');
+    expect(document.querySelector('[data-slot="job-trust-check"]')?.textContent).toBe('Jev\'s trust check lowered it: it changes CI, workflow files or branch rules');
+    await act(async () => { button(/Approve trust/)!.click(); });
+    const d = await dialog();
+    expect(calls.some((c) => c.method === 'POST' && c.path.startsWith('/ui/api/jobs/'))).toBe(false);
+    await act(async () => { [...d.querySelectorAll('button')].find((b) => b.textContent === 'Approve trust')!.click(); });
+    await vi.waitFor(() => expect(calls.filter((c) => c.method === 'POST' && c.path.startsWith('/ui/api/jobs/'))).toEqual([{ method: 'POST', path: '/ui/api/jobs/l1/approve-trust', body: {} }]));
+  });
+
+  it('a job no check lowered offers no Approve trust', async () => {
+    await boot('r1');
+    expect(document.querySelector('[data-slot="job-trust-check"]')).toBeNull();
+    expect(button(/Approve trust/)).toBeUndefined();
   });
 });
