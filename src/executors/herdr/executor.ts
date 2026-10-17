@@ -274,11 +274,13 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   function reopen(ctx: ExecutionContext, saved: PaneState | undefined, answer: string): Promise<ExecutionOutcome> {
     if (ctx.job.parked?.elsewhere) return relocate(ctx, answer, saved);
-    const session = ctx.job.agentSession;
-    if (!saved) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
+    // No pane state (issue #1472): Push it reopens the job worktree its kept work names, in a fresh session.
+    const where = saved ?? ctx.keptTree;
+    const session = saved ? ctx.job.agentSession : undefined;
+    if (!where) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
     const told = withNotes(ctx, answer);
-    const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: saved.cwd, makeWorkTree: false };
-    ctx.workTree(saved.jobWorktree ?? saved.cwd);
+    const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: where.cwd, makeWorkTree: false };
+    ctx.workTree(where.jobWorktree ?? where.cwd);
     return startAndSend(ctx, p, {
       first: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), ...(session ? { resume: session } : {}),
       said: session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded',

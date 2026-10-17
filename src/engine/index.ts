@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts'; import type { SagaStepContext } from '../sagas/coordinator.ts';
 import { settledBy } from '../domain/wait-on.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type MachineSnapshot, type ReviewKind } from '../domain/types.ts';
+import { keptTreeOf, keptWorkOf, REVIEW_KINDS, REVIEW_SECTIONS, WORK_EVENTS, type ActingPerson, type Discarding, type EventType, type Job, type MachineSnapshot, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
@@ -196,7 +196,8 @@ export function createEngine(o: EngineOptions): Engine {
     get executorNames() { return o.executors.names(); },
     get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
     resumable: (job) => job.agentSession !== undefined && job.executorState !== undefined && o.executors.get(job.spec.executor)?.park !== undefined,
-    reopens: (job) => { const ex = o.executors.get(job.spec.executor); return job.executorState !== undefined && (ex?.park !== undefined || ex?.reopensKept === true); },
+    // With no state recorded (issue #1472), an executor that parks reopens in the job worktree its kept work names.
+    reopens: (job) => { const ex = o.executors.get(job.spec.executor); return job.executorState !== undefined ? ex?.park !== undefined || ex?.reopensKept === true : ex?.park !== undefined && keptTreeOf(keptWorkOf(store.events.recent(1, [...WORK_EVENTS], job.id))[0]) !== undefined; },
     get reviewingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.reviews === true); },
     phaseShifts,
     sourceHost: createSourceHost(c, commands),

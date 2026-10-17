@@ -12096,8 +12096,18 @@ hopper push the work from any state with no click. This part does it for the cas
   fresh turn in the saved work tree, never the old chat: its task, then `pushBrief` with `fresh` (it is never
   `resumable`), then the protocol. The same job id keeps the same scratch dir, so the turn sees the kept work.
 
-Left of issue #1472 part 2: a herdr-claude job whose pane state was never recorded (its work tree is not known; Push it
-is refused, "its work tree cannot reopen"), and a push to a repository other than the job's own (refused, issue #1470).
+- **A job with no pane state** (`keptTreeOf`, `src/domain/kept-work.ts`). A herdr-claude job whose pane state was never
+  recorded (a state save is dropped while the hopper stops) left no work tree in its state. Its kept work does name one:
+  the sweep records `job.work_kept` with each repository it kept, and the job's own worktree is
+  `<work tree>/.worktrees/<name>/<job id>`. `Engine.reopens` takes such a job when its executor parks and its newest
+  `job.work_kept` names its job worktree. The runner gives a job Push it continued that tree (`ExecutionContext.keptTree`);
+  the executor's reopen uses it when it has no pane state: a new pane in that work tree, a fresh session (never a
+  recorded one: with no state the job is not `resumable`, so the brief says fresh), its task, then `pushBrief`. Kept
+  work that names only a clone in the scratch dir names no tree the agent ran in: Push it is still refused, "its work
+  tree cannot reopen". Running the agent in the shared work tree beside the clone could change another job's files.
+
+Left of issue #1472 part 2: a push to a repository other than the job's own and not one of its user's job repositories
+(refused, issue #1470). Which repositories a job may push to is a security decision for a person.
 
 **Verification:** `test/integration/auto-push.test.ts` (a finished job pushed by itself once, with `auto`; not again when
 its work is kept again; `auto.push` off; a failed job not pushed by itself), `test/integration/kept-work.test.ts` (a
@@ -12105,7 +12115,9 @@ person's Push it, with `auto.push` off), and in `auto-push.test.ts` a finished j
 a fresh session in its kept work tree. `auto-push.test.ts` also: a finished job of an executor that `reopensKept` goes
 on in a fresh turn, and one of an executor that neither parks nor reopens is refused with why;
 `test/adapters/print-agent-executors.test.ts`: each print-mode agent, continued, starts a fresh turn in its saved work
-tree, its task first, never its old session.
+tree, its task first, never its old session. `auto-push.test.ts` also: a finished job with no pane state goes on in a
+fresh session in the job worktree its kept work names, and is refused with why when its kept work names none;
+`test/herdr/executor-park.test.ts`: the reopen of a continued job with no pane state opens that job worktree, fresh.
 
 ### Actions answer at once (issue #1194, 2026-10-14)
 
