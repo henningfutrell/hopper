@@ -2422,6 +2422,12 @@ at read time. Only the newest job of an item counts. Each repository's yolo swit
 `repos`; `hopper yolo <owner/repo> on|off|default`. An open card has Merge now and Close PR (issue #677, "No checks means
 ready").
 
+**A pull request in another repository** (issue #1778). A job may open its pull request in another repository than its
+issue's (an infrastructure change for a workflow issue). The pull request's own repository comes from its URL, never from
+the job's: the follow reads, merges, moves and closes it there; its card is in that repository's group; its yolo mode,
+change rule, landing branch and tending queue are that repository's (`jobPullRequestRepo`, `src/domain/pull-requests.ts`).
+Only its issue — labels, the close after a merge — stays in the job's repository.
+
 **A pull request stays in sight while it is open** (issue #763: open pull requests a job opened were on GitHub and not on
 the list, and nothing tended them). Two ways it fell out, each closed:
 - *Its tend job works on it.* A tended job follows its pull request no more (`follow: tended`), and its new job is not

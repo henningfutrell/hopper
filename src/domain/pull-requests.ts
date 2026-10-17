@@ -301,7 +301,8 @@ export function inMotion(job: Job, mergesOnReady: (repo: string, kind?: ChangeKi
   const seen = (job.sourceState?.source as { seen?: PullRequestSeen } | undefined)?.seen;
   if (!seen || seen.checks === 'pending') return true;
   if (seen.checks === 'none' && !seen.draft && !seen.conflicting && !noChecksSettled(seen, now)) return true;
-  return readyToMerge(seen, now) && job.source?.repo !== undefined && mergesOnReady(job.source.repo, seen.change?.kind);
+  const repo = jobPullRequestRepo(job);
+  return readyToMerge(seen, now) && repo !== undefined && mergesOnReady(repo, seen.change?.kind);
 }
 
 /**
@@ -659,6 +660,20 @@ export const followsWhenEnded = (job: Job): boolean => job.status === 'finished'
  */
 export const following = (job: Job): boolean =>
   (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open' && !handedToFollowOns(job);
+
+/** The repository of GitHub pull request `url` (issue #1778: a job may open it in another repository than its issue's), else `repo`. */
+export const pullRequestRepo = (url: string | undefined, repo: string): string =>
+  (url ? /github\.com\/([^/]+\/[^/]+)\/pull\/\d+/i.exec(url)?.[1] : undefined) ?? repo;
+
+/**
+ * The repository of the job's pull request (issue #1778): of the one it follows, else the one its tend works on, from its
+ * URL; else the job's own. Its yolo mode, change rule and tending queue are that repository's.
+ */
+export function jobPullRequestRepo(job: Job): string | undefined {
+  const s = job.sourceState?.source as { pullRequest?: string; tended?: { pullRequest?: string } } | undefined;
+  const repo = job.source?.repo;
+  return repo === undefined ? undefined : pullRequestRepo(s?.pullRequest ?? s?.tended?.pullRequest, repo);
+}
 
 /**
  * An ended job that may follow its item's open pull request when reconciled with its source (issue #763): finished — or

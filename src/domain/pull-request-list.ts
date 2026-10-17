@@ -1,7 +1,7 @@
 // The Pull requests list (issue #637, design.md "PR waiting"): every hopper pull request that waits — a done job's,
 // followed after its end (PR waiting) — one closed without a merge, which waits on a person, and one its item's tend job
 // works on (issue #763: the tended job follows it no more, but it is still open), grouped per job repository with its yolo mode; and the header: how many repositories have yolo mode on, and where merging waits. A
-// merged one drops off. Only the newest job of an item counts: a job run again since is not waiting. Pure: built from the
+// merged one drops off. A pull request a job opened in another repository than its issue's is that repository's (issue #1778). Only the newest job of an item counts: a job run again since is not waiting. Pure: built from the
 // jobs as their follow-ups last saw them (`PullRequestSeen`), never from GitHub at read time, and the time now (the
 // no-checks grace window, issue #677). A card that needs tending says what the hopper does about it (issue #927): tended
 // next, held behind a head of its repository's tending queue that conflicts with it, or given up on, and why; a ready one
@@ -14,7 +14,7 @@
 // merged only with yolo mode on, `person merges` for a kind only a person merges; a kind merged with no person is not held.
 import type { Job } from './types.ts';
 import { DIRECT_SOURCE } from './direct-jobs.ts';
-import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, rebasesWhenBaseMoves, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
+import { followsWhenEnded, jobPullRequestRepo, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, rebasesWhenBaseMoves, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 import type { LandingCard } from './work-item-landing.ts';
@@ -175,7 +175,7 @@ function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob:
   const tendEnded = tendJob !== undefined && TEND_ENDS.includes(tendJob.status) && retryAt === undefined;
   const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, rule, now);
   return {
-    jobId: job.id, repo: job.source!.repo!,
+    jobId: job.id, repo: jobPullRequestRepo(job)!,
     ...(job.source!.number !== undefined ? { issue: { number: job.source!.number, url: job.source!.url ?? job.source!.key } } : { directJob: { url: job.source!.url ?? job.source!.key } }),
     ...(f.pullRequest ? { pullRequest: { number: numberOf(f.pullRequest), url: f.pullRequest } } : {}),
     part: f.part === true, state, checks: seen?.checks ?? 'unknown', mergeable: seen ? (seen.conflicting ? 'conflicts' : 'mergeable') : 'unknown',
@@ -258,10 +258,10 @@ function withQueue(cards: PullRequestCard[], waiting: Job[], tendJobs: Job[], ge
 export function pullRequestList(jobs: Job[], newest: (key: string) => Job | undefined, yolo: YoloModeSettings, repos: string[], now: number, get: (id: string) => Job | undefined): PullRequestsView {
   const waiting = jobs.filter((j) => waitsOnPullRequest(j, newest));
   const names: string[] = [];
-  for (const r of [...repos, ...waiting.map((j) => j.source!.repo!)]) if (!names.some((n) => n.toLowerCase() === r.toLowerCase())) names.push(r);
+  for (const r of [...repos, ...waiting.map((j) => jobPullRequestRepo(j)!)]) if (!names.some((n) => n.toLowerCase() === r.toLowerCase())) names.push(r);
   const groups = names.map((repo) => {
     const on = yoloModeFor(yolo, repo);
-    const here = waiting.filter((j) => j.source!.repo!.toLowerCase() === repo.toLowerCase());
+    const here = waiting.filter((j) => jobPullRequestRepo(j)!.toLowerCase() === repo.toLowerCase());
     const tendJobs = here.flatMap((j) => tendJobOf(j, newest) ?? []);
     const rule = changeRuleFor(yolo.changeKinds, repo);
     const cards = here.map((j) => cardOf(j, on, rule, now, tendJobOf(j, newest)))
