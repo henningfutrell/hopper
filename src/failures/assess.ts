@@ -51,6 +51,8 @@ export interface AssessInput {
   unfinishedFixes?: number;
   /** The failure of its item's run before it has the same signature (issue #1461, `chain.ts` `repeatedOf`). */
   repeated?: boolean;
+  /** Why its cause is not the one its text matches (issue #1522: its work shows its own pull request unfinished or red). */
+  causeReason?: string;
 }
 
 /** A failure assessed longer than this after it failed takes no automatic action (issue #517). */
@@ -173,7 +175,7 @@ function heldOnReport(i: AssessInput, bug: NonNullable<AssessInput['hopperBug']>
 /** What it would be without its age or a newer job: its class and decision. */
 function judge(i: AssessInput): Assessment {
   const s = i.settings;
-  const reasons: string[] = [i.cause ? `known cause: ${i.cause.name}` : 'no known cause matches'];
+  const reasons: string[] = [i.cause ? `known cause: ${i.cause.name}` : 'no known cause matches', ...(i.causeReason ? [i.causeReason] : [])];
   const done = (cls: FailureClass, decision: FailureDecision, extra: { problem?: ProblemPlan; title?: string; retryInMs?: number } = {}): Assessment => {
     const auto = decision === 'person' || s.auto[decision];
     if (!auto) reasons.push(`automatic ${decision} is off: it waits for a person`);

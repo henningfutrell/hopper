@@ -11742,6 +11742,19 @@ the checks pass, open no new pull request, end done. No `hopper:failed` while it
 **Scope.** Within a run, the finish briefs still come first (`MAX_FINISH_BRIEFS`); this cause is the job's end after them.
 A PR waiting job's pull request that has conflicts later is tended ("Tending a waiting pull request").
 
+**Its work decides, not only its text** (issue #1522, 2026-10-16). A job that pushed to a pull request its issue only
+names, which neither closes nor references the issue, failed with the generic Not complete text, and Needs a person
+opened for plain merge conflicts. Two changes:
+
+- The job's own open pull requests (`ownOpenPullRequests`, `completion.ts`) take in one that only references its issue,
+  in its repository, with no closing keyword for another issue: the miss names it, as above.
+- Before a done-check miss is assessed, after it is looked at once more, its work is asked at its source (`workCause`,
+  `done-at-source.ts`, at most `PR_LOOKUP_MS`). Its item open, nothing shipped, and a pull request the job opened or
+  pushed to open with merge conflicts or as a draft: the cause is **Own PR unfinished**; else one open with failing checks
+  (`WorkPullRequest.checks`): **Own PR checks red** (`ownPullRequestCause`, `causes.ts`, pure). It replaces Not complete
+  only, and the record says why (`its work shows its own pull request …, whatever the failure text says`). The rules,
+  the retry limit and `auto.continue` are those of the cause. Not known in time: the text decides, as before.
+
 ## Needs a person (issue #516, 2026-10-08)
 
 A failed job the assessor handed to a person showed among the recent failures, which a window of 50 hides, and as a
