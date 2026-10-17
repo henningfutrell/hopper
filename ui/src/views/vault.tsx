@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Confirm } from '@/components/confirm';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
-import { approvalText, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts, templateWaits, toolsText } from '@/model/vault';
+import { approvalText, keptText, mintsOf, mintsValueOf, nameProblem, profileText, referenceHint, secretFacts, templateWaits, toolsText } from '@/model/vault';
 import type { Asset, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { sendVault, setVaultView, useVault, useVaultStore } from '@/store/vault';
@@ -71,6 +71,7 @@ function SetForm({ secret, backends, local, busy, send, onDone }: { secret?: Vau
   const problem = name ? nameProblem(name.trim()) : undefined;
   const ready = backend ? reference.trim() !== '' : value !== '';
   const mints = mintsOf(mintsSaid);
+  const valueShape = mintsValueOf(typeof mints === 'object' ? mints : undefined, backend ? '' : value);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
@@ -101,10 +102,12 @@ function SetForm({ secret, backends, local, busy, send, onDone }: { secret?: Vau
           {(backend.problem ?? backend.setup) && <div className="text-xs text-warn break-words">{backend.problem ?? backend.setup}</div>}</label>
       ) : (
         <label className="block space-y-1"><Label>Value — kept encrypted; never shown again, to anyone</Label>
-          <ValueInput value={value} onChange={setValue} /></label>
+          <ValueInput value={value} onChange={setValue} />
+          {valueShape.shape && <div className="text-xs text-muted-foreground break-words">{valueShape.shape}</div>}
+          {valueShape.problem && <div className="text-xs text-bad">{valueShape.problem}</div>}</label>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !ready || !name.trim() || problem !== undefined || typeof mints === 'string'}>{secret ? 'Replace' : 'Set secret'}</Button>
+        <Button type="submit" disabled={busy || !ready || !name.trim() || problem !== undefined || typeof mints === 'string' || valueShape.problem !== undefined}>{secret ? 'Replace' : 'Set secret'}</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>

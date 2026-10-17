@@ -9,7 +9,7 @@
 // `vault.mint_tested` records each test, never a key or a token.
 import type { UserStore } from '../domain/ports.ts';
 import type { Asset } from '../domain/access.ts';
-import { MINT_TEST_ID, expiryOf, mintTarget, type MintTarget, type MintTestResult } from '../domain/minting.ts';
+import { MINT_TEST_ID, expiryOf, mintTarget, mintingCredentialFor, type MintTarget, type MintTestResult } from '../domain/minting.ts';
 import { assetOf, type MintedFrom, type MintFrom } from './mint.ts';
 
 /** A mint test's answer: what STS said, or why there is none — a bad ask, no minting credential, or STS refused. */
@@ -28,10 +28,11 @@ export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events'> }
     if (asset.kind !== 'aws-role' && asset.kind !== 'cluster') return refuse('invalid', `${takes}, not ${asset.kind}/${asset.name}`);
     const target = mintTarget(asset.kind === 'cluster' ? 'kube' : 'aws', { operation: 'read', asset });
     if (typeof target === 'string') return refuse('invalid', target);
-    const credential = vault.list().find((s) => s.mints?.kind === target.mintsFor.kind && s.mints.name === target.mintsFor.name);
-    if (!credential) return refuse('not_found', `no minting credential mints for ${target.mintsFor.kind} ${target.mintsFor.name}: a person adds one on Settings → Vault`);
+    const credential = mintingCredentialFor(vault.list(), target.mintsFor);
+    if (typeof credential === 'string') return refuse(credential.startsWith('no ') ? 'not_found' : 'invalid', credential);
     const made = await from(credential.name, target, MINT_TEST_ID, true);
-    if ('refused' in made) return refuse('failed', made.refused, credential.name);
+    // The answer names the secret the test used (issue #1761), as a tested answer does.
+    if ('refused' in made) return refuse('failed', `the mint test used ${credential.name}: ${made.refused}`, credential.name);
     const tested = testedOf(made, asset, credential.name, target);
     if (!tested) return refuse('failed', `the vault minted from ${credential.name} but said no identity`, credential.name);
     const who = tested.kind === 'aws' ? { arn: tested.identity.arn } : { user: tested.user.username };

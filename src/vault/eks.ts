@@ -7,7 +7,7 @@
 // credentials are opened: in the hopper, or in the vault's own container.
 import { parse } from 'yaml';
 import {
-  AWS_REGION_NAME, AWS_SESSION_SECONDS, EKS_CLUSTER_NAME, awsReadSession, awsSessionName, mintingCredentialOf, roleAccountOf,
+  AWS_REGION_NAME, AWS_SESSION_SECONDS, EKS_CLUSTER_NAME, awsReadSession, awsSessionName, mintingCredentialFor, mintingCredentialOf, roleAccountOf,
   type ClusterIdentity, type EksCluster, type EksMintingCredential, type Minted, type MintReach,
 } from '../domain/minting.ts';
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
@@ -93,8 +93,8 @@ export async function mintEks(
   const cluster = eksClusterOf(c, kubeconfig);
   if (typeof cluster === 'string') return refuse(cluster);
   const account = roleAccountOf(c.roleArn);
-  const aws = o.vault.list().find((s) => s.mints?.kind === 'aws-account' && s.mints.name === account);
-  if (!aws) return refuse(`its EKS sign-in assumes ${c.roleArn}: no minting credential mints for aws-account ${account}: a person adds one on Settings → Vault`);
+  const aws = mintingCredentialFor(o.vault.list(), { kind: 'aws-account', name: account });
+  if (typeof aws === 'string') return refuse(`its EKS sign-in assumes ${c.roleArn}: ${aws}`);
   const read = await o.valueOf(aws);
   if ('refused' in read) return refuse(`the AWS minting credential ${aws.name}: ${read.refused}`);
   const keys = mintingCredentialOf('aws', read.value);
