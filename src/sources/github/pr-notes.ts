@@ -14,3 +14,10 @@ export const retargetNote = (from: string, to: string): string =>
 
 /** The pull request closed without a merge: nothing is left to land, `why`. */
 export const supersededNote = (why: string): string => `The hopper closed this pull request: ${why}. Nothing is left to land.`;
+
+/**
+ * A second pull request of an item closed without a merge (issue #1208): it has merge conflicts, and the item's job follows
+ * pull request `followed`, the one the hopper tends.
+ */
+export const secondPullRequestNote = (followed: number): string =>
+  `The hopper closed this pull request: it has merge conflicts, and the work on its issue continues in #${followed}, which a job of the hopper follows. The hopper tends only that pull request. To keep a change of this one, add it to #${followed}.`;

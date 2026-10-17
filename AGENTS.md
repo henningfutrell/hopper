@@ -151,7 +151,7 @@ a conflict GitHub cannot merge files one issue the same way as a fix issue, its 
 (`landing_batch.back_merge_issue_filed`). **Pull request housekeeping** (issue #1143, `docs/design.md` "Pull request housekeeping") is the hopper's
 care of a job's open pull request it follows, or a **stray** one (a job named it, no job follows it, no job of its item
 works on it; part 4), or an **untracked** one of an item the ledger holds, on a branch named for its issue (issue #1176,
-`docs/design.md` "Untracked pull requests"; only the move): it moves one based off the landing branch to it, closes one with nothing
+`docs/design.md` "Untracked pull requests"; only the move, and the close of a **second pull request** on a branch named for its issue with merge conflicts, issue #1208): it moves one based off the landing branch to it, closes one with nothing
 left to land, and posts on the pull request one fixed comment for each such act and for each tend job it starts,
 naming no person; the batch runner's move of a job's pull request from the tested branch, followed or not, posts the same
 comment. A job's own request through the GitHub proxy (issue #563) is
