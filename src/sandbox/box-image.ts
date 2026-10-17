@@ -35,6 +35,9 @@ export async function boxImage(runtime: ContainerRuntime, base: string, tools: r
     return { image, user: (await runtime.pull(image)).user };
   }
   const built = toolsImage({ image: base, id: read.id }, tools, { readOnly });
-  await runtime.build(built.tag, built.containerfile);
+  // A build that fails is the hopper's failure, not the command's (issue #1737): the message says so to the job.
+  await runtime.build(built.tag, built.containerfile).catch((e: unknown) => {
+    throw new Error(`the hopper could not build the box's tools image, so the command did not run (a failure of the hopper, not of the command; run the step again): ${e instanceof Error ? e.message : String(e)}`);
+  });
   return { image: built.tag, user: (await runtime.pull(built.tag)).user };
 }

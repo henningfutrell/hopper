@@ -12,6 +12,7 @@
 //   Scenario: a read-only template's image holds the AWS provider in a mirror terraform installs only from (issue #715)
 //   Scenario: any other image with terraform puts the apply wrapper first on PATH (issue #870)
 //   Scenario: each image of the fetch stage carries the stage label, so a leftover stage is known as the hopper's (issue #1120)
+//   Scenario: each download tries again after a network error, so one lost DNS answer does not fail the build (issue #1737)
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS, toolsProblem } from '../../src/domain/sandboxes.ts';
 import { TERRAFORM_CLI_CONFIG, TERRAFORM_APPLY_WRAPPER, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
@@ -116,5 +117,14 @@ describe('the tools image (issue #716)', () => {
     // The first instruction after the stage's FROM: every image the build keeps for that stage has it.
     expect(containerfile).toContain(`AS fetch\nLABEL ${TOOLS_STAGE_LABEL}="fetch"\nRUN `);
     expect(TOOLS_STAGE_LABEL).toBe('io.hopper.tools-stage');
+  });
+
+  it('each download tries again after a network error, so one lost DNS answer does not fail the build (issue #1737)', () => {
+    const { containerfile } = toolsImage(BASE, [...BOX_TOOLS], { readOnly: true });
+    const curls = [...containerfile.matchAll(/curl -[^;]*/g)].map((m) => m[0]);
+    expect(curls).toHaveLength(BOX_TOOLS.length + 1);
+    // --retry-all-errors: curl tries again on a host it could not resolve (exit 6) too, not only on a timeout or a 5xx.
+    for (const c of curls) expect(c).toMatch(/^curl -fsSL --retry \d+ --retry-delay \d+ --retry-all-errors --connect-timeout \d+ /);
+    expect(containerfile).toContain('apt-get -o Acquire::Retries=');
   });
 });

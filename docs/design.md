@@ -10712,6 +10712,10 @@ box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
   so a tool fetched for one image is a cached layer for the next); then the box's own image, with only `/opt/hopper-tools`
   copied in and put first on `PATH`. Nothing else of the base changes: its user, its entrypoint, its labels; it adds the
   label `io.hopper.tools`. A sum that does not match fails the build, and nothing starts.
+  Each download tries again on a network error (issue #1737): `curl --retry 4 --retry-delay 3 --retry-all-errors`, and
+  `apt-get -o Acquire::Retries=4`, so one lost DNS answer or reset does not fail the build. A build that fails all the same
+  is said to the job as the hopper's failure, not the command's (`boxImage`, `src/sandbox/box-image.ts`): the step's
+  problem says the tools image did not build, so the command did not run, and to run the step again.
 - **Built once.** Its tag is `localhost/hopper-box-tools:<16 hex>`, a SHA-256 of the Containerfile and the base image's
   id: the same tools on the same base build once. The runtime port has `build(tag, containerfile)` (Podman's
   `/libpod/build`, Docker's `/build`; the context is a tar of the one Containerfile, `containerfileTar`). It builds only
