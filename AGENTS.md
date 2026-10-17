@@ -133,7 +133,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   and assigned it, not through an app or as a bot, and no job filed it; any other is a request card a person approves, and
   its job runs the approved text. A GitLab issue (issue #1448, `docs/design.md` "Jobs through GitLab") becomes a job only when
   the user's GitLab account — Access decides (`intake#can_start_jobs`, a `gitlab_account` by its GitLab and user id) — wrote,
-  labelled and assigned it, and nobody else edited its title or description; any other is listed with why, never taken. Approve is a person's act through the UI session, never a job's. One exception, the
+  labelled and assigned it, and nobody else edited its title or description; any other is a request card a person approves, as on GitHub, and its job runs the approved text (issue #1642). Approve is a person's act through the UI session, never a job's. One exception, the
   user's own setting: **auto-approval** (issue #1268, `docs/design.md` "Auto-approval", on by default) approves a card a
   trusted actor reopened, wrote or labelled `hopper:high`, or a listed app wrote, and records it as an approval; a card a
   job filed, that someone else edited, or that a person took into Intake still waits. The origin gates the job,
