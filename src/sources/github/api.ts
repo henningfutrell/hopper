@@ -16,6 +16,9 @@ import type { TaggedHit } from '../../domain/tagged.ts';
 export type TaggedSearchHit = TaggedHit & { labels: string[] };
 
 /** A GitHub Actions workflow run (issue #1508): `status` as GitHub says it (`queued`, `waiting`, `in_progress`, `completed`, …). */
+/** A review of a pull request (issue #1694 part 3). */
+export interface PullRequestReview { state: string; submittedAt?: string }
+
 export interface WorkflowRun { url: string; status: string; conclusion?: string }
 
 export interface GitHubIssue {
@@ -302,6 +305,12 @@ export interface GitHubApi {
    * completed, its conclusion. GitHub refuses it (403) without the Actions read permission; a refusal throws. Absent: not read.
    */
   workflowRun?(repo: string, runId: number): Promise<WorkflowRun>;
+  /**
+   * The reviews of pull request `number` of `repo` (issue #1694 part 3: a job's wait on its review), oldest first, each its
+   * state in lower case (`approved`, `changes_requested`, `commented`, `dismissed`) and when it was sent. A review not yet
+   * sent is none. Absent: not read.
+   */
+  pullRequestReviews?(repo: string, number: number): Promise<PullRequestReview[]>;
   /**
    * The checks of commit `ref` (a head commit, or a branch) of `repo` (issue #1244), over REST: its check runs and its
    * combined status. What the hopper reads when GitHub refuses the GraphQL rollup (`checksFallback`). A refusal of either
