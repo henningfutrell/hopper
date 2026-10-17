@@ -1,8 +1,9 @@
 // Preemption (issue #1525, design.md "Preemption"): the Decision marks a running job `preempted` and names it; here the
 // runner parks it on the Park button's path (its lane frees in the transaction that parks it, its pane and agent end,
 // its work tree, agent session and checkpoint are kept), and once parked it is queued again at once, pinned to its
-// machine with PARKED_RESUME pending, so its claim resumes its agent session where it stopped. A job the runner does not
-// hold (it ended meanwhile) loses its mark, so nothing waits on a park that never comes.
+// machine with PARKED_RESUME pending, so its claim resumes its agent session where it stopped. A job another hopper drives
+// is parked by that hopper (issue #1662). A job no runner holds (it ended meanwhile) loses its mark, so nothing waits on a
+// park that never comes.
 import { DEFAULT_PREEMPTION, type PreemptionSettings } from '../domain/types.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { EngineContext } from './context.ts';
@@ -11,9 +12,9 @@ import type { Runner } from './runner.ts';
 
 export const preemptionSettings = (store: Pick<UserStore, 'settings'>): PreemptionSettings => store.settings.getPreemption() ?? DEFAULT_PREEMPTION;
 
-/** After the commit: park the job the Decision preempted. */
-export function preemptRunning(c: EngineContext, runner: Pick<Runner, 'park'>, jobId: string): void {
-  if (runner.park(jobId)) return;
+/** After the commit: park the job the Decision preempted. `relay`: when another hopper drives it, ask that hopper to. */
+export function preemptRunning(c: EngineContext, runner: Pick<Runner, 'park'>, jobId: string, relay = true): void {
+  if (runner.park(jobId) || (relay && c.leases.relay(jobId, { kind: 'park' }))) return;
   c.store.tx(() => {
     const job = c.store.jobs.get(jobId);
     if (job?.preempted && job.status !== 'parked') c.store.jobs.update(jobId, { preempted: undefined });
