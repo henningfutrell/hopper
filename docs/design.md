@@ -24098,6 +24098,38 @@ registers once, and a wrong code or another account does not; the removal makes 
 not JSON, of another type or another shape is refused, recorded with its reason only, and changes nothing; the unlink
 notice names the instance id and the account.
 
+## The machines the link reports (issue #465, part 5, 2026-10-17)
+
+**The problem.** Issue #465 item 4: each instance reports its machines over the link — name, online state, lanes, and the
+executors offered — and hopper.io shows them under their instance. The hopper.io state snapshot (issue #466, "The hopper.io
+state snapshot") already holds each machine's key, online state and lanes. It does not hold the executors.
+
+**The change.** `machines[].executors` in the snapshot, `schema: 2` (`src/domain/hopper-io-state.ts`): the kinds of executor
+the machine offers, each once, in name order. A kind is the executor plugin's id when it is a built-in executor
+(`HOPPER_IO_EXECUTORS`: `herdr-claude`, `claude`, `codex`, `cursor-agent`, `opencode`, `omp`, `command`, `kubernetes`,
+`test`), else `other`. The projection takes `executorPlugin(name)`, the plugin of each executor instance of the plugins
+config, from the link (issue #464); an unknown name is `other` too.
+
+**Decisions:**
+- **The kind, never the name.** A machine's executors are the instance names the plugins config gives them, free text that
+  can hold a host name (R5). The kind is a closed list. A third-party executor plugin's id is free text too, so it is
+  `other`.
+- **No machine name.** Part 1 of issue #466 sends no label (R5); the owner names a machine at hopper.io by its key. This part
+  keeps that.
+- **`schema: 2`.** A new field bumps the schema ("The hopper.io state snapshot"). Nothing sends version 1 yet, so nothing
+  reads it: no hopper.io code base exists.
+- **A test keeps the list whole.** `test/domain/hopper-io-state.test.ts` checks that `HOPPER_IO_EXECUTORS` holds every
+  built-in executor's id. A new built-in executor fails it until the list names it. The domain does not import
+  `src/plugins/` (the seam table).
+
+**Left for later parts of issue #465:** the agent that sends the snapshot and carries the messages (issue #464, which supplies
+`machineKey` and `executorPlugin`); the link state and last-seen time at hopper.io, and one registration per instance id
+(item 3), kept at hopper.io; the open questions (issue #469 decision 6).
+
+**Verification:** `test/domain/hopper-io-state.test.ts`: a machine's executors named after a host, a custom name and a
+third-party plugin go out only as their kinds (`claude`, `codex`, `herdr-claude`, `other`); none of the names is in the
+snapshot; the schema refuses an executor outside the list and version 1; 50 machines with two executors each fit in 8 KiB.
+
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 
 **The problem.** The file-issue run skill ("Run skills") ran only on `claude`, on a machine the caller built the call
@@ -24217,7 +24249,7 @@ against the schema before it sends it (R4, R7); that check is #464's.
 
 | Field | From | Why hopper.io keeps it |
 |-------|------|------------------------|
-| `schema` | the constant `1` | which shape hopper.io parses |
+| `schema` | the constant `2` (`machines[].executors` added, issue #465 part 5) | which shape hopper.io parses |
 | `sentAt` | passed in, the link's clock | when the instance said it |
 | `instance.version` | `UpdateStatus.installed.commit`, its first 8 hex characters; `unknown` when none | the instances list: version |
 | `instance.channel` | `UpdateStatus.channel`: `dev`, `beta` or `stable` | the instances list: update channel |
@@ -24229,14 +24261,15 @@ against the schema before it sends it (R4, R7); that check is #464's.
 | `machines[].key` | `machineKey(id)`: an opaque, stable key the link derives (for example an HMAC under the cloud link key); never the id | to tell machines apart between snapshots, and for the name the owner gives it at hopper.io |
 | `machines[].online` | `MachineSnapshot.online` | machines per instance |
 | `machines[].lanesInUse`, `.lanes` | its lanes not idle; `maxLanes` | machines per instance |
+| `machines[].executors` | the kinds of its executors (`MachineSnapshot.executors`): a built-in executor plugin's id, else `other`; each once, in name order. Never an executor's name ("The machines the link reports") | machines per instance: the executors offered (#465 item 4) |
 | `machines[].takesJobs`, `.notTaking` | why it takes no new job, in the decider's order (`idleReason`): `no-lanes`, `offline`, `leaving`, `drained`, `template-waiting`, `disk-low`, `work-tree`, `address`, `herdr` | machines per instance |
 
-What is never sent: the instance's name, a machine's id or label, any free text of a machine (`ssh`, `home`, `workTree`,
+What is never sent: the instance's name, a machine's id or label, an executor's name, any free text of a machine (`ssh`, `home`, `workTree`,
 `workTreeProblem`, `addressProblem`, `herdrProblem`, `hopperUrl`, `client.door`, who drained it), any user, and any job or
 question content. A machine's label is often its host name, which R5 forbids; the owner names instances and machines at
 hopper.io instead (#465). `test/domain/hopper-io-state.test.ts` sends a machine with a host name, a path, an address and a
 person's name in each free-text field, and checks that none of them comes out. One snapshot holds every user's machines
-of the instance, as one list (the tracking issue's decision 6a); per-user parts would be `schema: 2`. A snapshot of 50
+of the instance, as one list (the tracking issue's decision 6a); per-user parts would be `schema: 3`. A snapshot of 50
 machines is under 8 KiB.
 
 **Live updates, with no polling of the instances** (the design for #464 and the hopper.io side; not built):
