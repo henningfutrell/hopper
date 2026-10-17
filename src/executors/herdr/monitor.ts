@@ -241,8 +241,8 @@ async function watch(w: TurnWatch): Promise<Watched> {
       } else if (turn.lastMarker === 'wait' && turn.wait) {
         // The job's own wait (issue #483): no question, no nudge. It goes on by itself, or a person ends the wait.
         w.onQuestion?.(agent.stateChangeSeq, undefined, turn.outputLines);
-        const { for: what, until, on } = turn.wait;
-        return { kind: 'wait', wait: { for: hideCodes(what, recent), ...(until ? { until: hideCodes(until, recent) } : {}), ...(on ? { on: hideCodes(on, recent) } : {}) } };
+        const { for: what, until, on, check } = turn.wait;
+        return { kind: 'wait', wait: { for: hideCodes(what, recent), ...(until ? { until: hideCodes(until, recent) } : {}), ...(on ? { on: hideCodes(on, recent) } : {}), ...(check ? { check: hideCodes(check, recent) } : {}) } };
       } else if (turn.lastMarker === 'auth') {
         return { authPending: turn.auth ?? {} };
       } else {

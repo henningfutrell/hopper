@@ -272,8 +272,9 @@ export function createLogins(o: LoginsOptions): Logins {
     view(login, withSecrets) {
       const secret = OPEN.includes(login.status) ? secrets.get(login.id) : undefined;
       const lastAccount = o.lastAccounts?.of(login);
+      const { hostOwner: _host, ...kept } = login; // the host that runs it names a machine: never answered
       return {
-        ...login, ...tagOf(login), codeKept: secret !== undefined, ...(secret ? { host: hostOf(secret.verificationUrl) } : {}), ...(withSecrets && secret ? secret : {}),
+        ...kept, ...tagOf(login), codeKept: secret !== undefined, ...(secret ? { host: hostOf(secret.verificationUrl) } : {}), ...(withSecrets && secret ? secret : {}),
         ...(lastAccount !== undefined ? { lastAccount } : {}),
       };
     },

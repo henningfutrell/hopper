@@ -24,6 +24,7 @@ import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limit
 import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
+import { soleLease } from '../domain/leases.ts';
 import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
@@ -206,8 +207,11 @@ export function createEngine(o: EngineOptions): Engine {
       // Each cleanup a record says is due (issue #1570) — of a job recovery ended, or one whose end a stop cut off from
       // its cleanup — and each deferred one (issue #371), then the sweep of every machine (issue #410): what a hopper
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
-      void cleanups.resume().then(() => sweep.run(true));
-      sweepTimer = setInterval(() => { void sweep.run(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
+      // On two hosts on one database (issue #1627), only the sweep lease's holder sweeps; a host that takes it sweeps every machine.
+      const sweepLease = o.sweepLease ?? soleLease();
+      const sweepIfHeld = (): Promise<void> => { const h = sweepLease.hold(); return h.held ? sweep.run(h.taken) : Promise.resolve(); };
+      void cleanups.resume().then(sweepIfHeld);
+      sweepTimer = setInterval(() => { void sweepIfHeld(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
       // Discovery (issue #542): each machine again every `everyMinutes`; one that comes online, at the next Decision.
       discoverTimer = setInterval(() => { void blastRadius.run(); }, DISCOVER_CHECK_MS);
       // Checkpoints (issue #921): one pass at a time; a pass still reading machines skips this one.

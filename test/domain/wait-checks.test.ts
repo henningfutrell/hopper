@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Job, JobWait } from '../../src/domain/types.ts';
 import {
-  afterCheck, commandOutcome, conditionKey, conditionOf, newCheck, COMMAND_DEADLINE_MS, DEADLINE_MS, FIRST_CHECK_MS, MAX_EVERY_MS, OVERDUE_EVERY_MS,
+  afterCheck, checkAskOf, checksOutcome, commandOutcome, conditionKey, conditionOf, newCheck, type WaitedChecks, COMMAND_DEADLINE_MS, DEADLINE_MS, FIRST_CHECK_MS, MAX_EVERY_MS, OVERDUE_EVERY_MS,
 } from '../../src/domain/wait-checks.ts';
 
 const SINCE = '2026-10-17T10:00:00.000Z';
@@ -17,7 +17,7 @@ const waiting = (wait: Partial<JobWait>): Job => ({
 describe('what a wait check tests (conditionOf)', () => {
   it('a pull request of the job\'s own repository: its end, read as an item', () => {
     expect(conditionOf(waiting({ on: { kind: 'pull_request', number: 8, about: 'merge' } }))).toEqual({ kind: 'items_ended', refs: [{ kind: 'issue', repo: 'octo/tools', number: 8 }] });
-    expect(conditionOf(waiting({ on: { kind: 'pull_request', repo: 'octo/web', number: 3, about: 'checks' } }))).toEqual({ kind: 'items_ended', refs: [{ kind: 'issue', repo: 'octo/web', number: 3 }] });
+    expect(conditionOf(waiting({ on: { kind: 'pull_request', repo: 'octo/web', number: 3, about: 'review' } }))).toEqual({ kind: 'items_ended', refs: [{ kind: 'issue', repo: 'octo/web', number: 3 }] });
   });
 
   it('an item, and an outside event that names items and runs', () => {
@@ -104,5 +104,72 @@ describe('a wait on its own command (commandOutcome)', () => {
   it('its pane lost: met; its pane not read: not met', () => {
     expect(commandOutcome(own(), { runs: false, lost: true }, at(1), GRACE)).toMatchObject({ met: true });
     expect(commandOutcome(own(), { runs: null, lost: null }, at(COMMAND_DEADLINE_MS), GRACE)).toEqual({ met: false, result: 'the hopper cannot read its pane now' });
+  });
+});
+
+// Part 2: the job names its check (a `check:` line after HOPPER_WAITING), a time the hopper wakes it at, and a pull request's checks.
+describe('the check a job names (checkAskOf, issue #1694 part 2)', () => {
+  it('in, every: the next check-in; after, at: a time to wake at; anything else: none', () => {
+    expect(checkAskOf('in 20m', at(0))).toEqual({ inMs: 20 * 60_000 });
+    expect(checkAskOf('every 2 minutes', at(0))).toEqual({ inMs: 2 * 60_000 });
+    expect(checkAskOf('In 10 min', at(0))).toEqual({ inMs: 10 * 60_000 });
+    expect(checkAskOf('after 2h', at(0))).toEqual({ at: new Date(at(2 * 3600_000)).toISOString() });
+    expect(checkAskOf('at 2026-10-17T16:30:00Z', at(0))).toEqual({ at: '2026-10-17T16:30:00.000Z' });
+    expect(checkAskOf('when it is done', at(0))).toBeUndefined();
+    expect(checkAskOf('at noon', at(0))).toBeUndefined();
+    expect(checkAskOf('in 0m', at(0))).toBeUndefined();
+  });
+
+  it('a check-in is kept between a minute and its cap; a time to wake at is never before the wait and at most a week after', () => {
+    expect(checkAskOf('in 10s', at(0))).toEqual({ inMs: FIRST_CHECK_MS });
+    expect(checkAskOf('in 3h', at(0))).toEqual({ inMs: MAX_EVERY_MS });
+    expect(checkAskOf('at 2026-10-17T09:00:00Z', at(0))).toEqual({ at: SINCE });
+    expect(checkAskOf('after 30d', at(0))).toEqual({ at: new Date(at(7 * 24 * 3600_000)).toISOString() });
+  });
+
+  it('a wait the hopper cannot test, with a time: time_passed; with a condition, the condition, woken at the time too', () => {
+    const outside = waiting({ on: { kind: 'outside', what: 'a deploy window' }, checkLine: 'after 2h' });
+    const wake = new Date(at(2 * 3600_000)).toISOString();
+    expect(conditionOf(outside)).toEqual({ kind: 'time_passed', at: wake });
+    expect(newCheck(outside, at(0))).toMatchObject({ condition: { kind: 'time_passed', at: wake }, nextCheckAt: wake });
+    const item = newCheck(waiting({ on: { kind: 'item', number: 9 }, checkLine: 'after 2h' }), at(0));
+    expect(item).toMatchObject({ condition: { kind: 'items_ended' }, wakeAt: wake, nextCheckAt: new Date(at(FIRST_CHECK_MS)).toISOString() });
+    expect(conditionKey({ kind: 'time_passed', at: wake })).toBe(`time_passed:${wake}`);
+  });
+
+  it('a check-in sets the first check and the time between checks', () => {
+    const c = newCheck(waiting({ on: { kind: 'item', number: 9 }, checkLine: 'in 20m' }), at(0));
+    expect(c).toMatchObject({ nextCheckAt: new Date(at(20 * 60_000)).toISOString(), everyMs: 20 * 60_000 });
+  });
+
+  it('a time to wake at is never passed by the backoff, and moves the deadline past it', () => {
+    const c = newCheck(waiting({ on: { kind: 'item', number: 9 }, checkLine: 'after 40h' }), at(0));
+    expect(Date.parse(c.deadline)).toBeGreaterThan(at(40 * 3600_000));
+    const near = newCheck(waiting({ on: { kind: 'item', number: 9 }, checkLine: 'after 3m' }), at(0));
+    const next = afterCheck(near, 'still open', at(2 * 60_000));
+    expect(next.check.nextCheckAt).toBe(new Date(at(3 * 60_000)).toISOString());
+  });
+
+  it('a pull request\'s checks: tested as its checks, not only its end', () => {
+    expect(conditionOf(waiting({ on: { kind: 'pull_request', number: 8, about: 'checks' } }))).toEqual({ kind: 'pr_checks_ended', repo: 'octo/tools', number: 8 });
+    expect(conditionKey({ kind: 'pr_checks_ended', repo: 'Octo/Tools', number: 8 })).toBe('pr_checks_ended:octo/tools#8');
+  });
+});
+
+describe('what a pull request\'s checks say (checksOutcome)', () => {
+  const URL = 'https://github.com/octo/tools/pull/8';
+  const pr = (o: Partial<WaitedChecks>): WaitedChecks => ({ url: URL, state: 'open', headCommittedAt: SINCE, ...o });
+  it('passed or failed: met; running or not read: not met', () => {
+    expect(checksOutcome(pr({ checks: 'passing' }), at(0))).toEqual({ met: true, note: `the checks of ${URL} passed` });
+    expect(checksOutcome(pr({ checks: 'failing' }), at(0))).toEqual({ met: true, note: `the checks of ${URL} failed` });
+    expect(checksOutcome(pr({ checks: 'pending' }), at(0))).toEqual({ met: false, result: `the checks of ${URL} run` });
+    expect(checksOutcome(pr({ checks: 'unknown' }), at(0))).toEqual({ met: false, result: `the hopper cannot read the checks of ${URL}` });
+  });
+
+  it('merged, closed or not found: met; none started two minutes after its last push: met', () => {
+    expect(checksOutcome(pr({ state: 'merged' }), at(0))).toEqual({ met: true, note: `${URL} was merged` });
+    expect(checksOutcome(pr({ state: 'not_found' }), at(0))).toMatchObject({ met: true });
+    expect(checksOutcome(pr({}), at(60_000))).toEqual({ met: false, result: `no checks of ${URL} started yet` });
+    expect(checksOutcome(pr({}), at(2 * 60_000))).toEqual({ met: true, note: `${URL} has no checks` });
   });
 });

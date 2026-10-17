@@ -96,6 +96,8 @@ export interface ClientOptions {
   maxIsolationMs?: number;
   /** How often it checks how long it has not heard the hopper; default 15 s. */
   isolationCheckMs?: number;
+  /** Where the jobs the hopper named are kept, so a restart while cut off still stops them (issue #1627). Absent: memory only. */
+  isolationFile?: string;
   /** The Windows link (windows-link.ts, issue #712): said in `/release` with the resources, once tested. */
   windowsLink?: () => WindowsLink | undefined;
 }

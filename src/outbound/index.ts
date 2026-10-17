@@ -2,8 +2,11 @@
 // user's sends to one destination share its limit: a token bucket, a dedupe of the sends that name a key, and a circuit
 // that opens when a runaway asks more than the limits allow. Each user's sends go through that user's `Outbound`, which
 // writes them to the user's send log: a sent or failed POST one row each, a held send one row, and its repeats within a
-// minute counted on one more row. The URL stays in memory: the log and the lines name the host only.
-import { askDestination, freshDestination, hostOf, OUTBOUND_LIMITS, OUTBOUND_LOG_DAYS, takeToken, type DestinationState, type OutboundCircuit, type OutboundLimits, type OutboundOutcome, type OutboundSend, type OutboundSender, type OutboundSendRepository } from '../domain/outbound.ts';
+// minute counted on one more row. The URL stays in memory: the log and the lines name the host only. The dedupe keys are
+// kept in the database (issue #1627), as a hash of the destination and the key, so a restart or a second host on the
+// same database knows a send asked before; the rate buckets and the circuits stay this process's.
+import { createHash } from 'node:crypto';
+import { askDestination, freshDestination, hostOf, OUTBOUND_LIMITS, OUTBOUND_LOG_DAYS, takeToken, type DestinationState, type OutboundCircuit, type OutboundKeyRepository, type OutboundLimits, type OutboundOutcome, type OutboundSend, type OutboundSender, type OutboundSendRepository } from '../domain/outbound.ts';
 import type { Clock } from '../domain/ports.ts';
 
 /** A send: who makes it, to where, about what. `key`: the same key asked again within the dedupe window is a duplicate. */
@@ -36,10 +39,14 @@ export interface OutboundGuardOptions {
   clock: Clock;
   logger: { info(line: string): void; warn(line: string): void };
   limits?: Partial<OutboundLimits>;
+  /** The dedupe keys in the database (issue #1627); none (a notifier built alone, a test): in this process only. */
+  keys?: OutboundKeyRepository;
 }
 
 /** Above this many known keys, the expired ones are dropped. */
 const KEYS_SWEEP_AT = 5000;
+/** How often the ended keys are pruned from the database. */
+const KEYS_PRUNE_MS = 10 * 60_000;
 
 export function createOutboundGuard(o: OutboundGuardOptions): OutboundGuard {
   const limits: OutboundLimits = { ...OUTBOUND_LIMITS, ...o.limits };
@@ -48,9 +55,18 @@ export function createOutboundGuard(o: OutboundGuardOptions): OutboundGuard {
   const keys = new Map<string, number>();
   const now = () => o.clock.now().getTime();
   const state = (url: string, t: number): DestinationState => destinations.get(url) ?? freshDestination(t, limits);
+  let prunedAt = 0;
 
   function known(url: string, key: string, t: number): boolean {
     const k = `${url}\0${key}`;
+    if (o.keys) {
+      try {
+        if (t - prunedAt >= KEYS_PRUNE_MS) { prunedAt = t; o.keys.prune(new Date(t).toISOString()); }
+        return !o.keys.claim(createHash('sha256').update(k).digest('hex'), new Date(t + limits.dedupeMs).toISOString(), new Date(t).toISOString());
+      } catch (e) {
+        o.logger.warn(`hopper: outbound: the dedupe keys in the database: ${(e as Error).message}; this process's only meanwhile`);
+      }
+    }
     if ((keys.get(k) ?? 0) > t) return true;
     if (keys.size >= KEYS_SWEEP_AT) for (const [kk, until] of keys) if (until <= t) keys.delete(kk);
     keys.set(k, t + limits.dedupeMs);

@@ -15,7 +15,7 @@ export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'propo
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
-  /** Request cards that wait for approval, across the sources. */
+  /** Request cards that wait for approval, and labelled issues not assigned to the user (issue #1614), across the sources. */
   intake: number;
   /** Credential requests, vault grant asks and templates that wait for approval. */
   access: number;
@@ -46,7 +46,7 @@ export interface NeedsYouRow {
 
 /** Each row's page and words: what it counts, said also when nothing waits, so a person knows the kind is there. */
 const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> = {
-  intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval' },
+  intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval, and labelled issues not assigned to you: no job starts until you assign them' },
   access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants and box templates that jobs on boxes wait for' },
   plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for a person to approve them' },
   questions: { label: 'Questions', href: '#questions', what: 'questions jobs asked you' },

@@ -115,7 +115,14 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     }
   }
 
-  async function attempt(d: WebhookDelivery): Promise<void> {
+  /**
+   * One attempt of a due delivery. Claimed first (issue #1627): on two hosts on one database, the host whose claim went
+   * through posts it, and the other leaves it.
+   */
+  async function attempt(due: WebhookDelivery): Promise<void> {
+    const d = store.webhooks.claimDelivery(due.id, clock.now(), after(timeoutMs + IN_FLIGHT_GRACE_MS));
+    if (!d) return;
+    for (const l of [...listeners]) l(d);
     const sub = store.webhooks.get(d.subscriptionId);
     if (!sub) return; // deleted: the store already failed its deliveries
     if (!sub.active) {
@@ -133,9 +140,8 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
       update(d.id, { status: 'failed', lastError: heldWhy('circuit-open'), nextAttemptAt: undefined });
       return;
     }
-    // No token: the delivery stays due, and a later sweep sends it; no attempt is spent.
-    if (o.outbound.take(r) > 0) return;
-    update(d.id, { nextAttemptAt: after(timeoutMs + IN_FLIGHT_GRACE_MS) });
+    // No token: the delivery is due again, and a later sweep sends it; no attempt is spent.
+    if (o.outbound.take(r) > 0) { update(d.id, { nextAttemptAt: due.nextAttemptAt }); return; }
     await post(d, sub, event, r);
   }
 

@@ -121,6 +121,14 @@ describe('a job that waits on what it named', () => {
     expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: `${PR} was merged` });
   });
 
+  it('a job names its check on a check: line (issue #1694): kept with its wait, so its wait check checks then', async () => {
+    const onPr = { output: ['● The checks run.', '  HOPPER_WAITING', '  for: the checks of the pull request', '  on: o/r#12 checks', '  check: in 20m'] };
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [onPr, DONE] });
+    const a = await start(herdr);
+    const job = await waiting(a, herdr);
+    expect(job.wait).toMatchObject({ on: { kind: 'pull_request', repo: 'o/r', number: 12, about: 'checks' }, checkLine: 'in 20m' });
+  });
+
   it('a job waiting on an issue the ledger holds closed already goes on at once (issue #1356): no event comes for it now', async () => {
     const ISSUE = 'https://github.com/o/r/issues/45';
     const herdr = createFakeHerdrClient({ session: 'jh-test' });

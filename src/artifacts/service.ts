@@ -13,6 +13,7 @@ import {
   type Artifact, type ArtifactRevision, type ArtifactSettings, type ArtifactShare,
 } from '../domain/artifacts.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
+import { soleLease, type SweepLease } from '../domain/leases.ts';
 import type { Job } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { artifactNote, createReviser, type MergeDone, type ReviseRequest } from './revise.ts';
@@ -87,6 +88,8 @@ const inWords = (bytes: number): string => (bytes >= MB ? `${Math.round((bytes /
 export function createUserArtifacts(o: {
   userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; newId?: () => string; sweepMs?: number;
   contentKey: () => Buffer;
+  /** The retention sweep's lease (issue #1627): on two hosts on one database, only its holder sweeps. Absent: this host alone. */
+  lease?: SweepLease;
 }): UserArtifacts {
   const repo = o.store.artifacts;
   const newId = o.newId ?? (() => randomUUID());
@@ -291,8 +294,9 @@ export function createUserArtifacts(o: {
       return gone;
     },
     start() {
+      const lease = o.lease ?? soleLease();
       const run = () => {
-        try { a.sweep(); } catch (e) { o.logger.warn(`hopper: artifacts: the retention sweep failed: ${(e as Error).message}`); }
+        try { if (lease.hold().held) a.sweep(); } catch (e) { o.logger.warn(`hopper: artifacts: the retention sweep failed: ${(e as Error).message}`); }
       };
       run();
       timer ??= setInterval(run, o.sweepMs ?? ARTIFACT_SWEEP_MS);

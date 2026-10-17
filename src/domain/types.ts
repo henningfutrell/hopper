@@ -52,7 +52,7 @@ export const JOBS_DIR = '~/hopper-jobs';
  * a legacy wait, stuck work. `polledAt` (issue #1210): when the hopper first saw its own command poll hopper state; `on` then
  * says what it polls. `check` (issue #1694): what the hopper tests of the wait and when, kept with it (wait-checks.ts).
  */
-export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck }
+export interface JobWait { for: string; until?: string; since: string; on?: import('./wait-on.ts').WaitOn; ownCommand?: true; goneSince?: string; nudgedAt?: string; stuckAt?: string; polledAt?: string; check?: import('./wait-checks.ts').WaitCheck; checkLine?: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 

@@ -2,7 +2,7 @@
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
 // The Jobs view (issue #434) has a card per job. Needs you (issue #897) comes first: its badge counts every decision that waits on a
-// person. Intake (issue #897; it was Not taken, issue #798) is badged with the request cards waiting for approval, Access requests
+// person. Intake (issue #897; it was Not taken, issue #798) is badged with the request cards waiting for approval and the labelled issues not assigned to the user (issue #1614), Access requests
 // with what jobs on boxes wait for. Tagged (issue #1141) with the open issues and pull requests that ask for the user's review,
 // mention the user or are assigned to the user. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
 // route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes, and is badged
@@ -26,7 +26,7 @@ import { changesUnmarked } from '@/model/out-of-band';
 import { signedOutMachines } from '@/model/tool-accounts';
 import { needsYouTotal } from '@/model/needs-you';
 import { SECTION_KINDS } from '@/model/sections';
-import { onTheBackburner, requestsWaiting } from '@/model/intake';
+import { notAssignedWaiting, onTheBackburner, requestsWaiting } from '@/model/intake';
 import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
@@ -91,6 +91,7 @@ export const useSection = (): string => useSyncExternalStore(subscribe, readSect
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const requests = useHopper((s) => requestsWaiting(s.sources));
+  const unassigned = useHopper((s) => notAssignedWaiting(s.sources));
   const backburner = useHopper((s) => onTheBackburner(s.sources));
   const sorting = useAwaitingSort();
   // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.
@@ -108,7 +109,10 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const badge: Partial<Record<View, NavBadge>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     'needs-you': { n: total.n, high: total.high, cls: 'bg-warn text-background', title: `${total.n} ${total.n === 1 ? 'decision waits' : 'decisions wait'} on you` },
-    intake: { n: requests, cls: 'bg-warn text-background', title: `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval` },
+    intake: { n: requests + unassigned, cls: 'bg-warn text-background', title: [
+      requests > 0 && `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval`,
+      unassigned > 0 && `${unassigned} labelled ${unassigned === 1 ? 'issue waits' : 'issues wait'} to be assigned to you`,
+    ].filter(Boolean).join('; ') },
     tagged: { n: tagged, cls: 'bg-warn text-background', title: `${tagged} ${tagged === 1 ? 'item asks' : 'items ask'} for your review, mention you or are assigned to you` },
     'access-requests': { n: access, cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
     ...sections,

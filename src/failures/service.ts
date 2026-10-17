@@ -37,7 +37,7 @@ import { createBackfill } from './backfill.ts'; import { autoPush } from './kept
 import type { FailureAction, Failures } from './failures.ts';
 import { signatureOf } from './signature.ts';
 import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts';
-import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
+import { highestFirst, newerOf, releasable, viewOf } from './view.ts'; import { soleLease, type SweepLease } from '../domain/leases.ts';
 
 /** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. */
 export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'>, ChecksRedOptions, Pick<UnfinishedDeps, 'unfinishedPullRequest'> {
@@ -52,6 +52,8 @@ export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'contin
   logger: { warn(line: string): void };
   /** How often the sweep runs. */
   sweepMs: number;
+  /** The sweep's lease (issue #1627): on two hosts on one database, only its holder sweeps. Absent: this host alone. */
+  lease?: SweepLease;
   /** Jev first (issue #550), asked about a failure no known cause explains, and whether the blast-radius gate keeps a machine. Absent: the rules only. */
   minorDecisions?: { first: JevFirst; gated(machineId: string): boolean };
   /** Whether a pull request of the job's own is open, by its source (issue #630); undefined: its source cannot tell. Throws: not known. */
@@ -78,7 +80,7 @@ export function createFailures(o: FailuresOptions): Failures {
   let stopped = false;
   let unsubscribe: (() => void) | undefined;
   let timer: NodeJS.Timeout | undefined;
-  let sweeping: Promise<void> | undefined;
+  let sweeping: Promise<void> | undefined; const lease = o.lease ?? soleLease();
   let prunedAt = 0;
   const now = () => clock.now();
   // Settings saved before a field existed take its default; `auto` too, field by field (issue #630: `auto.continue`).
@@ -257,9 +259,17 @@ export function createFailures(o: FailuresOptions): Failures {
     store.tx(() => { store.failures.prune(before); store.problems.prune(before); handoffs.prune(new Date(at - s.handoffRetentionDays * DAY_MS).toISOString()); });
   }
 
+  /** At the start, or once this host takes the lease from another: what a stop left, before anything is handed off. */
+  // Failed jobs left unassessed (a restart between the failure and the assessment, or an older build's backlog) and Jev's
+  // steps a restart left unasked (issue #1608); then, for a
+  // store from the build before (issue #529), what nothing waits on any more clears before anything is handed off.
+  const catchUp = (): void => { assessBacklog(); jevSteps.askLeft(); handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); handoffs.catchUp(); };
+
   function sweep(): Promise<void> {
     sweeping ??= (async () => {
       try {
+        const held = lease.hold();
+        if (!held.held) return; if (held.taken) catchUp();
         assessBacklog(JUST_FAILED_MS);
         if (!stopped) { handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); }
         // High-priority jobs run again first (issue #535): by their live priority, then as due.
@@ -299,17 +309,12 @@ export function createFailures(o: FailuresOptions): Failures {
       store.events.append({ type: 'failure.resolved', data: { problemId: p.id, title: p.title, by, released, ...acting, ...(note ? { note } : {}) } });
       return { ok: true, value: resolved };
     });
-    if (done.ok) { o.trigger('failure.resolved'); void sweep(); }
-    return done;
+    if (done.ok) { o.trigger('failure.resolved'); void sweep(); } return done;
   }
 
   return {
     start() {
-      // Failed jobs left unassessed: a restart between the failure and the assessment, or an older build's backlog; then
-      // Jev's steps a restart left unasked (issue #1608).
-      assessBacklog(); jevSteps.askLeft();
-      // A store from the build before (issue #529): what nothing waits on any more clears before anything is handed off.
-      handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); handoffs.catchUp();
+      if (lease.hold().held) catchUp();
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;
         // A timeout's facts first (issue #630), then the assessment.
@@ -320,10 +325,8 @@ export function createFailures(o: FailuresOptions): Failures {
       void sweep();
     },
     async stop() {
-      stopped = true;
-      unsubscribe?.();
-      if (timer) clearInterval(timer);
-      await sweeping;
+      stopped = true; unsubscribe?.();
+      if (timer) clearInterval(timer); await sweeping;
     },
     sweep,
     dismissStale: () => handoffs.dismissStale(),

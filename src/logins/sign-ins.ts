@@ -3,6 +3,8 @@
 // a login of kind `paste_code` on that machine, with no job: the person opens its URL, signs in, and pastes the code the page
 // shows, which goes to the tool. The tool's end completes or fails the login. One sign-in per machine and tool: a new one cancels
 // the one before. What runs on the machine is held in this process only: after a restart its login fails, and is started again.
+// On two hosts on one database (issue #1627) the login names the host that runs it: another host leaves it alone while that
+// host lives, and fails it once that host stopped.
 // The hopper's Claude sign-in for pods (issue #1287, design.md "The hopper's Claude sign-in for pods") is one more: `claude
 // setup-token` in the hopper itself, its login on no machine and naming the account; the token it printed is in the vault as
 // soon as it is read (issue #1610), and the login completes once the run ends.
@@ -38,6 +40,8 @@ type Run = Omit<ToolSignIn, 'machineId'> & { machineId?: string };
 
 export function createSignIns(o: {
   logins: Logins; sources: () => readonly UsageSource[]; clock: Clock; sweepMs?: number;
+  /** This host as a lease owner, and whether another host still runs (src/sagas/leases.ts). Absent: this host alone. */
+  hosts?: { owner: string; live(owner: string): boolean };
   /** A sign-in completed: the tool on `machineId` is signed in now (the not-signed-in questions there are answered). */
   onSignedIn?: (s: { machineId: string; tool: string; loginId: string }) => void;
   /**
@@ -64,7 +68,7 @@ export function createSignIns(o: {
     const expiresAt = new Date(o.clock.now().getTime() + SIGN_IN_LIFE_MS).toISOString();
     let login: Login;
     try {
-      login = logins.report({ kind: 'paste_code', tool: run.tool, verificationUrl: run.url, expiresAt, ...(account ? { account } : {}) }, { ...(run.machineId ? { machineId: run.machineId } : {}), run: SIGN_IN_RUN, renewable: false });
+      login = logins.report({ kind: 'paste_code', tool: run.tool, verificationUrl: run.url, expiresAt, ...(account ? { account } : {}) }, { ...(run.machineId ? { machineId: run.machineId } : {}), run: SIGN_IN_RUN, renewable: false, ...(o.hosts ? { hostOwner: o.hosts.owner } : {}) });
     } catch (e) {
       run.cancel();
       return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
@@ -136,7 +140,10 @@ export function createSignIns(o: {
         if (l?.status === 'expired') logins.failed(id, 'no code came before the sign-in expired: start it again');
       }
       for (const l of logins.list({ status: ['pending', 'expired'] })) {
-        if (l.run === SIGN_IN_RUN && !l.jobId && !l.questionId && !runs.has(l.id) && !pasting.has(l.id)) logins.failed(l.id, 'the hopper restarted while the sign-in waited: start it again');
+        if (l.run !== SIGN_IN_RUN || l.jobId || l.questionId || runs.has(l.id) || pasting.has(l.id)) continue;
+        // Another host's that still runs is that host's to end.
+        if (l.hostOwner && o.hosts && l.hostOwner !== o.hosts.owner && o.hosts.live(l.hostOwner)) continue;
+        logins.failed(l.id, 'the hopper restarted while the sign-in waited: start it again');
       }
     },
 
