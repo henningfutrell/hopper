@@ -1,7 +1,8 @@
 // hopper.io's store (issue #463, docs/cloud-hosting-identity.md): Postgres through pg. It keeps only what sign-in
 // needs: a **hopper.io account** per GitHub account, keyed by GitHub's numeric user id (never the login, which can be
 // renamed), with the login and the avatar URL for display; a **hopper.io session**, only its token's hash; and a
-// sign-in under way, only its state's hash and its PKCE verifier, for ten minutes. No GitHub token is kept.
+// sign-in under way, only its state's hash and its PKCE verifier, for ten minutes, and the account it is to delete when
+// it confirms a deletion. No GitHub token is kept. A deleted account takes its sessions with it.
 // Schema changes are migrations, appended to MIGRATIONS: the accounts are the users' saved data.
 import { createHash } from 'node:crypto';
 import pg from 'pg';
@@ -22,9 +23,13 @@ const MIGRATIONS: string[] = [
      created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL);
    CREATE INDEX session_account ON session (account_id);
    CREATE TABLE sign_in (state_hash text PRIMARY KEY, verifier text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());`,
+  // A sign-in that confirms an account deletion names the account (decision 5).
+  'ALTER TABLE sign_in ADD COLUMN deletes bigint',
 ];
 
 export const hashOf = (token: string): string => createHash('sha256').update(token).digest('hex');
+
+export interface SignInUnderWay { verifier: string; deletes?: string }
 
 export interface CloudStore {
   /** Keeps the account GitHub named, by its numeric id: a new one, or the same one with its login and avatar now. */
@@ -34,9 +39,12 @@ export interface CloudStore {
   /** The account of a session that has not ended. */
   sessionAccount(token: string, now: Date): Promise<CloudAccount | undefined>;
   endSession(token: string): Promise<void>;
-  startSignIn(state: string, verifier: string): Promise<void>;
-  /** The verifier of a sign-in started within SIGN_IN_MS, taken once. */
-  takeSignIn(state: string, now: Date): Promise<string | undefined>;
+  /** `deletes`: the account this sign-in confirms the deletion of. */
+  startSignIn(state: string, verifier: string, deletes?: string): Promise<void>;
+  /** A sign-in started within SIGN_IN_MS, taken once. */
+  takeSignIn(state: string, now: Date): Promise<SignInUnderWay | undefined>;
+  /** The account, its sessions and its deletion sign-ins under way, in one statement. */
+  deleteAccount(githubUserId: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -78,13 +86,17 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
     async endSession(token) {
       await q('DELETE FROM session WHERE token_hash = $1', [hashOf(token)]);
     },
-    async startSignIn(state, verifier) {
-      await q('INSERT INTO sign_in (state_hash, verifier) VALUES ($1, $2)', [hashOf(state), verifier]);
+    async startSignIn(state, verifier, deletes) {
+      await q('INSERT INTO sign_in (state_hash, verifier, deletes) VALUES ($1, $2, $3)', [hashOf(state), verifier, deletes ?? null]);
     },
     async takeSignIn(state, now) {
       await q('DELETE FROM sign_in WHERE created_at <= $1', [new Date(now.getTime() - SIGN_IN_MS)]);
-      const r = await q('DELETE FROM sign_in WHERE state_hash = $1 RETURNING verifier', [hashOf(state)]);
-      return r.rows[0] ? String(r.rows[0].verifier) : undefined;
+      const r = await q('DELETE FROM sign_in WHERE state_hash = $1 RETURNING verifier, deletes', [hashOf(state)]);
+      const row = r.rows[0];
+      return row ? { verifier: String(row.verifier), ...(row.deletes ? { deletes: String(row.deletes) } : {}) } : undefined;
+    },
+    async deleteAccount(githubUserId) {
+      await q('WITH s AS (DELETE FROM sign_in WHERE deletes = $1) DELETE FROM account WHERE github_user_id = $1', [githubUserId]);
     },
     close: () => pool.end(),
   };
