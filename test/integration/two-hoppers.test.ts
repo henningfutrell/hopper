@@ -64,9 +64,10 @@ async function twoHoppers(n: number) {
   cleanups.push(db.cleanup);
   const m = machine();
   cleanups.push(() => { for (const p of m.panes.values()) p.end(); });
-  const first = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(n) }, source: createManualSource(), seams: { executors: [m.executor('first')] } });
+  const source = createManualSource();
+  const first = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(n) }, source, seams: { executors: [m.executor('first')] } });
   apps.push(first);
-  return { m, first, start: async () => {
+  return { m, first, source, start: async () => {
     // Its own manual source, which offers nothing: only the first hopper takes items in.
     const second = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [m.executor('second')] } });
     apps.push(second);
@@ -119,14 +120,19 @@ describe('several hoppers on one database (issue #1662)', () => {
   });
 
   it('a cancel on the other hopper reaches the run of the hopper that drives the job: it ends cancelled once', async () => {
-    const { m, first, start } = await twoHoppers(1);
+    const { m, first, source, start } = await twoHoppers(1);
     const job = await first.pull({}, { executor: 'pane' });
     await first.waitForStatus(job.id, 'running');
     const second = await start();
+    // The source offers the item no more, as a GitHub issue whose job was cancelled: a later sync makes no new job of it.
+    source.remove(job.source!.key);
 
     expect(second.user(ADMIN_ID).engine.cancel(job.id, 'cancelled in UI', 'wrong repo').status).toBe('running');
     const cancelled = await first.waitForStatus(job.id, 'cancelled', 8000);
     expect(cancelled.attempts).toBe(1);
+    // Its end reported, a sync makes no new job of the item.
+    await waitFor(() => source.reports.some((r) => r.kind === 'cancelled' && r.job.id === job.id), { what: 'the cancelled end reported' });
+    await first.user(ADMIN_ID).sources.syncNow(source.name);
     expect(m.aborted).toEqual([{ jobId: job.id, by: 'first', reason: 'cancel' }]);
     expect(eventsOf(first, 'job.cancelled').filter((e) => e.jobId === job.id).map((e) => e.data))
       .toEqual([{ reason: 'cancelled in UI', note: 'wrong repo' }]);
