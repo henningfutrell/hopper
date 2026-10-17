@@ -3230,6 +3230,13 @@ export default {
   with the models the account can use (alias, name, description); no prompt, so no model call. Only
   the default `claude` is asked, not an instance's own `bin`: the list is per plugin.
 - `create(ctx, options)`: `ctx` = clock, logger, dataDir, the plugin's own scratch dir.
+- **Same work** (issue #1264, "Duplicate job sources") `sameWork(a, b)`, optional, a job source's: whether two
+  instances of this plugin, with these parsed options, take the same work. False when either is off. A second such
+  instance is refused (409) when it is added or turned on, and one configured already shows as a duplicate
+  (`SourceStatus.duplicateOf`). Absent: never the same work.
+- **Pass calls** (issue #1264, "The call log") `passCalls()`, optional, on a job source that runs passes (`RunsPasses`,
+  `src/domain/source-item.ts`): the calls to its service its last pass made, which the sync loop records in the call
+  log. Absent: not counted.
 - A plugin can import only `node:` builtins unless it ships its own `node_modules` in its
   directory.
 
@@ -22921,3 +22928,70 @@ config: `resume_agents_on_restore` is the machine owner's, and herdr reads one c
 **Verification:** `test/herdr/executor-herdr-restore.test.ts` (restored while watched; restored while it waited on a
 question; a pane saved with no terminal), `test/herdr/cli-client.test.ts` and `test/herdr/cli-client-ssh.test.ts`
 (`terminal_id` read from `tab create` and `agent get`), `test/herdr/executor-run.test.ts` (the terminal saved).
+
+## Duplicate job sources, poll backoff and the call log (issue #1264, 2026-10-15)
+
+Issue #1264 cut the calls the job sources make to GitHub. Three parts: a second source for the same work is refused, a
+source whose syncs find nothing changed syncs less often, and each source's calls are counted. Glossary: **Duplicate job
+source**, **Poll backoff**, **Call log**.
+
+### Duplicate job sources
+
+Two job sources of one plugin that take the same work poll the same service twice, for nothing. Code:
+`src/plugins/duplicates.ts`.
+
+- **The plugin says what the same work is**: `PluginDefinition.sameWork(a, b)`, optional, on the parsed options of two
+  instances ("Plugin contract"). It is false when either instance is off. Absent: no two instances of the plugin are
+  ever the same work. `github-account` (`sameAccountWork`, `src/sources/config.ts`): both on, the same `label` and the
+  same `hopperName`. Both read the one account the user connected, over the user's job repositories, so the same label
+  and hopper name are the same issues.
+- **Refused on add and on enable.** `POST /ui/api/plugins` refuses an add of a job source, and an edit of one's options
+  (turning it on is an edit of `enabled`), when `duplicateJobSource` finds a configured job source of the same plugin, by
+  another name, that takes the same work. The answer is 409 (`conflict`), and it names the first source: "job source
+  `<first>` already takes this work …: edit `<first>`, or remove it first". Nothing is written.
+- **One configured already** (a config from before the change, or one written another way) is not refused, so a start
+  never fails on it. `duplicateJobSources` walks the job sources in config order, and each that takes the same work as
+  an earlier one, not itself a duplicate, gets `SourceStatus.duplicateOf`: the name of the first. The plugin host
+  exposes the map (`PluginHost.duplicateJobSources`).
+- **Sources shows a banner** for each duplicate (`ui/src/views/sources.tsx`): "`<name>` takes the same work as
+  `<first>`", with **Remove `<name>`**, and a marker on the duplicate's card. Remove sends the ordinary plugins edit `remove` for that job source, so its jobs
+  and its sync state go the way of any removed source.
+
+### Poll backoff
+
+A configured job source whose timed syncs find nothing changed syncs less often. Code: `src/sources/poll-backoff.ts`,
+called from the sync loop (`src/sources/sync.ts`).
+
+- **The doubling.** After `n` timed syncs in a row that found nothing changed, the interval to the next timed sync is
+  the poll interval (`pollSeconds`) times `2^n`, at most `MAX_BACKOFF_FACTOR` (8) times the poll interval
+  (`backedOffMs`). Only a configured source backs off (`backoff` in `src/users/runtime.ts`): the direct jobs source and
+  a test seam source keep their interval.
+- **What counts as a change** (`afterSync`): the sync was one a person asked for (a full sync); its state is not `ok` (an
+  error, among others); it made a job; a job of its own is not ended; or its discover answered otherwise than the last
+  one. The answers are compared by a hash of the items (`answerPrint`). A 304 to a conditional request is no change: the
+  rate limiter answers it with the answer it kept, so the source discovers the same items and the hash is the same.
+- **What resets it.** A change sets the count of unchanged syncs to 0, so the next interval is the poll interval again.
+  A sync a person asked for (Sync now, an intake action, a new connection) is a change. A GitHub delivery
+  (`repoChanged`, "GitHub deliveries") sets the count to 0 at each source it makes due, before its sync.
+- **Status.** `SourceStatus.pollMs` is the poll interval as configured; `SourceStatus.nextPollMs` is the interval to the
+  next timed sync, backed off or not (`nextPollMs`). Sources shows the poll interval on each source's card, and the
+  next poll while it is backed off (`ui/src/views/source-sync.tsx`).
+
+### The call log
+
+The calls to its service each job source's sync passes made. Code: `src/store/source-calls.ts`.
+
+- **Counted per pass.** A source that runs passes ("One read per sync pass") may give `passCalls()`: the calls its last
+  pass made. The GitHub account source gives the REST and GraphQL calls of its `passReads` (`src/sources/compose.ts`).
+  After each sync, `afterSync` records that count. A source with no `passCalls` is not counted. Calls made outside a
+  pass (a job's own requests through the hopper, git fetches) are not in the log.
+- **The table** `source_calls` (tenant migration 61, `src/store/tenant-migrations-recent.ts`): `source`, `minute` (the
+  ISO time to the minute, `2026-10-15T12:00`, so text sorts as time) and `calls`, one row per source and minute; a
+  second pass in the same minute adds to the row. Each record drops the rows older than a day. Derived data: the build
+  before never reads the table, and a lost row only lowers a count.
+- **Status.** `SourceStatus.calls` is `{ lastHour, lastDay }`, summed from the table after each sync (`volume`), so the
+  count stays right after a restart. Sources shows it for each source.
+
+**Verification:** `test/integration/duplicate-sources.test.ts` (the 409 on add and on enable, `duplicateOf` on a
+duplicate configured already), `test/ui/sources-duplicates.test.ts` (the banner and Remove; the poll interval, the
+next poll and the calls on a card), `test/sources/sync-backoff.test.ts` (the doubling, its cap, a 304 as no change, what resets it, the call log).
