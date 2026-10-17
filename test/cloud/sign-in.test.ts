@@ -14,61 +14,13 @@
 //   Scenario: sign-out ends the session only, and only from hopper.io itself
 //   Scenario: two accounts: each session reads only its own account (R3)
 //   Scenario: sign-ins past the limit per address are refused (R7)
-import pg from 'pg';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { CloudConfig } from '../../cloud/config.ts';
-import { CALLBACK_PATH, SESSION_COOKIE, SIGN_IN_COOKIE, SIGN_IN_LIMIT, cloudServer, cookiesOf } from '../../cloud/server.ts';
-import { hashOf, openCloudStore } from '../../cloud/store.ts';
-import { testDatabaseUrl } from '../support/database.ts';
-import { createFakeGitHub } from '../support/fake-forges.ts';
+import { CALLBACK_PATH, SESSION_COOKIE, SIGN_IN_COOKIE, SIGN_IN_LIMIT } from '../../cloud/server.ts';
+import { hashOf } from '../../cloud/store.ts';
 import { rawRequest } from '../support/http.ts';
+import { PUBLIC, SECRET, account, rawUser, rows, setCookies, setUp, signIn, stopAll } from './harness.ts';
 
-const SECRET = 'hosted-app-secret-for-tests';
-const PUBLIC = 'http://127.0.0.1:8099';
-const stops: (() => Promise<void>)[] = [];
-afterEach(async () => { for (const s of stops.splice(0).reverse()) await s(); });
-
-async function setUp() {
-  const github = await createFakeGitHub({ clientId: 'hosted-app', clientSecret: SECRET });
-  stops.push(() => github.close());
-  const databaseUrl = testDatabaseUrl();
-  const store = await openCloudStore(databaseUrl);
-  stops.push(() => store.close());
-  const config: CloudConfig = { databaseUrl, publicUrl: PUBLIC, githubUrl: github.url, clientId: 'hosted-app', clientSecret: SECRET, host: '127.0.0.1', port: 0, trustProxy: false };
-  const server = await cloudServer({ config, store });
-  stops.push(() => server.close());
-  return { github, store, server, databaseUrl };
-}
-
-type Set = Awaited<ReturnType<typeof setUp>>;
-const setCookies = (h: string | string[] | number | undefined): Map<string, string> =>
-  cookiesOf((Array.isArray(h) ? h : [String(h ?? '')]).map((c) => c.split(';')[0]).join('; '));
-
-/** A browser's whole sign-in: hopper.io → GitHub → the callback. */
-async function signIn(s: Set) {
-  const start = await s.server.inject({ method: 'GET', url: '/auth/github' });
-  const state = setCookies(start.headers['set-cookie']).get(SIGN_IN_COOKIE)!;
-  const atGitHub = await rawRequest(s.github.url, { path: new URL(String(start.headers.location)).pathname + new URL(String(start.headers.location)).search });
-  const back = new URL(String(atGitHub.headers.location));
-  const callback = await s.server.inject({ method: 'GET', url: back.pathname + back.search, headers: { cookie: `${SIGN_IN_COOKIE}=${state}` } });
-  return { start, state, callback, session: setCookies(callback.headers['set-cookie']).get(SESSION_COOKIE) || undefined };
-}
-
-const account = (s: Set, session: string | undefined) =>
-  s.server.inject({ method: 'GET', url: '/api/account', ...(session ? { headers: { cookie: `${SESSION_COOKIE}=${session}` } } : {}) });
-
-async function rows(databaseUrl: string): Promise<string> {
-  const u = new URL(databaseUrl);
-  const schema = u.searchParams.get('schema')!;
-  u.searchParams.delete('schema');
-  const c = new pg.Client({ connectionString: u.toString() });
-  await c.connect();
-  try {
-    const out: unknown[] = [];
-    for (const t of ['account', 'session', 'sign_in']) out.push((await c.query(`SELECT row_to_json(x) AS r FROM "${schema}".${t} x`)).rows);
-    return JSON.stringify(out);
-  } finally { await c.end(); }
-}
+afterEach(stopAll);
 
 describe('sign in at hopper.io with GitHub', () => {
   it('keeps the account by its numeric id, opens a session, and keeps no GitHub token', async () => {
@@ -167,10 +119,3 @@ describe('sign in at hopper.io with GitHub', () => {
     expect((await s.server.inject({ method: 'GET', url: '/auth/github', remoteAddress: '127.0.0.2' })).statusCode).toBe(302);
   });
 });
-
-/** The fake GitHub's own answer for octo-user: the numeric id the account must be keyed by. */
-async function rawUser(s: Set): Promise<{ id: number }> {
-  const { accessToken } = s.github.mint('octo-user');
-  const r = await rawRequest(s.github.url, { path: '/api/v3/user', headers: { authorization: `token ${accessToken}` } });
-  return JSON.parse(r.text) as { id: number };
-}

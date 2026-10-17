@@ -37,4 +37,12 @@ describe('herdr-claude executor: a dialog as a question', () => {
     await executor.run(contextFor(jobWith({ prompt: 'go', env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '0' } })).ctx);
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } });
   });
+
+  // Issue #1502: terraform's version check writes ~/.terraform.d on the machine, which the credential check flags; off in
+  // every job's tab, and a payload cannot turn it on.
+  it("turns off terraform's version check, which writes into the machine's home", async () => {
+    const { herdr, executor } = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
+    await executor.run(contextFor(jobWith({ prompt: 'go', env: { CHECKPOINT_DISABLE: '' } })).ctx);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CHECKPOINT_DISABLE: '1' } });
+  });
 });

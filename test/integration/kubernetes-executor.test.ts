@@ -161,7 +161,9 @@ describe('a pod per job on the kubernetes executor', () => {
     expect(machines.find((m) => m.id === `hopper-job-${job.id}`)).toMatchObject({ executors: [], client: expect.any(Object) });
     expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
     await a.waitForStatus(job.id, 'cancelled', 15_000);
-    await waitFor(() => k8s.removed.includes(`hopper-job-${job.id}`), { what: 'its pod deleted' });
+    // Wait until no pod is left, not only until its name was deleted once: under load a second start of the job deletes
+    // its pod and makes it again (job-pods.ts), and the cancel's cleanup deletes it after that.
+    await waitFor(() => k8s.removed.includes(`hopper-job-${job.id}`) && k8s.pods.size === 0, { timeoutMs: 15_000, what: 'its pod deleted' });
     expect(k8s.pods.size).toBe(0);
   });
 

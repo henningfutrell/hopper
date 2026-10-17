@@ -377,7 +377,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         if (!q || q.status !== 'open') return;
         abortStage(id, 'cancel');
         clearTimers(id);
-        store.questions.update(id, { status: 'cancelled' });
+        // Said, so every view drops it from the open questions (issue #1457).
+        emit(store.questions.update(id, { status: 'cancelled' }), 'question.cancelled', {});
       });
     },
 

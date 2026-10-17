@@ -53,4 +53,48 @@ describe('the job leases', () => {
     expect(b.take(job.id)).toBe(true);
     store.close();
   });
+
+  it('a person\'s act on a job another hopper drives is written on its lease, and that hopper takes it once', () => {
+    const clock = fixedClock('2026-10-17T10:00:00.000Z');
+    const store = t.open(t.url(), clock);
+    const job = store.jobs.create(spec, 1);
+    store.jobs.update(job.id, { status: 'running' });
+    const a = createJobLeases({ store, clock, owner: 'a', leaseMs: 60_000 });
+    const b = createJobLeases({ store, clock, owner: 'b', leaseMs: 60_000 });
+    // No lease, or this hopper's own: nothing to relay.
+    expect(b.relay(job.id, { kind: 'park' })).toBe(false);
+    expect(a.take(job.id)).toBe(true);
+    expect(a.relay(job.id, { kind: 'park' })).toBe(false);
+    expect(b.relayed()).toEqual([]);
+
+    expect(b.relay(job.id, { kind: 'cancel', reason: 'cancelled in UI', note: 'wrong repo' })).toBe(true);
+    expect(b.relayed()).toEqual([]);
+    expect(a.relayed()).toEqual([{ jobId: job.id, act: { kind: 'cancel', reason: 'cancelled in UI', note: 'wrong repo' } }]);
+    expect(a.relayed()).toEqual([]);
+
+    // The lease ended: no hopper drives the job, so nothing is relayed.
+    clock.set('2026-10-17T10:01:01.000Z');
+    expect(b.relay(job.id, { kind: 'park' })).toBe(false);
+    store.close();
+  });
+
+  it('an act relayed to a hopper that crashed goes to the hopper that takes the job over; a claim drops it', () => {
+    const clock = fixedClock('2026-10-17T10:00:00.000Z');
+    const store = t.open(t.url(), clock);
+    const job = store.jobs.create(spec, 1);
+    store.jobs.update(job.id, { status: 'running' });
+    const a = createJobLeases({ store, clock, owner: 'a', leaseMs: 60_000 });
+    const b = createJobLeases({ store, clock, owner: 'b', leaseMs: 60_000 });
+    expect(a.take(job.id)).toBe(true);
+    expect(b.relay(job.id, { kind: 'park' })).toBe(true);
+    clock.set('2026-10-17T10:01:01.000Z');
+    expect(b.take(job.id)).toBe(true);
+    expect(b.relayed()).toEqual([{ jobId: job.id, act: { kind: 'park' } }]);
+
+    expect(a.take(job.id, true)).toBe(true);
+    expect(b.relay(job.id, { kind: 'park' })).toBe(true);
+    expect(b.take(job.id, true)).toBe(true);
+    expect(b.relayed()).toEqual([]);
+    store.close();
+  });
 });

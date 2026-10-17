@@ -109,6 +109,12 @@ spec:
         - name: hopper
           image: {{ $image }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.telemetry.envFromSecret }}
+          # The OTEL_* variables kept in a Secret (issue #1486), such as OTEL_EXPORTER_OTLP_HEADERS.
+          envFrom:
+            - secretRef:
+                name: {{ . | quote }}
+          {{- end }}
           env:
             {{- include "hopper.podLimits" "hopper" | nindent 12 }}
             {{- if .Values.postgres.bundled }}
@@ -155,6 +161,18 @@ spec:
             {{- if .Values.solr.enabled }}
             - name: HOPPER_SOLR_URL
               value: {{ printf "http://%s-solr:8983/solr/hopper" $name | quote }}
+            {{- end }}
+            {{- with .Values.telemetry }}
+            {{- if and .viewer.enabled (not (hasKey .env "OTEL_EXPORTER_OTLP_ENDPOINT")) }}
+            # Telemetry to the viewer in the release (issue #1486).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ printf "http://%s-telemetry:4318" $name | quote }}
+            {{- end }}
+            {{- range $k, $v := .env }}
+            {{- if not (hasPrefix "OTEL_" $k) }}{{ fail (printf "telemetry.env takes OTEL_* variables only, not %s" $k) }}{{ end }}
+            - name: {{ $k }}
+              value: {{ $v | toString | quote }}
+            {{- end }}
             {{- end }}
             # The names the cluster reaches it by; the first is the one in question links. Then allowedHosts and
             # service.loadBalancerIP: the names machines outside the cluster reach it by.

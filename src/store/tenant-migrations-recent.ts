@@ -23,7 +23,7 @@ import { accountSourceOnly } from './migration-account-source.ts';
 import { noSandboxMachines } from './migration-no-sandbox-machines.ts';
 import { noTemplateTimeLimit } from './migration-template-limits.ts';
 import { NOTIFIER_DELIVERY_TABLE } from './notifier-deliveries.ts';
-import { JOB_LEASE_TABLE } from './job-leases.ts';
+import { JOB_LEASE_RELAYED_COLUMN, JOB_LEASE_TABLE } from './job-leases.ts';
 import { EVENT_CURSOR_TABLE } from './event-cursors.ts';
 import { WAIT_CHECK_LEASE_TABLE } from './wait-check-leases.ts';
 import { PROMOTION_SEND_TABLE } from './promotions.ts';
@@ -119,4 +119,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 77: A promotion's new issue or comment on its way (issue #1591): kept before GitHub is asked, so a stop or a lost answer
   // links what GitHub made. A table only: the build before runs on it, and never reads it.
   PROMOTION_SEND_TABLE,
+  // 78: A person's cancel or park of a job that another hopper drives (issue #1662), on the job's lease. A nullable column
+  // only: the build before runs on it, and names its columns when it inserts.
+  JOB_LEASE_RELAYED_COLUMN,
 ];
