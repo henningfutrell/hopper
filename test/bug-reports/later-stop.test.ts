@@ -21,6 +21,7 @@ function memoryReports(): BugReportRepository {
     list: () => [...rows.values()].reverse(),
     inState: (state) => [...rows.values()].filter((r) => r.state === state),
     update: (id, patch) => { const r = { ...rows.get(id)!, ...patch }; rows.set(id, r); return r; },
+    remove: (id) => { rows.delete(id); },
   };
 }
 
@@ -35,6 +36,7 @@ describe('the send pass of Report a bug stops', () => {
       create: async () => { await answered; return { number: 7, url: 'https://github.test/7' }; },
       comment: async () => ({ number: 7, url: 'https://github.test/7' }),
       state: async () => ({ state: 'open' as const }),
+      find: async () => undefined,
     };
     const sender = createReportSender({ github: () => github, reports, now: () => '2026-10-11T00:00:01.000Z', record() {}, log() {} });
     sender.start();
