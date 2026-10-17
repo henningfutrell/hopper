@@ -23153,3 +23153,44 @@ The calls to its service each job source's sync passes made. Code: `src/store/so
 **Verification:** `test/integration/duplicate-sources.test.ts` (the 409 on add and on enable, `duplicateOf` on a
 duplicate configured already), `test/ui/sources-duplicates.test.ts` (the banner and Remove; the poll interval, the
 next poll and the calls on a card), `test/sources/sync-backoff.test.ts` (the doubling, its cap, a 304 as no change, what resets it, the call log).
+
+## When the hopper's app asks for a permission (issue #1378, 2026-10-16)
+
+Issue #1351 asked that the hopper says which GitHub App permission is missing, and when it requests it. The first half is
+"A refusal says what the app lacks". This is the second half.
+
+**What GitHub allows.** A GitHub App cannot ask one installation for a permission. Only the app's owner changes the app's
+permissions, in the app's settings on GitHub. GitHub then asks the owner of every installation to accept the new
+permissions (an email, and a *Review request* on the installation's settings page); until an owner accepts, that
+installation keeps the permissions it had. The hopper's app ships with no private key (issue #1377), so the hopper cannot
+read an installation as the app either. What it can read with the person's own token: `GET /apps/{slug}`, the permissions
+the app asks for, and `GET /user/installations`, what each installation grants.
+
+**The permission request.** The installations read (`installations`, `src/connected-accounts/identity.ts`, issue #1250)
+also reads `GET /apps/{slug}`, conditional like the others, and gives each installation its **permission request**
+(`AppInstallation.permissionRequest`, `permissionRequest`): the permissions the app asks for that the installation does
+not grant at that level or higher. Per repository owner (one installation per owner), Sources shows the state of it:
+
+| state | what Sources says |
+|---|---|
+| not asked | the app is not installed on the owner: the link to add the app to another account or organization (issue #352) |
+| asked | `permissionRequest` holds one or more permissions: "Waiting for an owner of `<owner>` to accept the new permissions the app asks for: …", with **Review the request**, the installation's settings page |
+| accepted | `permissionRequest` is empty: "It has every permission the app asks for." |
+
+No app slug, or GitHub does not answer `GET /apps/{slug}`: no permission request, and Sources says nothing of it. A read kept
+from before this change has none either, until the next read.
+
+**Persisted state.** `app_installations` is derived data (issue #1250): the new field is optional, the build before reads
+the row as before, and no migration is needed.
+
+**Decisions:**
+- **The hopper does not start a request.** GitHub has no API for it, and the app's settings are its owner's, not the
+  hopper's. When the hopper needs a new permission, its maintainer adds it to the app; each owner then sees the request here.
+- **"Not asked" is per owner, not per permission.** GitHub asks every installation at once, so an installed owner is
+  either asked or accepted. A permission that a refusal names and that the app does not ask for is the app owner's to add;
+  the refusal's words (issue #1351) say what it lacks.
+- **A failed read of the app is no failed read.** The installations still show; only the permission request is not known.
+
+**Verification:** `test/connected-accounts/permission-request.test.ts` (the difference, by level),
+`test/integration/connected-accounts.test.ts` (an owner that accepted and one that waits, through the fake GitHub's
+`GET /apps/{slug}`), `test/ui/sources-view.test.ts` (accepted, asked with its link, and not known).

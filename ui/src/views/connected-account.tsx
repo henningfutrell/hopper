@@ -277,16 +277,36 @@ function Installation({ installation: i, matches, box }: { installation: AppInst
         </ul>
       )}
       {i.permissions && <div data-installation-access className="text-muted-foreground">{access(i.permissions)}</div>}
+      {i.permissionRequest && <PermissionRequest installation={i} asked={i.permissionRequest} />}
       {i.settingsUrl && <div><a className="underline" href={i.settingsUrl} target="_blank" rel="noreferrer">Choose its repositories</a></div>}
+    </div>
+  );
+}
+
+/**
+ * An installation's permission request (issue #1378): accepted, or the new permissions the app asks for that wait for an
+ * owner of the account, with the link where they review the request on GitHub.
+ */
+function PermissionRequest({ installation: i, asked }: { installation: AppInstallation; asked: Record<string, string> }) {
+  if (Object.keys(asked).length === 0) return <div data-permission-request="accepted" className="text-muted-foreground">It has every permission the app asks for.</div>;
+  return (
+    <div data-permission-request="asked" className="text-warn">
+      Waiting for an owner of <span className="font-mono">{i.account}</span> to accept the new permissions the app asks for: {inWords(asked)}.
+      {i.settingsUrl && <> <a className="underline" href={i.settingsUrl} target="_blank" rel="noreferrer">Review the request</a></>}
     </div>
   );
 }
 
 /** What an installation grants, in words: `{ issues: 'write', metadata: 'read' }` → "It may: read and write issues; read metadata." */
 function access(permissions: Record<string, string>): string {
+  return `It may: ${inWords(permissions)}.`;
+}
+
+/** Permissions in words: `{ issues: 'write', metadata: 'read' }` → "read and write issues; read metadata". */
+function inWords(permissions: Record<string, string>): string {
   const by = (level: string) => Object.entries(permissions).filter(([, l]) => l === level).map(([p]) => p.replaceAll('_', ' ')).sort();
   const parts = [['read and write', by('write')], ['administer', by('admin')], ['read', by('read')]] as const;
-  return `It may: ${parts.filter(([, ps]) => ps.length > 0).map(([verb, ps]) => `${verb} ${ps.join(', ')}`).join('; ')}.`;
+  return parts.filter(([, ps]) => ps.length > 0).map(([verb, ps]) => `${verb} ${ps.join(', ')}`).join('; ');
 }
 
 /**
