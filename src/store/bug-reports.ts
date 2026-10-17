@@ -36,5 +36,8 @@ export function createBugReportRepository(c: StoreContext): BugReportRepository 
       c.db.run('UPDATE bug_reports SET state = ?, body = ? WHERE id = ?', next.state, JSON.stringify(next), id);
       return next;
     },
+    remove(id) {
+      c.db.run('DELETE FROM bug_reports WHERE id = ?', id);
+    },
   };
 }

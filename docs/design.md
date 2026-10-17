@@ -25765,3 +25765,46 @@ failure assessor's assessment of a job that failed here, a delivery's creation) 
 runs is not failed by host B, and is once A stopped; a dedupe key asked on one host is a duplicate on the other; a sweep
 lease held by one host at a time, taken by the other once it stops), `test/client/isolation-file.test.ts` (a client
 restarted while cut off stops the jobs named before; a file past its life is not read).
+
+## Posted once (issue #1591, 2026-10-17)
+
+Follow-up of #1524. **The problem.** Promote to GitHub (`src/promotions/service.ts` `promote`) made the issue or the
+comment, then wrote the promotion's row and `direct_job.promoted`. Report a bug (`src/bug-reports/service.ts` `file`) added
+its row only after GitHub answered, and the send later (`src/bug-reports/later.ts` `sendKept`) updated a kept row only after
+the create. A stop, or a timeout where GitHub did make the issue, posted it again on the next try, and the hopper had no link
+to the first.
+
+**The change: the post key** (`src/domain/post-key.ts`, pure). The row is kept first, before GitHub is asked for a new issue
+or comment, and its id is the **post key**: the text posted ends with it as a hidden line, `<!-- hopper post <key> -->`.
+Before a create of a row that may already be on GitHub, the hopper looks for that key, from an hour before the row was kept
+(`postKeySince`; GitHub's clock and the hopper's differ): the issues the account made (`GET /repos/{o}/{r}/issues`,
+`creator`, `state=all`, `since`), or the comments on the issue (`GET …/issues/{n}/comments`, `since`). What it finds is
+linked; only when it finds nothing is the issue or comment made. An edit has no key to look for: it is the same edit when
+made twice.
+
+- **Promote to GitHub.** A new issue or comment is kept as a **promotion send** (`direct_job_promotion_sends`, tenant
+  migration 77, a table only: the build before runs on it and never reads it), with the repository, the target, the
+  artifacts linked, who promoted it and when. GitHub's answer makes it the promotion, in one transaction
+  (`PromotionRepository.sent`). A send a stop or a lost answer left is settled at the next promotion of the direct job, and
+  at each start (`Promotions.recover`, from the user runtime's start; its stop waits for it): its key found, it becomes the
+  promotion, with `direct_job.promoted`; the next promotion then edits it with the text the person confirmed now. Not
+  found, the send goes. One promotion of a direct job at a time: a second while the first is on its way is 409.
+- **Report a bug.** The report's row is kept `sending` with its body before GitHub is asked; GitHub's answer makes it
+  `open`. A lost answer (no answer, 401, 403, 404, 429, 5xx) makes it `waiting`, as before. GitHub refusing the report
+  itself (a 422) removes the row, as before nothing was kept. A row a stop left `sending` is `waiting` again at the next
+  start (`ReportSender.start`). The send later looks for each kept report's key first (`findReport`): found, the report is
+  linked, `bug_report.filed` with `later: true`; else it is sent. The look-up is by the account, not the label: GitHub drops
+  the label of a person who may not triage. Your reports shows `sending` as Sending.
+
+**Decisions:**
+- **The key is the row's id.** It names nothing of a person or a machine, and it is on GitHub only as a hidden line.
+- **A look-up reads the list, not search.** GitHub's search index lags behind a create; the list does not.
+- **A look-up reads one page (100).** An issue or comment made within the hour before the row was kept is on it.
+
+**Residual risk, stated.** A create still in flight after its timeout that GitHub finishes only after the look-up found
+nothing posts a second one. File an issue (`src/issue-drafts/`) keeps no row before its create yet.
+
+**Verification:** `test/integration/bug-reports-post-key.test.ts` (an issue made with its answer lost, sent later: one
+issue, the report links it; a report a stop left `sending`: linked at the next start; a comment the same),
+`test/integration/direct-job-promotions-post-key.test.ts` (an issue made with its answer lost, promoted again: one issue,
+with the new text; a stop before the row: linked at the next start, one `direct_job.promoted`; a comment the same).
