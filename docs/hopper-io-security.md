@@ -162,8 +162,8 @@ plugins, command-bearing options, the vault, remote access or the hopper.io link
 
 **R5 — minimal data with stated retention.**
 
-- hopper.io keeps only what the dashboard shows. The allow-list is a closed schema, versioned, in the install's code
-  (#464 owns it). A new field is a change to that schema and to the privacy note, in the same change.
+- hopper.io keeps only what the dashboard shows. The allow-list is a closed schema, versioned, in the install's code:
+  the **hopper.io state snapshot** (`src/domain/hopper-io-state.ts`, issue #466; #464 sends it). A new field is a change to that schema and to the privacy note, in the same change.
 - No job content goes out: no issue text, diffs, logs, artifacts, questions, answers, file paths, host names, IP
   addresses or people's names other than the account's own GitHub login.
 - Last-known state has a retention period. After it, hopper.io deletes the state, not only hides it. The period is an
