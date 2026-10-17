@@ -1,7 +1,8 @@
 // A fake GitLab on loopback (issue #1448 part 2): GitLab's REST API v4 as the GitLab source asks it — who a personal access
 // token is and its emails, the projects it reaches, a project's open issues with a label —, paged by `x-next-page`; for a job
 // (part 3): a project's default branch, an issue's label events and system notes (who labelled, assigned or edited it), and
-// the hopper's label edits. Each request is recorded with the token it carried.
+// the hopper's label edits; for a job's merge request (issue #1642): one issue, the merge requests that close it, and one
+// merge request with its pipeline. Each request is recorded with the token it carried.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gitBackend } from './fake-git.ts';
@@ -16,6 +17,12 @@ export interface FakeGitLabIssue {
   labelledBy?: string; assignedBy?: string; editedBy?: string[];
 }
 
+/** A merge request (issue #1642): `closes` the issues its description closes; `pipeline` its head pipeline's status, absent: none. */
+export interface FakeGitLabMergeRequest {
+  project: string; iid: number; closes: number[]; state: 'opened' | 'closed' | 'merged'; createdAt: string; mergedAt?: string;
+  draft?: boolean; conflicts?: boolean; pipeline?: string;
+}
+
 export interface FakeGitLab {
   url: string;
   /** Token → its user. */
@@ -23,6 +30,7 @@ export interface FakeGitLab {
   /** Tokens GitLab refuses now (401): revoked. */
   refused: Set<string>;
   issues: FakeGitLabIssue[];
+  mergeRequests: FakeGitLabMergeRequest[];
   /** Projects whose issue reads fail with 500. */
   failing: Set<string>;
   requests: { path: string; token: string | undefined; method?: string; body?: unknown }[];
@@ -39,7 +47,7 @@ export interface FakeGitLab {
 
 /** `gitRoot`: the bare repositories `<root>/<project>.git` its git serves, by git's own `git-http-backend`; absent: no git. */
 export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?: string } = {}): Promise<FakeGitLab> {
-  const fake: Omit<FakeGitLab, 'url' | 'close'> = { tokens: new Map(), refused: new Set(), issues: [...(o.issues ?? [])], failing: new Set(), requests: [], gitRequests: [], ids: new Map(), defaultBranches: new Map() };
+  const fake: Omit<FakeGitLab, 'url' | 'close'> = { tokens: new Map(), refused: new Set(), issues: [...(o.issues ?? [])], mergeRequests: [], failing: new Set(), requests: [], gitRequests: [], ids: new Map(), defaultBranches: new Map() };
   const idOf = (username: string): number => [...fake.tokens.values()].find((u) => u.username === username)?.id ?? fake.ids.get(username) ?? 900;
   const person = (username: string) => ({ id: idOf(username), username });
   const send = (res: ServerResponse, status: number, body: unknown, next?: string) => {
@@ -51,6 +59,12 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
     const slice = list.slice((page - 1) * per, page * per);
     send(res, 200, slice, page * per < list.length ? String(page + 1) : undefined);
   };
+  /** A merge request as GitLab answers it; its head pipeline only in the answer for one (`one`), as GitLab's list leaves it out. */
+  const mergeRequestJson = (x: FakeGitLabMergeRequest, one: boolean) => ({
+    iid: x.iid, web_url: `${fakeUrl}/${x.project}/-/merge_requests/${x.iid}`, state: x.state, draft: x.draft ?? false, has_conflicts: x.conflicts ?? false,
+    created_at: x.createdAt, merged_at: x.mergedAt ?? null, description: x.closes.map((n) => `Closes #${n}`).join('\n'),
+    ...(one ? { head_pipeline: x.pipeline ? { id: 1, status: x.pipeline } : null } : {}),
+  });
   const read = (req: IncomingMessage): Promise<string> => new Promise((r) => { let b = ''; req.on('data', (c: Buffer) => { b += c.toString(); }); req.on('end', () => r(b)); });
   /** A git request (part 3): only with a token GitLab takes, as Basic auth's password, as GitLab answers a private project. */
   const git = (req: IncomingMessage, res: ServerResponse, url: URL): boolean => {
@@ -86,7 +100,13 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
       if (!user.projects.includes(project)) return send(res, 404, { message: '404 Project Not Found' });
       return send(res, 200, { path_with_namespace: project, default_branch: fake.defaultBranches.get(project) ?? 'main' });
     }
-    const of = /^\/api\/v4\/projects\/([^/]+)\/issues\/(\d+)(\/resource_label_events|\/notes)?$/.exec(url.pathname);
+    const mr = /^\/api\/v4\/projects\/([^/]+)\/merge_requests\/(\d+)$/.exec(url.pathname);
+    if (mr) {
+      const project = decodeURIComponent(mr[1]!), iid = Number(mr[2]);
+      const found = user.projects.includes(project) ? fake.mergeRequests.find((x) => x.project === project && x.iid === iid) : undefined;
+      return found ? send(res, 200, mergeRequestJson(found, true)) : send(res, 404, { message: '404 Not found' });
+    }
+    const of = /^\/api\/v4\/projects\/([^/]+)\/issues\/(\d+)(\/resource_label_events|\/notes|\/closed_by)?$/.exec(url.pathname);
     if (of) {
       const project = decodeURIComponent(of[1]!), iid = Number(of[2]);
       const issue = user.projects.includes(project) ? fake.issues.find((i) => i.project === project && i.iid === iid) : undefined;
@@ -98,6 +118,15 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
         const assigned = (issue.assignees ?? []).length ? [{ id: 1, system: true, body: `assigned to ${(issue.assignees ?? []).map((a) => `@${a}`).join(' and ')}`, author: person(issue.assignedBy ?? issue.author) }] : [];
         const edits = (issue.editedBy ?? []).map((who, i) => ({ id: 10 + i, system: true, body: 'changed the description', author: person(who) }));
         return paged(res, url, [...assigned, { id: 5, system: false, body: 'a comment', author: person(issue.author) }, ...edits]);
+      }
+      if (of[3] === '/closed_by') {
+        return paged(res, url, fake.mergeRequests.filter((x) => x.project === project && x.closes.includes(iid)).map((x) => mergeRequestJson(x, false)));
+      }
+      if (req.method !== 'PUT') {
+        return send(res, 200, {
+          iid, title: issue.title, description: issue.description ?? '', web_url: `${fakeUrl}/${project}/-/issues/${iid}`, state: issue.state ?? 'opened',
+          author: person(issue.author), assignees: (issue.assignees ?? []).map((username) => ({ username })), labels: issue.labels,
+        });
       }
       if (req.method === 'PUT') {
         const list = (v: unknown) => (typeof v === 'string' ? v.split(',').filter(Boolean) : []);
