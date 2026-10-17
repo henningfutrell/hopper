@@ -91,7 +91,7 @@ describe('re-run', () => {
       const { world, source, sync } = await setup();
       source.items = [item('k1')];
       await sync.syncNow();
-      source.reportErrors = [new SourceError('boom', false, 502), new SourceError('boom', false, 502)];
+      source.reportErrors = Array.from({ length: 10 }, () => new SourceError('boom', false, 502));
       world.patchJob('job-1', { status: 'finished' });
       world.emit('job.finished', 'job-1', {});
       await settle();
@@ -106,6 +106,7 @@ describe('re-run', () => {
       await sync.syncNow();
       source.items = [item('k1')];
       await sync.syncNow();
+      expect(world.jobs.size).toBe(1);
       expect(lines()).toHaveLength(2);
     } finally {
       spy.mockRestore();
