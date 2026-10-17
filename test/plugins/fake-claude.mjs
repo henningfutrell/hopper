@@ -6,7 +6,11 @@
 // modelUsage names `claude-<--model>-resolved`, as the real CLI names the model an alias ran.
 // With `--input-format stream-json` it answers the initialize control request on stdin with the
 // models it offers: $FAKE_CLAUDE_MODELS (JSON) when set, else two.
-import { writeFileSync } from 'node:fs';
+// With $FAKE_CLAUDE_LITTER set it leaves what a real run leaves (issue #472): a file in its cwd, and its project dir
+// under ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects, named for the cwd.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 let stdin = '';
 process.stdin.setEncoding('utf8');
@@ -16,6 +20,12 @@ process.stdin.on('end', () => {
     argv: process.argv.slice(2), stdin, env: process.env, cwd: process.cwd(),
   }));
   const mode = process.env.FAKE_CLAUDE_MODE ?? 'ok';
+  if (process.env.FAKE_CLAUDE_LITTER) {
+    writeFileSync(join(process.cwd(), 'session.jsonl'), '{}');
+    const project = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^A-Za-z0-9]/g, '-'));
+    mkdirSync(project, { recursive: true });
+    writeFileSync(join(project, 'session.jsonl'), '{}');
+  }
   if (process.argv.includes('--input-format')) {
     if (mode === 'exit1') process.exit(1);
     const models = process.env.FAKE_CLAUDE_MODELS ? JSON.parse(process.env.FAKE_CLAUDE_MODELS) : [
