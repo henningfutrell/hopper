@@ -53,7 +53,10 @@ export interface TelemetryOptions {
   env: Env;
   /** The hopper's version: the resource's `service.version`. */
   version: string;
-  /** Tests: where spans, metrics and log records go, in place of the exporters the environment names. */
+  /**
+   * Tests: where spans, metrics and log records go, in place of the exporters the environment names. When one is given,
+   * a signal not given goes nowhere (the SDK alone would export it to OTLP on localhost).
+   */
   spanProcessors?: SpanProcessor[];
   metricReaders?: IMetricReader[];
   logRecordProcessors?: LogRecordProcessor[];
@@ -87,9 +90,7 @@ export function startTelemetry(options: TelemetryOptions): Telemetry {
   const sdk = new NodeSDK({
     resource: defaultResource().merge(resourceFromAttributes({ 'service.name': 'hopper', 'service.version': o.version })),
     resourceDetectors: [envDetector],
-    ...(o.spanProcessors ? { spanProcessors: o.spanProcessors } : {}),
-    ...(o.metricReaders ? { metricReaders: o.metricReaders } : {}),
-    ...(o.logRecordProcessors ? { logRecordProcessors: o.logRecordProcessors } : {}),
+    ...(own ? { spanProcessors: o.spanProcessors ?? [], metricReaders: o.metricReaders ?? [], logRecordProcessors: o.logRecordProcessors ?? [] } : {}),
   });
   sdk.start();
   let stopped: Promise<void> | undefined;
