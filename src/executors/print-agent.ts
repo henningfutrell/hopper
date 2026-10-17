@@ -106,6 +106,11 @@ export function isolatedTurn(jobId: string, scratch: string, run: string): strin
     + `${turnServiceCommand(jobId, scratch)} \${w:+"$w"} ${run}; r=$?; [ -n "$sp" ] && kill "$sp" 2>/dev/null; exit $r`;
 }
 
+/** A first turn's text: the job's prompt, what it is told besides (notes, a brief), and the protocol. */
+function taskOf(ctx: ExecutionContext, prompt: string, cwd: string, told: string | undefined): string {
+  return `${prompt}\n\n${told ? `${told}\n\n` : ''}${protocolFooter(cwd, ctx.jobRules, jobScratchOf(cwd, ctx.job.id))}`;
+}
+
 function refusal(agent: PrintAgent, ctx: ExecutionContext): string | undefined {
   const m = ctx.machine;
   if (m.docker) return `${agent} does not run on container target ${m.id}: it has no agent`;
@@ -203,6 +208,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     idempotent: false,
     reviews: true,
     validate: validatePayload,
+    reopensKept: true,
     run(ctx) {
       const refused = refusal(label, ctx);
       if (refused) return Promise.resolve({ kind: 'failed', error: refused });
@@ -214,11 +220,16 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       // Saved before the turn: a job that ends any way at all is reaped where it ran.
       ctx.saveState(stateOf(ctx, tree.cwd));
       // Notes a person sent before it started (issue #997) go in its task; it has no turn boundary the hopper types into.
-      const notes = ctx.notes?.take('start');
-      return turn(ctx, tree.cwd, `${p.prompt}\n\n${notes ? `${notes}\n\n` : ''}${protocolFooter(tree.cwd, ctx.jobRules, jobScratchOf(tree.cwd, ctx.job.id))}`);
+      return turn(ctx, tree.cwd, taskOf(ctx, p.prompt, tree.cwd, ctx.notes?.take('start')));
     },
     resume(ctx, answer) {
       const s = ctx.job.executorState as Partial<PrintAgentState> | undefined;
+      // Push it (issue #1472 part 2): the ended job goes on in a fresh turn in its saved work tree, its task, then the brief.
+      if (ctx.job.continued && s?.cwd) {
+        ctx.workTree(s.cwd);
+        const notes = ctx.notes?.take('start');
+        return turn(ctx, s.cwd, taskOf(ctx, resolvePayload(ctx.job, ctx.machine).prompt, s.cwd, notes ? `${answer}\n\n${notes}` : answer));
+      }
       if (!s?.chatId || !s.cwd) return Promise.resolve({ kind: 'failed', error: `${label}: no session to resume` });
       const notes = ctx.notes?.take('resume');
       return turn(ctx, s.cwd, notes ? `${answer}\n\n${notes}` : answer, s.chatId);
