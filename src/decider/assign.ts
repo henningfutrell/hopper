@@ -120,6 +120,9 @@ export const leavingHolds = (m: MachineSnapshot, job: Job): boolean => m.leaving
  */
 export const drainedHolds = (m: MachineSnapshot, job: Job): boolean => m.drained !== undefined && job.pendingAnswer === undefined;
 
+/** A job moved off a lost machine (issue #1569) does not go back to it while the agent it left there may run. */
+export const leftHolds = (m: MachineSnapshot, job: Job): boolean => job.parked?.elsewhere?.lost === true && job.parked.elsewhere.from === m.id;
+
 const GIB = 1024 ** 3;
 const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
 export const NO_NEW_JOB = 'no new job is claimed there';
@@ -138,8 +141,10 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (pin === undefined) {
     const staying = running.filter((m) => !leavingHolds(m, job));
     if (staying.length === 0) return `${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'are' : 'is'} leaving: ${NO_NEW_JOB}`;
-    const open = staying.filter((m) => !drainedHolds(m, job));
-    if (open.length === 0) return `${staying.map((m) => m.id).join(', ')} ${staying.length > 1 ? 'are' : 'is'} drained: ${NO_NEW_JOB}`;
+    const undrained = staying.filter((m) => !drainedHolds(m, job));
+    if (undrained.length === 0) return `${staying.map((m) => m.id).join(', ')} ${staying.length > 1 ? 'are' : 'is'} drained: ${NO_NEW_JOB}`;
+    const open = undrained.filter((m) => !leftHolds(m, job));
+    if (open.length === 0) return `it moved off ${job.parked!.elsewhere!.from} when that machine was lost: it waits for another machine, or for the agent it left there to end`;
     const known = open.filter((m) => !homeless(m));
     if (known.length === 0) {
       return `no machine that runs executor ${executor} has its home known yet: ${open.map((m) => m.id).join(', ')} ${open.length > 1 ? 'have' : 'has'} not answered a probe`;
@@ -304,7 +309,7 @@ export interface MachineStateWithCredentialHold extends MachineState {
 
 function eligible(s: MachineStateWithCredentialHold, job: Job): boolean {
   const pin = pinOf(job);
-  return problemFree(s, job) && windowsFits(s.machine, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && !drainedHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+  return problemFree(s, job) && windowsFits(s.machine, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && !drainedHolds(s.machine, job) && !leftHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !credentialHolds(s.machine, job, s.credentialHeld) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
     && signedOutFor(s.machine.id, job, s.signedOut) === undefined && (pin === undefined || pin === s.machine.id);
 }

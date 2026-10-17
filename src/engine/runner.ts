@@ -21,6 +21,7 @@ import { withCorrection } from './answers.ts';
 import { forkResume } from './phase-shifts.ts';
 import { nudgeCheck } from './nudge-check.ts';
 import { runNotes } from './notes.ts';
+import { moveLost, type Lost } from './lost-move.ts';
 
 const PROGRESS_EVERY_MS = 500;
 
@@ -61,6 +62,9 @@ export interface Runner {
 const CANCEL = 'cancel';
 const PARK = 'park';
 const SHUTDOWN = 'shutdown';
+
+/** A wait for the machine that ended the run: its work gone, or its machine away past the grace (issue #1569). */
+type Unreached = ExecutionOutcome & { lost?: Lost };
 
 /** How a launch begins: a fresh run (or resume), a reattach, or a reattach once the machine answers. */
 type Launch = 'run' | 'reattach' | 'reattach-when-reachable';
@@ -130,22 +134,22 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
   /**
    * Issue #368: a client target dials in, an ssh target answers, some seconds after the daemon
    * starts. Issue #752: the same wait once a running job's machine link drops. Undefined once the job's
-   * work is alive again and `job.reattached` is recorded; else the outcome that ends it.
+   * work is alive again and `job.reattached` is recorded; else the outcome that ends it, and how the machine was lost.
    */
-  async function whenReachable(executor: Executor, job: Job, claim: Claim, machineId: string, signal: AbortSignal, why: 'daemon restart' | 'link restored'): Promise<ExecutionOutcome | undefined> {
+  async function whenReachable(executor: Executor, job: Job, claim: Claim, machineId: string, signal: AbortSignal, why: 'daemon restart' | 'link restored'): Promise<Unreached | undefined> {
     const restart = why === 'daemon restart';
     const graceMs = restart ? c.reconnectGraceMs : c.linkGraceMs;
     const until = c.clock.now().getTime() + graceMs;
     for (;;) {
       const alive = await executor.canReattach!(job).catch(() => undefined);
       if (signal.aborted) return { kind: 'failed', error: 'aborted' };
-      if (alive === false) return { kind: 'failed', error: restart ? 'interrupted by daemon restart' : `interrupted while the link to machine ${machineId} was down` };
+      if (alive === false) return { kind: 'failed', error: restart ? 'interrupted by daemon restart' : `interrupted while the link to machine ${machineId} was down`, lost: 'gone' };
       if (alive) {
         if (!c.stopping()) c.store.events.append({ type: 'job.reattached', jobId: job.id, laneId: claim.laneId, data: { reason: why } });
         return undefined;
       }
       if (c.clock.now().getTime() >= until) {
-        return { kind: 'failed', error: `machine ${machineId} did not reconnect within ${graceMs / 1000} s${restart ? ' after the daemon restart' : ''}` };
+        return { kind: 'failed', error: `machine ${machineId} did not reconnect within ${graceMs / 1000} s${restart ? ' after the daemon restart' : ''}`, lost: 'away' };
       }
       await sleep(REACHABLE_EVERY_MS, undefined, { signal }).catch(() => {});
     }
@@ -156,7 +160,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
    * `linkLost` on it — until its work is alive again (undefined) or the link grace runs out (the outcome that ends it).
    * A job held across a restart has `linkLost` still set: the reattach at recovery clears it.
    */
-  async function holdThroughLinkLoss(executor: Executor, job: Job, claim: Claim, machineId: string, signal: AbortSignal): Promise<ExecutionOutcome | undefined> {
+  async function holdThroughLinkLoss(executor: Executor, job: Job, claim: Claim, machineId: string, signal: AbortSignal): Promise<Unreached | undefined> {
     const now = c.clock.now().getTime();
     const linkLost = { machine: machineId, since: new Date(now).toISOString(), failsAt: new Date(now + c.linkGraceMs).toISOString() };
     if (c.stopping()) return { kind: 'failed', error: 'shutdown' };
@@ -230,12 +234,16 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         return masked({ kind: 'failed', error: e instanceof Error ? e.message : String(e) });
       }
     };
+    /** Set when the run ended on a wait for its machine (issue #1569): the job may resume rather than fail. */
+    let lost: Lost | undefined;
+    const unreached = (waited: Unreached | undefined): Unreached | undefined => { lost = waited?.lost; return waited; };
     /** Its machine link lost while it ran (issue #752): held, then watched again from its saved turn, as often as the link drops. */
     const attempt = async (go: () => Promise<ExecutionOutcome>): Promise<ExecutionOutcome> => {
+      lost = undefined;
       let outcome = await guarded(go);
       const { signal } = entry.controller;
       while (outcome.kind === 'failed' && outcome.linkLost && machine && executor?.canReattach && executor.reattach && !signal.aborted && !c.stopping()) {
-        const waited = await holdThroughLinkLoss(executor, store.jobs.get(job.id) ?? started, claim, machine.id, signal);
+        const waited = unreached(await holdThroughLinkLoss(executor, store.jobs.get(job.id) ?? started, claim, machine.id, signal));
         if (!c.stopping()) store.jobs.update(job.id, { linkLost: undefined });
         const now = store.jobs.get(job.id) ?? started;
         outcome = waited ?? await guarded(() => execute(executor, now, contextOf(now, machine), true, undefined));
@@ -244,7 +252,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     };
     let outcome = await attempt(async () => {
       const waited = machine && executor && launch === 'reattach-when-reachable'
-        ? await whenReachable(executor, started, claim, machine.id, entry.controller.signal, 'daemon restart') : undefined;
+        ? unreached(await whenReachable(executor, started, claim, machine.id, entry.controller.signal, 'daemon restart')) : undefined;
       if (started.linkLost && !c.stopping()) store.jobs.update(job.id, { linkLost: undefined });
       return !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : waited ?? await execute(executor, started, contextOf(started, machine), reattach, resumeWith);
     });
@@ -279,6 +287,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     // Shutdown: leave the job running in the store; restart recovery decides its fate.
     if (c.stopping() && entry.cancelReason === undefined) return;
     progress.flush();
+    // Its machine lost (issue #1569): it resumes there in its kept work tree, or elsewhere from its checkpoint, when it can.
+    if (lost && outcome.kind === 'failed' && entry.cancelReason === undefined && moveLost(c, job.id, claim.laneId, lost, outcome.error)) return;
     const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason === undefined ? undefined : { reason: entry.cancelReason, ...(entry.cancelNote ? { note: entry.cancelNote } : {}) }, machine);
     if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
     else if (recorded.kind === 'report') c.reviews[recorded.review].handle(recorded.itemId);
