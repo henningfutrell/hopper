@@ -25801,6 +25801,32 @@ this one logs a check of that kind as failed at each pass and leaves the wait as
 `test/engine/wait-checks.test.ts` (the real database: an old review does not end the wait, a new one does),
 `test/sources/waited-checks.test.ts` (`waitedReviews`), `test/ui/board.test.ts` (the card).
 
+### Part 4: what is left, closed (2026-10-17)
+
+Part 3 left three items. Each is closed here by a decision. No code changes.
+
+- **Stalled running jobs are re-checked already.** A running job with no progress is never left to a person by itself:
+  - **The turn timeout.** Each turn of a job runs under its executor's timeout (herdr-claude: the payload's `timeoutMs`, an
+    hour unless set, `src/executors/herdr/payload.ts`). The quiet watch after the nudges stopped (issue #491) runs under the
+    same timeout (`startedAt` of the turn), so a Claude that sits quiet ends the turn as `timed out`.
+  - **The timeout's assessment** (issue #630). The assessor reads the job's **liveness** (when its pane output last changed,
+    whether it pushed, whether its pull request is open) and continues a job that still works, else retries it or hands it
+    off by the rules. This is the scheduled re-check of a running job, once each turn timeout.
+  - **The job lease** (issue #1662). A running job that no runner drives loses its lease at the next renewal
+    (`renew` releases a lease of a job not in `driving`), and any hopper on the database takes it over (`takeOver`) as at a
+    restart. A hopper that stops holds its jobs for `JOB_LEASE_MS` at most.
+  - A second check beside these would only nudge the job again or time it out sooner. Each nudge costs the job a turn.
+- **No model-based condition.** Every condition the issue names has a deterministic kind: a pull request (its end, checks or
+  review), an issue, a workflow run, a job, a question, its own command, a time. An outside event that names nothing waits for
+  the time the job names on its `check:` line (part 2), else its deadline, then the Failures view. A model call at each check
+  costs money and gives a different answer on each run, and the hopper cannot test it.
+- **The tailnet observation** in the issue (the API did not answer over the tailnet address, but answered on the host) is no
+  part of the wait checks. It is the follow-up issue #1756.
+
+**Verification:** read of `src/executors/herdr/executor.ts` (`watch`, the quiet watch's `startedAt`),
+`src/executors/herdr/monitor.ts` (`timeoutMs`), `src/failures/chain.ts` (`livenessOf`), `src/engine/leases.ts` (`renew`),
+`src/engine/recovery.ts` (`takeOver`). Their tests are those of issues #491, #630 and #1662.
+
 ## A labelled issue not assigned to the user is said (issue #1614, 2026-10-17)
 
 Report: two issues were labelled `hopper` by a trusted author and assigned to nobody. No job started, and for 2 to 4
