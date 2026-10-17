@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_TEND_RETRIES, MAX_TENDS, NO_CHECKS_GRACE_MS, pullRequestList, TEND_RETRY_MS, type Job, type PullRequestSeen } from '../../src/domain/types.ts';
 import type { Holds } from '../../src/domain/tending-queue.ts';
-import { jobForIssue, REPO } from './fixtures/github-support.ts';
+import { jobFor, jobForIssue, REPO } from './fixtures/github-support.ts';
 
 const NOW = Date.parse('2026-10-02T10:00:00.000Z');
 const PR = `https://github.com/${REPO}/pull/7`;
@@ -230,5 +230,22 @@ describe('what the hopper does about a pull request that needs tending (issue #9
     const card = cards([...chain, last]).find((c) => c.jobId === last.id)!;
     expect(card.gaveUp).toMatch(/checks still fail after 3 fixes/);
     expect(card).not.toHaveProperty('queue');
+  });
+});
+
+describe('a direct job\'s pull request (issue #1068)', () => {
+  it('has a card with no issue, linked to its direct job', () => {
+    const url = 'https://hopper.test/#direct-jobs/d1';
+    const job = jobFor({ key: 'direct:d1', url, repo: REPO, author: 'owner', title: 'A direct job' },
+      { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: PR, seen: seen() } } }, 'direct');
+    const card = pullRequestList([job], () => job, { on: true, repos: {} }, [REPO], NOW, () => undefined).repos[0]!.pullRequests[0]!;
+    expect(card).toMatchObject({ jobId: job.id, repo: REPO, directJob: { url }, pullRequest: { number: 7, url: PR }, state: 'open', waits: 'ready' });
+    expect(card).not.toHaveProperty('issue');
+  });
+
+  it('a job of another source with no issue has none', () => {
+    const job = jobFor({ key: 'other:1', url: 'https://example.test/1', repo: REPO, author: 'owner', title: 'Other' },
+      { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: PR } } }, 'other');
+    expect(pullRequestList([job], () => job, { on: true, repos: {} }, [REPO], NOW, () => undefined).repos[0]!.pullRequests).toEqual([]);
   });
 });
