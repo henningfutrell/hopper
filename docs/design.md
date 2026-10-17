@@ -23983,8 +23983,8 @@ sends a registration, and answers hopper.io with the outcome.
 **Left for later parts of issue #465:** these need the cloud link's connection (issue #464) or hopper.io itself.
 - The agent calls `register` when hopper.io sends a code, and sends the outcome back.
 - The machines the link reports: the **hopper.io state snapshot** (issue #466, its allow-list) carries them.
-- Unregistering at hopper.io: hopper.io tells the instance over the link, and the instance unlinks (`unlink`, by
-  `hopper.io`); an unlink on the instance tells hopper.io before the connection closes. Neither deletes anything else.
+- Unregistering at hopper.io: hopper.io tells the instance over the link; an unlink on the instance tells hopper.io before
+  the connection closes. Neither deletes anything else. The instance's half is part 3 ("Unregistering at hopper.io").
 - The link state and last-seen time the account shows, kept at hopper.io.
 - The issue's open questions (issue #469 decision 6, and a cap on instances per account).
 
@@ -23995,6 +23995,37 @@ nothing; a new code replaces the old; an unlink removes the code, and a link aga
 code is answered once, never in the view or an event; 409 not linked, 400 a body other than `{}`, 403 not the admin.
 `test/store/migration-45.test.ts`; `test/http/cloud-link-fixture.test.ts` (a mint writes only its row; an unlink leaves every
 table as before).
+
+## Unregistering at hopper.io (issue #465, part 3, 2026-10-17)
+
+**The problem.** Issue #465 item 5: an instance is unregistered from either side, and neither side deletes anything on the
+instance. An unlink on the instance (part 1) is the instance's side. The account owner's side is at hopper.io: the owner
+removes the instance there, and the instance must learn that it is no longer registered.
+
+**The change.** `CloudLink.unregister(account)` (`src/http/cloud-link.ts`): hopper.io says that the account owner removed
+this instance, for `account`. A `registered` link of that account goes back to `state: 'pending'`, and its `registeredAt`
+is removed. Its record stays, with the same `installId`, `account`, `linkedAt` and `by`; the open registration code stays;
+nothing else on the instance changes. It records `cloud_link.unregistered` (`installId`, `account`), an instance event.
+Anything else changes nothing, records nothing, and answers why: `not-linked`, `other-account` (R3: hopper.io speaks for the
+linked account only), or `not-registered`. A new registration code registers it again, with the same id, so hopper.io adds
+no second instance. No route calls it yet: the cloud link's agent (issue #464) calls it when hopper.io sends the removal.
+
+**Decisions:**
+- **Pending, not unlinked.** The link record is the instance admin's switch (R8): only the admin turns the cloud link on
+  or off, and R1 and the repo law let nothing from hopper.io change the cloud link beyond its registration. hopper.io's
+  removal is a fact about the registration, which hopper.io owns; so it changes the state only. The admin then registers
+  again with a new code, or unlinks.
+- **No new field.** The time and the side of the removal are in the event (R6). The record keeps the shape the build
+  before reads, so no migration.
+- **The open code stays.** The admin minted it to register; the removal does not take back that approval.
+
+**Left for later parts of issue #465:** the agent's call of `register` and `unregister` and its answers, and the unlink that
+tells hopper.io (issue #464); the machines (issue #466); the link state and last-seen time at hopper.io; the open questions
+(issue #469 decision 6).
+
+**Verification:** `test/http/cloud-unregister.test.ts` (the real instance store): a registered link that hopper.io removes is
+pending, with the same id, and a new code registers it again; no link, another account and a pending link change and record
+nothing; an unregister changes the `cloudLink` row only, and every other setting is as before.
 
 ## Drafting on the user's AI CLI (issue #474, 2026-10-17)
 

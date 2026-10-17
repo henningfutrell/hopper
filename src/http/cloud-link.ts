@@ -2,10 +2,11 @@
 // hopper.io, or unlinks it, while it runs. A link writes one record in the instance's settings — the instance id, the
 // account, the state — and an unlink deletes it; neither moves, copies or rewrites anything else, restarts the daemon
 // or touches a job or a lane. Each is an event. This part makes no connection to hopper.io: a link stays `pending` until
-// it registers (issue #465, design.md "Registering at hopper.io") with a one-time registration code the admin minted.
+// it registers (issue #465, design.md "Registering at hopper.io") with a one-time registration code the admin minted, and
+// is `pending` again when hopper.io's account owner unregisters it there (design.md "Unregistering at hopper.io").
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { InstanceEvents, InstanceSettingsRepository } from '../domain/ports.ts';
-import { normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudLinkView, type RegistrationCodeMinted, type RegistrationOutcome } from '../domain/cloud-link.ts';
+import { normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudLinkView, type RegistrationCodeMinted, type RegistrationOutcome, type UnregistrationOutcome } from '../domain/cloud-link.ts';
 import { HttpError } from './errors.ts';
 
 export interface CloudLink {
@@ -21,6 +22,11 @@ export interface CloudLink {
    * unexpired code of the link's own account registers it and is spent; anything else changes nothing.
    */
   register(code: string, account: string): RegistrationOutcome;
+  /**
+   * hopper.io removed this instance: its account owner unregistered it there, for `account`. A registered link of that
+   * account is `pending` again; its record, its id and everything else on the instance stay. Anything else changes nothing.
+   */
+  unregister(account: string): UnregistrationOutcome;
 }
 
 const hash = (code: string): Buffer => createHash('sha256').update(code).digest();
@@ -77,6 +83,15 @@ export function createCloudLink(o: {
       o.settings.setCloudLink({ ...link, state: 'registered', registeredAt: o.now().toISOString() });
       o.events.append({ type: 'cloud_link.registered', data: { installId: link.installId, account: link.account } });
       return 'registered';
+    },
+    unregister(account) {
+      const link = o.settings.getCloudLink();
+      if (!link) return 'not-linked';
+      if (normalCloudAccount(account) !== link.account) return 'other-account';
+      if (link.state !== 'registered') return 'not-registered';
+      o.settings.setCloudLink({ installId: link.installId, account: link.account, state: 'pending', linkedAt: link.linkedAt, by: link.by });
+      o.events.append({ type: 'cloud_link.unregistered', data: { installId: link.installId, account: link.account } });
+      return 'unregistered';
     },
   };
 }

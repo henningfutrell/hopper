@@ -180,6 +180,7 @@
         "cloud_link.unlinked",
         "cloud_link.registration_code_minted",
         "cloud_link.registered",
+        "cloud_link.unregistered",
         "display_name.changed",
         "question.thread_held",
         "question.thread_approved",
