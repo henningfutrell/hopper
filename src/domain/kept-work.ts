@@ -68,6 +68,26 @@ export function keptWorkOf(newestFirst: readonly DomainEvent[]): KeptWork[] {
   return out;
 }
 
+/** The trail `keptAgainOf` reads: the work trail and the job going on in its work tree. */
+export const KEPT_AGAIN_EVENTS = [...WORK_EVENTS, 'job.continued'] as const;
+
+/**
+ * Pure: whether the job went on in its kept work tree (`job.continued`: Push it, a Continue) and its reap kept the same
+ * work again — no path it did not keep before (issue #1470). Then a push of it is refused or cannot be made from the job
+ * (a clone of another repository: a job pushes only to its own), and Push it again only asks the same thing again.
+ * `newestFirst`: the job's `KEPT_AGAIN_EVENTS` as the event log answers them.
+ */
+export function keptAgainOf(newestFirst: readonly DomainEvent[]): boolean {
+  const [now, ...older] = newestFirst;
+  if (now?.type !== 'job.work_kept') return false;
+  const at = older.findIndex((e) => e.type === 'job.continued');
+  if (at < 0) return false;
+  const before = older.slice(at + 1).find((e) => e.type !== 'job.continued');
+  if (before?.type !== 'job.work_kept') return false;
+  const was = new Set((before.data as { paths: string[] }).paths);
+  return (now.data as { paths: string[] }).paths.every((p) => was.has(p));
+}
+
 /**
  * The job's own scratch dir (`…/.worktrees/@scratch/<job id>`, job-layout.ts) its kept repositories are in, or beside: a
  * job worktree `<work tree>/.worktrees/<name>/<job id>` (issue #1188) has it in that work tree. A path of the layout before
