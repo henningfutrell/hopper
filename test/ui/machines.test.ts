@@ -10,7 +10,7 @@ const CONFIG: MachinesConfig = {
   machines: [
     { name: 'local', connection: 'local', options: { lanes: 4 } },
     { name: 'desk', connection: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } },
-    { name: 'box', connection: 'docker', options: { docker: 'box', lanes: 2 } },
+    { name: 'box', connection: 'container', options: { image: 'box', lanes: 2 } },
     { name: 'odd', connection: 'custom-machines' },
   ],
   executors: ['herdr-claude', 'test'],
@@ -124,12 +124,12 @@ describe('editing a machine\'s name and details', () => {
       name: 'desk', lanes: '1', executors: ['test'], label: '', herdr: true,
       details: { ssh: 'desk', session: '', hostKey: '', workTree: '' },
     });
-    expect(editDraft(box)).toEqual({ name: 'box', lanes: '2', executors: ['command'], label: '', herdr: true, details: { docker: 'box' } });
+    expect(editDraft(box)).toEqual({ name: 'box', lanes: '2', executors: ['command'], label: '', herdr: true, details: { image: 'box' } });
     // No herdr binary to name (issue #311): herdr is called by name there, from its PATH.
     expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'hostKey', 'workTree']);
     // There is never an ssh config (issue #309): no hint names one.
     expect(DETAILS.ssh!.map((f) => f.hint).join(' ')).not.toMatch(/ssh\/config/);
-    expect(DETAILS.docker!.map((f) => f.key)).toEqual(['docker']);
+    expect(DETAILS.container!.map((f) => f.key)).toEqual(['image']);
     // A client target dials in: nothing of how it is reached to type, only its work tree (issue #361).
     expect(DETAILS.client!.map((f) => f.key)).toEqual(['workTree']);
   });
@@ -140,8 +140,8 @@ describe('editing a machine\'s name and details', () => {
       action: 'options', role: 'machine-source', name: 'desk', rename: 'study', version: 'v1',
       options: { ssh: 'laptop', session: 'work', lanes: 1, executors: ['test'] },
     });
-    expect(editBody(box, { ...editDraft(box), details: { docker: 'other-box' } }, 'v1')).toEqual({
-      action: 'options', role: 'machine-source', name: 'box', version: 'v1', options: { docker: 'other-box', lanes: 2, executors: ['command'] },
+    expect(editBody(box, { ...editDraft(box), details: { image: 'other-box' } }, 'v1')).toEqual({
+      action: 'options', role: 'machine-source', name: 'box', version: 'v1', options: { image: 'other-box', lanes: 2, executors: ['command'] },
     });
   });
 

@@ -96,7 +96,7 @@ describe('the sweep runner (issue #410)', () => {
   it('skips a machine that is offline, a container target, or one no executor reaches', async () => {
     const r = rig({ machines: [
       { id: 'off', label: 'o', maxLanes: 1, online: false, executors: ['x'] },
-      { id: 'box', label: 'b', maxLanes: 1, online: true, executors: ['x'], docker: 'c' },
+      { id: 'box', label: 'b', maxLanes: 1, online: true, executors: ['x'], containerImage: 'c' },
       { id: 'unreachable', label: 'u', maxLanes: 1, online: true, executors: ['x'] },
     ] });
     await r.sweep.run(true);

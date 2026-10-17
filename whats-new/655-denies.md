@@ -1,0 +1,1 @@
+- When you decline a job's request for a sandbox, the hopper now trusts that job less. A second decline for the same job quarantines it: the job stops reaching anything through the hopper until you lift the quarantine.

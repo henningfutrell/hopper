@@ -100,12 +100,12 @@ export function readAddress(stdout: string, urls: readonly string[], wsl?: strin
 /**
  * The hopper's URL as a job on `m` reaches it, or undefined: it cannot, and its jobs get no proxy. A client target, the
  * URL it dialled in at; an ssh target, the address its probe found it reaches, never one it was not seen to reach; a
- * container target, the public URL, else the first LAN name; this machine, loopback.
+ * container target, none: its command boxes join no network (issue #865); this machine, loopback.
  */
 export function jobHopperUrl(m: MachineSnapshot, dialled: string | undefined, o: { port: number; reachable: string | undefined }): string | undefined {
   if (dialled) return dialled;
   if (m.client) return o.reachable;
   if (m.ssh) return m.hopperUrl;
-  if (m.docker) return o.reachable;
+  if (m.containerImage) return undefined;
   return `http://127.0.0.1:${o.port}`;
 }

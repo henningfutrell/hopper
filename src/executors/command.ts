@@ -1,13 +1,13 @@
 // The command executor (issue #58, design.md "Container targets"): runs a job's body as a shell
 // script on the machine its lane is on, through that machine's connection — this machine (none),
-// ssh, or `docker exec` into a container target — and returns what it printed. No agent, no
-// questions. Not idempotent: a restart never runs a command twice.
+// ssh, or, on a container target, a one-shot sandbox box of its own (issue #865) — and returns what
+// it printed. No agent, no questions. Not idempotent: a restart never runs a command twice.
 import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
+import type { CommandBoxes } from '../domain/sandboxes.ts';
 import type { MachineSnapshot } from '../domain/types.ts';
-import { dockerArgv, dockerEnv } from './docker.ts';
-import { userProcessEnv } from './env.ts';
+import { scrubbedEnv, userProcessEnv } from './env.ts';
 import { shellQuote, sshArgv, type SshAuth } from './ssh.ts';
 
 /** Per stream, the tail kept in the job's result. */
@@ -18,14 +18,13 @@ export interface CommandExecutorOptions {
   name: string;
   /** Wall-clock limit of one command. */
   timeoutMs: number;
-  dockerBin?: string;
   sshBin?: string;
   /** Where ssh's shared connection sockets live; absent → no sharing. */
   sshControlDir?: string;
   /** How the hopper proves itself to an ssh target (design.md "Target authentication"); throws when it cannot. */
   sshAuth: () => SshAuth;
-  /** The docker socket only the hopper may open (design.md "Target authentication"); throws when there is none. */
-  dockerHost: () => string;
+  /** A container target's command boxes, through the sandbox module (issue #865); absent: this hopper starts none. */
+  boxes?: CommandBoxes;
   /** Over the daemon's environment for what runs on this machine: the user's CLI config dirs (issue #158). */
   userEnv?: Readonly<Record<string, string>>;
 }
@@ -38,9 +37,9 @@ export function scriptOf(body: string): string {
 
 const tail = (s: string): string => (s.length > OUTPUT_CAP ? s.slice(-OUTPUT_CAP) : s);
 
-/** The program and argv that run `argv` on the machine, by its connection. */
-export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<CommandExecutorOptions, 'dockerBin' | 'sshBin' | 'sshControlDir' | 'sshAuth' | 'dockerHost'>): [string, string[]] {
-  if (machine.docker) return [o.dockerBin ?? 'docker', dockerArgv(o.dockerHost(), ['exec', '--', machine.docker, ...argv])];
+/** The program and argv that run `argv` on the machine, by its connection. A container target's commands run in boxes, not here. */
+export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<CommandExecutorOptions, 'sshBin' | 'sshControlDir' | 'sshAuth'>): [string, string[]] {
+  if (machine.containerImage) throw new Error('a container target runs each command in a sandbox box of its own, not over a connection');
   // A client target runs no job body (design.md "Client targets"); without this the command would run here.
   if (machine.client) throw new Error('the command executor does not run on a client target: a client runs no job body');
   if (machine.ssh) {
@@ -59,7 +58,7 @@ export interface Ran { exitCode: number; stdout: string; stderr: string }
 export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal, userEnv: Readonly<Record<string, string>> = {}, onOutput?: (chunk: string) => void): Promise<Ran | 'aborted' | 'timeout'> {
   return new Promise((resolve, reject) => {
     const child = execFile(file, args, {
-      env: dockerEnv(userProcessEnv(userEnv)), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
+      env: scrubbedEnv(userProcessEnv(userEnv)), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ exitCode: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
@@ -74,6 +73,19 @@ export function run(file: string, args: string[], timeoutMs: number, signal: Abo
 
 export function createCommandExecutor(o: CommandExecutorOptions): Executor {
   if (o.sshControlDir) mkdirSync(o.sshControlDir, { recursive: true, mode: 0o700 });
+  /** On a container target: the script in a one-shot box of its image, its output one stream, as the box's terminal wrote it. */
+  async function inBox(ctx: ExecutionContext, env: Record<string, string>, script: string): Promise<ExecutionOutcome> {
+    const where = ctx.machine.id;
+    if (!o.boxes) return { kind: 'failed', error: `command on ${where}: this hopper starts no sandbox box, so a container target runs no command` };
+    let output = '';
+    const r = await o.boxes.run({ jobId: ctx.job.id, image: ctx.machine.containerImage!, script, env, timeoutMs: o.timeoutMs }, { log: (chunk) => { output += chunk; }, signal: ctx.signal });
+    if (ctx.signal.aborted) return ABORTED;
+    if (r.stopped === 'timed-out') return { kind: 'failed', error: `command on ${where} timed out after ${o.timeoutMs} ms` };
+    if (r.problem) return { kind: 'failed', error: `command on ${where}: ${r.problem}` };
+    const stdout = tail(output.replaceAll('\r\n', '\n'));
+    if (r.exit !== 0) return { kind: 'failed', error: `command exited ${r.exit} on ${where}: ${stdout.trim()}` };
+    return { kind: 'finished', result: { machine: where, exitCode: 0, stdout, stderr: '' } };
+  }
   return {
     name: o.name,
     idempotent: false,
@@ -82,8 +94,9 @@ export function createCommandExecutor(o: CommandExecutorOptions): Executor {
     },
     async run(ctx: ExecutionContext): Promise<ExecutionOutcome> {
       const { body, env } = ctx.job.spec.payload as { body: string; env?: Record<string, string> };
-      const vars = Object.entries({ ...env, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => `${k}=${v}`);
       const where = ctx.machine.id;
+      if (ctx.machine.containerImage) return inBox(ctx, { ...env, HOPPER_JOB_ID: ctx.job.id }, scriptOf(body));
+      const vars = Object.entries({ ...env, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => `${k}=${v}`);
       try {
         const [file, args] = commandOn(ctx.machine, ['env', ...vars, 'sh', '-c', scriptOf(body)], o);
         const r = await run(file, args, o.timeoutMs, ctx.signal, o.userEnv);

@@ -9,7 +9,7 @@ const m = (id: string, over: Partial<MachineSnapshot> = {}): MachineSnapshot => 
 const HERE = m('here');
 const DESK = m('desk', { ssh: 'desk' });
 const PHONE = m('phone', { client: {} });
-const BOX = m('box', { docker: 'box' });
+const BOX = m('box', { containerImage: 'box' });
 
 describe('pickMachine (a level that names no machine)', () => {
   it('the job\'s machine first, where claude can run there: a client target too (issue #482)', () => {
@@ -43,9 +43,9 @@ describe('pickMachine (a level that names no machine)', () => {
     expect(pickMachine({ reach: 'no-container', machines: [HERE, DESK] })).toEqual({ none: expect.stringMatching(/names no machine, and here, desk can run claude.*default escalation machine/) });
   });
 
-  it('a usage source reaches any online machine, a client or container target too', () => {
+  it('a usage source reaches any online machine, a client target too, never a container target (issue #865)', () => {
     expect(pickMachine({ reach: 'any', machines: [PHONE] })).toEqual({ machine: 'phone', why: 'the only machine that can run claude' });
-    expect(pickMachine({ reach: 'any', machines: [PHONE, BOX] })).toEqual({ none: expect.stringMatching(/^This usage source names no machine, and phone, box can run claude/) });
+    expect(pickMachine({ reach: 'any', machines: [PHONE, BOX] })).toEqual({ machine: 'phone', why: 'the only machine that can run claude' });
     expect(pickMachine({ reach: 'any', machines: [m('gone', { online: false })] })).toEqual({ none: NO_MACHINE_FOR_USAGE });
   });
 });
@@ -54,12 +54,12 @@ const spec = (name: string, plugin: string): InstanceSpec => ({ name, plugin });
 
 describe('machineNote (the Settings status of a part that names no machine)', () => {
   it('one machine can run claude: not flagged, it names that machine — a client target too (issue #482)', () => {
-    expect(machineNote({ reach: 'no-container', machines: [spec('desk', 'ssh'), spec('box', 'docker')] })).toEqual({ machine: 'desk', needsMachine: false, note: 'names no machine: runs on desk, the only machine that can run claude' });
+    expect(machineNote({ reach: 'no-container', machines: [spec('desk', 'ssh'), spec('box', 'container')] })).toEqual({ machine: 'desk', needsMachine: false, note: 'names no machine: runs on desk, the only machine that can run claude' });
     expect(machineNote({ reach: 'no-container', machines: [spec('phone', 'client')] })).toEqual({ machine: 'phone', needsMachine: false, note: 'names no machine: runs on phone, the only machine that can run claude' });
   });
 
   it('none can: flagged, with the plain reason', () => {
-    expect(machineNote({ reach: 'no-container', machines: [spec('box', 'docker')] })).toEqual({ needsMachine: true, note: NO_MACHINE_FOR_LEVEL });
+    expect(machineNote({ reach: 'no-container', machines: [spec('box', 'container')] })).toEqual({ needsMachine: true, note: NO_MACHINE_FOR_LEVEL });
   });
 
   it('several can and no default: flagged; with the default set, not', () => {
@@ -70,7 +70,7 @@ describe('machineNote (the Settings status of a part that names no machine)', ()
 });
 
 describe('namedMachineNote (the Settings status of a level that names its machine, issue #482)', () => {
-  const specs = [spec('desk', 'ssh'), spec('phone', 'client'), spec('box', 'docker')];
+  const specs = [spec('desk', 'ssh'), spec('phone', 'client'), spec('box', 'container')];
 
   it('a machine claude can run on, online or not yet listed: no note', () => {
     expect(namedMachineNote({ reach: 'no-container', machine: 'phone', machines: specs, live: [PHONE] })).toBeUndefined();
@@ -102,18 +102,18 @@ describe('fillMachines (the stored plugins config)', () => {
   it('names the one machine that can run claude on every claude-cli level and claude-plan source that names none', () => {
     const doc = {
       version: 1,
-      machines: [{ name: 'desk', plugin: 'ssh', options: { ssh: 'desk' } }, { name: 'box', plugin: 'docker' }],
+      machines: [{ name: 'desk', plugin: 'ssh', options: { ssh: 'desk' } }, { name: 'box', plugin: 'container' }],
       escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } }, { name: 'level-2', plugin: 'claude-cli', options: { model: 'fable', machine: 'kept' } }, { name: 'api', plugin: 'anthropic-api' }],
       usageSources: [{ name: 'claude', plugin: 'claude-plan' }],
     };
-    expect(fillMachines(doc)).toEqual(['level-1']);
+    expect(fillMachines(doc)).toEqual(['level-1', 'claude']);
     expect(doc.escalationLevels).toEqual([
       { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus', machine: 'desk' } },
       { name: 'level-2', plugin: 'claude-cli', options: { model: 'fable', machine: 'kept' } },
       { name: 'api', plugin: 'anthropic-api' },
     ]);
-    // Two machines can run claude-plan (the ssh one and the container): left for the owner.
-    expect(doc.usageSources).toEqual([{ name: 'claude', plugin: 'claude-plan' }]);
+    // A container target runs no claude for a usage read either (issue #865): the ssh one is the only machine.
+    expect(doc.usageSources).toEqual([{ name: 'claude', plugin: 'claude-plan', options: { machine: 'desk' } }]);
   });
 
   it('no machine, several, or no machines section: nothing changes', () => {

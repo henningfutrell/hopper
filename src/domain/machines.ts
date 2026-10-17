@@ -7,7 +7,7 @@ export type { WindowsHost, WindowsHostsView } from './windows-steps.ts';
 /**
  * An attached machine as its machine-source instance names it (design.md "Attached machines",
  * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container
- * reached over docker exec, which runs commands only; or a client target, a machine running the
+ * target, which runs commands only, each in a sandbox box of its own; or a client target, a machine running the
  * hopper client that connects back over a reverse tunnel.
  */
 export type AttachedMachine = SshMachine | ContainerMachine | ClientMachine;
@@ -104,10 +104,13 @@ export interface SshMachine extends AttachedBase {
   hostKey?: string;
 }
 
-/** A container target (issue #58): a running container on this machine's docker, no agent in it. */
+/**
+ * A container target (issues #58, #865): a machine with no agent that runs commands only, each in a one-shot sandbox box
+ * the sandbox module starts and burns, on no network.
+ */
 export interface ContainerMachine extends AttachedBase {
-  /** The container's name or id: commands run in it through `docker exec`. */
-  docker: string;
+  /** The image each command's box runs. */
+  image: string;
 }
 
 /**

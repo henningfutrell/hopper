@@ -56,7 +56,7 @@ const normal = (path: string): string => posix.normalize(path).replace(/(.)\/+$/
  * as its root.
  */
 export function workTreeOn(machine: MachineSnapshot, cwd: string): { cwd: string } | { error: string } {
-  const attached = machine.ssh !== undefined || machine.client !== undefined || machine.docker !== undefined;
+  const attached = machine.ssh !== undefined || machine.client !== undefined || machine.containerImage !== undefined;
   const home = (attached ? machine.home : homedir())?.replaceAll('\\', '/');
   const tilde = cwd === '~' || cwd.startsWith('~/');
   if (tilde && !home) return { error: `cannot resolve the work tree ${cwd} on ${machine.id}: its home is not known yet (the machine has not answered a probe)` };

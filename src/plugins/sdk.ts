@@ -8,6 +8,7 @@ import type {
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, ReviewReply, ReviewRequest, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
 import type { VaultBackend } from '../domain/vault.ts';
+import type { CommandBoxes } from '../domain/sandboxes.ts';
 import type { InfraPlanNotice } from '../domain/infra-watchers.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, ChangeRule, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, ToolSignIn, UsageReading } from '../domain/types.ts';
@@ -157,6 +158,8 @@ export interface ExecutorContext extends Partial<Pick<MachineLookup, 'machine'>>
   client(machine: string): ClientTransport | undefined;
   /** Job pods (issue #1283): what a pod per job needs of the hopper. Absent: no job pod can join this hopper. */
   pods?: JobPodHost;
+  /** A container target's command boxes, through the sandbox module (issue #865). Absent: this hopper starts none. */
+  boxes?: CommandBoxes;
 }
 
 /** What the hopper does for a job pod (issue #1283, design.md "Job pods on Kubernetes"). */

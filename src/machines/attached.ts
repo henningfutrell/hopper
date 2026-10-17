@@ -1,6 +1,6 @@
 // An attached machine: another host that runs jobs in its own herdr session, reached over ssh
-// (design.md "Attached machines"), or a container target reached over docker exec that only runs
-// commands (issue #58, "Container targets"). Online while that session answers, or that container runs. The probe runs in the
+// (design.md "Attached machines"), or a container target that only runs commands, each in a one-shot sandbox box (issues
+// #58, #865, "Container targets"). Online while that session answers, or while a box can start for it. The probe runs in the
 // background, at most once per `probeEveryMs`; list() never waits for it, so a machine that is off
 // or asleep never stalls a Decision. Offline until the first probe says otherwise. Each is a
 // machine-source instance (issue #74), reached through createTargetPool.
@@ -75,11 +75,11 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   const name = o.machine().name;
   const reached = (): string => {
     const m = o.machine();
-    return 'docker' in m ? `docker ${m.docker}` : 'client' in m ? 'client, dialled in' : `ssh ${m.ssh}`;
+    return 'image' in m ? `one-shot sandbox boxes of ${m.image}` : 'client' in m ? 'client, dialled in' : `ssh ${m.ssh}`;
   };
   const down = (): string => {
     const m = o.machine();
-    return 'docker' in m ? 'its container is not running' : 'ssh' in m && !m.herdr ? 'it does not answer over ssh' : 'its herdr session is not running';
+    return 'image' in m ? 'no sandbox box can start for it now' : 'ssh' in m && !m.herdr ? 'it does not answer over ssh' : 'its herdr session is not running';
   };
   const now = (): number => (o.clock ? o.clock.now().getTime() : Date.now());
   const every = o.probeEveryMs ?? PROBE_EVERY_MS;
@@ -133,8 +133,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), ...(m.elbowIns !== undefined ? { elbowIns: m.elbowIns } : {}), ...(m.windows ? { windows: true as const } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(m.workTrees !== undefined ? { workTrees: { ...m.workTrees } } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials: [...infraCredentials] } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }), ...(workTreeProblem ? { workTreeProblem } : {}) };
-      if ('docker' in m) return [{ ...base, docker: m.docker }];
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), ...(m.elbowIns !== undefined ? { elbowIns: m.elbowIns } : {}), ...(m.windows ? { windows: true as const } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(m.workTrees !== undefined ? { workTrees: { ...m.workTrees } } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'image' in m ? undefined : m.diskLow) } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials: [...infraCredentials] } : {}), ...('image' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }), ...(workTreeProblem ? { workTreeProblem } : {}) };
+      if ('image' in m) return [{ ...base, containerImage: m.image }];
       if ('client' in m) {
         const name = m.client.template;
         // Fails closed: with no way to read the template's approval, its box takes no job.
@@ -258,7 +258,7 @@ export function createTargetPool(o: AttachedOptions & {
   reachedAt?: (machine: AttachedMachine) => number;
 }): (machine: AttachedMachine) => MachineSource {
   const known = new Map<string, { source: MachineSource; current: AttachedMachine }>();
-  const identity = (m: AttachedMachine): string => JSON.stringify('docker' in m ? [m.name, 'docker', m.docker]
+  const identity = (m: AttachedMachine): string => JSON.stringify('image' in m ? [m.name, 'container', m.image]
     : 'client' in m ? [m.name, 'client', m.client.key] : [m.name, m.ssh, m.herdr, m.session]);
   return (m) => {
     const key = identity(m);

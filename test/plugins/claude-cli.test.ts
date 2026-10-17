@@ -173,7 +173,7 @@ describe('detection: never a model call', () => {
 
 describe('a level that names no machine (#442)', () => {
   const OTHER: MachineSnapshot = { ...LOCAL, id: 'other', label: 'other' };
-  const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], docker: 'box' };
+  const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], containerImage: 'box' };
   const unnamed = (machines: MachineSnapshot[], fallback?: string) => claudeCli.create(ctx(machines, fallback), opts(claudeCli, { bin: BIN, timeoutMs: 5000 }));
   const ANSWER = { answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' };
 
@@ -257,7 +257,7 @@ describe('claude-cli on a designated machine (issue #150)', () => {
   it.each([
     ['not configured', [] as MachineSnapshot[], /machine laptop is not configured/],
     ['offline', [{ ...LAPTOP, online: false }], /machine laptop is offline/],
-    ['a container target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], docker: 'box' }], /container target/],
+    ['a container target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], containerImage: 'box' }], /container target/],
   ])('a machine %s returns { error }: the question escalates', async (_n, machines, why) => {
     expect(await (await onMachine(machines)).answer(req(), signal())).toEqual({ error: expect.stringMatching(why) });
   });
