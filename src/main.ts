@@ -40,7 +40,7 @@ import { NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, selectRuntime } from './sandbox/runt
 import { createSandboxes, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts'; import { createEgress } from './sandbox/egress.ts';
 import { createHostLeases, createSagas, sagaOwner } from './sagas/index.ts'; import { createTopologyDiscoveries, topologyDiscoverySaga } from './infra-plans/topology-discovery.ts'; import { NEED_STEP_SAGA, needStepSaga } from './sandbox/need-step-saga.ts'; import { jobMoveSaga } from './engine/job-move-saga.ts'; import { JOB_MOVE_SAGA } from './engine/lost-move.ts'; import { jobRunSaga } from './engine/job-run-saga.ts'; import { JOB_RUN_SAGA } from './engine/job-run.ts'; import { sagaEnded } from './domain/sagas.ts'; import { WINDOWS_STEP_SAGA, windowsStepSaga } from './windows-steps/step-saga.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
-import { observeQueueOf } from './telemetry/queue.ts'; import { startProcessTelemetry } from './telemetry/start.ts';
+import { observeQueueOf } from './telemetry/queue.ts'; import { NO_TELEMETRY, startProcessTelemetry, type TelemetryControl } from './telemetry/start.ts'; import { createTelemetrySettings } from './telemetry/settings.ts';
 
 export type { UserSeams } from './users/runtime.ts';
 
@@ -93,7 +93,7 @@ export interface AppSeams extends UserSeams {
   containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter; solrMeter?: import('./domain/stack-resources.ts').SolrMeter;
   /** The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
    * Cloudflare's and ngrok's APIs, which remote access mints the tunnel at (issue #968); default the real ones. */
-  searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string; /** The thread that reads a held event loop, with the health port (issue #1383); default watchHeld's; null: none (a test process starts many daemons, issue #1717). */ held?: HeldWatch | null;
+  searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string; /** The thread that reads a held event loop, with the health port (issue #1383); default watchHeld's; null: none (a test process starts many daemons, issue #1717). */ held?: HeldWatch | null; /** The daemon's telemetry (issue #1486), which the telemetry setting applies to; default none: the setting is only kept. */ telemetry?: TelemetryControl;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -115,7 +115,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, held: _held, ...shared } = seams;
+  const { env: _env, telemetry: _telemetry, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, held: _held, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -254,7 +254,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   secrets.connect((e) => runtimes.events.append(e));
   // Remote access (issue #880): the tunnel's settings, set in the UI, its authtoken in the instance's vault (an install's NGROK_AUTHTOKEN and
   // HOPPER_PUBLIC_URL from before moved there once), and its watch. The allowed hosts (issue #1024): the admin's, and this host's tailnet's.
-  const remoteAccess = createRemoteAccess({ settings: store.settings, secrets: secrets.system, events: runtimes.events, port: () => port, mints: { begin: (kind, key, data) => sagas.begin(kind, key, data), drive: (id) => sagas.drive(id), abort: (id, reason) => sagas.abort(id, reason), open: () => instance.sagas.open() }, instanceId: instance.settings.instanceId(), tunnelApis: config.tunnelApis, ...(seams.tunnelProviders ? { providers: seams.tunnelProviders } : {}), env, publicUrl: config.publicUrl, now: () => clock.now(), logger }), allowedHosts = createAllowedHosts({ settings: store.settings, events: runtimes.events, tailnet: seams.tailnet, lanNames: config.lanNames, port: () => port, logger });
+  const remoteAccess = createRemoteAccess({ settings: store.settings, secrets: secrets.system, events: runtimes.events, port: () => port, mints: { begin: (kind, key, data) => sagas.begin(kind, key, data), drive: (id) => sagas.drive(id), abort: (id, reason) => sagas.abort(id, reason), open: () => instance.sagas.open() }, instanceId: instance.settings.instanceId(), tunnelApis: config.tunnelApis, ...(seams.tunnelProviders ? { providers: seams.tunnelProviders } : {}), env, publicUrl: config.publicUrl, now: () => clock.now(), logger }), allowedHosts = createAllowedHosts({ settings: store.settings, events: runtimes.events, tailnet: seams.tailnet, lanNames: config.lanNames, port: () => port, logger }), telemetrySettings = createTelemetrySettings({ settings: store.settings, events: runtimes.events, control: seams.telemetry ?? NO_TELEMETRY, logger });
   // The hopper's app's client secret turns GitHub sign-in by redirect on (issue #258). A bad one (NAME and
   // NAME_FILE both set, an unreadable file) stops the start; read again at each use, so a rotated one counts.
   const secret = runtimeSecrets(env);
@@ -327,12 +327,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     port: () => port, signIn, signInEnvironment, events: runtimes.events, held: seams.held === undefined ? watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }) : seams.held ?? undefined, // issue #1383: where a held loop runs, and the health port
     // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), infraApplies: createInfraApplies({ settings: instance.settings, events: runtimes.events }), cloudLink: createCloudLink({ settings: instance.settings, secrets: secrets.system, events: runtimes.events, now: () => clock.now() }), displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, telemetrySettings, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), infraApplies: createInfraApplies({ settings: instance.settings, events: runtimes.events }), cloudLink: createCloudLink({ settings: instance.settings, secrets: secrets.system, events: runtimes.events, now: () => clock.now() }), displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8'), poolKey: () => { try { return secret(LANE_POOL_KEY_VARIABLE); } catch { return undefined; } } }, // the lane pool key (issue #1284)
   });
 
   // Before listening: the boot after an update records update.applied before anything is answered.
-  updater.start();
+  updater.start(); void telemetrySettings.start(); // the telemetry setting (issue #1486): its export, unless the launch's wins
   pluginStore.start();
   access.start();
   await server.listen({ host: config.host, port: config.port });
@@ -392,7 +392,7 @@ async function main(): Promise<void> {
     setInterval(() => {}, 60_000);
     return;
   }
-  const app = await startApp(loadConfig(process.env));
+  const app = await startApp(loadConfig(process.env), { telemetry });
   logStartup(app);
   const shutdown = (signal: string): void => {
     console.log(`hopper: ${signal}, shutting down`);

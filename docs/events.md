@@ -3633,6 +3633,40 @@ Version 1 (`docs/schemas/allowed_hosts.changed.v1.json`). The hopper's admin cha
 }
 ```
 
+## `telemetry.changed`
+
+Version 1 (`docs/schemas/telemetry.changed.v1.json`). The hopper's admin changed the telemetry setting (issue #1486, design.md "Telemetry settings"): whether the hopper exports its traces, metrics and logs over OTLP, the endpoint, and which signals. It applies at once, while the launch's OTEL_* variables name no exporter. `from` and `to` are the whole settings: `on`, `endpoint` (an http or https URL with no user, password or query), `signals`; `by`, who. Never a header or a credential. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": false,
+    "endpoint": "",
+    "signals": [
+      "traces",
+      "metrics",
+      "logs"
+    ]
+  },
+  "to": {
+    "on": true,
+    "endpoint": "http://collector:4318",
+    "signals": [
+      "traces",
+      "metrics",
+      "logs"
+    ]
+  },
+  "by": "admin"
+}
+```
+
 ## `source_email_match.changed`
 
 Version 1 (`docs/schemas/source_email_match.changed.v1.json`). The hopper's admin turned the source email match on or off (issue #1380): whether a GitHub account a person connects from Sources must have, among its verified emails, the email they signed in with. `on`, the new setting; `by`, who. An instance event: in every user's log.

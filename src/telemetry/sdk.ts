@@ -1,14 +1,21 @@
 // OpenTelemetry for the hopper (issue #1486, design.md "Telemetry"): the OpenTelemetry Node SDK, started once per process
-// from the launch's usual OTEL_* variables — the exporters, the OTLP endpoint and protocol, the sampler, the resource. Off
-// unless the launch names an exporter: then the OpenTelemetry API stays its no-op, and every span, metric and log record
-// the hopper makes costs next to nothing and goes nowhere. Nothing outside the stack is needed either way.
+// from the launch's usual OTEL_* variables — the exporters, the OTLP endpoint and protocol, the sampler, the resource —, or
+// from the telemetry setting's OTLP endpoint (design.md "Telemetry settings"). Off unless one names an exporter: then the
+// OpenTelemetry API stays its no-op, and every span, metric and log record the hopper makes costs next to nothing and goes
+// nowhere. Nothing outside the stack is needed either way.
 import { context, metrics, propagation, trace } from '@opentelemetry/api';
 import { logs } from '@opentelemetry/api-logs';
 import { defaultResource, envDetector, resourceFromAttributes } from '@opentelemetry/resources';
 import type { LogRecordProcessor } from '@opentelemetry/sdk-logs';
 import type { IMetricReader } from '@opentelemetry/sdk-metrics';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import type { SpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { BatchSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base';
+import type { TelemetrySignal } from '../domain/telemetry-settings.ts';
 
 type Env = Record<string, string | undefined>;
 
@@ -50,14 +57,31 @@ export interface TelemetryOptions {
   spanProcessors?: SpanProcessor[];
   metricReaders?: IMetricReader[];
   logRecordProcessors?: LogRecordProcessor[];
+  /**
+   * The telemetry setting's export (design.md "Telemetry settings"): OTLP over HTTP and protobuf to `<endpoint>/v1/<signal>`,
+   * for the signals named and no other. The exporters still read the launch's other OTLP variables (headers, timeout).
+   */
+  otlp?: { endpoint: string; signals: readonly TelemetrySignal[] };
+}
+
+/** The processors and readers of the setting's export: an empty list for a signal it does not name, so none goes out. */
+function otlpExport(o: NonNullable<TelemetryOptions['otlp']>): Pick<TelemetryOptions, 'spanProcessors' | 'metricReaders' | 'logRecordProcessors'> {
+  const url = (signal: TelemetrySignal): string => `${o.endpoint}/v1/${signal}`, on = (signal: TelemetrySignal): boolean => o.signals.includes(signal);
+  return {
+    spanProcessors: on('traces') ? [new BatchSpanProcessor(new OTLPTraceExporter({ url: url('traces') }))] : [],
+    metricReaders: on('metrics') ? [new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter({ url: url('metrics') }) })] : [],
+    logRecordProcessors: on('logs') ? [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: url('logs') }) })] : [],
+  };
 }
 
 /**
  * Starts the SDK when the launch asks for it (or a test gives its own processors). The resource is `service.name`
  * `hopper` and the version, then OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES; no host or process detector, so no
- * host name, user or command line goes out unless the launch adds it.
+ * host name, user or command line goes out unless the launch adds it. With `otlp`, the setting's exporters in place of
+ * the environment's.
  */
-export function startTelemetry(o: TelemetryOptions): Telemetry {
+export function startTelemetry(options: TelemetryOptions): Telemetry {
+  const o = options.otlp ? { ...options, ...otlpExport(options.otlp) } : options;
   const own = o.spanProcessors !== undefined || o.metricReaders !== undefined || o.logRecordProcessors !== undefined;
   if (!own && !telemetryWanted(o.env)) return { enabled: false, shutdown: async () => {} };
   const sdk = new NodeSDK({
