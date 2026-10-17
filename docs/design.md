@@ -3002,7 +3002,9 @@ and the test event are sent at once, in memory only.
   watchers": the plan's notice from `NotifierEvents.infraPlan`, with the watchers of its environments; `infra.plan_applied`
   is a `vault.minted` that names a plan and is no renewal); `machine.memory_low` and `machine.memory_recovered` (issue
   #868, "Machine resources over time" → "WSL and the memory alert": body adds `machineId`, `of`, `freeBytes`,
-  `totalBytes`, `thresholdBytes`, and `since` for a low).
+  `totalBytes`, `thresholdBytes`, and `since` for a low); `machine.offline` and `machine.back_online` (issue #1497: body
+  adds `machineId`, `label`, `since`); `machine.disk_over_budget` and `machine.disk_within_budget` (issue #1203, "Hopper's own
+  disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -21142,8 +21144,8 @@ each fetch. The measure left it out, so a machine could be over its disk budget 
   (each start fetches under the start lock with gc in the foreground, issue #1075). Over the budget, the checkouts are in
   `machine.disk_over_budget`'s `paths`, so a person sees why it stays over.
 
-**Not done here, each a follow-up of its own:** the Grok Bot routine posting the disk budget's events (it posts only
-questions that reach a person and intake stops; webhooks take the events). **Not the hopper's to know:** a container a
+The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
+know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
 part 4 (untagged and unlabelled: `podman image prune` once removes them). **Bounded already:** database backups and
 update logs (the update keeps one backup, `hopper-backup.dump`, and one build log, each replaced).
