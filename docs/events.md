@@ -3302,50 +3302,6 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 }
 ```
 
-## `preemption.settings_changed`
-
-Version 1 (`docs/schemas/preemption.settings_changed.v1.json`). An admin changed the preemption settings (issue #1525): whether a job of higher priority takes the lane of a running job of lower priority (`enabled`), and how many minutes a job runs before it may be preempted (`minRunMinutes`). `from` and `to`.
-
-| field | type | required |
-|---|---|---|
-| `from` | object | yes |
-| `to` | object | yes |
-| `by` | string | yes |
-
-```json
-{
-  "from": {
-    "enabled": true,
-    "minRunMinutes": 10
-  },
-  "to": {
-    "enabled": true,
-    "minRunMinutes": 20
-  },
-  "by": "admin"
-}
-```
-
-## `job.preempted`
-
-Version 1 (`docs/schemas/job.preempted.v1.json`). A Decision preempted this running job (issue #1525): job `by`, of priority `byPriority`, waits for a lane, every lane it may use is busy, and this job has the lower priority `priority`. It is parked next (`job.parked`), its lane frees, and it is queued again (`job.unparked`) to resume where it stopped. `reason`: the Decision's.
-
-| field | type | required |
-|---|---|---|
-| `by` | string | yes |
-| `byPriority` | number | yes |
-| `priority` | number | yes |
-| `reason` | string | yes |
-
-```json
-{
-  "by": "j-high",
-  "byPriority": 75,
-  "priority": 50,
-  "reason": "preempts j-low (priority 50, running 42 min) on laptop/lane-2: job j-high of priority 75 waits and every lane it may use is busy"
-}
-```
-
 ## `github_rate_limiter.settings_changed`
 
 Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), how many polls run at once in a batch (`batchSize`), and how many calls intake leaves for job work (`intakeReserve`, issue #983), how often intake lists the job repositories, in minutes (`intakeSyncMinutes`, issue #985), and how often the in-motion cycle reads the pull requests in motion, in minutes (`prCycleMinutes`, issue #985); each absent from a change made before it. `from` and `to`. An instance event: in every user's log.

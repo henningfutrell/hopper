@@ -15,7 +15,7 @@ import type { PullRequestSeen } from './pull-requests.ts';
 import type { QueueHead } from './tending-queue.ts';
 import type { Handoff } from './failures.ts';
 import { issueNodeId, jobNodeId, pullRequestNodeId, pullRequestOf, stageOf } from './job-graph.ts';
-import { nextWords, preempterLabel, preemptedByOf, stageWords, waitsOnYou, type Worded } from './job-words.ts';
+import { nextWords, stageWords, waitsOnYou, type Worded } from './job-words.ts';
 import { ownWaitOf } from './own-command.ts';
 import { phaseOf } from './phase.ts';
 import type { Question } from './questions.ts';
@@ -64,8 +64,6 @@ export interface JobBomInput {
   related: readonly Job[];
   /** Its job runs that ended, with what the machine and usage samples show (part 2); absent or empty: none ended yet. */
   runs?: readonly JobRun[];
-  /** The job that took its lane, when it was preempted (issue #1525). */
-  preempter?: Job;
   now: string;
 }
 
@@ -340,7 +338,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const pr = pullRequestOf(job);
   const ownWait = ownWaitOf(job);
   const worded: Worded = { kind: 'job', stage, status: job.status, ...(phase !== 'work' ? { phase } : {}), ...(ownWait ? { ownWait } : {}), ...(pr ? { pullRequest: pr } : {}),
-    ...(job.status === 'waiting_on' && job.wait?.on ? { waitOn: job.wait.on } : {}), ...preemptedByOf(job, (by) => preempterLabel(input.preempter, by)) };
+    ...(job.status === 'waiting_on' && job.wait?.on ? { waitOn: job.wait.on } : {}) };
   const s = job.source;
   const title = s?.title || job.spec.goal || job.id;
   return {

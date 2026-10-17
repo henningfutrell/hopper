@@ -14,7 +14,7 @@
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import { ownWaitOf, type OwnWait } from './own-command.ts';
 import type { GraphEdge, GraphNode } from './issue-graph.ts';
-import { attemptIn, preempterLabel, preemptedByOf, treeSummary, wordNodes } from './job-words.ts';
+import { attemptIn, treeSummary, wordNodes } from './job-words.ts';
 import { phaseOf } from './phase.ts';
 import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
@@ -106,8 +106,6 @@ export interface JobGraphNode {
   handedOff?: true;
   /** A job whose work item is in flight (issue #1113, `isInFlight`), and it is that item's own job: the Jobs view's in-flight filter. */
   inFlight?: true;
-  /** A job queued or parked because a job of higher priority took its lane (issue #1525): that job, as people read it. */
-  preemptedBy?: string;
   /**
    * An issue that waits on its batch (issue #1337): its work merged into the landing branch, and its batch run's merge closes
    * it. Done, whatever its job's end or the ledger says.
@@ -301,7 +299,6 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       ...(pr ? { pullRequest: pr } : {}), ...(job.dismissedAt !== undefined && stage === 'superseded' ? { dismissed: true as const } : {}),
       ...(stage === 'waiting' && (job.status === 'failed' || job.status === 'cancelled') ? { handedOff: true as const } : {}),
       ...(inFlightOn(job) ? { inFlight: true as const } : {}),
-      ...preemptedByOf(job, (by) => preempterLabel(byId.get(by), by)),
       ...(job.partlyDone && stage === 'partly_done' ? {
         partlyDone: { pullRequest: job.partlyDone, afterMerge: s?.repo && s.number !== undefined ? `the next part of ${ref(s.repo, s.number)} runs` : 'the next part of its issue runs' },
       } : {}),
