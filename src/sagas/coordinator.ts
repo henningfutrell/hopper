@@ -53,7 +53,8 @@ export interface SagaCoordinatorOptions {
 
 export interface SagaCoordinator {
   /**
-   * Keeps a new saga of `kind`, one per kind and `key` (a second begin answers the first), and starts to drive it.
+   * Keeps a new saga of `kind`, one per kind and `key` (a second begin answers the first), and starts to drive it once the
+   * caller's synchronous work is done: a step reads what the caller did right after begin (a move's transaction, issue #1569).
    * Throws for a kind no definition names.
    */
   begin(kind: string, key: string, data: Record<string, unknown>, o?: { userId?: string }): Saga;
@@ -168,7 +169,7 @@ export function createSagaCoordinator(o: SagaCoordinatorOptions): SagaCoordinato
       const def = defs.get(kind);
       if (!def) throw new Error(`no saga kind ${kind}`);
       const s = o.repo.begin(newSaga({ id: o.idGen(), kind, key, ...(b.userId !== undefined ? { userId: b.userId } : {}), steps: def.steps.map((t) => t.name), data, at: now() }));
-      if (!stopping) kick(s.id);
+      queueMicrotask(() => { if (!stopping) kick(s.id); });
       return s;
     },
     drive,

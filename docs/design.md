@@ -24565,6 +24565,9 @@ drops an abort asked meanwhile.
 
 **The coordinator** (`src/sagas/coordinator.ts`, one per process, started after the sandboxes, stopped before the database
 closes):
+- **Driven after its begin's caller.** A begin keeps the saga and starts to drive it once the caller's synchronous work is
+  done (a microtask), so its first step reads what the caller did right after the begin (the `job-move` saga below: the
+  move's transaction).
 - **One step at a time, recorded before the next.** A try is counted, and the step marked started, before its do runs; its
   outcome, and its output, are written before the next step starts. A step done is never done again.
 - **The same key on each try.** A step's do gets `stepKey` (`<saga>/<step>`), the same on every try and every host; a step

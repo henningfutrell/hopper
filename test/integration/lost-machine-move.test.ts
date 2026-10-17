@@ -13,6 +13,8 @@ import { waitFor } from '../support/wait.ts';
 const EXECUTORS = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 /** Long enough (one step per poll) to still be working when its machine is lost. */
 const LONG: FakeTurn = { steps: Array.from({ length: 400 }, (_, i) => `● Painting plank ${i + 1}`), output: ['● Painted the shed.', '  HOPPER_DONE'] };
+/** The end of the agent left waits on the saga's backoff (1 s, doubling) while that machine is away: more than vitest's default. */
+const MOVE_TIMEOUT_MS = 60_000;
 const DONE: FakeTurn = { output: ['● Painted the last planks.', '  HOPPER_DONE'] };
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', env: {} };
 const BASE = 'b'.repeat(40);
@@ -90,10 +92,10 @@ describe('the lost-machine move', () => {
     // The lost machine answers again: the agent left there is ended, its pane closed.
     expect(h[on].closed).not.toContain(paneId);
     h[on].setUnreachable(false);
-    await waitFor(() => (h[on].closed.includes(paneId) ? true : undefined), { what: 'the pane left on the lost machine closed', timeoutMs: 15000 });
+    await waitFor(() => (h[on].closed.includes(paneId) ? true : undefined), { what: 'the pane left on the lost machine closed', timeoutMs: 40_000 });
     expect(h[on].reaps.some((r) => r.jobId === job.id)).toBe(true);
     expect(h[on].prompts).toHaveLength(1);
-  });
+  }, MOVE_TIMEOUT_MS);
 
   it('the agent left on a lost machine is ended by a hopper started after the one that moved the job stopped', async () => {
     const db = tempDbPath();
@@ -110,7 +112,7 @@ describe('the lost-machine move', () => {
 
     const second = await boot(h, db.dbPath, { HOPPER_RECONNECT_GRACE_MS: '30000' });
     h[on].setUnreachable(false);
-    await waitFor(() => (h[on].closed.includes(paneId) ? true : undefined), { what: 'the pane left on the lost machine closed', timeoutMs: 15000 });
+    await waitFor(() => (h[on].closed.includes(paneId) ? true : undefined), { what: 'the pane left on the lost machine closed', timeoutMs: 40_000 });
     // The job's run on the other machine goes on: reattached there, never moved again, never failed.
     await second.waitForStatus(job.id, 'finished', 15000);
     const events = await ofJob(second, job.id);
@@ -118,7 +120,7 @@ describe('the lost-machine move', () => {
     expect(events.find((e) => e.type === 'job.reattached')).toMatchObject({ laneId: expect.stringContaining(other) });
     expect(events.some((e) => e.type === 'job.failed')).toBe(false);
     expect(h[on].prompts).toHaveLength(1);
-  });
+  }, MOVE_TIMEOUT_MS);
 
   it('a job with no checkpoint fails as before when its machine stays away', async () => {
     const db = tempDbPath();
