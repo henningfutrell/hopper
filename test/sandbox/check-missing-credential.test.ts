@@ -12,7 +12,7 @@ import type { OperationProfile } from '../../src/domain/access.ts';
 import type { ReadOnlyCheck } from '../../src/domain/read-only-check.ts';
 import type { Template } from '../../src/domain/vault.ts';
 import { createCheckPass } from '../../src/sandbox/check.ts';
-import { HOPPER_PROBES } from '../../src/sandbox/probes.ts';
+import { HOPPER_PROBES, PROBES } from '../../src/sandbox/probes.ts';
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
 
@@ -61,7 +61,9 @@ describe('a need with no credential in the read-only check (issue #873)', () => 
     const other = check.probes.filter((p) => p.asset === 'other');
     expect(lab.length).toBeGreaterThan(0);
     expect(lab.every((p) => p.passed && p.outcome !== 'not-run'), JSON.stringify(lab)).toBe(true);
-    expect(other.length).toBe(lab.length);
+    // A probe run once for the template (the egress probe, issue #849) runs on the first need with a credential only.
+    const once = new Set(PROBES.filter((p) => p.once).map((p) => p.id));
+    expect(other.length).toBe(lab.filter((p) => !once.has(p.id)).length);
     for (const p of other) expect(p).toMatchObject({ outcome: 'not-run', passed: false, output: why('other', 'no minting credential mints for cluster other') });
     expect(s.runtime.ran.size).toBe(1);
     // The check box got only the credential of cluster lab.
