@@ -3453,7 +3453,7 @@ Version 1 (`docs/schemas/source_email_match.changed.v1.json`). The hopper's admi
 
 ## `cloud_link.linked`
 
-Version 1 (`docs/schemas/cloud_link.linked.v1.json`). The hopper's admin linked this install to an account at hopper.io (issue #467): the link record is written in the instance's settings, and nothing else changes. `installId`, this install's id at hopper.io; `account`, the hopper.io account; `by`, who. An instance event: in every user's log.
+Version 1 (`docs/schemas/cloud_link.linked.v1.json`). The hopper's admin linked this install to an account at hopper.io (issue #467): the link record is written in the instance's settings, and nothing else changes. `installId`, the instance id (issue #465); `account`, the hopper.io account; `by`, who. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
@@ -3463,7 +3463,7 @@ Version 1 (`docs/schemas/cloud_link.linked.v1.json`). The hopper's admin linked 
 
 ```json
 {
-  "installId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "installId": "a1b2c3d4e5f60718",
   "account": "octo-cat",
   "by": "admin"
 }
@@ -3471,7 +3471,7 @@ Version 1 (`docs/schemas/cloud_link.linked.v1.json`). The hopper's admin linked 
 
 ## `cloud_link.unlinked`
 
-Version 1 (`docs/schemas/cloud_link.unlinked.v1.json`). The hopper's admin unlinked this install from hopper.io (issue #467): the link record is removed, and nothing else changes. `installId` and `account`, the link that ended; `by`, who. An instance event: in every user's log.
+Version 1 (`docs/schemas/cloud_link.unlinked.v1.json`). The hopper's admin unlinked this install from hopper.io (issue #467): the link record and its open registration code (issue #465) are removed, and nothing else changes. `installId` and `account`, the link that ended; `by`, who. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
@@ -3481,9 +3481,45 @@ Version 1 (`docs/schemas/cloud_link.unlinked.v1.json`). The hopper's admin unlin
 
 ```json
 {
-  "installId": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "installId": "a1b2c3d4e5f60718",
   "account": "octo-cat",
   "by": "admin"
+}
+```
+
+## `cloud_link.registration_code_minted`
+
+Version 1 (`docs/schemas/cloud_link.registration_code_minted.v1.json`). The hopper's admin minted a registration code for the cloud link (issue #465): a one-time code the hopper.io account owner enters at hopper.io to register this instance, answered once and kept only hashed, in place of any code before it. `installId` and `account`, the link; `expiresAt`, when the code ends (10 minutes); `by`, who. Never the code. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `expiresAt` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat",
+  "expiresAt": "2026-10-17T08:10:00.000Z",
+  "by": "admin"
+}
+```
+
+## `cloud_link.registered`
+
+Version 1 (`docs/schemas/cloud_link.registered.v1.json`). The cloud link registered at hopper.io (issue #465): hopper.io handed back the open registration code for the link's own account, and the instance spent it. The link's state is now `registered`. `installId` and `account`, the link. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat"
 }
 ```
 
