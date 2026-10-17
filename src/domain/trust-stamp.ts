@@ -6,6 +6,7 @@
 // no door meanwhile, as for a job whose stamp does not verify. Pure: the key is passed in.
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import type { Job } from './types.ts';
+import { brakeWhere, type Brake } from './intake-strictness.ts';
 
 /** The trust levels, lowest first. */
 export const TRUST_LEVELS = ['quarantined', 'untrusted', 'screened', 'approved', 'trusted', 'owner'] as const;
@@ -33,7 +34,7 @@ export interface TrustStamp {
   mac: string;
 }
 
-/** A job starts only at this level or above (the brake per source and repository is a later part of issue #655). */
+/** A job starts only at this level or above, unless the intake strictness (brake 1, part 3) asks for another. */
 export const DISPATCH_MIN: TrustLevel = 'approved';
 
 export const STAMP_MISSING = 'no trust stamp: held — the hopper did not make this job, or made it before stamps; cancel it, or run its item again';
@@ -105,14 +106,20 @@ export function verifiedLevel(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp
   return want.length === got.length && timingSafeEqual(want, got) ? s.level : undefined;
 }
 
-/** Why a job's stamp holds it: none, one that does not verify, or a level below the dispatch minimum; undefined: it may start. */
-export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): string | undefined {
+/**
+ * Why a job's stamp holds it: none, one that does not verify, or a level below the level `brake` needs (the dispatch
+ * minimum with none); undefined: it may start. Below `approved` a person's approval is the way out; at `approved` or
+ * above, only a looser brake.
+ */
+export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, brake?: Brake): string | undefined {
   if (!job.stamp) return STAMP_MISSING;
   const level = verifiedLevel(key, job);
   if (level === undefined) return STAMP_MISMATCH;
   if (level === 'quarantined') return QUARANTINED_HOLD;
-  return atLeast(level, DISPATCH_MIN) ? undefined
-    : `trust stamp ${level} is below ${DISPATCH_MIN}: held — a person approves its item in Intake, or cancels it`;
+  const min = brake?.min ?? DISPATCH_MIN;
+  if (atLeast(level, min)) return undefined;
+  if (!atLeast(level, DISPATCH_MIN) || !brake) return `trust stamp ${level} is below ${min}: held — a person approves its item in Intake, or cancels it`;
+  return `trust stamp ${level} is below ${min} (intake strictness ${brake.strictness} ${brakeWhere(brake)}): held — an admin changes the intake strictness in Settings → Intake, or a person cancels it`;
 }
 
 /**

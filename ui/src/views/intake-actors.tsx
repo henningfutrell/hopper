@@ -13,6 +13,7 @@ import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import { useHopper } from '@/store';
 import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView } from '@/model/wire';
 import { IntakeAutoApproval } from '@/views/intake-auto-approval';
+import { IntakeStrictness } from '@/views/intake-strictness';
 import { IntakeDecline } from '@/views/intake-decline';
 
 const FROM_TEXT: Record<CandidateFrom, string> = {
@@ -165,6 +166,7 @@ export function IntakeActors() {
       </Panel>
       <IntakeAutoApproval />
       <IntakeDecline />
+      <IntakeStrictness />
     </div>
   );
 }

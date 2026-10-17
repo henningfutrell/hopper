@@ -3,15 +3,17 @@
 // before origins were judged got its origin; (issue #798) a new request card opened, and an item taken off the backburner;
 // (issue #1035) a person declined a request card's text; (issue #1079) a GitHub delivery named a job repository; (issue
 // #1268) the hopper approved a request card a rule matched, and the auto-approval setting changed; (issue #1710) GitHub took a
-// decline's writes, and the decline defaults changed.
+// decline's writes, and the decline defaults changed; (issue #655) the intake strictness changed.
 // Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 import { JOB_ORIGINS, ORIGIN_ROLES } from '../domain/intake-origin.ts';
 import { AUTO_APPROVE_RULES } from '../domain/intake-auto-approve.ts';
 import { DECLINE_CHOICES } from '../domain/intake-decline.ts';
+import { INTAKE_STRICTNESS } from '../domain/intake-strictness.ts';
 import { ACTION_VIAS } from '../domain/types.ts';
 
 const strict = z.strictObject;
+const STRICTNESS = strict({ default: z.enum(INTAKE_STRICTNESS), sources: z.record(z.string(), z.enum(INTAKE_STRICTNESS)), repos: z.record(z.string(), z.enum(INTAKE_STRICTNESS)) });
 
 export const INTAKE_EVENT_SCHEMAS = {
   'source.claim_released': strict({ source: z.string(), key: z.string(), by: z.enum(['hopper', 'migration', 'user']), reason: z.string() }),
@@ -45,5 +47,6 @@ export const INTAKE_EVENT_SCHEMAS = {
   'intake.decline_changed': strict({
     from: strict({ request: z.enum(DECLINE_CHOICES), reopened: z.enum(DECLINE_CHOICES) }), to: strict({ request: z.enum(DECLINE_CHOICES), reopened: z.enum(DECLINE_CHOICES) }), by: z.string(),
   }),
+  'intake.strictness_changed': strict({ from: STRICTNESS, to: STRICTNESS, by: z.string() }),
   'job.origin_judged': strict({ key: z.string(), origin: z.enum(JOB_ORIGINS) }),
 };

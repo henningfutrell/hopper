@@ -52,7 +52,7 @@ export interface JobRepository {
    * Quarantine: `quarantine` stamps the job `quarantined`, its level before kept; `liftQuarantine` gives that level back
    * (the rules' with none). `trustLevel`: its verified level. `opensDoors`: its proxy token opens the hopper's doors.
    */
-  useStampKey(key: Buffer): string[]; stampHold(job: Job): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean;
+  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean;
 }
 
 export interface LaneRepository {

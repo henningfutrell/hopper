@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { RateLimiterSettings } from '../domain/github-rate-limit.ts';
 import { remoteAccessRecord, type RemoteAccessSettings } from '../domain/remote-access.ts';
-import type { IntakeActorSettings } from '../domain/intake-origin.ts'; import type { IntakeAutoApproval } from '../domain/intake-auto-approve.ts'; import type { IntakeDeclineDefaults } from '../domain/intake-decline.ts';
+import type { IntakeActorSettings } from '../domain/intake-origin.ts'; import type { IntakeAutoApproval } from '../domain/intake-auto-approve.ts'; import type { IntakeDeclineDefaults } from '../domain/intake-decline.ts'; import type { IntakeStrictness } from '../domain/intake-strictness.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { InfraPlanSettings } from '../domain/infra-plans.ts';
@@ -218,7 +218,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },
     // `actors` stays the logins (issue #930): the build before ids reads them; `accounts` holds each one's GitHub user id.
     setIntakeActors: (s) => write('intakeActors', JSON.stringify({ actors: s.actors, ...(s.accounts ? { accounts: s.accounts.map((a) => ({ id: a.id, login: a.login, type: a.type, ...(a.avatarUrl ? { avatarUrl: a.avatarUrl } : {}) })) } : {}) })),
-    getIntakeAutoApproval() { const text = read('intakeAutoApproval'); return text === undefined ? undefined : JSON.parse(text) as IntakeAutoApproval; }, setIntakeAutoApproval: (s) => write('intakeAutoApproval', JSON.stringify({ on: s.on, apps: s.apps })), getIntakeDecline() { const text = read('intakeDecline'); return text === undefined ? undefined : JSON.parse(text) as IntakeDeclineDefaults; }, setIntakeDecline: (s) => write('intakeDecline', JSON.stringify({ request: s.request, reopened: s.reopened })),
+    getIntakeAutoApproval() { const text = read('intakeAutoApproval'); return text === undefined ? undefined : JSON.parse(text) as IntakeAutoApproval; }, setIntakeAutoApproval: (s) => write('intakeAutoApproval', JSON.stringify({ on: s.on, apps: s.apps })), getIntakeDecline() { const text = read('intakeDecline'); return text === undefined ? undefined : JSON.parse(text) as IntakeDeclineDefaults; }, setIntakeDecline: (s) => write('intakeDecline', JSON.stringify({ request: s.request, reopened: s.reopened })), getIntakeStrictness() { const text = read('intakeStrictness'); return text === undefined ? undefined : JSON.parse(text) as IntakeStrictness; }, setIntakeStrictness: (s) => write('intakeStrictness', JSON.stringify({ default: s.default, sources: s.sources, repos: s.repos })),
     getRepoChecksDismissed() {
       const text = read('repoChecksDismissed');
       return text === undefined ? [] : JSON.parse(text) as string[];

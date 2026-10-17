@@ -8,6 +8,7 @@
 //   Scenario: a pod started again joins again as the same machine, with its volume or without it
 //   Scenario: a wrong key, or a hopper with no lane pool, refuses the join
 //   Scenario: before anyone signed in, a pod's join is refused (its join step tries again)
+//   Scenario: on a new hopper whose first admin is a local account, a pod joins as that admin's machine
 //   Scenario: a pod that leaves with no job on it is retired; any other machine that leaves only takes no new job
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,9 +19,15 @@ import { startLinkedClient } from '../../src/client/main.ts';
 import { joinHopper } from '../../src/client/join.ts';
 import type { Client } from '../../src/client/server.ts';
 import type { LeaveAnswer } from '../../src/client/leave.ts';
+import { runCli } from '../../src/cli.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { testInstallDir } from '../support/client.ts';
-import { newHopper } from '../support/database.ts';
+import { databaseUrlFor, newHopper } from '../support/database.ts';
+import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
+import { writeConfig } from '../support/files.ts';
+import { rawRequest } from '../support/http.ts';
+import { SECRETS } from '../support/sign-in-app.ts';
+import { KEY } from '../support/webhooks.ts';
 import { waitFor } from '../support/wait.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -40,15 +47,19 @@ afterEach(async () => {
   process.env = { ...saved };
 });
 
-async function boot(o: { poolKey?: string; signIn?: boolean } = {}): Promise<{ a: TestApp; session?: string }> {
+async function boot(o: { poolKey?: string; signIn?: boolean; localAccounts?: boolean } = {}): Promise<{ a: TestApp; session?: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
   // No sign-in: a new hopper, with no user at all (issue #238).
   if (o.signIn === false) newHopper(db.dbPath);
+  // Local accounts only (issue #1380): the first admin is the operator CLI's local account.
+  if (o.localAccounts) writeConfig(db.dbPath, 'sign-in', { version: 1, realms: [] });
+  const pool = o.poolKey ? { HOPPER_LANE_POOL_KEY: o.poolKey } : {};
   t = await startTestApp({
-    dbPath: db.dbPath, ...(o.poolKey ? { secrets: { HOPPER_LANE_POOL_KEY: o.poolKey } } : {}),
+    dbPath: db.dbPath, secrets: o.localAccounts ? { ...SECRETS, HOPPER_MASTER_KEY: KEY, ...pool } : pool,
+    ...(o.localAccounts ? { seams: { authorizationServer: createFakeAuthorizationServer() } } : {}),
     ...(o.signIn === false ? {} : { plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 2, executors: ['test'] } } }),
   });
   return { a: t, ...(o.signIn === false ? {} : { session: await t.login() }) };
@@ -124,6 +135,22 @@ describe('lane pods that join by dialling out', () => {
   it('before anyone signed in, a pod\'s join is refused: it tries again until someone has', async () => {
     const { a } = await boot({ poolKey: POOL_KEY, signIn: false });
     await expect(joinHopper({ line: `${a.url}#${POOL_KEY}`, name: 'hopper-lanes-0', dir: volume() })).rejects.toThrow(/\(409\).*nobody has signed in yet/);
+  });
+
+  it('on a new hopper whose first admin is a local account, a pod joins as that admin\'s machine', async () => {
+    const { a } = await boot({ poolKey: POOL_KEY, signIn: false, localAccounts: true });
+    const io = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => 'correct horse battery staple\n', out: () => {}, err: () => {} };
+    expect(await runCli(['local-account', 'add', 'ada@example.com'], io)).toBe(0);
+    const port = new URL(a.url).port;
+    const r = await rawRequest(a.url, {
+      path: '/ui/auth/password', method: 'POST', body: JSON.stringify({ username: 'ada@example.com', password: 'correct horse battery staple' }),
+      headers: { host: `localhost:${port}`, origin: `http://localhost:${port}`, 'content-type': 'application/json' },
+    });
+    expect(r.status, r.text).toBe(200);
+    const [ada] = a.app.instance.users.list();
+    expect(ada!.id).not.toBe('admin');
+    const link = await joinHopper({ line: `${a.url}#${POOL_KEY}`, name: 'hopper-lanes-0', dir: volume() });
+    expect(link).toMatchObject({ user: ada!.id, machine: 'hopper-lanes-0' });
   });
 
   it('a pod that leaves with no job on it is retired; it joins again as the same machine', async () => {
