@@ -1295,6 +1295,12 @@ Two gauges show what runs now (docs/design.md "Telemetry: what runs now"): `hopp
 the same time, by kind (`need`, `playground`), place (`local`, `machine`) and state, and `hopper_db_connections`, the
 store's open connections.
 
+The steps the hopper does for a job are spans of the job's trace (docs/design.md "Telemetry: job steps"):
+`hopper.job.worktree` (the job's worktree on its machine), `hopper.job.follow` (a follow of its pull request: the hopper's
+merge, Merge now, Close PR), `hopper.job.base_merge` and `hopper.job.tend`. Each has its outcome, and a link to the sync
+or request that ran it. A job that a tend starts links to that tend. The metric is `hopper_job_step_duration_seconds` by
+step and outcome, and the Telemetry panel lists the steps with the job spans.
+
 On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
 
 ```sh

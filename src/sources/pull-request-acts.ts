@@ -11,6 +11,7 @@
 import type { OutboxActs } from '../domain/github-outbox.ts';
 import type { JobSource, PullRequestActAnswer, UserStore } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
+import { followOutcome, traceJobStep } from '../telemetry/job-steps.ts';
 import { following, type ActingPerson, type FollowUp, type Job, type PullRequestAct } from '../domain/types.ts';
 
 export interface PullRequestActsContext {
@@ -43,7 +44,7 @@ export function createPullRequestActs(c: PullRequestActsContext) {
         if (what === 'merge' && (job?.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'merged') return;
         if (!job || !following(job)) throw new SourceError(noPullRequest(jobId), true);
         if (!source?.follow) throw new SourceError(`job ${jobId}: its source is not running, or follows no pull request`, false);
-        const r = await source.follow(job, what, { keep: (state) => c.setSource(jobId, state), acting });
+        const r = await traceJobStep(jobId, 'follow', () => source.follow!(job, what, { keep: (state) => c.setSource(jobId, state), acting }), followOutcome, { 'hopper.pull_request.act': what });
         if (!r) throw new SourceError(noPullRequest(jobId), true);
         c.record(jobId, r, acting);
       } catch (e) {
