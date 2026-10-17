@@ -1,18 +1,21 @@
 // File an issue (issue #471, design.md "File an issue"): one user's drafts and filed issues. `status` says whether the
 // flow can run now and why not; `context` is a job's, masked, for the person to read and edit; `prompt` is exactly what
-// the drafting skill is sent; `draft` runs it with the user's own signed-in Claude, cancelled when the person cancels,
-// and answers the draft cleaned of secrets and personal data; `check` is the confirm step, on the text as the person
-// edited it; `file` files that text only when the person confirmed it, with their own GitHub connection, on one of
-// their job repositories, with no label and no assignee, so it never queues a job. The scan runs again at `file`, on
-// the edited text. Drafts are kept nowhere: the UI holds them until it closes. Events never carry the text.
+// the file-issue run skill (src/run-skills/, issue #472) is sent; `draft` runs it with the user's own signed-in Claude,
+// cancelled when the person cancels, and answers the draft cleaned of secrets and personal data, with the constraints
+// it broke; `check` is the confirm step, the same constraints on the text as the person edited it; `file` files that
+// text only when the person confirmed it, with their own GitHub connection, on one of their job repositories, with no
+// label and no assignee, so it never queues a job, and runs the constraints again. Drafts are kept nowhere: the UI holds
+// them until it closes. Events never carry the text.
 import {
-  filedBody, ISSUE_DRAFT_SKILL, ISSUE_TITLE_MAX, issueDraftPrompt,
-  type FiledIssue, type IssueCheck, type IssueDraft, type IssueDraftRequest, type IssueDraftStatus,
+  draftContext, filedBody, filingRefusal, type DraftAnswer, type FiledIssue, type IssueCheck, type IssueDraftRequest, type IssueDraftStatus,
 } from '../domain/issue-drafts.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import { maskReportText, TAIL_LINES } from '../bug-reports/context.ts';
 import { PromotionGitHubError, type PromotionGitHub } from '../promotions/github.ts';
-import { cleanText, postRefusal, scanText } from '../promotions/scan.ts';
+import { cleanText } from '../promotions/scan.ts';
+import { checkDraft } from '../run-skills/constraints.ts';
+import { fileIssuePrompt, type FileIssueInput, type IssueDraft } from '../run-skills/file-issue.ts';
+import { checkRunSkill, loadRunSkill, type RunSkill } from '../run-skills/index.ts';
 
 /** Why a draft or a filing did not go on: `status` as the HTTP edge answers it. */
 export class IssueDraftRefused extends Error {
@@ -28,8 +31,8 @@ export class IssueDraftRefused extends Error {
 export interface IssueDrafter {
   provider: string;
   available(): Promise<{ ok: true } | { ok: false; reason: string }>;
-  /** One run; never throws. `signal` ends it: the person cancelled, or the time is up. */
-  draft(prompt: string, signal: AbortSignal): Promise<{ title: string; body: string; model?: string } | { error: string }>;
+  /** One run of the run skill; never throws. `signal` ends it: the person cancelled, or the time is up. */
+  draft(skill: RunSkill, input: FileIssueInput, signal: AbortSignal): Promise<(IssueDraft & { model?: string }) | { error: string }>;
 }
 
 export type IssueGitHub = Pick<PromotionGitHub, 'repo' | 'create'>;
@@ -46,6 +49,8 @@ export interface IssueDraftsOptions {
   timeoutMs: number;
   /** The host name, masked in a job's context. */
   hostname?: string;
+  /** The file-issue run skill; default its files as built in. */
+  skill?: RunSkill;
 }
 
 export interface FileRequest {
@@ -64,7 +69,7 @@ export interface IssueDrafts {
   status(): Promise<IssueDraftStatus>;
   context(jobId: string): string;
   prompt(r: IssueDraftRequest): string;
-  draft(r: IssueDraftRequest, signal: AbortSignal): Promise<IssueDraft>;
+  draft(r: IssueDraftRequest, signal: AbortSignal): Promise<DraftAnswer>;
   check(r: { repo: string; title: string; body: string; allowPersonalData?: boolean }): Promise<IssueCheck>;
   file(r: FileRequest, by: string): Promise<FiledIssue>;
 }
@@ -95,7 +100,15 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
     if (!f.hasIssues) throw new IssueDraftRefused(409, `${repo} takes no issues: pick another repository`);
     return f;
   };
-  const scanOf = (title: string, body: string) => scanText(`${title}\n${filedBody(body)}`);
+  const skill = o.skill ?? loadRunSkill('file-issue');
+  const skillName = `${skill.name}@${skill.id}`;
+  /** The run skill's input: the repository the person chose, their text, and the context with a run again's draft. */
+  const inputOf = (r: IssueDraftRequest, repo: string): FileIssueInput => {
+    const context = draftContext(r);
+    return { repo, text: r.text, ...(context ? { context } : {}) };
+  };
+  /** The constraints on the text as it would be filed: the person's title and body, no labels. */
+  const findingsOf = (title: string, body: string) => checkDraft({ title, body, labels: [] });
 
   return {
     async status() {
@@ -123,7 +136,7 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
       return cleanText(maskReportText(lines.join('\n'), o.hostname));
     },
 
-    prompt: (r) => issueDraftPrompt({ ...r, repo: allowed(r.repo) }),
+    prompt: (r) => fileIssuePrompt(skill, inputOf(r, allowed(r.repo))),
 
     async draft(r, signal) {
       const repo = allowed(r.repo);
@@ -131,23 +144,27 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
       if (!found.ok) throw new IssueDraftRefused(409, found.reason);
       const cancelled = () => new IssueDraftRefused(499, 'the draft was cancelled');
       if (signal.aborted) throw cancelled();
+      const broken = checkRunSkill(skill);
+      if (broken) throw new IssueDraftRefused(500, broken);
       const timeout = AbortSignal.timeout(o.timeoutMs);
-      const reply = await o.drafter.draft(issueDraftPrompt({ ...r, repo }), AbortSignal.any([signal, timeout]));
+      const reply = await o.drafter.draft(skill, inputOf(r, repo), AbortSignal.any([signal, timeout]));
       if (signal.aborted) throw cancelled();
       if (timeout.aborted) throw new IssueDraftRefused(504, `${o.drafter.provider} gave no draft in ${Math.round(o.timeoutMs / 1000)} s. Your text is kept: try again`);
       if ('error' in reply) throw new IssueDraftRefused(502, `${o.drafter.provider} could not draft the issue: ${reply.error}. Your text is kept: try again`);
-      const title = cleanText(reply.title.trim()).slice(0, ISSUE_TITLE_MAX);
+      // The constraints on the draft as written; then a secret or personal data is masked before the person sees it.
+      // Suggested labels are dropped: filing adds none (issue #470 D8).
+      const findings = checkDraft({ title: reply.title, body: reply.body, labels: reply.labels ?? [] });
+      const title = cleanText(reply.title.trim());
       const body = cleanText(reply.body.trim());
-      const findings = scanText(`${reply.title}\n${reply.body}`);
-      o.record({ type: 'issue_draft.drafted', data: { repo, provider: o.drafter.provider, ...(reply.model ? { model: reply.model } : {}), skill: ISSUE_DRAFT_SKILL, masked: findings.length > 0 } });
-      return { repo, title, body, findings, provider: o.drafter.provider, ...(reply.model ? { model: reply.model } : {}), skill: ISSUE_DRAFT_SKILL };
+      o.record({ type: 'issue_draft.drafted', data: { repo, provider: o.drafter.provider, ...(reply.model ? { model: reply.model } : {}), skill: skillName, findings: findings.map((f) => f.constraint) } });
+      return { repo, title, body, notes: cleanText(reply.notes.trim()), findings, provider: o.drafter.provider, ...(reply.model ? { model: reply.model } : {}), skill: skillName };
     },
 
     async check(r) {
       const repo = allowed(r.repo);
       const { visibility } = await facts(repo, connected(repo));
-      const findings = scanOf(r.title, r.body);
-      const refusal = postRefusal(findings, { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
+      const findings = findingsOf(r.title, r.body);
+      const refusal = filingRefusal(findings, { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
       return { repo, visibility, title: r.title, body: filedBody(r.body), labels: [], assignees: [], findings, ...(refusal ? { refusal } : {}) };
     },
 
@@ -156,15 +173,15 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
       const repo = allowed(r.repo);
       const api = connected(repo);
       const { visibility } = await facts(repo, api);
-      // The scan again, on the text as the person edited it, not only on the draft.
-      const refusal = postRefusal(scanOf(r.title, r.body), { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
+      // The constraints again, on the text as the person edited it, not only on the draft.
+      const refusal = filingRefusal(findingsOf(r.title, r.body), { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
       if (refusal) throw new IssueDraftRefused(422, refusal);
       if (visibility === 'public' && !r.confirmPublic) throw new IssueDraftRefused(409, `${repo} ${PUBLIC_NOTE}`);
       // No label and no assignee: a filed issue never queues a job.
       const made = await onGitHub(() => api.create(repo, { title: r.title.trim(), body: filedBody(r.body), labels: [] }));
       o.record({
         type: 'issue_draft.filed', ...(r.jobId && o.job(r.jobId) ? { jobId: r.jobId } : {}),
-        data: { repo, number: made.number, url: made.url, by, provider: o.drafter.provider, skill: ISSUE_DRAFT_SKILL },
+        data: { repo, number: made.number, url: made.url, by, provider: o.drafter.provider, skill: skillName },
       });
       return { repo, number: made.number, url: made.url };
     },

@@ -5834,7 +5834,7 @@ Version 1 (`docs/schemas/direct_job.promotion_revoked.v1.json`). A person revoke
 
 ## `issue_draft.drafted`
 
-Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an issue with the person's own signed-in AI connection (issue #471): `repo` it is for, the `provider` and the `model` that ran, the drafting `skill` and its version, and `masked` true when the draft held a secret or personal data, which was masked. Nothing is filed. Never the text.
+Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an issue with the person's own signed-in AI connection (issue #471): `repo` it is for, the `provider` and the `model` that ran, the run `skill` and its id (`file-issue@<id>`, issue #472), and `findings`: the ids of the draft constraints the draft as written broke (a secret or personal data is masked before the person sees it). Nothing is filed. Never the text.
 
 | field | type | required |
 |---|---|---|
@@ -5842,21 +5842,21 @@ Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an
 | `provider` | string | yes |
 | `model` | string | no |
 | `skill` | string | yes |
-| `masked` | boolean | yes |
+| `findings` | string[] | yes |
 
 ```json
 {
   "repo": "octo-org/ops",
   "provider": "claude",
   "model": "claude-sonnet-5-5",
-  "skill": "issue-draft@1",
-  "masked": false
+  "skill": "file-issue@3f2a9c1e7b4d5a60",
+  "findings": []
 }
 ```
 
 ## `issue_draft.filed`
 
-Version 1 (`docs/schemas/issue_draft.filed.v1.json`). A person confirmed and filed an issue that File an issue drafted (issue #471), with their own GitHub connection, with no label and no assignee: `repo`, `number`, `url`, `by` who confirmed it, the `provider` and the drafting `skill` with its version. Never the text.
+Version 1 (`docs/schemas/issue_draft.filed.v1.json`). A person confirmed and filed an issue that File an issue drafted (issue #471), with their own GitHub connection, with no label and no assignee: `repo`, `number`, `url`, `by` who confirmed it, the `provider` and the run `skill` with its id that drafted it. Never the text.
 
 | field | type | required |
 |---|---|---|
@@ -5874,7 +5874,7 @@ Version 1 (`docs/schemas/issue_draft.filed.v1.json`). A person confirmed and fil
   "url": "https://github.com/octo-org/ops/issues/13",
   "by": "octocat",
   "provider": "claude",
-  "skill": "issue-draft@1"
+  "skill": "file-issue@3f2a9c1e7b4d5a60"
 }
 ```
 

@@ -5,7 +5,8 @@
 // the request so the daemon ends the run), Review (the title and the body editable, the body's preview, what was masked,
 // Draft again with what to change, Discard), Confirm (where it goes, the title, the body as filed, no labels, no
 // assignee, what the scan finds; a public repository ticked first), and Filed (the link). A timeout or Claude's error
-// says so plainly and keeps the text. The draft lives only in this dialog. The header opens it (`FileIssueButton`; on a
+// says so plainly and keeps the text. The draft is the file-issue run skill's (issue #472): its notes show, and are never filed;
+// the draft constraints it broke show beside it, and the confirm step runs them again on the edited text. The draft lives only in this dialog. The header opens it (`FileIssueButton`; on a
 // phone the user menu, `useFileIssue`), and a job's view on that job; the button is off, with the reason, while no provider can draft, and hidden from a viewer.
 import { FilePlus } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -129,11 +130,11 @@ export function FileIssueDialog({ jobId, status, onClose }: { jobId?: string; st
         <div className="max-h-64 overflow-y-auto rounded-md border p-2"><Markdown text={check.body} /></div>
         {check.findings.length > 0 && (
           <ul data-slot="file-issue-findings" className="grid gap-1 text-warn">
-            {check.findings.map((f) => <li key={f.kind}>{findingLine(f, 'check')}</li>)}
+            {check.findings.map((f) => <li key={f.constraint}>{findingLine(f, 'check')}</li>)}
           </ul>
         )}
         {check.refusal && <p data-slot="file-issue-refusal" role="alert" className="text-destructive">{check.refusal}</p>}
-        {check.visibility !== 'public' && check.findings.some((f) => f.kind === 'personal') && (
+        {check.visibility !== 'public' && check.findings.some((f) => f.constraint === 'no-personal-data') && (
           <label className="flex items-center gap-2"><input type="checkbox" className="size-4" checked={allowPersonal} onChange={(e) => recheck(e.target.checked)} />File the personal data on this private repository</label>
         )}
         {check.visibility === 'public' && (
@@ -162,9 +163,10 @@ export function FileIssueDialog({ jobId, status, onClose }: { jobId?: string; st
         </div>
         {draft.findings.length > 0 && (
           <ul data-slot="file-issue-findings" className="grid gap-1 text-sm text-warn">
-            {draft.findings.map((f) => <li key={f.kind}>{findingLine(f, 'draft')}</li>)}
+            {draft.findings.map((f) => <li key={f.constraint}>{findingLine(f, 'draft')}</li>)}
           </ul>
         )}
+        {draft.notes && <p data-slot="file-issue-notes" className="text-sm text-muted-foreground">Claude's notes (not filed): {draft.notes}</p>}
         <label className={LABEL}>
           Draft again
           <span className={HINT}>Say what to change. Claude gets your edited draft and this.</span>

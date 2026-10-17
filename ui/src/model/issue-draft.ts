@@ -4,9 +4,11 @@
 
 export interface IssueDraftStatus { provider: string; available: boolean; usable: boolean; reason?: string; repos: string[] }
 
-export interface ScanFinding { kind: 'secret' | 'personal'; what: string }
+/** A constraint of a drafted issue the text breaks: its id and what it is. */
+export interface IssueFinding { constraint: string; what: string }
 
-export interface IssueDraft { repo: string; title: string; body: string; findings: ScanFinding[]; provider: string; model?: string; skill: string }
+/** The draft: masked where it held a secret or personal data; `notes` say what the skill changed or left out, never filed. */
+export interface IssueDraft { repo: string; title: string; body: string; notes: string; findings: IssueFinding[]; provider: string; model?: string; skill: string }
 
 export interface IssueCheck {
   repo: string;
@@ -15,7 +17,7 @@ export interface IssueCheck {
   body: string;
   labels: string[];
   assignees: string[];
-  findings: ScanFinding[];
+  findings: IssueFinding[];
   refusal?: string;
 }
 
@@ -69,5 +71,5 @@ export function confirmProblem(c: IssueCheck, o: { confirmPublic: boolean }): st
   return undefined;
 }
 
-/** A finding as the person reads it: in the draft it was masked; at the confirm step the edited text holds it. */
-export const findingLine = (f: ScanFinding, at: 'draft' | 'check'): string => (at === 'draft' ? `Masked in the draft: ${f.what}` : `The text holds ${f.what}`);
+/** A finding as the person reads it: what Claude's draft broke (a secret or personal data is masked), or what the edited text breaks. */
+export const findingLine = (f: IssueFinding, at: 'draft' | 'check'): string => (at === 'draft' ? `Claude's draft broke a rule: ${f.what}` : `The text breaks a rule: ${f.what}`);
