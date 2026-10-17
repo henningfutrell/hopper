@@ -12,7 +12,7 @@ import type {
 import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, furtherAccount, providerOfKey, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type IntakeAccess, type User, type WebhookSubscription } from '../domain/types.ts';
 import { pullRequestSettings, storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
-import { createEngine, type Engine } from '../engine/index.ts'; import type { JobMoveData } from '../engine/lost-move.ts';
+import { createEngine, type Engine } from '../engine/index.ts'; import type { JobMoveData } from '../engine/lost-move.ts'; import type { JobRunData } from '../engine/job-run.ts';
 import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts';
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } from '../machines/lane-pool.ts';
@@ -126,7 +126,8 @@ export interface UserRuntimeOptions {
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
   /** Begins a `job-move` saga for this user's job that moves off its lost machine (issue #1569). Absent: such a job fails. */
-  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
+  /** This user's `job-run` sagas (issue #1662): a claim's run is one, driven on any hopper. Absent: each run is driven where it was claimed. */
+  jobMoves?: { begin(userId: string, key: string, data: JobMoveData): void }; jobRuns?: { begin(userId: string, key: string, data: JobRunData): boolean; open(userId: string, jobIds: readonly string[]): Set<string> }; sandboxes?: SandboxLauncher; windowsSteps?: WindowsStepLedger; outboundGuard: OutboundGuard; leases?: HostLeases; jobPods?: { join(pod: string): string; instanceId(): string }; // the process's (issue #1014); job pods (issue #1283): a join code naming a pod, absent none joins
 }
 
 
@@ -371,7 +372,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // The sandboxes a waiting job's prompt names are asked for before it starts, and hold it until approved and ready (issue #1471).
     problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins), sandboxesHeld: (waiting) => sandboxesHeld(sandboxRequests, () => vault.view().templates, waiting),
     // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
-    jevFirst: minorDecisions, ...(o.jobMoves ? { jobMoves: { begin: (key: string, data: JobMoveData) => o.jobMoves!.begin(user.id, key, data) } } : {}),
+    jevFirst: minorDecisions, ...(o.jobMoves ? { jobMoves: { begin: (key: string, data: JobMoveData) => o.jobMoves!.begin(user.id, key, data) } } : {}), ...(o.jobRuns ? { jobRuns: { begin: (key: string, data: JobRunData) => o.jobRuns!.begin(user.id, key, data), open: (ids: readonly string[]) => o.jobRuns!.open(user.id, ids) } } : {}),
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({

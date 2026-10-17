@@ -144,6 +144,19 @@ export interface Executor extends ExecutorTerminal {
   validate(payload: Record<string, unknown>): string | null;
   run(ctx: ExecutionContext): Promise<ExecutionOutcome>;
   /**
+   * The job run's first steps apart (issue #1662, the `job-run` saga): where the job's credentials go on its machine
+   * (its scratch dir, and whether its work tree may be made), placed by the saga's `credentials` step before its pane
+   * opens. Undefined: the run cannot start (`open` says why). Present exactly when `open` is.
+   */
+  credentialsAt?(ctx: ExecutionContext): { scratch: string; makeWorkTree: boolean } | undefined;
+  /**
+   * Opens the job's pane and starts its agent there, its task saved unsent in its executor state, so that `reattach`
+   * sends the task and watches the run, on this hopper or on another after a stop. Undefined: opened. An outcome: the
+   * run ended before it ran. `again`: a try of it that a stop cut short may have opened a pane, which is closed first.
+   * Absent: `run` places the credentials, opens the pane and runs in one call.
+   */
+  open?(ctx: ExecutionContext, again?: boolean): Promise<ExecutionOutcome | undefined>;
+  /**
    * Continue a job that returned `question`, or a parked one re-queued (`ctx.job.parked`, issue #501): deliver
    * `answer` (from `ctx.job.executorState`) and run until the next outcome. Absent → the executor never asks questions.
    */
@@ -603,10 +616,8 @@ export class SourceError extends Error {
   readonly permanent: boolean;
   readonly status?: number;
   constructor(message: string, permanent: boolean, status?: number) {
-    super(message);
-    this.name = 'SourceError';
-    this.permanent = permanent;
-    if (status !== undefined) this.status = status;
+    super(message); this.name = 'SourceError';
+    this.permanent = permanent; if (status !== undefined) this.status = status;
   }
 }
 
