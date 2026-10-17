@@ -11,7 +11,9 @@
 //     Then its stamp is `quarantined`, its level before kept, and `job.quarantined` names who acted and the deny
 //     And its proxy token opens no door of the hopper
 //   Scenario: an approved request, or a decline of a request that no longer waits, changes no trust
-import { afterEach, describe, expect, it } from 'vitest';
+//   Scenario: a request no person answered in 24 hours is declined by the hopper, and changes no trust (part 9)
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HOLD_TIMEOUT, SANDBOX_HOLD_MS } from '../../src/domain/sandbox-approvals.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { DENY_REASON } from '../../src/domain/trust-stamp.ts';
@@ -73,6 +75,22 @@ describe('a person\'s deny at gate 2 (issue #655, part 5)', () => {
     expect((await t.a.ui('/ui/api/sandbox-requests', { action: 'approve', id: r.id }, { token: t.session })).status).toBe(200);
     expect((await decline(t, r.id)).status).toBe(409);
     expect((await decline(t, 'nope')).status).toBe(404);
+    expect(stored(t.a, t.job.id).stamp!.level).toBe('approved');
+    expect(eventsOf(t.a, 'job.trust_lowered')).toEqual([]);
+  });
+
+  it('a request no person answered in 24 hours is declined by the hopper, for this request only: the trust stays (part 9)', async () => {
+    const t = await start();
+    const r = t.a.user().sandboxRequests.ask(t.job.id, 'aws-prod');
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + SANDBOX_HOLD_MS });
+    try {
+      expect(t.a.user().sandboxRequests.expire()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(t.a.user().sandboxRequests.list()).toEqual([expect.objectContaining({ id: r.id, state: 'declined', declinedBy: HOLD_TIMEOUT })]);
+    expect(eventsOf(t.a, 'vault.sandbox_declined')).toEqual([expect.objectContaining({ jobId: t.job.id, data: expect.objectContaining({ request: r.id, by: HOLD_TIMEOUT }) })]);
+    expect((await decline(t, r.id)).status).toBe(409);
     expect(stored(t.a, t.job.id).stamp!.level).toBe('approved');
     expect(eventsOf(t.a, 'job.trust_lowered')).toEqual([]);
   });
