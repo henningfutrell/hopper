@@ -5,8 +5,8 @@
 // ended, an item's issue closed, a question answered, a grant or an approval given or not), on that event, never a poll.
 // Issue #1210: and a wait on its own command that only polls hopper state, an hour after it began (`recordPollSeen`).
 import { polledWait } from '../domain/own-command.ts';
-import type { Job, JobWait } from '../domain/types.ts';
-import { waitOnLabel, waitsFor, type Settled, type WaitOn } from '../domain/wait-on.ts';
+import type { DomainEvent, Job, JobWait } from '../domain/types.ts';
+import { SETTLING_EVENT_TYPES, settledBy, waitOnLabel, waitsFor, type Settled, type WaitOn } from '../domain/wait-on.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -44,10 +44,47 @@ export function recordEndWait(c: EngineContext, id: string, note?: string, by: W
  */
 export function wakeOn(c: EngineContext, s: Settled): string[] {
   const woken = c.store.jobs.list({ status: ['waiting_on'] }).filter((j) => waitsFor(j, s));
-  for (const j of woken) {
-    recordEndWait(c, j.id, s.note, 'hopper', (w) => `[hopper] The hopper ended your wait (${w?.on ? waitOnLabel(w.on) : w?.for ?? 'what you waited on'}): ${s.note}. Check it, then go on with the job.`);
-  }
+  for (const j of woken) wake(c, j.id, s);
   return woken.map((j) => j.id);
+}
+
+function wake(c: EngineContext, id: string, s: Settled): void {
+  recordEndWait(c, id, s.note, 'hopper', (w) => `[hopper] The hopper ended your wait (${w?.on ? waitOnLabel(w.on) : w?.for ?? 'what you waited on'}): ${s.note}. Check it, then go on with the job.`);
+}
+
+/**
+ * Issue #1571: the wakes `wakeOn` missed. It runs in memory after the settling event commits, so a stop between the two
+ * left the job on its wait with nothing to wake it. `run`, in the tx: each job on its own wait that an event since its wait
+ * began settles is woken, as `wakeOn` would. The first run reads every settling event since the oldest wait began; each
+ * later run only the events since the run before. The woken jobs.
+ */
+export function createMissedWakes(c: EngineContext): { run(): string[] } {
+  let after: number | undefined;
+  const settling = new Set<string>(SETTLING_EVENT_TYPES);
+  return {
+    run() {
+      const { events, jobs } = c.store;
+      const waiting = jobs.list({ status: ['waiting_on'] }).filter((j) => j.wait);
+      let read: DomainEvent[];
+      if (after === undefined) {
+        after = events.recent(1)[0]?.seq ?? 0;
+        const oldest = waiting.map((j) => j.wait!.since).sort()[0];
+        read = oldest ? events.between(SETTLING_EVENT_TYPES, oldest) : [];
+      } else {
+        const fresh = events.since(after);
+        after = fresh.at(-1)?.seq ?? after;
+        read = fresh.filter((e) => settling.has(e.type));
+      }
+      const woken: string[] = [];
+      for (const j of waiting) {
+        for (const e of read) {
+          const s = e.at >= j.wait!.since ? settledBy(e) : undefined;
+          if (s && waitsFor(j, s)) { wake(c, j.id, s); woken.push(j.id); break; }
+        }
+      }
+      return woken;
+    },
+  };
 }
 
 /** What a job whose own command polled for an hour is told when the hopper ends its wait (issue #1210). */

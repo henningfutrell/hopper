@@ -22083,6 +22083,12 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person; since issue #1508 also by
   the items an outside wait names ("Watched items"), and by the loss of the pane a poll ran in. Issue #1210
   carries the waits on hopper state a job polls for.
+- **A wake a stop lost (issue #1571).** `wakeOn` runs in memory after its event commits. A stop between the two left the
+  job `waiting_on` with nothing to wake it. So the engine reads the settling events again (`createMissedWakes`,
+  `src/engine/wait.ts`; the types `SETTLING_EVENT_TYPES`, `src/domain/wait-on.ts`): at start, every one since the oldest
+  wait began; on each tick, only the events since the tick before. Each job on its own wait that an event since its wait
+  began settles is woken as above, with the same note. A job woken in memory already is no longer `waiting_on`, so it is
+  not woken twice.
 - **A pull request no follow holds (issue #1433).** Only a followed pull request records `job.pull_request_merged` or
   `job.pull_request_closed`. One whose follow ended (a tend took it, a newer job of its item), a stray a person closed, or
   one of no job ends with no event, so a job waiting on it stayed parked. Now each sync of a source reads the pull requests

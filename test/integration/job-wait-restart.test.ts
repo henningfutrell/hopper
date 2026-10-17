@@ -32,7 +32,7 @@ async function boot(herdr: FakeHerdrClient): Promise<TestApp> {
 function commitWhileStopped(event: { type: 'job.finished'; jobId: string; data: { result: Record<string, never> } }): void {
   const instance = openInstanceStore({ url: databaseUrlFor(db!.dbPath), clock: { now: () => new Date() } });
   try {
-    const store = instance.userStore({ id: ADMIN_ID });
+    const store = instance.userStore(instance.users.get(ADMIN_ID)!);
     try { store.events.append(event); } finally { store.close(); }
   } finally { instance.close(); }
 }
