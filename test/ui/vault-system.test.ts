@@ -22,10 +22,10 @@ describe('a system secret on the page (issue #658)', () => {
     expect(systemSecretTitle(secret('github-webhook-secret', 'github-webhook'))).toBe('GitHub webhook secret');
     expect(systemSecretWhere({ kind: 'github-webhook' })).toBe('Settings → GitHub webhook');
     expect(mayKeepInBackend(secret('github-webhook-secret', 'github-webhook', { scope: 'instance' }))).toBe(false);
-    // The hopper.io link key (issue #467): the whole hopper's, made by the hopper.
-    expect(systemSecretTitle(secret('cloud-link.link-key', 'cloud-link'))).toBe('hopper.io link key: private half');
+    // The cloud link key (issue #467): the whole hopper's, made by the hopper.
+    expect(systemSecretTitle(secret('cloud-link.key', 'cloud-link'))).toBe('cloud link key: private half');
     expect(systemSecretWhere({ kind: 'cloud-link' })).toBe('Settings → hopper.io');
-    expect(mayKeepInBackend(secret('cloud-link.link-key', 'cloud-link', { scope: 'instance' }))).toBe(false);
+    expect(mayKeepInBackend(secret('cloud-link.key', 'cloud-link', { scope: 'instance' }))).toBe(false);
   });
 
   it('says set, its last 4 characters, who and that it is sealed', () => {

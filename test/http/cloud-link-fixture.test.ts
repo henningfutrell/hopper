@@ -1,9 +1,9 @@
 // The cloud link (issue #467, design.md "The cloud link"): linking an install to hopper.io moves no data. On a fixture
-// database with two users and their work, a link writes only its own record in the instance's settings and its link key
+// database with two users and their work, a link writes only its own record in the instance's settings and its cloud link key
 // (part 2) in the instance's vault, and an unlink removes both: every other row of every table, the instance's and each
 // user's, is as it was.
-//   Scenario: link, rotate the link key, mint a registration code (issue #465), then unlink a fixture database; every
-//     table but the link record, the code and the link key's one vault row is unchanged
+//   Scenario: link, rotate the cloud link key, mint a registration code (issue #465), then unlink a fixture database; every
+//     table but the link record, the code and the cloud link key's one vault row is unchanged
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InstanceStore } from '../../src/domain/store.ts';
 import type { NewEvent } from '../../src/domain/types.ts';

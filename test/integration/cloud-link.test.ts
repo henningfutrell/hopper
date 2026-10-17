@@ -1,7 +1,7 @@
 // The cloud link (issue #467, design.md "The cloud link"): the hopper's admin links this install to an account at
 // hopper.io, and unlinks it, in Settings, while it runs. A real daemon over the real database.
 //   Scenario: a link and an unlink during a running job apply at once, end no job and are each an event
-//   Scenario: the link key (part 2) is minted at the link and rotated during a running job, which it does not end; not
+//   Scenario: the cloud link key (part 2) is minted at the link and rotated during a running job, which it does not end; not
 //     linked, a rotation is 409; only the admin rotates
 //   Scenario: a link is kept across a restart; a second link is 409; a bad account is 400; only the admin links
 //   Scenario: an install that never links connects to nothing outside this machine, so not to hopper.io

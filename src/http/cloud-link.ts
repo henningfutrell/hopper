@@ -4,7 +4,7 @@
 // or touches a job or a lane. Each is an event. This part makes no connection to hopper.io: a link stays `pending` until
 // it registers (issue #465, design.md "Registering at hopper.io") with a one-time registration code the admin minted, and
 // is `pending` again when hopper.io's account owner unregisters it there (design.md "Unregistering at hopper.io").
-// The hopper.io link key (part 2, design.md "The hopper.io link key", docs/hopper-io-security.md R4): a link mints one
+// The cloud link key (part 2, design.md "The cloud link key", docs/hopper-io-security.md R4): a link mints one
 // X25519 key, its private half a system secret of the instance's vault, its public half in the record; the admin rotates
 // it on request; an unlink drops it. Nothing uses it yet: the cloud link's agent (issue #464) will prove the install with it.
 import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -17,9 +17,9 @@ export interface CloudLink {
   view(): CloudLinkView;
   /** Links this install to `account` (a valid name, normalised). Throws HttpError 409 while it is linked. */
   link(account: string, by: string): CloudLinkView;
-  /** Removes the link record, its registration code and its link key; not linked: nothing changes. */
+  /** Removes the link record, its registration code and its cloud link key; not linked: nothing changes. */
   unlink(by: string): CloudLinkView;
-  /** A new hopper.io link key in place of the one before, at once. Throws HttpError 409 while not linked. */
+  /** A new cloud link key in place of the one before, at once. Throws HttpError 409 while not linked. */
   rotateKey(by: string): CloudLinkView;
   /** A new registration code, in place of any before it; answered once, kept only hashed. Throws HttpError 409 while not linked. */
   mintRegistrationCode(by: string): RegistrationCodeMinted;
@@ -49,16 +49,16 @@ function newKey(): { secret: string; publicKey: string } {
 
 export function createCloudLink(o: {
   settings: Pick<InstanceSettingsRepository, 'instanceId' | 'getCloudLink' | 'setCloudLink' | 'removeCloudLink' | 'getCloudRegistrationCode' | 'setCloudRegistrationCode' | 'removeCloudRegistrationCode'>;
-  /** The instance's system secrets: the link key's private half. */
+  /** The instance's system secrets: the cloud link key's private half. */
   secrets: Pick<SystemSecrets, 'keep' | 'drop'>;
   events: Pick<InstanceEvents, 'append'>;
   now: () => Date;
 }): CloudLink {
-  /** Mints a link key and keeps its private half; throws HttpError 503 when no system secret can be kept (no master key). */
+  /** Mints a cloud link key and keeps its private half; throws HttpError 503 when no system secret can be kept (no master key). */
   const mintKey = (by: string, rotated: boolean): CloudLinkKey => {
     const key = newKey();
     const kept = o.secrets.keep(CLOUD_LINK_KEY, key.secret, by, { rotated });
-    if (!kept.ok) throw new HttpError(kept.code === 'unavailable' ? 503 : 409, `the hopper.io link key cannot be kept: ${kept.error}`);
+    if (!kept.ok) throw new HttpError(kept.code === 'unavailable' ? 503 : 409, `the cloud link key cannot be kept: ${kept.error}`);
     return { secret: CLOUD_LINK_KEY, publicKey: key.publicKey, createdAt: o.now().toISOString() };
   };
   /** The open code, or undefined; an expired one is removed. */

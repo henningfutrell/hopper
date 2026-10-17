@@ -19,7 +19,7 @@ export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): s
   if (s.kind === 'webhook') return 'Webhook signing secret';
   if (s.kind === 'remote-access') return `Remote access: ${REMOTE_ACCESS[s.name.slice('remote-access.'.length)] ?? s.name}`;
   if (s.kind === 'github-webhook') return 'GitHub webhook secret';
-  if (s.kind === 'cloud-link') return 'hopper.io link key: private half';
+  if (s.kind === 'cloud-link') return 'cloud link key: private half';
   const [, realm, setting] = s.name.split('.');
   return `Sign-in realm ${realm ?? ''}: ${setting === 'bindPassword' ? 'bind password' : 'client secret'}`;
 }

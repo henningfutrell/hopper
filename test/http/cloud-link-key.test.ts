@@ -1,4 +1,4 @@
-// The hopper.io link key (issue #467 part 2, design.md "The hopper.io link key", docs/hopper-io-security.md R4): one X25519
+// The cloud link key (issue #467 part 2, design.md "The cloud link key", docs/hopper-io-security.md R4): one X25519
 // key per instance, minted at the link, its private half a system secret in the instance's vault that the link record
 // names, its public half in the record. The admin rotates it on request; an unlink drops it. Over the real instance store.
 //   Scenario: a link mints the key; the record names the secret and holds the public half; the view never the private half
@@ -40,7 +40,7 @@ const publicOf = (secret: string): string => (createPublicKey(privateOf(secret))
 
 const keyOf = (v: CloudLinkView) => v.link?.linkKey;
 
-describe('the hopper.io link key', () => {
+describe('the cloud link key', () => {
   it('a link mints the key; the record names the secret and holds the public half; the view never the private half', () => {
     const { instance, link, secrets, events } = setup();
     const view = link.link('octo-cat', 'admin');

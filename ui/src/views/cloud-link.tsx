@@ -1,7 +1,7 @@
 // The cloud link (issue #467), in Settings, the hopper's admin's: link this install to an account at hopper.io, or unlink
 // it, while the hopper runs. A link writes one record on this install and moves no data; an unlink removes the record.
 // While linked, the admin gets a one-time registration code (issue #465) to enter at hopper.io, shown here once, and sees
-// the public half of the hopper.io link key, which they can rotate (issue #467 part 2).
+// the public half of the cloud link key, which they can rotate (issue #467 part 2).
 // "What hopper.io would get" shows the hopper.io state snapshot this hopper makes now, as it is (issue #466).
 import { Cloud } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -63,7 +63,7 @@ export function CloudLink() {
             </dl>
             <div data-slot="cloud-link-key" className="space-y-2 rounded-md border p-3">
               <p className="text-xs text-muted-foreground">
-                The link key proves this hopper to hopper.io. Its private half stays on this hopper, in the vault. Only the public half below goes to hopper.io. Rotate it if you think someone else has it: the old key stops at once.
+                The cloud link key proves this hopper to hopper.io. Its private half stays on this hopper, in the vault. Only the public half below goes to hopper.io. Rotate it if you think someone else has it: the old key stops at once.
               </p>
               {link.linkKey ? (
                 <>
@@ -71,7 +71,7 @@ export function CloudLink() {
                   <p className="text-xs text-muted-foreground">Made {new Date(link.linkKey.createdAt).toLocaleString()}</p>
                 </>
               ) : <p className="text-xs">This link has no key yet. Rotate to make one.</p>}
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => void act('/ui/api/cloud-link/rotate-key', {}, 'Made a new link key')}>Rotate key</Button>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void act('/ui/api/cloud-link/rotate-key', {}, 'Made a new cloud link key')}>Rotate key</Button>
             </div>
             <div className="space-y-2 rounded-md border p-3">
               <p className="text-xs text-muted-foreground">
