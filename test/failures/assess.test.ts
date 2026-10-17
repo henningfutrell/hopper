@@ -139,13 +139,13 @@ describe('assess', () => {
   });
 
   it('automatic actions off: the decision stands, but waits for a person', () => {
-    const off = { auto: { retry: false, hold: false, redirect: false, continue: false } };
+    const off = { auto: { retry: false, hold: false, redirect: false, continue: false, push: false } };
     expect(assess(input('read ECONNRESET', {}, off))).toMatchObject({ decision: 'retry', auto: false });
     expect(assess(input('no space left on device', {}, off))).toMatchObject({ decision: 'hold', auto: false });
   });
 
   it('redirect off: held instead', () => {
-    expect(assess(input('no space left on device', {}, { auto: { retry: true, hold: true, redirect: false, continue: true } }))).toMatchObject({ decision: 'hold', auto: true });
+    expect(assess(input('no space left on device', {}, { auto: { retry: true, hold: true, redirect: false, continue: true, push: true } }))).toMatchObject({ decision: 'hold', auto: true });
   });
 
   it('a job with no machine is held, never redirected', () => {

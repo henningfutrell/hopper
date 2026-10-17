@@ -28,6 +28,7 @@ const AUTO: { key: keyof FailureSettings['auto']; label: string }[] = [
   { key: 'hold', label: 'Hold jobs for open problems' },
   { key: 'redirect', label: 'Redirect jobs to another machine' },
   { key: 'continue', label: 'Continue timed-out jobs still at work' },
+  { key: 'push', label: 'Push work a finished job did not push' },
 ];
 
 function Form({ settings }: { settings: FailureSettings }) {

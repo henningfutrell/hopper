@@ -1027,7 +1027,7 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #65
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move re-queues with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
 
 | field | type | required |
 |---|---|---|
@@ -1043,13 +1043,14 @@ Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job
 
 ## `job.continued`
 
-Version 1 (`docs/schemas/job.continued.v1.json`). An ended job goes on in its own agent session: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`). A person resolved its hand-off with Continue (issue #551), told the failure and the person's note: `handoffId`, the hand-off it resolved. Or the failure assessor continued a timed-out job still at work (issue #630), told it timed out while at work: `recordId`, its failure record. Or a person chose Push it on its work not pushed (issue #1010) — a failed, finished or cancelled job —, told to push the work its work tree kept and open the pull request: `keptWork`.
+Version 1 (`docs/schemas/job.continued.v1.json`). An ended job goes on in its own agent session: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`). A person resolved its hand-off with Continue (issue #551), told the failure and the person's note: `handoffId`, the hand-off it resolved. Or the failure assessor continued a timed-out job still at work (issue #630), told it timed out while at work: `recordId`, its failure record. Or a person chose Push it on its work not pushed (issue #1010) — a failed, finished or cancelled job —, told to push the work its work tree kept and open the pull request: `keptWork`. Or the failure sweep did so by itself for a finished job (issue #1472, Push it by itself, the failures setting `auto.push`): `keptWork` and `auto`.
 
 | field | type | required |
 |---|---|---|
 | `handoffId` | string | no |
 | `recordId` | string | no |
 | `keptWork` | boolean | no |
+| `auto` | boolean | no |
 
 ```json
 {

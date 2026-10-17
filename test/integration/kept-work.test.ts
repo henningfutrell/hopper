@@ -95,6 +95,8 @@ describe('Work not pushed (issue #1010)', () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE, DONE], reapKeeps: [KEPT] });
     const a = await boot(herdr);
     const token = await a.login();
+    // A person's Push it: the hopper's own (issue #1472, auto-push.test.ts) is off.
+    expect((await a.ui('/ui/api/failures/settings', { auto: { push: false } }, { token })).status).toBe(200);
     const job = await a.pull({}, herdrItem);
     await a.waitForStatus(job.id, 'finished', 8000);
     const session = (await a.job(job.id)).agentSession!;

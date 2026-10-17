@@ -12009,6 +12009,32 @@ the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squ
 read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
 the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused; issue #1470: the same work kept again, Push it refused).
 
+### Push it by itself (issue #1472 part 2, 2026-10-17)
+
+A job that ended done with work not pushed waited for a person's Push it, sometimes for days. The issue asks that the
+hopper push the work from any state with no click. This part does it for the case that is the hopper's alone to decide.
+
+- **What** (`autoPush`, `src/failures/kept-work.ts`; run by the failure sweep after its work check). Each entry of
+  **work not pushed** whose job is `finished`, has no open hand-off, and whose Push it is taken now (its session resumes,
+  it is the newest job of its item, its source takes the item back, it was not kept again) goes on as Push it does: its
+  own agent session and kept work tree, told `pushBrief` with "The hopper asks you" in place of "A person asks you".
+  `job.continued` records `keptWork` and `auto`.
+- **Once for each job.** A job that has a `job.continued` with `keptWork` already (a person's Push it, or this) is not
+  pushed by itself again: its work waits for a person, and the kept-again rule (issue #1470) still applies to Push it.
+  So a push the hopper refuses, or a job that cannot push, costs one turn, not a loop.
+- **Not a failed or a cancelled job.** A failed job's failure goes to the assessor, which runs it again, continues it, or
+  hands it off; a hand-off's Push it is a person's. A cancelled job a person stopped. Both stay as they were.
+- **The setting.** `auto.push` in the failures settings, default on (`POST /ui/api/failures/settings`, Failures → settings,
+  "Push work a finished job did not push"). Off, the work waits for a person as before. A settings record saved before the
+  field existed reads it on, field by field (`failureSettingsOf`).
+
+Left of issue #1472 part 2: a job whose session cannot resume (its work needs a new job in the kept work tree), and a push
+to a repository other than the job's own (refused, issue #1470).
+
+**Verification:** `test/integration/auto-push.test.ts` (a finished job pushed by itself once, with `auto`; not again when
+its work is kept again; `auto.push` off; a failed job not pushed by itself), `test/integration/kept-work.test.ts` (a
+person's Push it, with `auto.push` off).
+
 ### Actions answer at once (issue #1194, 2026-10-14)
 
 A person's action on a local hopper must feel instant. Approve took 5 to 20 s: the route awaited a GitHub read of the

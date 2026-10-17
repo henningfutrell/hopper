@@ -82,7 +82,7 @@ describe('own PR unfinished (issue #1265)', () => {
 
   it('automatic Continue off: a person, as before', async () => {
     const gh = createFakeGitHub();
-    const app = await boot(gh, { auto: { retry: true, hold: true, redirect: true, continue: false } });
+    const app = await boot(gh, { auto: { retry: true, hold: true, redirect: true, continue: false, push: false } });
     const { job } = await conflictingPullRequest(gh, app, () => {});
     const handoff = await waitFor(async () => (await failuresOf(app)).handoffs[0], { what: 'a hand-off', timeoutMs: 30_000 });
     expect(handoff.jobId).toBe(job.id);
@@ -138,7 +138,7 @@ describe('own PR unfinished (issue #1265)', () => {
 
     it('automatic Continue off: a person, as before', async () => {
       const gh = createFakeGitHub();
-      const app = await boot(gh, { auto: { retry: true, hold: true, redirect: true, continue: false } });
+      const app = await boot(gh, { auto: { retry: true, hold: true, redirect: true, continue: false, push: false } });
       const { job } = await namedPullRequest(gh, app, () => {});
       const handoff = await waitFor(async () => (await failuresOf(app)).handoffs[0], { what: 'a hand-off', timeoutMs: 30_000 });
       expect(handoff.jobId).toBe(job.id);
