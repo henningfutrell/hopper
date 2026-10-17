@@ -2,7 +2,8 @@
 // "A GitLab source"): who the token is and its confirmed emails, the projects it reaches, and a project's open issues with a
 // label. For a job (part 3, "Jobs through GitLab"): a project's default branch, an issue's label events and notes (its
 // origin), and the hopper's labels on an issue. For a job's merge request (issue #1642, "A GitLab job's merge request"): one
-// issue, and the merge requests that close it, an open one with its head pipeline. Plain fetch; a list is paged by GitLab's `x-next-page` header. The token goes
+// issue, and the merge requests that close it, an open one with its head pipeline; one merge request, and the hopper's merge
+// of it at the head it read (part 2, yolo mode). Plain fetch; a list is paged by GitLab's `x-next-page` header. The token goes
 // in the `PRIVATE-TOKEN` header only, never in a URL or a log line.
 import type { GitLabIssue } from '../domain/gitlab-account.ts';
 
@@ -30,15 +31,21 @@ export interface GitLabApi {
   issue(project: string, iid: number): Promise<GitLabIssue & { state: 'opened' | 'closed' }>;
   /** The merge requests whose description closes the issue (GitLab's `closed_by`), each open one with its head pipeline. */
   closingMergeRequests(project: string, iid: number): Promise<GitLabMergeRequest[]>;
+  /** One merge request (`iid` its number in the project), with its head pipeline. */
+  mergeRequest(project: string, iid: number): Promise<GitLabMergeRequest>;
+  /** Merges a merge request at head `sha`: GitLab refuses it when the head moved, or it may not be merged (a refusal throws). */
+  merge(project: string, iid: number, sha: string): Promise<void>;
 }
 
 /**
  * A merge request as the hopper judges a GitLab job by (issue #1642). `pipeline`: its head pipeline's status (`success`,
- * `failed`, `running`, …), read only for an open one; absent: none, or not read.
+ * `failed`, `running`, …), read only for an open one; absent: none, or not read. `sha` its head, `updatedAt` its last change,
+ * `target` and `source` its branches (part 2, the follow), as GitLab said them.
  */
 export interface GitLabMergeRequest {
   iid: number; url: string; state: 'opened' | 'closed' | 'merged' | 'locked';
   draft: boolean; conflicting: boolean; createdAt: string; mergedAt?: string; pipeline?: string;
+  sha?: string; updatedAt?: string; target?: string; source?: string;
 }
 
 /** Who added or removed a label of an issue. `userId` absent: GitLab did not say. */
@@ -71,7 +78,14 @@ const mergeRequestOf = (m: Json): GitLabMergeRequest => ({
   iid: Number(m.iid), url: str(m.web_url), state: MR_STATES.find((s) => s === m.state) ?? 'closed',
   draft: m.draft === true || m.work_in_progress === true, conflicting: m.has_conflicts === true, createdAt: str(m.created_at),
   ...(typeof m.merged_at === 'string' && m.merged_at ? { mergedAt: m.merged_at } : {}),
+  ...(str(m.sha) ? { sha: str(m.sha) } : {}), ...(str(m.updated_at) ? { updatedAt: str(m.updated_at) } : {}),
+  ...(str(m.target_branch) ? { target: str(m.target_branch) } : {}), ...(str(m.source_branch) ? { source: str(m.source_branch) } : {}),
 });
+/** A merge request with its head pipeline's status, from GitLab's answer for one. */
+const withPipeline = (one: Json): GitLabMergeRequest => {
+  const status = str((one.head_pipeline as Json | null | undefined)?.status);
+  return { ...mergeRequestOf(one), ...(status ? { pipeline: status } : {}) };
+};
 
 export function createGitLabApi(o: { baseUrl: string; token: string; fetch?: typeof fetch }): GitLabApi {
   const get = o.fetch ?? fetch;
@@ -164,9 +178,16 @@ export function createGitLabApi(o: { baseUrl: string; token: string; fetch?: typ
       return Promise.all(list.map(async (m) => {
         if (m.state !== 'opened') return m;
         const one = await ok(`${at}/merge_requests/${m.iid}`) as Json | undefined;
-        const status = str((one?.head_pipeline as Json | null | undefined)?.status);
-        return { ...m, ...(one ? mergeRequestOf(one) : {}), ...(status ? { pipeline: status } : {}) };
+        return one ? withPipeline(one) : m;
       }));
+    },
+    async mergeRequest(project, iid) {
+      const one = await ok(`/projects/${encodeURIComponent(project)}/merge_requests/${iid}`) as Json | undefined;
+      if (!one || typeof one.iid !== 'number') throw new Error(`GitLab did not answer merge request ${project}!${iid}`);
+      return withPipeline(one);
+    },
+    async merge(project, iid, sha) {
+      await ok(`/projects/${encodeURIComponent(project)}/merge_requests/${iid}/merge`, { method: 'PUT', body: { sha } });
     },
   };
 }

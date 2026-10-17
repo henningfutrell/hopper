@@ -122,7 +122,8 @@ export interface ChecksProblem { repo: string; why: string; pullRequests: number
 interface Followed extends Holds { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; tended?: Tended }
 
 const followedOf = (job: Job): Followed => (job.sourceState?.source ?? {}) as Followed;
-const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
+/** A pull request's number, or a GitLab merge request's (issue #1642: `…/-/merge_requests/N`). */
+const numberOf = (url: string): number => Number(/\/(?:pull|-\/merge_requests)\/(\d+)/.exec(url)?.[1] ?? 0);
 
 /**
  * The tend job that works on the job's pull request (issue #763): the job's follow went to it (`tended`), it is the newest
