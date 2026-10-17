@@ -1,4 +1,4 @@
-// Issue #466 part 1: the hopper.io state snapshot, what the install may send on the hopper.io link for the dashboard.
+// Issue #466 part 1: the hopper.io state snapshot, what the instance may send on the cloud link for the dashboard.
 // A closed schema and a pure projection: counts, enums and an opaque machine key only (docs/hopper-io-security.md R4, R5).
 import { describe, expect, it } from 'vitest';
 import { HOPPER_IO_STATE_SCHEMA, projectHopperIoState, type HopperIoStateInputs } from '../../src/domain/hopper-io-state.ts';
@@ -38,7 +38,7 @@ describe('the hopper.io state snapshot (issue #466)', () => {
     expect(s).toMatchObject({
       schema: 1,
       sentAt: at,
-      install: { version: '1f36076e', channel: 'dev' },
+      instance: { version: '1f36076e', channel: 'dev' },
       queue: { waiting: 2, running: 1, locked: 1, gate: 'review' },
       attention: { questionsAwaitingOwner: 1, jobsLocked: 1, machinesOffline: 0 },
     });
@@ -67,16 +67,16 @@ describe('the hopper.io state snapshot (issue #466)', () => {
     expect(s.attention.machinesOffline).toBe(1);
   });
 
-  it('an install with no installed version and no machines still makes a snapshot the schema takes', () => {
+  it('an instance with no installed version and no machines still makes a snapshot the schema takes', () => {
     const s = projectHopperIoState(inputs({ installed: undefined }));
-    expect(s.install.version).toBe('unknown');
+    expect(s.instance.version).toBe('unknown');
     expect(HOPPER_IO_STATE_SCHEMA.parse(s)).toEqual(s);
   });
 
   it('the schema is closed: a key outside it is refused, at every level', () => {
     const s = projectHopperIoState(inputs({ machines: [machine('a')] }));
     expect(HOPPER_IO_STATE_SCHEMA.safeParse({ ...s, extra: 1 }).success).toBe(false);
-    expect(HOPPER_IO_STATE_SCHEMA.safeParse({ ...s, install: { ...s.install, host: 'x' } }).success).toBe(false);
+    expect(HOPPER_IO_STATE_SCHEMA.safeParse({ ...s, instance: { ...s.instance, host: 'x' } }).success).toBe(false);
     expect(HOPPER_IO_STATE_SCHEMA.safeParse({ ...s, machines: [{ ...s.machines[0], name: 'x' }] }).success).toBe(false);
     expect(HOPPER_IO_STATE_SCHEMA.safeParse({ ...s, schema: 2 }).success).toBe(false);
   });
