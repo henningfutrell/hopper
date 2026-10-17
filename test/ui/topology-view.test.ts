@@ -6,14 +6,15 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { afterReport, joinGraph } from '../../src/domain/topology.ts';
 import { awsTopology, kubeTopology } from '../../src/domain/topology-discover.ts';
-import { TopologyPanel } from '../../ui/src/views/topology.tsx';
 import { aws, CLUSTER, kube } from '../support/topology-answers.ts';
 
 let root: Root | undefined;
 afterEach(() => { act(() => root?.unmount()); root = undefined; document.body.innerHTML = ''; });
 
 const AT = '2026-10-17T10:00:00.000Z';
-const render = (g: ReturnType<typeof joinGraph>): HTMLElement => {
+const view = '../../ui/src/views/topology.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
+const render = async (g: ReturnType<typeof joinGraph>): Promise<HTMLElement> => {
+  const { TopologyPanel } = (await import(view)) as { TopologyPanel: (p: { g: typeof g; changes: [] }) => ReturnType<typeof createElement> };
   const el = document.createElement('div');
   document.body.append(el);
   root = createRoot(el);
@@ -22,9 +23,9 @@ const render = (g: ReturnType<typeof joinGraph>): HTMLElement => {
 };
 
 describe('the Topology panel', () => {
-  it('draws the graph; a click on a node shows its details and neighbours; a stale source says why', () => {
+  it('draws the graph; a click on a node shows its details and neighbours; a stale source says why', async () => {
     const kubeGood = afterReport(undefined, { source: { kind: 'kubernetes', cluster: CLUSTER }, ok: true, ...kubeTopology(kube) }, 'collector', AT);
-    const el = render(joinGraph([
+    const el = await render(joinGraph([
       afterReport(undefined, { source: { kind: 'aws', account: '111111111111', region: 'eu-west-1' }, ok: true, ...awsTopology(aws) }, 'collector', AT),
       afterReport(kubeGood, { source: { kind: 'kubernetes', cluster: CLUSTER }, ok: false, error: 'the API server did not answer' }, 'collector', '2026-10-17T11:00:00.000Z'),
     ]));
@@ -40,7 +41,7 @@ describe('the Topology panel', () => {
     expect(details.textContent).toContain('engine');
   });
 
-  it('says how a check fills an empty topology', () => {
-    expect(render({ nodes: [], links: [], sources: [] }).textContent).toContain('POST /ui/api/topology/report');
+  it('says how a check fills an empty topology', async () => {
+    expect((await render({ nodes: [], links: [], sources: [] })).textContent).toContain('POST /ui/api/topology/report');
   });
 });
