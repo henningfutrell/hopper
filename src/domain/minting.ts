@@ -54,6 +54,8 @@ export const awsReadSession = (roleArn: string): { policyArns: string[]; policy:
 
 /** Where a token for a whole cluster is minted: the service accounts `hopper-<operation>` live in this namespace. */
 export const KUBE_CLUSTER_NAMESPACE = 'hopper';
+/** Where a sync of an Argo CD app is minted (issue #959): Argo CD's namespace, where its Applications live. */
+export const ARGOCD_NAMESPACE = 'argocd';
 
 /**
  * A minting credential's value for AWS: a key pair STS takes, an optional region and endpoint (an STS other than AWS's),
@@ -130,7 +132,7 @@ export const MINT_BINDING_LABEL = 'io.hopper.mint';
  * What `kind` mints for the profile, or why it mints nothing for it. AWS: an `aws-role` (`<account>/<role>`) is assumed,
  * a read session under the read-only policy and the deny policy (issue #715). Kubernetes: a `namespace` (`<cluster>/<ns>`) or a `cluster` asset gets a
  * token for the service account `hopper-<operation>` in that namespace (or `hopper` for a cluster); its RBAC is the
- * cluster's.
+ * cluster's. An `argocd-app` (`<cluster>/<app>`, issue #959) takes sync only: `hopper-sync` in Argo CD's namespace.
  */
 export function mintTarget(kind: MintKind, p: OperationProfile): MintTarget | string {
   const { kind: assetKind, name } = p.asset;
@@ -142,6 +144,13 @@ export function mintTarget(kind: MintKind, p: OperationProfile): MintTarget | st
     return { kind, mintsFor: { kind: 'aws-account', name: account }, roleArn, ...read, durationSeconds: AWS_SESSION_SECONDS };
   }
   const serviceAccount = `hopper-${p.operation}`;
+  if (assetKind === 'argocd-app') {
+    // A sync sets the Application's operation; Argo CD's controller then applies what git says (issue #959).
+    if (p.operation !== 'sync') return `an argocd-app takes sync only, not ${p.operation}: read or change what it deploys on its cluster or namespace`;
+    const [cluster, app, ...rest] = name.split('/');
+    if (!cluster || !app || rest.length) return `a sync of an Argo CD app names its cluster (argocd-app/<cluster>/<app>), not argocd-app/${name}`;
+    return { kind, mintsFor: { kind: 'cluster', name: cluster }, namespace: ARGOCD_NAMESPACE, serviceAccount, expirationSeconds: KUBE_TOKEN_SECONDS };
+  }
   if (assetKind === 'cluster') return { kind, mintsFor: { kind: 'cluster', name }, namespace: KUBE_CLUSTER_NAMESPACE, serviceAccount, expirationSeconds: KUBE_TOKEN_SECONDS };
   const [cluster, namespace, ...rest] = name.split('/');
   if (assetKind !== 'namespace' || !cluster || !namespace || rest.length) return `a kube credential is minted for a cluster or a namespace (cluster/<name>, namespace/<cluster>/<ns>), not ${assetKind}/${name}`;

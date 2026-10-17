@@ -1189,6 +1189,43 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
   the check box there. With neither, the template waits for its check. A client older than this release refuses the
   check box, and the check fails with that reason; run it again once the machine has the new client.
+
+### Argo CD syncs through the plan gate
+
+A gated Argo CD application syncs only for a recorded, approved, current GitOps plan (issue #959, `docs/design.md` "Infra
+plans: Argo CD syncs through the plan gate"). A job asks `$HOPPER_SECRET kube sync argocd-app/<cluster>/<app> --plan <id>`
+and gets a 10-minute token of the service account `hopper-sync` in the namespace `argocd`; with it, the job starts the
+sync (`argocd app sync --core`, or a patch of the Application's `operation`). To gate an application:
+
+1. **Turn off its automated sync.** Remove `spec.syncPolicy.automated` from the Application. Argo CD then syncs it only
+   when someone asks.
+2. **Label it** `io.hopper.plan-gate=true`. The out-of-band collector's `--argo` then reports it on Infra if its
+   automated sync is turned on again.
+3. **Make `hopper-sync`** in the namespace `argocd`, with a Role that may `get` and `patch` only the gated Applications
+   (`resourceNames`), and let the minting credential's identity `create` on `serviceaccounts/token` for it and on
+   `secrets` in `argocd`, as above:
+
+   ```yaml
+   apiVersion: v1
+   kind: ServiceAccount
+   metadata: { name: hopper-sync, namespace: argocd }
+   ---
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: Role
+   metadata: { name: hopper-sync, namespace: argocd }
+   rules:
+     - { apiGroups: [argoproj.io], resources: [applications], resourceNames: [web], verbs: [get, patch] }
+   ---
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: RoleBinding
+   metadata: { name: hopper-sync, namespace: argocd }
+   roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: hopper-sync }
+   subjects: [{ kind: ServiceAccount, name: hopper-sync, namespace: argocd }]
+   ```
+
+4. **Take sync away from people and other tools** in Argo CD's own RBAC (`argocd-rbac-cm`): no role but an admin's for
+   break-glass may `sync` a gated application. The hopper cannot see a sync it did not mint for, other than as drift.
+5. **The template** declares `sync` on `argocd-app/<cluster>/<app>`, and a person approves it on Settings → Vault.
 ## Search
 
 Search (issue #945, docs/design.md "Search") finds your jobs, artifacts, infra plans, and the issues and pull requests your job sources see by their words, filters and facets: `GET /api/search`,
