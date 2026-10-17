@@ -10,7 +10,13 @@ import type { Job } from './types.ts';
 /** A thing a wait names that the hopper reads: an issue or a pull request (one GitHub number), or a workflow run. */
 export type WatchedRef = { kind: 'issue'; repo: string; number: number } | { kind: 'run'; repo: string; runId: number };
 
-/** A watched thing seen ended: an issue `closed`, a pull request `merged` or `closed`, a run completed with its conclusion. */
+/** The state of a watched thing that does not exist (issue #1691): no such repository, item or run. It never ends. */
+export const NOT_FOUND = 'not_found';
+
+/**
+ * A watched thing seen ended: an issue `closed`, a pull request `merged` or `closed`, a run completed with its conclusion; or
+ * one that does not exist, `not_found`.
+ */
 export interface WatchedEnd { ref: WatchedRef; url: string; state: string }
 
 /** A watched thing, and the jobs whose waits name it. */
@@ -81,9 +87,10 @@ export function watchedItems(jobs: WaitingJob[]): Watched[] {
   return [...out.values()];
 }
 
-/** What ended, in a few words: what the woken job is told. */
+/** What ended, or was not found, in a few words: what the woken job is told. */
 export const endedNote = (ended: Pick<WatchedEnd, 'url' | 'state'>[]): string =>
-  ended.map((e) => (/\/actions\/runs\//.test(e.url) ? `${e.url} completed (${e.state})` : `${e.url} was ${e.state}`)).join('; ');
+  ended.map((e) => (e.state === NOT_FOUND ? `${e.url} was not found: no such repository or item, so the wait never ends on it`
+    : /\/actions\/runs\//.test(e.url) ? `${e.url} completed (${e.state})` : `${e.url} was ${e.state}`)).join('; ');
 
 /**
  * A wait only its pane can end (issue #1508): on its own command, or on an outside event the hopper watches nothing of — a
