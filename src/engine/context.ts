@@ -68,6 +68,11 @@ export interface EngineOptions {
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
   problems: () => ProblemBlock[];
   /**
+   * Issue #1471, design.md "Sandboxes before the start": asks for the sandboxes each waiting job's prompt names, and
+   * answers the jobs they hold, with why; read at each Decision. Absent: none.
+   */
+  sandboxesHeld?: (waiting: readonly Job[]) => { jobId: string; reason: string }[];
+  /**
    * Set a machine's configured lanes as an admin's edit of the machine sets them (issue #688): an applied lane
    * recommendation and its undo. Throws an EngineError when refused. Absent: refused.
    */

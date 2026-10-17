@@ -15,7 +15,8 @@ import { askedSkill, catalogText, credentialText, kindsInWords, linkText, minted
 import type { SandboxRequestView } from '../domain/sandbox-approvals.ts';
 import { nameWithoutEmail } from '../domain/users.ts';
 import { needsOf, SANDBOX_SKILL, TEMPLATE_SKILL, type AskAbout, type TemplateAnswer } from './template-request.ts';
-import { PLAN_MAX, PURPOSE_MAX } from '../domain/vault.ts';
+import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
+import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -35,6 +36,8 @@ export interface SkillUser {
   need(ask: CredentialNeed, asker: { job: Job; machine: string; template: string }): { waiting: string } | { declined: string };
   /** A template request (issue #716): the hopper makes the template the job's needs say, or says why not. */
   requestTemplate(needs: string | undefined, job: Job, about?: AskAbout): Promise<TemplateAnswer>;
+  /** The user's template of that name, as the vault shows it (issue #1471: a sandbox ask may name one); undefined: none. */
+  template(name: string): TemplateView | undefined;
   /** A sandbox request (issue #991): the job's ask for a box of the template, and where it is now; `about`: why, and its plan (issue #1001). */
   sandbox(template: string, job: Job, about?: AskAbout): SandboxRequestView;
   /** The job's sandbox ask waits on the template for a person (issue #1001): their approval then covers the job's run. */
@@ -186,6 +189,8 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
      * ends; the approval is a 200 that says how the job runs each step (issue #1349): in a sandbox of its own, burned after it.
      */
     async function sandbox(): Promise<SkillAnswer> {
+      const named = field(body, 'template');
+      if (named !== undefined) return namedSandbox(named);
       const t = await user.requestTemplate(field(body, 'needs'), job, about);
       if ('reason' in t) return no(t.status, t.reason);
       const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
@@ -196,11 +201,35 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       const r = user.sandbox(t.template, job, about);
       if (r.state === 'waiting') return { status: 202, text: `waiting: the sandbox runs of template ${t.template} wait for a person to approve them on Access requests.${later}` };
       if (r.state === 'declined') return no(403, `a person declined the sandbox runs of template ${t.template}: ${r.reason ?? 'no reason given'}. Find another way.`);
+      return approved(t.template, r);
+    }
+
+    /** The approval of the job's sandbox runs of `template`: how it runs each step (issue #1349). */
+    function approved(template: string, r: SandboxRequestView): SkillAnswer {
       record('skill.loaded');
       return {
         status: 200,
-        text: `${SANDBOX_SKILL}: the sandbox runs of template ${t.template} are approved for this job, by ${nameWithoutEmail(r.approvedBy ?? 'a person')}. A sandbox never runs this job and never joins the hopper as a machine. Run each command that needs these assets as a box step: the hopper makes a new sandbox of template ${t.template} for the step, mints short-lived credentials for it there, gives back the output, exit code and outputs, and destroys the sandbox when the step ends. Nothing is kept between steps.\n  sh "$HOPPER_STEP" box ${t.template} --command '<the command>'\nLoad the box-step skill (sh "$HOPPER_SKILL" box-step) for the inputs, the outputs, --plan-id and the credentials in the sandbox.\n`,
+        text: `${SANDBOX_SKILL}: the sandbox runs of template ${template} are approved for this job, by ${nameWithoutEmail(r.approvedBy ?? 'a person')}. A sandbox never runs this job and never joins the hopper as a machine. Run each command that needs these assets as a box step: the hopper makes a new sandbox of template ${template} for the step, mints short-lived credentials for it there, gives back the output, exit code and outputs, and destroys the sandbox when the step ends. Nothing is kept between steps.\n  sh "$HOPPER_STEP" box ${template} --command '<the command>'\nLoad the box-step skill (sh "$HOPPER_SKILL" box-step) for the inputs, the outputs, --plan-id and the credentials in the sandbox.\n`,
       };
+    }
+
+    /**
+     * Issue #1471: the sandbox runs of a template the user has, named (`--template NAME`), as a brief often names one. The
+     * template stays as it is: a person approves the runs, and the template too when it waits for them.
+     */
+    function namedSandbox(name: string): SkillAnswer {
+      if (field(body, 'needs') !== undefined) return no(400, 'give --template NAME or --needs, not both');
+      const t = user.template(name);
+      if (!t) return no(404, `there is no template ${name}. Name a template the user has, or say what the work needs with --needs.`);
+      if (!about?.plan && t.profiles.some((p) => p.operation !== 'read')) {
+        return no(400, `template ${name} changes assets: say what the box will do with --plan "<the commands or the plan; for each change, what it changes (resource names) and whether it can be undone>"`);
+      }
+      const r = user.sandbox(name, job, about);
+      const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
+      if (r.state === 'waiting') return { status: 202, text: `waiting: the sandbox runs of template ${name} wait for a person to approve them on Access requests.${later}` };
+      if (r.state === 'declined') return no(403, `a person declined the sandbox runs of template ${name}: ${r.reason ?? 'no reason given'}. Find another way.`);
+      if (!templateReady(t)) return { status: 202, text: `waiting: the sandbox runs of template ${name} are approved, but the template waits for a person or for its read-only check on Access requests.${later}` };
+      return approved(name, r);
     }
 
     async function link(s: Skill, l: NonNullable<Skill['link']>): Promise<SkillAnswer> {

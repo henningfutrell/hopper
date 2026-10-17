@@ -26,7 +26,7 @@ const VAULT_CHANGES: readonly EventType[] = [
   'vault.sandbox_approved', 'vault.sandbox_declined', 'vault.sandbox_started', 'vault.sandbox_failed',
 ];
 /** The fields of a request that are asked again; `wait` and `timeout` are the watch's. */
-const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs'];
+const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs', 'template'];
 
 /** One user's side: their job stream, and their event log to hear the vault's changes on. */
 export interface WaitUser {

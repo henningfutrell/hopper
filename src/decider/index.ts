@@ -79,6 +79,12 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
       continue;
     }
+    const sandboxes = job.pendingAnswer === undefined ? inputs.sandboxesHeld?.find((h) => h.jobId === job.id) : undefined;
+    if (sandboxes) {
+      // Issue #1471: a job starts only once the sandboxes its prompt names are approved and ready, never to stop mid-run.
+      hold.push({ jobId: job.id, reason: sandboxes.reason });
+      continue;
+    }
     const native = nativeHold(job, machines, inputs.unavailableExecutors, inputs.signedOut, inputs.credentialHeld) ?? cleanupHold(job, inputs.cleanupDue ?? []) ?? problemHold(job, machines, inputs.problems ?? [])
       ?? bringsToGate(job, machines, inputs.problems ?? [], inputs.blastRadius, inputs.signedOut, inputs.credentialHeld);
     if (!native && job.pendingAnswer !== undefined) {

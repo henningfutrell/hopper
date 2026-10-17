@@ -5,7 +5,7 @@
 // commands as box steps: each in a sandbox of its own, of the template, that the hopper burns after the step (issue
 // #1349, src/sandbox/need-box.ts). The approval starts nothing: no box waits between steps, and none joins as a machine.
 // Every step is an event on the job's timeline. A person declines a request with a reason the job is told. A request
-// whose job is no longer at work is forgotten.
+// whose job ended is forgotten. Issue #1471: the hopper asks for the sandboxes a job's prompt names before it starts.
 // Issue #1001: a run needs no separate approval when the user's auto-approve policy holds its template's blast radius,
 // or when a person approved the template this job asked for, or waited on: that approval was given for this job's run;
 // or when a person's remembered write approvals cover every change the template makes (src/domain/remembered-writes.ts).
@@ -23,8 +23,8 @@ export interface SandboxRequestsOptions {
   record(event: NewEvent): void;
   approvals(): SandboxApprovals;
   template(name: string): TemplateView | undefined;
-  /** Whether the job is at work: a request of a job that is not is forgotten. */
-  atWork(jobId: string): boolean;
+  /** Whether the job has not ended (issue #1471: a job waiting to start too): a request of a job that ended is forgotten. */
+  live(jobId: string): boolean;
   jobTitle?(jobId: string): string | undefined;
   /** The job's issue or pull request (issue #1001). */
   jobUrl?(jobId: string): string | undefined;
@@ -50,7 +50,7 @@ export interface SandboxRequests {
   approve(id: string, by: string): SandboxRequestResult;
   /** A person declines a waiting request, with the reason the job is told. */
   decline(id: string, reason: string, by: string): SandboxRequestResult;
-  /** The requests of jobs at work, oldest first. */
+  /** The requests of jobs not ended, oldest first. */
   list(): SandboxRequestView[];
 }
 
@@ -64,8 +64,8 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   };
 
   const forget = (): void => {
-    for (const [id, r] of requests) if (!o.atWork(r.jobId)) requests.delete(id);
-    for (const k of waitedOn) if (!o.atWork(k.slice(0, k.indexOf(' ')))) waitedOn.delete(k);
+    for (const [id, r] of requests) if (!o.live(r.jobId)) requests.delete(id);
+    for (const k of waitedOn) if (!o.live(k.slice(0, k.indexOf(' ')))) waitedOn.delete(k);
   };
 
   /**

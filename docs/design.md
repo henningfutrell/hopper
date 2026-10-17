@@ -22735,3 +22735,45 @@ hopper follows, on the repositories where a person turned it on.
 forced too", "refuses a push to another job repository its user cannot push to", a repository the hopper does not work
 on refused), `test/integration/github-proxy.test.ts` (a pull request on another job repository, marked ready; one
 elsewhere refused), `test/github-proxy/proxy.test.ts` (`checkRequest`), `test/integration/contribution.test.ts`.
+
+## Sandboxes before the start (issue #1471, 2026-10-16)
+
+A direct job's brief said to work in a box of template `cluster-role-builder`. The job's only approved sandbox was of a
+template its `--needs` made. It learned of the gap mid-run, when its box step was refused, and could not fix it: a
+sandbox ask took only `--needs`. Several rounds of questions followed. Now the hopper finds the templates a job will need
+before the job starts, and asks a person for them up front.
+
+- **Named templates** (`namedTemplates`, `src/domain/sandboxes-before-start.ts`, pure). A template of the user's is
+  named in a job's prompt when its whole name comes right after `template` or `box` (or `box of template`), quoted or
+  not: `box cluster-role-builder`, ``template `cluster-role-builder` ``. A name that is only a word of the text is not
+  named ("fix the web page" names no template `web`), and a name no template has is not named. Only the user's own
+  templates are matched, so the check never guesses at a template that does not exist.
+- **The ask** (`sandboxesHeld`, `src/users/sandbox-requests.ts`). At each Decision, the engine's gather step
+  (`src/engine/decision-step.ts`, engine option `sandboxesHeld`) gives the waiting jobs to it. For each job that is
+  accepted, of a judged origin and text, not resuming after a question, and with a prompt, it asks for the sandbox runs
+  of every template the prompt names, with the purpose `BEFORE_START_PURPOSE`. A request is the one the job has when
+  asked again: no second event, no second card. The approvals that skip a person — skip sandbox approval, the
+  auto-approve policy, remembered write approvals — apply as to any sandbox request. The vault's view is read only when
+  a waiting job may name a template.
+- **The hold** (`sandboxesHold`, pure; the decider, `src/decider/index.ts`). A job is held `awaiting its sandboxes: …`
+  while one of its requests waits for a person, or an approved one's template is not ready (`templateReady`: approved,
+  its image approved, every profile approved, its read-only check passed). A declined request holds nothing: a person
+  said no, and the job is told so when it asks. The hold comes after the queue gate and before every other judgement
+  of a job not resuming: a person's approval of a router hold does not pass it. The decider stays pure: the reasons
+  come in as the input `sandboxesHeld`.
+- **One approval for all of them.** Every request of a job is on Access requests, panel **Sandbox runs**, at once,
+  before the job starts: **Approve selected** (issue #1018) approves them in one action.
+- **Requests live until the job ends.** A sandbox request was forgotten when its job was not at work. It is now kept
+  while the job is queued, held, claimed or at work (`live`), so the approval given before the start is there when the
+  job's box step asks. Requests are still kept in memory: after a restart, the next Decision asks again for a job that
+  has not started.
+- **A job may name a template** (`sh "$HOPPER_SKILL" sandbox --template NAME --why …`, `src/skills/broker.ts`). In place
+  of `--needs`, not with it. The template stays as it is: the hopper makes and widens nothing. A template whose profiles
+  change an asset takes `--plan`, as a `--needs` ask that changes one does. Approved, but the template not ready: 202,
+  waiting. A template the user does not have: no. The refusal of a box step of a template the job has no approval of
+  says how to ask for it by name.
+
+**Tests.** `test/domain/sandboxes-before-start.test.ts` (named templates; the hold), `test/decider/sandboxes-before-start.test.ts`
+(the decider holds; the queue gate first; never a job resuming), `test/users/sandboxes-held.test.ts` (asked once, all at
+once; declined and skip sandbox approval do not hold; nothing asked for a job at the gate, not judged or resuming), and
+`test/integration/job-sandboxes.test.ts` (a held job starts once a person approves its request; `--template`).
