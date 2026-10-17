@@ -1,15 +1,17 @@
-// A GitLab source (issue #1448 part 2, design.md "A GitLab source"), through the real daemon, store and HTTP edge; GitLab is
-// a fake on loopback (test/support/fake-gitlab.ts).
+// A GitLab source (issue #1448, design.md "A GitLab source", "Jobs through GitLab"), through the real daemon, store and HTTP
+// edge, with Access (the in-memory OpenFGA); GitLab is a fake on loopback (test/support/fake-gitlab.ts).
 //
 // Feature: a GitLab source
 //   Scenario: a user connects GitLab with a personal access token and picks projects; the hopper adds the GitLab source, and
-//     Intake lists the labelled open issues of the picked projects, each with why it is not taken; nothing is written to GitLab
+//     Intake lists the labelled open issues of the picked projects; the account's own issue becomes a job, of the GitLab
+//     source, and its issue is labelled claimed at GitLab; another person's issue says why it is not taken
 //   Scenario: the token is never answered; no account to pick for is not found; removing the account removes its source
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SourceStatus } from '../../src/domain/types.ts';
 import type { GitLabAccountStatus } from '../../src/domain/gitlab-account.ts';
 import type { IntakeOutcome } from '../../src/domain/intake.ts';
-import { NOT_TAKEN_YET } from '../../src/gitlab/source.ts';
+import type { Job } from '../../src/domain/types.ts';
+import { NOT_TRUSTED } from '../../src/gitlab/source.ts';
 import { createFakeGitLab } from '../support/fake-gitlab.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -25,7 +27,8 @@ afterEach(async () => {
 async function setup() {
   const gitlab = await createFakeGitLab({
     issues: [
-      { project: 'ada/tools', iid: 1, title: 'Fix the parser', author: 'ada', assignees: ['ada'], labels: ['hopper'] },
+      { project: 'ada/tools', iid: 1, title: 'Fix the parser', description: 'It drops the last line.', author: 'ada', assignees: ['ada'], labels: ['hopper'] },
+      { project: 'ada/tools', iid: 2, title: 'From bob', description: 'Do this.', author: 'bob', assignees: ['ada'], labels: ['hopper'], labelledBy: 'ada', assignedBy: 'ada' },
       { project: 'acme/api', iid: 5, title: 'Not picked', author: 'ada', assignees: ['ada'], labels: ['hopper'] },
     ],
   });
@@ -43,7 +46,7 @@ const sources = async (app: TestApp) => (await app.api<{ sources: SourceStatus[]
 const gitlabSource = async (app: TestApp) => (await sources(app)).find((s) => s.kind === 'gitlab-account');
 
 describe('a GitLab source', () => {
-  it('lists the labelled open issues of the picked projects in Intake, through the GitLab account\'s token', async () => {
+  it('takes the account\'s own issue as a job, labels it claimed at GitLab, and says why another person\'s is not taken', async () => {
     const { app, gitlab } = await setup();
     const token = await app.login();
     expect(await gitlabSource(app)).toBeUndefined();
@@ -53,10 +56,24 @@ describe('a GitLab source', () => {
     expect(paused.detail.paused).toContain('no GitLab project is picked');
 
     expect((await post(app, token, { action: 'choose', projects: ['ada/tools'] })).body.account).toMatchObject({ projects: ['ada/tools'] });
-    const listed = await waitFor(async () => { const s = await gitlabSource(app); const i = s?.detail.intake as IntakeOutcome[] | undefined; return i?.length ? i : undefined; }, { what: 'Intake to list the GitLab issue' });
-    expect(listed).toEqual([{ key: `${gitlab.url}/ada/tools/-/issues/1`, title: 'Fix the parser', repo: 'ada/tools', reason: NOT_TAKEN_YET, group: 'other' }]);
+    const key = `${gitlab.url}/ada/tools/-/issues/1`;
+    const job = await waitFor(async () => (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.find((j) => j.source?.key === key), { what: 'the GitLab issue\'s job' });
+    expect(job.source).toMatchObject({ kind: 'gitlab-account', repo: 'ada/tools', number: 1, url: key, origin: 'trusted' });
+    expect(job.spec.payload.prompt).toContain(`git push to ${gitlab.url} go through the hopper`);
+    await waitFor(() => gitlab.issues.find((i) => i.iid === 1)!.labels.includes('hopper:claimed') || undefined, { what: 'the claimed label at GitLab' });
+    const listed = await waitFor(async () => { const i = (await gitlabSource(app))?.detail.intake as IntakeOutcome[] | undefined; return i?.length === 2 ? i : undefined; }, { what: 'Intake to list the GitLab issues' });
+    expect(listed.find((x) => x.key === key)).toMatchObject({ jobId: job.id });
+    expect(listed.find((x) => x.title === 'From bob')).toMatchObject({ reason: `${NOT_TRUSTED}: bob wrote it, and is not a trusted actor`, group: 'other' });
     expect(gitlab.requests.every((r) => r.token === 'glpat-ada')).toBe(true);
     expect(gitlab.requests.some((r) => r.path.includes('acme%2Fapi/issues'))).toBe(false);
+    // The test daemon has no herdr-claude executor, so the job fails at once: its end label replaces the claim.
+    await waitFor(async () => ((await app.api<Job>('GET', `/api/jobs/${job.id}`)).body.status === 'failed') || undefined, { what: 'the job to end' });
+    await waitFor(() => gitlab.issues.find((i) => i.iid === 1)!.labels.includes('hopper:failed') || undefined, { what: 'the end label at GitLab' });
+    expect(gitlab.requests.filter((r) => r.method === 'PUT').map((r) => [r.path, r.body])).toEqual([
+      ['/api/v4/projects/ada%2Ftools/issues/1', { add_labels: 'hopper:claimed' }],
+      ['/api/v4/projects/ada%2Ftools/issues/1', { add_labels: 'hopper:failed', remove_labels: 'hopper:claimed' }],
+    ]);
+    expect(gitlab.issues.find((i) => i.iid === 1)!.labels).toEqual(['hopper', 'hopper:failed']);
   });
 
   it('never answers the token, finds no account to pick for, and removes the source with the account', async () => {

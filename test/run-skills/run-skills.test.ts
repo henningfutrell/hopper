@@ -10,6 +10,7 @@ import { checkRunSkill, loadRunSkill, RUN_SKILL_NAMES } from '../../src/run-skil
 import { PROTOCOL_LINES } from '../../src/job-rules/index.ts';
 
 const input = { repo: 'acme/widgets', text: 'The export button does nothing.' };
+const scope = { repos: ['acme/widgets'] };
 
 describe('run skills: packaging and versioning', () => {
   it('each run skill is its plain files, named by a content hash: the same files, the same id', () => {
@@ -63,11 +64,11 @@ describe('the file-issue skill: one source for the constraints', () => {
 
   it('every constraint has an id and a check, and a clean draft passes them all', () => {
     expect(new Set(DRAFT_CONSTRAINTS.map((c) => c.id)).size).toBe(DRAFT_CONSTRAINTS.length);
-    expect(checkDraft({ title: 'Export button does nothing', body: 'The export button in `ui/src/views/jobs.tsx` does nothing.', labels: ['bug'] })).toEqual([]);
+    expect(checkDraft({ repo: 'acme/widgets', title: 'Export button does nothing', body: 'The export button in `ui/src/views/jobs.tsx` does nothing.', labels: ['bug'] }, scope)).toEqual([]);
   });
 
   it('the check finds what each constraint forbids', () => {
-    const found = (d: Parameters<typeof checkDraft>[0]) => checkDraft(d).map((f) => f.constraint);
+    const found = (d: Omit<Parameters<typeof checkDraft>[0], 'repo'>) => checkDraft({ repo: 'acme/widgets', ...d }, scope).map((f) => f.constraint);
     expect(found({ title: 't', body: 'token ghp_abcdefghijklmnopqrstuvwxyz0123456789' })).toContain('no-secret');
     expect(found({ title: 't', body: 'Write to someone@example.com' })).toContain('no-personal-data');
     expect(found({ title: 't', body: 'It fails in /home/someone/work' })).toContain('no-personal-data');
@@ -81,7 +82,7 @@ describe('the file-issue skill: one source for the constraints', () => {
   });
 
   it('an email address is not read as a mention', () => {
-    expect(checkDraft({ title: 't', body: 'mail a@example.com' }).map((f) => f.constraint)).not.toContain('no-mention');
+    expect(checkDraft({ repo: 'acme/widgets', title: 't', body: 'mail a@example.com' }, scope).map((f) => f.constraint)).not.toContain('no-mention');
   });
 });
 

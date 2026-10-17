@@ -10,8 +10,8 @@ import type { ForgeRequest } from './fake-forges.ts';
 
 const GIT_PATH = /^\/([^/]+\/[^/]+?)(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;
 
-/** One git request answered by `git-http-backend` (CGI) over the bare repositories under `root`. */
-function gitBackend(root: string, req: IncomingMessage, res: ServerResponse, u: URL, repo: string, rest: string, user: string | undefined): void {
+/** One git request answered by `git-http-backend` (CGI) over the bare repositories under `root`; the fake GitLab's too (issue #1448). */
+export function gitBackend(root: string, req: IncomingMessage, res: ServerResponse, u: URL, repo: string, rest: string, user: string | undefined): void {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH, GIT_PROJECT_ROOT: root, GIT_HTTP_EXPORT_ALL: '1', PATH_INFO: `/${repo}.git/${rest}`,
     QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method ?? 'GET', CONTENT_TYPE: req.headers['content-type'] ?? '',

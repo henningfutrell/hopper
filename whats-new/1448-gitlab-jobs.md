@@ -1,0 +1,1 @@
+- An issue on GitLab that your GitLab account wrote, labelled hopper and assigned to itself now becomes a job. The job works in its GitLab project, pushes through the hopper with your GitLab account, and opens a merge request. The job page shows the GitLab account it acts as.

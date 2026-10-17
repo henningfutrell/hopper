@@ -1,65 +1,171 @@
-// The GitLab source (issue #1448 part 2, design.md "A GitLab source"): the open issues labelled `hopper` in the projects
-// picked for the user's GitLab account, read through that account's token, listed in Intake. This part takes no job from
-// GitLab: a job cannot act through GitLab yet (its git and its API through the hopper are a later part), so each issue is
-// listed with why it is not taken, and nothing is written to GitLab. Paused while no account is attached, its token ended,
-// or no project is picked.
+// The GitLab source (issue #1448, design.md "A GitLab source", "Jobs through GitLab"): the open issues labelled `hopper` in
+// the projects picked for the user's GitLab account, read through that account's token, listed in Intake. An issue assigned
+// to the account, of a trusted origin (origin.ts, Access decides), with no end label, becomes a job (part 3): it works in a
+// clone of its project, fetched and pushed through the hopper with the account's token (git-broker.ts), and opens its merge
+// request with git's push options. The hopper writes only its labels to the issue: `hopper:claimed` while a job holds it,
+// then its end label. Paused while no account is attached, its token ended, or no project is picked.
 import type { JobSource, SourceSignal } from '../domain/ports.ts';
+import { SourceError } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import type { SourceItem } from '../domain/source-item.ts';
 import type { IntakeOutcome } from '../domain/intake.ts';
-import { GITLAB_LABEL, type GitLabIssue } from '../domain/gitlab-account.ts';
-import type { GitLabAccount } from './account.ts';
+import { GITLAB_LABEL, GITLAB_SOURCE_KIND, type GitLabIssue } from '../domain/gitlab-account.ts';
+import { LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED } from '../sources/github/labels.ts';
+import { CHECKS_LINE, untrustedBlock } from '../sources/github/context.ts';
+import { NoGitLabAccount, type GitLabAccount } from './account.ts';
+import { GitLabNotFound } from './api.ts';
+import { gitlabActs, untrustedActs } from './origin.ts';
 
-/** Why a GitLab issue assigned to the account is not taken: this part only lists them. */
-export const NOT_TAKEN_YET = 'jobs do not act through GitLab yet: the hopper lists this issue, and takes it in a later version';
+/** The labels a job's end leaves on a GitLab issue: any of them keeps the issue out until a person removes it. */
+const END_LABELS = [LABEL_DONE, LABEL_FAILED, LABEL_REJECTED] as const;
 
-export function createGitLabSource(o: { name: string; account: GitLabAccount; label?: string }): JobSource {
+/** Why an issue not of a trusted origin is not taken: request cards from GitLab are a later part. */
+export const NOT_TRUSTED = 'not of a trusted origin';
+
+export interface GitLabSourceOptions {
+  name: string;
+  account: GitLabAccount;
+  label?: string;
+  /** The executor of its jobs, and an optional model (the plugin's options). */
+  executor?: string;
+  model?: string;
+  /** A label's priority; else `defaultPriority`. */
+  priorityLabels?: Record<string, number>;
+  defaultPriority?: number;
+}
+
+const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
+const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+/** A double-quoted shell word of `s`, for a push option in the done line. */
+const quoted = (s: string): string => `"${s.replace(/["\\$`]/g, (c) => `\\${c}`)}"`;
+
+/** The GitLab line (issue #1448 part 3): where the issue is, what goes through the hopper, and what does not. */
+export const gitlabLine = (baseUrl: string): string => `gitlab: this issue and its project are on GitLab at ${baseUrl}, not on GitHub. sh "$HOPPER_GH" acts only on GitHub: do not use it for this job. git fetch and git push to ${baseUrl} go through the hopper by themselves, with the GitLab account the hopper holds: this machine holds no GitLab token. Never log in to GitLab yourself, and do not read GitLab's API or pages: the hopper does not take those for a job yet`;
+
+/** What done means for a GitLab job (issue #1448 part 3): its merge request, opened with git's push options as it pushes. */
+export function gitlabDoneLine(iid: number, defaultBranch: string | undefined, title: string): string {
+  const target = defaultBranch ?? 'the default branch';
+  const push = `git push -o merge_request.create${defaultBranch ? ` -o merge_request.target=${defaultBranch}` : ''} -o merge_request.title=${quoted(oneLine(title))} -o ${quoted(`merge_request.description=Closes #${iid}`)} origin HEAD:<your branch>`;
+  return `done: once the change is ready for review — the repo's own checks pass, the change is pushed to a new branch of your own work, and a merge request from it into ${target} is open with "Closes #${iid}" in its description. Open the merge request as you push the branch, with git's push options: ${push}. A push goes only to a branch of your own work, never to ${target}. A local commit or an unpushed branch is not done. Do not merge the merge request: a person reviews and merges it on GitLab`;
+}
+
+export function createGitLabSource(o: GitLabSourceOptions): JobSource {
   const label = o.label ?? GITLAB_LABEL;
-  let listed: GitLabIssue[] = [];
+  const priorities = o.priorityLabels ?? { 'hopper:high': 75, 'hopper:low': 25 };
+  const fallback = o.defaultPriority ?? 50;
+  let outcomes: IntakeOutcome[] = [];
   let repoErrors: Record<string, string> = {};
-  const outcome = (i: GitLabIssue, account: string | undefined): IntakeOutcome => {
-    const mine = account !== undefined && i.assignees.some((a) => a.toLowerCase() === account.toLowerCase());
+
+  const priorityOf = (labels: readonly string[]): { priority: number; reason: string } => {
+    const hit = Object.entries(priorities).filter(([l]) => labels.includes(l)).sort((a, b) => b[1] - a[1])[0];
+    return hit ? { priority: hit[1], reason: `label:${hit[0]}` } : { priority: fallback, reason: 'default' };
+  };
+
+  const toItem = (i: GitLabIssue, baseUrl: string, defaultBranch: string | undefined, account: string): SourceItem => {
+    const p = priorityOf(i.labels);
+    const context = [
+      '[hopper issue context]',
+      `forge: GitLab · project: ${i.project} · issue: #${i.iid} · url: ${i.url}`,
+      `labels: ${i.labels.join(', ')} · author: ${i.author}`,
+      `priority: ${p.priority} (${p.reason})`,
+      gitlabLine(baseUrl),
+      CHECKS_LINE.replace(/pull request/g, 'merge request'),
+      gitlabDoneLine(i.iid, defaultBranch, i.title),
+    ].join('\n');
     return {
-      key: i.url, title: i.title, repo: i.project,
-      ...(mine
-        ? { reason: NOT_TAKEN_YET, group: 'other' as const }
-        : { reason: `not assigned to your GitLab account${account ? ` ${account}` : ''}: assign it at GitLab`, group: 'not-assigned' as const }),
+      key: i.url, url: i.url, title: i.title, body: i.description,
+      prompt: `${untrustedBlock({ title: i.title, body: i.description }, [], 0)}\n\n${context}`,
+      env: { HOPPER_ISSUE_URL: i.url, HOPPER_REPO: i.project, HOPPER_ISSUE_NUMBER: String(i.iid), HOPPER_ISSUE_TITLE: oneLine(i.title) },
+      author: i.author, assignee: account, priority: p.priority, priorityReason: p.reason,
+      labels: i.labels, repo: i.project, number: i.iid,
+      executor: o.executor ?? 'herdr-claude', ...(o.model ? { model: o.model } : {}),
+      origin: 'trusted',
+      ...(i.description.trim() === '' ? { invalid: 'empty issue body' } : {}),
     };
   };
+
+  /** Why an issue is not taken before its origin is read; undefined: it may be. */
+  const notTaken = (i: GitLabIssue, account: string): Pick<IntakeOutcome, 'reason' | 'group'> | undefined => {
+    const ended = END_LABELS.find((l) => i.labels.includes(l));
+    if (ended) return { reason: `labelled ${ended}: remove the label at GitLab to offer it again`, group: 'other' };
+    if (i.labels.includes(LABEL_BACKBURNER)) return { reason: `on the backburner (${LABEL_BACKBURNER})`, group: 'backburner' };
+    if (!i.assignees.some((a) => same(a, account))) return { reason: `not assigned to your GitLab account ${account}: assign it at GitLab`, group: 'not-assigned' };
+    return undefined;
+  };
+
+  /** Why the issue's origin is not trusted, one reason each; empty: it is. */
+  async function originOf(i: GitLabIssue, account: string): Promise<string[]> {
+    const [events, notes] = await o.account.act((a) => Promise.all([a.labelEvents(i.project, i.iid), a.systemNotes(i.project, i.iid)]));
+    const acts = gitlabActs(i, events, notes, label, account);
+    const trusted = await o.account.trusted(acts.flatMap((a) => (a.userId === undefined ? [] : [a.userId])));
+    return untrustedActs(acts, trusted);
+  }
+
   return {
     name: o.name,
-    kind: 'gitlab-account',
+    kind: GITLAB_SOURCE_KIND,
     describe() {
       const s = o.account.status();
       const connected = 'account' in s ? { login: s.account, baseUrl: s.baseUrl, projects: s.projects } : {};
-      return { ...connected, label, issues: listed.length, ...(Object.keys(repoErrors).length ? { repoErrors } : {}) };
+      return { ...connected, label, issues: outcomes.length, ...(Object.keys(repoErrors).length ? { repoErrors } : {}) };
     },
     paused: () => o.account.paused(),
     async discover(): Promise<SourceItem[]> {
       const s = o.account.status();
-      if (s.state !== 'connected') { listed = []; repoErrors = {}; return []; }
-      const read: GitLabIssue[] = [];
+      const clear = (): SourceItem[] => { outcomes = []; repoErrors = {}; return []; };
+      if (s.state !== 'connected') return clear();
+      const items: SourceItem[] = [];
+      const listed: IntakeOutcome[] = [];
       const errors: Record<string, string> = {};
       for (const project of s.projects) {
         try {
-          read.push(...await o.account.issues(project, label));
+          const issues = await o.account.issues(project, label);
+          let branch: { name: string | undefined } | undefined;
+          for (const i of issues) {
+            const base = { key: i.url, title: i.title, repo: i.project };
+            const out = notTaken(i, s.account);
+            if (out) { listed.push({ ...base, ...out }); continue; }
+            let why: string[];
+            try { why = await originOf(i, s.account); } catch (err) {
+              if (o.account.status().state !== 'connected') throw err;
+              listed.push({ ...base, reason: `its origin cannot be read: ${(err as Error).message}`, group: 'other' });
+              continue;
+            }
+            if (why.length > 0) { listed.push({ ...base, reason: `${NOT_TRUSTED}: ${why.join('; ')}`, group: 'other' }); continue; }
+            branch ??= { name: await o.account.act((a) => a.defaultBranch(project)) };
+            items.push(toItem(i, s.baseUrl, branch.name, s.account));
+            listed.push(base);
+          }
         } catch (err) {
           errors[project] = (err as Error).message;
           if (o.account.status().state !== 'connected') break; // its token ended: the rest would be refused too
         }
       }
-      if (o.account.status().state !== 'connected') { listed = []; repoErrors = {}; return []; } // ended now: paused from the next sync
-      listed = read; repoErrors = errors;
+      if (o.account.status().state !== 'connected') return clear(); // ended now: paused from the next sync
+      outcomes = listed; repoErrors = errors;
       const projects = s.projects.length;
       if (projects > 0 && Object.keys(errors).length === projects) throw new Error(`GitLab answered no project: ${Object.values(errors)[0]}`);
-      return [];
+      return items;
     },
-    intake() {
-      const s = o.account.status();
-      const account = 'account' in s ? s.account : undefined;
-      return listed.map((i) => outcome(i, account));
-    },
+    intake: () => outcomes,
     check: async (_active: Job[]): Promise<SourceSignal[]> => [],
-    report: async (r) => r.job.sourceState?.source ?? {}, // never asked: this part takes no job
+    async report(r) {
+      const before = r.job.sourceState?.source ?? {};
+      const project = r.job.source?.repo, iid = r.job.source?.number;
+      if (project === undefined || iid === undefined) throw new SourceError(`job ${r.job.id} names no GitLab issue`, true);
+      const change = r.kind === 'claimed' ? { add: [LABEL_CLAIMED], remove: [] }
+        : r.kind === 'finished' ? { add: [LABEL_DONE], remove: [LABEL_CLAIMED] }
+          : r.kind === 'failed' ? (r.fixing ? { add: [], remove: [] } : { add: [LABEL_FAILED], remove: [LABEL_CLAIMED] })
+            : r.kind === 'rejected' ? { add: [LABEL_REJECTED], remove: [LABEL_CLAIMED] }
+              : { add: [], remove: [LABEL_CLAIMED] };
+      try {
+        await o.account.act((a) => a.editLabels(project, iid, change));
+      } catch (err) {
+        if (err instanceof GitLabNotFound) throw new SourceError(err.message, true, 404);
+        if (err instanceof NoGitLabAccount) throw new SourceError(err.message, false);
+        throw new SourceError((err as Error).message, false);
+      }
+      return { ...before, reported: r.kind };
+    },
   };
 }

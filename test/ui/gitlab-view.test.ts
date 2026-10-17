@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #1448 part 2: the GitLab account on Sources. Not connected, it takes the GitLab URL and a personal access token; a
 // refusal says why. Connected, it lists the projects the token reaches to pick, with the GitLab source's sync, and Remove this
-// account. A token GitLab refused reads "reconnect needed". It says that jobs do not act through GitLab yet. The whole app
+// account. A token GitLab refused reads "reconnect needed". It says which issues become jobs, and the token's scopes (issue #1448 part 3). The whole app
 // against a fake of the daemon's HTTP surface.
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +23,8 @@ describe('Sources view: the GitLab account', () => {
   it('connects with a GitLab URL and a token; a refusal says why', async () => {
     await boot({ '/api/gitlab-account': { account: { state: 'not-connected' } }, '/ui/api/gitlab-account': { account: { state: 'failed', error: 'GitLab refused the token: 401' } } });
     await vi.waitFor(() => expect(panel()?.getAttribute('data-gitlab-account')).toBe('not-connected'));
-    expect(document.body.textContent).toContain('Jobs do not act through GitLab yet');
+    expect(document.body.textContent).toContain('An issue that your GitLab account wrote, labelled and assigned to itself becomes a job');
+    expect(document.body.textContent).toContain('write_repository');
     await type(panel()!.querySelector('[data-gitlab-url]') as HTMLInputElement, 'https://gitlab.example.com');
     await type(panel()!.querySelector('[data-gitlab-token]') as HTMLInputElement, 'glpat-ada');
     await act(async () => { (panel()!.querySelector('[data-gitlab-token-connect]') as HTMLButtonElement).click(); });
