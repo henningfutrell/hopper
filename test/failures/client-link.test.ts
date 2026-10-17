@@ -74,6 +74,8 @@ describe('every ClientError the transport can throw', () => {
     'client ${t.machine}: ${status} ${text.slice(0, 200)}': 'its text',
     'client ${t.machine}: answer is not JSON': 'its text',
     'client ${t.machine}: its runtime answer has no status': 'its text',
+    'client ${t.machine}: its turn answer has no exit code': 'its text',
+    'client ${t.machine}: aborted': 'its text',
     'client ${t.machine}: ${started.error}': 'its text',
     'client ${t.machine}: no sign-in in its answer': 'its text',
   };
