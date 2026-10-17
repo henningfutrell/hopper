@@ -58,6 +58,18 @@ export function joined(slot: Slot, asked: boolean, asks: readonly SyncAsk[]): Pr
   return slot.queued.done;
 }
 
+/** The items not run again now; only their keys stay logged (issue #1402), so one that comes back is said again. */
+export function keepNotRerun(slot: Slot, notRerun: NotRerun[]): void {
+  const still = new Set(notRerun.map((n) => n.key));
+  for (const key of slot.loggedNotRerun) if (!still.has(key)) slot.loggedNotRerun.delete(key);
+  slot.notRerun = notRerun;
+}
+
+/** A job gone, or ended with nothing left to report, retries nothing (issue #1402). */
+export function dropRetries(slot: Slot, reports: (jobId: string) => boolean): void {
+  for (const id of slot.retrying.keys()) if (!reports(id)) slot.retrying.delete(id);
+}
+
 export function newSlot(source: JobSource): Slot {
   return {
     source, chain: Promise.resolve(), retrying: new Map(), notRerun: [], loggedNotRerun: new Set(),

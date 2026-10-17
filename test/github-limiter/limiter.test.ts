@@ -152,6 +152,14 @@ describe('the shared rate limiter (issue #436)', () => {
     expect(JSON.stringify(limiter.view())).not.toMatch(/t1|t2/);
   });
 
+  it('drops a bucket past its reset, so a renewed token\'s old bucket does not stay (issue #1402)', async () => {
+    const { req, poll, limiter, clock } = await setup();
+    await poll(1);
+    clock.t = RESET_MS + 1000;
+    await req('GET /repos/{owner}/{repo}/issues/{n}', { owner: 'o', repo: 'r', n: 1, headers: { authorization: 'token t2' } });
+    expect(limiter.view().buckets).toHaveLength(1);
+  });
+
   it('keeps at most the cache size, the least recently used out first', async () => {
     const clock = { t: 0 };
     const gh = fakeGitHub(clock);

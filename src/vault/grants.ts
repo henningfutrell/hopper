@@ -22,12 +22,14 @@ export function withVaultGrants(v: Vault, o: {
   clock: Clock;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
+  /** The jobs a person denied. Default: a set of its own. */
+  denied?: Set<string>;
 }): Vault {
   const { events, jobs, vaultGrants } = o.store;
   /** The open asks, by job. */
   const asks = new Map<string, VaultGrantAsk>();
   /** The jobs whose ask a person denied (issue #1138): still refused, they ask no more. */
-  const denied = new Set<string>();
+  const denied = o.denied ?? new Set<string>();
   /** The jobs the standing read grant granted (issue #1472): each keeps it while at work, whatever the setting is now. */
   const standing = new Set<string>();
 
@@ -142,6 +144,8 @@ export function withVaultGrants(v: Vault, o: {
       if (!job) return missing(jobId);
       if (!open().some((a) => a.job === job.id)) return { ok: false, code: 'conflict', error: `no grant ask waits for job ${jobId}` };
       asks.delete(job.id);
+      // A job no longer at work asks no more: its denial goes (issue #1402).
+      for (const id of denied) if (!AT_WORK.includes(jobs.get(id)?.status ?? '')) denied.delete(id);
       denied.add(job.id);
       events.append({ type: 'vault.grant_denied', jobId: job.id, data: { job: job.id, key: grantKeyOf(job), by } });
       return { ok: true };

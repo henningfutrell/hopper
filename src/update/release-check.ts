@@ -63,6 +63,9 @@ export function releaseAccount(accounts: ConnectedAccountTokens[], apiUrl = GITH
   return { token: () => a.token('github'), renew: (refused) => a.renew('github', refused) };
 }
 
+/** How many commits' answers are kept (issue #1402): the oldest goes first. */
+export const RELEASE_CHECKS_KEPT = 256;
+
 const hhmm = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
 
 export function createReleaseCheck(o: {
@@ -72,6 +75,8 @@ export function createReleaseCheck(o: {
   github: () => TokenSource | { problem: string };
   /** The shared rate limiter unless a test gives one. */
   limiter?: GitHubLimiter;
+  /** How many commits' answers are kept. Default RELEASE_CHECKS_KEPT. */
+  kept?: number;
 }): ReleaseCheck {
   const apiUrl = o.apiUrl ?? GITHUB_API;
   const req = o.limiter ? makeRequest(apiUrl, o.limiter) : makeRequest(apiUrl);
@@ -121,7 +126,9 @@ export function createReleaseCheck(o: {
           ? { verdict: { passed: false, reason: `GitHub rate-limited the hopper: it asks about ${short(commit)} again at ${hhmm(until)} UTC` }, settled: false, until }
           : { verdict: { passed: false, reason: `GitHub could not be asked about ${short(commit)}: ${e instanceof Error ? e.message : String(e)}` }, settled: false };
       }
+      known.delete(key);
       known.set(key, { ...answer, at: now });
+      for (const old of known.keys()) { if (known.size <= (o.kept ?? RELEASE_CHECKS_KEPT)) break; known.delete(old); }
       return answer.verdict;
     },
   };

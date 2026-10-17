@@ -32,7 +32,7 @@ import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from 
 import { TERMINAL_STATUSES, isRerunnable, type ActingPerson, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts'; import type { GiveBackCheck, GiveBackChecked } from '../domain/give-back.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
-import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
+import { REMOVED, detailOf, dropRetries, followSources, joined, keepNotRerun, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
 import { needsWork, pauseTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
@@ -139,17 +139,17 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     try {
       const source = await slot.source.report(build(job));
       write(jobId, mark(flagsOf(store.jobs.get(jobId) ?? job)), source);
-      slot.retrying.delete(jobId);
-      return true;
     } catch (e) {
-      if (e instanceof SourceError && e.permanent) {
-        const f = flagsOf(store.jobs.get(jobId) ?? job);
-        write(jobId, mark({ ...f, permanentErrors: [...(f.permanentErrors ?? []), { kind, message: e.message }] }));
-        return true;
+      if (!(e instanceof SourceError && e.permanent)) {
+        slot.retrying.set(jobId, message(e));
+        return false;
       }
-      slot.retrying.set(jobId, message(e));
-      return false;
+      const f = flagsOf(store.jobs.get(jobId) ?? job);
+      write(jobId, mark({ ...f, permanentErrors: [...(f.permanentErrors ?? []), { kind, message: e.message }] }));
     }
+    // Reported, or never to be (issue #1402): no retry is left.
+    slot.retrying.delete(jobId);
+    return true;
   }
 
 
@@ -241,7 +241,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       slot.loggedNotRerun.add(n.key);
       console.warn(`hopper: ${n.key} not run again: job ${n.job} ${n.status}, ${n.reason}`);
     }
-    slot.notRerun = notRerun;
+    keepNotRerun(slot, notRerun);
     return { seen: items.length, created };
   }
 
@@ -288,6 +288,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
+    dropRetries(slot, (id) => { const j = store.jobs.get(id); return !!j && needsWork(j); });
     delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
