@@ -13,8 +13,8 @@ let posts: { path: string; body: Record<string, unknown> }[] = [];
 
 const REPO = 'octo-org/ops';
 const USABLE = { provider: 'claude', available: true, usable: true, repos: [REPO] };
-const DRAFT = { repo: REPO, title: 'Queue stalls', body: '## Problem\nThe queue stalls.', findings: [], provider: 'claude', model: 'claude-sonnet-5-5', skill: 'issue-draft@1' };
-const CHECK = { repo: REPO, visibility: 'private', title: 'Queue stalls', body: '## Problem\nThe queue stalls.\n\n---\nnote', labels: [], assignees: [], findings: [] };
+const DRAFT = { repo: REPO, title: 'Queue stalls', body: '## Summary\nThe queue stalls.', notes: 'Rephrased the text.', findings: [], provider: 'claude', model: 'claude-sonnet-5-5', skill: 'file-issue@3f2a9c1e7b4d5a60' };
+const CHECK = { repo: REPO, visibility: 'private', title: 'Queue stalls', body: '## Summary\nThe queue stalls.\n\n---\nnote', labels: [], assignees: [], findings: [] };
 
 type Reply = Response | ((signal: AbortSignal | undefined) => Promise<Response>);
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
@@ -126,6 +126,7 @@ describe('File an issue', () => {
     await describeIt();
     await click(button(/Draft with Claude/));
     expect(field('Title').value).toBe('Queue stalls');
+    expect(document.querySelector('[data-slot="file-issue-notes"]')?.textContent).toContain('Rephrased the text.');
     await type(field('Title'), 'Queue stalls after a restart');
     await click(button(/Review and file/));
     expect(posts.at(-1)).toEqual({ path: '/ui/api/issue-drafts/check', body: { repo: REPO, title: 'Queue stalls after a restart', body: DRAFT.body } });
@@ -142,7 +143,7 @@ describe('File an issue', () => {
     await render({
       replies: {
         '/ui/api/issue-drafts/draft': [json(DRAFT)],
-        '/ui/api/issue-drafts/check': [json({ ...CHECK, findings: [{ kind: 'secret', what: 'a secret: a token or a key' }], refusal: 'the text holds a secret: a token or a key. Remove it: a secret is never posted' })],
+        '/ui/api/issue-drafts/check': [json({ ...CHECK, findings: [{ constraint: 'no-secret', what: 'it holds a secret: a token or a key' }], refusal: 'the text cannot be filed: it holds a secret: a token or a key. Change it' })],
       },
     });
     await describeIt();

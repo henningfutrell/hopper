@@ -36,7 +36,10 @@ const REPO = 'octo-org/ops';
 const DRAFTER: IssueDrafter = {
   provider: 'claude',
   available: async () => ({ ok: true }),
-  draft: async (prompt) => ({ title: 'Sign-in locks out after two tries', body: `## Problem\nTwo failed sign-ins lock the account.\n\nSeen with: ${prompt.includes('Job:') ? 'a job' : 'no job'}`, model: 'claude-sonnet-5-5' }),
+  draft: async (_skill, input) => ({
+    title: 'Sign-in locks out after two tries', notes: 'Rephrased.', model: 'claude-sonnet-5-5',
+    body: `## Summary\nTwo failed sign-ins lock the account.\n\nSeen with: ${input.context?.includes('Job:') ? 'a job' : 'no job'}`,
+  }),
 };
 
 async function start(o: { drafter?: IssueDrafter; viewer?: boolean } = {}) {
@@ -81,7 +84,7 @@ describe('File an issue (issue #471)', () => {
 
     const draft: Answer = await app.ui('/ui/api/issue-drafts/draft', ask, { token });
     expect(draft.status).toBe(200);
-    expect(draft.body).toMatchObject({ repo: REPO, title: 'Sign-in locks out after two tries', provider: 'claude', skill: 'issue-draft@1', findings: [] });
+    expect(draft.body).toMatchObject({ repo: REPO, title: 'Sign-in locks out after two tries', notes: 'Rephrased.', provider: 'claude', skill: expect.stringMatching(/^file-issue@[0-9a-f]{16}$/), findings: [] });
     expect(draft.body.body).toContain('Seen with: a job');
     expect(github.issues.filter((i) => i.repo === REPO)).toEqual([]);
 
@@ -104,7 +107,7 @@ describe('File an issue (issue #471)', () => {
     expect(filed.body).toEqual({ repo: REPO, number: issue.number, url: `${github.url}/${REPO}/issues/${issue.number}` });
 
     const [event] = eventsOf(app, 'issue_draft.filed');
-    expect(event).toMatchObject({ jobId: job.id, data: { repo: REPO, number: issue.number, url: filed.body.url, by: expect.any(String), provider: 'claude', skill: 'issue-draft@1' } });
+    expect(event).toMatchObject({ jobId: job.id, data: { repo: REPO, number: issue.number, url: filed.body.url, by: expect.any(String), provider: 'claude', skill: draft.body.skill } });
     expect(JSON.stringify(eventsOf(app, 'issue_draft.drafted'))).not.toContain('locked out');
   });
 

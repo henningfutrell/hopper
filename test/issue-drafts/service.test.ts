@@ -4,15 +4,20 @@
 //
 // Feature: File an issue
 //   Scenario: no provider, no GitHub, no job repository: it says why, and cannot be used
-//   Scenario: the prompt is what is sent, exactly; a repository that is not a job repository is refused
-//   Scenario: a draft comes back cleaned, with what was masked
+//   Scenario: the file-issue run skill's prompt is what is sent, exactly; a repository that is not a job repository is refused
+//   Scenario: a draft comes back cleaned, with the constraints it broke; its suggested labels are dropped
 //   Scenario: a cancel mid-draft, a timeout and a provider's error file nothing
-//   Scenario: filing needs the confirmation; an edit that brings in a secret is refused at filing
+//   Scenario: filing needs the confirmation; an edit that brings in a secret or an @ mention is refused at filing
 //   Scenario: a public repository needs its own confirmation; a filed issue has no label and no assignee
 import { describe, expect, it } from 'vitest';
 import { FILED_NOTE } from '../../src/domain/issue-drafts.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
 import { createIssueDrafts, IssueDraftRefused, type IssueDrafter, type IssueGitHub } from '../../src/issue-drafts/index.ts';
+import { fileIssuePrompt } from '../../src/run-skills/file-issue.ts';
+import { loadRunSkill } from '../../src/run-skills/index.ts';
+
+const SKILL = loadRunSkill('file-issue');
+const SKILL_NAME = `file-issue@${SKILL.id}`;
 
 const REPO = 'octo-org/hello';
 const TOKEN = `ghp_${'a'.repeat(36)}`;
@@ -28,7 +33,7 @@ function setUp(o: { drafter?: Partial<IssueDrafter>; visibility?: 'public' | 'pr
   const drafter: IssueDrafter = {
     provider: 'claude',
     available: async () => ({ ok: true }),
-    draft: async () => ({ title: 'Queue stalls after a restart', body: '## Problem\nThe queue stalls.', model: 'claude-sonnet-5-5' }),
+    draft: async () => ({ title: 'Queue stalls after a restart', body: '## Summary\nThe queue stalls.', notes: 'Rephrased.', model: 'claude-sonnet-5-5' }),
     ...o.drafter,
   };
   const drafts = createIssueDrafts({
@@ -48,7 +53,7 @@ const refusal = async (p: Promise<unknown>): Promise<IssueDraftRefused> => {
 
 /** A drafter that answers only when its run is ended. */
 const waits: Partial<IssueDrafter> = {
-  draft: (_p, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => resolve({ error: 'aborted' })); }),
+  draft: (_s, _i, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => resolve({ error: 'aborted' })); }),
 };
 
 describe('File an issue (issue #471)', () => {
@@ -60,29 +65,32 @@ describe('File an issue (issue #471)', () => {
     expect(await setUp().drafts.status()).toEqual({ provider: 'claude', available: true, usable: true, repos: [REPO] });
   });
 
-  it('shows the prompt as it is sent; a repository that is not a job repository is refused', async () => {
+  it('shows the run skill\'s prompt as it is sent; a repository that is not a job repository is refused', async () => {
     const sent: string[] = [];
-    const { drafts } = setUp({ drafter: { draft: async (p) => { sent.push(p); return { title: 't', body: 'b' }; } } });
-    const r = { repo: REPO, text: 'The queue stalls after a restart.', context: '- Job: j1 (failed)', instructions: 'Shorter title' };
+    const { drafts } = setUp({ drafter: { draft: async (skill, input) => { sent.push(fileIssuePrompt(skill, input)); return { title: 't', body: 'b', notes: '' }; } } });
+    const r = { repo: REPO, text: 'The queue stalls after a restart.', context: '- Job: j1 (failed)', instructions: 'Shorter title', previous: { title: 'Old title', body: 'Old body' } };
     const prompt = drafts.prompt(r);
+    expect(prompt).toContain(`hopper run skill file-issue ${SKILL.id}`);
     expect(prompt).toContain('The queue stalls after a restart.');
     expect(prompt).toContain('- Job: j1 (failed)');
+    expect(prompt).toContain('Old body');
     expect(prompt).toContain('Shorter title');
-    expect(prompt).toMatch(/Never name a person/);
+    expect(prompt).toContain(`Target repository: \`${REPO}\``);
     await drafts.draft(r, new AbortController().signal);
     expect(sent).toEqual([prompt]);
     expect((await refusal(drafts.draft({ ...r, repo: 'someone/else' }, new AbortController().signal))).status).toBe(400);
     expect(() => drafts.prompt({ ...r, repo: 'someone/else' })).toThrow(/not one of your job repositories/);
   });
 
-  it('answers the draft cleaned, with what was masked, and records it without the text', async () => {
-    const { drafts, events } = setUp({ drafter: { draft: async () => ({ title: 'Lockout', body: `Mail ada@example.com, token ${TOKEN}`, model: 'claude-sonnet-5-5' }) } });
+  it('answers the draft cleaned, with the constraints it broke, its labels dropped, and records it without the text', async () => {
+    const { drafts, events } = setUp({ drafter: { draft: async () => ({ title: 'Lockout', body: `Mail ada@example.com, token ${TOKEN}`, labels: ['hopper', 'bug'], notes: 'Kept short.', model: 'claude-sonnet-5-5' }) } });
     const d = await drafts.draft({ repo: REPO, text: 'A lockout.' }, new AbortController().signal);
     expect(d.body).not.toContain('ada@example.com');
     expect(d.body).not.toContain(TOKEN);
-    expect(d.findings.map((f) => f.kind).sort()).toEqual(['personal', 'secret']);
-    expect(d).toMatchObject({ repo: REPO, title: 'Lockout', provider: 'claude', model: 'claude-sonnet-5-5', skill: 'issue-draft@1' });
-    expect(events).toEqual([{ type: 'issue_draft.drafted', data: { repo: REPO, provider: 'claude', model: 'claude-sonnet-5-5', skill: 'issue-draft@1', masked: true } }]);
+    expect(d.findings.map((f) => f.constraint)).toEqual(['no-secret', 'no-personal-data', 'no-hopper-label']);
+    expect(d).toMatchObject({ repo: REPO, title: 'Lockout', notes: 'Kept short.', provider: 'claude', model: 'claude-sonnet-5-5', skill: SKILL_NAME });
+    expect(d).not.toHaveProperty('labels');
+    expect(events).toEqual([{ type: 'issue_draft.drafted', data: { repo: REPO, provider: 'claude', model: 'claude-sonnet-5-5', skill: SKILL_NAME, findings: ['no-secret', 'no-personal-data', 'no-hopper-label'] } }]);
   });
 
   it('a cancel mid-draft ends the run and files nothing', async () => {
@@ -90,7 +98,7 @@ describe('File an issue (issue #471)', () => {
     let started!: () => void;
     const running$ = new Promise<void>((resolve) => { started = resolve; });
     const { drafts, events, created } = setUp({
-      drafter: { draft: (_p, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => { ended = true; resolve({ error: 'aborted' }); }); started(); }) },
+      drafter: { draft: (_s, _i, signal) => new Promise((resolve) => { signal.addEventListener('abort', () => { ended = true; resolve({ error: 'aborted' }); }); started(); }) },
     });
     const cancel = new AbortController();
     const running = drafts.draft({ repo: REPO, text: 'A lockout.' }, cancel.signal);
@@ -125,7 +133,7 @@ describe('File an issue (issue #471)', () => {
 
   it('files only once the person confirmed it, with no label and no assignee, the note last', async () => {
     const { drafts, created, events } = setUp();
-    const issue = { repo: REPO, title: 'Queue stalls', body: '## Problem\nThe queue stalls.' };
+    const issue = { repo: REPO, title: 'Queue stalls', body: '## Summary\nThe queue stalls.' };
     expect((await refusal(drafts.file({ ...issue, confirmed: false }, 'ada'))).status).toBe(400);
     expect(created).toEqual([]);
 
@@ -136,15 +144,17 @@ describe('File an issue (issue #471)', () => {
 
     expect(await drafts.file({ ...issue, confirmed: true }, 'ada')).toEqual({ repo: REPO, number: 7, url: `https://github.com/${REPO}/issues/7` });
     expect(created).toEqual([{ repo: REPO, title: 'Queue stalls', body: check.body, labels: [] }]);
-    expect(events).toEqual([{ type: 'issue_draft.filed', data: { repo: REPO, number: 7, url: `https://github.com/${REPO}/issues/7`, by: 'ada', provider: 'claude', skill: 'issue-draft@1' } }]);
+    expect(events).toEqual([{ type: 'issue_draft.filed', data: { repo: REPO, number: 7, url: `https://github.com/${REPO}/issues/7`, by: 'ada', provider: 'claude', skill: SKILL_NAME } }]);
   });
 
-  it('scans the edited text again at filing: a secret the person put in is refused', async () => {
+  it('checks the edited text again at filing: a secret or an @ mention the person put in is refused', async () => {
     const { drafts, created } = setUp();
     const edited = { repo: REPO, title: 'Queue stalls', body: `It stalls. The token is ${TOKEN}` };
     expect((await drafts.check(edited)).refusal).toMatch(/secret/);
-    const e = await refusal(drafts.file({ ...edited, confirmed: true }, 'ada'));
-    expect(e.status).toBe(422);
+    expect((await refusal(drafts.file({ ...edited, confirmed: true }, 'ada'))).status).toBe(422);
+    const mention = { repo: REPO, title: 'Queue stalls', body: 'It stalls. Ask @octocat.' };
+    expect((await drafts.check(mention)).findings.map((f) => f.constraint)).toEqual(['no-mention']);
+    expect((await refusal(drafts.file({ ...mention, confirmed: true }, 'ada'))).status).toBe(422);
     expect(created).toEqual([]);
   });
 
