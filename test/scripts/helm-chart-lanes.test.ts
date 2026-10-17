@@ -42,6 +42,13 @@ describe('the Helm chart\'s lane pods', () => {
     expect(script).toMatch(/until .*; do sleep \d+; done/);
   });
 
+  it('copies the image\'s home into the volume without setting the times or mode of the volume\'s own directory', () => {
+    // The volume's root is not the agent's: `cp -a` on it fails (EPERM preserving its times), and the join never runs.
+    const script = join?.command?.join(' ') ?? '';
+    expect(script).toContain('cp -RPn /home/agent/. /var/lib/lane-home/');
+    expect(script).not.toMatch(/cp -[a-zA-Z]*a/);
+  });
+
   it('lets only the join step see the lane pool key: never the container the jobs run in', () => {
     const key = pod(lanes).volumes?.find((v) => v.secret?.secretName === 'hopper-lane-pool');
     expect(key).toBeDefined();

@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, joinLine, hostKeyCheck, clientReleaseText, clientUpdateLine, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, joinLine, hostKeyCheck, loopbackOnly, podRunnerCommands, clientReleaseText, clientUpdateLine, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -278,6 +278,16 @@ describe('the Add machine line (issue #308)', () => {
   it('a computer: the hopper\'s install script, from the URL this page is open at, joined with the code', () => {
     expect(joinLine({ origin: 'http://localhost:4790', code }))
       .toBe(`curl -fsSL 'http://localhost:4790/client/install' | sh -s -- 'http://localhost:4790#${code}'`);
+  });
+
+  // Issue #1454: lane pods of a runner-only release join a hopper outside it, with the key it issued.
+  it('pods on Kubernetes: a Secret with the issued key, then a runner-only release that joins this hopper', () => {
+    const c = podRunnerCommands({ hopperUrl: 'https://hopper.example.com/', key: code });
+    expect(c.secret).toBe(`kubectl create namespace hopper-runner && kubectl -n hopper-runner create secret generic runner-pool-key --from-literal=key='${code}'`);
+    expect(c.helm).toBe("helm install runner deploy/helm/hopper -n hopper-runner --set hopper.enabled=false --set lanes.replicas=1 --set lanes.hopperUrl='https://hopper.example.com' --set lanes.existingSecret=runner-pool-key");
+    expect(loopbackOnly('http://localhost:4790')).toBe(true);
+    expect(loopbackOnly('http://127.0.0.1:4790')).toBe(true);
+    expect(loopbackOnly('http://box.lan:4790')).toBe(false);
   });
 });
 

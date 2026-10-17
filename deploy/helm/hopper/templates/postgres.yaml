@@ -1,3 +1,4 @@
+{{- if .Values.hopper.enabled }}
 {{- if .Values.postgres.bundled -}}
 {{- $name := printf "%s-postgres" (include "hopper.fullname" .) -}}
 {{- $sel := dict "ctx" . "component" "postgres" -}}
@@ -112,4 +113,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.postgres.size }}
+{{- end }}
 {{- end }}

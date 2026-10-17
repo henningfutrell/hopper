@@ -46,7 +46,7 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
-  instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'users'>;
+  instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'lanePoolKeys' | 'users'>;
   sessions: UiSessions;
   /** Grants (issue #881), and every scope a route needs. */
   grants: import('./api-grants.ts').ApiGrants; proofs: import('./dpop.ts').DpopProofs; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;

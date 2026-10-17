@@ -1,9 +1,15 @@
 {{- if .Values.networkPolicy.enabled -}}
 {{- /*
 Who reaches each part: Postgres the hopper, OpenFGA, its migration and the vault pod; OpenFGA, Solr, the vault pod, the
-tunnel services and the telemetry viewer's OTLP port the hopper alone; the local KMS the pod the vault runs in; the lane pods no one.
+tunnel services and the telemetry viewer's OTLP port the hopper alone; the local KMS the pod the vault runs in; the lane pods no one. A runner-only release
+(hopper.enabled=false, issue #1454) has the lane pods' alone.
 */ -}}
-{{- $parts := list (list "openfga" 8080 (list "hopper")) (list "lanes" 0 list) -}}
+{{- $parts := list -}}
+{{- if .Values.hopper.enabled -}}
+{{- $parts = append $parts (list "openfga" 8080 (list "hopper")) -}}
+{{- end -}}
+{{- $parts = append $parts (list "lanes" 0 list) -}}
+{{- if .Values.hopper.enabled -}}
 {{- if .Values.postgres.bundled -}}
 {{- $db := list "hopper" "openfga" "openfga-migrate" -}}
 {{- if .Values.hopperVault.enabled -}}
@@ -28,6 +34,7 @@ tunnel services and the telemetry viewer's OTLP port the hopper alone; the local
 {{- end -}}
 {{- if .Values.tunnel.cloudflared.enabled -}}
 {{- $parts = append $parts (list "cloudflared" 2000 (list "hopper")) -}}
+{{- end -}}
 {{- end -}}
 {{- range $i, $p := $parts }}
 {{- if $i }}

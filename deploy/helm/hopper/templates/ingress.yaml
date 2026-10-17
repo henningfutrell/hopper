@@ -1,3 +1,4 @@
+{{- if .Values.hopper.enabled }}
 {{- if .Values.ingress.enabled -}}
 {{- $name := include "hopper.fullname" . -}}
 {{- $host := required "ingress.host: the host name the Ingress publishes the hopper on" .Values.ingress.host -}}
@@ -31,4 +32,5 @@ spec:
                 name: {{ $name }}
                 port:
                   name: http
+{{- end }}
 {{- end }}

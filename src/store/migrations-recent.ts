@@ -64,4 +64,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 50: two hosts on one database (issue #1627): the sweep leases, one host's hold on each sweep, and the outbound dedupe
   // keys. Tables only: the build before never reads them, and runs its sweeps and dedupes its sends in memory as before.
   SWEEP_LEASE_TABLE + OUTBOUND_KEY_TABLE,
+  // 51: lane pool keys the hopper issues (issue #1454): one per user at most, only its SHA-256 kept, for lane pods of a
+  // chart release outside this hopper's own. A table only: the build before never reads it, and joins no pod with one.
+  'CREATE TABLE IF NOT EXISTS lane_pool_keys (key_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS lane_pool_keys_user ON lane_pool_keys (user_id);',
 ];

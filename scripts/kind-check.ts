@@ -6,7 +6,10 @@
 // a person signs in with no GitHub (issue #1380): the operator CLI in the hopper's pod adds the first admin's local
 // account, who signs in with its email and password and mints a grant, and the grant's refreshed API token reads as that
 // person. Then the machines come up as pods — by an upgrade of the same release, sandbox boxes on with little CPU and
-// memory each, one lane pod — and the check runs again: still no container runtime. Needs
+// memory each, one lane pod — and the check runs again: still no container runtime. Then a runner-only release in a
+// namespace of its own (issue #1454): its lane pod joins the hopper — as a hopper outside the release, by its URL, with a
+// lane pool key the hopper issued, with no restart of the hopper — and shows online and ready, with no host path and no
+// host credential. Needs
 // `kind`, `helm` and `kubectl` on PATH, and a container runtime for kind.
 //
 //   node scripts/kind-check.ts [--cluster NAME] [--tag TAG] [--keep] [--set key=value ...]
@@ -65,7 +68,7 @@ function check(context: string, tag: string | undefined, sets: string[]): string
   const values = [...(tag ? [`image.tag=${tag}`] : []), ...sets];
   if (install(context, ['--create-namespace'], values) !== 0) return 'helm install did not bring up the release';
 
-  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? keyKept(context) ?? rolloutRestart(context) ?? withoutGitHub(context) ?? machines(context);
+  return healthy(context) ?? noRuntime(context) ?? migratesOnce(context) ?? keyKept(context) ?? rolloutRestart(context) ?? withoutGitHub(context) ?? machines(context) ?? runnerOnly(context, tag);
 }
 
 /** `helm install` of the release, waiting for it, with `values`. Answers its exit status. */
@@ -214,8 +217,11 @@ function inPod(context: string, input: string, ...command: string[]): { status: 
  * operator CLI in the pod, a sign-in with its email and password, a grant minted for an agent, and the grant's refreshed
  * API token reads that person's grants. The cluster holds no GitHub App and no GitHub connection.
  */
+let adminPassword = '';
+
 function withoutGitHub(context: string): string | null {
   const password = randomBytes(18).toString('base64url');
+  adminPassword = password;
   const added = inPod(context, `${password}\n`, 'hopper', 'local-account', 'add', ADMIN);
   if (added.status !== 0) return `hopper local-account add in the hopper's pod did not succeed: exit ${added.status}`;
   const r = inPod(context, password, 'node', '-e', SIGN_IN_AND_GRANT);
@@ -250,6 +256,119 @@ function machines(context: string): string | null {
   const runtime = noRuntime(context, pods);
   if (runtime) return runtime;
   console.log(`machines as pods: sandbox boxes on, lane pod ${LANE_POD}`);
+  return null;
+}
+
+// The runner-only release (issue #1454): its namespace, its name, and so its lane pod's name.
+const RUNNER_NAMESPACE = 'hopper-runner';
+const RUNNER_POD = 'runner-hopper-lanes-0';
+// The hopper as a hopper outside the release reaches it: a URL, a name the hopper answers to (one of its LAN names).
+const HOPPER_URL = `http://hopper.${NAMESPACE}.svc.cluster.local:${PORT}`;
+
+/** In the hopper's pod, signed in as the first admin (password on stdin): the machines, as GET /api/machines answers. */
+const READ_MACHINES = `
+const base = 'http://127.0.0.1:${PORT}';
+let password = '';
+process.stdin.on('data', (d) => { password += d; }).on('end', async () => {
+  try {
+    const h = { 'content-type': 'application/json', origin: base };
+    const s = await fetch(base + '/ui/auth/password', { method: 'POST', headers: h, body: JSON.stringify({ username: '${ADMIN}', password: password.trim() }) });
+    const { token } = await s.json();
+    const r = await fetch(base + '/api/machines', { headers: { ...h, 'x-hopper-session': token } });
+    process.stdout.write(JSON.stringify((await r.json()).machines.map((m) => ({ id: m.id, online: m.online, infraCredentials: m.infraCredentials }))));
+  } catch (e) { process.stdout.write(JSON.stringify({ error: e.message })); process.exit(1); }
+});`;
+
+/** The hopper's pod: its uid and restart count, to know it was not started again. */
+function hopperPod(context: string): string {
+  return sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'get', 'pods', '-l', 'app.kubernetes.io/instance=hopper,app.kubernetes.io/component=hopper',
+    '-o', 'jsonpath={range .items[*]}{.metadata.uid}/{.status.containerStatuses[0].restartCount}{end}'], true).stdout.trim();
+}
+
+/**
+ * A runner-only release (issue #1454): the lane pods alone, in a namespace of their own, join the hopper by its URL with
+ * a lane pool key it issued (`hopper pool-key`), and the hopper does not start again. The machine shows online and ready
+ * (no infra credentials on it), and no pod of the release mounts a host path or holds a credential in the jobs'
+ * container. A hopper image older than `hopper pool-key` (the dev channel before this change ships) lets no pod join
+ * with its install's key (it gives such pods to a user `admin` a fresh hopper does not have): then the check takes
+ * that key, does not wait for the join, and checks that the join step runs and tries again without a crash, and the
+ * pods' spec. It says so.
+ */
+function runnerOnly(context: string, tag: string | undefined): string | null {
+  const podBefore = hopperPod(context);
+  let key = inPod(context, '', 'hopper', 'pool-key').stdout.trim();
+  const issued = /^[0-9a-f]{64}$/.test(key);
+  if (!issued) {
+    console.log('this hopper image issues no lane pool key yet (hopper pool-key): the runner uses the key of the hopper\'s own release, and the check does not wait for the join');
+    const b64 = sh('kubectl', ['--context', context, '--namespace', NAMESPACE, 'get', 'secret', 'hopper-lane-pool', '-o', 'jsonpath={.data.key}'], true).stdout.trim();
+    key = Buffer.from(b64, 'base64').toString('utf8');
+    if (!/^[0-9a-f]{64}$/.test(key)) return 'no lane pool key: neither hopper pool-key nor the Secret hopper-lane-pool gave one';
+  }
+  const kubectl = (...args: string[]): number | null => sh('kubectl', ['--context', context, ...args]).status;
+  if (kubectl('create', 'namespace', RUNNER_NAMESPACE) !== 0) return `kubectl could not make the namespace ${RUNNER_NAMESPACE}`;
+  // The manifest on stdin (`-f -`): Node gives a child's stdin as a socket, which /dev/stdin cannot open (ENXIO).
+  const manifest = JSON.stringify({ apiVersion: 'v1', kind: 'Secret', metadata: { name: 'runner-pool-key' }, type: 'Opaque', stringData: { key } });
+  const secret = spawnSync('kubectl', ['--context', context, '--namespace', RUNNER_NAMESPACE, 'create', '-f', '-'],
+    { input: manifest, encoding: 'utf8', stdio: ['pipe', 'inherit', 'inherit'] });
+  if (secret.status !== 0) return 'kubectl could not make the Secret runner-pool-key';
+  const install = sh('helm', ['install', 'runner', CHART, '--kube-context', context, '--namespace', RUNNER_NAMESPACE, ...(issued ? ['--wait', '--timeout', '15m'] : []),
+    ...[...(tag ? [`image.tag=${tag}`] : []), 'hopper.enabled=false', 'lanes.replicas=1', `lanes.hopperUrl=${HOPPER_URL}`, 'lanes.existingSecret=runner-pool-key'].flatMap((v) => ['--set', v])]);
+  if (install.status !== 0) return 'helm install of the runner-only release did not succeed';
+  const ready = issued ? joined(context) : joinRuns(context);
+  if (ready) return ready;
+
+  const pods = (listPods(context) ?? []).filter((p) => p.metadata.namespace === RUNNER_NAMESPACE);
+  if (pods.length === 0) return `no pod in ${RUNNER_NAMESPACE}`;
+  for (const p of pods) {
+    if ((p.spec.volumes ?? []).some((v) => v.hostPath)) return `${RUNNER_NAMESPACE}/${p.metadata.name} mounts a host path`;
+    for (const c of p.spec.containers) for (const e of c.env ?? []) if (/KEY|TOKEN|SECRET|PASSWORD/.test(e.name)) return `${RUNNER_NAMESPACE}/${p.metadata.name}/${c.name} has the variable ${e.name}`;
+  }
+  const runtime = noRuntime(context, pods);
+  if (runtime) return runtime;
+  const podAfter = hopperPod(context);
+  if (podAfter !== podBefore) return `the hopper started again while the runner joined: ${podBefore} became ${podAfter}`;
+  console.log(issued
+    ? `runner-only release: ${RUNNER_POD} joined the hopper at ${HOPPER_URL}, online and ready, no host path, no credential, no hopper restart`
+    : `runner-only release: ${RUNNER_POD} tries to join the hopper at ${HOPPER_URL} with no crash, no host path, no credential, no hopper restart`);
+  return null;
+}
+
+/** The runner's lane pod shows online and ready on the hopper: no infra credentials on it. */
+function joined(context: string): string | null {
+  let seen: { id: string; online: boolean; infraCredentials?: string[] } | undefined;
+  for (let i = 0; i < 60; i++) {
+    const r = inPod(context, adminPassword, 'node', '-e', READ_MACHINES);
+    try { seen = (JSON.parse(r.stdout) as { id: string; online: boolean; infraCredentials?: string[] }[]).find((m) => m.id === RUNNER_POD); } catch { seen = undefined; }
+    if (seen?.online && Array.isArray(seen.infraCredentials)) break;
+    spawnSync('sleep', ['5']);
+  }
+  if (!seen?.online) return `the runner's lane pod ${RUNNER_POD} is not online on the hopper: ${JSON.stringify(seen ?? 'not there')}`;
+  if (!Array.isArray(seen.infraCredentials)) return `the hopper did not read the infra credentials of ${RUNNER_POD}: it cannot say it is ready`;
+  if (seen.infraCredentials.length > 0) return `${RUNNER_POD} is not ready: it holds the infra credentials ${seen.infraCredentials.join(', ')}`;
+  return null;
+}
+
+/**
+ * The runner's join step runs and tries the join again, with no crash: its home copied into the volume, the join refused
+ * for now. Its last lines are printed: they say why the hopper does not let it in.
+ */
+function joinRuns(context: string): string | null {
+  const kubectl = (...args: string[]): { status: number | null; stdout: string } => sh('kubectl', ['--context', context, '--namespace', RUNNER_NAMESPACE, ...args], true);
+  if (kubectl('wait', '--for=create', `pod/${RUNNER_POD}`, '--timeout=180s').status !== 0) return `no lane pod ${RUNNER_POD} in ${RUNNER_NAMESPACE}`;
+  const state = (): { restarts: number; running: boolean } => {
+    const out = kubectl('get', 'pod', RUNNER_POD, '-o', 'jsonpath={.status.initContainerStatuses[0].restartCount} {.status.initContainerStatuses[0].state.running.startedAt}').stdout.trim().split(' ');
+    return { restarts: Number(out[0] || 0), running: Boolean(out[1]) };
+  };
+  let s = state();
+  // The box image is large: its pull takes minutes.
+  for (let i = 0; i < 180 && !s.running && s.restarts === 0; i++) { spawnSync('sleep', ['5']); s = state(); }
+  // Long enough for a join step that fails at once to stop and be started again.
+  spawnSync('sleep', ['60']);
+  s = state();
+  const log = kubectl('logs', RUNNER_POD, '-c', 'join', '--tail', '3').stdout.trim();
+  if (log) console.log(`the join step of ${RUNNER_POD} says:\n${log}`);
+  if (s.restarts > 0) return `the join step of ${RUNNER_POD} stopped and was started again ${s.restarts} times: it must try the join again, not stop`;
+  if (!s.running) return `the join step of ${RUNNER_POD} does not run`;
   return null;
 }
 

@@ -57,6 +57,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/machines/:id/terminal/input', kind: 'change work on a machine' }, // issue #1128: typed into a pane on a machine
   { route: '/ui/api/machines', kind: 'change work on a machine' },
   { route: '/ui/api/machines/join', kind: 'change work on a machine' },
+  { route: '/ui/api/machines/pool-key', kind: 'change work on a machine' }, // issue #1454: lane pods join with it
   { route: '/ui/api/sandbox-playground', kind: 'change work on a machine' }, // issue #1410: starts sandboxes
   { route: '/ui/api/sandbox-requests', kind: 'change work on a machine' }, // issue #991: approving one lets the job's box steps run
   // Issue #731: where a job's Windows sandbox steps run, with the hopper's own ssh key.

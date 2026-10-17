@@ -1,3 +1,4 @@
+{{- if .Values.hopper.enabled }}
 {{- /*
 The master key Secret (issue #1406): `helm install` alone keeps the master key. With no Secret given
 (masterKey.existingSecret) and no ExternalSecret, the chart makes <release>-master-key with the key masterKey.value
@@ -41,5 +42,6 @@ stringData:
   {{- with get $old "previous" }}
   previous: {{ b64dec . | quote }}
   {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
