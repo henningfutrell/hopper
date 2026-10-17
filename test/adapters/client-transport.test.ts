@@ -44,7 +44,7 @@ const herdrCalls = (): string[][] => (existsSync(join(dir, 'calls.jsonl'))
 describe('herdr over a client target', () => {
   it('herdr calls run in the client\'s own herdr session, and results come back as they do locally', async () => {
     await serve();
-    expect(await hopper().getAgent('jh-a')).toEqual({ status: 'idle', stateChangeSeq: 4, paneId: 'w7:p5' });
+    expect(await hopper().getAgent('jh-a')).toEqual({ status: 'idle', stateChangeSeq: 4, paneId: 'w7:p5', terminalId: 'term_a1' });
     expect(await hopper().getAgent('jh-gone')).toBeNull();
     await expect(hopper().run(['usage'])).rejects.toMatchObject({ code: 'usage' });
     const text = `it's "quoted" $HOME \`date\` ; | &\nsecond line`;
