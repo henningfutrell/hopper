@@ -3,7 +3,7 @@
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts), and Tend again (issue #1010);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
-// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
+// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject;
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
 // the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
 // API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
@@ -87,7 +87,7 @@ ${REPO_USAGE}
   hopper proposal more-paths <id> [--note <text>] [--select <path>]...
                                                      Ask for more paths; the paths named stay selected for the next version
   hopper proposal steer <id> --note <text>           Steer: the note goes back to the job
-  hopper proposal reject <id> --note <why>           Reject all: the job ends with the rejection
+  hopper proposal reject <id> [--note <why>]         Reject the whole proposal: the job ends with the rejection
   hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
   hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
@@ -232,7 +232,8 @@ function proposalCall(args: string[]): Call {
   if (rest.length > 0 || values['path-note'] !== undefined || (values.select !== undefined && verb !== 'more-paths')) throw usage(PROPOSAL_USAGE);
   if (verb === 'accept') return { role: 'operator', path: `${at}/accept`, body: async () => note };
   if (verb === 'more-paths') return { role: 'operator', path: `${at}/more-paths`, body: async () => ({ ...note, ...(values.select ? { paths: values.select.map((p) => ({ id: p })) } : {}) }) };
-  if ((verb === 'steer' || verb === 'reject') && values.note?.trim()) return { role: 'operator', path: `${at}/${verb}`, body: async () => note };
+  if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => note };
+  if (verb === 'steer' && values.note?.trim()) return { role: 'operator', path: `${at}/steer`, body: async () => note };
   throw usage(PROPOSAL_USAGE);
 }
 

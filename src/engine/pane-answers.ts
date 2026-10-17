@@ -75,7 +75,8 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
   function adopt(jobId: string, questionId: string, seen: PaneAnswer): Claim | undefined {
     return store.tx(() => {
       const job = store.jobs.get(jobId);
-      if (job?.status !== 'waiting_answer' || job.questionId !== questionId) return undefined;
+      // Another hopper adopts it now (issue #1662): it holds the job's lease.
+      if (job?.status !== 'waiting_answer' || job.questionId !== questionId || !c.leases.take(jobId)) return undefined;
       const settled = seen.lapsed ? c.questions.lapsedInPane(questionId) : c.questions.answeredInPane(questionId, seen.answer ?? ANSWERED_IN_PANE);
       if (!settled) return undefined;
       return onLane(job, seen, seen.lapsed ? LAPSED_REASON : REATTACH_REASON, questionId);
@@ -86,7 +87,7 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
   function adoptWait(jobId: string, seen: PaneAnswer): Claim | undefined {
     return store.tx(() => {
       const job = store.jobs.get(jobId);
-      return job?.status === 'waiting_on' ? onLane(job, seen, WAIT_ENDED_REASON) : undefined;
+      return job?.status === 'waiting_on' && c.leases.take(jobId) ? onLane(job, seen, WAIT_ENDED_REASON) : undefined;
     });
   }
 

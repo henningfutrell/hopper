@@ -30,6 +30,7 @@ import { createSourceCallLog } from './source-calls.ts';
 import { createGitHubOutboxRepository } from './github-outbox.ts';
 import { createNotifierDeliveryRepository } from './notifier-deliveries.ts';
 import { createCheckpointRepository } from './checkpoints.ts';
+import { createJobLeaseRepository } from './job-leases.ts';
 import { createOutboundSendRepository } from './outbound-sends.ts';
 import { createSearchPendingRepository } from './search-pending.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
@@ -107,6 +108,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     repoChecks: createRepoChecksReadRepository(ctx),
     appInstallations: createAppInstallationsReadRepository(ctx),
     checkpoints: createCheckpointRepository(ctx),
+    jobLeases: createJobLeaseRepository(ctx),
     outboundSends: createOutboundSendRepository(ctx),
     notifierDeliveries: createNotifierDeliveryRepository(ctx),
     searchPending: createSearchPendingRepository(ctx),

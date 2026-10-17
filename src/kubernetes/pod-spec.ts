@@ -31,9 +31,12 @@ export interface JobPodInput {
   pullSecret?: string;
 }
 
+/** What a job's pod name starts with: the job id follows. */
+export const JOB_POD_PREFIX = 'hopper-job-';
+
 /** A job's pod name: `hopper-job-<job id>`, a DNS label and a machine name at once. Throws on a job id that is neither. */
 export function jobPodName(jobId: string): string {
-  const name = `hopper-job-${jobId.toLowerCase()}`;
+  const name = `${JOB_POD_PREFIX}${jobId.toLowerCase()}`;
   if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) throw new Error(`job id ${JSON.stringify(jobId)} makes no pod name`);
   return name;
 }

@@ -16,7 +16,7 @@ import { createPaneAnswers } from './pane-answers.ts';
 import { askFor, createReviewHandlers, type ReviewHandlers } from './reviews.ts';
 import { createQueries, type Queries } from './queries.ts';
 import { createQueueGateCommands, type QueueGateCommands } from './queue-gate.ts';
-import { recover } from './recovery.ts'; import { liftLost } from './lost-move.ts';
+import { recover } from './recovery.ts'; import { liftLost } from './lost-move.ts'; import { createJobLeases, createLeaseKeeper } from './leases.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
@@ -138,10 +138,12 @@ export function createEngine(o: EngineOptions): Engine {
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
+    leases: createJobLeases({ store, clock: o.clock, ...(o.jobLeaseMs ? { leaseMs: o.jobLeaseMs } : {}) }),
   };
   const cleanups = createCleanups(c);
   const cleanup = cleanups.run;
   const runner = createRunner(c, cleanup);
+  const leases = createLeaseKeeper(c, runner, cleanup);
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanups);
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
@@ -194,13 +196,14 @@ export function createEngine(o: EngineOptions): Engine {
     ...createUsageLimitCommands(c),
     ...createQueries(c, (id) => sweep.disk(id), (id) => sweep.leftovers(id)),
     ...createAnswerHandlers(c, cleanup),
-    ...createReviewHandlers(c, cleanup),
+    ...createReviewHandlers(c, cleanup, (jobId, reason) => commands.cancel(jobId, reason)),
     askFor: (kind, id) => askFor(c, kind, id),
     async start() {
       const recovered = await recover(c);
-      // The reap of each job recovery ended, then the sweep of every machine (issue #410): what a hopper
+      // Each cleanup a record says is due (issue #1570) — of a job recovery ended, or one whose end a stop cut off from
+      // its cleanup — and each deferred one (issue #371), then the sweep of every machine (issue #410): what a hopper
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
-      void Promise.all(recovered.toClean.map((jobId) => cleanup(jobId))).then(() => sweep.run(true));
+      void cleanups.resume().then(() => sweep.run(true));
       sweepTimer = setInterval(() => { void sweep.run(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
       // Discovery (issue #542): each machine again every `everyMinutes`; one that comes online, at the next Decision.
       discoverTimer = setInterval(() => { void blastRadius.run(); }, DISCOVER_CHECK_MS);
@@ -210,10 +213,9 @@ export function createEngine(o: EngineOptions): Engine {
         checkpointing = true;
         void checkpoints.run().catch((e: unknown) => console.error('hopper: checkpoints failed', e)).finally(() => { checkpointing = false; });
       }, CHECKPOINT_CHECK_MS);
-      // Deferred before this start (issue #371): tried again now, and on every tick.
-      cleanups.retry();
       for (const claim of recovered.reattach) runner.reattach(claim);
       for (const claim of recovered.awaiting) runner.reattachWhenReachable(claim);
+      leases.start();
       unsubscribe = store.events.subscribe((event) => {
         // Never decide inside append: schedule.
         if (event.type === 'job.queued' && event.jobId) {
@@ -243,6 +245,7 @@ export function createEngine(o: EngineOptions): Engine {
       wakeMissed();
       timer = setInterval(() => {
         wakeMissed();
+        leases.tick();
         classifier.sweep();
         void paneAnswers.sweep();
         cleanups.retry();
@@ -274,7 +277,9 @@ export function createEngine(o: EngineOptions): Engine {
       if (checkpointTimer) clearInterval(checkpointTimer);
       unsubscribe?.();
       await runner.stopAll(SHUTDOWN_WAIT_MS);
-      await sweep.removals();
+      leases.stop();
+      // A discard under way is a record (issue #1570), done again after the next start: the stop waits for it a while only.
+      await Promise.race([sweep.removals(), new Promise((r) => setTimeout(r, SHUTDOWN_WAIT_MS).unref())]);
       // In-flight classifications are not awaited: they write nothing once stopping.
       await serial.idle();
     },

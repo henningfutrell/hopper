@@ -2,7 +2,7 @@
 // token is and its emails, the projects it reaches, a project's open issues with a label —, paged by `x-next-page`; for a job
 // (part 3): a project's default branch, an issue's label events and system notes (who labelled, assigned or edited it), and
 // the hopper's label edits; for a job's merge request (issue #1642): one issue, the merge requests that close it, and one
-// merge request with its pipeline. Each request is recorded with the token it carried.
+// merge request with its pipeline; the hopper's merge of one (issue #1642 part 2), which closes the issues it closes. Each request is recorded with the token it carried.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gitBackend } from './fake-git.ts';
@@ -17,10 +17,13 @@ export interface FakeGitLabIssue {
   labelledBy?: string; assignedBy?: string; editedBy?: string[];
 }
 
-/** A merge request (issue #1642): `closes` the issues its description closes; `pipeline` its head pipeline's status, absent: none. */
+/**
+ * A merge request (issue #1642): `closes` the issues its description closes; `pipeline` its head pipeline's status, absent: none.
+ * `sha`: its head (default `abc123`); `mergeRefusal`: a merge of it is refused with this status (405, 409, …).
+ */
 export interface FakeGitLabMergeRequest {
   project: string; iid: number; closes: number[]; state: 'opened' | 'closed' | 'merged'; createdAt: string; mergedAt?: string;
-  draft?: boolean; conflicts?: boolean; pipeline?: string;
+  draft?: boolean; conflicts?: boolean; pipeline?: string; sha?: string; updatedAt?: string; mergeRefusal?: number;
 }
 
 export interface FakeGitLab {
@@ -62,7 +65,7 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
   /** A merge request as GitLab answers it; its head pipeline only in the answer for one (`one`), as GitLab's list leaves it out. */
   const mergeRequestJson = (x: FakeGitLabMergeRequest, one: boolean) => ({
     iid: x.iid, web_url: `${fakeUrl}/${x.project}/-/merge_requests/${x.iid}`, state: x.state, draft: x.draft ?? false, has_conflicts: x.conflicts ?? false,
-    created_at: x.createdAt, merged_at: x.mergedAt ?? null, description: x.closes.map((n) => `Closes #${n}`).join('\n'),
+    target_branch: 'main', source_branch: `issue-${x.closes[0] ?? x.iid}`, created_at: x.createdAt, updated_at: x.updatedAt ?? x.createdAt, merged_at: x.mergedAt ?? null, sha: x.sha ?? 'abc123', description: x.closes.map((n) => `Closes #${n}`).join('\n'),
     ...(one ? { head_pipeline: x.pipeline ? { id: 1, status: x.pipeline } : null } : {}),
   });
   const read = (req: IncomingMessage): Promise<string> => new Promise((r) => { let b = ''; req.on('data', (c: Buffer) => { b += c.toString(); }); req.on('end', () => r(b)); });
@@ -100,11 +103,18 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
       if (!user.projects.includes(project)) return send(res, 404, { message: '404 Project Not Found' });
       return send(res, 200, { path_with_namespace: project, default_branch: fake.defaultBranches.get(project) ?? 'main' });
     }
-    const mr = /^\/api\/v4\/projects\/([^/]+)\/merge_requests\/(\d+)$/.exec(url.pathname);
+    const mr = /^\/api\/v4\/projects\/([^/]+)\/merge_requests\/(\d+)(\/merge)?$/.exec(url.pathname);
     if (mr) {
       const project = decodeURIComponent(mr[1]!), iid = Number(mr[2]);
       const found = user.projects.includes(project) ? fake.mergeRequests.find((x) => x.project === project && x.iid === iid) : undefined;
-      return found ? send(res, 200, mergeRequestJson(found, true)) : send(res, 404, { message: '404 Not found' });
+      if (!found) return send(res, 404, { message: '404 Not found' });
+      if (mr[3] && req.method === 'PUT') {
+        if (found.mergeRefusal) return send(res, found.mergeRefusal, { message: 'Branch cannot be merged' });
+        if (found.state !== 'opened' || body?.sha !== (found.sha ?? 'abc123')) return send(res, 409, { message: 'SHA does not match HEAD of source branch' });
+        Object.assign(found, { state: 'merged', mergedAt: new Date().toISOString() });
+        for (const i of fake.issues.filter((i) => i.project === project && found.closes.includes(i.iid))) i.state = 'closed';
+      }
+      return send(res, 200, mergeRequestJson(found, true));
     }
     const of = /^\/api\/v4\/projects\/([^/]+)\/issues\/(\d+)(\/resource_label_events|\/notes|\/closed_by)?$/.exec(url.pathname);
     if (of) {

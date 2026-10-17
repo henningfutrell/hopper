@@ -106,5 +106,7 @@ export function createKubernetesExecutor(name: string, inner: Executor, pods: Jo
     // A pod's machine is a client target: reached as herdr-claude reaches one (the job's credentials, the sweep). The
     // lane's machine, the cluster, is no machine any command runs on.
     machineShell: (machine) => (machine.client ? inner.machineShell?.(machine) : undefined),
+    // A pod whose job ended and no cleanup deleted (issue #1570).
+    sweep: (ended) => pods.sweep(ended),
   };
 }

@@ -218,7 +218,7 @@ export const EVENT_SCHEMAS = {
   'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), reason: z.enum(WORK_DISCARD_REASONS).optional(), ...actingIfPerson }),
   // Issue #371: the job's cleanup could not reach its machine; it is tried again until it goes through.
   'job.cleanup_deferred': strict({ error: z.string() }),
-  'job.cleaned_up': strict({ deferredAt: z.string(), by: z.enum(['user']).optional() }),
+  'job.cleaned_up': strict({ deferredAt: z.string().optional(), dueAt: z.string().optional(), by: z.enum(['user']).optional() }),
   // Assignment drift (issue #387): the started job's item is no longer, or again, assigned to the account it was taken for.
   'job.unassigned': strict({ assignee: z.string() }),
   'job.reassigned': strict({ assignee: z.string() }),

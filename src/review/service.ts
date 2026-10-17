@@ -311,7 +311,9 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
       return store.tx((): ReviewActionResult => {
         const p = items.get(id);
         if (!p) return { ok: false, reason: 'not_found', message: `${type.noun} ${id} not found` };
-        if (p.status !== 'open') return { ok: false, reason: 'not_open', message: `${type.noun} ${id} is ${p.status}: only an open ${type.noun} can be decided` };
+        // A reject (issue #1659) ends the whole item: in review at any stage, or sent back while its job writes the next version.
+        const decidable = p.status === 'open' || (offered.effect === 'reject' && p.status === 'revising');
+        if (!decidable) return { ok: false, reason: 'not_open', message: `${type.noun} ${id} is ${p.status}: only an open ${type.noun} can be decided` };
         // What the job does next is picked only at Accept, and only in a phase a question switched it to (issue #548).
         if (then !== undefined) {
           const switched = store.jobs.get(p.jobId)?.shift?.to === kind;
@@ -319,13 +321,12 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
             return { ok: false, reason: 'not_switched', message: switched ? `a ${type.noun} accepted in a switched phase may go on to ${thenChoices(kind).join(', ')}, not ${then}` : `${type.noun} ${id}: its job is not in a phase a question switched it to; there is nothing to pick` };
           }
         }
-        // A proposal's paths (issue #651): Accept continues with the paths selected, or none on zero paths; Reject all
-        // needs paths to reject; a decision that sends it back keeps a selection.
+        // A proposal's paths (issue #651): Accept continues with the paths selected, or none on zero paths; Reject takes
+        // none, on any proposal (issue #1659); a decision that sends it back keeps a selection.
         let selected: SelectedPath[] | undefined;
         if (picks !== undefined && kind !== 'proposal') return { ok: false, reason: 'bad_selection', message: `${type.noun}s have no paths to select` };
         if (kind === 'proposal') {
           const set = pathsOf(p.versions.at(-1)!);
-          if (offered.effect === 'reject' && viablePaths(set).length === 0) return { ok: false, reason: 'no_paths', message: `${type.noun} ${id} has no path to reject: accept it, steer it, or ask for paths` };
           const why = offered.effect === 'reject' ? undefined : selectionRefusal(set, picks, offered.effect === 'accept');
           if (why) return { ok: false, reason: 'bad_selection', message: why };
           if (offered.effect === 'accept') selected = (picks ?? []).map((x) => ({ id: x.id, title: set.paths.find((q) => q.id === x.id)!.title, ...(x.note ? { note: x.note } : {}) }));
