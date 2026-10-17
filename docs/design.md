@@ -25475,3 +25475,28 @@ herdr: a stop while the cleanup is at the machine, then the next start closes th
 next start removes the work and records who discarded it), `test/integration/kubernetes-executor.test.ts` (a pod still
 there after its job ended is deleted at the next start, `job.pod_removed`), `test/kubernetes/job-pods.test.ts` (only this
 hopper's pods of ended jobs).
+
+## A labelled issue not assigned to the user is said (issue #1614, 2026-10-17)
+
+Report: two issues were labelled `hopper` by a trusted author and assigned to nobody. No job started, and for 2 to 4
+hours nothing said why: no log line, no problem, nothing on the issue. Assigning them started their jobs at the next sync.
+
+The rule stays ("Intake by label and assignee", issue #387): an issue is taken only when it is assigned to the user's
+connected account. Intake already listed such an issue under **Not assigned to you**, with Assign to me; but Intake's
+badge and Needs you counted only the request cards, so nothing pointed a person at it. Now:
+
+- **The log.** After each sync the sync loop logs each outcome in the `not-assigned` group once
+  (`notAssignedTold`, `src/sources/sync-slots.ts`): `hopper: source <name> does not take <key>: <reason>. No job starts
+  until it is assigned (Intake: Assign to me)`. A key taken or gone is forgotten, so it is logged again when it comes back,
+  as `notRerun` (issue #1402). A paused source logs nothing new. Every source that sets the group says it: GitHub and GitLab.
+- **The badge.** Intake's nav badge and Needs you's Intake row count the request cards and the issues not assigned to the
+  user (`notAssignedWaiting`, `ui/src/model/intake.ts`); the badge's title names each.
+
+Not done: a label or a comment on the issue. The hopper writes only its labels to an issue and posts no comments
+(AGENTS.md "GitHub text is neutral"), and a new label for this would be one more write per unassigned issue, on every
+repository, for a state the user can already see. Not a **Problem** either: a problem is a shared cause of failed jobs,
+and no job failed. Taking an unassigned issue from a trusted author is the change issue #387 removed: assignment is how
+two users of one repository each take only their own issues.
+
+Tests: `test/sources/sync-not-assigned.test.ts` (logged once, again after taken and back),
+`test/ui/intake-view.test.ts` (the badge, its title and the Needs you row count both kinds).
