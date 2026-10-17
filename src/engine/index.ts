@@ -5,6 +5,7 @@ import { settledBy } from '../domain/wait-on.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type ActingPerson, type Discarding, type EventType, type Job, type MachineSnapshot, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
+import { createSignedOutMove } from './signed-out-move.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
@@ -137,6 +138,9 @@ export function createEngine(o: EngineOptions): Engine {
   const sweep = createSweep(c);
   const checkpoints = createCheckpoints(c);
   c.checkpoints = checkpoints;
+  // The signed-out move (issue #1211): a job held on a not-signed-in question goes on at a signed-in machine.
+  const signedOutMove = createSignedOutMove(c);
+  let moving = false;
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
@@ -222,6 +226,10 @@ export function createEngine(o: EngineOptions): Engine {
         if (!autoParking) {
           autoParking = true;
           void autoPark(c).catch((e: unknown) => console.error('hopper: auto-park failed', e)).finally(() => { autoParking = false; });
+        }
+        if (!moving) {
+          moving = true;
+          void signedOutMove().catch((e: unknown) => console.error('hopper: the signed-out move failed', e)).finally(() => { moving = false; });
         }
         c.trigger('tick');
       }, o.tickMs);

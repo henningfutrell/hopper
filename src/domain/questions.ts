@@ -60,6 +60,14 @@ export const LOGIN_SCREEN_MARK = 'Select login method';
 export const SIGNED_IN_BY = 'sign-in';
 /** The answer it gets: at Claude's prompt nothing is typed, and the job's text goes once Claude shows it is signed in. */
 export const SIGNED_IN_ANSWER = 'Claude is signed in on this machine now.';
+/**
+ * Who answers a not-signed-in question when the hopper moves its job to a machine signed in (issue #1211, design.md "The
+ * signed-out move"): its trail's tier and `answeredBy`.
+ */
+export const SIGNED_OUT_MOVE_BY = 'signed-out-move';
+/** The answer it gets: what a job resuming elsewhere is told after its brief. */
+export const signedOutMoveAnswer = (from: string, service: string): string =>
+  `${service} was signed out on machine ${from}. The hopper moved this job to a machine where ${service} is signed in.`;
 
 export const ESCALATION_REASONS = ['guard', 'low_confidence', 'no_answer', 'frontier_escalated', 'high_priority', 'auto_answer_off', 'fork'] as const;
 /**

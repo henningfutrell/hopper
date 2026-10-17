@@ -142,6 +142,26 @@ describe('herdr-claude executor: an unknown startup screen is a question, never 
     expect(herdr.prompts).toHaveLength(1);
   });
 
+  it('moved off a machine where Claude was not signed in (issue #1211): elsewhere, the text it held unsent goes after the answer', async () => {
+    const { herdr, executor } = setup({ claudeConfig: 'absent', notSignedIn: true, turns: [DONE], repositories: [CWD] }, { unattended: true, jobWorktrees: true });
+    const first = contextFor(jobWith({ prompt: 'go', cwd: CWD }));
+    expect((await executor.run(first.ctx)).kind).toBe('question');
+    // The move parks it: its pane on the old machine ends.
+    await executor.park!(jobWith({ prompt: 'go', cwd: CWD }, { executorState: first.saved.at(-1)!, agentSession: first.sessions.at(-1)! }));
+    herdr.signIn();
+    const base = 'b'.repeat(40);
+    const moved = jobWith({ prompt: 'go', cwd: CWD }, {
+      executorState: first.saved.at(-1)!, agentSession: first.sessions.at(-1)!,
+      parked: { at: '2026-10-16T00:00:00.000Z', from: 'waiting_answer', elsewhere: { at: '2026-10-16T00:00:00.000Z', checkpointAt: '2026-10-16T00:00:00.000Z', from: 'local' } },
+      checkpoint: { at: '2026-10-16T00:00:00.000Z', machineId: 'local', base, head: base, commits: [], bytes: 1, session: true },
+    });
+    expect((await executor.resume!(contextFor(moved).ctx, 'The job moved.')).kind).toBe('finished');
+    expect(herdr.restores).toHaveLength(1);
+    const told = herdr.prompts.at(-1)!.text;
+    expect(told.indexOf('The job moved.')).toBe(0);
+    expect(told).toContain('go');
+  });
+
   it.each([
     ['a Windows computer (a client target)', STUDIO, 'studio'],
     ['a wsl machine (over ssh)', WSL, 'wsl'],
