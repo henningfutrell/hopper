@@ -309,6 +309,17 @@ describe('hopper user transfer (issue #212)', () => {
     expect((await cli(url, ['user', 'transfer', 'admin', 'bea'])).code).toBe(0);
   });
 
+  it('two daemons on one database both hold the daemon lock (issue #1662); the transfer waits until both stopped', async () => {
+    const url = await adminAndBea();
+    const first = instanceOf(url), second = instanceOf(url);
+    expect(first.holdDaemonLock()).toBe(true);
+    expect(second.holdDaemonLock()).toBe(true);
+    first.close();
+    expect(await cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/a running daemon has this database; stop it first/) });
+    second.close();
+    expect((await cli(url, ['user', 'transfer', 'admin', 'bea'])).code).toBe(0);
+  });
+
   it('refuses unknown users, one user onto itself, and a wrong shape', async () => {
     const url = await adminAndBea();
     expect(await cli(url, ['user', 'transfer', 'admin', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });

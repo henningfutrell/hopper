@@ -1,7 +1,8 @@
 // Several hoppers on one database (issue #1662): a running job is held by a lease of the hopper that drives it. Another
 // hopper on the same database leaves it alone while that lease lives, and takes the job once the lease ends: here its
 // hopper stops, and the other reattaches the job's pane, which is still alive on its machine. The task is sent once. A
-// person's cancel or park on the other hopper reaches the run of the hopper that drives the job.
+// person's cancel or park on the other hopper reaches the run of the hopper that drives the job. Each pass of the engine
+// over every job (here the read of a waiting job's pane) runs on one hopper at a time, and on the other once it stops.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../../src/domain/ports.ts';
 import type { DomainEvent } from '../../src/domain/types.ts';
@@ -27,6 +28,8 @@ function machine() {
   const reattached: { jobId: string; by: string }[] = [];
   /** Each run aborted: the job, the hopper that drove it, and why (`cancel`, `park`, `shutdown`). */
   const aborted: { jobId: string; by: string; reason: unknown }[] = [];
+  /** Each read of a waiting job's pane for an answer typed there: which hopper read it. */
+  const probed: string[] = [];
   /** The job's pane ends done; or the watch ends with the hopper (abort), and the pane lives on. */
   const watch = (ctx: ExecutionContext, by: string): Promise<ExecutionOutcome> => new Promise((resolve) => {
     if (ctx.signal.aborted) { resolve({ kind: 'failed', error: 'aborted' }); return; }
@@ -44,8 +47,11 @@ function machine() {
       const ended = new Promise<void>((r) => { end = r; });
       panes.set(ctx.job.id, { end, ended });
       sent.push({ jobId: ctx.job.id, by });
+      // A job told to wait goes on its own wait for something outside: its pane stays.
+      if (JSON.stringify(ctx.job.spec.payload).includes('wait')) return Promise.resolve({ kind: 'wait', wait: { for: 'a release', on: 'outside: a release' } });
       return watch(ctx, by);
     },
+    async answeredInPane() { probed.push(by); return null; },
     async canReattach(job) { return panes.has(job.id); },
     reattach(ctx) {
       reattached.push({ jobId: ctx.job.id, by });
@@ -54,7 +60,7 @@ function machine() {
     // Parked: its pane ends, its work tree is kept.
     async park(job) { panes.get(job.id)?.end(); },
   });
-  return { panes, sent, reattached, aborted, executor };
+  return { panes, sent, reattached, aborted, probed, executor };
 }
 
 const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
@@ -150,5 +156,21 @@ describe('several hoppers on one database (issue #1662)', () => {
     expect(parked.laneId).toBeUndefined();
     expect(m.aborted).toEqual([{ jobId: job.id, by: 'first', reason: 'park' }]);
     expect(eventsOf(first, 'job.parked').filter((e) => e.jobId === job.id)).toHaveLength(1);
+  });
+
+  it('each pass over the jobs runs on one hopper at a time: a waiting job\'s pane is read by one, by the other once it stops', async () => {
+    const { m, first, start } = await twoHoppers(1);
+    const job = await first.pull({ wait: true }, { executor: 'pane' });
+    await first.waitForStatus(job.id, 'waiting_on');
+    await waitFor(() => m.probed.includes('first'), { what: 'the first hopper to read the waiting job\'s pane' });
+    await start();
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(m.probed.filter((by) => by === 'second')).toEqual([]);
+
+    await first.stop();
+    apps.splice(apps.indexOf(first), 1);
+    const before = m.probed.length;
+    await waitFor(() => m.probed.slice(before).includes('second'), { what: 'the second hopper to read the pane', timeoutMs: 8000 });
+    expect(m.probed.slice(before).filter((by) => by === 'first')).toEqual([]);
   });
 });
