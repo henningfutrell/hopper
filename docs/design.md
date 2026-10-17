@@ -5724,7 +5724,10 @@ naming the account.
   /ui/api/logins/:id/code`, as a **tool sign-in**'s). The hopper reads the token out of what the CLI printed (its last
   `sk-ant-oat…`, checked as an **agent credential**), sets it as the user's vault secret `CLAUDE_TOKEN` (sealed,
   `vault.secret_set` with no value, by the admin who started it; a second sign-in replaces it), its scope
-  `Claude account <email>`, so Settings → Vault says whose it is; then the login completes. A wrong code fails the login with
+  `Claude account <email>`, so Settings → Vault says whose it is; then, once the CLI ended, the login completes.
+- **Kept as soon as it is read** (issue #1610). The token goes to the vault the moment the CLI printed it whole (a character
+  after it), not when the CLI ends: a stop or crash between the two would lose a minted credential that nothing revokes.
+  Once kept, the login completes whatever the CLI's end; a token the vault refused fails the login with why. A wrong code fails the login with
   the CLI's reason and keeps the token before; a run that ends with no token fails it and keeps nothing.
 - **Never answered, logged or in an event.** The token goes from the CLI's output to `vault.set` and nowhere else; a reason
   masks any Claude token (`maskClaudeTokens`) and hides the code. Job pods (`CLAUDE_TOKEN` unless the executor's
@@ -5737,7 +5740,8 @@ terminal: its URL from the link, the right code answers the token, the home is r
 `CLAUDE_CODE_OAUTH_TOKEN` does not reach it; a wrong code and a run with no token say why, never the code or a token.
 `test/integration/claude-setup-token.test.ts`, through the real daemon: the login names the account, one paste keeps the
 token as `CLAUDE_TOKEN` with the account in its scope, a pod is then given it, and no event, log line or answer holds it; a
-second sign-in replaces it, a wrong code keeps the one before; the account must be an email; only an admin starts it.
+second sign-in replaces it, a wrong code keeps the one before; the account must be an email; only an admin starts it; a CLI
+that prints the token and does not end has it in the vault before the login ends, and after a stop and a start (issue #1610).
 `test/ui/logins-view.test.ts`: the form and the card. By hand: the real CLI under `script` printed its whole URL. Not checked
 here: a real sign-in to the end, and the token the real CLI prints.
 
