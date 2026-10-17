@@ -518,7 +518,7 @@ export interface UserStore {
   /** The infra plans jobs record, and their approvals (issue #870). */
   infraPlans: import('./infra-plans.ts').InfraPlanRepository;
   /** The out-of-band infrastructure changes jobs' checks report, their marks, and the controller identities (issue #871). */
-  outOfBand: import('./out-of-band.ts').OutOfBandRepository;
+  outOfBand: import('./out-of-band.ts').OutOfBandRepository; topology: import('./topology.ts').TopologyRepository; // the topology sources (issue #1781)
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;

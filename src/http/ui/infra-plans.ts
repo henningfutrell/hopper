@@ -3,7 +3,7 @@
 // vault mint a credential that changes infrastructure. By risk (part 3): an operator approves a low-risk uat plan, an
 // admin any other; the service checks the role, so the route's least role is operator. Auto-approve (admin) lets the
 // hopper approve a low-risk uat plan when it is kept. Plans are never changed or removed here. The out-of-band changes
-// (issue #871) register here too. An admin names the environment watchers (part 4), whom the notifiers name.
+// (issue #871) and the infrastructure topology (issue #1781) register here too. An admin names the environment watchers (part 4), whom the notifiers name.
 // An API token's approval of a plan that is not low risk is a person's to confirm (issue #909): asked, not done.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { personOf } from './sessions.ts';
 import { OUT_OF_BAND_OPERATIONS, outOfBandReadRoutes, registerOutOfBandRoutes } from './out-of-band.ts';
+import { registerTopologyRoutes, TOPOLOGY_OPERATIONS, topologyReadRoutes } from './topology.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -29,11 +30,11 @@ export const INFRA_PLAN_OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/infra-plans', tag: 'Infra', summary: 'Approve a plan', description: 'Issue #870: `action` `approve`, `plan` its id. Kept as a row of its own (`infra.plan_approved`, on the timeline of the job that recorded it); the plan does not change. Until the plan is stale, an ask for a credential that changes infrastructure that names it, made at the commit its branch is at, is minted. By risk: an operator approves a low-risk plan in uat only; any other plan only an admin (403 otherwise, saying why). 404: no such plan; 409: approved already, or the plan failed a check (a new AWS resource without the MAP tag). A box action. Issue #909: for an API token whose role may approve it, a plan that is not low risk is not approved: 202 `{ waiting }`, and a person is asked (`approval.confirmation_asked`, once an hour at most), who approves it in the UI.', role: 'operator', body: infraPlanBody, returns: '{ plan: PlanView } | { waiting: string }', errors: [400, 403, 404, 409] },
   { method: 'post', path: '/ui/api/infra-plans/settings', tag: 'Infra', summary: 'Auto-approve low-risk uat plans', description: 'Issue #870: `autoApprove` on: the hopper approves a plan an operator may approve (low risk, in uat only) when the job records it; the approval names the hopper (`auto`), and it is shown and on the timeline as any other. Off, the default: a person approves each plan. Recorded as `infra.settings_changed` when it changes. A box action: it approves work.', role: 'admin', body: infraPlanSettingsBody, returns: '{ settings: { autoApprove: boolean } }', errors: [400] },
   { method: 'post', path: '/ui/api/infra-plans/watchers', tag: 'Infra', summary: 'Name the environment watchers', description: 'Issue #870 part 4: `watchers`, the whole list: for each environment (`prod`, `uat`, `staging`, `dev`, `qa`), and for every plan (`*`), the names the notifiers\' receiver tells of each plan, approval and apply there (a handle, a team, a channel; one line, no comma, at most 50 an environment). A plan names the watchers of `*` and of each environment it names. Kept trimmed, each name once; an environment with no name is dropped. `infra.watchers_changed` when it changes. 400: an environment the hopper does not know, or a name that is not one line.', role: 'admin', body: infraWatchersBody, returns: '{ watchers: Record<string, string[]> }', errors: [400] },
-  ...OUT_OF_BAND_OPERATIONS,
+  ...OUT_OF_BAND_OPERATIONS, ...TOPOLOGY_OPERATIONS,
 ];
 
 export function infraPlanReadRoutes(app: FastifyInstance, { tenant }: { tenant: (req: FastifyRequest) => TenantParts }): void {
-  outOfBandReadRoutes(app, { tenant });
+  outOfBandReadRoutes(app, { tenant }); topologyReadRoutes(app, { tenant });
   app.get('/api/infra-plans', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const infra = tenant(req).githubProxy.infraPlans;
@@ -54,7 +55,7 @@ export function infraPlanReadRoutes(app: FastifyInstance, { tenant }: { tenant: 
 }
 
 export function registerInfraPlanRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
-  registerOutOfBandRoutes(app, o);
+  registerOutOfBandRoutes(app, o); registerTopologyRoutes(app, o);
   app.post('/ui/api/infra-plans', o.operator, async (req, reply) => {
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to approve a plan');

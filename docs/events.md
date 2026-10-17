@@ -4193,7 +4193,7 @@ Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a te
 
 ## `template.check_requested`
 
-Version 1 (`docs/schemas/template.check_requested.v1.json`). A person asked for the read-only check of a template to run again (issue #716): its last check is dropped, and the next check pass runs one.
+Version 1 (`docs/schemas/template.check_requested.v1.json`). A person asked for the read-only check of a template to run again (issue #716), or (issue #1779) a minting credential was set for the account or cluster of a read need its failed check got no credential for (`by` `minting credential <name>`): its last check is dropped, and the next check pass runs one.
 
 | field | type | required |
 |---|---|---|
@@ -6414,6 +6414,34 @@ Version 1 (`docs/schemas/infra.watchers_changed.v1.json`). An admin named the en
     ]
   },
   "by": "owner"
+}
+```
+
+## `infra.topology_reported`
+
+Version 1 (`docs/schemas/infra.topology_reported.v1.json`). A read-only check reported topology sources (issue #1781, design.md "The infrastructure topology"): for each source (`key`: `aws/<account>/<region>` or `kubernetes/<cluster>`), `ok` and the `nodes` and `links` it found, or the `error` that kept it from being read; a failed source keeps its last good snapshot. `reporter`: the API token's label, else who signed in. Never a node. On no job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `reporter` | string | yes |
+| `sources` | object[] | yes |
+
+```json
+{
+  "reporter": "topology collector",
+  "sources": [
+    {
+      "key": "aws/123456789012/eu-west-1",
+      "ok": true,
+      "nodes": 42,
+      "links": 61
+    },
+    {
+      "key": "kubernetes/arn:aws:eks:eu-west-1:123456789012:cluster/prod",
+      "ok": false,
+      "error": "the API server did not answer"
+    }
+  ]
 }
 ```
 
