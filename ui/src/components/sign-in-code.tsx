@@ -5,6 +5,8 @@ import { ExternalLink, Send } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { BrowserProfile } from '@/components/browser-profile';
+import { loginProfileName } from '@/model/browser-profile';
 import type { LoginView } from '@/model/wire';
 import { actFor, refreshLogins } from '@/store';
 
@@ -26,16 +28,20 @@ export function SignInCode({ l }: { l: LoginView }) {
     setBusy(false);
     refreshLogins().catch(() => {});
   };
+  const profile = loginProfileName(l);
   return (
     <form data-slot="sign-in-code" onSubmit={(e) => void send(e)} className="space-y-2 text-sm">
       <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
-        <li>Open the sign-in page and sign in with the account this machine must use.</li>
+        <li>Open the sign-in page, in its browser profile, and sign in with the account this machine must use.</li>
         <li>Copy the code the page shows. Paste it here and send it.</li>
       </ol>
       {l.verificationUrl && (
-        <Button asChild size="sm" variant="outline" className="w-full">
-          <a data-open-sign-in href={l.verificationUrl} target="_blank" rel="noopener noreferrer"><ExternalLink />Open the sign-in page</a>
-        </Button>
+        <>
+          <Button asChild size="sm" variant="outline" className="w-full">
+            <a data-open-sign-in href={l.verificationUrl} target="_blank" rel="noopener noreferrer"><ExternalLink />Open the sign-in page</a>
+          </Button>
+          <BrowserProfile profile={profile} url={l.verificationUrl} />
+        </>
       )}
       <div className="flex gap-2">
         <Input aria-label="Code from the sign-in page" autoComplete="off" spellCheck={false} placeholder="Code from the sign-in page" value={code} disabled={busy} onChange={(e) => setCode(e.target.value)} />
