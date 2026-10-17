@@ -14499,7 +14499,7 @@ every start of the job, so a restart or a renewal changes nothing on the machine
 hashed" — this one is not even kept.)
 
 **`hopper-gh`** (`src/github-proxy/script.ts`): POSIX sh and curl, nothing else, so it runs on any machine a job runs
-on. `issue create|comment|view|close`, `pr create|view|diff|commits|checks|reviews|status|wait|ready` (`pr status`, `pr wait`, issue #1072, "Jobs ask the hopper, not GitHub"), `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
+on. `issue create|comment|view|close`, `pr create|view|diff|commits|checks|reviews|status|wait|ready|edit|close` (`pr status`, `pr wait`, issue #1072, "Jobs ask the hopper, not GitHub"; `pr edit`, `pr close`, issue #1734, below), `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
 place (no `eval`); `--body-file` is read by curl. It prints the hopper's JSON answer and exits 1 on a refusal or a
 GitHub failure, 2 on a bad call. Its `help` is the whole manual: the job is told one protocol line
 (`GITHUB_PROXY_LINE`, `src/job-rules/`) and reads the rest only when it needs it.
@@ -14515,6 +14515,12 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    repository (its source's, a fork's parent's) — else **403** with the reason. (Before issue #1380 part 5 the hopper acted
    with its oldest user's connection for every job, and another user's job could only file an issue.);
 4. the GitHub connection of the job's own user (issue #1380 part 5): none, or its sign-in ended — **503** saying so;
+   A job edits a pull request's title or body (`pr edit N [--title T] [--body-file F]`, op `pr.edit`) or closes it with
+   no merge (`pr close N`, op `pr.close`) only when it opened that pull request through the proxy (a `github_proxy.done`
+   of `pr.create` on its timeline) or the pull request is its **work item**'s, one an earlier job of the item opened
+   (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request).
+   A close is the job's act, as its push is; it never merges, and the follow sees the pull request closed as a person's
+   close;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
    `issue.comment` 20 and 100, `pr.create` 3 and 20, reads 120 and 600; in memory, a restart starts them again) — **429**;
 6. GitHub (`src/github-proxy/api.ts`: one REST call, `pr.create` without `--base` first reads the default branch; a 401

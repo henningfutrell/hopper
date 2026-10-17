@@ -43,6 +43,10 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
                                                          (wait until its checks end, or with --for mergeable until
                                                          its merge conflicts change; then as pr status)
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
+  sh "$HOPPER_GH" pr edit N       --repo OWNER/NAME [--title TITLE] [--body TEXT | --body-file FILE]
+                                                         (change its title or body: a pull request this job opened,
+                                                         or its work item's)
+  sh "$HOPPER_GH" pr close N      --repo OWNER/NAME      (close it with no merge: the same pull requests only)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
   sh "$HOPPER_GH" check log JOB  --repo OWNER/NAME      (a failed check's full log; JOB: the last number of the check's link)
@@ -102,7 +106,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr reviews'|'pr status'|'pr wait'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr reviews'|'pr status'|'pr wait'|'pr ready'|'pr edit'|'pr close'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac
