@@ -117,7 +117,7 @@ describe('the outbox flush and the sync are spans linked to the action (issue #1
     await until(() => byName('hopper.source.sync').length >= 1);
     const [one] = byName('hopper.source.sync');
     expect(one!.attributes['hopper.sync.outcome']).toBe('error');
-    expect(JSON.stringify(spans.getFinishedSpans())).not.toContain('ghp_secret');
+    expect(JSON.stringify(spans.getFinishedSpans().map((x) => ({ n: x.name, a: x.attributes, e: x.events, s: x.status })))).not.toContain('ghp_secret');
     const durations = points(await metricsNow(), 'hopper.source.sync.duration');
     expect(durations.some((p) => p.attributes['hopper.sync.outcome'] === 'error' && p.attributes['hopper.job.source'] === 'broken')).toBe(true);
   });

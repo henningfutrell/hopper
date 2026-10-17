@@ -29,6 +29,7 @@ import {
   OUTBOX_ATTEMPTS, coalesce, jobActMarkers, notIntake, outboxBackoffMs,
   type GitHubOutboxRepository, type OutboxAct, type OutboxActs, type OutboxChange, type OutboxGiveBack, type OutboxGiveBackMore, type OutboxInput, type OutboxRow,
 } from '../../domain/github-outbox.ts';
+import { outboxBatch, outboxCall } from '../../telemetry/sources.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
 
 export type GitHubOutbox = ReturnType<typeof createGitHubOutbox>;
@@ -120,7 +121,9 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
     rows.update(due.map((r) => r.id), { state: 'sending' });
     const byId = new Map(due.map((r) => [r.id, r]));
     const wrote = new Set<string>();
-    for (const plan of coalesce(due)) {
+    const plans = coalesce(due);
+    outboxBatch(due.length, plans.reduce((n, p) => n + p.calls.length, 0));
+    for (const plan of plans) {
       if (plan.cancelled.length) rows.update(plan.cancelled, { state: 'sent', sentAt: now() });
       const left = new Map<number, number>();
       for (const c of plan.calls) for (const id of c.rows) left.set(id, (left.get(id) ?? 0) + 1);
@@ -129,10 +132,12 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
         try {
           await send(plan.repo, plan.key, call.change, call.change.op === 'comment' ? onceMarker(byId.get(Math.min(...call.rows))!) : undefined);
         } catch (e) {
+          outboxCall('failed');
           const endedAt = performance.now();
           for (const r of failed([...left.keys()].map((id) => byId.get(id)!), e)) { time(r, startedAt, endedAt); gaveUp?.(r, message(e)); }
           break;
         }
+        outboxCall('sent');
         const endedAt = performance.now();
         const done = call.rows.filter((id) => { const n = left.get(id)! - 1; if (n === 0) left.delete(id); else left.set(id, n); return n === 0; });
         rows.tx(() => {
