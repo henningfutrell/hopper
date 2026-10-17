@@ -92,9 +92,9 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name as steps, find what a mint cut short made, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`, issue #1609) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
-| `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, off unless they name an exporter (`sdk.ts`, `start.ts`); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events (`jobs.ts`); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
+| `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, off unless they name an exporter (`sdk.ts`, `start.ts`); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events (`jobs.ts`); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
-| `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts` and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
+| `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account, account deletion after a fresh GitHub sign-in; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — `install.html`, the install page, `guide.html`, the user guide (issue #556), and the **help pages** (issue #790): `help/*.md` rendered by `site/help.ts` into `help/<page>.html`, with each page's Markdown beside it, never copied into `site/`; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/` (it renders the help pages itself, with `marked`, the way `src/help/book.ts` does); of `ui/` only `index.css` and `app/story.ts`; of `help/` only its Markdown; it links to the docs on GitHub |
@@ -802,7 +802,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   aborted at startup in every job. `/tmp/hopper-` and a UUID job id take 48. (The print agents get the
   same link as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
-  the owner. A payload cannot turn the countdown back on.
+  the owner. A payload cannot turn the countdown back on. It also gets `CHECKPOINT_DISABLE=1` (`JOB_TOOL_ENV`, issue #1502): terraform's
+  version check writes `~/.terraform.d` on the machine, which the credential check reads as infra credentials.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows
@@ -3002,7 +3003,9 @@ and the test event are sent at once, in memory only.
   watchers": the plan's notice from `NotifierEvents.infraPlan`, with the watchers of its environments; `infra.plan_applied`
   is a `vault.minted` that names a plan and is no renewal); `machine.memory_low` and `machine.memory_recovered` (issue
   #868, "Machine resources over time" → "WSL and the memory alert": body adds `machineId`, `of`, `freeBytes`,
-  `totalBytes`, `thresholdBytes`, and `since` for a low).
+  `totalBytes`, `thresholdBytes`, and `since` for a low); `machine.offline` and `machine.back_online` (issue #1497: body
+  adds `machineId`, `label`, `since`); `machine.disk_over_budget` and `machine.disk_within_budget` (issue #1203, "Hopper's own
+  disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -21142,8 +21145,8 @@ each fetch. The measure left it out, so a machine could be over its disk budget 
   (each start fetches under the start lock with gc in the foreground, issue #1075). Over the budget, the checkouts are in
   `machine.disk_over_budget`'s `paths`, so a person sees why it stays over.
 
-**Not done here, each a follow-up of its own:** the Grok Bot routine posting the disk budget's events (it posts only
-questions that reach a person and intake stops; webhooks take the events). **Not the hopper's to know:** a container a
+The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
+know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
 part 4 (untagged and unlabelled: `podman image prune` once removes them). **Bounded already:** database backups and
 update logs (the update keeps one backup, `hopper-backup.dump`, and one build log, each replaced).
@@ -21385,6 +21388,15 @@ jobs** with why (strict mode, or an admin's stop), the fix steps first, and Use 
 and each warning no admin acknowledged. Tests: `test/decider/infra-credentials.test.ts` (the rule, held and not held),
 `test/ui/machine-infra-credentials.test.ts` (each card state), `test/ui/machine-credential-card.test.ts` (each state rendered,
 no contradicting text), `test/integration/machine-credential-acceptance.test.ts` (default, strict, stop, restart).
+
+**Infrastructure tools stay off the machine** (issue #1502, 2026-10-17). A job that wrote terraform ran `terraform` on the
+machine. terraform's version check then wrote `~/.terraform.d` with only `checkpoint_cache` and `checkpoint_signature`, and the
+credential check flagged it. Three parts: every job's tools get `CHECKPOINT_DISABLE=1` (`JOB_TOOL_ENV`,
+`src/executors/herdr/start.ts`; the herdr tab and the print agents, after the payload, so a payload cannot turn the version check
+back on); the read counts a `.terraform.d` folder only when it holds more than those two files (a file of that name still
+counts; the ssh probe applies the same rule); and one protocol line (`INFRA_TOOLS_LINE`, `src/job-rules/`) tells every job
+to run terraform, aws, kubectl, helm and the like only in a sandbox the hopper starts for it, never on the machine itself.
+Tests: `test/client/infra-credentials.test.ts`, `test/herdr/executor-dialog.test.ts`, `test/job-rules/infra-tools.test.ts`.
 
 **Reach is the address hold.** An ssh target's probe already asks which of the hopper's addresses it reaches (#698); one
 that reaches none has an address problem and takes no new job. A client target reaches the hopper through its door, at the
@@ -22318,7 +22330,9 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   read each, `src/sources/github/follow.ts`; `src/sources/waited-pull-requests.ts`). Each one merged or closed without a
   merge records `job.waited_pull_request_ended { pullRequest, state }` on each job waiting on it, and the engine wakes them
   on that event, as above. So a parked job wakes within one sync after its pull request closes. A read that fails is
-  logged and asked again at the next sync. A job of no source (a direct job) is not read so: no sync lists it.
+  logged and asked again at the next sync. A direct job (issue #1721) is read so by the `direct` source: no GitHub source
+  lists it, so the direct source answers `endedPullRequests` and `endedWatched` with the user's own GitHub connection
+  (`createDirectPullRequests`, `src/sources/compose.ts`); with no account connected, none ended.
   Verified by `test/integration/waited-pull-request.test.ts` (closed or merged, the job wakes at the next sync),
   `test/sources/github-waited-pull-requests.test.ts` and `test/domain/wait-on.test.ts`.
 - **Legacy waits.** A `waiting_on` job from before, with no `wait.on` and not on its own command, is **stuck work** of cause
@@ -25914,3 +25928,41 @@ no action; each job span timed by its events; GitHub calls by route with a cache
 telemetry off. `test/integration/stack-resources.test.ts` (the route through the real daemon) and
 `test/integration/instance-admin.test.ts` (an instance read); `test/ui/resources-view.test.ts` (the panel, its empty and
 refused states).
+
+## Telemetry: how work goes (issue #1486, part 3, 2026-10-17)
+
+Parts 1 and 2 traced jobs and requests and counted GitHub and store calls. The issue also asks for failures by kind,
+assessor decisions, retries, escalations by level, dead letters, sandbox spin-up and the CI gate, and for Helm values for
+a collector and a viewer.
+
+**The change.**
+- **The event log as metrics** (`src/telemetry/outcomes.ts`), one per user's runtime, beside its job traces. Each is read
+  off an event the hopper already appends, so no part of it changes:
+  - `hopper.job.assessed`, by `hopper.failure.class` (`transient`, `shared`, `job`), `hopper.assessor.decision` and
+    `hopper.assessor.auto`: failures by kind, and what the assessor decided (`job.assessed`).
+  - `hopper.job.retries`, by `hopper.retry.kind` — `requeued` (by the status it left) or `rerun` (by `user`, `assessor`,
+    `tending`).
+  - `hopper.question.escalations`, by `hopper.question.target`, the level reached; a re-notification is no new level.
+  - `hopper.handoffs`, by `hopper.handoff.reason`: a failed job handed off to a person (Needs a person). The hopper has
+    no dead-letter queue; this is where a job goes that nothing retries.
+  - `hopper.sandbox.requests`, by `hopper.sandbox.outcome` (`started`, `failed`, `declined`), and
+    `hopper.sandbox.spin_up.duration`, from the request's approval to its box started or failed: the time a person
+    takes to approve is not the box's.
+  - `hopper.landing_batch.ended`, by `hopper.landing_batch.outcome` (`promoted`, `failed`): the CI gate a batch run is.
+  Each attribute is an enum, a level or a status, taken by name and only when it is a short word, else `other`: no
+  reason, summary, signature, template or person goes out.
+- **A sandbox request is a job span** (`jobs.ts`), `hopper.job.sandbox`, one per request: from `vault.sandbox_requested`
+  to its box started, failed or declined, with its approval an event on it. So a job's trace shows how long it waited
+  for its box, and why.
+- **Helm values** (docs/deploy.md "Telemetry"): `telemetry.env` passes `OTEL_*` variables to the hopper as they are, and
+  refuses any other name, so the block cannot set the hopper's own settings; `telemetry.envFromSecret` reads them from
+  a Secret, for a header with a credential. `telemetry.viewer.enabled` adds the same all-in-one image as compose's
+  `telemetry` profile, which the hopper exports to unless `telemetry.env` names another endpoint. Its NetworkPolicy lets
+  only the hopper reach its OTLP port; Grafana is reached by `kubectl port-forward`.
+
+**Left for the next parts** (the pull request lists them): the settings in the UI; trace context carried to machines,
+lane pods and boxes; spans for work tree setup, tend, rebase, merge and deploy, the outbox flush and the sync with its
+ETag fetches; concurrent sandboxes, the outbox's batch size and coalescing, and the store's pool.
+
+**Tests.** `test/telemetry/outcomes.test.ts` (in-memory exporters, times from the events, no event text exported) and
+`test/scripts/helm-chart-telemetry.test.ts` (what `helm template` renders).

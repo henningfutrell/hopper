@@ -2,19 +2,24 @@
 // that pull request, no follow records its end, so the sync reads it. Closed without a merge, or merged, the job is woken
 // within one sync (`job.waited_pull_request_ended`, then `job.wait_ended { by: hopper }`); open, it still waits.
 import { afterEach, describe, expect, it } from 'vitest';
+import { DIRECT_SOURCE, directKey } from '../../src/domain/direct-jobs.ts';
 import type { Job } from '../../src/domain/types.ts';
+import { createFakeGitHubServer, endPull, type FakeGitHubServer } from '../../src/sources/github/http/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { connectGitHub } from '../support/github-account.ts';
+import { TEST_ACCOUNT_TOKEN, connectGitHub, fakeGitHubEnv } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
 let a: TestApp | undefined;
 let cleanup: (() => void) | undefined;
+let server: FakeGitHubServer | undefined;
 
 afterEach(async () => {
   await a?.stop();
   a = undefined;
+  await server?.close();
+  server = undefined;
   cleanup?.();
 });
 
@@ -70,5 +75,39 @@ describe('a job waiting on a pull request no job follows (issue #1433)', () => {
     await app.sync();
     await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
     expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${pr.url} was merged` }]);
+  });
+});
+
+// Issue #1721: a direct job has no source that lists it for the GitHub source, so the `direct` source reads its waits
+// itself, with the user's own GitHub connection (the node:http fake GitHub here, the connected account's real adapter).
+describe('a direct job waiting on a pull request (issue #1721)', () => {
+  it('merged: woken at the next sync of the direct source; open, it still waits', async () => {
+    const fake = await createFakeGitHubServer({
+      login: 'owner', token: TEST_ACCOUNT_TOKEN,
+      installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'hopper-sandbox', labels: [], issues: [
+        { number: 2, title: 'Another change', body: '', pullRequest: true, labels: [], assignees: [], pull: { headRef: 'other', base: 'dev', state: 'OPEN' } },
+      ] }] }],
+    });
+    server = fake;
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    a = await startTestApp({ dbPath: db.dbPath, env: fakeGitHubEnv(fake) });
+    connectGitHub(a, [REPO]);
+    const { store } = a.user();
+    const job = store.tx(() => {
+      const j = store.jobs.create({ executor: 'scripted', payload: {} }, 50, { source: DIRECT_SOURCE, kind: DIRECT_SOURCE, key: directKey('d1'), url: 'https://hopper.test/#direct-jobs/d1', repo: REPO });
+      return store.jobs.update(j.id, { status: 'waiting_on', wait: { for: 'the other change to land', on: { kind: 'pull_request', number: 2, about: 'merge' }, since: new Date().toISOString() } });
+    });
+    const pr = `https://github.com/${REPO}/pull/2`;
+
+    await a.sync();
+    expect((await a.job(job.id)).status).toBe('waiting_on');
+    expect(await endedWaits(a, job.id)).toEqual([]);
+
+    endPull(fake.state.repos.get(REPO)!, 2, 'MERGED', new Date().toISOString());
+    await a.sync();
+    await waitFor(async () => (await endedWaits(a!, job.id)).length > 0, { what: 'job.wait_ended' });
+    expect(await endedWaits(a, job.id)).toEqual([{ by: 'hopper', note: `${pr} was merged` }]);
+    expect((await a.events('types=job.waited_pull_request_ended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: pr, state: 'merged' }]]);
   });
 });
