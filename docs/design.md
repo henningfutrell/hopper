@@ -24597,6 +24597,8 @@ below, part 2).
 **What is not done yet** (part 1 ships the saga, its store and its coordinator). The sandbox work — create the sandbox, mint and grant its credentials, set up the worktree, run the executor, push, open the
 pull request, tear down, revoke — moves onto a saga kind in a later part, with the executor's session state (#1465) in its
 data. The audit on the issue lists every boundary call that is no durable record today, each with a child issue.
+Later parts moved the need and box steps ("Need steps kept as sagas") and the end of a moved job's left agent ("The
+lost-machine move"). The job's whole run is not a saga: issue #1662 carries it, with the lease across several hoppers.
 
 **Decisions:**
 - **"Saga", not "work item".** The work item is the work-item ledger's (issue #1067): one item of a source. A saga is a
@@ -24743,8 +24745,9 @@ stream — with 401, before the `end-left` step ends it. A stream it holds open 
   `auto` and `why`: the job page, the timeline and the reports read it already.
 - **A saga for the end of the agent left, not the deferred cleanup.** The cleanup is for an ended job and reads the job's
   executor state, which the new run overwrites; the saga keeps the old pane with it and survives a stop on any host.
-- **The job's whole run is not a saga yet.** Its steps (claim, credentials, pane, run, checkpoint, end) stay in the runner;
+- **The job's whole run is not a saga.** Its steps (claim, credentials, pane, run, checkpoint, end) stay in the runner;
   the issue's tests — a job stopped mid-run on one machine resumes on another, with no task sent twice — pass with the move.
+  "Not built" below says why, and where it is carried (issue #1662).
 
 **A checkpoint at the first missed heartbeat** (issue #1569). An `away` move resumes from the job's last checkpoint, and a
 pass takes one only every ten minutes: the work after it was lost. Once the link is down the machine cannot be read, so
@@ -24770,8 +24773,18 @@ Decisions:
 - **No new event and no field.** The checkpoint is `job.checkpointed`, as any other. Why it was taken is said in the log
   only when it fails.
 
-**Not built (left on issue #1569).** A lease on lanes and running jobs across several hoppers: the daemon is one writer
-for its database (the daemon lock), so a second hopper on the same database is not supported yet.
+**Not built, by a decision on issue #1569 (it closes with the parts above; the rest is issue #1662, "Several hoppers on
+one database").**
+- **The job run as a saga kind** (`job-run`, keyed by the job and its attempt, with the steps claim, credentials, pane, run,
+  checkpoint, end, and the executor's session state in its data). A saga step runs to its end, and a job's run is one
+  executor call that can last hours: it places the credentials, opens the pane and runs, with its own holds through a link
+  loss. To split it, the runner and the executors must change. The saga's lease would be the hopper's hold on a running job,
+  which matters only when another hopper can take the job. The tests the issue names pass with the move.
+- **A lease on lanes and running jobs across several hoppers.** The daemon is one writer for its database (the daemon lock),
+  so a second hopper on the same database is not supported. On the machine side, the reconnect grace after a restart and
+  the link grace already act as the lease: when either ends, the job moves (`away`), as the issue asks.
+- Issue #1662 carries both, with audit gap 17 (#1627: a lease on each sweep, recovery and timer), as one change: the
+  daemon lock stops being a single-writer rule.
 
 **Residual risk, stated.** Between the lost machine's last answer and the move (the grace, 30 s by default), the agent there
 may still ask the hopper, with the token of the job's run then: its asks are the job's, as before the machine was lost. Its
