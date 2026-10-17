@@ -79,4 +79,9 @@ export interface HerdrClient extends MachineShell {
   closePane(paneId: string): Promise<void>;
   /** True while the machine's link is down (issue #752): a client target not dialled in. Absent: the machine has no link. */
   linkDown?(): boolean;
+  /**
+   * Calls `fn` at each **missed heartbeat** of the machine's link (issue #1569): a PING not answered within its interval,
+   * before the PING timeout drops the link. Returns the call that stops it. Absent: the machine has no link.
+   */
+  onLinkLate?(fn: () => void): () => void;
 }

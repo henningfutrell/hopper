@@ -22,6 +22,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const panes = new Map<string, Pane>();
   const failures = new Map<string, { code: string; times: number }>();
   const lostAnswers = new Set<string>();
+  const lateListeners = new Set<() => void>();
   /** setUnreachable: every call rejects. */
   let n = 0, unreachable = false, restarts = 0;
   let busyStarts = o.shellNotReadyStarts ?? 0;
@@ -157,6 +158,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     loseNextAnswer(method) { lostAnswers.add(method); },
     setUnreachable(on) { unreachable = on; },
     linkDown: () => unreachable,
+    onLinkLate(fn) { lateListeners.add(fn); return () => { lateListeners.delete(fn); }; },
+    lateLink() { for (const fn of [...lateListeners]) fn(); },
     screen: (id) => paneScreen(panes.get(id), signedIn),
     openPane({ title, lines }) {
       n++;

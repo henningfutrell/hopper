@@ -106,6 +106,33 @@ describe('the link keepalive', () => {
     expect(herdr.linkDown?.()).toBe(true);
   });
 
+  it('a PING not answered within its interval is a missed heartbeat, said to the herdr client\'s listeners before the drop (issue #1569)', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'jh-ping-'));
+    process.env.FAKE_HERDR_DIR = dir;
+    r = await rig({ everyMs: 60_000, timeoutMs: 60_000 });
+    const herdr = herdrVia(r);
+    await herdr.getAgent('jh-a');
+    const first = r.link()!;
+    const said: string[] = [];
+    const off = herdr.onLinkLate!(() => said.push(first.destroyed ? 'late after the drop' : 'late'));
+    r.blackhole();
+    await waitFor(() => first.destroyed, { timeoutMs: 2000, what: 'the hopper to drop the dead link' });
+    expect(said).toEqual(['late']);
+    off();
+  });
+
+  it('a live link says no missed heartbeat', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'jh-ping-'));
+    process.env.FAKE_HERDR_DIR = dir;
+    r = await rig(PING);
+    const herdr = herdrVia(r);
+    const said: string[] = [];
+    herdr.onLinkLate!(() => said.push('late'));
+    await herdr.getAgent('jh-a');
+    await new Promise((res) => setTimeout(res, 400));
+    expect(said).toEqual([]);
+  });
+
   it('the client finds a half-open link dead and dials in again', async () => {
     r = await rig(PING);
     r.blackhole();
