@@ -167,7 +167,7 @@ describe('the tunnel\'s edge in the hopper (issues #795, #968): only the API, an
 
   it('through the tunnel: 404 off the API, the event stream included; the agent\'s own ask names the hopper as Host and passes', async () => {
     const { a, hit } = await app('cloudflare');
-    for (const p of ['/api/state', '/ui/api/jobs', '/ui/auth/api-token', '/ui/auth/token/refresh']) expect(await hit(p), p).toBe(200);
+    for (const p of ['/api/state', '/ui/api/jobs', '/ui/auth/api-token', '/ui/auth/token/refresh', '/ui/auth/device-grant', '/ui/auth/device-grant/poll']) expect(await hit(p), p).toBe(200);
     expect(await hit('/tunnel/agent', '203.0.113.5', 'hopper:4790')).toBe(200);
     expect(await hit('/tunnel/agent', '203.0.113.5', 'H.example.com:443')).toBe(404);
     for (const p of ['/', '/index.html', '/api/events/stream?token=x', '/ui/auth/login', '/help/x', '/install.sh', '/artifact-link/x']) expect(await hit(p), p).toBe(404);
@@ -183,6 +183,15 @@ describe('the tunnel\'s edge in the hopper (issues #795, #968): only the API, an
     expect(await hit('/api/state', '198.51.100.7')).toBe(200);
     later();
     expect(await hit('/api/state')).toBe(200);
+    await a.close();
+  });
+
+  it('a device grant request counts as a token exchange; its poll does not (issue #892)', async () => {
+    const { a, hit } = await app('cloudflare');
+    for (let i = 0; i < 5; i++) expect(await hit('/ui/auth/device-grant')).toBe(200);
+    expect(await hit('/ui/auth/device-grant')).toBe(429);
+    expect(await hit('/ui/auth/api-token')).toBe(429);
+    for (let i = 0; i < 12; i++) expect(await hit('/ui/auth/device-grant/poll')).toBe(200);
     await a.close();
   });
 

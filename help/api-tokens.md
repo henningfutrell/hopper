@@ -113,6 +113,42 @@ hopper token revoke-all
 
 `--preset` gives a preset's scopes, and its box flag unless you give `--box`. `--scope` adds more. `--role` is `admin` when you leave it out. `--days` sets its end (1 to 365); `--no-expiry` (an admin's only) gives it no fixed end; `--minutes` gives its API tokens a shorter life than the admin's setting.
 
+## Let an agent ask for a grant
+
+An agent can ask for a grant itself, with no token. You approve the ask in the UI. You do not copy a token to the agent.
+
+1. The agent asks for the grant it needs. It names the same fields as a mint: `label`, `holder`, `role`, `scopes`, `preset`, `box`, `days`, `minutes`.
+
+   ```sh
+   curl -X POST http://localhost:4790/ui/auth/device-grant \
+     -H 'content-type: application/json' \
+     -d '{"label": "Grok Bot", "holder": "grok-bot", "preset": "agent-intake", "role": "operator"}'
+   ```
+
+   The answer holds a `deviceCode` (the agent keeps it and shows it to nobody), a `userCode` such as `BCDF-GHJK`, and `verificationPathComplete`, a link to **Settings → API tokens** that holds the code.
+2. The agent shows you the code, or the link at the hopper's URL.
+3. In **Settings → API tokens → Approve a device**, enter the code, or open the link. You see what the agent asks for and from where it asked. Approve only a code that the agent showed to you yourself.
+4. Click **Approve** or **Deny**. When you approve, the grant is yours, as if you minted it: its role is at most yours, and its scopes are checked as at a mint.
+5. The agent polls every `interval` seconds (5):
+
+   ```sh
+   curl -X POST http://localhost:4790/ui/auth/device-grant/poll \
+     -H 'content-type: application/json' \
+     -d '{"deviceCode": "hopper_dc_…"}'
+   ```
+
+   It gets `{"state": "waiting"}` until you answer. After you approve, it gets `{"state": "granted"}` with the grant's first API token and refresh token, one time. After you deny, it gets `403`.
+
+An ask ends after 10 minutes, and when the hopper restarts. Then the agent asks again. At most 50 asks wait at one time.
+
+From the command line:
+
+```sh
+hopper token device BCDF-GHJK     # what the ask is for
+hopper token approve BCDF-GHJK    # --role sets the most role it can get (admin when you leave it out)
+hopper token deny BCDF-GHJK
+```
+
 ## Exchange a sign-in for a token
 
 An agent with no UI session can exchange a sign-in for one API token. It sends a token the hopper already accepts for reads: a GitHub token of your connected account, or the JWT an auth gateway forwards.

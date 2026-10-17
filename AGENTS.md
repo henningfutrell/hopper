@@ -105,7 +105,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, the admin's API-token lifetime at most
   (5–15 minutes), its role no higher than its minter's, refreshed from a **grant** a person minted from a UI session (issue
   #881, `docs/design.md` "Grants and refresh tokens": `POST /ui/auth/token/refresh` with a one-time refresh token, only
-  its hash kept; a spent one sent again ends the grant) or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
+  its hash kept; a spent one sent again ends the grant; or one an agent asked for at `POST /ui/auth/device-grant`, which a
+  person approved by its user code through the UI session, never an API token, and the agent takes once at its poll, issue
+  #892, `docs/design.md` "Grants by device approval") or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
   accepts, never by another API token; a grant's token uses only the routes its scopes name, deny by default; Access decides
   each use, `api_token#can_view|can_operate|can_administer`) whose UI role allows it. A
   **box action** (issue #795: starts a job, runs a command, approves or merges, updates, changes the work on a machine) also

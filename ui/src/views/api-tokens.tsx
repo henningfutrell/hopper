@@ -4,7 +4,8 @@
 // after the mint. The list shows each live grant: holder, scopes, when it was made, last used and from where, and when it
 // ends; Revoke ends it at once, Revoke all ends every one. A box grant's tokens (issue #795) are the only ones that may do
 // a box action: a grant is one when a ticked scope is a box action. The scopes are ticked, never typed (issue #909,
-// ./scope-checklist.tsx). The hopper's admin sets how long an API token lives.
+// ./scope-checklist.tsx). The hopper's admin sets how long an API token lives. An agent may ask for a grant instead, by
+// a code the person approves here (issue #892, ./device-approval.tsx).
 import { KeySquare, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -17,6 +18,7 @@ import { get, post, SessionRejected } from '@/lib/api';
 import { apiTokenLine, boxPermissions, grantLine, mintableRoles } from '@/model/api-tokens';
 import type { ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenView, ScopeRegistry, UiRole } from '@/model/wire';
 import { ScopeChecklist } from './scope-checklist';
+import { DeviceApproval } from './device-approval';
 import { useHopper } from '@/store';
 import { useCanAdminInstance } from '@/store/selectors';
 
@@ -101,6 +103,7 @@ export function ApiTokens() {
           <span className="text-xs text-muted-foreground">Applies to API tokens issued from now on.</span>
         </form>
       )}
+      {roles.length > 0 && <DeviceApproval role={role} registry={registry} onApproved={() => void reload()} />}
       {minted && (
         <div className="space-y-2 rounded-md border border-warn p-3">
           <p className="text-sm font-medium">{minted.view.label}: copy both now. They are not shown again.</p>

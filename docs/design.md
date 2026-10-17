@@ -13593,8 +13593,8 @@ needs the legitimate holder to refresh after a thief: a thief who refreshes firs
 until the holder's next refresh ends it. The scope names a route's area and act, not an object: `questions:answer` answers
 any question of the user. Sender binding (DPoP, RFC 9449) and per-grant repository or source limits are not built.
 
-**Not built** (follow-ups): a grant minted by device-code approval; sender binding (DPoP); per-grant repository or source
-restrictions.
+**Not built** (follow-ups, issue #892): sender binding (DPoP); per-grant repository or source restrictions. A grant minted
+by device approval is built: "Grants by device approval" below.
 
 Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
 ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
@@ -13602,6 +13602,49 @@ ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign
 in scope and out, the retry, the events; no box flag; revoke and revoke all; the mint's checks; the setting's bounds),
 `test/domain/token-scopes.test.ts`, `test/integration/api-tokens.test.ts`, `test/integration/box-tokens.test.ts`,
 `test/ui/api-tokens.test.ts`.
+
+### Grants by device approval (issue #892, 2026-10-16)
+
+The first part of issue #892, a follow-up of #881: an agent gets a grant with no token pasted into it. On the model of the
+OAuth 2.0 device authorization grant (RFC 8628). Sender binding and per-grant repository or source limits are the issue's
+other parts, not built here.
+
+- **The ask.** `POST /ui/auth/device-grant`, with no credential: the grant the agent wants, in a mint's fields (`label`,
+  `holder`, `role`, `scopes`, `preset`, `box`, `days`, `minutes`, `deny`). It answers a **device code** (`hopper_dc_` and
+  64 hex digits, which the agent keeps) and a **user code** (`BCDF-GHJK`: eight letters of twenty, no vowels, so no word is
+  spelled and none reads as a digit), `verificationPath` (`/#settings/api-tokens`) and `verificationPathComplete` (with
+  the code), `expiresAt` (`DEVICE_GRANT.minutes`, 10) and `interval` (5 s). Only the device code's SHA-256 is kept.
+  The paths are the hopper's own: the agent knows the URL it called, and the hopper builds no URL from a Host header.
+- **The approval.** A signed-in person enters the user code in Settings → API tokens (Approve a device; case, spaces and
+  dashes do not count), or opens the link, which looks it up at once: `GET /api/api-tokens/device/:code` shows the ask and
+  who sent it (as the sign-in limit counts callers), never the device code. Approve is `POST /ui/api/api-tokens`
+  `{ action: 'approve-device', code }`: the ask is checked as that person's own mint (`checked`, the role at most theirs,
+  the scopes, the preset, `days: null` an admin's only, a delegate's `deny`), so a refusal is the person's to read (400,
+  403). Deny is `deny-device`. An API token may approve none (403, as a mint): an agent never approves a grant. The CLI:
+  `hopper token device|approve|deny <code>`.
+- **The poll.** `POST /ui/auth/device-grant/poll` `{ deviceCode }`: `{ state: 'waiting', interval, expiresAt }` until a
+  person answers; then once, and the request ends — approved: the grant is minted now (`granted`), Access asked for its
+  role and box flag as at a mint, and the answer is a mint's (`ApiGrantMinted`) with `state: 'granted'`; denied: 403.
+  After that, or when it ended, the device code is unknown (401). The grant is minted at the poll, not at the approval,
+  so an approval nobody collects leaves no grant behind.
+- **Kept in memory.** `src/http/ui/device-grants.ts`: requests by the device code's hash, each ends `DEVICE_GRANT.minutes`
+  after it was made, approved or not; at most `DEVICE_GRANT.most` (50) wait at once (429 beyond). A restart drops them
+  all, and the agent asks again: an ask is cheap, and a stored one would be a credential in the database for nothing.
+- **Limits.** The ask and the poll share the sign-in limit per caller (20 a minute): a poll each interval keeps under it.
+  Through the tunnel both pass (`throughTheTunnel`); the ask counts as a token route (5 a minute), the poll does not.
+- **No slow-down answer.** RFC 8628 answers `slow_down` to a poll faster than the interval. The sign-in limit already
+  answers 429 to a caller that polls too fast, so there is no second rule.
+- **Events.** None new: the grant's mint is `api_grant.minted`, as any mint. Each ask, approval and denial is a log line,
+  never a code but the user code.
+
+**Residual risk, stated.** Anyone who reaches the hopper may ask; the ask holds nothing until a person approves it. The
+risk of a device flow is phishing: someone asks, then gets a person to approve their code as if it were the person's
+own agent's. The form says to approve only a code from the agent the person runs, and shows who asked and what for. Whoever
+holds the device code when the request is approved takes the grant; it is shown to nobody but the agent that asked.
+
+Tests: `test/http/device-grants.test.ts` (the codes, waiting, approve once, deny, the end, the cap),
+`test/integration/device-grants.test.ts` (the flow over HTTP and its refresh; deny; the mint's checks at the approval;
+no approval by an API token; the CLI), `test/http/tunnel.test.ts`, `test/ui/api-tokens.test.ts`.
 
 ### The scope registry and presets (issue #909, 2026-10-12)
 

@@ -6,9 +6,12 @@
 //   Scenario: an agent asks, a person approves, the agent gets its pair once and refreshes it
 //   Scenario: a person denies; the agent is told, and the request is gone
 //   Scenario: the approval checks the ask as a mint does; an API token may not approve; an unknown code is 404
+//   Scenario: the operator CLI shows, approves and denies a request
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { rawRequest } from '../support/http.ts';
+import { runCli, type CliIo } from '../../src/cli.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { KEY } from '../support/webhooks.ts';
 
@@ -107,5 +110,28 @@ describe('grants by device approval (issue #892)', () => {
     expect((await person(a, session, { action: 'approve-device', code: 'BCDF-GHJK' })).status).toBe(404);
     expect((await a.api('GET', '/api/api-tokens/device/BCDF-GHJK', undefined, { 'x-hopper-session': session })).status).toBe(404);
     expect((await poll(a, `hopper_dc_${'0'.repeat(64)}`)).status).toBe(401);
+  });
+
+  it('the operator CLI shows, approves and denies a request', async () => {
+    const a = await boot();
+    const out: string[] = [];
+    const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
+    const hopper = async (argv: string[]) => {
+      out.length = 0;
+      const code = await runCli([...argv, '--url', a.url], io);
+      return { code, out: out.join('') };
+    };
+    const first = (await ask(a, { role: 'viewer' })).body as { deviceCode: string; userCode: string };
+    const shown = await hopper(['token', 'device', first.userCode]);
+    expect(shown.code).toBe(0);
+    expect(JSON.parse(shown.out)).toMatchObject({ userCode: first.userCode, ask: { label: 'Grok Bot', role: 'viewer' } });
+    expect((await hopper(['token', 'approve', first.userCode])).code).toBe(0);
+    // The CLI's session ends with the call: the grant is minted at the poll, for the CLI's user.
+    expect((await poll(a, first.deviceCode)).body).toMatchObject({ state: 'granted', view: { role: 'viewer', holder: 'grok-bot' } });
+
+    const second = (await ask(a)).body as { deviceCode: string; userCode: string };
+    expect((await hopper(['token', 'deny', second.userCode])).code).toBe(0);
+    expect((await poll(a, second.deviceCode)).status).toBe(403);
+    expect((await hopper(['token', 'approve', second.userCode])).code).not.toBe(0);
   });
 });
