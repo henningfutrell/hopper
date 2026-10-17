@@ -289,10 +289,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Kubernetes runtime (issue #1286), as pods. It burns the boxes an older build launched, and their sandbox records.
   const sandboxRuntime = seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime, ...(config.kubernetes ? { kubernetes: { ...config.kubernetes, port } } : {}) }), sandboxes = createSandboxes({
     runtime: sandboxRuntime, repo: instance.sandboxes, runs: instance.sandboxRuns, instanceId: instance.settings.instanceId(),
-    network: hopperNetwork(config), cluster: inPod,
+    network: hopperNetwork(config), cluster: inPod, clients: sandboxClientsOf(runtimes),
     // A read-only box's egress (issue #849): on a socket runtime only; a Kubernetes box has its own egress policy.
     ...(config.egress && (sandboxRuntime?.kind === 'podman' || sandboxRuntime?.kind === 'docker') ? { egress: createEgress(config.egress) } : {}),
-    clients: sandboxClientsOf(runtimes),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
   const sagas = createSagas({ repo: instance.sagas, definitions: [needStepSaga({ steps: (userId) => runtimes.get(userId)?.needSteps }), jobMoveSaga({ engine: (userId) => runtimes.get(userId)?.engine })], instanceId: instance.settings.instanceId(), clock, logger }); // sagas: work across a boundary that goes on after a stop, on any host (issue #1524)
