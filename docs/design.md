@@ -21005,11 +21005,24 @@ syncs at once. The assignment counts as the user's act, as Assign to me does (`a
 app's act, so Intake lists the issue as a request card: a person approves its text before a job runs it, whoever wrote it.
 Then its pull request is `not_by_a_job`; the job the approval starts makes its own.
 
-**A rebase of a second pull request: not done, by decision** (part 2). A wrong base on a job's branch is moved (above); a job's
-pull request whose item no job follows is attached by reconciling, then tended as any. What stays is a second pull request of
-an item whose job follows another one. A rebase is a tend, and a tend runs the item again for the pull request its job follows:
-tending the second one would take the follow off the first. The list names both (`second_pull_request`), and a person closes
-one; issue #1208 carries the rest.
+**A second pull request with merge conflicts: closed** (issue #1208, 2026-10-16). A wrong base on a job's branch is moved
+(above); a job's pull request whose item no job follows is attached by reconciling, then tended as any. What stays is a second
+pull request of an item whose job follows another one. A rebase is a tend, and a tend runs the item again for the pull request
+its job follows: tending the second one would take the follow off the first. Two paths were open: tend the second one with a
+job that follows no pull request, or close it. Closing is the smaller change and keeps one item, one followed pull request:
+a job of the item already does the item's work in the followed one, so a second one with merge conflicts is a leftover of an
+earlier job. So the census closes a `second_pull_request` (`closedAsSecond` in `src/sources/github/census.ts`) when:
+
+- its head branch is named for its issue (`namesIssue`, a job's branch); one on any other branch is a person's, listed, never
+  closed;
+- GitHub reads it with merge conflicts (`conflicting` in the batched read); one with none stays open and listed, for a person;
+- the census did not move it in the same round: its merge conflicts were read against the base from before, so the next census
+  decides.
+
+It closes it without a merge (`GitHubApi.closeWithoutMerge`), posts one fixed comment (`secondPullRequestNote`: it has merge
+conflicts, the work on its issue continues in the followed pull request, which a job follows, and a change to keep goes
+there), and lists it no more. The followed pull request and its job do not change. A close GitHub refuses is logged and tried at
+the next round, with no comment. No event: no job holds it, as for the move. Its branch stays, so a person can reopen it.
 
 Tests: `test/domain/untracked-pull-requests.test.ts` (each reason, a stack, no landing batches, the issue a text links),
 `test/sources/github-pr-census.test.ts` (the census, the move of a job's branch, a person's branch left),
@@ -21019,7 +21032,9 @@ Tests: `test/domain/untracked-pull-requests.test.ts` (each reason, a stack, no l
 title in the batched read). Part 2: `test/sources/github-take-in.test.ts` (Take into Intake, only on an issue the census
 offers), `test/ui/pull-requests-untracked.test.ts` (its button, a viewer's none, a second pull request's text), the second
 pull request in the domain, census and cadence tests, and Take into Intake over the real daemon in
-`test/integration/untracked-pull-requests.test.ts`.
+`test/integration/untracked-pull-requests.test.ts`. Issue #1208: `test/sources/github-pr-census.test.ts` (a second pull request
+closed with its note, the followed one left; none closed without merge conflicts, on a person's branch, or just moved; a refused
+close tried again).
 
 ## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
 
