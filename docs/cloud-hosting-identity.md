@@ -1,0 +1,261 @@
+# Cloud hosting: the GitHub account as the identity at hopper.io
+
+**Status: proposal.** Nothing here is implemented (issue #463). This document compares the paths
+for each open question and gives a recommendation for each. **All four decisions belong to the
+owner**, in the tracking issue (the parent of #463). This document does not pick a domain, a host
+or a database. It does not change any GitHub App setting or secret.
+
+The terms *hopper.io account*, *install registration* and *linked install* are proposed here only.
+They go into `docs/glossary.md` with the implementation, after the decisions.
+
+## What is fixed already
+
+These points come from the issue. The paths below keep all of them.
+
+- A hopper.io account is keyed by GitHub's **numeric user id** (`id` from `GET /user`), never by the
+  login. A login can be renamed, and someone else can then register the old name.
+- hopper.io keeps only the account id, the login and the avatar URL (for display), and the
+  installs the account registered. It keeps no GitHub access or refresh token after sign-in.
+- **Each install keeps its own sign-in.** A hopper.io session never gives a session on an install.
+- Sign-out and account deletion are covered in [Decision 5](#5-sign-out-and-account-deletion).
+
+## How an install signs in with GitHub today
+
+- `src/connected-accounts/hopper-app.ts`: the shipped app is `hopper-qm`. The hopper ships its
+  public client id and slug only. The app is public: any account or organization installs it
+  (issue #352). Its permissions are issues, pull requests and contents read/write, and checks,
+  commit statuses and metadata read.
+- `src/connected-accounts/device-flow.ts`: the device flow needs no secret. This is the default way in.
+- `src/connected-accounts/web-flow.ts`: the browser redirect (authorization code with PKCE, through
+  openid-client) needs the app's client secret, `HOPPER_GITHUB_CLIENT_SECRET`, from the runtime. The
+  callback `<sign-in origin>/ui/auth/github/callback` must be registered on the app. GitHub allows
+  **at most 10 callback URLs** per app (`docs/sign-in.md`).
+- `src/connected-accounts/identity.ts`: `whoIs()` reads `GET /user` (and the verified emails when
+  the app may read them). The subject is the numeric id.
+- `src/connected-accounts/revocation.ts`: GitHub keeps **at most ten tokens per user and app**. An
+  eleventh grant revokes an older one, whoever holds it. The token a person signs in with is also the
+  token their jobs work through (issue #214).
+- `src/users/identities.ts`: `userForIdentity()` links *(realm, subject)* to one user of the
+  install. An unlinked identity whose realm vouches for an email signs in as the user with that
+  email (issue #1380).
+- `src/auth/gateway.ts`: the `gateway` realm checks a token that a gateway in front of the hopper
+  forwards on **every request**, by JWKS (jose) or by introspection (openid-client).
+
+## 1. Which GitHub App hopper.io signs in through
+
+### Path A: the shipped `hopper-qm` app
+
+- **Client secret.** hopper.io signs in by browser redirect, so it needs the client secret of
+  `hopper-qm`. That secret then lives on a public, always-on service. A leak of it lets an attacker
+  delete or reset tokens of `hopper-qm` (`DELETE /applications/{client_id}/token`), and these are the
+  tokens every install's jobs work through. An install that uses the web flow on `hopper-qm` holds
+  the same secret. A rotation for one breaks all of them at once.
+- **Redirect URLs.** hopper.io takes one of the 10 callback slots. The slots are shared with every
+  install that signs in by redirect on `hopper-qm`. Ten is already too few for a public app.
+- **What breaks when the app is shared with installs.**
+  - The ten-token limit is per user and app. Each sign-in at hopper.io is a new grant. Enough
+    sign-ins at hopper.io revoke the token of a person's install, and **their jobs stop working on
+    GitHub** until they sign in again there.
+  - A token from `hopper-qm` may write issues, pull requests and contents wherever the app is
+    installed. hopper.io would receive that power at each sign-in, though it needs only `GET /user`.
+    It drops the token at once, but it holds it during the exchange.
+  - GitHub's consent page and the person's *Authorized GitHub Apps* list show one app for two
+    different things. A person who revokes the app to leave hopper.io also cuts off their install.
+- **For it:** no new app to register. One consent for a person who uses both.
+
+### Path B: a separate hosted GitHub App for hopper.io
+
+- **Client secret.** A new secret that only hopper.io holds. hopper.io gives it from its runtime, as
+  an install gives `HOPPER_GITHUB_CLIENT_SECRET` (`docs/design.md` "Secrets": a credential the
+  service is *given*). A leak touches only hopper.io sign-in. No install uses it.
+- **Redirect URLs.** hopper.io's own callback(s) only. Installs keep all 10 slots of `hopper-qm`.
+- **Permissions.** No repository permissions, no account permissions. `GET /user` needs none. The
+  app is never installed on a repository. Its user tokens can read the person's public profile and
+  nothing else.
+- **What breaks:** nothing at the installs. Its tokens count toward a separate ten-token limit.
+- **Against it:** one more app to register and one more secret to rotate. A person sees a second
+  consent page.
+
+### Recommendation: Path B
+
+A separate app keeps hopper.io's secret, its callbacks and its token limit away from the token that
+jobs work through. It also needs no permissions, which is the least privilege for what hopper.io
+does. The cost is one app registration and one secret. **Decision for the owner.**
+
+## 2. Where the hopper.io service lives
+
+### What it would reuse
+
+From `src/connected-accounts/`, with little or no change:
+
+| File | Use at hopper.io |
+|---|---|
+| `hopper-app.ts` | the `HopperApp` shape and `hopperApps()`, given the hosted app's client id |
+| `web-flow.ts` | the browser sign-in, PKCE and state, through openid-client |
+| `identity.ts` | `whoIs()`: the numeric id, the login (the avatar URL is one more field of `GET /user`) |
+| `revocation.ts` | delete the token after sign-in, and the grant at account deletion |
+
+From `src/auth/`, nothing at first. The realms, role rules, tickets and the UI session are an
+install's. hopper.io has one way in and no roles. If [Decision 4](#4-whether-installs-may-trust-hopperio-as-an-issuer)
+makes hopper.io an issuer, its token format must match what `src/auth/oidc.ts` or
+`src/auth/gateway.ts` checks, and the tests of those realms are the contract.
+
+### Path A: a `cloud/` service in this repository
+
+- Imports the files above directly. One change to GitHub sign-in updates both sides in one pull
+  request. The tests run in the same suite.
+- Needs changes to the repo law in the same change: a row in `docs/design.md` "Directories and what
+  each must not know" (`cloud/` imports only `src/connected-accounts/` and `src/domain/types.ts`;
+  nothing in `src/` imports `cloud/`), and the rule "The UI is the daemon's one built part" names a
+  second built part.
+- hopper.io would move main → dev → beta → canary → stable with the daemon. That is safe, but a fix
+  to hopper.io waits for the same promotions, unless its deploy takes `main` or `dev` directly.
+- The daemon image must not carry `cloud/`, and the hopper.io image must not carry the daemon.
+
+### Path B: a separate repository
+
+- Its own deploy cadence, its own checks, its own law.
+- It must copy the four files (about 150 lines) or this repo must publish them as a package. A copy
+  drifts. A package adds a release step for one caller.
+- A change to the sign-in contract becomes two pull requests in two repositories.
+
+### Recommendation: Path A
+
+The shared code is small, and it is the code most likely to change with GitHub. Keeping it in one
+place stops drift, and a package for one caller is generality not yet earned. Move hopper.io out
+when its deploy cadence or its law starts to fight the daemon's. **Decision for the owner.**
+
+## 3. Personal accounts only, or GitHub organizations too
+
+### Path A: personal accounts only
+
+Data model:
+
+| Table | Columns |
+|---|---|
+| `account` | `github_user_id` (bigint, primary key), `login`, `avatar_url`, `created_at`, `seen_at` |
+| `install_registration` | `id`, `account_id` → `account`, the install's own fields (from the multiple-installs issue), `created_at` |
+
+- `login` and `avatar_url` are display only. Each sign-in updates them from `GET /user`.
+- Every registration has one owner. Only that account sees it.
+- The app needs no permissions. hopper.io needs no token after sign-in.
+
+### Path B: GitHub organizations too, installs shared with an org's members
+
+Data model, in addition to Path A:
+
+| Table | Columns |
+|---|---|
+| `organization` | `github_org_id` (bigint, primary key), `login`, `avatar_url` |
+| `install_registration` | `owner_kind` (`account` or `organization`), `owner_id` in place of `account_id` |
+| `membership` (or none) | `account_id`, `org_id`, `role`, `checked_at` |
+
+- hopper.io must know who is a member of an org, and keep it current. GitHub answers this only to
+  a token with organization **Members: read**, and only where the app is installed on that org. So
+  the hosted app needs a permission and an install per org.
+- Membership changes. hopper.io must read it again at each sign-in at least. A person removed from
+  the org keeps their access until then. To cut that gap, hopper.io must keep a token or receive
+  `organization` webhooks. Both go against "stores no GitHub tokens beyond sign-in", or add a
+  webhook receiver.
+- An org owner, not an individual, decides who may register an install for the org. That is a
+  role model hopper.io does not have yet.
+
+### Recommendation: Path A first
+
+Personal accounts meet the stated need with no permissions and no kept token. Org sharing adds a
+permission, an install per org, a freshness problem and a role model. Moving later is one migration:
+add `organization`, add `owner_kind`, and set every existing row to `account`. The registrations are
+the users' saved data, so that migration must keep them. **Decision for the owner.**
+
+## 4. Whether installs may trust hopper.io as an issuer
+
+### Path A: each install keeps strictly its own realms
+
+- hopper.io is a directory: it says which installs an account registered, and links to them. To
+  reach an install, a person signs in there, as today.
+- No new trust. A compromise of hopper.io gives no session on any install.
+
+### Path B: hopper.io is an issuer that an install may trust
+
+hopper.io would have to be an OpenID provider: a discovery document, a JWKS, signed ID tokens with
+`sub` = the GitHub numeric id. Two ways for an install to trust it:
+
+- **`gateway` realm** (`src/auth/gateway.ts`). It fits badly. The gateway realm expects a proxy in
+  front of the install that forwards a token on **every request**. hopper.io would have to be that
+  proxy. That means the install's traffic passes through hopper.io, which is against "the hopper
+  pulls" and against the loopback default.
+- **`oidc` realm** (`src/auth/oidc.ts`). It fits. The install redirects to hopper.io and back. The
+  install's admin adds the realm and its role rules. It needs a callback at hopper.io per install,
+  so hopper.io keeps a client per registration.
+
+Risks with either way:
+
+- Whoever controls hopper.io's signing key can sign in to every install that trusts it. An install
+  that trusted only GitHub before now trusts GitHub **and** hopper.io.
+- `userForIdentity()` links an identity to the user of the same verified email (issue #1380). An
+  issuer that vouches for emails could sign in as an existing admin. A hopper.io realm must not
+  vouch for emails, and role rules must match subjects only.
+- `sub` from hopper.io is the GitHub numeric id, but in a different realm from the `github` realm.
+  The same person gets a second identity on the install unless the two are linked.
+
+### Recommendation: Path A now
+
+Keep each install on its own realms. It is the safe default, it keeps requirement 3 of the issue,
+and it needs no change in `src/auth/`. If the owner later wants single sign-on through hopper.io,
+use an **opt-in `oidc` realm** that an install's admin adds, with subject-only role rules and no
+email trust, not the `gateway` realm. **Decision for the owner.**
+
+## 5. Sign-out and account deletion
+
+The issue lists these two together. This proposal keeps them apart:
+
+- **Sign-out** ends the hopper.io session only. The account and its registrations stay. Nothing is
+  told to any install, because nothing at the install changed.
+- **Account deletion** removes the account and all its install registrations at hopper.io, in one
+  transaction. hopper.io also deletes the person's grant to the hosted app at GitHub
+  (`DELETE /applications/{client_id}/grant`, the same call shape as `revocation.ts`), so the consent
+  goes away too. Logs and events keep no login or avatar after the deletion, only the numeric id
+  where an audit needs it.
+
+### How linked installs are told
+
+An install is often on loopback or a LAN, behind no public URL. hopper.io cannot reach it. So the
+install asks, and hopper.io answers:
+
+1. At registration, hopper.io gives the install a **registration token** (kept hashed at hopper.io).
+2. The install calls hopper.io with that token from time to time (a heartbeat), and when its admin
+   opens the hopper.io settings.
+3. After a deletion, hopper.io keeps a **tombstone** for each removed registration: its id and the
+   time, nothing else. The install's next call gets "registration removed". The install then drops
+   the token and shows its admin that it is no longer registered. Its own users, realms and data do
+   not change.
+4. Tombstones expire after a fixed time (for example 90 days). After that, an unknown token gets the
+   same answer as a removed one.
+
+This keeps the rule that the hopper pulls, and needs no inbound route on the install.
+
+### Recommendation
+
+Sign-out ends the session only. Deletion removes the account, its registrations and the GitHub
+grant, and leaves tombstones that installs read at their next call. This depends on the
+registration design of the multiple-installs issue. **Decision for the owner.**
+
+## Decisions for the owner
+
+| # | Decision | Recommended |
+|---|---|---|
+| 1 | Which GitHub App hopper.io signs in through | a separate hosted app, no permissions |
+| 2 | Where the service lives | `cloud/` in this repository |
+| 3 | Personal accounts or organizations too | personal accounts first |
+| 4 | Whether installs may trust hopper.io as an issuer | no, own realms only; later an opt-in `oidc` realm |
+| 5 | Sign-out and account deletion | session-only sign-out; deletion with tombstones that installs pull |
+
+The issue names four open decisions (1, 3, 4 and where the service lives). Item 5 follows from the
+issue's requirement 4 and is listed so it is not lost.
+
+## After the decisions
+
+The implementation follows, in this order: the `account` table and GitHub sign-in at hopper.io,
+the install registrations (with the multiple-installs issue), account deletion and tombstones, then
+the install side of the heartbeat. Each part adds its glossary entries and its row in
+`docs/design.md` "Directories and what each must not know" in the same change.
