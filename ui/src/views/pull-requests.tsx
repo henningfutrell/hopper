@@ -52,7 +52,8 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   const sendingBack = useGivingBack((s) => s[c.jobId] === 'rework');
   const acting = useActingOnPullRequest((s) => s[c.jobId]);
   // A tend job works on it (issue #763): its job follows it no more, so no act until the tend job ends.
-  if (!operator || c.state !== 'open' || !c.pullRequest || c.tendJobId) return null;
+  // A direct job's (issue #1068): these acts go through a GitHub source's outbox, which the direct source has not; a person acts on GitHub.
+  if (!operator || c.state !== 'open' || !c.pullRequest || c.tendJobId || c.directJob) return null;
   // Answered at once (issue #1194): GitHub merges or closes it after, and the card waits until the stream says so.
   const run = (what: PullRequestAct) => void actOnPullRequest(c.jobId, what, onChanged);
   const waiting = busy || acting !== undefined;
@@ -117,7 +118,9 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
         {c.pullRequest
           ? <GhLink url={c.pullRequest.url} className="font-medium text-foreground">#{c.pullRequest.number}<ExternalLink className="size-3 opacity-60" /></GhLink>
           : <span className="text-muted-foreground">pull request not found yet</span>}
-        <GhLink url={c.issue.url} className="text-xs">{closesText(c)}</GhLink>
+        {c.issue
+          ? <GhLink url={c.issue.url} className="text-xs">{closesText(c)}</GhLink>
+          : c.directJob && <a href={c.directJob.url} className="text-xs text-muted-foreground hover:underline">{closesText(c)}</a>}
         <span data-slot="pr-state"><StatusBadge status={c.state} tone={STATE_TONE[c.state]} /></span>
         <span data-slot="pr-yolo"><YoloBadge on={c.yolo} /></span>
         {c.change && <span data-slot="pr-change-kind"><StatusBadge status={`change-${c.change.kind}`} label={CHANGE_KIND_TEXT[c.change.kind].label} tone={CHANGE_KIND_TEXT[c.change.kind].tone} title={changeWhy(c)} /></span>}

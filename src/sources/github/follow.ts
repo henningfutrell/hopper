@@ -77,7 +77,7 @@ const ruleOf = (ctx: FollowContext, repo: string): ChangeRule => ctx.changeRule?
 const merges = (ctx: FollowContext, repo: string, kind: ChangeKind | undefined): boolean =>
   mergesOnReady(ruleOf(ctx, repo), ctx.yoloMode?.(repo) ?? false, kind);
 
-const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
+export const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
 const repoOfPull = (url: string): string => /([^/]+\/[^/]+)\/pull\/\d+/.exec(url)?.[1] ?? '';
 const pushedAtOf = (pr: { createdAt: string; headCommittedAt?: string }): string =>
   (pr.headCommittedAt && pr.headCommittedAt > pr.createdAt ? pr.headCommittedAt : pr.createdAt);
@@ -206,7 +206,7 @@ async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequ
   return stacked ? undefined : to;
 }
 
-async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct):
+export async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct):
   Promise<{ ended: 'merged' | 'closed'; superseded?: string; seen?: PullRequestSeen } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
   const repo = job.source!.repo!;
   if (act === 'close') {

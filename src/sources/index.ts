@@ -8,7 +8,7 @@ export { createGitHubSource, createFakeGitHub } from './github/index.ts';
 export type { FakeGitHub, GitHubApi, GitHubSourceOptions } from './github/index.ts';
 export { githubAccountOptions, sameAccountWork, sourceConfig } from './config.ts';
 export type { GitHubAccountOptions, GitHubSourceConfig } from './config.ts';
-export { createAccountSource, followEvery } from './compose.ts';
+export { createAccountSource, createDirectPullRequests, followEvery } from './compose.ts';
 export { createAccountGitHubApi } from './github/account/api.ts';
 export { createSourceSync, DELIVERY_SYNC_MS } from './sync.ts';
 export type { SourceSync, SourceSyncOptions } from './sync.ts';

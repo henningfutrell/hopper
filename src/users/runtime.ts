@@ -10,7 +10,7 @@ import type {
   UserStore, WebhookDispatcher, CredentialMinter,
 } from '../domain/ports.ts';
 import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type IntakeAccess, type User, type WebhookSubscription } from '../domain/types.ts';
-import { storeSourceContext } from './source-context.ts';
+import { pullRequestSettings, storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts';
@@ -39,7 +39,7 @@ import { withSystemScope } from '../vault/system-view.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { answerSignedOut, createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
+import { createDirectPullRequests, createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink, type UserLink } from './link.ts';
@@ -337,7 +337,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onDecided: (p) => engine.onDecided(p), onRevise: (p, brief) => engine.onRevise(p, brief),
   });
   let { running, fixed } = splitSources(host.jobSources());
-  const directJobs = createDirectJobs({ store, host: () => engine.sourceHost, url: (id) => uiUrl(`direct-jobs/${id}`), artifactUrl: (id) => artifactUrl(linkBase(), id), now: () => clock.now().toISOString() });
+  const directJobs = createDirectJobs({ store, host: () => engine.sourceHost, url: (id) => uiUrl(`direct-jobs/${id}`), artifactUrl: (id) => artifactUrl(linkBase(), id), now: () => clock.now().toISOString(), pullRequests: createDirectPullRequests({ accounts: connectedAccounts, clock, ...pullRequestSettings(store) }) }); // its pull request followed with the user's own GitHub connection (issue #1068)
   const jobSources = () => [...running.map((r) => r.source), directJobs.source, ...(seams.sources ?? [])];
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
