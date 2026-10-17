@@ -1,12 +1,15 @@
 # Cloud hosting: the GitHub account as the identity at hopper.io
 
-**Status: proposal.** Nothing here is implemented (issue #463). This document compares the paths
-for each open question and gives a recommendation for each. **All four decisions belong to the
-owner**, in the tracking issue (the parent of #463). This document does not pick a domain, a host
-or a database. It does not change any GitHub App setting or secret.
+**Status: decided, and the first part is built.** On 2026-10-17 the owner accepted the five
+recommendations of this document as written ([Decisions for the owner](#decisions-for-the-owner)); the
+decisions are recorded on the tracking issue #469. The first implementation part, the hopper.io account and GitHub
+sign-in at hopper.io, is built in `cloud/` ([What is built](#what-is-built)). This document does not
+pick a domain, a host or a database. It does not change any GitHub App setting or secret: the hosted
+app is registered by hand ([Run it](#run-it)).
 
-The terms *hopper.io account*, *install registration* and *linked install* are proposed here only.
-They go into `docs/glossary.md` with the implementation, after the decisions.
+The terms *hopper.io account* and *hopper.io session* are in `docs/glossary.md`. The terms *install
+registration* and *linked install* are proposed here only; they go into the glossary with the
+registration part.
 
 ## What is fixed already
 
@@ -253,9 +256,53 @@ registration design of the multiple-installs issue. **Decision for the owner.**
 The issue names four open decisions (1, 3, 4 and where the service lives). Item 5 follows from the
 issue's requirement 4 and is listed so it is not lost.
 
+All five are accepted as recommended (2026-10-17).
+
+## What is built
+
+Part 2 of #463 (part 1 was this document): the hopper.io account and GitHub sign-in at hopper.io, in
+`cloud/` (decision 2).
+
+- `cloud/store.ts`: the `account` table, keyed by GitHub's numeric user id (`github_user_id`), with `login`
+  and `avatar_url` for display, `created_at` and `seen_at`. Each sign-in updates the login and the avatar,
+  so a renamed account stays one account. Also the `session` table (only the SHA-256 of each token, 7 days)
+  and `sign_in` (a sign-in under way: the SHA-256 of its state and its PKCE verifier, for 10 minutes, taken
+  once). No table has a column for a GitHub token. Schema changes are migrations in `MIGRATIONS`.
+- `cloud/server.ts`: `GET /auth/github` sends the browser to GitHub through the hosted app's web flow
+  (`src/connected-accounts/web-flow.ts`, PKCE), with the state also in an HttpOnly cookie, so only the
+  browser that started a sign-in can finish it. `GET /auth/github/callback` exchanges the code, reads
+  `GET /user` (`whoIs`), keeps the account and opens a hopper.io session. The access token is then
+  dropped. `POST /auth/sign-out` (only with hopper.io's own Origin) ends that session only (decision 5).
+  `GET /api/account` answers the signed-in account, else 401. `GET /` is a minimal page.
+- Sign-ins are limited per address (`SIGN_IN_LIMIT`, 30 a minute, `@fastify/rate-limit`;
+  `docs/hopper-io-security.md` R7).
+- Personal accounts only (decision 3). No route accepts a hopper.io session on an instance, and no
+  instance realm changes (decision 4).
+- Tests: `test/cloud/sign-in.test.ts` (real Postgres, real server, a fake GitHub) and
+  `test/cloud/config.test.ts` (the config, and the `cloud/` seam both ways).
+
+## Run it
+
+1. Register a GitHub App for hopper.io by hand. Give it no repository and no account permissions. Set its
+   callback URL to `<public URL>/auth/github/callback`. Do not install it on any repository.
+2. Start a Postgres for hopper.io. It is not an instance's database.
+3. Set the runtime and start it with `npm run cloud`:
+
+| Variable | Value |
+|---|---|
+| `HOPPER_IO_DATABASE_URL` | `postgres://…` (required) |
+| `HOPPER_IO_PUBLIC_URL` | the origin people reach, https (http only on loopback) (required) |
+| `HOPPER_IO_GITHUB_CLIENT_ID` | the hosted app's client id (required) |
+| `HOPPER_IO_GITHUB_CLIENT_SECRET` or `HOPPER_IO_GITHUB_CLIENT_SECRET_FILE` | the hosted app's client secret (required) |
+| `HOPPER_IO_GITHUB_URL` | GitHub's origin; default `https://github.com` |
+| `HOPPER_IO_HOST`, `HOPPER_IO_PORT` | where it listens; default `127.0.0.1`, `8080` |
+| `HOPPER_IO_TRUST_PROXY` | `1` behind a reverse proxy, so the sign-in limit counts the client's address |
+
+No deploy is part of this: where hopper.io runs is decision 7 of #469.
+
 ## After the decisions
 
-The implementation follows, in this order: the `account` table and GitHub sign-in at hopper.io,
-the install registrations (with the multiple-installs issue), account deletion and tombstones, then
+The implementation follows, in this order: the `account` table and GitHub sign-in at hopper.io
+(built, part 2), the install registrations (with the multiple-installs issue), account deletion and tombstones, then
 the install side of the heartbeat. Each part adds its glossary entries and its row in
 `docs/design.md` "Directories and what each must not know" in the same change.

@@ -10,21 +10,23 @@ import type { HopperApp } from './hopper-app.ts';
 
 /**
  * The account a token belongs to. `subject`: GitHub's stable numeric id; `account`: the login. `verifiedEmails`: every
- * email GitHub verified for it (issue #1380, the source email match); absent when GitHub did not show them.
+ * email GitHub verified for it (issue #1380, the source email match); absent when GitHub did not show them. `avatarUrl`:
+ * the account's picture, which hopper.io shows (issue #463).
  */
-export interface AccountIdentity { subject: string; account: string; name?: string; email?: string; verifiedEmails?: string[] }
+export interface AccountIdentity { subject: string; account: string; name?: string; email?: string; verifiedEmails?: string[]; avatarUrl?: string }
 
 const github = (app: HopperApp, token: string) =>
   octokitRequest.defaults({ baseUrl: app.apiUrl, headers: { authorization: `token ${token}`, 'user-agent': 'hopper', 'x-github-api-version': '2022-11-28' } });
 
 export async function whoIs(app: HopperApp, token: string): Promise<AccountIdentity> {
   const req = github(app, token);
-  const u = (await req('GET /user')).data as { id: number; login: string; name?: string | null };
+  const u = (await req('GET /user')).data as { id: number; login: string; name?: string | null; avatar_url?: string | null };
   // The verified emails, and the primary one, when the app may read email addresses; without them the identity has none.
   const emails = await req('GET /user/emails').then((r) => (r.data as { email: string; primary: boolean; verified: boolean }[]).filter((e) => e.verified), () => undefined);
   const email = emails?.find((e) => e.primary)?.email;
   return {
     subject: String(u.id), account: u.login, ...(u.name ? { name: u.name } : {}), ...(email ? { email } : {}),
+    ...(u.avatar_url ? { avatarUrl: u.avatar_url } : {}),
     ...(emails ? { verifiedEmails: emails.map((e) => e.email) } : {}),
   };
 }

@@ -15,7 +15,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**', 'src/main.ts', 'src/startup-log.ts', 'src/vault/main.ts'],
+    files: ['scripts/**', 'src/main.ts', 'cloud/main.ts', 'src/startup-log.ts', 'src/vault/main.ts'],
     rules: { 'no-console': 'off' },
   },
   {
