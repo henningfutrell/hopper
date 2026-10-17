@@ -15,7 +15,6 @@ import { useNow } from '@/hooks/use-now';
 import { canRerun, machineName, ownWaitOf, waitOnLink, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
-import { preemptedLine } from '@/model/preemption';
 import { act, useHopper } from '@/store';
 import { giveBack, useGivingBack } from '@/store/give-back';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
@@ -103,13 +102,6 @@ export function LockedRows({ heading = true }: { heading?: boolean }) {
   </>;
 }
 
-/** A job preempted (issue #1525): which job took its lane, and that it resumes from where it stopped. */
-function PreemptedLine({ job, className }: { job: Job; className?: string }) {
-  const by = useHopper((s) => (job.preempted ? s.jobs[job.preempted.by] : undefined));
-  const line = preemptedLine(job, by);
-  return line ? <div data-slot="preempted" className={`text-xs text-warn/90 [overflow-wrap:anywhere] ${className ?? ''}`}>{line}</div> : null;
-}
-
 /** What each waiting state means, on hover (issue #381). */
 const WAITING_MEANING: Record<string, string> = {
   queued: 'Admitted: it starts as soon as a lane is free.',
@@ -142,7 +134,6 @@ export function ParkedRows({ heading = true }: { heading?: boolean }) {
           <span className="ml-auto">for <Since iso={job.parked?.at ?? job.updatedAt} /></span>
         </div>
         {job.parked?.why && <div data-slot="parked-why" className="text-xs text-muted-foreground">{job.parked.why}</div>}
-        <PreemptedLine job={job} />
         {job.workTree && <div className="truncate font-mono text-xs text-muted-foreground" title={`work tree ${job.workTree}`}>{job.workTree}</div>}
       </div>
     ))}
@@ -242,7 +233,6 @@ export function WaitingPanel() {
           {job.holdReason && <div data-slot="hold-reason" className="pl-7 text-xs text-warn/90 [overflow-wrap:anywhere]" title={job.holdReason}>{heldAtGate(job) ? gateHoldText(job.holdReason, machines) : job.holdReason}</div>}
           {job.textChange && <div className="pl-7"><TextChangeCard job={job} /></div>}
           {job.status === 'queued' && job.waitReason && <div className="pl-7 text-xs text-muted-foreground [overflow-wrap:anywhere]">{job.waitReason.replace(/^waiting for a lane: /, '')}</div>}
-          <PreemptedLine job={job} className="pl-7" />
           <div data-slot="waiting-actions" className="flex flex-wrap items-center gap-1.5 pl-7 empty:hidden">
             {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
             {job.originPending && <a href="#intake" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Intake">approve in Intake →</a>}

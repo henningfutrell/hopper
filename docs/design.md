@@ -162,13 +162,6 @@ same Decision. Algorithm, in order:
    (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
    `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
    `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
-7b. **Preempt** (issue #1525, "Preemption"; only with `inputs.preemption`). For each job left waiting in step 7, in
-   order: the running job of the lowest priority, then started last, then the lowest id, whose own priority is
-   strictly below the waiting job's, that has run at least the minimum run time since it started or resumed, whose
-   executor parks, that has an agent session, whose lane is busy and not drained by step 8, and on a machine where the
-   waiting job fits once that lane is free. One per waiting job; never one already named by a preemption in flight.
-   `Decision.preempt`, with a reason: `preempts r (priority 50, running 42 min) on m/lane-2: job h of priority 75
-   waits and every lane it may use is busy`.
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
    min(cap + overCap, occupied + assigned)`, `overCap` the lane a critical job took over the cap in
    this Decision (0 or 1); from the next Decision on it is past the cap, so it drains when its job ends. `open` = number of this machine's starts with
@@ -182,7 +175,7 @@ same Decision. Algorithm, in order:
    verbatim.
 
 **A no-op decision is not recorded.** The engine discards a Decision with no lane change,
-no start, no preemption, no hold whose reason differs from the job's current `holdReason`, and no wait on a job
+no start, no hold whose reason differs from the job's current `holdReason`, and no wait on a job
 not already `queued` with that `waitReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
 `decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` (v3;
@@ -208,8 +201,8 @@ stays pure — every time it compares is `inputs.at`.
   that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
   pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
   it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
-- **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). It preempts
-  nothing ("Preemption" does, issue #1525). A job at or above it that fits on no machine may take a lane past its caps — the
+- **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). The hopper never
+  preempts. A job at or above it that fits on no machine may take a lane past its caps — the
   machine's lane cap, its executor's, or the reserved lanes — on an eligible machine (online, its executor, its pin) at neither the machine's nor the executor's hard
   limit, and not past its cap already — at most one lane over it per machine. The start reason says
   `critical priority: one lane over the cap N` (or, inside the machine's cap, `… past the executor's
@@ -236,7 +229,7 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
 - **The overflow clears.** The start reason says `specialty: elbows in over the lane cap N` (or, inside the machine's
   cap, `… past the executor's lane cap or the reserved lanes`); step 8 counts the lane in `target`. From the next
   Decision on, the machine is past its cap: step 8 drains the specialty job's lane before any other busy lane, so it
-  closes when that job ends and the machine is back at its cap. It preempts nothing ("Preemption").
+  closes when that job ends and the machine is back at its cap. Nothing is preempted.
 - **Shown.** The lanes panel marks the lane `elbow-in · over the cap` and names each machine with more lanes in use
   than its lanes (`7/6 lanes in use · 1 over the cap`); the Lanes count reads the same way.
 - The designation is read at intake: a label added to an item whose job is already queued takes effect on its next job.
@@ -12432,59 +12425,6 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
 
-## Preemption (issue #1525, 2026-10-16)
-
-When a job of higher priority waits and no lane it may use is free, the hopper parks a running job of lower priority and
-gives its lane to the waiting job. The job parked resumes later from where it stopped, not from the start.
-
-- **Who preempts whom** (the decider, step 7b, `src/decider/preempt.ts`; pure). Only a job that step 7 left waiting for a
-  lane (a wait, never a hold) preempts. Its own priority (`job.priority`, the live priority, never the resume or router
-  boost) must be strictly higher than the running job's: equal priority never preempts. The running job must be
-  `running` (not `claimed`), its executor must park (`parkingExecutors`), it must have an **agent session** (else its pick
-  up needs a person's confirmation, issue #530), and it must have run at least the **minimum run time** since its start or
-  resume (`startedAt`). Its lane must be busy and not drained in this Decision, and the waiting job must fit on that
-  machine once the lane is free: step 7's own fit (`fitsLane`), with the lane taken out of the machine's, its executor's,
-  the unpinned and the priority-lane counts. Of these: the lowest priority, then the one started last (it loses the least
-  work), then the lowest id. Each waiting job preempts one job at most, in step 6's order; each running job is preempted
-  once.
-- **In flight.** The Decision marks the job `preempted: { at, by, byPriority, priority, machineId }` and emits
-  `job.preempted` in the transaction that applies it (`src/engine/decision-step.ts`). The decider counts a running job
-  with that mark as in flight: it is not preempted again, and its `by` job preempts no other. A mark older than
-  `PREEMPT_IN_FLIGHT_MS` (2 min) — a park that never came, a restart in between — is void, so nothing waits on it for good.
-  A job the runner does not hold any more loses the mark at once (`preemptRunning`).
-- **The park** (`src/engine/preemption.ts`). After the commit the runner parks the job on the Park button's path
-  (`runner.park`: abort reason `park`, `recordPark` frees the lane in one transaction, `releaseParked` ends its pane and
-  agent and takes its **checkpoint**). Its work tree, branch, agent session and checkpoint are kept. A job that ended done
-  in that moment is recorded as done. The freed lane wakes the engine (`job.parked`); the waiting job takes it in the next
-  Decision.
-- **Back in the queue.** Once parked, the job is picked up at once (`requeuePreempted` → `recordUnpark`, `job.unparked
-  { to: queued }`): `queued`, pinned to its machine (`resumeOn`), `PARKED_RESUME` pending, so its claim resumes its agent
-  session in its kept work tree (`claude --resume`). While `preempted` it waits at its own priority with **no resume
-  boost** (a boost would take the lane back from the job that preempted it), and step 6 orders it ahead of the other jobs
-  of the same effective priority. Its next start clears the mark, and its minimum run time counts from that start.
-- **No thrash.** Only a strictly higher priority preempts, the minimum run time stops a resumed job from being preempted
-  again at once, and the preempted job never outranks its preempter.
-- **Settings** (`preemption`, a user setting; `GET /api/preemption`, `POST /ui/api/preemption`, least role `admin`,
-  `preemption.settings_changed`; Settings → Preemption): `enabled` (default on) and `minRunMinutes` (default 10, 0 to a
-  day). Read on each Decision (`preemptionInput`), so a change applies without a restart. Off, `DecisionInputs.preemption`
-  is absent and nothing is preempted; Decisions stored before this change have none either.
-- **Shown.** The job graph and the job's parts list say `Queued: preempted by #12 Fix the roof` (or `Parked: …`) and what
-  comes next ("It resumes from where it stopped when a lane is free", `preemptedByOf`, `src/domain/job-words.ts`). The
-  Dashboard's Waiting and Parked rows show which job took the lane, both priorities, and that it resumes
-  (`ui/src/model/preemption.ts`). The job's timeline has `job.preempted`, `job.parked` and `job.unparked`.
-- **Persisted state.** No schema change: `preempted` is in the job's JSON, `preempt` and `preemption` in the Decision's,
-  the setting a key of its own. A build before this one ignores the mark; a job it shows as queued resumes as a parked
-  job picked up does.
-- **Not built.** Resume on another machine: the preempted job waits for a lane on its own machine (its pin), as a parked
-  job picked up does. "Resume elsewhere" from its checkpoint stays a person's act (issue #921). The companion issue on
-  durable work items is not needed for this: the park keeps the work tree and the agent session, and takes a checkpoint.
-
-Verification: `test/decider/preemption.test.ts` (who preempts whom, ties, equal priority, the minimum run time, off,
-executors that cannot park, no agent session, in flight, the order of a preempted job), `test/integration/preemption.test.ts`
-(the real daemon over the fake herdr: a high job parks the low one and starts, the low one resumes its own session; equal
-priority, the minimum run time and off preempt nothing; the settings), `test/domain/preempted-words.test.ts`,
-`test/ui/preemption.test.ts`.
-
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
 **Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
@@ -12604,8 +12544,8 @@ waiting one), with `job.reprioritized`, so a label change moves it everywhere at
   high-priority job ends it is an idle lane like any other. So marking every lane a priority lane never starves the
   default jobs. Before #788 `keep-free` held the free priority lanes empty whenever any job waited, and a low job never
   took one: an idle machine with all its lanes marked ran only high-priority jobs.
-- A priority lane preempts nothing. Since issue #1525 a job of higher priority that waits for a lane may preempt a
-  running job of lower priority ("Preemption"): the owner decision D2 left open here. A job on a non-priority lane opens the lowest number not a priority lane.
+- Nothing is preempted: a running job is never stopped or parked for a high-priority one (owner decision D2 left open;
+  the hopper never preempts, "Usage pacing"). A job on a non-priority lane opens the lowest number not a priority lane.
 
 **Lane reliability** (`src/reliability/`, pure). Runs are read from the event log over the window (`EventLog.between`:
 `job.claimed`, `job.started`, and the end on that lane — `job.finished`, `job.failed`, `question.asked`;

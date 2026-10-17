@@ -133,10 +133,9 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     const now = new Date();
     const first = Math.min(Date.parse(job.createdAt), ...events.map((e) => Date.parse(e.at)));
     const runs = store.machineHistory.jobRuns({ from: new Date(first - BOM_BASELINE_MS), to: now, jobId: id });
-    const preempter = job.preempted ? store.jobs.get(job.preempted.by) : undefined;
     return jobBom({
       job, events, questions: store.questions.list({ jobId: id }), artifacts: store.artifacts.list({ jobId: id }),
-      related, runs, now: now.toISOString(), ...(handoff ? { handoff } : {}), ...(preempter ? { preempter } : {}),
+      related, runs, now: now.toISOString(), ...(handoff ? { handoff } : {}),
     });
   });
 
