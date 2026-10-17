@@ -212,6 +212,25 @@ describe('Sources view: GitHub', () => {
       .toBe('It may: read and write contents, issues, pull requests; read metadata.');
   });
 
+  it('installed: says, per account, whether the app waits for its owner to accept new permissions (#1378)', async () => {
+    await boot(withAccount(connected([
+      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'], settingsUrl: 'https://github.com/settings/installations/1',
+        permissions: { issues: 'write' }, permissionRequest: {} },
+      { account: 'octo-org', repositorySelection: 'selected', repositories: ['octo-org/site'], settingsUrl: 'https://github.com/organizations/octo-org/settings/installations/2',
+        permissions: { issues: 'read' }, permissionRequest: { issues: 'write', checks: 'read' } },
+      { account: 'octo-old', repositorySelection: 'all', repositories: ['octo-old/x'], settingsUrl: 'https://github.com/organizations/octo-old/settings/installations/3' },
+    ])));
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-installation="octo-org"]')).not.toBeNull());
+    const request = (a: string) => panel()!.querySelector(`[data-installation="${a}"] [data-permission-request]`);
+    expect(request('octo-user')?.getAttribute('data-permission-request')).toBe('accepted');
+    expect(request('octo-user')?.textContent).toBe('It has every permission the app asks for.');
+    expect(request('octo-org')?.getAttribute('data-permission-request')).toBe('asked');
+    expect(request('octo-org')?.textContent).toBe('Waiting for an owner of octo-org to accept the new permissions the app asks for: read and write issues; read checks. Review the request');
+    expect(request('octo-org')?.querySelector('a')?.getAttribute('href')).toBe('https://github.com/organizations/octo-org/settings/installations/2');
+    // Not read yet (a read before the hopper read the app's permissions): nothing said.
+    expect(request('octo-old')).toBeNull();
+  });
+
   it('installed nowhere: says so, and links to install it (#253)', async () => {
     await boot(withAccount(connected([])));
     await vi.waitFor(() => expect(panel()?.textContent).toContain('Connected as octo-user.'));

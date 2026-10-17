@@ -145,8 +145,24 @@ describe('a user connects their own GitHub', () => {
     const connected = await account(app, 'github');
     const permissions = { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' };
     expect(connected.state === 'connected' && connected.installations).toEqual([
-      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`, permissions },
-      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2`, permissions },
+      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`, permissions, permissionRequest: {} },
+      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2`, permissions, permissionRequest: {} },
+    ]);
+  });
+
+  it('says, for each account, the new permissions the app asks for that its owner has not accepted yet (#1378)', async () => {
+    const f = await forges({ github: [{ repo: 'octo-user/tools', number: 7, title: 'x', body: SLEEP, author: 'octo-user', labels: [] }] });
+    const granted = { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' };
+    f.github.installedOn = ['octo-user', 'octo-org'];
+    // The app's owner added Checks (read) and raised nothing else: GitHub asked each owner to accept it. octo-user accepted.
+    f.github.appPermissions = { ...granted, checks: 'read' };
+    f.github.installationPermissions = { 'octo-user': { ...granted, checks: 'read' } };
+    const app = await start(f);
+    await connect(app, f.github, 'github', 'octo-user', await app.login());
+    const connected = await account(app, 'github');
+    expect(connected.state === 'connected' && connected.installations?.map((i) => [i.account, i.permissionRequest])).toEqual([
+      ['octo-user', {}],
+      ['octo-org', { checks: 'read' }],
     ]);
   });
 

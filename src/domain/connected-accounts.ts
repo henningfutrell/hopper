@@ -20,6 +20,12 @@ export interface AppInstallation {
   repositories: string[];
   settingsUrl?: string;
   permissions?: Record<string, string>;
+  /**
+   * The installation's **permission request** (issue #1378): the permissions the hopper's app asks for that it does not
+   * grant yet, which GitHub asked its owner to accept; empty: accepted, nothing waits. Absent: not known (no app slug,
+   * GitHub did not answer the app, or a read from before issue #1378).
+   */
+  permissionRequest?: Record<string, string>;
 }
 
 /**

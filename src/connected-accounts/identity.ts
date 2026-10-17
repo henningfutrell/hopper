@@ -43,9 +43,22 @@ async function all<T>(get: (page: number) => Promise<unknown>, pick: (data: unkn
 
 interface Installation { id: number; account?: { login?: string } | null; html_url?: string; repository_selection?: string; permissions?: Record<string, string> }
 
+const LEVELS = ['read', 'write', 'admin'];
+
+/**
+ * An installation's **permission request** (issue #1378): the permissions the app asks for, at their level, that the
+ * installation does not grant at that level or higher. GitHub asks the installation's owner to accept them when the app's
+ * owner adds them to the app; the hopper cannot ask by itself. Empty: the owner accepted every one.
+ */
+export function permissionRequest(asked: Record<string, string>, granted: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(asked).filter(([p, level]) => LEVELS.indexOf(granted[p] ?? '') < LEVELS.indexOf(level)));
+}
+
 /**
  * The installations of the app the token's user can see, each with the repositories it reaches there that the user can
- * see. Each GET through `answers`, with the ETag kept from the read before.
+ * see, and its permission request: what the app asks for (`GET /apps/{slug}`) that it does not grant yet. Without the
+ * app's slug, or when GitHub does not answer the app, no installation says its permission request. Each GET through
+ * `answers`, with the ETag kept from the read before.
  */
 export async function installations(app: HopperApp, token: string, answers: ConditionalAnswers): Promise<AppInstallation[]> {
   const req = makeRequest(app.apiUrl) as unknown as Get;
@@ -53,6 +66,9 @@ export async function installations(app: HopperApp, token: string, answers: Cond
   const get = (route: string, params: Record<string, unknown>) => answers.get<unknown>(req, route, { ...params, headers });
   const found = await all((page) => get('GET /user/installations', { per_page: PER_PAGE, page }),
     (d) => (d as { installations: Installation[] }).installations);
+  const asked = app.slug
+    ? await get('GET /apps/{app_slug}', { app_slug: app.slug }).then((d) => (d as { permissions?: Record<string, string> }).permissions, () => undefined)
+    : undefined;
   return Promise.all(found.filter((i) => i.account?.login).map(async (i) => {
     const repositories = await all((page) => get('GET /user/installations/{installation_id}/repositories', { installation_id: i.id, per_page: PER_PAGE, page }),
       (d) => (d as { repositories: { full_name: string }[] }).repositories.map((r) => r.full_name));
@@ -60,6 +76,7 @@ export async function installations(app: HopperApp, token: string, answers: Cond
       account: i.account!.login!, repositorySelection: i.repository_selection === 'selected' ? 'selected' : 'all', repositories,
       ...(i.html_url ? { settingsUrl: i.html_url } : {}),
       ...(i.permissions ? { permissions: i.permissions } : {}),
+      ...(asked ? { permissionRequest: permissionRequest(asked, i.permissions ?? {}) } : {}),
     } satisfies AppInstallation;
   }));
 }
