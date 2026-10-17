@@ -190,7 +190,7 @@ services:
       HOPPER_SANDBOX_MAX_MEMORY_MB: ${HOPPER_SANDBOX_MAX_MEMORY_MB:-8192}
       HOPPER_SANDBOX_MAX_TTL_MINUTES: ${HOPPER_SANDBOX_MAX_TTL_MINUTES:-1440}
       # A read-only box's egress (issue #849, docs/deploy.md "A read-only box's egress"): a read-only box and the read-only
-      # check box join the internal network `egress` below, with no route out, and reach out only through the `egress`
+      # check box join the internal network `egress` below, with no way out, and reach out only through the `egress`
       # service, to AWS and the clusters the vault mints for. The hopper writes the allowlist into the `egress` volume.
       HOPPER_SANDBOX_EGRESS_NETWORK: hopper_egress
       HOPPER_SANDBOX_EGRESS_PROXY: http://egress:3128
@@ -609,7 +609,7 @@ networks:
   # Search's (issue #945): the hopper and Solr only.
   search:
     name: hopper_search
-  # The read-only boxes' (issue #849): internal, so it has no route out. The hopper and the egress proxy are on it too: a
+  # The read-only boxes' (issue #849): internal, so it has no way out. The hopper and the egress proxy are on it too: a
   # box on it reaches the hopper, and every other host only through the proxy.
   egress:
     name: hopper_egress
