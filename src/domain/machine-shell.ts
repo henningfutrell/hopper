@@ -9,7 +9,15 @@ import type { CheckpointCapture } from './checkpoints.ts';
  * the containers and volumes labelled with the job's id that it removed; absent, none. `left` (issue #1452): the job's dirs
  * it set out to remove and could not; absent, none (or a client older than this).
  */
-export interface Reaped { kept: string[]; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[] } }
+export interface Reaped { kept: string[]; pushed?: string[]; left?: string[]; removed?: ContainersRemoved }
+
+/**
+ * The containers and volumes a reap removed (issue #1120), as `job.containers_removed` records them; `details` (issue #975):
+ * what the reap said of each container before it removed it, for the job's parts list; absent, none (a client older than this).
+ */
+export type ContainersRemoved = { containers: string[]; volumes: string[]; details?: ContainerDetails[] };
+/** One container a reap removed (issue #975): its name, image, and when it started and stopped; a time absent never came. */
+export type ContainerDetails = { id: string; name: string; image: string; startedAt?: string; stoppedAt?: string };
 
 /** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
 export interface Survey {

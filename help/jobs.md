@@ -86,7 +86,7 @@ The parts list is everything the job touched or made:
 | Outputs | Its artifacts and each revision, its plan or research report, and the help pages and What's new lines its pull request changes. |
 | Infra | Its infra plans and their approvals, each credential minted for it with what it may do, drift it found, and a vault grant it asked for. |
 | Decisions | Each question and who answered it (a person, or a level such as rules or a model), overrides, and its hand-off. |
-| Machines and sandboxes | Each machine it ran on, each checkpoint the hopper took of it, and each Windows sandbox step. |
+| Machines and sandboxes | Each machine it ran on, each checkpoint the hopper took of it, and each Windows sandbox step. When the job ends, also each test database and other container its tests started: its name, image and machine, when it started, and how long it ran. The hopper learns of them only when it removes them at the end of the job. |
 
 Each part shows its status: waiting on you, running, open, done, failed, cancelled, or recorded (a fact, such as a branch or a lane). The page reads the parts again each time the job has a new event, so running parts stay live.
 

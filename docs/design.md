@@ -17434,7 +17434,7 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 | Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`); the help pages and What's new lines among the files its pull request changes (part 2) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
 | Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
-| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`) |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below) |
 
 Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
 piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
@@ -17442,6 +17442,25 @@ piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#
 `header` says what was asked, where it stands (the stage words above) and what is next (`nextWords`: "You: answer the
 question.", "Review and merge the pull request.", "The agent works on it: 1 of 3 tasks done."); `summary` counts the
 parts that are work, not records. `events` is the job's events, newest first.
+
+**Test databases** (issue #975). A job's tests start their own databases on its machine, and the hopper was told nothing
+of them. Three decisions:
+
+1. *What counts.* A container the job's tests start: in the job's own container runtime ("Each job its own container
+   runtime"), or with its label (`hopper.job=<job id>`) in the machine's. A container of a database image (Postgres,
+   MySQL, MariaDB, Mongo, Redis and the like, `DATABASE_IMAGE` in `job-bom.ts`) is a **test database**; any other is a
+   container, listed the same way. A database a job copies for an ad-hoc daemon (`pg_dump` into a fresh database) does not
+   count: it lives inside a Postgres the job did not start, and nothing on the machine tells it from any other database.
+2. *How the hopper learns of one.* The machine says it, not the job: a job need not cooperate, and the reap already lists
+   and removes each container (issue #1120). Before it removes one, the reap asks the runtime for its name, image, and
+   when it started and stopped (`DETAILS_FORMAT`, `src/client/job-runtime.ts`), one line `hopper-container-details <id>
+   …`; `readReap` reads it as `removed.details`, and `job.containers_removed` keeps it beside the ids. A client older
+   than this says only the ids. Nothing new is kept but that optional field.
+3. *What the part shows.* `container:<id>` in the machines group: "Test database <name>" (or "Container <name>"), its
+   image and machine, when it started (`at`), how long it ran — until it stopped, or until the reap when it still ran —,
+   and that its reap removed it. A recorded container is therefore never still there. A job whose reap has not run yet
+   (it runs, or its cleanup is deferred, or it timed out and may go on) shows none: the hopper learns of its containers
+   only at the reap.
 
 **The route.** `GET /api/jobs/:id/bom` (`src/http/jobs.ts`), the user's own; 404 for a job it does not know. It reads the
 job's newest 2000 events (`EventLog.recent` takes a job now, over the `events_job` index of tenant migration 45), its
