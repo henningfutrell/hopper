@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
+import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
@@ -293,8 +293,8 @@ export interface Lane {
   idleSince?: string; pastCap?: true;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials and leaving: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving` (src/domain/machines.ts). */
-export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials, leaving and drained: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving`, `MachineDrained` (src/domain/machines.ts). */
+export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving, MachineDrained {
   id: MachineId;
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
@@ -499,7 +499,7 @@ export type { AfterAnswerTimed, AfterAnswerTiming, SourceCallLog, SourceCalls, S
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig, type WindowsHost, type WindowsHostsView, type PlaygroundLimits, type PlaygroundSandbox, type PlaygroundSize, type PlaygroundState, type PlaygroundView } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type MachineDrain, type MachineDrains, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig, type WindowsHost, type WindowsHostsView, type PlaygroundLimits, type PlaygroundSandbox, type PlaygroundSize, type PlaygroundState, type PlaygroundView } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 

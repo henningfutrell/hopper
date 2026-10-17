@@ -26,6 +26,7 @@
 //   hopper cluster script                             the host's cluster script: bootstrap, migrate, rollback (issue #1373)
 //   hopper lanes plan|costs|tune|apply|dismiss|undo …
 //                                                     lane recommendations, job cost profiles and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
+//   hopper machine list|drain|undrain …               the machines, drained or not; drain or undrain one (issue #1511, cli-operator-machine.ts)
 //   hopper vault|template|sandbox …                   vault secrets (value on stdin), templates and sandbox boxes (issue #716, cli-operator-vault.ts)
 //   hopper update <tool>|compose|skill                the update of a container install, no database (issue #697, cli-update.ts)
 //   hopper update drift [--url <hopper URL>]          the running stack's drift from its compose file (issue #1017, cli-update-drift.ts)

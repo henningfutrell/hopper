@@ -23395,3 +23395,37 @@ failed jobs in the store; the build before read them 2795 times against a bound 
 (`getMany` and `newestOfItems`: one statement, the bodies only of the rows that changed, the newest job as
 `getBySourceKey`), `test/integration/stale-failures.test.ts` and `test/integration/handoffs.test.ts` (the hand-offs end
 as before).
+
+## Draining a machine (issue #1511, 2026-10-16)
+
+**The gap.** A machine that must stay idle for maintenance (a rebuild of a seat) had no command for it. The only way was to
+set its lanes to 0 in the plugins config and set them back after: an edit of the machine's own config for a state that is
+not config, easy to forget, and with no sign on Machines of why the machine took no job. A **leaving** client target
+(issue #1284) stops new placement, but only a client that says it leaves, and only until it dials in again.
+
+**The change** (`src/domain/machines.ts` `MachineDrained`, `withDrains`; `src/decider/assign.ts` `drainedHolds`,
+`src/decider/lanes.ts`; `src/engine/machine-drains.ts`; `src/store/machine-drain-settings.ts`;
+`src/http/ui/machine-drains.ts`; `src/cli-operator-machine.ts`; Machines, `ui/src/views/machine-drain.tsx`):
+- **Drained** (glossary) is a person's hold on one machine, any kind: no new job is placed on it; the jobs on it run to their
+  end, and a job resuming there (an answer back to its pane) returns there. Not **leaving**, which a client target says of
+  itself, and not a lane's `draining`, which is one lane closing once its job ends: a drained machine's lanes are not closed.
+- **Kept in the user's settings** (`machineDrains`, by machine id: who, the way, when), so a restart keeps it. It is no plugins
+  config: an edit of the machine, its rename or its removal leaves it as it is, and an undrain of a machine gone from the
+  config still clears it. The engine marks each machine it lists (`drainedMachines` over the machine source), so the decider,
+  `GET /api/machines` and the lane recommendations read the same mark.
+- **The decider holds** a new job there as it does on a leaving machine: a job with no pin goes to another machine, even with
+  less room; with none left, it is held, never failed (`<m> is drained: no new job is claimed there`); a job pinned there is
+  held (`pinned machine <m> is drained: …`); the machine's idle reason is `drained: …`.
+- **Drain and undrain** are an admin's: `POST /ui/api/machines/drain {machineId, drained}`, the Machines card's Drain (it asks
+  first) and Undrain, and `hopper machine drain|undrain <machine>`. Each change records `machine.drained` or
+  `machine.undrained` with who and the way, and asks for a Decision; one that changes nothing records nothing. The answer
+  says the jobs still on the machine (its lanes with a job), so a script can wait for 0. A drain of a machine no source lists
+  and the config does not name is a 404. Not a box action: it starts, stops and changes no work.
+- **Shown.** The card has a *drained* badge and says who drained it, when, and how many jobs are still on it;
+  `hopper machine list` prints each machine, online or not, and drained or not.
+
+**Not changed.** Leaving, a lane's draining, lane tuning and the plugins config. A drain stops no running job: to stop one,
+cancel or park it.
+
+Tests: `test/decider/drained.test.ts` (placement, holds, the idle reason), `test/integration/machine-drain.test.ts` (the route,
+the events, a restart, the CLI), `test/ui/machine-drain.test.ts` (the card).

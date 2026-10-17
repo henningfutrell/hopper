@@ -26,6 +26,7 @@ import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
+import { createMachineDrains, drainedMachines, type MachineDrains } from './machine-drains.ts';
 import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
@@ -84,6 +85,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly blastRadius: BlastRadius;
   /** Lane tuning (issue #688): every machine's lane recommendation, recorded; an admin's apply, dismiss and undo; each machine's settings. */
   readonly laneTuning: LaneTuningService;
+  /** Drained machines (issue #1511): a person drains or undrains a machine; every machine the engine lists carries it. */
+  readonly machineDrains: MachineDrains;
   /** Job checkpoints (issue #921): a pass every minute takes those due; a park takes one. */
   readonly checkpoints: Checkpoints;
   /**
@@ -120,7 +123,7 @@ export function createEngine(o: EngineOptions): Engine {
   }, (e) => console.error('decision failed', e));
 
   const c: EngineContext = {
-    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines, configuredMachines: o.configuredMachines ?? (() => undefined),
+    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: drainedMachines(o.machines, { store }), configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
@@ -159,6 +162,7 @@ export function createEngine(o: EngineOptions): Engine {
     priorityLanes,
     blastRadius,
     laneTuning,
+    machineDrains: createMachineDrains(c),
     checkpoints,
     discardWork: (jobId, by) => sweep.discard(jobId, by),
     discarding: (jobId) => sweep.discarding(jobId),
