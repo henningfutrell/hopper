@@ -1,11 +1,13 @@
 // The cloud link (issue #467, design.md "The cloud link"): the hopper's admin links this install to an account at
 // hopper.io, and unlinks it, in Settings, while it runs. A real daemon over the real database.
 //   Scenario: a link and an unlink during a running job apply at once, end no job and are each an event
+//   Scenario: the link key (part 2) is minted at the link and rotated during a running job, which it does not end; not
+//     linked, a rotation is 409; only the admin rotates
 //   Scenario: a link is kept across a restart; a second link is 409; a bad account is 400; only the admin links
 //   Scenario: an install that never links connects to nothing outside this machine, so not to hopper.io
 import { Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { CloudLinkView } from '../../src/domain/cloud-link.ts';
+import { CLOUD_LINK_KEY, type CloudLinkView } from '../../src/domain/cloud-link.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 let t: TestApp | undefined;
@@ -85,6 +87,14 @@ describe('the cloud link', () => {
     expect(await view(a, token)).toEqual(linked.body);
     expect((await a.job(job.id)).status).toBe('running');
 
+    const key = linked.body.link!.linkKey!;
+    expect(key).toEqual({ secret: CLOUD_LINK_KEY, publicKey: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/), createdAt: expect.any(String) });
+    const rotated = await a.ui<CloudLinkView>('/ui/api/cloud-link/rotate-key', {}, { token });
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.link!.linkKey!.publicKey).not.toBe(key.publicKey);
+    expect(await view(a, token)).toEqual(rotated.body);
+    expect((await a.job(job.id)).status).toBe('running');
+
     expect((await a.ui<CloudLinkView>('/ui/api/cloud-link/unlink', {}, { token })).body).toEqual({ link: null });
     expect((await a.ui<CloudLinkView>('/ui/api/cloud-link/unlink', {}, { token })).body).toEqual({ link: null });
     expect((await a.job(job.id)).status).toBe('running');
@@ -94,6 +104,7 @@ describe('the cloud link', () => {
       ['cloud_link.unlinked', { installId, account: 'octo-cat', by: expect.any(String) }],
     ]));
     expect((await a.events('types=cloud_link.linked,cloud_link.unlinked'))).toHaveLength(2);
+    expect((await a.ui('/ui/api/cloud-link/rotate-key', {}, { token })).status).toBe(409);
   });
 
   it('a link is kept across a restart; a second link is 409; a bad account is 400; only the admin links', async () => {
@@ -115,6 +126,8 @@ describe('the cloud link', () => {
     const other = await a.addUser('octo2');
     const otherToken = await a.login(other.id);
     expect((await a.ui('/ui/api/cloud-link/unlink', {}, { token: otherToken })).status).toBe(403);
+    expect((await a.ui('/ui/api/cloud-link/rotate-key', {}, { token: otherToken })).status).toBe(403);
+    expect((await a.ui('/ui/api/cloud-link/rotate-key', { extra: 1 }, { token })).status).toBe(400);
     expect((await a.api('GET', '/api/cloud-link', undefined, { 'x-hopper-session': otherToken })).status).toBe(403);
     expect(await view(a, token)).toEqual(first);
   });

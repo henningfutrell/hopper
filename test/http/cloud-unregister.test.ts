@@ -13,6 +13,7 @@ import { createCloudLink, type CloudLink } from '../../src/http/cloud-link.ts';
 import { openDb } from '../../src/store/db.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { installFromBefore, testDatabaseUrl } from '../support/database.ts';
+import { systemOf } from '../support/system-secrets.ts';
 import { fixedClock } from '../store/helpers.ts';
 
 const closers: (() => void)[] = [];
@@ -23,7 +24,7 @@ function setup(): { url: string; instance: InstanceStore; link: CloudLink; event
   const instance = openInstanceStore({ url, clock: fixedClock() });
   closers.push(() => instance.close());
   const events: NewEvent[] = [];
-  const link = createCloudLink({ settings: instance.settings, events: { append: (e) => { events.push(e); } }, now: () => new Date('2026-10-17T08:00:00.000Z') });
+  const link = createCloudLink({ settings: instance.settings, secrets: systemOf({ vault: instance.vault, events: { append: (e) => e }, tx: instance.tx }), events: { append: (e) => { events.push(e); } }, now: () => new Date('2026-10-17T08:00:00.000Z') });
   return { url, instance, link, events };
 }
 
