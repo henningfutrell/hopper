@@ -10699,6 +10699,28 @@ schedule. (Built since, as "A read-only infra box" parts 1 to 6; egress moved to
 of a template with secrets a person gave (#583): a secret given later does not make the check stale. (The check on a
 schedule, the terraform wrapper and its probes are built since: "A read-only infra box", issue #715.)
 
+**A check that failed on a mint (issue #1779, 2026-10-17).** Reported from a real run: a check failed as STS refused the
+minting credential's AssumeRole; a person fixed the credential, and `hopper vault mint-test` passed, but the failed check
+stayed until a person ran `hopper template check`. Two jobs waited on a template whose role the new minting credential
+may not assume, with nothing to tell them.
+- **Kept.** A failed check keeps the read needs the vault minted nothing for, each with the vault's reason
+  (`ReadOnlyCheck.unminted`, `unmintedNeeds`): a refusal that is not a network error (one is **transient**, issue #1468).
+- **Run again when the credential is set.** The vault's set of a minting credential (`recheckUnminted`,
+  `src/vault/checks.ts`, in the set's transaction) drops the failed check of each template with an unminted need minted
+  from that account or cluster, and records `template.check_requested` `by` `minting credential <name>`. The next check
+  pass runs it. A credential for another account or cluster changes nothing.
+- **The job is told.** A template request for such a template is a 409, not a 202 wait (`requestTemplate`,
+  `src/skills/template-request.ts`): it names each unminted need and the vault's reason, and the read needs on the same
+  account or cluster that a check of another template passed with, to ask for in its place. `template.checked` asks a
+  waiting request again, so a job on its own wait is woken with that refusal.
+- **Not built (left on the issue).** A job on its own wait whose agent session ended is not yet shown as stranded in the
+  operator CLI and the UI.
+
+Tests: `test/integration/read-only-check-unminted.test.ts` (the real daemon and `hopper-skill`: the check fails on a
+cluster with no minting credential, the job's wait ends with the refusal, a credential for another cluster keeps the
+check, one for that cluster drops it and the next pass passes), `test/skills/template-request-unminted.test.ts`,
+`test/sandbox/check-transient.test.ts`.
+
 **Residual risk, stated.** A probe that writes runs the write for real when the credential allows it (the dry runs do
 not): with a writable credential, `ssm put-parameter` and `iam create-user` make their resource and the cleanup deletes
 it. That is what the check exists to find, and it fails then. Every probe runs under the sandbox flags, as the box's user.

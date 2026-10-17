@@ -27,7 +27,7 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
-import { probeMarksFor, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts';
+import { probeMarksFor, recheckUnminted, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts';
 import { agentCredentialProblem, agentCredentials, type AgentCredentials } from './agent-credential.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };
@@ -232,8 +232,7 @@ export function createVaultService(o: {
         if (shape) return fail('invalid', `${name} ${shape}`);
         const kept = keptOf(s, was?.id ?? o.idGen());
         if ('ok' in kept) return kept;
-        const scoped = said ? { scope: said } : {};
-        const where = kept.backend ? { backend: kept.backend } : {};
+        const scoped = said ? { scope: said } : {}, where = kept.backend ? { backend: kept.backend } : {};
         const minting = mintsNow ? { mints: { kind: mintsNow.kind, name: mintsNow.name } } : {};
         if (was) {
           const { scope: _old, backend: _was, mints: _mints, ...rest } = was;
@@ -242,6 +241,7 @@ export function createVaultService(o: {
           vault.add({ id: kept.id, name, ...scoped, ...where, ...minting, setBy: by, createdAt: at, changedBy: by, changedAt: at }, kept.sealed);
         }
         events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined, ...(kept.backend ? { backend: kept.backend.name } : {}), ...minting } });
+        if (mintsNow) recheckUnminted(o.store, mintsNow, name); // Issue #1779: a check that failed for want of it runs again.
         return { ok: true } as const;
       });
     },
