@@ -137,7 +137,16 @@ export interface ReadOnlyCheck {
    * cluster answered: the check pass runs it again soon, with no person. Absent: a failure that waits for a person.
    */
   transient?: true;
+  /**
+   * The read needs the vault minted no credential for (issue #1779), each with the vault's reason: not a network error.
+   * Setting the minting credential for one of their accounts or clusters runs the check again; until then a job that asks
+   * for the template is told it cannot pass, so it asks for a need that mints. Absent: each need was minted for, or older.
+   */
+  unminted?: Unminted[];
 }
+
+/** A read need the check box got no credential for (issue #1779), and why. */
+export interface Unminted { asset: Asset; reason: string }
 
 /** A network error, as a mint's refusal or a check box's start says it (issue #1468): not a standing answer. */
 const NETWORK_ERROR = /\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|EPIPE|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|timed out|timeout)\b/i;
@@ -160,6 +169,15 @@ export const refusedReads = (c: ReadOnlyCheck): string[] =>
 
 /** The probes that failed, in words: `<id> on <asset>`. */
 export const failedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => !p.passed).map((p) => `${p.id} on ${p.asset} (${p.outcome})`);
+
+/**
+ * The needs a failed check of the template's current version got no credential for (issue #1779); empty when it did not
+ * fail so, or failed on a network error, which the check pass runs again by itself.
+ */
+export function unmintedNeeds(t: CheckedTemplate): Unminted[] {
+  const c = currentCheck(t);
+  return c?.state === 'failed' && !c.transient ? c.unminted ?? [] : [];
+}
 
 /** Why a box of the template waits for its read-only check; undefined when it needs none or its current version passed. */
 export function checkWait(t: CheckedTemplate): string | undefined {

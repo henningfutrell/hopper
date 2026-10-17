@@ -39,6 +39,8 @@ describe('a read-only check that fails on a network error (issue #1468)', () => 
     await s.pass();
     expect(s.template().check).toMatchObject({ state: 'failed', transient: true });
     expect(checkWait(s.template())).toContain('a network error');
+    // Issue #1779: a network error is no standing refusal to mint.
+    expect(s.template().check!.unminted).toBeUndefined();
     expect(dueForCheck(s.template(), new Date(T0 + CHECK_RETRY_MS - 1))).toBe(false);
     expect(dueForCheck(s.template(), new Date(T0 + CHECK_RETRY_MS))).toBe(true);
     s.at(CHECK_RETRY_MS);
@@ -57,6 +59,8 @@ describe('a read-only check that fails on a network error (issue #1468)', () => 
     await s.pass();
     expect(s.template().check).toMatchObject({ state: 'failed' });
     expect(s.template().check!.transient).toBeUndefined();
+    // Issue #1779: the need the vault minted nothing for, kept with its reason.
+    expect(s.template().check!.unminted).toEqual([{ asset: { kind: 'aws-role', name: '123456789012/ReadOnly' }, reason: expect.stringContaining('no minting credential mints for aws-account') }]);
     expect(dueForCheck(s.template(), new Date(T0 + 10 * CHECK_RETRY_MS))).toBe(false);
     expect(checkWait(s.template())).toContain('A person runs it again');
   });

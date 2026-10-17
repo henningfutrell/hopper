@@ -17,9 +17,10 @@
 // after `CHECK_RETRY_MS`, with no person. Any other failure still waits for one.
 // Issue #1736: a check that failed only on probes the catalog passes now (helm list refused on secrets, on a view role)
 // runs again at the next pass, with no person (`judgedAgain`).
+// Issue #1779: a failed check keeps the read needs the vault minted nothing for (`unminted`), not on a network error.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
-import type { CheckCredential, ProbeCatalog, ProbeRun, ReadOnlyCheck } from '../domain/read-only-check.ts';
+import type { CheckCredential, ProbeCatalog, ProbeRun, ReadOnlyCheck, Unminted } from '../domain/read-only-check.ts';
 import { currentCheck, markRuns, onlyNetworkErrors, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
@@ -141,6 +142,8 @@ interface Given {
   missing: Map<string, string>;
   /** Whether each refusal was a network error only (issue #1468), so the check runs again with no person. */
   transient: boolean;
+  /** The needs the vault refused to mint for, not on a network error (issue #1779). */
+  unminted: Unminted[];
 }
 
 /**
@@ -153,11 +156,16 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
   const reaches: MintReach[] = [];
   const missing = new Map<string, string>();
   const refusals: string[] = [];
+  const unminted: Unminted[] = [];
   let other = false;
   const noCredential = (need: OperationProfile, why: string): void => { missing.set(assetKey(need.asset), `not run: the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${why}`); };
   for (const need of needs.filter((n) => n.asset.kind !== 'terraform-workspace')) {
     const r = await c.credentials.credential(userId, t.name, name, need);
-    if ('refused' in r) { noCredential(need, r.refused); refusals.push(r.refused); }
+    if ('refused' in r) {
+      noCredential(need, r.refused);
+      refusals.push(r.refused);
+      if (!onlyNetworkErrors([r.refused])) unminted.push({ asset: need.asset, reason: r.refused });
+    }
     else { credentials.push(checkCredentialOf(need, r.minted, r.reach)); reaches.push(r.reach); }
   }
   for (const workspace of needs.filter((n) => n.asset.kind === 'terraform-workspace')) {
@@ -167,7 +175,7 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
     if (session) credentials.push({ ...session, asset: workspace.asset });
     else noCredential(workspace, `the aws-role ${role.asset.name} it is read with gets none`);
   }
-  return { credentials, reaches, missing, transient: !other && onlyNetworkErrors(refusals) };
+  return { credentials, reaches, missing, transient: !other && onlyNetworkErrors(refusals), unminted };
 }
 
 /**
@@ -178,10 +186,13 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   const needs = (t.profiles ?? []).filter((p) => p.operation === 'read');
   // A person's marks on its read probes (issue #916): an expected refusal, or a probe not run.
   const runs = markRuns(c.probes.runsFor(needs), t.probeMarks);
+  let unminted: Unminted[] = [];
   const ended = (state: 'passed' | 'failed', probes: ReadOnlyCheck['probes'], problem?: string, transient?: boolean): ReadOnlyCheck =>
-    ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}), ...(transient ? { transient: true as const } : {}) });
+    ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}), ...(transient ? { transient: true as const } : {}),
+      ...(state === 'failed' && unminted.length > 0 ? { unminted } : {}) });
   if (runs.length === 0) return ended('failed', [], 'no probe checks its needs: it cannot pass');
   const given = await credentialsFor(c, userId, t, name, needs);
+  ({ unminted } = given);
   // Issue #873: a probe of a need with no credential is not run, and says why; the probes of the other needs still run.
   // The missing credential is its reason even when the probe lacks something else too (a state backend): it is the first fix.
   const checked = runs.map((r) => (given.missing.has(runKey(r)) ? { ...r, notRun: given.missing.get(runKey(r))! } : r));
