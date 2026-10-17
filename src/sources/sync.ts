@@ -42,7 +42,7 @@ import { createThreadAsks } from './thread-asks.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts'; import { waitedPullRequestEnds } from './waited-pull-requests.ts'; import { watchedEnds } from './watched-ends.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
-import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts'; import { outboxFlushes } from './outbox-flush.ts';
+import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts'; import { afterSync, answerPrint, nextPollMs } from './poll-backoff.ts'; import { outboxFlushes } from './outbox-flush.ts'; import { causeNow, traceSync } from '../telemetry/sources.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -245,7 +245,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return { seen: items.length, created };
   }
 
-  async function syncOnce(slot: Slot, asked: boolean) {
+  async function syncOnce(slot: Slot, asked: boolean): Promise<boolean> { // answers whether the sync went through
     const st = slot.status;
     // Issue #812: a sync asked for off its timer (Sync now, an intake action) runs now: its timer goes, so one timer per
     // source fires, at the next sync time shown; and the old next time goes while it runs.
@@ -301,10 +301,11 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
       delete st.nextSyncAt;
       emit(slot);
-      return;
+      return true;
     }
     schedule(slot);
     emit(slot);
+    return st.state !== 'error';
   }
 
   function schedule(slot: Slot) {
@@ -321,13 +322,12 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
    */
   function runSync(slot: Slot, asked = false, askedAt?: number): Promise<void> {
     clearTimeout(slot.timer);
-    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now, or from when the act asked its outbox to send (issue #1238).
-    const asks = syncAsks(askedAt);
-    const joining = joined(slot, asked, asks);
-    if (joining) return joining;
-    const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve(), asks };
+    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now, or from when the act asked its outbox to send (issue #1238). Its span is linked to the action that asked for it (issue #1486 part 5): none for a timer or the sync before it.
+    const asks = syncAsks(askedAt), cause = causeNow(), causes = cause ? [cause] : [];
+    const joining = joined(slot, asked, asks, causes); if (joining) return joining;
+    const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve(), asks, causes };
     slot.queued = queued;
-    slot.chain = slot.chain.then(() => { slot.queued = undefined; return timedSync(timings, queued.asks, () => syncOnce(slot, queued.asked)); });
+    slot.chain = slot.chain.then(() => { slot.queued = undefined; return timedSync(timings, queued.asks, () => traceSync(slot.source.name, queued.asked, queued.causes, () => syncOnce(slot, queued.asked))); });
     queued.done = slot.chain;
     syncs.add(slot.chain);
     void slot.chain.finally(() => syncs.delete(slot.chain)).catch(() => undefined);
