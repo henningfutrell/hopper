@@ -20,7 +20,7 @@ describe('the vault forgets ended jobs (issue #1402)', () => {
     const jobs = jobsOf('j1', 'j2');
     const denied = new Set<string>();
     const store = {
-      events: { append: () => undefined }, jobs: { get: (id: string) => jobs.get(id) }, vaultGrants: { get: () => undefined },
+      events: { append: () => undefined }, jobs: { get: (id: string) => jobs.get(id), opensDoors: () => true }, vaultGrants: { get: () => undefined },
       tx: <T>(f: () => T) => f(), directJobs: { get: () => undefined }, settings: {},
     };
     const vault = withVaultGrants({ view: () => ({ templates: [] }) } as unknown as Vault, { store: store as never, clock, targets: () => [], holds: () => true, denied });

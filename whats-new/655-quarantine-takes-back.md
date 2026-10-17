@@ -1,0 +1,1 @@
+- When you quarantine a job, its running sandbox steps now stop, and the vault access you gave its work is taken back. After you lift the quarantine, you give the vault access again if you still want it.

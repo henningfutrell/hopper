@@ -4842,7 +4842,7 @@ Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item 
 
 ## `vault.grant_revoked`
 
-Version 1 (`docs/schemas/vault.grant_revoked.v1.json`). A person took back a job's item's vault grant (issue #652): its jobs get nothing from the vault again until a person grants it again. `by` who took it back.
+Version 1 (`docs/schemas/vault.grant_revoked.v1.json`). A person took back a job's item's vault grant (issue #652): its jobs get nothing from the vault again until a person grants it again. `by` who took it back. A quarantine of the job takes it back too (issue #655 part 6): `by` `quarantine by <person>`.
 
 | field | type | required |
 |---|---|---|

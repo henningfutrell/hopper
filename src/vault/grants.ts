@@ -67,9 +67,10 @@ export function withVaultGrants(v: Vault, o: {
     return { machine: m.name, template: m.template, job: job.id, reason: noGrant(job.id) };
   }
 
-  /** The asks of jobs still at work whose item has no grant. */
+  /** The asks of jobs still at work, not quarantined (issue #655 part 6), whose item has no grant. */
   const open = (): VaultGrantAsk[] => [...asks.values()].filter((a) => {
-    const at = AT_WORK.includes(jobs.get(a.job)?.status ?? '') && !vaultGrants.get(a.key);
+    const job = jobs.get(a.job);
+    const at = job !== undefined && AT_WORK.includes(job.status) && jobs.opensDoors(job) && !vaultGrants.get(a.key);
     if (!at) asks.delete(a.job);
     return at;
   }).map((a) => ({ ...a, names: [...a.names] }));
