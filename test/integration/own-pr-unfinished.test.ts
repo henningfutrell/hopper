@@ -49,7 +49,8 @@ async function conflictingPullRequest(gh: FakeGitHub, app: TestApp, fix: (url: s
     else if (j.continued !== undefined || j.id !== first) fix(url);
   });
   await app.sync();
-  const [job] = await jobsFor(app, issue.url);
+  // The list is newest first: the job may already have failed and gone on as a new run.
+  const job = (await jobsFor(app, issue.url)).at(-1);
   return { issue, job: job!, url: () => url! };
 }
 
@@ -103,7 +104,8 @@ describe('own PR unfinished (issue #1265)', () => {
         else fix(pr.url, issue.number);
       });
       await app.sync();
-      const [job] = await jobsFor(app, issue.url);
+      // The list is newest first: the job may already have failed and gone on as a new run.
+      const job = (await jobsFor(app, issue.url)).at(-1);
       return { issue, job: job!, url: pr.url };
     }
 
@@ -114,9 +116,11 @@ describe('own PR unfinished (issue #1265)', () => {
         gh.pushToPullRequest(pr, new Date().toISOString());
         gh.closeIssue(REPO, n, 'someone', { at: new Date().toISOString() });
       });
-      const failed = await app.waitForStatus(job.id, 'failed');
-      expect(failed.error).toMatch(/^not complete: /);
-      expect(failed.error).not.toMatch(/merge conflicts with its base/);
+      // Its failure event, not its status: the job may already have gone on.
+      const failed = await waitFor(async () => (await app.events('types=job.failed&limit=1000')).find((e) => e.jobId === job.id), { what: 'the job failed' });
+      const error = String((failed.data as { error?: unknown }).error);
+      expect(error).toMatch(/^not complete: /);
+      expect(error).not.toMatch(/merge conflicts with its base/);
       await waitFor(async () => (await jobsFor(app, issue.url)).find((j) => j.status === 'finished'), { what: 'the job finished', timeoutMs: 30_000 });
       expect(await assessed(app, job.id)).toEqual([expect.objectContaining({ causeId: 'own-pr-unfinished', decision: 'continue', auto: true })]);
       expect((await app.events('types=job.continued&limit=1000')).length + (await app.events('types=job.rerun&limit=1000')).length).toBe(1);
