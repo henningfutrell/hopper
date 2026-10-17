@@ -25459,6 +25459,8 @@ that keeps what it made:
 (the operator CLI writes the database directly) could commit a lower seq after a higher one was handled; that event is
 skipped, as it was never told to the daemon's listeners before. The other listeners (the notifiers, the engine's, the
 failure log's) are not followed by a cursor yet.
+Several hoppers on one database (issue #1662) each follow the same cursor: two that run at once can both hand an event.
+The deliveries claimed by compare-and-set are issue #1627's part; until then, run one daemon per database.
 
 **Verification:** `test/events/consumer-cursors.test.ts` (an event committed while each consumer was stopped is handled after
 the next start: the webhook sent once, the job written to the index, the hand-off compared once; a first start replays
