@@ -77,8 +77,9 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   /** Whether a failed job's own agent session can resume (issue #551): its executor parks, and it recorded a session and its pane state. */
   resumable(job: Job): boolean;
   /**
-   * Whether an ended job reopens in its kept work tree (issue #1472 part 2): its executor parks and it recorded its pane
-   * state. Its own agent session resumes when `resumable`, else a fresh session starts there.
+   * Whether an ended job reopens in its kept work tree (issue #1472 part 2): its executor parks, or reopens with no park
+   * (`Executor.reopensKept`, a print-mode agent's), and it recorded its state. Its own agent session resumes when
+   * `resumable`, else a fresh session starts there.
    */
   reopens(job: Job): boolean;
   /** Of those, the ones that run the research and proposal loop (issue #548): only their jobs may shift phase from a question. */
@@ -193,7 +194,7 @@ export function createEngine(o: EngineOptions): Engine {
     get executorNames() { return o.executors.names(); },
     get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
     resumable: (job) => job.agentSession !== undefined && job.executorState !== undefined && o.executors.get(job.spec.executor)?.park !== undefined,
-    reopens: (job) => job.executorState !== undefined && o.executors.get(job.spec.executor)?.park !== undefined,
+    reopens: (job) => { const ex = o.executors.get(job.spec.executor); return job.executorState !== undefined && (ex?.park !== undefined || ex?.reopensKept === true); },
     get reviewingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.reviews === true); },
     phaseShifts,
     sourceHost: createSourceHost(c, commands),

@@ -1,0 +1,1 @@
+- Work that a job of a print-mode agent (such as Codex or Cursor) did not push can now be pushed too: the job starts again in its kept work, with its task, and pushes it.

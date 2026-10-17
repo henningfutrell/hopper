@@ -12217,14 +12217,22 @@ hopper push the work from any state with no click. This part does it for the cas
   the earlier session's history. Through an open hand-off only when its own session resumes: else the hand-off's
   Continue runs a new job, away from the kept work, so Push it is refused with why.
 
-Left of issue #1472 part 2: a job whose executor cannot park (a print-mode agent's), or whose pane state was never
-recorded (its work needs a new job in the kept work tree), and a push to a repository other than the job's own (refused,
-issue #1470).
+- **A print-mode agent's job** (`Executor.reopensKept`). Its executor cannot park, but its state names its work tree
+  (saved before the first turn) and its reap keeps work in the job's scratch dir there. `Engine.reopens` takes it too.
+  Push it continues the same job (`job.continued` with `keptWork`); the executor's `resume` sees `continued` and starts a
+  fresh turn in the saved work tree, never the old chat: its task, then `pushBrief` with `fresh` (it is never
+  `resumable`), then the protocol. The same job id keeps the same scratch dir, so the turn sees the kept work.
+
+Left of issue #1472 part 2: a herdr-claude job whose pane state was never recorded (its work tree is not known; Push it
+is refused, "its work tree cannot reopen"), and a push to a repository other than the job's own (refused, issue #1470).
 
 **Verification:** `test/integration/auto-push.test.ts` (a finished job pushed by itself once, with `auto`; not again when
 its work is kept again; `auto.push` off; a failed job not pushed by itself), `test/integration/kept-work.test.ts` (a
 person's Push it, with `auto.push` off), and in `auto-push.test.ts` a finished job with no recorded agent session pushed in
-a fresh session in its kept work tree.
+a fresh session in its kept work tree. `auto-push.test.ts` also: a finished job of an executor that `reopensKept` goes
+on in a fresh turn, and one of an executor that neither parks nor reopens is refused with why;
+`test/adapters/print-agent-executors.test.ts`: each print-mode agent, continued, starts a fresh turn in its saved work
+tree, its task first, never its old session.
 
 ### Actions answer at once (issue #1194, 2026-10-14)
 

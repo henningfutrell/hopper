@@ -184,6 +184,12 @@ export interface Executor extends ExecutorTerminal {
    */
   park?(job: Job): Promise<void>;
   /**
+   * An executor that cannot park, but whose ended job reopens in the work tree its state names (issue #1472 part 2): a
+   * print-mode agent's. Push it continues the job (`ctx.job.continued`), and `resume` starts a fresh turn there, its task
+   * first, then the brief. Absent → only an executor that parks reopens an ended job.
+   */
+  reopensKept?: true;
+  /**
    * The lost-machine move (issue #1569): end the agent a job left on a machine it moved off, its pane named by `left` (the
    * job's executor state there), so it does no more work beside the job's new run. Its work tree stays. Idempotent; when
    * the job runs on that machine again, only the old pane closes. Rejects when that machine cannot be reached yet.
@@ -351,9 +357,7 @@ export interface RoutingView {
   machines(): readonly string[];
 }
 
-export interface Clock {
-  now(): Date;
-}
+export interface Clock { now(): Date }
 
 // ---- Questions -----------------------------------------------------------------------
 
