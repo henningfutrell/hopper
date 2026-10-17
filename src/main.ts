@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createAllowedHosts, createCloudLink, createDisplayName, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld } from './http/event-loop-held.ts';
+import { createAllowedHosts, createCloudLink, createDisplayName, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld, type HeldWatch } from './http/event-loop-held.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts'; import { inCluster } from './client/cluster.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -93,7 +93,7 @@ export interface AppSeams extends UserSeams {
   containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter; solrMeter?: import('./domain/stack-resources.ts').SolrMeter;
   /** The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
    * Cloudflare's and ngrok's APIs, which remote access mints the tunnel at (issue #968); default the real ones. */
-  searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string;
+  searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string; /** The thread that reads a held event loop, with the health port (issue #1383); default watchHeld's; null: none (a test process starts many daemons, issue #1717). */ held?: HeldWatch | null;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -115,7 +115,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, held: _held, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -324,7 +324,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         return id === undefined ? undefined : instance.users.get(id);
       },
     },
-    port: () => port, signIn, signInEnvironment, events: runtimes.events, held: watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }), // issue #1383: where a held loop runs, and the health port
+    port: () => port, signIn, signInEnvironment, events: runtimes.events, held: seams.held === undefined ? watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }) : seams.held ?? undefined, // issue #1383: where a held loop runs, and the health port
     // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), cloudLink: createCloudLink({ settings: instance.settings, secrets: secrets.system, events: runtimes.events, now: () => clock.now() }), displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8'), poolKey: () => { try { return secret(LANE_POOL_KEY_VARIABLE); } catch { return undefined; } } }, // the lane pool key (issue #1284)
