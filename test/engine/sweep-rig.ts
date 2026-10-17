@@ -1,6 +1,6 @@
 // The sweep's test rig (issue #410): jobs, an empty survey, and the sweep runner with a fake machine shell, the store's
 // jobs and work trail as plain lists. Shared by the sweep's tests.
-import type { DomainEvent, Job, MachineSnapshot } from '../../src/domain/types.ts';
+import type { DomainEvent, Job, Leftover, MachineSnapshot } from '../../src/domain/types.ts';
 import type { Executor, MachineShell, Survey } from '../../src/domain/ports.ts';
 import { createSweep } from '../../src/engine/sweep.ts';
 
@@ -11,7 +11,7 @@ export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
 export const none: Survey = { scopes: [], processes: [], scratch: [] };
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[] } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left' } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -22,7 +22,17 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
   const surveyed: string[][] = [];
   const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
   const logs: string[] = [];
+  // The leftovers listings asked (issue #1116), with their work trees, and the removals asked.
+  const listings: string[][] = [];
+  const removals: string[] = [];
   const shell: MachineShell = {
+    async leftovers(roots) {
+      listings.push(roots);
+      if (o.leftovers === 'old client') throw new Error('client m runs an older client release: /leftovers not found');
+      if (o.leftovers === 'fails') throw new Error('the leftovers listing on m did not finish');
+      return o.leftovers ?? [];
+    },
+    async removeLeftover(path) { removals.push(path); return o.removal ?? 'removed'; },
     async survey(roots) { surveyed.push(roots); return surveys.shift() ?? o.found ?? none; },
     async reap(jobId, scratch, _keep, discard) {
       reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
@@ -57,5 +67,5 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
+  return { sweep, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }

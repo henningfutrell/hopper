@@ -2903,6 +2903,51 @@ Version 1 (`docs/schemas/machine.disk_within_budget.v1.json`). A machine told ov
 }
 ```
 
+## `machine.leftover_kept`
+
+Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `path` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "machineId": "desk",
+  "path": "/home/me/work/.hopper-scratch/test-job",
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
+## `machine.leftover_removed`
+
+Version 1 (`docs/schemas/machine.leftover_removed.v1.json`). A person removes a leftover on Machines (issue #1116): the dir at `path` on `machineId` is removed whatever it holds. `unpushed`: it held work not pushed, which is lost; `bytes`: its size when listed. `gone`: it was no longer there. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `path` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+| `unpushed` | boolean | yes |
+| `bytes` | number | no |
+| `gone` | boolean | no |
+
+```json
+{
+  "machineId": "desk",
+  "path": "/home/me/work/.hopper-scratch/repos/acme/app.git",
+  "unpushed": false,
+  "bytes": 1200000000,
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `minor_decision.picked`
 
 Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).

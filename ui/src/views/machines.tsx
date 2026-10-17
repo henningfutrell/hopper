@@ -13,7 +13,8 @@
 // recommendation and its lane tuning settings sit under the machines (issue #688, lane-tuning.tsx). A sandbox box an older
 // build launched that the hopper could not burn is shown with the reason (issues #603, #1349, GET /api/sandboxes). A machine whose link dropped under a running
 // job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx). Each card
-// says the hopper's own disk use there, against the disk budget set under the machines (issue #1120, disk-budget.tsx).
+// says the hopper's own disk use there, against the disk budget set under the machines (issue #1120, disk-budget.tsx), and the
+// leftovers there the sweep does not judge, each for a person to keep or remove (issue #1116, machine-leftovers.tsx).
 // A machine whose job user holds infra credentials is not ready: their names and the guided fix to a dedicated job user (issues #1128 part 7, #1248).
 import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, SquareTerminal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +34,7 @@ import { hopperDiskText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
+import { allows } from '@/model/roles';
 import { refreshLive, useHopper } from '@/store';
 import { AddMachineForm, AddThisMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
@@ -46,6 +48,7 @@ import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-res
 import { DiskBudgetPanel } from './disk-budget';
 import { SandboxPlaygroundPanel } from './sandbox-playground';
 import { MachineTerminal } from './machine-terminal';
+import { MachineLeftovers } from './machine-leftovers';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -100,6 +103,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const [graph, setGraph] = useState(false);
   const [terminal, setTerminal] = useState(false);
   const admin = useCanAdmin();
+  const operator = useHopper((s) => allows(s.user, 'operator'));
   const res = resourcesText(m.resources);
   const off = offNetwork(m);
   const actions = ctx.authed && !editing && kind.kind !== 'unknown' && (
@@ -158,6 +162,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
       <CredentialCheck m={m} authed={ctx.authed} busy={ctx.busy} />
+      <MachineLeftovers m={m} canAct={ctx.authed && operator} />
       {m.resources?.windowsLink && <WindowsLinkProblem link={m.resources.windowsLink} />}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
