@@ -207,6 +207,9 @@ export interface InstanceSettingsRepository {
   /** The source email match (issue #1380): an account connected from Sources must have its person's email verified; never set: on. */
   getSourceEmailMatch(): boolean;
   setSourceEmailMatch(on: boolean): void;
+  /** Infra applies (issue #1722): whether the vault mints a write, sync or apply for an approved plan, and steps apply; never set: on. */
+  getInfraApplies(): boolean;
+  setInfraApplies(on: boolean): void;
   /** The cloud link (issue #467): this install linked to a hopper.io account; undefined: not linked. */
   getCloudLink(): CloudLinkSettings | undefined;
   setCloudLink(link: CloudLinkSettings): void;

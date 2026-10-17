@@ -310,6 +310,6 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setRemoteAccess: (s) => write('remoteAccess', JSON.stringify(remoteAccessRecord(s))),
     getHostLinkBase: () => read('hostLinkBase') ?? '', setHostLinkBase: (base) => write('hostLinkBase', base),
     getAllowedHosts() { const text = read('allowedHosts'); return text === undefined ? [] : JSON.parse(text) as string[]; },
-    setAllowedHosts: (hosts) => write('allowedHosts', JSON.stringify([...hosts])), getSourceEmailMatch: () => read('sourceEmailMatch') !== 'off', setSourceEmailMatch: (on) => write('sourceEmailMatch', on ? 'on' : 'off'), getDisplayName: () => read('displayName') ?? '', setDisplayName: (name) => write('displayName', name),
+    setAllowedHosts: (hosts) => write('allowedHosts', JSON.stringify([...hosts])), getSourceEmailMatch: () => read('sourceEmailMatch') !== 'off', setSourceEmailMatch: (on) => write('sourceEmailMatch', on ? 'on' : 'off'), getInfraApplies: () => read('infraApplies') !== 'off', setInfraApplies: (on) => write('infraApplies', on ? 'on' : 'off'), getDisplayName: () => read('displayName') ?? '', setDisplayName: (name) => write('displayName', name),
   };
 }

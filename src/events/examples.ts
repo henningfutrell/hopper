@@ -289,7 +289,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'approval.confirmation_asked': { kind: 'infra-plan', ref: '0b7e5a3c-0000-4000-8000-000000000870', plan: '0b7e5a3c-0000-4000-8000-000000000870', words: 'approve plan 0b7e5a3c for prod-db (high risk): Destroys 1 database in prod', asker: 'Grok Bot' },
   'infra.controllers_changed': { from: [], to: ['system:serviceaccount:argocd:argocd-application-controller', 'arn:aws:sts::123456789012:assumed-role/atlantis/*'], by: 'Ada' },
   'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada', level: 'low' },
-  'infra.settings_changed': { from: { autoApprove: false }, to: { autoApprove: true }, by: 'owner' },
+  'infra.settings_changed': { from: { autoApprove: false }, to: { autoApprove: true }, by: 'owner' }, 'infra.applies_changed': { on: false, by: 'admin' },
   'infra.watchers_changed': { from: {}, to: { '*': ['ops-lead'], prod: ['prod-owner'] }, by: 'owner' },
   'api_grant.minted': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', role: 'operator', scopes: ['questions:answer', 'sources:intake', '*:read'], box: true, endsAt: '2027-01-10T09:00:00.000Z', tokenMinutes: 10 },
   'api_grant.refreshed': { grant: '3f9a0c2e5b7d1e48', from: '127.0.0.1' },
