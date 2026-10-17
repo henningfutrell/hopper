@@ -128,6 +128,9 @@ describe('Work not pushed (issue #1010)', () => {
     const job = await a.pull({}, herdrItem);
     await a.waitForStatus(job.id, 'running', 8000);
     await waitFor(() => herdr.prompts.length === 1, { what: 'the task sent' });
+    // A cancelled end leaves its item offered (as on GitHub): a sync after its report would make a newer job of it, and
+    // Push it is refused for that job. The item is no longer offered, so only Push it takes it back.
+    a.source.end(job.source!.key);
     expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
     await a.waitForStatus(job.id, 'cancelled', 8000);
     const session = (await a.job(job.id)).agentSession!;

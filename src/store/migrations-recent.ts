@@ -8,6 +8,7 @@ import type { Migration } from './migrations.ts';
 import { remoteAccessProvider } from './migration-remote-access.ts';
 import { SANDBOX_RUN_TABLE } from './sandbox-runs.ts';
 import { cloudLinkInstanceId } from './migration-cloud-link-id.ts';
+import { SAGA_TABLE } from './sagas.ts';
 
 export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
@@ -43,4 +44,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 45: the cloud link's id is the instance id (issue #465), so a link again is the same instance at hopper.io. A record
   // from before takes it; the build before reads `installId` as before.
   cloudLinkInstanceId,
+  // 46: the sagas (issue #1524): one row per saga, its steps and data as JSON, its lease and abort as columns. A table
+  // only: the build before never reads it, and leaves a saga to a hopper that knows its kind.
+  SAGA_TABLE,
 ];

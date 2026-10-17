@@ -10,6 +10,8 @@ export interface ManualSource extends JobSource {
   /** Offer an item from the next sync on (replaces one with the same key). */
   add(item: SourceItem): void;
   remove(key: string): void;
+  /** Stop offering the item, as a reported finished end does: `rerun` offers it again. A cancelled end alone does not stop it. */
+  end(key: string): void;
   /** Raise a signal on the next sync's check. */
   signal(s: SourceSignal): void;
   /** Close the item at the source, as an issue closed on GitHub (issue #529): `workState` answers `closed`. */
@@ -55,6 +57,7 @@ export function createManualSource(name = 'manual'): ManualSource {
     describe: () => ({ items: items.size }),
     add(item) { items.set(item.key, item); },
     remove(key) { items.delete(key); },
+    end(key) { const item = items.get(key); if (item) ended.set(key, item); items.delete(key); },
     signal(s) { signals.push(s); },
     close(key) { closed.add(key); items.delete(key); },
     setWork(key, w) { work.set(key, w); },
