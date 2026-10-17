@@ -3539,6 +3539,20 @@ Version 1 (`docs/schemas/cloud_link.unregistered.v1.json`). hopper.io removed th
 }
 ```
 
+## `cloud_link.message_refused`
+
+Version 1 (`docs/schemas/cloud_link.message_refused.v1.json`). The instance refused a message hopper.io sent over the cloud link (issue #465): it was larger than 1024 bytes (`too-large`), not JSON (`not-json`), of a type other than `register` or `unregister` (`unknown-type`), or not of that type's closed shape (`bad-shape`). Nothing changed on the instance. `reason`, why; never the message. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `reason` | `too-large` \| `not-json` \| `unknown-type` \| `bad-shape` | yes |
+
+```json
+{
+  "reason": "unknown-type"
+}
+```
+
 ## `display_name.changed`
 
 Version 1 (`docs/schemas/display_name.changed.v1.json`). The hopper's admin changed the instance's display name (issue #465): what they call this hopper, shown in Settings → Version beside its instance id. `from` and `to` are the names, empty when none; `by`, who. An instance event: in every user's log.
