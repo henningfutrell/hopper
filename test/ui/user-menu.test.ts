@@ -90,7 +90,7 @@ describe('the top bar on a phone (issue #666)', () => {
 });
 
 describe('the user menu (issue #666)', () => {
-  it('names the user and role, then the theme, the device link and Report a bug, with Sign out last and set apart', async () => {
+  it('names the user and role, then the theme, the device link, File an issue and Report a bug, with Sign out last and set apart', async () => {
     await render();
     await openMenu();
     const text = menu()!.textContent ?? '';
@@ -98,7 +98,7 @@ describe('the user menu (issue #666)', () => {
     expect(text).toContain('admin');
     const labels = items().map((i) => i.textContent?.trim());
     expect(labels[0]).toMatch(/^(Light|Dark) theme$/);
-    expect(labels.slice(1)).toEqual(['Help', 'Log in another device', 'Report a bug', 'Sign out']);
+    expect(labels.slice(1)).toEqual(['Help', 'Log in another device', 'File an issue', 'Report a bug', 'Sign out']);
     const separators = [...menu()!.querySelectorAll('[role="separator"]')];
     expect(separators.at(-1)?.nextElementSibling).toBe(item(/Sign out/));
     for (const i of items()) expect(i.className).toMatch(/(^|\s)min-h-11(\s|$)/);
@@ -107,11 +107,11 @@ describe('the user menu (issue #666)', () => {
   it('has no device link for a user who is not admin', async () => {
     await render({ ...ADMIN, role: 'operator' });
     await openMenu();
-    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'Report a bug', 'Sign out']);
-    expect(items()).toHaveLength(4);
+    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'File an issue', 'Report a bug', 'Sign out']);
+    expect(items()).toHaveLength(5);
   });
 
-  it('has no Report a bug for a viewer, who may not send one', async () => {
+  it('has no Report a bug and no File an issue for a viewer, who may send neither', async () => {
     await render({ ...ADMIN, role: 'viewer' });
     await openMenu();
     expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'Sign out']);

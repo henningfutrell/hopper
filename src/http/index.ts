@@ -77,6 +77,7 @@ import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { vaultRoutes } from './vault.ts';
 import { bugReportReadRoutes } from './ui/bug-reports.ts';
+import { issueDraftReadRoutes } from './ui/issue-drafts.ts';
 import { pointedJobReadRoutes } from './ui/pointed-jobs.ts';
 import { directJobReadRoutes } from './ui/direct-jobs.ts';
 import { searchReadRoutes } from './search.ts';
@@ -224,6 +225,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   webhookRoutes(app, tenant);
   vaultRoutes(app, tenant);
   bugReportReadRoutes(app, tenant); // Your reports (issue #694)
+  issueDraftReadRoutes(app, tenant); // File an issue (issue #471)
   pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
   directJobReadRoutes(app, tenant); // Direct jobs (issue #901)
   searchReadRoutes(app, tenant); // Search (issue #945)

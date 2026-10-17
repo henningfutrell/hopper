@@ -5832,6 +5832,52 @@ Version 1 (`docs/schemas/direct_job.promotion_revoked.v1.json`). A person revoke
 }
 ```
 
+## `issue_draft.drafted`
+
+Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an issue with the person's own signed-in AI connection (issue #471): `repo` it is for, the `provider` and the `model` that ran, the run `skill` and its id (`file-issue@<id>`, issue #472), and `findings`: the ids of the draft constraints the draft as written broke (a secret or personal data is masked before the person sees it). Nothing is filed. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `provider` | string | yes |
+| `model` | string | no |
+| `skill` | string | yes |
+| `findings` | string[] | yes |
+
+```json
+{
+  "repo": "octo-org/ops",
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "skill": "file-issue@3f2a9c1e7b4d5a60",
+  "findings": []
+}
+```
+
+## `issue_draft.filed`
+
+Version 1 (`docs/schemas/issue_draft.filed.v1.json`). A person confirmed and filed an issue that File an issue drafted (issue #471), with their own GitHub connection, with no label and no assignee: `repo`, `number`, `url`, `by` who confirmed it, the `provider` and the run `skill` with its id that drafted it. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `by` | string | yes |
+| `provider` | string | yes |
+| `skill` | string | yes |
+
+```json
+{
+  "repo": "octo-org/ops",
+  "number": 13,
+  "url": "https://github.com/octo-org/ops/issues/13",
+  "by": "octocat",
+  "provider": "claude",
+  "skill": "file-issue@3f2a9c1e7b4d5a60"
+}
+```
+
 ## `infra.plan_recorded`
 
 Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), when it goes stale (`expiresAt`), and its `summary` (issue #870 part 2): what it changes in plain words, its `level` (`low` or `high`), its risk callouts (`destroy`, `iam`, `prod`, `data`, `network`), and whether it `failed` a check (a new AWS resource without the MAP tag: nobody approves such a plan). Never its text or its file. A plan is never changed once kept. The notifiers send it, with the watchers of its environments (part 4).
