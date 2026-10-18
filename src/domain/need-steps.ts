@@ -8,8 +8,7 @@ import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 import type { StepResult } from './windows-steps.ts';
 
 /** The template a step runs in, as it was when the job asked: what its need box is made of. */
-/** The template a step runs in, as it was when the step was asked for; `egress`: its approved egress hosts (issue #1875). */
-export interface NeedStepTemplate { name: string; image: string; tools?: BoxTool[]; egress?: string[]; readOnly?: true; limits?: TemplateLimits }
+export interface NeedStepTemplate { name: string; image: string; tools?: BoxTool[]; readOnly?: true; limits?: TemplateLimits }
 
 export interface NeedStep {
   id: string;

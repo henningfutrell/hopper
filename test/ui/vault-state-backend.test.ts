@@ -10,7 +10,7 @@ const WORKSPACE = { operation: 'read', asset: { kind: 'terraform-workspace', nam
 const ROLE = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } };
 const TF = {
   name: 'tf', image: 'img', secrets: [], profiles: [WORKSPACE, ROLE], savedBy: 'Ada', savedAt: '2026-10-11T10:00:00Z',
-  approval: { image: 'img', secrets: [], by: 'Ada', at: '' }, pending: { secrets: [], image: false, egress: [], profiles: [] },
+  approval: { image: 'img', secrets: [], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [] },
   gives: [], radius: { level: 'low', reasons: [], profiles: [] }, tools: ['aws', 'terraform'],
 };
 

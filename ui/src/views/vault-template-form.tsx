@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FIELD } from '@/components/plugin-form';
 import { Label } from '@/components/vault-fields';
-import { highRadius, profileText, DEFAULT_BOX_IMAGE, EGRESS_HOST, egressOf } from '@/model/vault';
+import { highRadius, profileText, DEFAULT_BOX_IMAGE } from '@/model/vault';
 import { limitsDraft, templateLimits } from '@/model/sandbox-launch';
 import type { AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultSecret } from '@/model/wire';
 import { LimitsInput } from './sandbox-limits';
@@ -69,18 +69,16 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
   const [scope, setScope] = useState<string[]>(t?.secrets ?? []);
   const [profiles, setProfiles] = useState<OperationProfile[]>(t?.profiles ?? []);
   const [tools, setTools] = useState<string[]>(t?.tools ?? []);
-  const [egress, setEgress] = useState((t?.egress ?? []).join(' '));
   const [limits, setLimits] = useState(limitsDraft(t?.limits));
   const [credential, setCredential] = useState(t?.agentCredential ?? '');
   const [marks, setMarks] = useState<Record<string, string>>(t?.probeMarks ?? {});
   const saved = templateLimits(limits);
-  const hosts = egressOf(egress), badHost = hosts.find((h) => !EGRESS_HOST.test(h));
   const toggle = (n: string) => setScope(scope.includes(n) ? scope.filter((x) => x !== n) : [...scope, n]);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
-      if (!saved.ok || badHost) return;
-      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, egress: hosts, limits: saved.limits, agentCredential: agentCredentialOf(credential, scope), ...(t?.readOnly ? { probeMarks: marks } : {}) }, `${name.trim()}: saved`)) onDone();
+      if (!saved.ok) return;
+      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, limits: saved.limits, agentCredential: agentCredentialOf(credential, scope), ...(t?.readOnly ? { probeMarks: marks } : {}) }, `${name.trim()}: saved`)) onDone();
     }}>
       {!t && (
         <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
@@ -102,18 +100,13 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
       </div>
       <AgentCredentialInput choice={credential} scope={scope} busy={busy} onChange={setCredential} />
       <ToolsInput tools={tools} busy={busy} onChange={setTools} />
-      <label className="block space-y-1"><Label>Egress hosts — host:port its boxes may reach through the egress proxy, beside AWS and the minted clusters</Label>
-        <Input className="h-9 font-mono text-sm" value={egress} maxLength={2000} autoCapitalize="off" autoCorrect="off" spellCheck={false} disabled={busy}
-          placeholder="auth.example.com:443" aria-invalid={badHost !== undefined} onChange={(e) => setEgress(e.target.value)} />
-        {badHost && <span className="block text-xs text-destructive">{badHost} is not host:port: a DNS name or an address, no scheme, no wildcard.</span>}
-      </label>
       <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
       <BackendsInput key={profiles.filter((p) => p.asset.kind === 'terraform-workspace').map((p) => p.asset.name).join(' ')} profiles={profiles} busy={busy} onChange={setProfiles} />
       {t?.readOnly && <ProbeMarksInput t={t} marks={marks} busy={busy} onChange={setMarks} />}
       <LimitsInput draft={limits} busy={busy} problem={saved.ok ? undefined : saved.error} onChange={setLimits} />
-      <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools, a new egress host or a new profile waits for your approval before any box gets it. A profile you remove loses its approval. Limits apply to the next box with no approval: they give a box nothing.</p>
+      <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools or a new profile waits for your approval before any box gets it. A profile you remove loses its approval. Limits apply to the next box with no approval: they give a box nothing.</p>
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !name.trim() || !image.trim() || !saved.ok || badHost !== undefined}>Save template</Button>
+        <Button type="submit" disabled={busy || !name.trim() || !image.trim() || !saved.ok}>Save template</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>

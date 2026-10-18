@@ -26075,54 +26075,6 @@ no route. A host added to the allowlist was reached after the reload (200), with
 the real `aws` 2.37.12 and `kubectl` v1.37.1: refused both ways on the internal network (`egress refused`), reached on an
 open one.
 
-## A template's egress hosts (issue #1875, part 1, 2026-10-18)
-
-**The problem.** A job had to run an end-to-end test in a box against a dev host. The box's egress proxy refused the host
-(403): the allowlist held only AWS's endpoints and the minted clusters ("A read-only box's egress"), and a template had
-no way to name another host. A person could not approve "this box may reach this one host".
-
-- **The field** (`Template.egress`, `src/domain/vault.ts`). A list of `host:port`: a lowercase DNS name or an IPv4
-  address, a port from 1 to 65535, no scheme and no wildcard (`egressHostProblem`). The vault saves it in lowercase,
-  each host once, sorted. A save that leaves it out keeps the hosts the template has, as tools do; `[]` removes them. Set
-  in Settings → Vault (the template form), by `POST /ui/api/vault` `save-template` `egress`, or by
-  `hopper template save --egress <host>:<port>` (`none` removes them).
-- **Approved with the image.** `approve-template` keeps the hosts in the approval (`approval.egress`) and in
-  `vault.approved`. A host not in the approval waits for a person (`pending.egress`, `egressPending`): the template gives
-  no vault secret (`givesOf`), it is not ready (`templateReady`), and a box of it takes no job (`approvalWait`). A host
-  removed needs no approval: it narrows what a box may do. The approval card and the template card show the hosts, a
-  waiting one marked.
-- **The blast radius.** Each host is a `medium` line (`rateTemplate`): a place off AWS and the minted clusters where a
-  box can send what it reads. A template's rating is its highest line, so a template of reads and an egress host is
-  medium, and the auto-approve policy's default (low only) leaves it to a person.
-- **The box.** A need box (a need step or a box step) of a template that names egress hosts runs behind the egress
-  proxy, as a read-only box does, a write box too (`Sandboxes.needStep`). Before the box is made, the hopper adds the
-  template's hosts to the **egress allowlist** with the hosts of the step's credentials (`Egress.allow`). The step keeps
-  the template's hosts as they were when it was asked for (`NeedStepTemplate.egress`); a step is asked for only of a
-  ready template, so they are approved hosts.
-
-**Residual risk, stated.** The allowlist is shared, and only grows while the hopper runs: a host one template named
-stays allowed for every box behind the proxy after it, as a cluster's host does. tinyproxy allows a host and a port
-apart (its `Filter` and `ConnectPort`): a box may reach an allowed host on any allowed port. Where the egress is not
-limited — no egress settings, a client target, a Kubernetes box (its own egress policy) — a write box of such a template
-keeps its open egress, as every write box there does.
-
-**Decisions:**
-- **Approved with the image, not apart.** A new host is a new place a box's data can go. It waits as a new image does,
-  and the template gives nothing meanwhile, so no box reaches a host a person did not approve.
-- **Medium, not counted as a vault secret is.** An egress host gives no credential. It widens where data can go, which
-  the rules rate no higher than an unconfirmed reach.
-- **One allowlist, not one per box.** tinyproxy filters by host for all its clients. A proxy per template, or a filter
-  per client, is a larger change for the residual risk above.
-
-Left for later parts of issue #1875: a prebuilt test image (non-root, Python, Playwright with Chromium headless shell,
-its libraries and fonts) that a template can name; and a job's template request that asks for vault secrets, that image
-and egress hosts, which a person approves.
-
-Tests: `test/integration/template-egress.test.ts` (save, approve, widen and narrow through the real routes; the radius;
-a host that is not `host:port` refused), `test/sandbox/template-egress.test.ts` (a write box of a template with hosts
-behind the proxy, the hosts on the allowlist; a read-only box's hosts joined to its clusters; the host's form),
-`test/blast-radius/template-rate.test.ts`, `test/ui/vault.test.ts`.
-
 ## Remote access: the mint as a saga (issue #1609, 2026-10-17)
 
 **The problem.** Remote access's mint ("Remote access providers: the hopper mints the tunnel") made a tunnel, its ingress,

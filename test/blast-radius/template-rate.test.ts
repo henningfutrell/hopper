@@ -47,12 +47,6 @@ describe('rating a template', () => {
     expect(rateTemplate({ secrets: [{ name: 'KUBE_TOKEN' }], profiles: [] }, [], { ...rules, unconfirmed: 'read' }).level).toBe('low');
   });
 
-  // Issue #1875: an egress host is a place off AWS and the minted clusters where a box can send what it reads.
-  it('an egress host is medium, and named', () => {
-    const r = rateTemplate({ secrets: [], profiles: [READ], egress: ['auth.example.test:443'] }, [READ], rules);
-    expect(r).toMatchObject({ level: 'medium', reasons: ['egress host auth.example.test:443: its boxes may send what they read there'] });
-  });
-
   it('the high-radius operations are write, sync and apply', () => {
     expect(['read', 'write', 'sync', 'apply'].filter((o) => highRadius(profile(o as OperationProfile['operation'])))).toEqual(['write', 'sync', 'apply']);
   });

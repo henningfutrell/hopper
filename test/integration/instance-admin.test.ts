@@ -72,9 +72,7 @@ async function instanceLevel(app: TestApp, token: string): Promise<Record<string
 const allRefused = (r: Record<string, number>) => expect(r).toEqual(Object.fromEntries(Object.keys(r).map((k) => [k, 403])));
 const noneRefused = (r: Record<string, number>) => { for (const [k, status] of Object.entries(r)) expect(status, k).not.toBe(403); };
 
-// Each test starts a daemon, signs people in and makes about twenty requests: under an affected shard's load
-// that takes more than the default 15 s, as in two admin tiers (test/integration/super-admin.test.ts).
-describe('the instance admin is the first GitHub user; a login code is no admin login (issue #240)', { timeout: 60_000 }, () => {
+describe('the instance admin is the first GitHub user; a login code is no admin login (issue #240)', () => {
   it('the first GitHub admin does what is the instance\'s; a user they add, by its login link, does not', async () => {
     const github = await forge();
     const { app, origin } = await startNewHopper(h, undefined, ENV(github));

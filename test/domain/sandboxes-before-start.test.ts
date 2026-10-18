@@ -32,8 +32,8 @@ describe('the templates a job names (issue #1471)', () => {
   });
 });
 
-const ready = (name: string): TemplateView => ({ name, approval: { by: 'Ada', at: 'now' }, pending: { egress: [], profiles: [] } }) as unknown as TemplateView;
-const notReady = (name: string): TemplateView => ({ name, pending: { egress: [], profiles: [] } }) as unknown as TemplateView;
+const ready = (name: string): TemplateView => ({ name, approval: { by: 'Ada', at: 'now' }, pending: { profiles: [] } }) as unknown as TemplateView;
+const notReady = (name: string): TemplateView => ({ name, pending: { profiles: [] } }) as unknown as TemplateView;
 const request = (template: string, state: SandboxRequestView['state']): SandboxRequestView => ({ id: `r-${template}`, jobId: 'j', template, state, askedAt: 'now' });
 
 describe('the hold of a job whose sandboxes are not approved yet (issue #1471)', () => {
