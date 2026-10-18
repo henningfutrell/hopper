@@ -34,7 +34,7 @@ async function withAccounts(s: Set) {
   await s.store.signedIn({ githubUserId: GRACE, login: 'grace' });
   await s.store.openSession('ada-session', ADA, new Date());
   await s.store.openSession('grace-session', GRACE, new Date());
-  return createCloudLinkAnswers({ store: s.store, requests: s.requests });
+  return createCloudLinkAnswers({ store: s.store, requests: s.requests, states: s.states });
 }
 const enter = (s: Set, session: string, installId: string, code: string, origin = PUBLIC) => s.server.inject({
   method: 'POST', url: '/account/instances/register', headers: { ...form, origin, ...cookie(session) },

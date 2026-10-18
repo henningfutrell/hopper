@@ -32,7 +32,7 @@ async function withAccounts(s: Set) {
   await s.store.signedIn({ githubUserId: GRACE, login: 'grace' });
   await s.store.openSession('ada-session', ADA, new Date());
   await s.store.openSession('grace-session', GRACE, new Date());
-  return createCloudLinkAnswers({ store: s.store, requests: s.requests });
+  return createCloudLinkAnswers({ store: s.store, requests: s.requests, states: s.states });
 }
 const instances = async (s: Set, session: string) =>
   (await s.server.inject({ method: 'GET', url: '/api/account/instances', headers: cookie(session) })).json().instances as Record<string, unknown>[];
