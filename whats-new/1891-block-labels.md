@@ -1,0 +1,1 @@
+- When the hopper marks an issue blocked, its labels on GitHub now change within seconds, not at the next sync.

@@ -4,7 +4,8 @@
 // judged: an item a job works (queued, working, waiting outside) carries none; an item in PR open carries
 // `hopper:pr-ready`, or `hopper:partly-done` for a part; a blocked item carries `hopper:blocked`, or `hopper:pr-closed`
 // when its pull request was closed without a merge. Every other state is not judged. Pure: no I/O, no clock.
-import type { WorkItem } from '../../domain/work-items.ts';
+import type { BlockedCause } from '../../domain/item-lifecycle.ts';
+import type { WorkItem, WorkItemState } from '../../domain/work-items.ts';
 import { END_LABELS, LABEL_BLOCKED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 
 /** The end labels an item's state allows, and the one to add when none of them is on (absent: none is needed). */
@@ -21,6 +22,17 @@ export function labelsFor(item: Pick<WorkItem, 'state' | 'blockedCause'>): Wante
     }
     default: return undefined;
   }
+}
+
+/**
+ * The label change of a block the item reconciler makes (part 8): the end labels the state it leaves may have put on
+ * (PR open's, or partly done's `hopper:partly-done`) come off, and the blocked state's goes on. Written with no read of
+ * the issue's labels: a remove of a label the issue does not carry changes nothing.
+ */
+export function blockLabels(from: WorkItemState, cause: BlockedCause): { remove: string[]; add: string[] } {
+  const add = labelsFor({ state: 'blocked', blockedCause: cause })!.add!;
+  const left = from === 'partly_done' ? [LABEL_PARTLY_DONE] : labelsFor({ state: from })?.allowed ?? [];
+  return { remove: left.filter((l) => l !== add), add: [add] };
 }
 
 /**
