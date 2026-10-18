@@ -1,14 +1,16 @@
 // Issue #1909: fan-out and completion end to end, on a machine with only the hopper's files. A job of octo/tools#1 loads
 // the orchestrate skill, files its sub-task as a required child with a fan-out key, and waits on it. A person approves the
 // child's request card; the child's own job runs and its merge closes the child; the hopper wakes the parent, which files
-// the sub-task again with the same key, learns the issue it filed, files nothing twice, and finishes. The daemon, store
-// and HTTP edge are real. GitHub is two fakes: one on loopback for what a job asks the hopper (test/support/fake-forges.ts),
-// and the in-memory one the job source reads; the test shows the source the child as GitHub would, with the same number.
+// the sub-task again with the same key, learns the issue it filed, files nothing twice, opens its own pull request and
+// finishes. The daemon, store and HTTP edge are real. GitHub is two fakes: one on loopback for what a job asks the hopper
+// (test/support/fake-forges.ts), and the in-memory one the job source reads; the test shows the source the child as GitHub
+// would, with the same number.
 //
 //   Given a job of octo/tools#1 from the job source, on a machine with no workflow repository
 //   When  it loads orchestrate, files sub-task t1 (--required --key fanout-t1) and waits on issue octo/tools#2
 //   Then  the child is a request card, not a job; approved, its job runs and ends; the merge closes the child
-//   And   the parent's wait ends; it files t1 again: the same issue, replayed; GitHub holds one child; it finishes
+//   And   the parent's wait ends; it files t1 again: the same issue, replayed; GitHub holds one child; it opens its pull
+//         request and finishes
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,7 +19,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor, ExecutionContext, ExecutionOutcome, MachineShell } from '../../src/domain/ports.ts';
 import { ADMIN_ID, type DiscoveryFacts, type Job } from '../../src/domain/types.ts';
 import { builtInSkills } from '../../src/skill-library/index.ts';
-import { createFakeGitHub as createSourceGitHub } from '../../src/sources/index.ts';
+import { createFakeGitHub as createSourceGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -45,10 +47,12 @@ function hopperSkill(root: string, env: Record<string, string>, args: string[]):
 
 /**
  * An executor that plays the orchestrate skill on a machine whose disk is `root`: the parent (issue #1) loads the skill,
- * files t1 and waits on it; woken, it files t1 again and finishes. Any other job (the child) ends finished at once.
+ * files t1 and waits on it; woken, it files t1 again, opens its own pull request and finishes. Any other job (the child)
+ * opens its pull request on `gh`, which closes its issue when merged, and ends.
  */
-function orchestrating(root: string) {
+function orchestrating(root: string, gh: FakeGitHub) {
   const runs: { jobId: string; step: string; out: Run }[] = [];
+  const pullRequests: string[] = [];
   const shell: MachineShell = {
     async reap() { return { kept: [] }; },
     async survey() { return { scopes: [], processes: [], scratch: [] }; },
@@ -65,7 +69,10 @@ function orchestrating(root: string) {
   const executor: Executor = {
     name: 'orchestrating', idempotent: false, validate: () => null, machineShell: () => shell,
     async run(ctx): Promise<ExecutionOutcome> {
-      if (ctx.job.source?.number !== 1) return { kind: 'finished', result: 'the child is done' };
+      if (ctx.job.source?.number !== 1) {
+        pullRequests.push(gh.openPullRequest(REPO, ctx.job.source!.number!, { createdAt: new Date().toISOString() }).url);
+        return { kind: 'finished', result: 'the child is done' };
+      }
       const e = await env(ctx);
       await step(ctx.job, 'load', hopperSkill(root, e, ['orchestrate']));
       const filed = await step(ctx.job, 'file', hopperGh(root, e, SUB_TASK));
@@ -75,10 +82,11 @@ function orchestrating(root: string) {
     async resume(ctx): Promise<ExecutionOutcome> {
       const e = await env(ctx);
       await step(ctx.job, 'resume', hopperGh(root, e, SUB_TASK));
+      pullRequests.push(gh.openPullRequest(REPO, ctx.job.source!.number!, { createdAt: new Date().toISOString() }).url);
       return { kind: 'finished', result: 'every sub-task is done' };
     },
   };
-  return { executor, runs };
+  return { executor, runs, pullRequests };
 }
 
 describe('fan-out and completion end to end (issue #1909)', () => {
@@ -89,7 +97,7 @@ describe('fan-out and completion end to end (issue #1909)', () => {
     const gh = createSourceGitHub();
     const root = mkdtempSync(join(tmpdir(), 'hopper-fan-out-machine-'));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-    const o = orchestrating(root);
+    const o = orchestrating(root, gh);
     const db = tempDbPath();
     cleanups.push(db.cleanup);
     const app = await startTestApp({
@@ -128,15 +136,15 @@ describe('fan-out and completion end to end (issue #1909)', () => {
     }, { what: 'the child\'s request card' });
     expect(store.jobs.list().filter((j) => j.source?.key === child.url)).toEqual([]);
 
-    // A person approves it; its own job runs and ends.
+    // A person approves it; its own job runs, opens its pull request and ends.
     const approved = await app.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [child.url], hash: card.request!.hash }, { token });
     expect(approved).toMatchObject({ status: 200, body: { done: [child.url] } });
     const childJob = await waitFor(async () => store.jobs.list().find((j) => j.source?.key === child.url), { what: 'the child\'s job' });
     await app.waitForStatus(childJob.id, 'finished');
 
     // The merge of the child's pull request closes it; the next sync wakes the parent, and it finishes.
-    const now = new Date().toISOString();
-    gh.closeByPullRequest(REPO, child.number, { createdAt: now, mergedAt: now });
+    expect(o.pullRequests).toHaveLength(1);
+    gh.mergePullRequest(o.pullRequests[0]!);
     await app.sync();
     await app.waitForStatus(parent.id, 'finished');
     expect(o.runs.filter((r) => r.jobId === parent.id).map((r) => r.step)).toEqual(['load', 'file', 'resume']);

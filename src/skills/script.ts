@@ -35,18 +35,21 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
 #                        the hopper pushes it on the job stream (issue #613)
 #     --timeout SECONDS  how long --wait waits (the hopper's default: an hour)
+#     --repo-copy DIR    for orchestrate: the job follows its repository's own copy of the skill, in DIR (issue #1909);
+#                        the hopper records its folder, git tree and commit, and whether it has changes
 # Exit 0: the answer; 1: a no, with why; 2: a bad call; 3: the user is asked, and --wait was not given;
 #      4: --wait reached its deadline with no answer.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--wait [--timeout SECONDS]] [--repo-copy DIR]]' >&2; exit 2; }
 ${TRACE_HEADER_SH}
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
 ${STREAM_WAIT_SH}
-wait=; opt=; pos=0
+wait=; opt=; pos=0; copy=
 for a in "$@"; do
   shift
+  if [ "$opt" = copy ]; then copy=$a; opt=; continue; fi
   if [ -n "$opt" ]; then set -- "$@" --data-urlencode "$opt=$a"; opt=; continue; fi
   case $a in
     --wait) wait=1; set -- "$@" --data-urlencode wait=1 ;;
@@ -59,6 +62,7 @@ for a in "$@"; do
     --egress) opt=egress ;;
     --image) opt=image ;;
     --timeout) opt=timeout ;;
+    --repo-copy) opt=copy ;;
     -*) usage ;;
     *) case $pos in
          0) set -- "$@" --data-urlencode "name=$a" ;;
@@ -69,6 +73,14 @@ for a in "$@"; do
   esac
 done
 [ -z "$opt" ] || usage
+# The repository's own copy (issue #1909): its folder in the repository, the tree and commit that hold it, its changes.
+if [ -n "$copy" ]; then
+  git -C "$copy" rev-parse --show-toplevel >/dev/null 2>&1 || { echo "hopper-skill: $copy is not in a git repository" >&2; exit 2; }
+  prefix=$(git -C "$copy" rev-parse --show-prefix) && commit=$(git -C "$copy" rev-parse HEAD 2>/dev/null) && tree=$(git -C "$copy" rev-parse HEAD:./ 2>/dev/null) ||
+    { echo "hopper-skill: no commit holds $copy: commit it first" >&2; exit 2; }
+  changed=0; [ -z "$(git -C "$copy" status --porcelain -- . 2>/dev/null)" ] || changed=1
+  set -- "$@" --data-urlencode "repoCopy=\${prefix:-.}" --data-urlencode "tree=$tree" --data-urlencode "commit=$commit" --data-urlencode "changed=$changed"
+fi
 out=$(hcurl -sS -H @- -X POST "$@" -w '\\n%{http_code}' "$HOPPER_URL${SKILL_PATH}") || exit 1
 code=\${out##*
 }

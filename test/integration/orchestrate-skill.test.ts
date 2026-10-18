@@ -12,7 +12,7 @@
 //   When  the job works in a repository that has its own copy of the skill, and says so with --repo-copy
 //   Then  `skill.loaded` names the copy's folder, its git tree and commit, and whether it has changes
 import { execFile, execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -61,9 +61,9 @@ async function start() {
   return { app, github, root, env, jobId: job.id, h };
 }
 
-/** Another job of `number`, on its own machine: its variables. */
-async function another(t: Awaited<ReturnType<typeof start>>, number: number) {
-  const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools', number }, ADMIN_ID);
+/** Another job of `number` (of the item `key`, when given: a Run again), on its own machine: its variables. */
+async function another(t: Awaited<ReturnType<typeof start>>, number: number, key?: string) {
+  const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools', number, ...(key ? { key } : {}) }, ADMIN_ID);
   const env = await waitFor(async () => t.h.held.get(job.id)?.env, { what: `job ${job.id} to run` });
   return { env, jobId: job.id };
 }
@@ -75,7 +75,8 @@ const git = (dir: string, ...args: string[]): string => execFileSync('git', ['-c
 function hopperSkill(root: string, env: Record<string, string>, args: string[]): Promise<Run> {
   return new Promise((resolve) => {
     execFile('sh', [join(root, env.HOPPER_SKILL!), ...args], {
-      env: { PATH: process.env.PATH, HOPPER_URL: env.HOPPER_URL, HOPPER_TOKEN_FILE: join(root, env.HOPPER_TOKEN_FILE!) } as NodeJS.ProcessEnv,
+      // No repository above the test's temp dirs counts (a job's scratch dir is inside one).
+      env: { PATH: process.env.PATH, HOPPER_URL: env.HOPPER_URL, HOPPER_TOKEN_FILE: join(root, env.HOPPER_TOKEN_FILE!), GIT_CEILING_DIRECTORIES: `${tmpdir()}:${realpathSync(tmpdir())}` } as NodeJS.ProcessEnv,
     }, (err, stdout, stderr) => resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr }));
   });
 }
@@ -137,7 +138,7 @@ describe('the orchestrate skill the hopper ships (issue #1909)', () => {
     t.h.held.get(t.jobId)!.end();
     await t.app.waitForStatus(t.jobId, 'finished');
 
-    const next = await another(t, 7);
+    const next = await another(t, 7, (await t.app.job(t.jobId)).source!.key);
     const again = await hopperGh(t.root, next.env, SUB_TASK);
     expect(json(again)).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', replayed: true });
 
