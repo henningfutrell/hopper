@@ -71,7 +71,7 @@ export interface FakeForge extends PullReadsForge, ContentsForge, RepoChecksForg
   /** GitHub: an install that reaches only chosen repositories, by account → its repos (owner/name); an account not named here reaches all of its repos (those its issues are in). */
   chosenRepos?: Record<string, string[]>;
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
-  installationsDown?: boolean;
+  installationsDown?: boolean; /** GitHub: drops these assignees from a new issue with no error (issue #1856); `unassignable` drops them from a later assign too. */ dropsAssignees?: string[]; unassignable?: string[];
   /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
   issuesRefused?: number; /** GitHub: a new issue or comment is made, then its answer is lost: this status (issue #1591: a stop or a timeout). */ answerLost?: number;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
@@ -310,7 +310,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (r.method === 'POST' && rest === 'issues') {
         const issue: FakeIssue = {
           repo, number: nextNumber(), title: String(r.body.title), body: String(r.body.body ?? ''), author: login,
-          labels: (r.body.labels as string[] | undefined) ?? [], assignees: (r.body.assignees as string[] | undefined) ?? [],
+          labels: (r.body.labels as string[] | undefined) ?? [], assignees: ((r.body.assignees as string[] | undefined) ?? []).filter((a) => !forge?.dropsAssignees?.includes(a)),
         };
         issues.push(issue); if (forge?.answerLost) return { status: forge.answerLost, body: { message: 'Bad Gateway' } };
         return { status: 201, body: restIssue(issue) };
@@ -324,7 +324,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const pm = /^pulls\/(\d+)$/.exec(rest);
       const pull = pm ? pulls.find((p) => p.repo === repo && p.number === Number(pm[1])) : undefined;
       if (r.method === 'GET' && pm) return pull ? { status: 200, body: restPull(pull) } : { status: 404, body: { message: 'Not Found' } };
-      const im = /^issues\/(\d+)(?:\/(comments|labels|events)(?:\/(.+))?)?$/.exec(rest);
+      const im = /^issues\/(\d+)(?:\/(comments|labels|events|assignees)(?:\/(.+))?)?$/.exec(rest);
       const issue = im ? find(repo, Number(im[1])) : undefined;
       if (!im || !issue) return { status: 404, body: { message: 'Not Found' } };
       if (r.method === 'GET' && !im[2]) return { status: 200, body: restIssue(issue) };
@@ -340,6 +340,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') }); else editIssue(issue, r.body);
         return { status: 200, body: restIssue(issue) };
       }
+      if (r.method === 'POST' && im[2] === 'assignees') { for (const a of (r.body.assignees as string[] | undefined) ?? []) if (!forge?.unassignable?.includes(a) && !(issue.assignees ??= []).includes(a)) issue.assignees.push(a); return { status: 201, body: restIssue(issue) }; }
       if (r.method === 'GET' && im[2] === 'comments') return { status: 200, body: issue.comments ?? [] };
       if (r.method === 'POST' && im[2] === 'comments' && !im[3]) {
         const id = ++n;
