@@ -28,7 +28,8 @@
       "type": "string",
       "enum": [
         "stale",
-        "no_pr"
+        "no_pr",
+        "pr_closed"
       ]
     },
     "replay": {

@@ -748,8 +748,8 @@ export type IntakeActionOutcome =
   | { ok: true; result: IntakeActionResult }
   | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
-/** Who asks for an ended job's item to run again: the user, or the failure assessor (issue #509). */
-export type RerunBy = 'user' | 'assessor' | 'tending';
+/** Who asks for an ended job's item to run again: the user, the failure assessor (issue #509), tending (issue #736), or the item reconciler (issue #1891). */
+export type RerunBy = 'user' | 'assessor' | 'tending' | 'reconciler';
 
 export type RerunResult =
   | { ok: true; job: Job }

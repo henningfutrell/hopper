@@ -36,7 +36,7 @@ export interface StuckInputs {
   pullRequests: PullRequestCard[];
   /** Parked jobs and jobs on their own wait. */
   jobs: Job[];
-  /** The jobs of the items blocked with no pull request to wait on (issues #1231, #1891, `blockedStuck`). */
+  /** The jobs of the items blocked with no pull request to wait on, or with it closed without a merge (issues #1231, #1891, `blockedStuck`). */
   prOpen: string[];
 }
 
@@ -56,7 +56,7 @@ const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> 
   tend_refused: { what: 'Pull requests the hopper cannot tend', todo: 'Read why on its card in Pull requests, and remove the block.' },
   parked: { what: 'Parked jobs', todo: 'Answer its question in Parked, then pick it up.' },
   own_wait: { what: 'Jobs stuck on their own wait, past its deadline', todo: 'End its wait or cancel it, on the job.' },
-  pr_open_stale: { what: 'Items blocked with no pull request to wait on', todo: 'Look at its issue on GitHub. When work is left, press Run again on the job. Else close the issue.' },
+  pr_open_stale: { what: 'Items blocked with no pull request to wait on, or with their pull request closed without a merge', todo: 'Look at its issue and its pull request on GitHub. When work is left, press Run again on the job. Else close the issue.' },
 };
 
 /** An open hand-off's cause: its card's recommended resolution, or taken soon when that is refused for a short time. */

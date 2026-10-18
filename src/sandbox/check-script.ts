@@ -1,7 +1,7 @@
 // The read-only check's script (issue #716, item 4): what a check box runs, and how the hopper reads what it wrote. Pure.
 // Each probe's snippet is written to a file under /tmp (the box's only writable place; HOPPER_CHECK_DIR in a test) and
 // run alone, under a time limit, with its asset in $ASSET. For each, the box prints one line:
-// `HOPPER-PROBE <n> <exit> <output, base64>`. The hopper decides from the exit code and the output whether the probe passed; a probe with no line did not run.
+// `HOPPER-PROBE <n> <exit> <output, base64>` (a long output's start and end). The hopper decides from the exit code and the output whether the probe passed; a probe with no line did not run.
 // The read credentials minted for the check (issue #797) come in the box's environment, never in the script: the script
 // takes each into a shell variable and out of the environment at its start, writes each kubeconfig under /tmp, and gives
 // a probe only the credential of its own asset.
@@ -76,6 +76,16 @@ ${[...takeCredentials(credentials), ...steps].join('\n')}
 `;
 }
 
+/**
+ * What the box sends of a probe's output: all of it, or a long one's start and end. A refusal's words can be at the start,
+ * before a long tail: EC2's ends with its encoded authorization failure message (issue #1904).
+ */
+function sent(out: string): string {
+  const start = PROBE_OUTPUT_MAX;
+  const end = PROBE_OUTPUT_MAX * 2;
+  return `{ if [ "$(wc -c < ${out})" -gt ${start + end} ]; then head -c ${start} ${out}; echo; tail -c ${end} ${out}; else cat ${out}; fi; }`;
+}
+
 /** One probe's step: its snippet and cleanup as files, run with its asset's credential and its own variables. */
 function step(r: ProbeRun, n: number, credentials: readonly CheckCredential[]): string {
   const { probe, asset } = r;
@@ -90,7 +100,7 @@ function step(r: ProbeRun, n: number, credentials: readonly CheckCredential[]): 
     file(`${dir}/probe.sh`, probe.script, n),
     ...(probe.cleanup ? [file(`${dir}/cleanup.sh`, probe.cleanup, n)] : []),
     `${run}${cleanup}`,
-    `printf '${MARK} %s %s %s\\n' ${n} "$code" "$(tail -c ${PROBE_OUTPUT_MAX * 2} ${dir}/out | base64 | tr -d '\\n')"`,
+    `printf '${MARK} %s %s %s\\n' ${n} "$code" "$(${sent(`${dir}/out`)} | base64 | tr -d '\\n')"`,
   ].join('\n');
 }
 

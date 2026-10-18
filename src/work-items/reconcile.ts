@@ -4,8 +4,11 @@
 // is folded again from that job's end event, and so is an item blocked for want of a pull request whose job's report
 // named one since; an item in PR open past its deadline with no open pull request a job follows is blocked. Each correction is an event (`work_item.reconciled`), so the item moves in the event's transaction
 // as every ledger change does, and a rebuild replays it. An item that keeps its promise is checked again later. It reads
-// only the database: no call to GitHub.
+// only the database: no call to GitHub. One correction is no event: an item blocked because its pull request was closed
+// without a merge, the first time in a row, runs again (`runAgain`: its ended job's Run again, by `reconciler`, with a brief
+// that names the closed pull request), off the pass; its new job's `job.queued` moves it. One run again per item at a time.
 import type { SweepLease } from '../domain/leases.ts';
+import type { RerunResult } from '../domain/ports.ts';
 import { following } from '../domain/pull-requests.ts';
 import { TERMINAL_STATUSES, type DomainEvent, type EventType, type Job, type NewEvent } from '../domain/types.ts';
 import { checkOf, correctionOf, type ItemCorrection } from '../domain/item-lifecycle.ts';
@@ -15,6 +18,12 @@ import type { WorkItem, WorkItemLedger } from '../domain/work-items.ts';
 export const RECONCILE_INTERVAL_MS = 5 * 60_000;
 /** The most items one pass checks. */
 export const RECONCILE_LIMIT = 200;
+
+/** The brief of the job that runs an item again after its pull request was closed without a merge. */
+export const closedBrief = (pullRequest: string | undefined): string =>
+  `The earlier pull request of this issue${pullRequest ? ` (${pullRequest})` : ''} was closed without a merge. Read its comments `
+  + 'and reviews, and the comments of the issue, to learn why. Then do the work again so that it answers why. Open a new pull '
+  + 'request: do not reopen the closed one.';
 
 /** The end event of each ended job status: what an item is folded again from. */
 const END_EVENT: Readonly<Record<string, EventType>> = { finished: 'job.finished', failed: 'job.failed', cancelled: 'job.cancelled', rejected: 'job.rejected' };
@@ -31,15 +40,31 @@ export function createItemReconciler(o: {
   jobs: { get(id: string): Job | undefined };
   events: { append(event: NewEvent): unknown; recent(limit?: number, types?: EventType[], jobId?: string): DomainEvent[] };
   lease: SweepLease;
+  /** Run the ended job's item again (Run again, by the reconciler, with `brief`); absent: no item runs again by itself. */
+  runAgain?(jobId: string, brief: string): Promise<RerunResult>;
   now(): string;
   log(line: string): void;
   intervalMs?: number;
   limit?: number;
 }): ItemReconciler {
   let timer: ReturnType<typeof setInterval> | undefined;
+  /** The items whose run again is under way: a pass while one runs starts no second. */
+  const running = new Set<string>();
+
+  /** Run the item again, off the pass; a refusal or a failure is logged, and the next due check tries again. */
+  function runAgain(c: Extract<ItemCorrection, { kind: 'run_again' }>): boolean {
+    if (!o.runAgain || running.has(c.key)) return false;
+    running.add(c.key);
+    void o.runAgain(c.jobId, closedBrief(c.pullRequest))
+      .then((r) => { if (!r.ok) o.log(`hopper: the item reconciler could not run ${c.key} again, tries again later: ${r.message}`); })
+      .catch((e: unknown) => o.log(`hopper: the item reconciler could not run ${c.key} again, tries again later: ${(e as Error).message}`))
+      .finally(() => running.delete(c.key));
+    o.log(`hopper: the item reconciler runs ${c.key} again: its pull request was closed without a merge`);
+    return true;
+  }
 
   /** The event that makes the correction; undefined when the job's end event is not there to fold from. */
-  function eventOf(c: ItemCorrection, job: Job | undefined): NewEvent | undefined {
+  function eventOf(c: Exclude<ItemCorrection, { kind: 'run_again' }>, job: Job | undefined): NewEvent | undefined {
     if (c.kind === 'block') return { type: 'work_item.reconciled', data: { key: c.key, from: c.from, cause: c.cause } };
     const type = job ? END_EVENT[job.status] : undefined;
     const end = type ? o.events.recent(1, [type], c.jobId)[0] : undefined;
@@ -53,13 +78,17 @@ export function createItemReconciler(o: {
     const correction = correctionOf(item, job && {
       id: job.id, status: job.status, ended: TERMINAL_STATUSES.includes(job.status), updatedAt: job.updatedAt, ...(typeof pullRequest === 'string' ? { pullRequest } : {}),
     }, job !== undefined && following(job), now);
+    const next = checkOf(item.state, item.stateSince, now);
+    if (correction?.kind === 'run_again') {
+      if (next) o.ledger.checked(item.key, item.version, next.nextCheckAt);
+      return runAgain(correction);
+    }
     const event = correction && eventOf(correction, job);
     if (event) {
       o.events.append(event);
       o.log(`hopper: the item reconciler moved ${item.key} out of ${item.state}: ${correction.kind === 'block' ? `blocked, ${correction.cause}` : `folded again from its job's end (${job?.status ?? 'ended'})`}`);
       return true;
     }
-    const next = checkOf(item.state, item.stateSince, now);
     if (next) o.ledger.checked(item.key, item.version, next.nextCheckAt);
     return false;
   }

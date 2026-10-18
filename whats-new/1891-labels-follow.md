@@ -1,0 +1,1 @@
+- An issue the hopper is blocked on no longer shows that its pull request waits for review: its labels on GitHub now follow where its work stands.

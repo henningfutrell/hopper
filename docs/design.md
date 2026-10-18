@@ -1654,7 +1654,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985), the GitHub outbox of a source (`github/outbox.ts`, issue #1238: the rows an intake action, a hand-off resolution, Merge now, Close PR and each give-back keep, sent in batches, coalesced) and when the sync loop sends it (`outbox-flush.ts`) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again; `strays.ts`, issue #1143 part 4: the housekeeping of pull requests no job follows), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985), the GitHub outbox of a source (`github/outbox.ts`, issue #1238: the rows an intake action, a hand-off resolution, Merge now, Close PR and each give-back keep, sent in batches, coalesced), the label mirror (`github/label-mirror.ts`, issue #1891: each listed issue's end labels against its work item's state, `github/item-labels.ts`, pure) and when the sync loop sends it (`outbox-flush.ts`) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again; `strays.ts`, issue #1143 part 4: the housekeeping of pull requests no job follows), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -2336,7 +2336,8 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 | still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
 | merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
-| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
+| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again). Closed on GitHub (no person's Close PR, not superseded), its item is blocked (`pr_closed`, issue #1891): the first time in a row the item reconciler runs it again by itself, which takes the label off; a second time a person decides ("The item lifecycle") |
+| none named, none open, and a pull request of the issue's repository that mentions it merged since the job began (issue #1891) | named, and ended as a merged part: the job's own "Part of #N" first (issue #1231), else one that only mentions the issue (`mention: true`), such as a pull request of several issues. The next part is taken, or the issue is done when every declared part is done |
 | none named, one found open (issue #1891) | named from now on (`pullRequest`, `part` for a part); an issue the report left `hopper:blocked` gets `hopper:pr-ready`, or `hopper:partly-done` for a part, in its place |
 | still open, or none found yet, and the issue closed as not planned (issue #428) | abandoned: `job.pull_request_abandoned`; `follow: abandoned`, followed no more and never merged, yolo mode or not; the pull request is left as it is; `hopper:pr-ready`, `hopper:partly-done` and `hopper:failed` come off and no end label goes on. A person's Merge now or Close PR still goes through. Reopened with the pull request still open, reconciling (issue #763) follows it again |
 
@@ -18422,8 +18423,12 @@ mode; the API gives the graph (issue #718's parity).
 the record holds, no new field. `jobGraph({ jobs, links, issueGraph })` makes the nodes (jobs, issues, pull requests) and
 the typed edges (glossary "Job graph"), and `treesOf` the **job trees**: each connected group, rooted at a node no edge
 leads into (an issue first); a node **blocks** the root when it is not `done` or `cancelled`, or leads to one that is not
-(a depth-first walk that counts a cycle once). An issue takes the stage of its newest job; an issue no job works is
-`no_job`, or `done` when the issue graph read it closed.
+(a depth-first walk that counts a cycle once). An issue takes the stage of its newest job. An issue no job here works
+(issue #1895) takes its stage from its own state first: closed as completed is `done`; closed as not planned or as a
+duplicate is `cancelled` with `closed` ("Closed"). The ledger's `issueState` comes before the issue graph's read, which can
+be older than the close. An open issue then takes its work item's stage (`ITEM_STAGE`: its jobs may be gone from the
+graph, so the route looks the item up by the issue's URL), and only an open issue with no item is `no_job` ("Not
+started"). A tree's summary counts such an issue as shipped when `done`, and says how many are closed.
 
 **Where the edges come from.** Nothing new is recorded: `rerunOf` (`next_part` when the job before is partly done, else
 `rerun`), `forkOf` (`spawned`), `followOn` (`plan_apply`), the job's source state (`opened`, `waits_on_merge`), the
@@ -18494,7 +18499,7 @@ settled was said to **block** its root, also a job that only works on its issue.
 - **Stage words** (`src/domain/job-words.ts`, pure). Each node carries `stageText`: Queued, Building it (attempt 2 of
   3), Plan, Research, Waiting on you: answer a question / approve the plan / accept the research / answer it / take it
   over, A person works on it, Parked, PR open: checks running / fixing checks / has merge conflicts / draft / waiting
-  for the merge (issue #1067: never "Ready for review"), Part shipped, Merged, Done, Failed, Cancelled, Not started. An
+  for the merge (issue #1067: never "Ready for review"), Part shipped, Merged, Done, Failed, Cancelled, Closed, Not started. An
   issue says what its item's job says. `waitsOnYou` marks a node that waits on
   the person. The attempt counts the failed runs a run again redoes (`attemptIn`), and its "of" is the failure settings'
   `maxAttempts` plus one, which the route passes in; a next part is no new attempt. The words are made on the server, as
@@ -18536,10 +18541,11 @@ poll: the owner's constraint on the issue.
 - **The route** adds the newest job of each issue it shows (`getBySourceKey`), so an issue whose last job ended before
   the queue's 24-hour window still takes its stage from it.
 
-Left: an issue no job works, closed after its last read, shows `no_job` until a read of it or of an issue that links it
-(each discover reads the open issues of the hopper's label again). Reading closed issues again would be a new poll.
+Left: an issue no job works, with no work item, closed after its last read, shows `no_job` until a read of it or of an
+issue that links it (each discover reads the open issues of the hopper's label again). Reading closed issues again would be
+a new poll. An issue with a work item reads the ledger, which a GitHub delivery moves at the close.
 
-Tests: `test/domain/job-rollup.test.ts`, `test/domain/issue-graph.test.ts` and
+Tests: `test/domain/job-rollup.test.ts`, `test/domain/job-graph-issue-stage.test.ts`, `test/domain/issue-graph.test.ts` and
 `test/sources/issue-place.test.ts` (`stateReason`), `test/integration/job-graph.test.ts` (the newest job of an issue).
 
 ## A job's parts list (issue #935, 2026-10-12)
@@ -20779,11 +20785,60 @@ and the writes held while a sign-in has ended are the next parts.
 - **Failures.** The stuck cause `pr_open_stale` lists the blocked items (`blockedStuck`): a `no_pr` item only after ten
   minutes, as its report names its pull request a moment after the job's end.
 
+**Part 3: a pull request closed without a merge, and a merged mention.**
+- **`pr_closed`, a new blocked cause.** A pull request closed without a merge on GitHub — not a person's Close PR, not
+  the hopper's close as superseded — moves an item no job acts on to `blocked` (`pr_closed`), not to `dropped`. The item
+  counts its closes in a row (`closedWithoutMerge`); a merge ends the row, a new job does not. A person's Close PR still
+  drops the item.
+- **Run again once, by itself.** The item reconciler's correction `run_again` (`runsAgainBySelf`): an item blocked as
+  `pr_closed` on the first close in a row, within a day of it, whose newest job ended, runs again — Run again on that
+  job, `by: "reconciler"` on `job.rerun`, with a brief that names the closed pull request and asks the new job to learn
+  why. It is no event of its own: the new job's `job.queued` moves the item, and Run again takes `hopper:pr-closed` off.
+  The reconciler starts one run again per item at a time; a refused one is logged and tried again at the next check. A
+  close older than a day — one the rebuild of tenant migration 83 finds — runs nothing by itself.
+- **A second close waits on a person.** The item stays `blocked` (`pr_closed`) and Failures lists it under
+  `pr_open_stale`, where Run again on its job takes it back through the GitHub outbox (a give-back row, issue #1238), with
+  no label to edit on GitHub. An item the reconciler runs again is not listed.
+- **A merged mention ends the wait for a pull request** (`mergedPartOf`, `src/sources/github/follow.ts`). A job that
+  ended naming no pull request, with none open, takes a pull request of its issue's repository that mentions the issue
+  and merged since the job began — its own part first — and ends as a merged part (`mention: true` in its source state).
+  So an item blocked as `no_pr` because a pull request of several issues only mentioned it moves on: `partly_done`, or
+  done when every declared part is done; `hopper:blocked` comes off.
+- **Tenant migration 83** rebuilds the ledger, so an item whose pull request GitHub closed, with its issue still open, is
+  blocked as `pr_closed` and listed in Failures.
+- **Not in this part:** the item saga in the `sagas` table, the label mirror (`labelsFor`) with label drift counted,
+  Won't do on a blocked item, deadlines for the states other than PR open, and one notice when an item is blocked.
+
+**Part 4: labels mirror the database.**
+- **`labelsFor`** (`src/sources/github/item-labels.ts`, pure): the end labels a work item's state wants on its issue. An
+  item a job works (queued, working, waiting outside) carries none; PR open carries `hopper:pr-ready`, or
+  `hopper:partly-done` for a part; blocked carries `hopper:blocked`, or `hopper:pr-closed` when its pull request was
+  closed without a merge. The other states are not judged: their labels depend on more than the state (a hand-off, a
+  failure, a part merged).
+- **The label mirror** (`src/sources/github/label-mirror.ts`). At each discover, each listed issue's end labels are
+  compared with its item (`labelDrift`). It reads only what the discover listed and the ledger: no call of its own, no
+  new poll. An item that moved in the last two minutes, or with outbox rows not sent, is not judged: its move's own writes
+  are on their way. A **label drift** is logged once and counted (`hopper.work_items.label_drift`, by state and whether
+  it is corrected), until it changes or ends.
+- **A blocked item's labels are corrected.** Its drift becomes GitHub outbox rows (act `mirror`, tagged with its state
+  and cause), coalesced into one remove call and one add call, so `hopper:pr-ready` comes off an item the item reconciler
+  blocked (the #465 case) and `hopper:blocked` goes on, or `hopper:pr-closed` after a second close. The send makes its
+  repository due, so the next discover lists the new labels; the act once sent adds no row before that.
+- **Not in this part:** a correction of the other states' drift (only counted), rows written in the transaction of each
+  state change, the item saga in the `sagas` table, Won't do on a blocked item, deadlines for the states other than PR
+  open, and one notice when an item is blocked.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
 names one; PR open past its deadline blocked as stale; two hosts on one database, only the lease holder acts),
 `test/store/tenant-migration-82.test.ts`, `test/sources/github-report.test.ts` (blocked with none open; a draft named).
+Part 3: `test/work-items/reconcile.test.ts` (closed once, run again once and no second while it runs; closed twice, a
+person decides), `test/store/tenant-migration-83.test.ts`, `test/sources/github-follow-merged-part.test.ts` (a merged
+mention ends the follow as a part; one merged before the job began does not).
+Part 4: `test/sources/github-item-labels.test.ts` (each state's labels, the drift), `test/sources/github-label-mirror.test.ts`
+(the #465 case corrected in one coalesced change, once; a second close; another state's drift logged once and not
+corrected; an item that moved a moment ago not judged).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -27084,6 +27139,13 @@ cluster.
   the link in words, and the out-of-band changes whose target names it (its id, name, an alias or an attr, as `vpc-1`).
   Each source says what its snapshot holds and when it was read; a stale one says why. Every node is also listed by kind.
   `GET /api/topology` reads the graph; the page reads it once, with Try again on an error.
+- **A job reads the topology** (issue #1905, `src/http/job-topology.ts`). A running job starts from the map, so it reads
+  the graph `GET /api/topology` answers, at `GET /job/topology` with its proxy token (`Authorization: Bearer`), only
+  while it is at work (running, waiting on an answer, waiting on something), else 401. `/api/` stays a person's read: a
+  job's token is no UI session. A job learns the route from the `topology` skill (`src/skills/catalog.ts`), which reads
+  it at `$HOPPER_URL`, never at `127.0.0.1` (on a seat, that is the seat's own loopback). The whole graph, as the person
+  reads it: no slice, a job filters it. It changes nothing and records nothing; to read an account or a cluster now, a
+  job asks for `aws-diagnostics` or `kube-diagnostics`.
 - **Infra changes linked to nodes** (part 2, `entryNodes` and `nodeEntries`, `ui/src/model/topology.ts`, pure). Each entry of
   Applies and drift names what it **touched** (`subject`, `infraTimeline`): a plan, its approval and an apply their asset;
   drift and an out-of-band write (and its mark) their target. The nodes it touched: an `aws-account` its account node; an

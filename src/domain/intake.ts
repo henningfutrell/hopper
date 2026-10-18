@@ -15,6 +15,7 @@ import type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts';
 import type { ActingPerson } from './failures.ts';
 import type { JobStatus } from './types.ts';
 import type { TaggedRecord } from './tagged.ts';
+import type { WorkItem } from './work-items.ts';
 
 /** What became of one open item in a source's scope. */
 export interface IntakeOutcome {
@@ -148,6 +149,8 @@ export interface IntakeContext {
    * #1232, `promotedOpen`): the sync closes the issue, once, and it is no reopened card.
    */
   promotedOpen?(key: string): boolean;
+  /** The work item of an issue, by its URL (issue #1891): its end labels mirror its state (the label mirror). Absent: none is compared. */
+  workItem?(key: string): WorkItem | undefined;
 }
 
 /**

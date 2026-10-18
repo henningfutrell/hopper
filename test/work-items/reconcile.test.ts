@@ -15,13 +15,18 @@
 //     Given an item in PR open whose job no longer follows its pull request
 //     When the reconciler runs an hour on
 //     Then the item is blocked as stale
+//   Scenario: a pull request closed without a merge
+//     Given a job whose pull request was closed on GitHub without a merge
+//     When the reconciler runs
+//     Then it runs the item again once, with a brief that names the closed pull request, and its new job queues the item
+//     And when the new job's pull request is closed too, the item stays blocked for a person, and nothing runs again
 //   Scenario: two hosts
 //     Given hosts A and B on one database, each with its reconciler and sweep leases
 //     Then only A acts while it holds the lease, and B acts once A stopped
 import { afterEach, describe, expect, it } from 'vitest';
 import { blockedStuck } from '../../src/domain/item-lifecycle.ts';
 import { soleLease } from '../../src/domain/leases.ts';
-import type { UserStore } from '../../src/domain/ports.ts';
+import type { RerunResult, UserStore } from '../../src/domain/ports.ts';
 import { ADMIN_ID, type JobSourceRef } from '../../src/domain/types.ts';
 import { createHostLeases, LEASE_ASK_MS } from '../../src/sagas/index.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
@@ -110,6 +115,53 @@ describe('the item reconciler', () => {
     expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale', pullRequest: PR });
     expect(reconciler(store, () => at(120)).reconcileOnce()).toBe(0);
     expect(reconciled(store)).toHaveLength(1);
+  });
+
+  it('runs an item whose pull request was closed without a merge again once; a second close waits on a person', async () => {
+    const store = t.open(t.url());
+    cleanups.push(() => store.close());
+    const first = store.jobs.create(spec, 50, ref);
+    store.events.append({ type: 'job.queued', jobId: first.id, data: { spec, priority: 50 }, at: T0 });
+    store.jobs.update(first.id, { status: 'finished', finishedAt: T0, sourceState: { source: { pullRequest: PR, follow: 'closed' } } });
+    store.events.append({ type: 'job.finished', jobId: first.id, data: { result: 'pull request ready for review' }, at: T0 });
+    store.events.append({ type: 'job.pull_request_closed', jobId: first.id, data: { pullRequest: PR, part: false }, at: T0 });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'pr_closed', closedWithoutMerge: 1 });
+    expect(blockedStuck(store.workItems.get(KEY)!, at(10))).toBe(false);
+
+    const asked: { jobId: string; brief: string }[] = [];
+    let release: () => void = () => {};
+    const runAgain = (jobId: string, brief: string) => {
+      asked.push({ jobId, brief });
+      return new Promise<RerunResult>((done) => {
+        release = () => {
+          const next = store.jobs.create(spec, 50, ref);
+          store.events.append({ type: 'job.queued', jobId: next.id, data: { spec, priority: 50 }, at: at(10) });
+          done({ ok: true, job: next });
+        };
+      });
+    };
+    const r = (now: string) => createItemReconciler({ ledger: store.workItems, jobs: store.jobs, events: store.events, lease: soleLease(), runAgain, now: () => now, log: () => {} });
+    const one = r(at(10));
+    expect(one.reconcileOnce()).toBe(1);
+    expect(asked).toEqual([{ jobId: first.id, brief: expect.stringContaining(PR) as string }]);
+    // A pass while its run again is under way starts no second; no event is added.
+    store.workItems.checked(KEY, store.workItems.get(KEY)!.version, at(10));
+    expect(one.reconcileOnce()).toBe(0);
+    expect(asked).toHaveLength(1);
+    release();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'queued', closedWithoutMerge: 1 });
+    expect(reconciled(store)).toHaveLength(0);
+
+    // Its new job's pull request is closed without a merge too: blocked for a person, and listed in Failures.
+    const second = store.jobs.getBySourceKey(KEY)!;
+    store.jobs.update(second.id, { status: 'finished', finishedAt: at(20), sourceState: { source: { pullRequest: `${PR}1`, follow: 'closed' } } });
+    store.events.append({ type: 'job.finished', jobId: second.id, data: { result: 'pull request ready for review' }, at: at(20) });
+    store.events.append({ type: 'job.pull_request_closed', jobId: second.id, data: { pullRequest: `${PR}1`, part: false }, at: at(20) });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'pr_closed', closedWithoutMerge: 2 });
+    expect(r(at(40)).reconcileOnce()).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(blockedStuck(store.workItems.get(KEY)!, at(40))).toBe(true);
   });
 
   it('of two hosts on one database, only the lease holder acts; the other takes over once it stopped', async () => {

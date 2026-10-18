@@ -27,6 +27,8 @@ export interface Worded {
   dismissed?: true;
   /** A failed job whose item is handed to a person on its failure (issue #1067). */
   handedOff?: true;
+  /** An issue closed as not planned or as a duplicate (issue #1895). */
+  closed?: true;
   /** An issue that waits on its batch (issue #1337). */
   awaitsBatch?: true;
   /** A job queued or parked because a job of higher priority took its lane (issue #1525): that job, as people read it. */
@@ -101,7 +103,7 @@ export function stageWords(n: Worded): string {
     case 'partly_done': return 'Part shipped: the rest runs after the merge';
     case 'done': return n.awaitsBatch ? 'Merged: waits on its batch run' : n.pullRequest?.state === 'merged' ? 'Merged' : 'Done';
     case 'failed': return 'Failed';
-    case 'cancelled': return 'Cancelled';
+    case 'cancelled': return n.closed ? 'Closed' : 'Cancelled';
     case 'superseded': return n.dismissed ? 'Dismissed' : 'Superseded';
     case 'no_job': return 'Not started';
   }
@@ -122,14 +124,17 @@ export function nextWords(n: Worded, tasks?: { done: number; total: number }): s
     case 'partly_done': return 'Merge the pull request: then the next part runs.';
     case 'done': return n.awaitsBatch ? 'Nothing: its batch run closes the issue.' : 'Nothing: it is done.';
     case 'failed': return 'Read why it failed, then run it again or close it.';
-    case 'cancelled': return 'Nothing: it was cancelled.';
+    case 'cancelled': return n.closed ? 'Nothing: the issue is closed.' : 'Nothing: it was cancelled.';
     case 'superseded': return n.dismissed ? 'Nothing: it was dismissed.' : 'Nothing: other work finished its issue.';
     case 'no_job': return 'A job starts when a source takes the issue.';
   }
 }
 
-/** One piece of a tree, for its summary: its stage, whether a run again redoes a failed run, whether it waits on you. */
-export interface Piece { stage: JobStage; redone: boolean; you: boolean }
+/**
+ * One piece of a tree, for its summary: its stage, whether a run again redoes a failed run, whether it waits on you, and
+ * whether it is an issue closed as not planned (issue #1895).
+ */
+export interface Piece { stage: JobStage; redone: boolean; you: boolean; closed?: boolean }
 
 /** A job tree in one line: "3 of 4 pieces shipped, 1 being redone, nothing waiting on you." */
 export function summaryWords(pieces: readonly Piece[], waiting: number): string {
@@ -138,10 +143,12 @@ export function summaryWords(pieces: readonly Piece[], waiting: number): string 
   const redone = count((p) => p.redone && (p.stage === 'running' || p.stage === 'queued'));
   const going = count((p) => !p.redone && !p.you && ['queued', 'running', 'pr_open', 'partly_done', 'waiting'].includes(p.stage));
   const failed = count((p) => p.stage === 'failed');
+  const closed = count((p) => p.closed === true);
   const bits = [`${shipped} of ${pieces.length} ${pieces.length === 1 ? 'piece' : 'pieces'} shipped`];
   if (going) bits.push(`${going} in progress`);
   if (redone) bits.push(`${redone} being redone`);
   if (failed) bits.push(`${failed} failed`);
+  if (closed) bits.push(`${closed} closed`);
   bits.push(waiting ? `${waiting} waiting on you` : 'nothing waiting on you');
   return `${bits.join(', ')}.`;
 }
@@ -162,7 +169,7 @@ export function treeSummary(t: Omit<JobTree, 'summary'>, nodes: ReadonlyMap<stri
   const issues = members.filter((n) => n.kind === 'issue');
   const redone = (job: Job | undefined) => job?.rerunOf !== undefined && byId.get(job.rerunOf)?.status === 'failed';
   const pieces: Piece[] = (issues.length ? issues : members.filter((n) => n.kind === 'job'))
-    .map((n) => ({ stage: n.stage, redone: redone(n.kind === 'issue' ? newestOf.get(n.id) : byId.get(n.jobId!)), you: n.waitsOnYou === true }));
+    .map((n) => ({ stage: n.stage, redone: redone(n.kind === 'issue' ? newestOf.get(n.id) : byId.get(n.jobId!)), you: n.waitsOnYou === true, closed: n.closed === true }));
   const asking = new Set(edges.filter((e) => e.kind === 'asks' || e.kind === 'hands_off').map((e) => e.from));
   const waiting = members.filter((n) => n.waitsOnYou && n.kind !== 'issue' && !asking.has(n.id)).length;
   return summaryWords(pieces, waiting);

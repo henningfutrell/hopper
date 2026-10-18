@@ -114,10 +114,11 @@ describe('the work-item reducer', () => {
     expect(applyEvent(opened, ev('source.request_approved', { key: KEY }), KEY)?.state).toBe('queued');
   });
 
-  it('cancelled, rejected, and a pull request closed without a merge are dropped; done-by-hand and a direct job are done', () => {
+  it('cancelled, rejected, and a pull request a person closed without a merge are dropped; done-by-hand and a direct job are done', () => {
     expect(fold([['job.queued'], ['job.cancelled', { reason: 'r' }]])?.state).toBe('dropped');
     expect(fold([['job.queued'], ['job.rejected', { by: 'user', reason: 'r' }]])?.state).toBe('dropped');
-    expect(fold([['job.queued'], ['job.finished', {}], ['job.pull_request_closed', { pullRequest: PR, part: false }]])?.state).toBe('dropped');
+    expect(fold([['job.queued'], ['job.finished', {}], ['job.pull_request_closed', { pullRequest: PR, part: false, person: 'p', via: 'ui' }]])?.state).toBe('dropped');
+    expect(fold([['job.queued'], ['job.finished', {}], ['job.pull_request_closed', { pullRequest: PR, part: false, superseded: 'its issue was closed by another' }]])?.state).toBe('dropped');
     expect(fold([['job.queued'], ['job.failed', { error: 'x' }], ['job.finished', { result: { summary: 'done by hand' } }]])?.state).toBe('done');
     expect(fold([['job.queued', {}, { id: 'j1', key: KEY, kind: 'direct' }], ['job.finished', { result: 'ok' }, { id: 'j1', key: KEY, kind: 'direct' }]])?.state).toBe('done');
   });

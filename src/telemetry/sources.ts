@@ -75,3 +75,10 @@ export function outboxBatch(due: number, calls: number): void {
 export function outboxCall(result: 'sent' | 'failed'): void {
   outboxCalls().add(1, { 'hopper.outbox.result': result });
 }
+
+const labelDrifts = instrument((m) => m.createCounter('hopper.work_items.label_drift', { description: 'Issues whose end labels differ from their work item\'s state, by state and whether the outbox corrects them.' }));
+
+/** An issue whose end labels differ from its work item's state (issue #1891), counted once per drift. */
+export function labelDriftSeen(source: string, state: string, corrected: boolean): void {
+  labelDrifts().add(1, { 'hopper.job.source': source, 'hopper.work_item.state': state, 'hopper.label_drift.corrected': corrected });
+}

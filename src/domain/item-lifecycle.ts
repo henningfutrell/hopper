@@ -13,14 +13,18 @@ import type { WorkItem, WorkItemState } from './work-items.ts';
 export const ITEM_OWNERS = ['scheduler', 'lane_worker', 'github_observer', 'assessor', 'reconciler', 'person'] as const;
 export type ItemOwner = typeof ITEM_OWNERS[number];
 
-/** Why an item is blocked: past its deadline with no move (`stale`), or no pull request to wait on (`no_pr`). */
-export const BLOCKED_CAUSES = ['stale', 'no_pr'] as const;
+/**
+ * Why an item is blocked: past its deadline with no move (`stale`), no pull request to wait on (`no_pr`), or its pull request
+ * closed without a merge on GitHub (`pr_closed`): the first time the item reconciler runs it again by itself, once.
+ */
+export const BLOCKED_CAUSES = ['stale', 'no_pr', 'pr_closed'] as const;
 export type BlockedCause = typeof BLOCKED_CAUSES[number];
 
 /** What a blocked item waits on, in plain words. */
 export const BLOCKED_WORDS: Readonly<Record<BlockedCause, string>> = {
   stale: 'a person: it stayed past its deadline with no move',
   no_pr: 'a pull request: none was found for it',
+  pr_closed: 'a person: its pull request was closed without a merge',
 };
 
 /** What each state promises: its owner, how often it is checked, and its deadline from `stateSince` (absent: none). */
@@ -66,6 +70,13 @@ export function transitionOwner(type: EventType): ItemOwner {
   return 'lane_worker';
 }
 
+/**
+ * Whether `event` is a pull request closed without a merge on GitHub (issue #1891): `job.pull_request_closed` that is no
+ * person's Close PR, not the hopper's close as superseded, and no stray's.
+ */
+export const closedOnGitHub = (event: { type: EventType; data: Record<string, unknown> }): boolean =>
+  event.type === 'job.pull_request_closed' && event.data.person === undefined && event.data.superseded === undefined && event.data.byHopper !== true && event.data.stray !== true;
+
 /** The states that need a pull request named: `pr_open` waits on one, so with none it cannot be written. */
 export const NEEDS_PULL_REQUEST: readonly WorkItemState[] = ['pr_open'];
 
@@ -82,16 +93,32 @@ export interface ReconcileJob { id: string; status: string; ended: boolean; upda
  */
 export type ItemCorrection =
   | { kind: 'replay'; key: string; jobId: string; from: WorkItemState }
-  | { kind: 'block'; key: string; from: WorkItemState; cause: BlockedCause };
+  | { kind: 'block'; key: string; from: WorkItemState; cause: BlockedCause }
+  | { kind: 'run_again'; key: string; jobId: string; pullRequest?: string };
 
 /**
  * Whether a blocked item is stuck work for a person (Failures' `pr_open_stale`): blocked as stale, or for want of a pull
  * request for `BLOCKED_NO_PR_MS` — a job's end is blocked on it until its report names the pull request, a moment later.
  */
-export function blockedStuck(item: Pick<WorkItem, 'state' | 'stateSince' | 'blockedCause'>, now: string): boolean {
+export function blockedStuck(item: Pick<WorkItem, 'state' | 'stateSince' | 'blockedCause' | 'closedWithoutMerge'>, now: string): boolean {
   if (item.state !== 'blocked') return false;
+  if (runsAgainBySelf(item, now)) return false;
   return item.blockedCause !== 'no_pr' || Date.parse(now) - Date.parse(item.stateSince) >= BLOCKED_NO_PR_MS;
 }
+
+/**
+ * How long after its pull request's first close without a merge the item reconciler still runs the item again by itself:
+ * a close older than that (one a rebuild of the ledger finds, from before the rule) waits on a person.
+ */
+export const RUN_AGAIN_WINDOW_MS = 24 * 60 * MINUTE;
+
+/**
+ * Whether the item reconciler runs the item again by itself (issue #1891): blocked because its pull request was closed
+ * without a merge on GitHub, the first time in a row, within `RUN_AGAIN_WINDOW_MS` of that close. A second close in a
+ * row waits on a person: Run again or Won't do.
+ */
+export const runsAgainBySelf = (item: Pick<WorkItem, 'state' | 'stateSince' | 'blockedCause' | 'closedWithoutMerge'>, now: string): boolean =>
+  item.state === 'blocked' && item.blockedCause === 'pr_closed' && item.closedWithoutMerge === 1 && Date.parse(now) - Date.parse(item.stateSince) < RUN_AGAIN_WINDOW_MS;
 /** How long an item blocked for want of a pull request waits before a person is asked: its report names one before. */
 export const BLOCKED_NO_PR_MS = 10 * MINUTE;
 
@@ -103,7 +130,8 @@ export const RECONCILE_GRACE_MS = 2 * MINUTE;
  * none found); `follows`: a job follows the item's open pull request. An item queued or working whose job ended is folded
  * again from that job's end (the item names its newest job, so no live job comes after it), and so is an item blocked for
  * want of a pull request whose finished job's report has named one since; an item past its deadline in PR open with no
- * open pull request a job follows is blocked: `no_pr` with none named, else `stale`.
+ * open pull request a job follows is blocked: `no_pr` with none named, else `stale`. An item blocked because its pull
+ * request was closed without a merge for the first time in a row (`runsAgainBySelf`) runs again: its ended job's Run again.
  */
 export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, follows: boolean, now: string): ItemCorrection | undefined {
   const settledBefore = Date.parse(now) - RECONCILE_GRACE_MS;
@@ -111,6 +139,9 @@ export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, foll
   if ((item.state === 'queued' || item.state === 'working') && job?.ended && job.id === item.jobId
     && (job.updatedAt === undefined || Date.parse(job.updatedAt) <= settledBefore)) {
     return { kind: 'replay', key: item.key, jobId: job.id, from: item.state };
+  }
+  if (runsAgainBySelf(item, now) && job?.ended && job.id === item.jobId) {
+    return { kind: 'run_again', key: item.key, jobId: job.id, ...(item.pullRequest !== undefined ? { pullRequest: item.pullRequest } : {}) };
   }
   if (item.state === 'blocked' && item.blockedCause === 'no_pr' && job?.status === 'finished' && job.id === item.jobId && job.pullRequest !== undefined) {
     return { kind: 'replay', key: item.key, jobId: job.id, from: item.state };
