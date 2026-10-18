@@ -28578,3 +28578,63 @@ give-back rows under a kill (the sync loop's acts); a randomised run over the ou
 **Verification:** `test/store/github-outbox.test.ts` (a claim takes each row once, a claim that ended is taken again, a
 failed row never); `test/sources/github-outbox-comment-once.test.ts` (a comment left `sending` is sent once its claim
 ends; two outboxes on one store); `test/crash/outbox-kill.test.ts`; `test/integration/github-outbox-faults.test.ts`.
+
+## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
+
+**Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event
+shapes taken from the real CLIs once. Nothing showed when a real CLI changed its output, and the faults of a model
+(429, overloaded, a stream that breaks) were not tested at all.
+
+**The fake model server** (`test/support/fake-model-server.ts`, `fake-model-anthropic.ts`, `fake-model-openai.ts`). A
+loopback HTTP server that speaks the Anthropic Messages API (`/v1/messages`), the OpenAI Responses API (`/v1/responses`)
+and the Chat Completions API (`/v1/chat/completions`), streamed or not. A test gives it a script of **model steps**, one
+per turn of the conversation: text (with reasoning before it, and a delay between the events for slow tokens), a tool
+call, or a fault — `rate-limited` (429), `overloaded` (529 on the Messages API, 503 on OpenAI's), `server-error` (500),
+`cut` (the stream ends after its first delta), `malformed` (an event that is not JSON in place of a text delta, or a body
+that is not JSON when no stream was asked for). A request that offers no tools is a CLI's side call and takes no step.
+The server is also the run's proxy (`HTTPS_PROXY`): a CLI's call to anywhere else (telemetry, an update check, a model
+catalog) is refused there and recorded, so nothing leaves the machine.
+
+**The real CLIs** (`test/support/real-agents.ts`). For each print-mode CLI, how it is pointed at the server with a dummy
+key: claude by `ANTHROPIC_BASE_URL`; codex by a model provider given with `-c` (Responses API, no retries); opencode by
+`OPENCODE_CONFIG_CONTENT` (its `openai` provider at the server); omp by a `models.yml` in the throwaway home (Chat
+Completions). The CLI is `HOPPER_ACCEPTANCE_<AGENT>_BIN`, else the first on PATH that is no shell script: the test
+isolation's `claude` guard, and the wrappers that would find it, are passed over. A CLI not found skips its tests.
+Cursor's agent is not covered: its endpoint cannot be set.
+
+**What the tests prove** (`test/acceptance/print-agents.test.ts`, through `createPrintAgentExecutor`, in the job's
+sandbox and runtime as a job runs). Each CLI completes a job (a tool call writes the file, the answer ends with
+`HOPPER_DONE`), asks a question and resumes the same session (the resumed request carries the question and the answer),
+and fails on each fault with no file written.
+
+**The schema-drift check** (`test/acceptance/fake-drift.test.ts`, `test/support/event-drift.ts`). The real CLI and
+`fake-print-agent.mjs` play the same turn. Every field of every event the fake prints must be in the real CLI's events of
+the same kind (its `type`, with its `item`'s or `part`'s type); the check names the event kind or the field that is not.
+
+**What it found.**
+- The omp fake printed `errorMessage: null` on an answer with no error; omp 18.7 prints no such field. The fake no longer
+  does.
+- opencode 1.19 retries a 5xx answer and a cut stream with a growing backoff and no limit, and omp 18.7 a 429 and a 5xx
+  (still at it after 150 s): only the turn's timeout (`timeoutMs`) ends such a job. The test says so for each
+  (`retriesPastTimeout`), so a change in it shows.
+- claude, after a cut stream, asks again with no stream: the `cut` fault ends that connection too.
+- claude, on a malformed stream, asks again with no stream; codex reads an item whole from `response.output_item.done`,
+  not from its deltas. The `malformed` fault breaks both, so neither reads a damaged answer as done.
+
+**Decisions.**
+- **The CLIs reach the network only through the server.** The proxy variables and each CLI's own switches
+  (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `OPENCODE_DISABLE_MODELS_FETCH`) keep a run on loopback. A network
+  namespace (`unshare -rn`) would hide the server from the CLI, which the executor starts in the test's namespace.
+- **A side call takes no step.** A CLI's title, quota or summary calls differ by version; a step taken by one would make
+  the script depend on that version.
+
+**Left for later parts.** The CI run of these tests on pull requests (the CLIs installed on the runner) and the nightly
+run (workflow files: a change to CI, which a job does not make from an issue's text); the nightly run of the real Claude
+Code TUI in a real herdr pane against the server, with its screens diffed against `src/executors/herdr/fake-screens.ts`
+and written as artifacts; the fault modes of `fake-print-agent.mjs` (partial stream then hang, malformed line, permission
+prompt, huge output, non-UTF-8, exit with no final event); a scripted tool call that fires a configured hook, and a call
+to an in-memory MCP server double; the drift check for `fake-cursor-agent.mjs`.
+
+**Verification:** `test/support/fake-model-server.test.ts` (each API's answer, streamed and not, each fault, a side
+call, the proxy); `test/support/event-drift.test.ts` (kinds, paths, a field and a kind the real CLI does not print);
+`test/acceptance/print-agents.test.ts` and `test/acceptance/fake-drift.test.ts` (the real CLIs, where installed).

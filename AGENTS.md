@@ -20,7 +20,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   store (issue #53): `npm test` starts a throwaway Postgres container (testcontainers; needs docker),
   each test in its own schema, unless `HOPPER_TEST_POSTGRES_URL` names one.
 - **Tests are sealed off from the real machine.** `test/support/isolate.ts` (vitest setup) gives
-  every worker a throwaway HOME and refuses any non-loopback `fetch`. Never point a test at
+  every worker a throwaway HOME and refuses any connection or DNS lookup off loopback, from any client and in every
+  node process a test starts (`test/support/network-guard.ts`, issue #1955; the `HOPPER_TEST_*` services excepted). Never point a test at
   the owner's database, env file or a real URL; a test daemon once sent real Grok Bot webhooks.
   An ad-hoc daemon (own port) gets its own database (a copy, by `pg_dump` into a fresh
   database, with the Grok Bot variables and webhook subscribers removed), and runs network-isolated (`unshare -rn`).
