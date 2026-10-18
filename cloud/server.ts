@@ -12,6 +12,9 @@
 //                               its sessions go, then its grant of the hosted app at GitHub, with that sign-in's token
 //   GET  /api/account           the signed-in account as JSON, else 401
 //   GET  /api/account/records   its hopper.io records as JSON, newest first, else 401
+//   GET  /api/account/instances its registrations as JSON (issue #465), else 401
+//   POST /account/instances/:id/name    names its own instance (`name`, empty clears it)
+//   POST /account/instances/:id/remove  removes its own instance; its next hello is answered `unregister`
 //   GET  /privacy               the privacy note (cloud/privacy.ts), signed in or not
 import { randomBytes } from 'node:crypto';
 import rateLimit from '@fastify/rate-limit';
@@ -21,8 +24,9 @@ import { whoIs } from '../src/connected-accounts/identity.ts';
 import { grantDeletion } from '../src/connected-accounts/revocation.ts';
 import { webFlow } from '../src/connected-accounts/web-flow.ts';
 import type { CloudConfig } from './config.ts';
+import { INSTALL_ID } from './link.ts';
 import { NEVER_KEPT, PRIVACY_NOTE } from './privacy.ts';
-import { SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudStore, type RecordKind } from './store.ts';
+import { INSTANCE_NAME_MAX, SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudInstance, type CloudStore, type RecordKind } from './store.ts';
 
 export const SESSION_COOKIE = 'hopper_io_session';
 export const SIGN_IN_COOKIE = 'hopper_io_sign_in';
@@ -31,8 +35,22 @@ export const CALLBACK_PATH = '/auth/github/callback';
 export const GITHUB_AUTHORIZATIONS = 'https://github.com/settings/apps/authorizations';
 const RECORD_LABELS: Record<RecordKind, string> = {
   signed_in: 'Signed in', signed_out: 'Signed out', deletion_refused: 'Deletion refused: confirmed as another GitHub account',
+  instance_registered: 'Instance registered', instance_renamed: 'Instance named', instance_removed: 'Instance removed',
+  instance_unlinked: 'Instance unlinked on the instance', instance_moved: 'Instance registered under another account',
 };
 const PRIVACY_LINK = '<p><a href="/privacy">What hopper.io keeps</a></p>';
+
+/** An instance's name as its owner typed it: trimmed; '' clears it; undefined: refused (too long, a control character). */
+export function instanceName(raw: string): string | undefined {
+  const name = raw.trim();
+  return [...name].length > INSTANCE_NAME_MAX || /\p{Cc}/u.test(name) ? undefined : name;
+}
+
+const instanceRow = (i: CloudInstance): string => `<li><strong>${i.name ? html(i.name) : 'No name'}</strong> (${i.installId}),`
+  + ` registered ${i.registeredAt.toISOString()}, last seen ${i.seenAt ? i.seenAt.toISOString() : 'never'}`
+  + `<form method="post" action="/account/instances/${i.installId}/name"><input name="name" maxlength="${INSTANCE_NAME_MAX}"`
+  + ` value="${i.name ? html(i.name) : ''}" aria-label="Name"> <button type="submit">Name</button></form>`
+  + `<form method="post" action="/account/instances/${i.installId}/remove"><button type="submit">Remove</button></form></li>`;
 
 /** Sign-ins per address (docs/hopper-io-security.md R7): a start and its callback each count. */
 export const SIGN_IN_LIMIT = { max: 30, timeWindow: '1 minute' };
@@ -72,7 +90,7 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
   // Behind a reverse proxy the address is the client's, from X-Forwarded-For, only when the runtime says so.
   const server = Fastify({ logger: false, trustProxy: config.trustProxy });
   await server.register(rateLimit, { global: false });
-  // The sign-out form posts urlencoded; it has no fields hopper.io reads.
+  // The forms post urlencoded; only an instance's name form has a field hopper.io reads (`name`).
   server.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, body));
   server.addHook('onSend', async (_req, reply) => { reply.headers(SECURITY_HEADERS); });
 
@@ -88,10 +106,11 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
     if (!a) return page(reply, 200, `<h1>hopper.io</h1><p><a href="/auth/github">Sign in with GitHub</a></p>${PRIVACY_LINK}`);
     const avatar = a.avatarUrl ? `<img src="${html(a.avatarUrl)}" alt="" width="40" height="40"> ` : '';
     const records = (await store.records(a.githubUserId, now())).map((r) => `<li>${r.at.toISOString()}: ${RECORD_LABELS[r.kind]}</li>`).join('');
+    const instances = (await store.instances(a.githubUserId)).map(instanceRow).join('') || '<li>No instance is registered.</li>';
     return page(reply, 200, `<h1>hopper.io</h1><p>${avatar}Signed in as <strong>${html(a.login)}</strong>.</p>`
       + '<form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>'
       + '<form method="post" action="/account/delete"><p>Delete your hopper.io account. You sign in with GitHub again to confirm.</p>'
-      + `<button type="submit">Delete account</button></form><h2>What was done on your account</h2><ul>${records}</ul>${PRIVACY_LINK}`);
+      + `<button type="submit">Delete account</button></form><h2>Your instances</h2><ul>${instances}</ul><h2>What was done on your account</h2><ul>${records}</ul>${PRIVACY_LINK}`);
   });
 
   /** To GitHub, with the state also in this browser's cookie; `deletes`: the account the sign-in confirms the deletion of. */
@@ -166,6 +185,42 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
     const a = await signedIn(req);
     if (!a) return reply.code(401).send({ error: 'not signed in' });
     return { records: (await store.records(a.githubUserId, now())).map((r) => ({ kind: r.kind, at: r.at.toISOString() })) };
+  });
+
+  server.get('/api/account/instances', async (req, reply) => {
+    const a = await signedIn(req);
+    if (!a) return reply.code(401).send({ error: 'not signed in' });
+    return { instances: (await store.instances(a.githubUserId)).map((i) => ({
+      installId: i.installId, ...(i.name ? { name: i.name } : {}), registeredAt: i.registeredAt.toISOString(),
+      ...(i.seenAt ? { seenAt: i.seenAt.toISOString() } : {}),
+    })) };
+  });
+
+  /** The signed-in account and the instance id of a form post from hopper.io itself, else the reply already sent. */
+  const ownInstance = async (req: FastifyRequest<{ Params: { installId: string } }>, reply: FastifyReply) => {
+    if (req.headers.origin !== config.publicUrl) { await reply.code(403).send({ error: 'only from hopper.io itself' }); return undefined; }
+    const a = await signedIn(req);
+    if (!a) { await reply.code(401).send({ error: 'not signed in' }); return undefined; }
+    if (!INSTALL_ID.test(req.params.installId)) { await reply.code(404).send({ error: 'no such instance' }); return undefined; }
+    return { account: a.githubUserId, installId: req.params.installId };
+  };
+
+  server.post<{ Params: { installId: string } }>('/account/instances/:installId/name', async (req, reply) => {
+    const own = await ownInstance(req, reply);
+    if (!own) return reply;
+    const name = instanceName(new URLSearchParams(typeof req.body === 'string' ? req.body : '').get('name') ?? '');
+    if (name === undefined) return reply.code(400).send({ error: `a name of at most ${INSTANCE_NAME_MAX} characters, with no control character` });
+    if (!await store.rename(own.account, own.installId, name || undefined)) return reply.code(404).send({ error: 'no such instance' });
+    await store.record(own.account, 'instance_renamed', now());
+    return reply.redirect('/', 303);
+  });
+
+  server.post<{ Params: { installId: string } }>('/account/instances/:installId/remove', async (req, reply) => {
+    const own = await ownInstance(req, reply);
+    if (!own) return reply;
+    if (!await store.remove(own.account, own.installId, now())) return reply.code(404).send({ error: 'no such instance' });
+    await store.record(own.account, 'instance_removed', now());
+    return reply.redirect('/', 303);
   });
 
   server.get('/privacy', (_req, reply) => page(reply, 200, '<h1>What hopper.io keeps</h1>'
