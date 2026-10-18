@@ -264,7 +264,13 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     entered the code, and only when the instance answered `registered`; R7: that answer is checked against a closed
     schema and a cap of 1024 bytes, as the instance checks hopper.io's messages. R1: the tombstone's answer is
     `unregister`, a message the instance already takes, which changes its registration only.
-  - Not yet: the R6 records of registration, the cloud link and remote actions at hopper.io (with #465 and #464),
+  - R3: **an account's instances** (issue #465 part 6, `docs/design.md` "Instances at hopper.io"): one registration
+    per instance id, so an instance is under one account at a time. The owner lists, names and removes only their own
+    instances, by a hopper.io session, a form post only from hopper.io's own Origin. The name is the owner's, typed at
+    hopper.io, never sent by the instance (R5), and escaped on the page (T3). A removal leaves a tombstone (R1: the instance
+    takes `unregister`, which changes its registration only). The instance's unlink notice removes only the registration of
+    the instance on whose connection it came, under the account it names. R6: each is a hopper.io record.
+  - Not yet: the R6 records of the cloud link and remote actions at hopper.io (with #464),
     and the connection that carries the registration messages and the hello (#464).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
   everything at hopper.io wait for the issues in the table below. The connection's design — its data boundary, no inbound

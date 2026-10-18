@@ -313,6 +313,12 @@ tombstones, in `cloud/` (decision 2).
   registers again, its tombstone goes. This replaces the registration token of "How linked installs are
   told": the instance proves itself at its hello with its cloud link key (`docs/design.md` "Cloud link"),
   so hopper.io keeps no token for it.
+- **An account's instances** (issue #465 part 6, `docs/design.md` "Instances at hopper.io"). One registration per
+  instance id: an instance that registers under another account moves there. `registration.name` is the owner's name for
+  it, typed at hopper.io; `registration.seen_at` is its last hello. The owner reads them at `GET /api/account/instances`
+  and on `GET /`, names one (`POST /account/instances/:id/name`) and removes one (`POST /account/instances/:id/remove`,
+  with a tombstone, so the instance's next hello is answered `unregister`). `unlinked()` in `cloud/link.ts` takes the
+  instance's unlink notice and removes its registration. Tests: `test/cloud/instances.test.ts`.
 - Personal accounts only (decision 3). No route accepts a hopper.io session on an instance, and no
   instance realm changes (decision 4).
 - Tests: `test/cloud/sign-in.test.ts`, `test/cloud/delete-account.test.ts`, `test/cloud/records.test.ts`,
