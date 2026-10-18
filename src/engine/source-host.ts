@@ -26,12 +26,17 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
     ...(item.parts ? { parts: { ...item.parts } } : {}),
     ...(item.origin ? { origin: item.origin } : {}),
     ...(item.origin && item.originActs ? { originActs: item.originActs.map((a) => ({ ...a })) } : {}),
+    ...(item.origin ? linksOf(item) : {}),
   };
 }
 
-/** A person's Run again or Rework of a job (issue #652): the new job keeps the origin of the job it follows, and its origin acts (issue #655 part 14). */
+/** An item's or a job's links (issue #655 part 19): its repository's visibility and its linked pull requests, copied. */
+const linksOf = (x: Pick<SourceItem, 'visibility' | 'linkedPulls'>): Pick<SourceItem, 'visibility' | 'linkedPulls'> =>
+  ({ ...(x.visibility ? { visibility: x.visibility } : {}), ...(x.linkedPulls ? { linkedPulls: x.linkedPulls.map((p) => ({ ...p })) } : {}) });
+
+/** A person's Run again or Rework of a job (issue #652): the new job keeps the origin of the job it follows, its origin acts (issue #655 part 14) and its links (part 19). */
 const originFrom = (item: SourceItem, job: Job): SourceItem => (item.origin || !job.source?.origin ? item
-  : { ...item, origin: job.source.origin, ...(job.source.originActs ? { originActs: job.source.originActs } : {}) });
+  : { ...item, origin: job.source.origin, ...(job.source.originActs ? { originActs: job.source.originActs } : {}), ...linksOf(job.source) });
 
 /**
  * What the item and the routing rule give a job's spec (issue #375). The job's own work tree is a routing
@@ -211,7 +216,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // A job queued before origins were judged (issue #652, the backfill): its issue is offered once it is of a trusted
         // origin or a person approved it; the job takes that origin, and its hold goes.
         if (job.originPending && item.origin && job.source) {
-          store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin, ...(item.originActs ? { originActs: item.originActs } : {}) } });
+          store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin, ...(item.originActs ? { originActs: item.originActs } : {}), ...linksOf(item) } });
           store.jobs.restamp(jobId); // its trust stamp from the origin now judged (issue #655)
           store.events.append({ type: 'job.origin_judged', jobId, data: { key: item.key, origin: item.origin } });
           changed = true;
