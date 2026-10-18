@@ -3953,7 +3953,7 @@ Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a Gi
 
 ## `github_proxy.failed`
 
-Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused a GitHub operation the hopper did for a running job (issue #563): `error` is what GitHub answered, as the job was told. Fields as `github_proxy.done`.
+Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused a GitHub operation the hopper did for a running job (issue #563): `error` is what GitHub answered, as the job was told; for a git push a hopper stopped during (issue #1806, a push kept as a saga), the refs GitHub does not have, recorded by the next hopper. Fields as `github_proxy.done`.
 
 | field | type | required |
 |---|---|---|

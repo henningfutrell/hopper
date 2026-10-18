@@ -12,7 +12,7 @@
 //                      the same for a job of a GitLab issue (issue #1448 part 3), done on GitLab with the token of the job's
 //                      own user's GitLab account; a push only to the job's own project.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createGitProxy, GIT_PATH, type GitAnswer, type GitRequest } from '../github-proxy/index.ts';
+import { createGitProxy, GIT_PATH, type GitAnswer, type GitPushes, type GitRequest } from '../github-proxy/index.ts';
 import { createGitLabGitProxy, GITLAB_GIT_PATH } from '../gitlab/git-broker.ts';
 import type { Tenants } from './tenants.ts';
 
@@ -21,8 +21,8 @@ export const GIT_BODY_LIMIT = 512 * 1024 * 1024;
 
 const one = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
 
-export function jobGitRoutes(app: FastifyInstance, o: { tenants: Tenants }): void {
-  const proxy = createGitProxy({ user: (id) => o.tenants.user(id)?.githubProxy.git, log: (line) => console.warn(line) });
+export function jobGitRoutes(app: FastifyInstance, o: { tenants: Tenants; pushes?: GitPushes }): void {
+  const proxy = createGitProxy({ user: (id) => o.tenants.user(id)?.githubProxy.git, log: (line) => console.warn(line), ...(o.pushes ? { pushes: o.pushes } : {}) });
   const gitlab = createGitLabGitProxy({
     user: (id) => { const t = o.tenants.user(id); return t && { user: t.githubProxy.user, gitlab: t.gitlabAccount }; },
     log: (line) => console.warn(line),
