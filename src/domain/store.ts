@@ -57,10 +57,10 @@ export interface JobRepository {
    * gate 2 lowers the job's level one step, the second quarantines it — undefined, and nothing written, when it ended, is
    * quarantined already, or its stamp does not verify. `edited` (part 7): a sync saw the item of the started job edited, so
    * its level drops to `untrusted` — undefined, and nothing written, when it ended, is at `untrusted` or lower already, or
-   * its stamp does not verify. `autoApprovable` (part 7): gate 2 may approve the job's requests with no person — its stamp
-   * verifies at `approved` or above, or the store has no stamp key.
+   * its stamp does not verify. `gate2Hold` (parts 7, 12): why gate 2 asks a person for each of the job's requests — its
+   * stamp does not verify, or is below `approved` or the level `brake` needs; undefined, the store has no stamp key too.
    */
-  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; stampView(job: Job, brake: import('./intake-strictness.ts').Brake): import('./stamp-view.ts').StampView; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; autoApprovable(job: Job): boolean; edited(id: JobId): Job | undefined; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined; deny(id: JobId): Job | undefined;
+  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; stampView(job: Job, brake: import('./intake-strictness.ts').Brake): import('./stamp-view.ts').StampView; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; gate2Hold(job: Job, brake: import('./intake-strictness.ts').Brake): string | undefined; edited(id: JobId): Job | undefined; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined; deny(id: JobId): Job | undefined;
 }
 
 export interface LaneRepository {

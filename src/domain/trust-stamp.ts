@@ -191,14 +191,28 @@ export function opensDoors(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>)
   return level !== undefined && level !== 'quarantined';
 }
 
+/** The level gate 2 needs to approve a job's privileged requests with no person: `approved`, or the brake's when higher (part 12). */
+export const gate2Min = (brake: Brake): TrustLevel => (atLeast(brake.min, DISPATCH_MIN) ? brake.min : DISPATCH_MIN);
+
 /**
  * Whether gate 2 may approve the job's privileged requests with no person (part 7): its stamp verifies at the dispatch
- * minimum `approved` or above. Below it — an edit, Jev's check or a deny lowered it — a sandbox request waits for a person,
- * the standing read grant grants nothing, and a need step is refused.
+ * minimum `approved` or above, and at the level `brake` (brake 1, read at each ask) needs (part 12). Below it — an edit,
+ * Jev's check or a deny lowered it, or an admin tightened the brake after the start — a sandbox request waits for a
+ * person, the standing read grant grants nothing, and a need step is refused.
  */
-export function autoApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
+export function autoApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, brake: Brake): boolean {
+  return gate2Hold(key, job, brake) === undefined;
+}
+
+/** Why gate 2 asks a person for each of the job's privileged requests under `brake`; undefined: it does not. */
+export function gate2Hold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, brake: Brake): string | undefined {
   const level = verifiedLevel(key, job);
-  return level !== undefined && atLeast(level, DISPATCH_MIN);
+  if (level === undefined) return 'its trust stamp does not verify';
+  const min = gate2Min(brake);
+  if (atLeast(level, min)) return undefined;
+  return atLeast(level, DISPATCH_MIN)
+    ? `its trust stamp ${level} is below ${min} (intake strictness ${brake.strictness} ${brakeWhere(brake)})`
+    : `its trust stamp ${level} is below ${min}`;
 }
 
 /**
