@@ -7,6 +7,7 @@ import { jobHref } from '@/model/job';
 import { artifactCreatedDetail, revisedDetail } from '@/model/artifacts';
 import { pickedEventDetail } from '@/model/minor-decisions';
 import { redBatchDetail } from '@/model/landing-batches';
+import { workSkillChosenLine } from '@/model/skills';
 import type { DomainEvent, MachineView } from '@/model/wire';
 import { TEXT, type Tone } from '@/components/status';
 import { cn } from '@/lib/utils';
@@ -73,6 +74,8 @@ export function detailOf(e: DomainEvent): string {
   // Skills (issue #582): what the job asked the hopper to set up, and the answer.
   if (e.type === 'skill.listed') return 'asked what the hopper can set up';
   if (e.type === 'skill.loaded') return `loaded ${String(d.skill)}${typeof d.asset === 'string' ? ` for ${d.asset}` : ''}`;
+  // The skill library (issue #1911): the work skill the job got, at which version, and which setting chose it.
+  if (e.type === 'job.work_skill_chosen') return workSkillChosenLine(d as unknown as Parameters<typeof workSkillChosenLine>[0]);
   if (e.type === 'skill.refused') return `${String(d.skill)}: no: ${String(d.reason)}`;
   // Windows sandbox steps (issue #731): on which host, what ran, how it ended.
   if (e.type === 'step.started') return `${d.box === undefined ? `on ${String(d.host)}` : `in box ${String(d.box)}`}: ${String(d.command)}`;

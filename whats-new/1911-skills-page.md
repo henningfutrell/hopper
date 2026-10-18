@@ -1,0 +1,1 @@
+- A new Skills page shows the skills jobs get. You can choose the skill for each kind of work, for all repositories or for one, and write, change or copy a skill there. A job now shows which skill and version it got.

@@ -56,6 +56,14 @@ export interface LibrarySkillSummary {
   versions: number;
 }
 
+/** As GET /api/skill-library answers it: every skill, the built-in ones first, and the choice of work skills. */
+export interface SkillLibraryView {
+  skills: LibrarySkillSummary[];
+  workSkills: WorkSkillSettings;
+  defaults: Readonly<Record<WorkKind, string>>;
+  kinds: readonly WorkKind[];
+}
+
 /** Each kind of work's skill by name; absent: the next setting down. */
 export type WorkSkillChoice = Partial<Record<WorkKind, string>>;
 

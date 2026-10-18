@@ -13,8 +13,8 @@
 // its own (issue #897): it left Settings, which keeps configuration only. Direct jobs (issue #901) submits a job with no GitHub issue and reads it back. Resources (issue #947) shows what every
 // container of the stack and its Postgres use now. Search (issue #945) finds jobs by their words: the header's search box opens it too.
 // Accounts (issue #1128) is a group of its own, not under Settings or Machines: who each machine's agent tool is signed in as,
-// badged with the machines signed in as nobody.
-import { AtSign, BellRing, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
+// badged with the machines signed in as nobody. Skills (issue #1911) is the skill library's own group: the skills jobs get, and the choice per kind of work.
+import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -32,7 +32,7 @@ import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'intake', 'tagged', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'intake', 'tagged', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'skills', 'usage', 'resources', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
@@ -43,6 +43,7 @@ export const NAV_GROUPS = [
   { id: 'waiting', label: 'Waiting on you', views: ['intake', 'tagged', 'access-requests', ...SECTION_KINDS] },
   { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'direct-jobs', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
   { id: 'infra', label: 'Infra', views: ['infra'] },
+  { id: 'skills', label: 'Skills', views: ['skills'] },
   { id: 'accounts', label: 'Accounts', views: ['accounts'] },
   { id: 'sources-machines', label: 'Sources & machines', views: ['sources', 'machines', 'usage', 'resources'] },
   { id: 'settings', label: 'Settings', views: ['settings'] },
@@ -74,6 +75,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   sources: { label: 'Sources', icon: Inbox },
   machines: { label: 'Machines', icon: Server },
   infra: { label: 'Infra', icon: FileDiff },
+  skills: { label: 'Skills', icon: BookOpen },
   usage: { label: 'Usage', icon: Gauge },
   resources: { label: 'Resources', icon: Cpu },
   settings: { label: 'Settings', icon: Settings },

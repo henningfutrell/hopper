@@ -27757,3 +27757,46 @@ refusals; a job on a fresh machine with no workflow repository gets its skill's 
 repository's setting, the user's and the default; an edit reaches the next job and leaves the earlier job's version; the
 pinned version across starts after an edit and a new setting; each action's scope and role, and nothing changes with no
 session).
+
+## The Skills page (issue #1911, part 2, 2026-10-18)
+
+Before: the skill library (part 1) was only in the API. A person could not see which skill each kind of work gets, or
+write one, without a token.
+
+- **A top-level view, `#skills`** (`ui/src/views/skills.tsx`), in a nav group of its own between Infra and Accounts: the
+  skill library's one home. It reads `GET /api/skill-library` once; each change answers the new view, which the page shows.
+  Loading, an error that says why with **Try again**, or the panels.
+- **Work skills.** One choice per kind of work (Code work, Research, Proposals) for every repository; its empty choice
+  names the built-in default. Below it, **Per repository**: a row per repository with a choice of its own, a choice per kind
+  whose empty choice says what the repository gets from the choice above, and **Add a repository** (`owner/name`). Each
+  change is one `POST /ui/api/work-skills` with only that kind (`null` for the empty choice); the next job gets it.
+- **Library** (`ui/src/views/skill-library.tsx`). Each skill: its name, where it came from (`built-in`, `written by …`, `a
+  copy of <skill> <version>, by …`), its version's short id, how many versions it has, its description, and the settings
+  that choose it. **Show files** reads `GET /api/skill-library/:name`. **Edit** (the user's own) opens the editor on its
+  newest files; the name stays, and Save is an `edit`: a new version. **Duplicate** (any skill, a built-in one too) asks a
+  new name and copies the version shown. **Remove** (the user's own) asks once; while a setting names the skill it is
+  off, and the row says which settings name it. **New skill** opens the editor with a `SKILL.md` that names the skill.
+- **The editor** holds a skill's files: a path and a text each, `SKILL.md` first, **Add a file**, remove one. It says what
+  stops a save before Save (`draftProblem`, `ui/src/model/skills.ts`, pure: the name, an empty or a second path, a path
+  that is no path in a skill, no `SKILL.md`), with the daemon's own checks copied; the daemon checks again.
+- **The job shows its work skill.** `job.work_skill_chosen` on the job's timeline reads `<kind>: <skill> <version>
+  (built-in | version <n>), by the repository's setting | your setting | the default` (`workSkillChosenLine`).
+- `SkillLibraryView` moved to `src/domain/skill-library.ts`, so the UI takes its type from the domain, as with the other
+  views.
+
+**Decisions.**
+- **A group of its own in the navigation**, not a section of Settings: the issue names the Skills page its own canonical
+  home (issue #896), as the Infra page is.
+- **Each choice saves at once**, one kind per request, as yolo mode's per-repository switches do: there is no draft to lose
+  and no version to conflict on, and the event names the one change.
+- **Admins only**, as in part 1: the buttons and choices show only to a session that may change them; any person reads.
+
+**Left for later parts.** Import of a skill from a git repository (a workflow repository) and its refresh, recorded; a
+skill that depends on another, delivered with it; the `orchestrate` skill, which issue #1909 bakes into the hopper.
+
+**Verification:** `test/ui/skills.test.ts` (pure: the source line, the choice per kind and which setting gives it, the
+repository rows, the settings that name a skill, a draft's rows and problems, the timeline line);
+`test/ui/skills-view.test.ts` (the whole app in happy-dom against a fake daemon: the nav entry; the list with source and
+version; a choice for every repository and back to the default; a choice per repository and a new repository; create with
+a second file; edit with the name fixed; duplicate of a built-in at the version shown; the files shown, and a skill a setting
+names kept from removal with the reason).
