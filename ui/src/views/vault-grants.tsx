@@ -48,7 +48,7 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
               <div className="flex flex-wrap items-center gap-2">
                 <KeyRound className="size-4 text-warn" />
                 <span className="text-sm font-medium">Grant this job the vault</span>
-                <span className="text-xs text-muted-foreground">job {a.job.slice(0, 8)} {a.windowsHost ? `for a step on the Windows host ${a.windowsHost}` : `on ${a.machine ?? 'a box'}, a box of ${a.template ?? 'a template'}`}</span>
+                <span className="text-xs text-muted-foreground">job {a.job.slice(0, 8)} {a.windowsHost ? `for a step on the Windows host ${a.windowsHost}` : a.box ? `for a box step of template ${a.template ?? 'a template'}` : `on ${a.machine ?? 'a box'}, a box of ${a.template ?? 'a template'}`}</span>
               </div>
               <p className="text-xs break-words">Asked for: <span className="font-mono">{a.names.join(', ')}</span></p>
               <p className="text-xs text-muted-foreground break-all">Item: {a.item ? <ItemName item={a.item} /> : a.key}</p>

@@ -95,8 +95,10 @@ says so). Stop hopper-step (a signal) and the step stops. Inputs: at most 32 MiB
 Credentials. The hopper mints a short-lived credential for each of the template's AWS roles, clusters and namespaces,
 for that step only, after Access: its reads, and with --plan-id its changes too. They are in the sandbox's environment,
 set up as for a need step: one AWS role is the AWS CLI's default; each AWS role is also a profile named
-<account>-<role>; each cluster or namespace is a kubectl context named for it, the first one current. A step takes no
---secret, and no credential reaches this machine. Never print a credential.
+<account>-<role>; each cluster or namespace is a kubectl context named for it, the first one current. The template's
+vault secrets come too, after a person granted this job the vault (else the step ends with exit ${STEP_NOT_RUN} and a person is
+asked): read one in the step with "$("$HOPPER_SECRET" get NAME)" (files in $HOPPER_SECRETS_DIR). A step takes no --secret,
+no credential reaches this machine, and outputs that hold a secret's value are not brought back. Never print a credential.
 
 Example: check who the sandbox is on AWS, and bring back a plan.
   sh "$HOPPER_STEP" box asked-0a1b2c3d4e5f --input infra --command 'cd infra && terraform plan -no-color > plan.txt' --output infra/plan.txt`;

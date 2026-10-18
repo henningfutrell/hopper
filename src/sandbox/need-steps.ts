@@ -12,7 +12,10 @@
 // A box step (issue #1349) is a need step too: a job whose sandbox request of a template was approved names that template
 // (`sh "$HOPPER_STEP" box <template>`), and the step runs in a need box of it, minted each of the template's profiles the
 // vault mints — its reads, and with an approved plan (`--plan-id`) its changes too. Each step gets a sandbox of its own,
-// which is burned after it: no box waits between steps, and none joins as a machine.
+// which is burned after it: no box waits between steps, and none joins as a machine. A box step of a template that
+// gives vault secrets (issue #1875) gets them too: read for the step only, after the job's vault grant (the vault's
+// `forStep`, as a Windows step's), copied into its need box beside the hopper, masked in the log, and never given to the
+// job: outputs that hold a secret's value are dropped.
 //
 // Each step is kept in the database from the job's ask (issues #1524, #1568, design.md "Sagas: work that survives a
 // stop"): its ask, its inputs, its log, its result and its outputs, in the need steps (`need_steps`). The job
@@ -33,7 +36,7 @@ import { mintKindFor, type Minted, type MintReach } from '../domain/minting.ts';
 import type { NeedStep, NeedStepRepository } from '../domain/need-steps.ts';
 import { templateReady as ready } from '../domain/sandboxes-before-start.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
-import type { TemplateView } from '../domain/vault.ts';
+import { isSharedSecret, type TemplateView } from '../domain/vault.ts';
 import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
 import { maskSecrets, STEP_KEEP_MS } from '../windows-steps/service.ts';
 import { needEnv, needSecrets, type NeedBox, type NeedBoxResult, type NeedCredential } from './need-box.ts';
@@ -54,6 +57,9 @@ export function coveringTemplate(templates: readonly TemplateView[], needs: read
     .sort((a, b) => a.profiles.length - b.profiles.length || a.name.localeCompare(b.name))[0];
 }
 
+/** Why a box step's outputs were not given (issue #1875). */
+export const OUTPUTS_HOLD_SECRET = 'the outputs hold the value of a vault secret: they are not given to the job';
+
 /** The problem of a step whose need box a hopper started before it stopped: it is not run again (issue #1568). */
 export const STEP_INTERRUPTED = 'the hopper stopped while the step ran, and it is not run again: it may have had its effect. Look at what it changed before you run it again';
 
@@ -67,6 +73,8 @@ export interface NeedStepsOptions {
   planFile(id: string): Buffer | undefined;
   /** Runs the need box (the sandbox module's `needStep`), `run` naming its job and step for the ledger; absent: this hopper runs no need box. */
   run?: (box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal }, run: { jobId: string; step: string; template: string }) => Promise<NeedBoxResult>;
+  /** A vault secret's value for the job's box step in need box `host` of `template` (the vault's grant and checks), or why not. Absent: no step gets one. */
+  secret?(ask: { name: string; job: string; host: string; template: string }): Promise<{ value: string } | { refused: string }>;
   /** Whether the sandbox runs ledger holds a run of the step: its need box started once (issue #1568). */
   ran(step: string): boolean;
   /** The step's need box ended (issue #1371): each token minted for it stops working (the vault's `releaseMints`). Never rejects. */
@@ -92,7 +100,7 @@ export interface NeedStepsOptions {
 export interface NeedStepAsk { key: string; inputs: Buffer }
 
 /** A Linux step's fields as the job sent them, its needs read already, and the template that covers them. */
-export interface NeedStepFields { template: TemplateView; needs: OperationProfile[]; command?: string; timeout?: string; outputs: string[]; plan?: string }
+export interface NeedStepFields { template: TemplateView; needs: OperationProfile[]; command?: string; timeout?: string; outputs: string[]; plan?: string; secrets?: readonly string[] }
 
 /** A box step's fields as the job sent them (issue #1349): the template it names, and the templates of its approved sandbox requests. */
 export interface BoxStepFields { box: string; approved: readonly string[]; command?: string; timeout?: string; outputs: string[]; plan?: string; secrets: readonly string[] }
@@ -188,7 +196,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       id, userId: o.userId, jobId: job.id, key: ask.key, box: `hopper-need-${t.name}-${id.slice(0, 8)}`,
       template: { name: t.name, image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.egress?.length ? { egress: t.egress } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
       needs, command: request.command, timeoutSeconds: request.timeoutSeconds, outputs: request.outputs,
-      ...(fields.plan ? { plan: fields.plan } : {}), inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
+      ...(fields.plan ? { plan: fields.plan } : {}), ...(fields.secrets?.length ? { secrets: [...fields.secrets] } : {}), inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
     }, ask.inputs);
     // Begun at each ask, once per step: an ask whose begin a stop cut short begins it when it is sent again.
     const saga = o.sagas.begin(step.id);
@@ -220,6 +228,21 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       }
       credentials.push({ profile, minted: r.minted, reach: r.reach });
     }
+    // Read now, for this try only, as a Windows step's: no secret is kept in the database or between tries.
+    const secrets: Record<string, string> = {};
+    for (const name of s.secrets ?? []) {
+      const gives = o.templates().find((t) => t.name === s.template.name)?.gives ?? [];
+      const r = !gives.includes(name) ? { refused: `template ${s.template.name} does not give ${name} now` }
+        : o.secret ? await o.secret({ name, job: s.jobId, host: s.box, template: s.template.name }) : { refused: 'the hopper gives no vault secret to a step here' };
+      if ('refused' in r) {
+        await release(s.box);
+        const no = `${name}: ${r.refused}`;
+        o.record({ type: 'step.refused', jobId: s.jobId, data: { reason: no, box: s.box } });
+        finish(s, { exit: 125, problem: no }, 0);
+        return;
+      }
+      secrets[name] = r.value;
+    }
     const dir = dirOf(s.id);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const inputs = s.inputsBytes > 0 ? o.steps.inputs(s.id) : undefined;
@@ -230,21 +253,24 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     const stopped = new AbortController();
     const watch = setInterval(() => { if (!o.atWork(s.jobId)) stopped.abort(new Error('the job is not at work')); }, AT_WORK_MS);
     watch.unref();
-    const masked = maskSecrets(needSecrets(credentials), (chunk) => { o.steps.appendLog(s.id, chunk); });
+    const masked = maskSecrets([...needSecrets(credentials), ...Object.values(secrets)], (chunk) => { o.steps.appendLog(s.id, chunk); });
     o.record({ type: 'step.started', jobId: s.jobId, data: {
       step: s.id, box: s.box, template: s.template.name, needs: s.needs.map(keyOf), command: s.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: s.timeoutSeconds,
-      inputsBytes: s.inputsBytes, outputs: s.outputs,
+      inputsBytes: s.inputsBytes, outputs: s.outputs, ...(s.secrets?.length ? { secrets: s.secrets } : {}),
     } });
     let result: StepResult, outputs: Buffer | undefined;
     try {
       const env = needEnv({ command: s.command, outputs: s.outputs, ...(s.plan ? { plan: s.plan } : {}), credentials });
-      const files = { ...(inputs ? { inputs: join(dir, 'inputs.tar') } : {}), ...(planFile ? { plan: planFile } : {}) };
+      const files = { ...(inputs ? { inputs: join(dir, 'inputs.tar') } : {}), ...(planFile ? { plan: planFile } : {}), ...(s.secrets?.length ? { secrets } : {}) };
       const r = await o.run({
         name: s.box, template: s.template, env, reaches: credentials.map((c) => c.reach), timeoutMs: s.timeoutSeconds * 1000,
         dir, ...(Object.keys(files).length > 0 ? { files } : {}),
       }, { log: masked.write, signal: AbortSignal.any([signal, stopped.signal]) }, { jobId: s.jobId, step: s.id, template: s.template.name });
-      outputs = r.outputs;
-      result = { exit: r.exit, ...(r.outputs ? { outputsBytes: r.outputs.length } : {}), ...(r.problem ? { problem: r.problem } : {}) };
+      // Outputs that hold a vault secret's value never go to the job (issue #1875).
+      const leaks = r.outputs !== undefined && Object.values(secrets).some((v) => v.length > 0 && r.outputs!.includes(v));
+      outputs = leaks ? undefined : r.outputs;
+      const problem = leaks ? `${r.problem ? `${r.problem}; ` : ''}${OUTPUTS_HOLD_SECRET}` : r.problem;
+      result = { exit: r.exit, ...(outputs ? { outputsBytes: outputs.length } : {}), ...(problem ? { problem } : {}) };
     } catch (e) {
       o.log(`hopper: sandbox step ${s.id} in ${s.box}: ${(e as Error).message}`);
       result = { exit: 125, problem: (e as Error).message };
@@ -252,6 +278,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       clearInterval(watch);
       masked.end();
       credentials.length = 0;
+      for (const k of Object.keys(secrets)) delete secrets[k];
       rmSync(dir, { recursive: true, force: true });
     }
     // Kept before the release: a stop between the two leaves the release to the saga's `release` step. Its saga
@@ -277,11 +304,12 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
         // Issue #1471: a job asks for the template it was told to use by its name.
         return refuse(job, 404, `this job has no approved sandbox of template ${box}. ${named} Ask for it: sh "$HOPPER_SKILL" sandbox --template ${box} --why "<why the job needs it>"`, box);
       }
-      if (fields.secrets.length > 0) return refuse(job, 400, 'a box step takes no --secret: its sandbox is minted what its template gives', box);
+      if (fields.secrets.length > 0) return refuse(job, 400, 'a box step takes no --secret: its sandbox gets what its template gives, its vault secrets too', box);
       const t = o.templates().find((x) => x.name === box);
       if (!t || !ready(t)) return refuse(job, 409, `template ${box} is not ready now: ${t ? 'something of it waits for a person or for its read-only check' : 'it is not there any more'}`, box);
       return start(job, {
-        template: t, needs: boxNeeds(t, fields.plan), outputs: fields.outputs,
+        // Its vault secrets: those the template gives a box's job, but a shared secret and the agent credential (a box's sign-in).
+        template: t, needs: boxNeeds(t, fields.plan), outputs: fields.outputs, secrets: t.gives.filter((n) => !isSharedSecret(n) && n !== t.agentCredential),
         ...(fields.command !== undefined ? { command: fields.command } : {}), ...(fields.timeout !== undefined ? { timeout: fields.timeout } : {}), ...(fields.plan !== undefined ? { plan: fields.plan } : {}),
       }, ask);
     },

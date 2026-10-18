@@ -1,5 +1,5 @@
 // Vault grants (issue #652, requirement 5, design.md "Vault grants"): a user's vault, wherever it runs, gives a box's job
-// — or a job's Windows sandbox step (issue #731) — nothing — no vault secret, no minted credential — until a person granted that job's item the vault. The ask passes the
+// — or a job's Windows sandbox step (issue #731), or its box step (issue #1875) — nothing — no vault secret, no minted credential — until a person granted that job's item the vault. The ask passes the
 // same checks as any delivery first (box.ts): a refusal there is the vault's own, with its own reason. A job of a box with
 // no grant is refused, and the hopper asks a person: a grant ask, kept in memory, shown on the Vault page, one event per
 // job. A person grants or revokes through the UI session, after Access (the route's); the grant is kept for the item, so
@@ -55,7 +55,7 @@ export function withVaultGrants(v: Vault, o: {
   }
 
   /** Records that `job` asked for `name` with no grant, from `where`: one ask per job, one event. */
-  function ask(job: Job, name: string, where: { machine: string; template: string } | { windowsHost: string }): void {
+  function ask(job: Job, name: string, where: { machine: string; template: string } | { windowsHost: string } | { box: string; template: string }): void {
     if (denied.has(job.id)) return;
     const open = asks.get(job.id);
     if (open) {
@@ -110,7 +110,7 @@ export function withVaultGrants(v: Vault, o: {
     async forStep(a) {
       const job = jobs.get(a.job);
       if (job && !vaultGrants.get(grantKeyOf(job))) {
-        ask(job, a.name, { windowsHost: a.host });
+        ask(job, a.name, a.template !== undefined ? { box: a.host, template: a.template } : { windowsHost: a.host });
         const reason = noGrant(job.id);
         events.append({ type: 'vault.step_refused', jobId: job.id, data: { name: a.name, host: a.host, job: job.id, reason } });
         return { refused: reason };

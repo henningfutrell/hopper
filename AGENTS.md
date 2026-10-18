@@ -104,7 +104,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   box step (issue #1004, `docs/design.md` "Box steps"): the same routes with `box=`, run one command in a sandbox box the job's own
   sandbox request started, through that box's container runtime beside the hopper, and answer its output, exit code and outputs; it
   changes no job, question, webhook or setting, only records the step. While it runs, the box's vault helper asks for that job, as for
-  a job on the box, after the same checks and the job's vault grant; a box step takes no `--secret`. A Windows, need or box step is kept
+  a job on the box, after the same checks and the job's vault grant; a box step takes no `--secret`. The vault secrets its template
+  gives go into its need box beside the hopper, after the job's vault grant, by a copy, never in its environment and never to the job (issue #1875). A Windows, need or box step is kept
   (issues #1568, #1611, `docs/design.md` "Need steps kept as sagas", "Windows steps kept as sagas"): its ask carries the job's key and is answered 202, its saga runs it on
   any host, and the job reads `GET /job/step/:id/log` and stops it with `DELETE /job/step/:id`, its own step only. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
