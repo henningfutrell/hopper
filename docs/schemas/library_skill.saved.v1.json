@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "built-in"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "created"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "duplicated"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "version"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "seq",
+    "source",
+    "by"
+  ],
+  "additionalProperties": false
+}

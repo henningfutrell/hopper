@@ -10,6 +10,8 @@ import type { TaskCount } from '../domain/task-count.ts';
 import { keptTreeOf, keptWorkOf, WORK_EVENTS, type Job, type KeptTree, type LaneId, type MachineSnapshot } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
 import { repoJobRulesFor, withRepoJobRules } from '../job-rules/repo-rules.ts';
+import { withWorkSkill } from '../domain/skill-library.ts';
+import { workSkillOf } from '../skill-library/index.ts';
 import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -145,9 +147,10 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
   const executor = c.executors.get(j.spec.executor);
   const progress = progressOf(c, e, d);
   return {
-    // The job rules as they are at this start (issue #172): an edit reaches the next job. Then its repository's (issue #1472).
+    // The job rules as they are at this start (issue #172): an edit reaches the next job. Then its repository's (issue #1472),
+    // then its work skill's line (issue #1911): the skill chosen at its first start.
     job: j, laneId: d.laneId, machine: m, signal: e.controller.signal,
-    jobRules: withAsks(withRepoJobRules(readJobRules(store.config), repoJobRulesFor(store.config, j.source?.repo)), j.spec, j.forkOf, j.followOn),
+    jobRules: withWorkSkill(withAsks(withRepoJobRules(readJobRules(store.config), repoJobRulesFor(store.config, j.source?.repo)), j.spec, j.forkOf, j.followOn), workSkillOf(store, j).chosen),
     // A login the job waits on (issue #476) goes to the logins, never into a question.
     logins: c.logins.forRun({ jobId: j.id, laneId: d.laneId, machineId: m.id, run: j.spec.executor }, () => !c.stopping()),
     // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).

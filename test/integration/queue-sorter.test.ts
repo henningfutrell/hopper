@@ -46,10 +46,22 @@ async function firstClaimed(a: TestApp, blocker: Job, ids: string[]): Promise<st
   const token = await a.login();
   expect((await a.ui(`/ui/api/jobs/${blocker.id}/cancel`, {}, { token })).status).toBe(200);
   // Two jobs run one after the other in the one lane: on a loaded CI runner that takes more than the default 5 s.
-  for (const id of ids) await a.waitForStatus(id, 'finished', 20000);
+  try {
+    for (const id of ids) await a.waitForStatus(id, 'finished', 20000);
+  } catch (e) {
+    // The lane stayed busy on CI only (issue #1918): say where the blocker and the two jobs stood.
+    const all = [blocker.id, ...ids];
+    const states = await Promise.all(all.map(async (id) => `${id.slice(0, 8)} ${(await a.job(id)).status}`));
+    const events = (await a.events('limit=1000')).filter((x) => all.includes(x.jobId!)).map((x) => `${x.type} ${x.jobId!.slice(0, 8)}`);
+    throw new Error(`${e instanceof Error ? e.message : String(e)}; jobs: ${states.join(', ')}; events: ${events.join(', ')}`, { cause: e });
+  }
   const claims = (await a.events('types=job.claimed&limit=1000')).map((e) => e.jobId).filter((id) => ids.includes(id!));
   return claims[0]!;
 }
+
+// A test that runs jobs through the lane waits up to 20 s for each of its two jobs: more than the default
+// test timeout of 15 s.
+const LANE_TEST_TIMEOUT_MS = 60_000;
 
 describe('the queue sorter in the engine', () => {
   it('default (no queueSorter section): priority — the higher priority starts first', async () => {
@@ -58,7 +70,7 @@ describe('the queue sorter in the engine', () => {
     const { blocker, older, newer } = await queueBehindBlocker(a);
     expect((await a.api('GET', '/api/queue')).body.waiting.map((j: Job) => j.id)).toEqual([newer.id, older.id]);
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(newer.id);
-  });
+  }, LANE_TEST_TIMEOUT_MS);
 
   it('a plugins config change swaps the sorter within 5 s: oldest-first starts the older job first', async () => {
     const a = await boot();
@@ -69,7 +81,7 @@ describe('the queue sorter in the engine', () => {
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(older.id);
     const decisions = (await a.api('GET', '/api/decisions?limit=50')).body.decisions;
     expect(decisions.some((d: { inputs: { queueOrder?: { sorter: string } } }) => d.inputs.queueOrder?.sorter === 'fifo')).toBe(true);
-  });
+  }, LANE_TEST_TIMEOUT_MS);
 
   it('the UI selects a queue sorter (POST /ui/api/plugins select)', async () => {
     const a = await boot();
@@ -94,5 +106,5 @@ describe('the queue sorter in the engine', () => {
     await waitFor(async () => (await a.api('GET', '/api/plugins')).body.queueSorter.fallback === true, { what: 'the fallback to show' });
     expect((await a.api('GET', '/api/plugins')).body.queueSorter).toMatchObject({ active: 'throwing-sorter', fallback: true, reason: expect.stringContaining('sorter broke') });
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(newer.id);
-  });
+  }, LANE_TEST_TIMEOUT_MS);
 });

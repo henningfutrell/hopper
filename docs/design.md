@@ -78,6 +78,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill, chosen at its first start and kept (`index.ts`). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
@@ -2336,7 +2337,7 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 | still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
 | merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
-| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again). Closed on GitHub (no person's Close PR, not superseded), its item is blocked (`pr_closed`, issue #1891): the first time in a row the item reconciler runs it again by itself, which takes the label off; a second time a person decides ("The item lifecycle") |
+| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again). Closed on GitHub (no person's Close PR, not superseded), its item is blocked (`pr_closed`, issue #1891): the first time in a row the item reconciler runs it again by itself, which takes the label off; a second time a person decides: Run again or Won't do on its row in Intake ("The item lifecycle") |
 | none named, none open, and a pull request of the issue's repository that mentions it merged since the job began (issue #1891) | named, and ended as a merged part: the job's own "Part of #N" first (issue #1231), else one that only mentions the issue (`mention: true`), such as a pull request of several issues. The next part is taken, or the issue is done when every declared part is done |
 | none named, one found open (issue #1891) | named from now on (`pullRequest`, `part` for a part); an issue the report left `hopper:blocked` gets `hopper:pr-ready`, or `hopper:partly-done` for a part, in its place |
 | still open, or none found yet, and the issue closed as not planned (issue #428) | abandoned: `job.pull_request_abandoned`; `follow: abandoned`, followed no more and never merged, yolo mode or not; the pull request is left as it is; `hopper:pr-ready`, `hopper:partly-done` and `hopper:failed` come off and no end label goes on. A person's Merge now or Close PR still goes through. Reopened with the pull request still open, reconciling (issue #763) follows it again |
@@ -3021,7 +3022,9 @@ and the test event are sent at once, in memory only.
   #868, "Machine resources over time" → "WSL and the memory alert": body adds `machineId`, `of`, `freeBytes`,
   `totalBytes`, `thresholdBytes`, and `since` for a low); `machine.offline` and `machine.back_online` (issue #1497: body
   adds `machineId`, `label`, `since`); `machine.disk_over_budget` and `machine.disk_within_budget` (issue #1203, "Hopper's own
-  disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are).
+  disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are);
+  `work_item.person_asked` (issue #1891, "The item lifecycle": a blocked work item waits on a person; body adds `issueUrl`,
+  `cause`, `waitingOn` in plain words and `pullRequest`; once per block, as the event is).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -10651,9 +10654,10 @@ replaces them; test with doubles, and state the gap to a real environment.
   it was refused in the tool's own words (`DENIAL`: `AccessDenied`, `UnauthorizedOperation`, `is forbidden`, …); a read
   must exit 0. Each write leaves nothing when refused, and is a dry run where the service has one; a write that went
   through runs its `cleanup`, and the check fails.
-  - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run` on a VPC
-    `ec2 describe-vpcs` finds (`ec2 create-vpc --dry-run` with none: EC2 looks up a VPC before the dry run asks the
-    authorization, so a VPC the account does not hold answers NotFound, never a refusal, issue #882), `ssm
+  - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-vpc --dry-run` (probe id
+    `aws.ec2-create-tags`, kept so probe marks still name it: EC2 looks up each resource a write names before the dry
+    run asks the authorization, so a VPC or instance the account does not hold answers NotFound or InvalidID, never a
+    refusal, issues #882, #1903; create-vpc names none), `ssm
     put-parameter`, `iam create-user`, `sts assume-role` to another role of the account.
   - `cluster`, `namespace` (`<cluster>/<ns>`): read `kubectl get ns` (or pods in the namespace), `helm list`; writes
     `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, and the install of a chart `helm
@@ -20828,6 +20832,37 @@ and the writes held while a sign-in has ended are the next parts.
   state change, the item saga in the `sagas` table, Won't do on a blocked item, deadlines for the states other than PR
   open, and one notice when an item is blocked.
 
+**Part 5: Won't do and Run again on a blocked item, in Intake.**
+- **Won't do** (intake action `wont_do`). Discover offers it on an issue its labels keep out as blocked (`hopper:blocked`
+  or `hopper:pr-closed`); the act goes through only when the ledger holds the item `blocked`, as the database is the
+  truth, else it is refused with the state the ledger has. It records `work_item.dropped` at once (with the job source,
+  the item's newest job, the blocked cause and who pressed it), and the reducer drops a blocked item, only a blocked
+  one, so a second press changes nothing. Its GitHub change is outbox rows kept in the same transaction, coalesced into
+  one remove call — the end labels and the claim the last listing showed — and one add call, `hopper:rejected`, so no
+  hopper takes the issue again and no one edits `hopper:pr-closed` on GitHub. Labels only: no comment, and the issue
+  stays open. A second press before the next listing adds no row. Run again on its job later takes `hopper:rejected` off
+  as it takes any end label off.
+- **Run again on the same row.** The row of a blocked item names its newest job (`liveIntake`), and offers Run again on
+  it, the job's own give-back (a row of the GitHub outbox, issue #1238).
+- **Failures** points there: the stuck cause `pr_open_stale` says to press Run again or Won't do on the item's row in
+  Intake. It keeps no per-item buttons of its own, as no other stuck cause does.
+- **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, a
+  correction of the other states' label drift, deadlines for the states other than PR open, and one notice when an item
+  is blocked.
+
+**Part 6: one notice when an item is blocked.**
+- **The item reconciler asks a person once** (correction `ask`). A blocked item that is stuck work for a person
+  (`blockedStuck`: Failures lists it under `pr_open_stale`) and that no one was asked about yet gets one
+  `work_item.person_asked` event, with its cause, its newest job and the pull request it names. So a `no_pr` item is asked
+  about only after ten minutes, and an item the reconciler runs again by itself is not asked about.
+- **Once per block.** The event marks the item (`personAsked`), and its state stays. A second pass, or a second host,
+  asks nothing more. The mark goes when the item leaves `blocked` or is blocked for another cause, so the next block asks
+  again.
+- **A notifier sends it on.** The Grok Bot routine posts `work_item.person_asked` with the cause in plain words
+  ("Grok Bot routine webhook").
+- **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, a
+  correction of the other states' label drift, and deadlines for the states other than PR open.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
@@ -20839,6 +20874,12 @@ mention ends the follow as a part; one merged before the job began does not).
 Part 4: `test/sources/github-item-labels.test.ts` (each state's labels, the drift), `test/sources/github-label-mirror.test.ts`
 (the #465 case corrected in one coalesced change, once; a second close; another state's drift logged once and not
 corrected; an item that moved a moment ago not judged).
+Part 5: `test/domain/work-items-wont-do.test.ts` (a blocked item dropped, a person's move; once), `test/sources/github-wont-do.test.ts`
+(offered on a blocked issue, dropped at once and its labels in one coalesced change; a second press adds nothing; refused
+when the ledger does not hold the item blocked), `test/sources/intake-live.test.ts`, `test/ui/intake-wont-do.test.ts`.
+Part 6: `test/domain/work-items-person-asked.test.ts` (asked once; forgotten on a move out of blocked or a new cause),
+`test/domain/item-lifecycle.test.ts` (asked only about stuck work, once), `test/work-items/reconcile.test.ts` (a stale item
+and a second close asked about once), `test/plugins/grokbot-intake.test.ts` (the post).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -27654,3 +27695,108 @@ admin wants to keep below the user's limits.
 primary loses a lane; a Decision starts on the primary only; without the option the user's limits apply);
 `test/plugins/machine-targets.test.ts` and `test/plugins/host-sources.test.ts` (the option reaches the machine;
 soft at or above hard refused); `test/ui/usage-limits-view.test.ts` (the cap does not follow the user's limits).
+
+## The skill library (issue #1911, part 1, 2026-10-18)
+
+**Problem.** A job of each kind of work — the work itself, research, a proposal — follows a skill. The skills lived in
+the user's workflow repositories, and not every machine or box has those. The hopper must keep the skills itself, so a
+job gets its skill on any machine, and a person must be able to choose the skill of each kind of work, or write one.
+
+**As built (part 1).**
+- **The skill library** (`src/skill-library/`, `src/domain/skill-library.ts`, pure). A **library skill** is a `SKILL.md`
+  and the text files beside it. The **built-in library skills** — `work`, `research`, `proposal` — are the files of
+  `src/skill-library/built-in/<name>/`, named by a content id over their files (`releaseOf`, as a run skill's): they ship
+  with the hopper and are never edited or removed. The user's own are rows of `library_skill_versions` (tenant migration
+  84), one per **library skill version**, never changed once kept. Limits: a name of lowercase letters, digits and dashes;
+  at most 32 files, 4 path parts and 160 characters a path, 64 KiB a file (a credential file's limit on the machine),
+  256 KiB in all; no `..`, no absolute path.
+- **Routes** (`src/http/ui/skill-library.ts`, the OpenAPI tag `Skills`). `GET /api/skill-library`: every skill, the
+  built-in ones first, with its newest version (no files), the **work skill settings**, the defaults and the kinds.
+  `GET /api/skill-library/:name?version=`: one version with its files, and the skill's versions. `POST
+  /ui/api/skill-library` with `action` `create` (refused when the name exists), `edit` (a new version; the same files keep
+  none), `duplicate` (any skill's version, built-in or not, as a new skill) or `remove` (refused for a built-in one and while
+  a setting names it). `POST /ui/api/work-skills`: `kinds` for every repository, `repos` per repository, `null` for the next
+  setting down; each skill named must be in the library. Every change is an admin's, as the job rules are.
+- **Permissions.** Each action is a scope of its own (`skill-library:edit.create`, `.edit`, `.duplicate`, `.remove`;
+  `work-skills:edit`; `skill-library:read`), in the scope registry's new section **Skills**, so a grant's checkboxes list
+  each one (issue #909). Access (OpenFGA) decides each API token's use as for every route.
+- **Events.** `library_skill.saved` (name, version, seq, source, by — never the files), `library_skill.removed`,
+  `work_skills.changed` (from, to, by), and `job.work_skill_chosen` on the job's timeline.
+- **A job's work skill.** At a job's first start, `workSkillOf` reads its **kind of work** (`research`, `proposal`, else
+  `code`, as its job cost kind) and the settings — its repository's, else the user's, else the built-in default — and
+  records the choice as `job.work_skill_chosen` (kind, name, version, seq, `from`: `repo`, `user`, `default`). Each later
+  start of the job reads that event and gets the same version, on whichever machine and hopper: an edit or a new setting
+  reaches the next job, never a running one. A job whose kind of work changed chooses again. A version that is gone — a
+  built-in one this build no longer has — gives the current choice, recorded again.
+- **Delivery, for any agent CLI.** The work skill's files go into the job's **credentials dir** with the hopper's scripts
+  (`jobProxy`, `src/users/github-proxy.ts`): `<scratch>/credentials/work-skill/<name>/<path>`, through the machine's own
+  connection, mode 600, removed by the reap. `HOPPER_WORK_SKILL` names its `SKILL.md`. The job rules end with one line:
+  `[hopper work skill] This job's skill for its kind of work (<kind>) is <name>, version <version>. When the variable
+  HOPPER_WORK_SKILL is set, read the file it names before you start, …`. The line and the files reach every executor —
+  herdr's pane and each print-mode agent — as the job rules and the credentials do. Nothing is written into the job's
+  work tree, and nothing is read from a workflow repository.
+
+**Decisions.**
+- **The kinds are the job cost kinds** (`code`, `research`, `proposal`): one reading of a job's spec, not a second one.
+- **The setting names a skill, not a version.** A job pins the version at its first start; pinning in the setting would
+  make every edit a second step.
+- **Per user and per repository, in the user's settings** (`workSkills`), as yolo mode's per-repository setting is; the more
+  specific wins.
+- **An admin's**, as the job rules and the repository job rules are: a skill is text every job of the user follows.
+- **Text files only.** A binary asset is out of this part.
+
+**Left for later parts.** The **Skills** page in the UI (a top-level view: list, source and version, create, edit,
+duplicate, remove, and the choice per kind of work); import of a skill from a git repository (a workflow repository) and
+its refresh, recorded; a skill that depends on another, delivered with it; the `orchestrate` skill, which issue #1909 bakes
+into the hopper.
+
+**Verification:** `test/domain/skill-library.test.ts` (the choice — repository, user, default —, a change of the settings,
+a version's limits, the description, the delivery's paths); `test/integration/skill-library.test.ts` (on the real
+database and HTTP edge: list, create, edit, duplicate, remove and their refusals and events; the settings and their
+refusals; a job on a fresh machine with no workflow repository gets its skill's files, its variable and its line, by the
+repository's setting, the user's and the default; an edit reaches the next job and leaves the earlier job's version; the
+pinned version across starts after an edit and a new setting; each action's scope and role, and nothing changes with no
+session).
+
+## The Skills page (issue #1911, part 2, 2026-10-18)
+
+Before: the skill library (part 1) was only in the API. A person could not see which skill each kind of work gets, or
+write one, without a token.
+
+- **A top-level view, `#skills`** (`ui/src/views/skills.tsx`), in a nav group of its own between Infra and Accounts: the
+  skill library's one home. It reads `GET /api/skill-library` once; each change answers the new view, which the page shows.
+  Loading, an error that says why with **Try again**, or the panels.
+- **Work skills.** One choice per kind of work (Code work, Research, Proposals) for every repository; its empty choice
+  names the built-in default. Below it, **Per repository**: a row per repository with a choice of its own, a choice per kind
+  whose empty choice says what the repository gets from the choice above, and **Add a repository** (`owner/name`). Each
+  change is one `POST /ui/api/work-skills` with only that kind (`null` for the empty choice); the next job gets it.
+- **Library** (`ui/src/views/skill-library.tsx`). Each skill: its name, where it came from (`built-in`, `written by …`, `a
+  copy of <skill> <version>, by …`), its version's short id, how many versions it has, its description, and the settings
+  that choose it. **Show files** reads `GET /api/skill-library/:name`. **Edit** (the user's own) opens the editor on its
+  newest files; the name stays, and Save is an `edit`: a new version. **Duplicate** (any skill, a built-in one too) asks a
+  new name and copies the version shown. **Remove** (the user's own) asks once; while a setting names the skill it is
+  off, and the row says which settings name it. **New skill** opens the editor with a `SKILL.md` that names the skill.
+- **The editor** holds a skill's files: a path and a text each, `SKILL.md` first, **Add a file**, remove one. It says what
+  stops a save before Save (`draftProblem`, `ui/src/model/skills.ts`, pure: the name, an empty or a second path, a path
+  that is no path in a skill, no `SKILL.md`), with the daemon's own checks copied; the daemon checks again.
+- **The job shows its work skill.** `job.work_skill_chosen` on the job's timeline reads `<kind>: <skill> <version>
+  (built-in | version <n>), by the repository's setting | your setting | the default` (`workSkillChosenLine`).
+- `SkillLibraryView` moved to `src/domain/skill-library.ts`, so the UI takes its type from the domain, as with the other
+  views.
+
+**Decisions.**
+- **A group of its own in the navigation**, not a section of Settings: the issue names the Skills page its own canonical
+  home (issue #896), as the Infra page is.
+- **Each choice saves at once**, one kind per request, as yolo mode's per-repository switches do: there is no draft to lose
+  and no version to conflict on, and the event names the one change.
+- **Admins only**, as in part 1: the buttons and choices show only to a session that may change them; any person reads.
+
+**Left for later parts.** Import of a skill from a git repository (a workflow repository) and its refresh, recorded; a
+skill that depends on another, delivered with it; the `orchestrate` skill, which issue #1909 bakes into the hopper.
+
+**Verification:** `test/ui/skills.test.ts` (pure: the source line, the choice per kind and which setting gives it, the
+repository rows, the settings that name a skill, a draft's rows and problems, the timeline line);
+`test/ui/skills-view.test.ts` (the whole app in happy-dom against a fake daemon: the nav entry; the list with source and
+version; a choice for every repository and back to the default; a choice per repository and a new repository; create with
+a second file; edit with the name fixed; duplicate of a built-in at the version shown; the files shown, and a skill a setting
+names kept from removal with the reason).

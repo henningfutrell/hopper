@@ -3552,6 +3552,98 @@ Version 1 (`docs/schemas/preemption.settings_changed.v1.json`). An admin changed
 }
 ```
 
+## `library_skill.saved`
+
+Version 1 (`docs/schemas/library_skill.saved.v1.json`). A person kept a new version of a library skill (issue #1911): `name`, its content id `version` and its place `seq` (1, 2, …); `source` says whether a person wrote it (`created`) or copied it from another skill's version (`duplicated`, with that `name` and `version`). Never its files: GET /api/skill-library/{name} answers them.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `version` | string | yes |
+| `seq` | integer | yes |
+| `source` | object \| object \| object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "name": "careful-work",
+  "version": "3f9c2a7b1d4e6f80",
+  "seq": 2,
+  "source": {
+    "kind": "created"
+  },
+  "by": "owner"
+}
+```
+
+## `library_skill.removed`
+
+Version 1 (`docs/schemas/library_skill.removed.v1.json`). A person removed a library skill of their own (issue #1911): no list shows it, and no new job gets it. Jobs that got one of its versions keep it.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "name": "careful-work",
+  "by": "owner"
+}
+```
+
+## `work_skills.changed`
+
+Version 1 (`docs/schemas/work_skills.changed.v1.json`). A person changed which library skill each kind of work gets (issue #1911): `kinds` for every repository, `repos` per repository (`owner/name` lowercased), which wins; a kind absent gets the built-in default. `from` and `to`. The next job gets it, never a running one.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "kinds": {},
+    "repos": {}
+  },
+  "to": {
+    "kinds": {
+      "code": "careful-work"
+    },
+    "repos": {
+      "owner/repo": {
+        "research": "research"
+      }
+    }
+  },
+  "by": "owner"
+}
+```
+
+## `job.work_skill_chosen`
+
+Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this job got (issue #1911), at its first start or when its kind of work changed: its kind of work (`code`, `research`, `proposal`), the skill `name`, its `version` and `seq` (0: built in), and which setting chose it (`repo`, `user`, `default`). Each later start of the job, on any machine, gets the same version.
+
+| field | type | required |
+|---|---|---|
+| `kind` | `code` \| `research` \| `proposal` | yes |
+| `name` | string | yes |
+| `version` | string | yes |
+| `seq` | integer | yes |
+| `from` | `repo` \| `user` \| `default` | yes |
+
+```json
+{
+  "kind": "code",
+  "name": "careful-work",
+  "version": "3f9c2a7b1d4e6f80",
+  "seq": 2,
+  "from": "user"
+}
+```
+
 ## `job.preempted`
 
 Version 1 (`docs/schemas/job.preempted.v1.json`). A Decision preempted this running job (issue #1525): job `by`, of priority `byPriority`, waits for a lane, every lane it may use is busy, and this job has the lower priority `priority`. It is parked next (`job.parked`), its lane frees, and it is queued again (`job.unparked`) to resume where it stopped. `reason`: the Decision's.
@@ -5253,6 +5345,51 @@ Version 1 (`docs/schemas/work_item.reconciled.v1.json`). The item reconciler cor
   "key": "https://github.com/owner/repo/issues/9",
   "from": "pr_open",
   "cause": "no_pr"
+}
+```
+
+## `work_item.dropped`
+
+Version 1 (`docs/schemas/work_item.dropped.v1.json`). A person pressed Won't do on a blocked work item in Intake (issue #1891, design.md "The item lifecycle"): `key` is the item's source key, `source` the job source that listed it, `jobId` its newest job, `cause` why it was blocked (`no_pr`, `stale`, `pr_closed`), `by` who pressed it. The item is dropped at once; its issue's blocked label goes and `hopper:rejected` comes on through the GitHub outbox, so no hopper takes it again until a person runs it again. Moves the item only while it is blocked, so a second one changes nothing.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `jobId` | string | no |
+| `cause` | `stale` \| `no_pr` \| `pr_closed` | no |
+| `by` | object | no |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/owner/repo/issues/9",
+  "jobId": "job-1",
+  "cause": "pr_closed",
+  "by": {
+    "person": "ada",
+    "via": "ui"
+  }
+}
+```
+
+## `work_item.person_asked`
+
+Version 1 (`docs/schemas/work_item.person_asked.v1.json`). The one notice of a blocked work item (issue #1891, design.md "The item lifecycle"): the item reconciler found it stuck work for a person (Failures' `pr_open_stale`) and asked a person once. `key` is the item's source key, `cause` why it is blocked (`no_pr`, `stale`, `pr_closed`), `jobId` its newest job, `pullRequest` the pull request it names. A notifier sends it on. The item's state stays; it is asked again only once it is blocked again, or for another cause.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `cause` | `stale` \| `no_pr` \| `pr_closed` | yes |
+| `jobId` | string | no |
+| `pullRequest` | string | no |
+
+```json
+{
+  "key": "https://github.com/owner/repo/issues/9",
+  "cause": "pr_closed",
+  "jobId": "job-1",
+  "pullRequest": "https://github.com/owner/repo/pull/14"
 }
 ```
 

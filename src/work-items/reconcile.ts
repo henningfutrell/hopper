@@ -7,6 +7,7 @@
 // only the database: no call to GitHub. One correction is no event: an item blocked because its pull request was closed
 // without a merge, the first time in a row, runs again (`runAgain`: its ended job's Run again, by `reconciler`, with a brief
 // that names the closed pull request), off the pass; its new job's `job.queued` moves it. One run again per item at a time.
+// A blocked item that is stuck work for a person gets one notice: `work_item.person_asked`, which a notifier sends on.
 import type { SweepLease } from '../domain/leases.ts';
 import type { RerunResult } from '../domain/ports.ts';
 import { following } from '../domain/pull-requests.ts';
@@ -66,6 +67,10 @@ export function createItemReconciler(o: {
   /** The event that makes the correction; undefined when the job's end event is not there to fold from. */
   function eventOf(c: Exclude<ItemCorrection, { kind: 'run_again' }>, job: Job | undefined): NewEvent | undefined {
     if (c.kind === 'block') return { type: 'work_item.reconciled', data: { key: c.key, from: c.from, cause: c.cause } };
+    if (c.kind === 'ask') {
+      const { kind: _kind, ...data } = c;
+      return { type: 'work_item.person_asked', ...(c.jobId !== undefined ? { jobId: c.jobId } : {}), data };
+    }
     const type = job ? END_EVENT[job.status] : undefined;
     const end = type ? o.events.recent(1, [type], c.jobId)[0] : undefined;
     if (!type || !end) return undefined;
@@ -86,7 +91,9 @@ export function createItemReconciler(o: {
     const event = correction && eventOf(correction, job);
     if (event) {
       o.events.append(event);
-      o.log(`hopper: the item reconciler moved ${item.key} out of ${item.state}: ${correction.kind === 'block' ? `blocked, ${correction.cause}` : `folded again from its job's end (${job?.status ?? 'ended'})`}`);
+      o.log(correction.kind === 'ask'
+        ? `hopper: the item reconciler asked a person about ${item.key}: blocked, ${correction.cause}`
+        : `hopper: the item reconciler moved ${item.key} out of ${item.state}: ${correction.kind === 'block' ? `blocked, ${correction.cause}` : `folded again from its job's end (${job?.status ?? 'ended'})`}`);
       return true;
     }
     if (next) o.ledger.checked(item.key, item.version, next.nextCheckAt);

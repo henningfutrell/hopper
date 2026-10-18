@@ -30,6 +30,7 @@ import { PROMOTION_SEND_TABLE } from './promotions.ts';
 import { noQuestionOnOwnWait } from './migration-own-wait-question.ts';
 import { TOPOLOGY_TABLE } from './topology.ts';
 import { containerTargets } from './migration-container-target.ts';
+import { SKILL_LIBRARY_TABLE } from './skill-library.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -142,4 +143,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 83: A pull request closed without a merge on GitHub blocks its item (issue #1891, `pr_closed`), in place of dropping it:
   // the ledger rebuilt, so an item whose issue is still open waits on a person. Rows only: the build before reads `blocked`.
   (db) => { rebuildWorkItems(db); },
+  // 84: The skill library (issue #1911): each version of a library skill the user made, kept whole. A table only: the build
+  // before runs on it, never reads it, and gives jobs no work skill.
+  SKILL_LIBRARY_TABLE,
 ];

@@ -62,7 +62,8 @@ export function checkOf(state: WorkItemState, since: string, at: string = since)
 
 /** Who makes each kind of move of the ledger: the transition's owner. */
 export function transitionOwner(type: EventType): ItemOwner {
-  if (type === 'work_item.reconciled') return 'reconciler';
+  if (type === 'work_item.reconciled' || type === 'work_item.person_asked') return 'reconciler';
+  if (type === 'work_item.dropped') return 'person';
   if (type.startsWith('work_item.') || type.startsWith('job.pull_request_') || type.startsWith('landing_batch.')) return 'github_observer';
   if (type === 'source.request_opened' || type === 'source.request_withdrawn' || type === 'source.request_auto_approved' || type === 'job.queued' || type === 'job.requeued') return 'scheduler';
   if (type.startsWith('source.request_') || type === 'job.dismissed' || type === 'handoff.closed' || type === 'job.unparked') return 'person';
@@ -89,12 +90,14 @@ export interface ReconcileJob { id: string; status: string; ended: boolean; upda
 
 /**
  * A corrective move of the item reconciler: `replay`, fold the item again from its job's end (the ledger missed it, or an
- * event after it moved the item back); `block`, the item broke its state's promise.
+ * event after it moved the item back); `block`, the item broke its state's promise; `run_again`, its ended job's Run again;
+ * `ask`, the one notice of a blocked item that is stuck work: a person is asked.
  */
 export type ItemCorrection =
   | { kind: 'replay'; key: string; jobId: string; from: WorkItemState }
   | { kind: 'block'; key: string; from: WorkItemState; cause: BlockedCause }
-  | { kind: 'run_again'; key: string; jobId: string; pullRequest?: string };
+  | { kind: 'run_again'; key: string; jobId: string; pullRequest?: string }
+  | { kind: 'ask'; key: string; cause: BlockedCause; jobId?: string; pullRequest?: string };
 
 /**
  * Whether a blocked item is stuck work for a person (Failures' `pr_open_stale`): blocked as stale, or for want of a pull
@@ -132,6 +135,7 @@ export const RECONCILE_GRACE_MS = 2 * MINUTE;
  * want of a pull request whose finished job's report has named one since; an item past its deadline in PR open with no
  * open pull request a job follows is blocked: `no_pr` with none named, else `stale`. An item blocked because its pull
  * request was closed without a merge for the first time in a row (`runsAgainBySelf`) runs again: its ended job's Run again.
+ * A blocked item that is stuck work for a person (`blockedStuck`) and not asked about yet gets its one notice (`ask`).
  */
 export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, follows: boolean, now: string): ItemCorrection | undefined {
   const settledBefore = Date.parse(now) - RECONCILE_GRACE_MS;
@@ -151,6 +155,9 @@ export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, foll
     if (deadline === undefined || Date.parse(now) < Date.parse(deadline)) return undefined;
     if (item.pullRequest === undefined) return { kind: 'block', key: item.key, from: item.state, cause: 'no_pr' };
     if (item.pullRequestState !== 'open' || !follows) return { kind: 'block', key: item.key, from: item.state, cause: 'stale' };
+  }
+  if (item.state === 'blocked' && item.blockedCause !== undefined && item.personAsked !== true && blockedStuck(item, now)) {
+    return { kind: 'ask', key: item.key, cause: item.blockedCause, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), ...(item.pullRequest !== undefined ? { pullRequest: item.pullRequest } : {}) };
   }
   return undefined;
 }
