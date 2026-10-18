@@ -6,13 +6,14 @@
 //   Scenario: an admin sets the skill rules; a rule that names no skill in the library, or no condition, is refused
 //   Scenario: a job a rule matches gets the skill's files, an index, a line in its job rules, and why on its timeline
 //   Scenario: a job no rule matches gets none; a later start keeps what the first start got
+//   Scenario: a paths rule gives its skill at the start and keeps its paths for the done check; the deletes the job's approved text allows
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor } from '../../src/domain/ports.ts';
 import type { DomainEvent } from '../../src/domain/types.ts';
-import { doneCriteriaOfJob, jobSkillsOf, type SkillLibraryView } from '../../src/skill-library/index.ts';
+import { allowedDeletesOfJob, doneCriteriaOfJob, jobSkillsOf, type SkillLibraryView } from '../../src/skill-library/index.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -113,5 +114,31 @@ describe('conditional skills (issue #1924)', () => {
     expect(jobSkillsOf(store, job).conditional.map((c) => c.chosen)).toEqual(first.conditional.map((c) => c.chosen));
     expect(eventsOf(t, 'job.conditional_skills_chosen')).toHaveLength(1);
     expect(jobSkillsOf(store, { ...job, id: 'j-next' }).conditional).toEqual([]);
+  });
+
+  it('a paths rule gives its skill at the start, its paths kept for the done check; a rule with none makes it apply always', async () => {
+    const t = await start();
+    await choose(t, { rules: [{ skill: 'iac', paths: ['*.tf'] }, { skill: 'iac', repos: ['octo/site'] }] });
+    const { store } = t.app.user();
+    const infra = { id: 'j-paths', spec: {}, source: { repo: 'octo/infra' } } as Parameters<typeof jobSkillsOf>[1];
+    expect(jobSkillsOf(store, infra).conditional.map((c) => c.chosen)).toMatchObject([{ name: 'iac', why: ['paths *.tf'], paths: ['*.tf'] }]);
+    expect(doneCriteriaOfJob(store, 'j-paths')).toMatchObject([{ skill: 'iac', paths: ['*.tf'] }]);
+    const site = { id: 'j-site', spec: {}, source: { repo: 'octo/site' } } as Parameters<typeof jobSkillsOf>[1];
+    const [both] = jobSkillsOf(store, site).conditional.map((c) => c.chosen);
+    expect(both).toMatchObject({ name: 'iac', why: ['paths *.tf', 'repository octo/site'] });
+    expect(both!.paths).toBeUndefined();
+  });
+
+  it('the deletes a job may make are the ones its approved text allows by address, never the live issue\'s', async () => {
+    const t = await start();
+    const { store } = t.app.user();
+    const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/infra', key: 'https://github.com/octo/infra/issues/7' });
+    expect(allowedDeletesOfJob(store, job.id)).toEqual([]);
+    store.itemSnapshots.put({
+      key: 'https://github.com/octo/infra/issues/7', title: 'Remove the bucket', body: 'Allowed deletes: `aws_s3_bucket.logs`',
+      comments: [{ author: 'owner', at: '2026-10-18T00:00:00.000Z', body: '- not a list here' }], hash: 'h', recordedAt: '2026-10-18T00:00:00.000Z', reason: 'intake',
+    });
+    expect(allowedDeletesOfJob(store, job.id)).toEqual(['aws_s3_bucket.logs']);
+    t.held.get(job.id)?.end();
   });
 });

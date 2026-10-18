@@ -2,8 +2,8 @@
 // repository, its labels, its kind of work —, why each one, and the done criteria the hopper checks before the job is done.
 import { describe, expect, it } from 'vitest';
 import {
-  conditionalSkillsCredentials, criteriaLine, doneCriteriaOf, doneFileProblem, planDestroys, ruleMatch, skillRuleProblem, unmetCriteria,
-  withConditionalSkills, type ConditionalSkillChosen, type DoneCriterion,
+  allowedDeletesIn, conditionalSkillsCredentials, criteriaLine, destroyedAddresses, doneCriteriaOf, doneFileProblem, pathsApply, planDestroys, ruleMatch,
+  skillRuleProblem, unmetCriteria, withConditionalSkills, type ConditionalSkillChosen, type DoneCriterion,
 } from '../../src/domain/conditional-skills.ts';
 import { namedSkills, patchWorkSkills, skillFilesProblem } from '../../src/domain/skill-library.ts';
 
@@ -26,6 +26,26 @@ describe('a skill rule', () => {
     expect(skillRuleProblem({ skill: 'iac', repos: ['infra'] })).toMatch(/owner\/name/);
     expect(skillRuleProblem({ skill: 'iac', kinds: ['deploy'] } as never)).toMatch(/kind of work/);
     expect(skillRuleProblem({ skill: 'iac', labels: [] })).toMatch(/at least one condition/);
+  });
+
+  it('a paths condition is not known at the start: the rule matches, and says the paths; the done check reads them later', () => {
+    expect(ruleMatch({ skill: 'iac', paths: ['*.tf'] }, job)).toEqual(['paths *.tf']);
+    expect(ruleMatch({ skill: 'iac', labels: ['iac'], paths: ['*.tf', 'modules/**'] }, job)).toEqual(['label iac', 'paths *.tf, modules/**']);
+    expect(ruleMatch({ skill: 'iac', labels: ['gitops'], paths: ['*.tf'] }, job)).toBeUndefined();
+    expect(skillRuleProblem({ skill: 'iac', paths: ['*.tf'] })).toBeUndefined();
+    expect(skillRuleProblem({ skill: 'iac', paths: ['/abs/*.tf'] })).toMatch(/relative/);
+    expect(patchWorkSkills({ kinds: {}, repos: {} }, { rules: [{ skill: 'iac', paths: ['*.tf'] }] }).rules).toEqual([{ skill: 'iac', paths: ['*.tf'] }]);
+  });
+
+  it('a paths condition applies when a changed file matches: a pattern with no slash matches the file name in any folder', () => {
+    expect(pathsApply(undefined, { files: ['README.md'] })).toBe(true);
+    expect(pathsApply(['*.tf'], { files: ['README.md', 'envs/prod/main.tf'] })).toBe(true);
+    expect(pathsApply(['src/**'], { files: ['src/a/b.ts'] })).toBe(true);
+    expect(pathsApply(['src/**'], { files: ['docs/src/x.md'] })).toBe(false);
+    expect(pathsApply(['*.tf'], { files: ['README.md'] })).toBe(false);
+    // Not known (no mirror), or not all files named: the criteria apply. Not known is not a pass.
+    expect(pathsApply(['*.tf'], {})).toBe(true);
+    expect(pathsApply(['*.tf'], { files: ['README.md'], filesCut: true })).toBe(true);
   });
 
   it('the work skill settings keep the rules; a change replaces them, and a skill a rule names cannot be removed', () => {
@@ -72,6 +92,46 @@ describe('a skill\'s done criteria', () => {
     expect(unmetCriteria([{ kind: 'plan-destroy', max: 2 }], { checks: [], comments: ['Plan: 0 to add, 1 to change, 2 to destroy.'] })).toEqual([]);
   });
 
+  const replaces = [
+    '  # module.deployment.module.bastion[0].aws_instance.bastion must be replaced',
+    '-/+ resource "aws_instance" "bastion" {',
+    '  # aws_s3_bucket.logs will be destroyed',
+    '  # aws_iam_role.old (deposed object 1a2b3c4d) will be destroyed',
+    '  # aws_instance.web is tainted, so must be replaced',
+    '  # aws_instance.api will be updated in-place',
+  ].join('\n');
+
+  it('the addresses a plan destroys or replaces, from its resource lines', () => {
+    expect(destroyedAddresses(replaces)).toEqual([
+      'module.deployment.module.bastion[0].aws_instance.bastion', 'aws_s3_bucket.logs', 'aws_iam_role.old', 'aws_instance.web',
+    ]);
+    expect(destroyedAddresses('\u001b[1m  # aws_s3_bucket.logs\u001b[0m will be destroyed')).toEqual(['aws_s3_bucket.logs']);
+  });
+
+  it('the deletes an issue allows, by address: the list after an Allowed deletes line', () => {
+    const body = [
+      'Remove the old bucket.', '', '**Allowed deletes:** `aws_s3_bucket.logs`, `aws_iam_role.old`', '',
+      '## Allowed deletes', '- `module.a.aws_instance.x[0]`', '* module.b.aws_db_instance.y', '', 'Not this: `aws_vpc.main`',
+    ].join('\n');
+    expect(allowedDeletesIn([body])).toEqual(['aws_s3_bucket.logs', 'aws_iam_role.old', 'module.a.aws_instance.x[0]', 'module.b.aws_db_instance.y']);
+    expect(allowedDeletesIn(['Delete `aws_vpc.main` please.'])).toEqual([]);
+  });
+
+  it('a delete the issue allows by address does not count; any other, or one the plan text does not name, does', () => {
+    const plan = (body: string, n: number) => `${body}\n\nPlan: 0 to add, 0 to change, ${n} to destroy.`;
+    const one = plan('  # aws_s3_bucket.logs will be destroyed', 1);
+    expect(unmetCriteria([{ kind: 'plan-destroy' }], { checks: [], comments: [one], allowed: ['aws_s3_bucket.logs'] })).toEqual([]);
+    expect(unmetCriteria([{ kind: 'plan-destroy' }], { checks: [], comments: [one], allowed: ['aws_s3_bucket.other'] }))
+      .toEqual(['a terraform plan destroys or replaces 1 resource (a comment): aws_s3_bucket.logs, which the issue does not allow; at most 0 may be']);
+    // Two roots in one text: each plan's resource lines are the ones before its Plan line.
+    const two = `${plan('  # aws_s3_bucket.logs will be destroyed', 1)}\n${plan('  # aws_instance.web must be replaced', 1)}`;
+    expect(unmetCriteria([{ kind: 'plan-destroy' }], { checks: [], comments: [two], allowed: ['aws_s3_bucket.logs'] }))
+      .toEqual(['a terraform plan destroys or replaces 1 resource (a comment): aws_instance.web, which the issue does not allow; at most 0 may be']);
+    // A summary with no resource lines names no address: its deletes count.
+    expect(unmetCriteria([{ kind: 'plan-destroy' }], { checks: [], comments: [plan('', 1)], allowed: ['aws_s3_bucket.logs'] }))
+      .toEqual(['a terraform plan destroys or replaces 1 resource (a comment); at most 0 may be']);
+  });
+
   it('as one line for the job\'s prompt', () => {
     expect(criteriaLine(criteria)).toBe('every check named terraform plan* passed; no terraform plan of the checks named terraform plan* destroys or replaces a resource');
     expect(criteriaLine([{ kind: 'plan-destroy', max: 1 }])).toBe('no terraform plan destroys or replaces more than 1 resource');
@@ -84,6 +144,12 @@ describe('delivery', () => {
   it('one line after the job rules names each skill, why, and its done criteria; none, no line', () => {
     expect(withConditionalSkills('Be brief.', [])).toBe('Be brief.');
     expect(withConditionalSkills('Be brief.', chosen)).toMatch(/^Be brief\.\n\[hopper conditional skills\] .*iac, version abc \(label iac\)\. .*HOPPER_CONDITIONAL_SKILLS.*The hopper checks before the job is done: iac: no terraform plan destroys or replaces a resource\.$/);
+  });
+
+  it('a skill with paths says its criteria apply only when the change touches them', () => {
+    const paths: ConditionalSkillChosen[] = [{ ...chosen[0]!, why: ['paths *.tf'], paths: ['*.tf'] }];
+    expect(withConditionalSkills('', paths)).toMatch(/iac, version abc \(paths \*\.tf\)\. .*The hopper checks before the job is done: iac, when the change touches \*\.tf: no terraform plan/);
+    expect(conditionalSkillsCredentials(paths, { iac: { 'SKILL.md': 'a' } }).files['conditional-skill/INDEX.md']).toMatch(/when the change touches \*\.tf/);
   });
 
   it('each skill\'s files go under conditional-skill/<name>, and an index the variable names lists them', () => {
