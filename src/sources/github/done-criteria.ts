@@ -3,8 +3,9 @@
 // commit's checks and their output, and its comments since that commit — and does not trust the job. A criterion not met
 // keeps the job not done, said by the pull request's number and the skill, so the assessor sends the job back to fix it.
 // A skill a paths rule gave is checked only when the pull request changes a file its paths match (part 2), and a plan's delete
-// of an address the job's issue allows does not count.
-import { pathsApply, unmetCriteria, type DoneCriterion } from '../../domain/conditional-skills.ts';
+// of an address the job's issue allows does not count. Yolo mode asks the same before its own merge (part 3,
+// `doneCriteriaHold`), and a `person-merges` criterion that applies holds that merge for a person.
+import { mergeHolds, pathsApply, unmetCriteria, type DoneCriterion } from '../../domain/conditional-skills.ts';
 import type { Job } from '../../domain/types.ts';
 import type { GitHubApi } from './api.ts';
 import { ownOpenPullRequests } from './completion.ts';
@@ -30,20 +31,50 @@ export async function doneCriteriaMiss(api: GitHubApi, job: Job, criteria: JobDo
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (!own) return undefined;
   const pr = numberOf(own.url);
+  const unmet = await unmetOn(api, repo, pr, all, allowedDeletes?.(job.id) ?? [], own);
+  if (unmet === 'none') return undefined;
+  if (unmet.known === false) return `the issue ${url ?? `${repo}#${number}`} is open, and PR #${pr}: done criteria of skill ${unmet.skills.join(', ')} not known: its checks cannot be read`;
+  return unmet.misses.length > 0 ? `the issue ${url ?? `${repo}#${number}`} is open, and ${unmet.misses.map((m) => `PR #${pr}: done criteria of skill ${m.skill} not met: ${m.why}`).join(', and ')}` : undefined;
+}
+
+type Unmet = 'none' | { known: false; skills: string[] } | { known: true; misses: { skill: string; why: string }[]; holds: { skill: string; why: string }[] };
+
+/**
+ * The done criteria of `all` on pull request `pr` of `repo` now: 'none', when no skill applies to the files it changes; not
+ * known, when its checks cannot be read; else each skill's misses and its merge holds (`person-merges`).
+ */
+async function unmetOn(api: GitHubApi, repo: string, pr: number, all: ReturnType<JobDoneCriteria>, allowed: string[], listed?: { headOid?: string; headRef?: string; headCommittedAt?: string }): Promise<Unmet> {
   // Read by its number: its head commit as GitHub has it now.
   const read = await api.pullRequest(repo, pr);
   // Its changed files, as the hopper's mirror says: a skill a paths rule gave applies when one matches.
   const skills = all.filter((s) => pathsApply(s.paths, read ?? {}));
-  if (skills.length === 0) return undefined;
-  const ref = read?.headOid ?? read?.headRef ?? own.headOid ?? own.headRef;
-  if (!api.checkRuns || !ref) return `the issue ${url ?? `${repo}#${number}`} is open, and PR #${pr}: done criteria of skill ${skills.map((s) => s.skill).join(', ')} not known: its checks cannot be read`;
+  if (skills.length === 0) return 'none';
+  const holds = skills.flatMap((s) => mergeHolds(s.done, read ?? {}).map((why) => ({ skill: s.skill, why })));
+  const checked = skills.filter((s) => s.done.some((c) => c.kind !== 'person-merges'));
+  if (checked.length === 0) return { known: true, misses: [], holds };
+  const ref = read?.headOid ?? read?.headRef ?? listed?.headOid ?? listed?.headRef;
+  if (!api.checkRuns || !ref) return { known: false, skills: checked.map((s) => s.skill) };
   const checks = await api.checkRuns(repo, ref);
-  const since = read?.headCommittedAt ?? own.headCommittedAt;
+  const since = read?.headCommittedAt ?? listed?.headCommittedAt;
   const comments = (await api.listComments(repo, pr)).filter((c) => since === undefined || (c.updatedAt ?? c.createdAt) >= since).map((c) => c.body);
-  const allowed = allowedDeletes?.(job.id) ?? [];
-  const unmet = skills.flatMap((s) => {
+  const misses = checked.flatMap((s) => {
     const why = unmetCriteria(s.done, { checks, comments, allowed });
-    return why.length > 0 ? [`PR #${pr}: done criteria of skill ${s.skill} not met: ${why.join('; ')}`] : [];
+    return why.length > 0 ? [{ skill: s.skill, why: why.join('; ') }] : [];
   });
-  return unmet.length > 0 ? `the issue ${url ?? `${repo}#${number}`} is open, and ${unmet.join(', and ')}` : undefined;
+  return { known: true, misses, holds };
+}
+
+/**
+ * Why the hopper does not merge job `job`'s pull request `url` itself (part 3, yolo mode), or undefined: a done criterion of
+ * its conditional skills not met on it now, or not known, or a `person-merges` criterion that applies. Asked just before the
+ * hopper's own merge, never before a person's Merge now. An error asking GitHub throws.
+ */
+export async function doneCriteriaHold(api: GitHubApi, job: Job, repo: string, url: string, criteria: JobDoneCriteria | undefined, allowedDeletes?: JobAllowedDeletes): Promise<string | undefined> {
+  const all = criteria?.(job.id) ?? [];
+  if (all.length === 0) return undefined;
+  const unmet = await unmetOn(api, repo, numberOf(url), all, allowedDeletes?.(job.id) ?? []);
+  if (unmet === 'none') return undefined;
+  if (unmet.known === false) return `done criteria of skill ${unmet.skills.join(', ')} not known: its checks cannot be read`;
+  const why = [...unmet.misses.map((m) => `done criteria of skill ${m.skill} not met: ${m.why}`), ...unmet.holds.map((h) => `done criteria of skill ${h.skill}: ${h.why}`)];
+  return why.length > 0 ? why.join('; and ') : undefined;
 }

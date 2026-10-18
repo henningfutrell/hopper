@@ -97,7 +97,9 @@ export function requiresLine(view: SkillLibraryView, skill: Pick<LibrarySkillSum
 }
 
 // The daemon's words for the done criteria (src/domain/conditional-skills.ts criteriaLine), copied: the UI imports types only.
-const criteriaLine = (criteria: readonly DoneCriterion[]): string => criteria.map((c) => (c.kind === 'checks-passed'
+const criteriaLine = (criteria: readonly DoneCriterion[]): string => criteria.map((c) => (c.kind === 'person-merges'
+  ? `a person merges ${c.paths?.length ? `a change to ${c.paths.join(', ')}` : 'it'}, not the hopper`
+  : c.kind === 'checks-passed'
   ? `every check named ${c.checks} passed`
   : `no terraform plan ${c.checks === undefined ? '' : `of the checks named ${c.checks} `}destroys or replaces ${(c.max ?? 0) === 0 ? 'a resource' : `more than ${c.max} ${c.max === 1 ? 'resource' : 'resources'}`}`)).join('; ');
 

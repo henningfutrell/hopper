@@ -15,7 +15,7 @@ export type WorkKind = typeof WORK_KINDS[number];
 export const workKindOf = (spec: { research?: true; proposal?: true }): WorkKind => (spec.research ? 'research' : spec.proposal ? 'proposal' : 'code');
 
 /** The built-in library skills, by name, and the one each kind of work gets while no setting names another. */
-export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal', 'orchestrate', 'iac'] as const;
+export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal', 'orchestrate', 'iac', 'gitops-deploy'] as const;
 export const DEFAULT_WORK_SKILLS: Readonly<Record<WorkKind, string>> = { code: 'work', research: 'research', proposal: 'proposal' };
 
 /** The file every library skill has: what the job reads first. */

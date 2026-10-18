@@ -110,5 +110,9 @@ describe('conditional skills (issue #1924)', () => {
       { name: 'iac', version: 'd'.repeat(16), seq: 0, why: ['repository octo/infra', 'label iac'], done: [{ kind: 'plan-destroy' }] },
       { name: 'gitops', version: 'e'.repeat(16), seq: 2, why: ['label gitops'], done: [] },
     ] })).toBe(`conditional skills: iac ${'d'.repeat(8)} (built-in), by repository octo/infra, label iac; done when no terraform plan destroys or replaces a resource; gitops ${'e'.repeat(8)} (version 2), by label gitops`);
+    // Part 3: a person-merges criterion.
+    expect(conditionalSkillsChosenLine({ skills: [
+      { name: 'gitops-deploy', version: 'f'.repeat(16), seq: 0, why: ['label gitops'], done: [{ kind: 'person-merges', paths: ['**/overlays/production/**'] }] },
+    ] })).toBe(`conditional skills: gitops-deploy ${'f'.repeat(8)} (built-in), by label gitops; done when a person merges a change to **/overlays/production/**, not the hopper`);
   });
 });

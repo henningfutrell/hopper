@@ -3684,7 +3684,7 @@ Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this jo
 
 ## `job.conditional_skills_chosen`
 
-Version 1 (`docs/schemas/job.conditional_skills_chosen.v1.json`). The conditional skills this job got beside its work skill (issue #1924), at its first start, because a skill rule matched what it works on: each skill's `name`, `version` and `seq` (0: built in), `why` (the conditions that matched: `repository owner/name`, `label x`, `kind of work k`, `paths a, b`), and `done`, the done criteria of its `done.json` that the done check verifies before the job is done. `paths` (part 2): the globs of a paths rule; the done check verifies the criteria only when the pull request changes a file they match. Absent: always. Each later start gets the same versions. None when no rule matched.
+Version 1 (`docs/schemas/job.conditional_skills_chosen.v1.json`). The conditional skills this job got beside its work skill (issue #1924), at its first start, because a skill rule matched what it works on: each skill's `name`, `version` and `seq` (0: built in), `why` (the conditions that matched: `repository owner/name`, `label x`, `kind of work k`, `paths a, b`), and `done`, the done criteria of its `done.json` that the done check verifies before the job is done (part 3: `person-merges`, a person merges a change to its `paths`, never the hopper's yolo mode, which reads the criteria again before its merge). `paths` (part 2): the globs of a paths rule; the done check verifies the criteria only when the pull request changes a file they match. Absent: always. Each later start gets the same versions. None when no rule matched.
 
 | field | type | required |
 |---|---|---|

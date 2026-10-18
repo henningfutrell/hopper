@@ -28004,7 +28004,7 @@ requires `orchestrate`, and one not in the library: the files, the event's `requ
 required skill reaches the next job and not a later start of this one); `test/ui/skills.test.ts` and
 `test/ui/skills-view.test.ts` (the requires line, the timeline line).
 
-## Conditional skills (issue #1924, parts 1 and 2, 2026-10-18)
+## Conditional skills (issue #1924, parts 1 to 3, 2026-10-18)
 
 **Problem.** A job that changed infrastructure code opened its pull request and ended done while most of its `terraform
 plan` checks were red and one plan replaced a resource. The plan summary showed the delete, but nothing made the job read
@@ -28086,9 +28086,34 @@ skill's machine-checkable criteria itself before it takes the job as done.
 - **The allowed list is the approved text.** A list in the live issue or the pull request body could be written by anyone
   who can edit them, or by the job; the snapshot is the text a trusted person wrote or approved.
 
-**Left for later parts.** The Skills page's editor for the skill rules (they are set through the API now). The gitops skill (production overlays are deploys on merge: flagged in the pull request body,
-never merged by the hopper). Yolo mode reading the done criteria before a merge. Done criteria on GitLab merge requests and on
-pull requests that ship a part.
+**As built (part 3).**
+- **Yolo mode reads the done criteria** (`doneCriteriaHold`, `src/sources/github/done-criteria.ts`). Just before the
+  hopper's own merge of a job's ready pull request (`waiting`, `src/sources/github/follow.ts`), it reads the job's done
+  criteria again on that pull request now: its head commit's checks and their output, its comments since that commit, its
+  changed files. A criterion not met, or not known (its checks cannot be read), holds the merge: the reason is kept as
+  `mergeError` (`done criteria of skill <name> not met: …`), the Pull requests card says merge refused with it, and the next
+  sync asks again. Met later, it merges. A person's Merge now is not held. The done check is the same as before.
+- **`person-merges`**, a new done criterion (`paths` optional: relative globs). A pull request that changes a file its paths
+  match (all, absent; files not known, or not all named, count) is merged by a person, never by yolo mode or a change kind's
+  `ready` gate: `done criteria of skill <name>: a person merges a change to <paths>, not the hopper` (`mergeHolds`). It is no
+  miss at the done check: the job is done once its pull request is ready.
+- **The built-in `gitops-deploy` skill** (`src/skill-library/built-in/gitops-deploy/`): a production overlay change is a
+  deploy on merge; the job never merges or applies, and starts the pull request body with a line `Deploys on merge:` that
+  lists each production overlay it touches. Its `done.json`: `person-merges` for `**/overlays/production/**`,
+  `**/overlays/prod/**` and `**/overlays/prd/**`. A rule gives it to a job; no rule names it by default.
+
+**Decisions (part 3).**
+- **The hold is a refused merge.** It is kept as `mergeError`, as GitHub's own refusal is, so the card, the tending queue
+  and the next sync treat it the same: no new wait state, nothing new persisted.
+- **Read again at each sync while held.** A plan comment can come after the checks end; a hold kept with no read could
+  never lift. The cost is one checks read and one comments read per held pull request per sync.
+- **The body flag is the skill's text, not a criterion.** The hopper does not read the pull request body at the done check,
+  and the merge hold already keeps a person in front of the deploy; the line is for that person.
+- **The name is `gitops-deploy`, not `gitops`.** A built-in skill wins over a user's own skill of the same name, and
+  `gitops` is a likely name for one a user made already.
+
+**Left for later parts.** The Skills page's editor for the skill rules (they are set through the API now). Done criteria
+on GitLab merge requests and on pull requests that ship a part.
 
 **Verification:** `test/domain/conditional-skills.test.ts` (a rule's match and why, its problems, the settings' change,
 done.json and its refusal, the plan's destroy counts, each miss, the prompt line, the delivery paths);
@@ -28102,4 +28127,7 @@ skill); part 2: `test/domain/conditional-skills.test.ts` (a paths rule's match, 
 addresses, the allowed deletes, an allowed delete not counted), `test/sources/github-done-criteria.test.ts` (a paths skill
 checked only when a changed file matches or the files are not known; an allowed delete), and
 `test/integration/conditional-skills.test.ts` (a paths rule's skill and its paths kept; the allowed deletes from the
-snapshot).
+snapshot); part 3: `test/sources/github-yolo-done-criteria.test.ts` (a plan that replaces a resource holds yolo mode's
+merge, met later it merges, a person-merges change held and one outside its paths merged, Merge now still merges, no
+done-check miss), `test/domain/conditional-skills.test.ts` (`person-merges` in done.json, `mergeHolds`, the built-in
+`gitops-deploy` skill), `test/ui/skills.test.ts` (its timeline line).

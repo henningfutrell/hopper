@@ -187,8 +187,8 @@ describe('a person-merges criterion (issue #1924 part 3)', () => {
     expect(criteriaLine(GITOPS)).toBe('a person merges a change to **/overlays/production/**, not the hopper');
   });
 
-  it('the built-in gitops skill carries it', () => {
-    const gitops = builtInSkills().find((s) => s.name === 'gitops');
+  it('the built-in gitops-deploy skill carries it', () => {
+    const gitops = builtInSkills().find((s) => s.name === 'gitops-deploy');
     expect(gitops && doneFileProblem(gitops.files['done.json'] ?? '')).toBeUndefined();
     expect(doneCriteriaOf(gitops!.files).map((c) => c.kind)).toEqual(['person-merges']);
     expect(skillFilesProblem(gitops!.files)).toBeUndefined();
