@@ -28536,7 +28536,9 @@ takes the source's rows due — `pending` ones and `sending` ones whose claim en
 claim's end as `next_at`. Postgres checks a row another send claimed meanwhile again and skips it, so of two hoppers one
 gets each row. The send renews the claim of its rows before each call. The claim is 2 minutes: longer than a call's longest
 wait at the rate limiter (60 s). A row a killed or stopped hopper left is sent again once its claim ends, by any hopper.
-The start no longer resets rows (`recover` is gone).
+The start no longer resets rows (`recover` is gone). A clean stop releases what its send claimed and did not send
+(`releaseOutbox`, at the sync loop's stop): the send makes no more calls, and those rows are due again at once, so a
+restart sends them without waiting for the claim.
 
 **Kill points** (`outboxKillPoint`, `src/sources/github/outbox.ts`): `outbox:<op>:before-send` before each coalesced call,
 and `outbox:<op>:after-send` once GitHub answered it, before its rows are `sent` and their events recorded.
@@ -28560,7 +28562,9 @@ holds the outbox's calls, a person's action answers at once (issue #1194).
 **Decisions.**
 - **A claim with an end, not an owner.** A host's identity is not in the user's schema, and a killed host never releases
   anything. The end time alone frees what a dead host held, as the saga lease does. The price: a restart after a crash
-  sends what was in flight up to 2 minutes later.
+  sends what was in flight up to 2 minutes later. A clean stop releases its rows at once, the row of a call GitHub has not
+  answered too, as before: if GitHub applies that call only after the next start read the issue's comments, its comment
+  is posted twice. The window is the time a request a stopped process sent takes to reach GitHub.
 - **The outbox's own write kinds only.** An issue edit, a pull request's edit, close or draft, an issue a job files and a
   sub-issue link are not outbox rows: a job asks for them through the GitHub proxy, or the source's report makes them.
   They are the next part.
