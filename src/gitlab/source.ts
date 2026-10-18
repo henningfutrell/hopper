@@ -195,7 +195,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
               continue;
             }
             branch ??= { name: await o.account.act((a) => a.defaultBranch(project)) };
-            items.push({ ...toItem(i, s.baseUrl, branch.name, s.account), origin: v.origin });
+            items.push({ ...toItem(i, s.baseUrl, branch.name, s.account), origin: v.origin, originActs: v.acts });
             listed.push(base);
           }
         } catch (err) {

@@ -8,8 +8,8 @@ import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
 import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts'; import { createTopology, type Topology } from '../infra-plans/topology.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
-import type { CountPushLines } from '../git-mirror/push-lines.ts';
-import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
+import type { CheckFastForward, CountPushLines } from '../git-mirror/push-lines.ts';
+import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, directPushFor, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import { isGitLabItem } from '../domain/gitlab-account.ts';
 import { GITLAB_GIT_PATH } from '../gitlab/git-broker.ts';
@@ -118,6 +118,8 @@ export interface UserGitHubProxyOptions {
   stack?: () => Promise<StackResources>;
   /** A push's lines, counted in the user's mirrors of the job repositories (issue #1096); absent: no shrink guard. */
   pushLines?: CountPushLines;
+  /** Whether a direct push is a fast-forward (issue #1806), in the same mirrors; absent: no direct push is taken. */
+  fastForward?: CheckFastForward;
   /** File an issue's drafter (issue #471): the user's own AI connection; absent: none, so File an issue cannot draft. */
   issueDrafter?: IssueDrafter;
   /** The host name, masked in a job's context that File an issue attaches. */
@@ -145,14 +147,14 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     : createReportGitHub(mine()));
   /** This user's Contribution (issue #429), read at each request: a change applies without a restart. */
   const contribution = () => (o.store.settings.getContribution() ?? DEFAULT_CONTRIBUTION).on;
+  /** Where the user's mirror of `repo` fetches from, with the account of the repository (issues #1096, #1806). */
+  const mirrorRemote = (repo: string) => async () => { const key = keyOf(repo); return { url: `${o.accounts.endpoints(key).url.replace(/\/+$/, '')}/${repo}.git`, token: await o.accounts.token(key) }; };
   /**
    * The shrink guard (issue #1096): a push's lines from the mirror, fetched with this user's own connection, judged at the
    * percent of the user's settings. Git cannot say: the push goes on, as it did before the guard.
    */
   const shrinkGuard = (pushLines: CountPushLines): NonNullable<GitUser['shrinkGuard']> => async (push) => {
-    const key = keyOf(push.repo);
-    const remote = async () => ({ url: `${o.accounts.endpoints(key).url.replace(/\/+$/, '')}/${push.repo}.git`, token: await o.accounts.token(key) });
-    const lines = await pushLines(push.repo, remote, push);
+    const lines = await pushLines(push.repo, mirrorRemote(push.repo), push);
     if (!lines?.brings) return { ok: true };
     const shrunk = shrunkFiles(lines.files, (o.store.settings.getShrinkGuard() ?? DEFAULT_SHRINK_GUARD).percent);
     return shrunk.length === 0 ? { ok: true } : { ok: false, shrunk, reason: shrinkReason(shrunk, push.base) };
@@ -306,7 +308,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       repoChecks: createRepoChecks({
         github: () => { const login = o.accounts.account('github'); return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login }; },
         repos: () => o.store.settings.getJobRepositories('github'), reads: o.store.repoChecks,
-        yolo: (repo) => yoloModeFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+        yolo: (repo) => yoloModeFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(o.store)),
         dismissed: () => o.store.settings.getRepoChecksDismissed(), setDismissed: (repos) => o.store.settings.setRepoChecksDismissed(repos),
         record: (e) => { o.store.events.append(e); }, now: () => o.clock.now().getTime(), log: (l) => o.logger.warn(l),
       }),
@@ -349,6 +351,9 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // The landing batch setting's, never GitHub's default branch (issues #1142, #1147).
         landingBranch: (repo) => { const cfg = o.store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
         ...(o.pushLines ? { shrinkGuard: shrinkGuard(o.pushLines) } : {}),
+        // Direct push (issue #1806): the user's setting, read at each push; the check fetches with the account of the repository.
+        directPush: (repo) => directPushFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+        ...(o.fastForward ? { fastForward: ({ repo, ...push }: Parameters<CheckFastForward>[2] & { repo: string }) => o.fastForward!(repo, mirrorRemote(repo), push) } : {}),
       },
     },
   };

@@ -166,7 +166,7 @@ function cannotMint(u: Pick<TemplateRequestUser, 'templates'>, t: TemplateView, 
     .filter((p) => p.operation === 'read' && scopes.has(scopeOf(p.asset)) && !failed.has(`${p.asset.kind}/${p.asset.name}`)).map(keyOf)));
   const why = unminted.map((x) => `read on ${x.asset.kind} ${x.asset.name}: ${x.reason}`).join('; ');
   const instead = mint.size > 0 ? `These read needs on the same account or cluster passed a check: ${[...mint].join(' ')}. Ask for them in its place` : 'Ask for a read need the vault mints for in its place';
-  return `template ${t.name} cannot pass its read-only check: the vault minted no credential for ${why}. ${instead}. When a person sets the minting credential again, the hopper runs the check again by itself.`;
+  return `template ${t.name} cannot pass its read-only check: the vault minted no credential for ${why}. ${instead}. The hopper runs the check again by itself in an hour, or when a person sets the minting credential again.`;
 }
 
 /** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */

@@ -209,7 +209,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       return text === undefined ? undefined : JSON.parse(text) as YoloModeSettings;
     },
     setYoloMode(settings) {
-      write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos, ...(settings.changeKinds ? { changeKinds: settings.changeKinds } : {}) }));
+      write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos, ...(settings.changeKinds ? { changeKinds: settings.changeKinds } : {}), ...(settings.push?.length ? { push: settings.push } : {}) }));
     },
     getLandingBatches() { const text = read('landingBatches'); return text === undefined ? undefined : JSON.parse(text) as LandingBatchSettings; }, setLandingBatches(settings) { write('landingBatches', JSON.stringify({ repos: settings.repos })); },
     getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; }, setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); }, getShrinkGuard() { const text = read('shrinkGuard'); return text === undefined ? undefined : JSON.parse(text) as ShrinkGuardSettings; }, setShrinkGuard(settings) { write('shrinkGuard', JSON.stringify({ percent: settings.percent })); },

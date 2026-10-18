@@ -3,6 +3,7 @@
 // surface: whether OpenFGA can be asked, and why not; each template's approvals with the relationship chain from the
 // template to the asset, each with Revoke (asked once, then POST /ui/api/access); a check tried for a template, an
 // operation and an asset, with its answer and path; the newest decisions; and the model, saved against its version.
+// Each operation's minimum trust (issue #655, part 15), with Clear, and a form that sets one; a check told a job's trust.
 // Who may do what is the permission matrix's (issues #559, #581, test/ui/permission-matrix.test.ts): Access links to it.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -25,6 +26,7 @@ const VIEW = {
     profiles: [{ profile: { operation: 'read', asset: { kind: 'cluster', name: 'x' } }, level: 'low', approved: true }, { profile: { operation: 'write', asset: { kind: 'cluster', name: 'x' } }, level: 'high', approved: false }],
   } }],
   revoked: [],
+  minTrust: [{ profile: { operation: 'write', asset: { kind: 'cluster', name: 'x' } }, level: 'trusted', setBy: 'alice', setAt: '2026-10-09T11:40:00.000Z' }],
   requesters: [
     { requester: { kind: 'user', userId: 'admin' }, grants: [{ profile: READ_X, path: [owns, runsOn, instance, read, grant] }] },
     { requester: { kind: 'job', userId: 'admin', jobId: 'j1' }, template: 'kubectl-diag', machine: 'kbox', grants: [{ profile: READ_X, path: [owns, runsOn, instance, read, grant] }] },
@@ -122,6 +124,12 @@ describe('access model', () => {
     expect(tupleText(instance)).toBe('machine kbox is an instance of template kubectl-diag');
     expect(tupleText({ subject: 'machine:admin/my%20box', relation: 'instance_of', object: 'template:t' })).toBe('machine my box is an instance of template t');
   });
+
+  it('reads a job\'s trust and a profile\'s minimum trust in plain words (issue #655, part 15)', () => {
+    expect(tupleText({ subject: 'job:admin/j1', relation: 'holder', object: 'trust:approved' })).toBe('job j1 holds trust approved');
+    expect(tupleText({ subject: 'job:trial/t1', relation: 'holder', object: 'trust:owner' })).toBe('this job holds trust owner');
+    expect(tupleText({ subject: 'trust:trusted', relation: 'min_trust', object: 'operation_profile:write/cluster/x' })).toBe('write on cluster x needs trust trusted or higher');
+  });
 });
 
 describe('Settings → Access', () => {
@@ -182,6 +190,35 @@ describe('Settings → Access', () => {
     await vi.waitFor(() => expect(form.querySelector('[data-check-result]')?.getAttribute('data-check-result')).toBe('allowed'));
     expect(daemon.calls.find((c) => c.path === '/ui/api/access')?.body).toEqual({ action: 'check', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' } });
     expect(form.textContent).toContain('template kubectl-diag is approved for read on cluster x');
+  });
+
+  it('shows each minimum trust with Clear, and sets a new one (issue #655, part 15)', async () => {
+    const daemon = await boot();
+    const form = panel()!.querySelector('[data-slot="access-min-trust"]')!;
+    const row = form.querySelector('[data-min-trust="write/cluster/x"]')!;
+    expect(row.textContent).toContain('write on cluster x: needs trusted or higher');
+    expect(row.textContent).toContain('alice');
+    await click(button('Clear', row));
+    await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/access')?.body).toEqual({ action: 'min-trust', operation: 'write', asset: { kind: 'cluster', name: 'x' }, level: null }));
+
+    await set(form.querySelector<HTMLSelectElement>('select[name="min-operation"]')!, 'apply');
+    await set(form.querySelector<HTMLSelectElement>('select[name="min-kind"]')!, 'terraform-workspace');
+    await set(form.querySelector<HTMLInputElement>('input[name="min-asset"]')!, 'prod');
+    await set(form.querySelector<HTMLSelectElement>('select[name="min-level"]')!, 'owner');
+    await click(button('Set minimum', form));
+    await vi.waitFor(() => expect(daemon.calls.filter((c) => c.path === '/ui/api/access').at(-1)?.body)
+      .toEqual({ action: 'min-trust', operation: 'apply', asset: { kind: 'terraform-workspace', name: 'prod' }, level: 'owner' }));
+  });
+
+  it('Check sends the job\'s trust level when it is not owner (issue #655, part 15)', async () => {
+    const daemon = await boot();
+    const form = panel()!.querySelector('[data-slot="access-check"]')!;
+    await set(form.querySelector<HTMLInputElement>('input[name="template"]')!, 'kubectl-diag');
+    await set(form.querySelector<HTMLInputElement>('input[name="asset"]')!, 'x');
+    await set(form.querySelector<HTMLSelectElement>('select[name="level"]')!, 'approved');
+    await click(button('Check', form));
+    await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/access')?.body)
+      .toEqual({ action: 'check', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' }, level: 'approved' }));
   });
 
   it('Save model posts the model with the version it was read at', async () => {

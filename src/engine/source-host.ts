@@ -25,11 +25,13 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
     labels: [...item.labels],
     ...(item.parts ? { parts: { ...item.parts } } : {}),
     ...(item.origin ? { origin: item.origin } : {}),
+    ...(item.origin && item.originActs ? { originActs: item.originActs.map((a) => ({ ...a })) } : {}),
   };
 }
 
-/** A person's Run again or Rework of a job (issue #652): the new job keeps the origin of the job it follows. */
-const originFrom = (item: SourceItem, job: Job): SourceItem => (item.origin || !job.source?.origin ? item : { ...item, origin: job.source.origin });
+/** A person's Run again or Rework of a job (issue #652): the new job keeps the origin of the job it follows, and its origin acts (issue #655 part 14). */
+const originFrom = (item: SourceItem, job: Job): SourceItem => (item.origin || !job.source?.origin ? item
+  : { ...item, origin: job.source.origin, ...(job.source.originActs ? { originActs: job.source.originActs } : {}) });
 
 /**
  * What the item and the routing rule give a job's spec (issue #375). The job's own work tree is a routing
@@ -209,7 +211,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // A job queued before origins were judged (issue #652, the backfill): its issue is offered once it is of a trusted
         // origin or a person approved it; the job takes that origin, and its hold goes.
         if (job.originPending && item.origin && job.source) {
-          store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin } });
+          store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin, ...(item.originActs ? { originActs: item.originActs } : {}) } });
           store.jobs.restamp(jobId); // its trust stamp from the origin now judged (issue #655)
           store.events.append({ type: 'job.origin_judged', jobId, data: { key: item.key, origin: item.origin } });
           changed = true;

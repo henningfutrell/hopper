@@ -21,7 +21,7 @@
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ProbeRun, ReadOnlyCheck, Unminted } from '../domain/read-only-check.ts';
-import { currentCheck, markRuns, onlyNetworkErrors, workspaceRole } from '../domain/read-only-check.ts';
+import { CHECK_UNMINTED_MS, currentCheck, markRuns, onlyNetworkErrors, unmintedNeeds, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
@@ -39,6 +39,7 @@ export const CHECK_MS = 30 * 60_000;
 export const CHECK_EVERY_MS = 24 * 60 * 60_000;
 /** How soon a check that failed only on a network error runs again (issue #1468). */
 export const CHECK_RETRY_MS = 5 * 60_000;
+export { CHECK_UNMINTED_MS };
 
 /** The templates the check pass reads, of every user, and where it keeps a check. */
 export interface CheckTemplates {
@@ -81,13 +82,16 @@ export interface CheckPassContext extends Omit<CheckContext, 'runtime' | 'networ
  * Whether the template gets a check now: it needs one, its image is approved, and its version has none — or one still
  * `running`, which a pass finds only when a hopper stopped mid-check: passes run one after the other —, or one that
  * passed `CHECK_EVERY_MS` ago or more (issue #715), or one that failed only on a network error `CHECK_RETRY_MS` ago or
- * more (issue #1468). Any other failed check waits for a person.
+ * more (issue #1468), or one that failed as the vault minted nothing for a need `CHECK_UNMINTED_MS` ago or more (issue
+ * #1845). Any other failed check waits for a person.
  */
 export function dueForCheck(t: Template, now: Date): boolean {
   if (t.readOnly !== true || !imageApproved(t)) return false;
   const c = currentCheck(t);
   if (c?.state === 'passed') return now.getTime() - Date.parse(c.at) >= CHECK_EVERY_MS;
   if (c?.state === 'failed' && c.transient) return now.getTime() - Date.parse(c.at) >= CHECK_RETRY_MS;
+  // Issue #1845: what the vault can mint changes outside the hopper too (a cluster made, a trust policy fixed).
+  if (unmintedNeeds(t).length > 0) return now.getTime() - Date.parse(c!.at) >= CHECK_UNMINTED_MS;
   return c?.state !== 'failed';
 }
 

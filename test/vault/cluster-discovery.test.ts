@@ -67,6 +67,7 @@ function fakeMinter(has: string[], refuse: string[] = []): Fake {
       if (refuse.some((a) => r.roleArn.includes(`::${a}:`))) throw new Error(`STS refused AssumeRole on ${r.roleArn}: AccessDenied`);
       return { kind: 'aws', AccessKeyId: `ASIA-${r.roleArn}`, SecretAccessKey: 's', SessionToken: 't', Expiration: '2030-01-01T00:15:00Z' };
     },
+    async awsRegions(_session, r) { return [r.region]; },
     async eksCluster(session, r): Promise<EksCluster | undefined> {
       const account = /::(\d{12}):/.exec(session.AccessKeyId)![1]!;
       fake.described.push(`${account} ${r.region} ${r.cluster}${r.endpoint ? ` at ${r.endpoint}` : ''}`);
@@ -123,7 +124,7 @@ describe('a mint for a discovered cluster', () => {
 
   it('picks no account of several that have the cluster', async () => {
     const made = await fromHere(fakeMinter([UAT, PROD]))(discovery, clusterTarget('uat'), 'job-1');
-    expect(made).toEqual({ refused: expect.stringMatching(/EKS has a cluster uat in 2 accounts: 111111111111 \(MINTER_UAT\), 222222222222 \(MINTER_PROD\)/) });
+    expect(made).toEqual({ refused: expect.stringMatching(/EKS has a cluster uat in 2 places: 111111111111 in eu-west-1 \(MINTER_UAT\), 222222222222 in us-east-2 \(MINTER_PROD\)/) });
   });
 });
 
@@ -136,6 +137,7 @@ describe('a mint test of a discovered cluster', () => {
       tested: {
         kind: 'kube', asset: { kind: 'cluster', name: 'uat' }, credential: 'MINTER_UAT', server: SERVER, expiresAt: '2030-01-01T00:14:00.000Z',
         roleArn: `arn:aws:iam::${UAT}:role/hopper-read`, account: UAT, sessionName: 'hopper-mint-test',
+        region: 'eu-west-1', searched: [{ account: UAT, regions: ['eu-west-1'] }, { account: PROD, regions: ['us-east-2'] }],
         user: { username: `as eks:ASIA-arn:aws:iam::${UAT}:role/hopper-read:uat`, groups: ['hopper:view'] }, namespaces: ['web'],
       },
     });

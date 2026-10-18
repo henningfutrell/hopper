@@ -1,0 +1,1 @@
+- In Settings → Access you can now say how much trust a job needs to get a credential for an operation: a job below it does not get the credential, whatever its template is approved for.

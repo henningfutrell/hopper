@@ -16,8 +16,8 @@ import type { IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/int
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
 import { DONE_OPEN } from './discover.ts';
 
-/** An issue's origin: trusted or approved (it may be taken), else the request card a person approves. */
-export type OriginVerdict = { origin: JobOrigin } | { request: IntakeRequest };
+/** An issue's origin: trusted or approved (it may be taken), with its acts (issue #655 part 14), else the request card a person approves. */
+export type OriginVerdict = { origin: JobOrigin; acts: OriginActor[] } | { request: IntakeRequest };
 
 export const REQUEST_REASON = 'a request: approve it to take it';
 /** A reopened card (issue #1126). */
@@ -88,8 +88,8 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
     ];
     const approved = trust.approvedText(i.url);
     const hash = requestHash(i);
-    if (why.length === 0) verdicts.set(i.url, { origin: 'trusted' });
-    else if (approved && requestHash(approved) === hash) verdicts.set(i.url, { origin: 'approved' });
+    if (why.length === 0) verdicts.set(i.url, { origin: 'trusted', acts: actors });
+    else if (approved && requestHash(approved) === hash) verdicts.set(i.url, { origin: 'approved', acts: actors });
     else verdicts.set(i.url, { request: { hash, title: i.title, body: i.body, author: i.author, actors, why, ...(approved ? { approved } : {}) } });
   }
   return verdicts;

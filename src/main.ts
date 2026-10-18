@@ -181,8 +181,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // (src/machines/hopper-address.ts); a container target, the user's link base, the public URL, else a LAN name, an
   // address first (src/github-proxy/reach.ts).
   const proxyUrl = (m: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined => m.ssh ? m.hopperUrl : jobHopperUrl({ machine: m, dialled, linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
-  // Access (issue #559): the instance's. Who is live (issue #581): each user's live jobs, each on the machine it runs on,
-  // and each box with its template; a template is rated from every user's vault templates of its name (issue #584).
+  // Access (issue #559): the instance's. Who is live (issue #581): each user's live jobs, each on the machine it runs on
+  // and with the level its stamp verifies at (issue #655, part 15), and each box with its template; a template is rated from every user's vault templates of its name (issue #584).
   // Made before the runtimes: each user's vault approves profiles in it.
   const fgaKey = runtimeSecrets(env);
   const access = createAccess({
@@ -192,8 +192,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     requesters: () => runtimes.all().map((rt) => ({
       userId: rt.user.id,
       jobs: rt.store.jobs.list({ status: [...LIVE_JOB_STATUSES] }).map((j) => {
-        const machine = machineOfLane(j.laneId) ?? j.resumeOn;
-        return { jobId: j.id, ...(machine === undefined ? {} : { machine }) };
+        const machine = machineOfLane(j.laneId) ?? j.resumeOn, trust = rt.store.jobs.trustLevel(j);
+        return { jobId: j.id, ...(machine === undefined ? {} : { machine }), ...(trust === undefined ? {} : { trust }) };
       }),
       boxes: rt.vault.boxes(),
     })),

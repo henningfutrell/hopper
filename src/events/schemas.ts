@@ -106,7 +106,7 @@ const divergence = strict({
 const phase = z.enum(JOB_PHASES);
 const reviewKind = z.enum(REVIEW_KINDS);
 // `changeKinds` (additive, issue #1076): absent on a change made before it, and while the built-in rule holds.
-const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()), changeKinds: changeKinds.optional() });
+const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()), changeKinds: changeKinds.optional(), push: z.array(z.string()).optional() });
 // `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
 const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
 const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
@@ -367,10 +367,10 @@ export const EVENT_SCHEMAS = {
   // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
   // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on
   // the job's stream, or `settled` or `none`. A poll (issue #1210): `poll`, how many times the job asked the same read in the window.
-  // An issue create or comment (issue #1607): `key`, the resend key hopper-gh sent with it.
+  // An issue create or comment (issue #1607): `key`, the resend key hopper-gh sent with it. A direct push (issue #1806): `direct`, the refs it moved straight on the target branch.
   'github_proxy.done': z.union([
     strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional(), key: z.string().optional(), replayed: z.literal(true).optional() }),
-    strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
+    strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()), direct: z.array(z.string()).optional() }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),
   // A push the shrink guard refused (issue #1096): the files it would empty or shrink.

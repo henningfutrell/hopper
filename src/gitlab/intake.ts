@@ -16,7 +16,7 @@ export const NOT_ON_GITLAB = 'not offered on GitLab: only Approve and Decline on
  * A GitLab issue's origin: trusted or approved (it may be taken), else the request card a person approves, with who added
  * `hopper:high` when it has it (for auto-approval).
  */
-export type GitLabVerdict = { origin: JobOrigin } | { request: IntakeRequest; high?: OriginActor };
+export type GitLabVerdict = { origin: JobOrigin; acts: OriginActor[] } | { request: IntakeRequest; high?: OriginActor };
 
 /** The text an issue's request is of: its title and description, as GitHub's title and body. */
 const textOf = (i: Pick<GitLabIssue, 'title' | 'description'>) => ({ title: i.title, body: i.description });
@@ -27,15 +27,15 @@ const textOf = (i: Pick<GitLabIssue, 'title' | 'description'>) => ({ title: i.ti
  * `hopper:high`, when it has it.
  */
 export function gitlabVerdict(i: GitLabIssue, acts: readonly GitLabAct[], why: readonly string[], trusted: ReadonlyMap<number, boolean>, trust: Pick<IntakeTrust, 'approvedText'>, high?: GitLabAct): GitLabVerdict {
-  if (why.length === 0) return { origin: 'trusted' };
-  const text = textOf(i);
-  const hash = requestHash(text);
-  const approved = trust.approvedText(i.url);
-  if (approved && requestHash(approved) === hash) return { origin: 'approved' };
   const actor = (a: GitLabAct): OriginActor => ({
     role: a.role, ...(a.account ? { login: a.account } : {}), ...(a.userId !== undefined ? { id: a.userId } : {}),
     trusted: a.userId !== undefined && trusted.get(a.userId) === true,
   });
+  if (why.length === 0) return { origin: 'trusted', acts: acts.map(actor) };
+  const text = textOf(i);
+  const hash = requestHash(text);
+  const approved = trust.approvedText(i.url);
+  if (approved && requestHash(approved) === hash) return { origin: 'approved', acts: acts.map(actor) };
   const request = { hash, ...text, author: i.author, actors: acts.map(actor), why: [...why], ...(approved ? { approved } : {}) };
   return { request, ...(high ? { high: actor(high) } : {}) };
 }

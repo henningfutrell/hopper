@@ -66,7 +66,9 @@ required child: the hopper links it as a sub-issue of this job's issue, which is
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work, never to a default or a release branch: on this job's own repository, or
 on any other repository your user can push to when the change belongs there (its issue stays on this job's own: the
-pull request body says "Closes OWNER/NAME#N" with this job's issue). When GitHub gives your user no write access there,
+pull request body says "Closes OWNER/NAME#N" with this job's issue). Only where a person turned on direct push for a
+repository, a push may go straight to its target branch (its landing branch, else its default branch), and only as a
+fast-forward: never rewrite it. When GitHub gives your user no write access there,
 the push is refused and says so. A pull request: push the branch first (git push), on the repository the pull request
 is opened on. On a repository the hopper does not work on, a job opens a pull request, and marks ready, edits or closes
 only the one it opened; it files no issue there.

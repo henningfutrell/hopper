@@ -170,6 +170,9 @@ export const refusedReads = (c: ReadOnlyCheck): string[] =>
 /** The probes that failed, in words: `<id> on <asset>`. */
 export const failedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => !p.passed).map((p) => `${p.id} on ${p.asset} (${p.outcome})`);
 
+/** How soon a check that failed as the vault minted nothing for a need runs again by itself (issue #1845). */
+export const CHECK_UNMINTED_MS = 60 * 60_000;
+
 /**
  * The needs a failed check of the template's current version got no credential for (issue #1779); empty when it did not
  * fail so, or failed on a network error, which the check pass runs again by itself.
@@ -189,6 +192,7 @@ export function checkWait(t: CheckedTemplate): string | undefined {
   if (c.state === 'running') return `${wait}: it runs now`;
   const failed = [...failedProbes(c), ...(c.problem ? [c.problem] : [])];
   if (c.transient) return `${wait}: it failed on a network error (${failed.join('; ')}). The hopper runs it again in a few minutes`;
+  if (unmintedNeeds(t).length > 0) return `${wait}: it failed (${failed.join('; ')}). The hopper runs it again in an hour, or when a minting credential for its account or cluster is set. A person runs it again in Settings → Vault, or with hopper template check ${t.name}`;
   return `${wait}: it failed (${failed.join('; ')}). A person runs it again in Settings → Vault, or with hopper template check ${t.name}`;
 }
 

@@ -138,6 +138,42 @@
             "trusted",
             "approved"
           ]
+        },
+        "originActs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "author",
+                  "labelled",
+                  "assigned",
+                  "edited"
+                ]
+              },
+              "login": {
+                "type": "string"
+              },
+              "id": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "app": {
+                "type": "string"
+              },
+              "trusted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "role",
+              "trusted"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

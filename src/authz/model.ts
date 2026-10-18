@@ -6,6 +6,7 @@
 // asks (`modelGaps`).
 import { transformer } from '@openfga/syntax-transformer';
 import { OPERATIONS } from '../domain/types.ts';
+import { TRUST_MODEL, TRUST_WRITTEN } from './trust-model.ts';
 
 export const DEFAULT_ACCESS_MODEL = `model
   schema 1.1
@@ -32,12 +33,7 @@ type template
     define instance_of: [machine]
     define requester: running or instance_of or runs_on from instance_of or owner from instance_of
 
-# An operation on an asset, as read/cluster/x. A template approved for it lets its requesters do the operation.
-type operation_profile
-  relations
-    define approved_for: [template]
-    define requester: requester from approved_for
-
+${TRUST_MODEL}
 # What a credential is for: a cluster, a namespace, an Argo CD app, a Terraform workspace, an AWS account or role.
 type asset
   relations
@@ -280,6 +276,11 @@ export function terminalGaps(model: ModelJson): string[] {
 /** What the model lacks for a machine's terminal (issue #1128); empty: attaching is decided. A gap here denies every attach. */
 export function machineTerminalGaps(model: ModelJson): string[] {
   return gapsIn(model, MACHINE_TERMINAL_WRITTEN, MACHINE_TERMINAL_ASKED);
+}
+
+/** What the model lacks for trust (issue #655, part 15); empty: jobs hold their trust. A gap: no trust tuple, and no minimum trust. */
+export function trustGaps(model: ModelJson): string[] {
+  return gapsIn(model, TRUST_WRITTEN, []);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {

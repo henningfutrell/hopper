@@ -15,6 +15,9 @@
 // push's pack, by the user's side before anything reaches GitHub; a push that brings in the branch's base — its open pull
 // request's base, else the repository's landing branch, else its default branch (issue #1147) — and empties or shrinks a file the branch's own change did not is refused with the files named, as git's own refusal,
 // and the refusal (`github_proxy.refused`) carries them (`shrunk`).
+// Direct push (issue #1806): with it on for the repository, a person's setting, a push may go straight to the target branch
+// — the landing branch, else the default branch — but only as a fast-forward, as the user's mirror reads it with the push's
+// pack; a push the hopper cannot check is refused, never taken. The push's event names those refs (`direct`).
 import { Readable } from 'node:stream';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
@@ -60,6 +63,10 @@ export interface GitUser {
    * the base branch `base`. Refused: the files and why. Absent: no guard.
    */
   shrinkGuard?(push: { repo: string; base: string; old: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; shrunk: ShrunkFile[]; reason: string }>;
+  /** Direct push (issue #1806): whether a job may push straight to `repo`'s target branch. Absent: never. */
+  directPush?(repo: string): boolean;
+  /** Whether a push from `old` to `new`, with its pack, is a fast-forward (issue #1806); undefined: git cannot say. Absent: no direct push is taken. */
+  fastForward?(push: { repo: string; old: string; new: string; pack: Buffer }): Promise<boolean | undefined>;
 }
 
 /** A git request as the route gets it: the path after `/job/git/`, the query's `service`, the headers git sent, the body. */
@@ -209,6 +216,7 @@ export function createGitProxy(o: GitProxyOptions) {
         }
       }
       let refs: RefUpdate[] = [];
+      let direct: RefUpdate[] = [];
       if (push && !at.advertise) {
         let plain: Buffer;
         try { plain = r.contentEncoding === 'gzip' ? await unpack(r.body ?? Buffer.alloc(0)) : r.body ?? Buffer.alloc(0); } catch { return refuse('not a git push'); }
@@ -216,10 +224,21 @@ export function createGitProxy(o: GitProxyOptions) {
         const read = receivePackCommands(plain);
         if (!read.ok) return refuse(read.reason);
         refs = read.commands;
-        const allowed = checkPush(refs, { defaultBranch: facts!.defaultBranch });
+        const target = side.directPush?.(at.repo) ? side.landingBranch?.(at.repo) ?? facts!.defaultBranch : undefined;
+        const allowed = checkPush(refs, { defaultBranch: facts!.defaultBranch, ...(target ? { direct: target } : {}) });
         if (!allowed.ok) {
           record('github_proxy.refused', { refs: refs.map((c) => c.ref), reason: allowed.reason });
           return refusedReport(plain, refs, allowed.reason);
+        }
+        direct = target ? refs.filter((c) => same(c.ref, `refs/heads/${target}`)) : [];
+        for (const c of direct.filter((x) => !ZERO.test(x.old))) {
+          const ff = side.fastForward ? await side.fastForward({ repo: at.repo, old: c.old, new: c.new, pack: read.pack }).catch(() => undefined) : undefined;
+          if (ff === true) continue;
+          const reason = ff === false
+            ? `a job pushes to ${target} only a fast-forward: fetch it, put your commits on top, and push again`
+            : `the hopper could not check that the push to ${target} is a fast-forward: push a new branch and open a pull request`;
+          record('github_proxy.refused', { refs: refs.map((x) => x.ref), reason });
+          return refusedReport(plain, refs, reason);
         }
         if (side.shrinkGuard && facts?.defaultBranch) {
           const defaultBranch = facts.defaultBranch;
@@ -242,7 +261,7 @@ export function createGitProxy(o: GitProxyOptions) {
       try {
         const answer = await forward(r, at, git);
         if (push && !at.advertise) {
-          if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref) });
+          if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
           else record('github_proxy.failed', { refs: refs.map((c) => c.ref), error: `GitHub answered ${answer.status}` });
         }
         return answer;

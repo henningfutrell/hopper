@@ -4,17 +4,21 @@
 // yolo mode's one switch (issue #897): the header and Pull requests show it and link here.
 // Change kinds (issue #1076): below it, each kind's merge gate under the built-in rule, and the admin's own rules over it
 // as JSON — per repository or for every one —, saved whole; empty is the built-in rule again.
+// Direct push (issue #1806): below them, the repositories where a job may push straight to the target branch, one a line,
+// with the warning that says what it allows. A repository the hopper does not work on (issue #1806 part 3) is added by
+// name, on: the switch for every job repository does not reach it.
 import { JsonBlock } from '@/components/json-block';
 import { TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import type { ChangeKind, YoloModeView } from '@/model/wire';
-import { YOLO_WARNING, changeKindsText, gateText, parseChangeKinds, yoloPatch, yoloRows, yoloSummary, type YoloDraft, type YoloSetting } from '@/model/yolo-mode';
+import { DIRECT_PUSH_WARNING, OUTSIDE_YOLO_WARNING, YOLO_WARNING, addYoloRepo, changeKindsText, directPushPatch, directPushText, gateText, parseChangeKinds, yoloPatch, yoloRows, yoloSummary, type YoloDraft, type YoloSetting } from '@/model/yolo-mode';
 import { useHopper } from '@/store';
 import { setPolled } from '@/store/polled';
 
@@ -23,11 +27,17 @@ const SETTING_LABEL: Record<YoloSetting, (on: boolean) => string> = {
   on: () => 'Merges',
   off: () => 'Does not merge',
 };
+/** A repository that is no job repository (issue #1806): the default does not merge there, whatever the switch says. */
+const OUTSIDE_DEFAULT = 'Does not merge (not a job repository)';
 
 function Form({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloModeView) => void }) {
-  const rows = yoloRows(view);
-  const [draft, setDraft] = useState<YoloDraft>({ on: view.on, repos: Object.fromEntries(rows.map((r) => [r.repo, r.setting])) });
+  const listed = yoloRows(view);
+  const [draft, setDraft] = useState<YoloDraft>({ on: view.on, repos: Object.fromEntries(listed.map((r) => [r.repo, r.setting])) });
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState('');
+  const added = addYoloRepo(draft, adding);
+  // The rows, and each repository added to the draft and not saved yet: none of the job repositories.
+  const rows = [...listed, ...Object.keys(draft.repos).filter((r) => !listed.some((l) => l.repo === r)).map((repo) => ({ repo, outside: true as const }))];
   const patch = yoloPatch(view, draft);
   const save = async () => {
     if (!patch) return;
@@ -59,12 +69,21 @@ function Form({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloModeView
               <span className="min-w-48 font-mono text-xs">{r.repo}</span>
               <select className="h-8 rounded-md border bg-background px-2 text-xs" aria-label={`Yolo mode for ${r.repo}`} disabled={busy}
                 value={draft.repos[r.repo] ?? 'default'} onChange={(e) => setDraft({ ...draft, repos: { ...draft.repos, [r.repo]: e.target.value as YoloSetting } })}>
-                {(['default', 'on', 'off'] as const).map((s) => <option key={s} value={s}>{SETTING_LABEL[s](draft.on)}</option>)}
+                {(['default', 'on', 'off'] as const).map((s) => <option key={s} value={s}>{s === 'default' && r.outside ? OUTSIDE_DEFAULT : SETTING_LABEL[s](draft.on)}</option>)}
               </select>
+              {r.outside && <span data-slot="yolo-outside" className="text-xs text-muted-foreground">not a job repository</span>}
             </label>
           ))}
         </fieldset>
       )}
+      <div data-slot="yolo-add" className="space-y-1">
+        <p role="note" data-slot="yolo-outside-warning" className="text-xs text-muted-foreground">{OUTSIDE_YOLO_WARNING}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input aria-label="Another repository" className="h-8 w-56 font-mono text-xs" placeholder="owner/repo" disabled={busy} value={adding} onChange={(e) => setAdding(e.target.value)} />
+          <Button size="sm" variant="outline" disabled={busy || !added.ok} onClick={() => { if (added.ok) { setDraft(added.draft); setAdding(''); } }}>Add, on</Button>
+          {adding.trim() !== '' && !added.ok && <span className="text-xs text-destructive">{added.error}</span>}
+        </div>
+      </div>
       <Button size="sm" disabled={busy || !patch} onClick={() => void save()}>Save</Button>
     </div>
   );
@@ -118,6 +137,39 @@ function ChangeKinds({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloM
   );
 }
 
+/** Direct push (issue #1806): the repositories where a job may push straight to the target branch, one a line. */
+function DirectPush({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloModeView) => void }) {
+  const [text, setText] = useState(directPushText(view));
+  const [busy, setBusy] = useState(false);
+  const parsed = directPushPatch(view, text);
+  const save = async () => {
+    if (!parsed.ok || !parsed.value) return;
+    setBusy(true);
+    try {
+      onSaved(await post<YoloModeView>('/ui/api/yolo-mode', parsed.value));
+      toast.success('Direct push saved');
+    } catch (e) {
+      if (e instanceof SessionRejected) useHopper.setState({ authed: false, user: null });
+      toast.error(e instanceof RoleRefused ? 'Only an admin changes direct push' : (e as Error).message);
+    }
+    setBusy(false);
+  };
+  return (
+    <div data-slot="direct-push" className="space-y-2 border-t pt-3 text-sm">
+      <p className="font-medium">Direct push</p>
+      <p role="note" data-slot="direct-push-warning" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+        <TriangleAlert className="size-4 shrink-0 text-amber-600" />{DIRECT_PUSH_WARNING}
+      </p>
+      <label className="grid gap-1 text-xs">
+        Repositories where a job may push straight to the target branch (owner/repo, one a line; empty: none)
+        <Textarea aria-label="Direct push repositories" rows={3} className="font-mono text-xs" disabled={busy} value={text} onChange={(e) => setText(e.target.value)} placeholder="owner/repo" />
+      </label>
+      {!parsed.ok && <p role="alert" className="text-xs text-bad">{parsed.error}</p>}
+      <Button size="sm" disabled={busy || !parsed.ok || !parsed.value} onClick={() => void save()}>Save direct push</Button>
+    </div>
+  );
+}
+
 /** Read when shown; keyed by the saved values, so a save starts the form from them. */
 export function YoloMode() {
   const [view, setView] = useState<YoloModeView | null>(null);
@@ -129,6 +181,7 @@ export function YoloMode() {
         <div className="space-y-4">
           <Form key={JSON.stringify(view)} view={view} onSaved={(v) => { setView(v); setPolled('/api/yolo-mode', v); }} />
           <ChangeKinds key={`kinds-${JSON.stringify(view.changeKinds ?? null)}`} view={view} onSaved={(v) => { setView(v); setPolled('/api/yolo-mode', v); }} />
+          <DirectPush key={`push-${JSON.stringify(view.push ?? [])}`} view={view} onSaved={(v) => { setView(v); setPolled('/api/yolo-mode', v); }} />
         </div>
       ) : <p className="text-sm text-muted-foreground">Loading…</p>}
     </Panel>

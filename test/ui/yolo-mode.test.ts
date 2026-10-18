@@ -1,7 +1,7 @@
 // Yolo mode in the UI (issue #579), pure: one row per job repository and per repository set apart, each saying
 // whether its jobs may merge and why; the summary; and the change a save sends — only what differs.
 import { describe, expect, it } from 'vitest';
-import { YOLO_WARNING, changeKindsText, gateText, parseChangeKinds, repoMerges, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
+import { DIRECT_PUSH_WARNING, OUTSIDE_YOLO_WARNING, YOLO_WARNING, addYoloRepo, changeKindsText, directPushPatch, directPushText, gateText, parseChangeKinds, repoMerges, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
 
 const view = (on: boolean, repos: Record<string, boolean> = {}, choices = ['owner/a', 'owner/b']) => ({ on, repos, choices: { repos: choices } });
 
@@ -10,7 +10,7 @@ describe('yolo mode model', () => {
     expect(yoloRows(view(false, { 'owner/b': true, 'owner/gone': false }))).toEqual([
       { repo: 'owner/a', setting: 'default', merges: false },
       { repo: 'owner/b', setting: 'on', merges: true },
-      { repo: 'owner/gone', setting: 'off', merges: false },
+      { repo: 'owner/gone', setting: 'off', merges: false, outside: true },
     ]);
     expect(yoloRows(view(true, { 'owner/a': false }, ['Owner/A', 'owner/b']))).toEqual([
       { repo: 'Owner/A', setting: 'off', merges: false },
@@ -37,7 +37,25 @@ describe('yolo mode model', () => {
     expect(repoMerges(v, 'Owner/B')).toBe(true);
     expect(repoMerges(v, 'owner/a')).toBe(false);
     expect(repoMerges(view(true, { 'owner/a': false }), 'owner/a')).toBe(false);
-    expect(repoMerges(view(true), 'owner/c')).toBe(true);
+    expect(repoMerges(view(true), 'owner/c')).toBe(false);
+  });
+
+  it('a repository the hopper does not work on (issue #1806): merges only when named on, never by the default', () => {
+    expect(yoloRows(view(true, { 'zed/tool': true, 'zed/web': false }))).toEqual([
+      { repo: 'owner/a', setting: 'default', merges: true },
+      { repo: 'owner/b', setting: 'default', merges: true },
+      { repo: 'zed/tool', setting: 'on', merges: true, outside: true },
+      { repo: 'zed/web', setting: 'off', merges: false, outside: true },
+    ]);
+    expect(repoMerges(view(true, { 'zed/tool': true }), 'Zed/Tool')).toBe(true);
+    expect(OUTSIDE_YOLO_WARNING).toContain('not one of your job repositories');
+  });
+
+  it('adds a repository by name, on, to the draft: owner/repo only, lowercased, once', () => {
+    const d = { on: false, repos: { 'owner/a': 'default' as const } };
+    expect(addYoloRepo(d, ' Zed/Tool ')).toEqual({ ok: true, draft: { on: false, repos: { 'owner/a': 'default', 'zed/tool': 'on' } } });
+    expect(addYoloRepo(d, 'Owner/A')).toEqual({ ok: false, error: 'owner/a is listed already' });
+    expect(addYoloRepo(d, 'tool')).toEqual({ ok: false, error: 'name a repository as owner/repo' });
   });
 
   it('the warning says what it allows', () => {
@@ -64,4 +82,15 @@ describe('change kinds in the yolo mode panel (issue #1076)', () => {
     expect(gateText('yolo')).toBe('merged when ready only with yolo mode on');
     expect(gateText('person')).toBe('only a person merges');
   });
+
+  it('direct push (issue #1806): the list as text, one repository a line, and the change a save sends', () => {
+    expect(directPushText({ ...view(false), push: ['acme/api', 'zed/tool'] })).toBe('acme/api\nzed/tool');
+    expect(directPushText(view(false))).toBe('');
+    expect(directPushPatch(view(false), ' Acme/API \n\nzed/tool\n')).toEqual({ ok: true, value: { push: ['acme/api', 'zed/tool'] } });
+    expect(directPushPatch({ ...view(false), push: ['acme/api'] }, 'acme/api')).toEqual({ ok: true, value: undefined });
+    expect(directPushPatch({ ...view(false), push: ['acme/api'] }, '')).toEqual({ ok: true, value: { push: [] } });
+    expect(directPushPatch(view(false), 'not a repo')).toEqual({ ok: false, error: 'not owner/repo: not a repo' });
+    expect(DIRECT_PUSH_WARNING).toContain('no person reviews');
+  });
 });
+

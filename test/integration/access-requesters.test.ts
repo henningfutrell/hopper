@@ -142,7 +142,7 @@ describe('requesters in Access (issue #581)', () => {
     const profile = { operation: 'read', asset: PROD };
     expect(rows).toEqual([
       { requester: { kind: 'user', userId: user }, grants: [{ profile, path: expect.any(Array) }] },
-      { requester: { kind: 'job', userId: user, jobId: job }, template: 'kube', machine: 'kbox', grants: [{ profile, path: expect.any(Array) }] },
+      { requester: { kind: 'job', userId: user, jobId: job }, template: 'kube', machine: 'kbox', trust: 'approved', grants: [{ profile, path: expect.any(Array) }] },
       { requester: { kind: 'machine', userId: user, machine: 'kbox' }, template: 'kube', grants: [{ profile, path: expect.any(Array) }] },
     ]);
   });

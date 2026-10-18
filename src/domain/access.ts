@@ -4,6 +4,7 @@
 // operation, an asset, and the operation profile that is an operation on an asset. The approvals and the model are the
 // hopper's, rows in its database, pushed to OpenFGA with the tuples of who is live; every decision is recorded.
 import type { TemplateRadius } from './blast-radius.ts';
+import type { TrustLevel } from './trust-stamp.ts';
 import { backendProblem, type StateBackend } from './state-backend.ts';
 
 /** What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). */
@@ -58,10 +59,14 @@ export interface MintRequest {
  */
 export interface CheckMintRequest { template: string; check: string; operation: Operation; asset: Asset }
 
-/** Who is live now, of one user, as the hopper writes it to OpenFGA: each live job with the machine it runs on, and each box with the template it joined as. */
+/**
+ * Who is live now, of one user, as the hopper writes it to OpenFGA: each live job with the machine it runs on and the
+ * level its stamp verifies at (issue #655, part 15; none: no stamp verifies, or no stamp key), and each box with the
+ * template it joined as.
+ */
 export interface LiveRequesters {
   userId: string;
-  jobs: { jobId: string; machine?: string }[];
+  jobs: { jobId: string; machine?: string; trust?: TrustLevel }[];
   boxes: { machine: string; template: string }[];
 }
 
@@ -71,6 +76,8 @@ export interface RequesterRow {
   /** A job's or a box's template now; a job's machine. */
   template?: string;
   machine?: string;
+  /** A job's trust level, as OpenFGA holds it (issue #655, part 15). */
+  trust?: TrustLevel;
   grants: { profile: OperationProfile; path: RelationshipTuple[] }[];
 }
 
@@ -92,7 +99,8 @@ export interface MintDecision {
  */
 export interface AccessDecisionRecord extends MintDecision {
   requester?: Requester;
-  trial?: { by: string };
+  /** `level`: the trust level the trial's made-up job was told (issue #655, part 15); none: owner. */
+  trial?: { by: string; level?: TrustLevel };
   check?: { box: string };
   template?: string;
   operation: Operation;
@@ -145,13 +153,19 @@ export interface AccessView {
   requesters: RequesterRow[];
   /** The newest decisions, newest first. */
   decisions: AccessDecisionRecord[];
+  /** Each operation profile with a minimum trust (issue #655, part 15): no job below it is its requester. */
+  minTrust: MinTrust[];
 }
+
+/** An operation profile's minimum trust (issue #655, part 15), who set it and when. */
+export interface MinTrust { profile: OperationProfile; level: TrustLevel; setBy: string; setAt: string }
 
 /** POST /ui/api/access: approve (what the vault's gate, issue #558, writes), revoke, try a check, or save the model. */
 export type AccessEdit =
   | { action: 'approve'; template: string; operation: Operation; asset: Asset }
   | { action: 'revoke'; approval: number }
-  | { action: 'check'; template: string; operation: Operation; asset: Asset }
+  | { action: 'check'; template: string; operation: Operation; asset: Asset; level?: TrustLevel }
+  | { action: 'min-trust'; operation: Operation; asset: Asset; level: TrustLevel | null }
   | { action: 'model'; dsl: string; version: number };
 
 /**

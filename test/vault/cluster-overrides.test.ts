@@ -93,6 +93,7 @@ function fakeMinter(has: string): Fake {
       fake.assumed.push(r.roleArn);
       return { kind: 'aws', AccessKeyId: `ASIA-${r.roleArn}`, SecretAccessKey: 's', SessionToken: 't', Expiration: '2030-01-01T00:15:00Z' };
     },
+    async awsRegions(_session, r) { return [r.region]; },
     async eksCluster(session, r): Promise<EksCluster | undefined> {
       const account = /::(\d{12}):/.exec(session.AccessKeyId)![1]!;
       fake.described.push(`${account} ${r.region} ${r.cluster}`);

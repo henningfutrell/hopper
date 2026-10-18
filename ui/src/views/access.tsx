@@ -1,9 +1,10 @@
 // Settings → Access (issue #559): OpenFGA decides each credential a job is given. Whether OpenFGA can be asked, and
 // why not (every credential is denied meanwhile); each template's approvals, each with the relationship chain from
 // the template to the asset and Revoke (the next check is denied), and its blast radius with the reasons (issue #584);
-// a check tried for a template, an operation and an asset, answered with its path; the newest decisions; and the access
-// model, saved against the version read. Who may do what is the permission matrix's (issue #559), linked from here. The
-// instance admin's alone: anyone else is told so.
+// each operation's minimum trust (issue #655, ./min-trust.tsx); a check tried for a template, an operation, an asset and
+// a job's trust level, answered with its path; the newest decisions; and the access model, saved against the version
+// read. Who may do what is the permission matrix's (issue #559), linked from here. The instance admin's alone: anyone
+// else is told so.
 import { KeySquare } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
@@ -19,7 +20,8 @@ import { usePoll } from '@/hooks/use-poll';
 import { get, post } from '@/lib/api';
 import { chainText, requesterText } from '@/model/access';
 import { clock } from '@/model/format';
-import type { AccessDecisionRecord, AccessStatus, AccessView, Approval, Operation, AssetKind } from '@/model/wire';
+import type { AccessDecisionRecord, AccessStatus, AccessView, Approval, MinTrust, Operation, AssetKind } from '@/model/wire';
+import { MIN_LEVELS, MinTrustPanel } from './min-trust';
 
 const POLL_MS = 10_000;
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
@@ -113,19 +115,20 @@ function Check() {
   const [operation, setOperation] = useState<Operation>('read');
   const [kind, setKind] = useState<AssetKind>('cluster');
   const [asset, setAsset] = useState('');
+  const [level, setLevel] = useState<MinTrust['level']>('owner');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AccessDecisionRecord | undefined>();
   const check = async () => {
     setBusy(true);
     try {
-      setResult(await post<AccessDecisionRecord>('/ui/api/access', { action: 'check', template, operation, asset: { kind, name: asset } }));
+      setResult(await post<AccessDecisionRecord>('/ui/api/access', { action: 'check', template, operation, asset: { kind, name: asset }, ...(level === 'owner' ? {} : { level }) }));
     } catch (e) { toast.error((e as Error).message); }
     setBusy(false);
   };
   return (
     <Panel title="Try a check" icon={KeySquare}>
       <div data-slot="access-check" className="space-y-2 text-sm">
-        <p className="text-muted-foreground">What a live job from this template would get now: OpenFGA is asked as for a real credential, and the answer is recorded.</p>
+        <p className="text-muted-foreground">What a live job from this template, at the trust level chosen, would get now: OpenFGA is asked as for a real credential, and the answer is recorded.</p>
         <div className="flex flex-wrap items-end gap-2">
           <label className="grid gap-1"><span className="text-xs text-muted-foreground">Template</span>
             <Input name="template" className="h-8 w-44" value={template} disabled={busy} onChange={(e) => setTemplate(e.target.value)} /></label>
@@ -139,6 +142,10 @@ function Check() {
             </select></label>
           <label className="grid gap-1"><span className="text-xs text-muted-foreground">Asset</span>
             <Input name="asset" className="h-8 w-44" value={asset} disabled={busy} onChange={(e) => setAsset(e.target.value)} /></label>
+          <label className="grid gap-1"><span className="text-xs text-muted-foreground">Job's trust</span>
+            <select name="level" className={`${FIELD} w-32`} value={level} disabled={busy} onChange={(e) => setLevel(e.target.value as MinTrust['level'])}>
+              {MIN_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select></label>
           <Button size="sm" disabled={busy || template === '' || asset === ''} onClick={() => void check()}>Check</Button>
         </div>
         {result && <div data-check-result={result.allowed ? 'allowed' : 'denied'} className="rounded-lg border p-2 text-xs"><DecisionLine d={result} /></div>}
@@ -192,6 +199,7 @@ export function Access() {
         </div>
       </Panel>
       <Approvals view={view} onChanged={setView} />
+      <MinTrustPanel view={view} operations={OPERATIONS} kinds={ASSET_KINDS} onChanged={setView} />
       <Check />
       <Panel title="Recent decisions" icon={KeySquare} count={view.decisions.length} list>
         {view.decisions.length === 0 ? <Empty>no decisions yet</Empty> : (
@@ -199,7 +207,7 @@ export function Access() {
             {view.decisions.map((d) => (
               <li key={d.id} data-decision={d.id} data-allowed={String(d.allowed)} className="space-y-0.5 border-b py-2 text-xs last:border-b-0">
                 <span className="num font-mono text-muted-foreground" title={d.at}>{clock(d.at)}</span>
-                {' '}<span className="text-muted-foreground">{d.trial ? `tried by ${d.trial.by}` : d.check ? `read-only check ${d.check.box}` : d.requester ? requesterText(d.requester) : ''}</span>
+                {' '}<span className="text-muted-foreground">{d.trial ? `tried by ${d.trial.by}${d.trial.level ? ` at trust ${d.trial.level}` : ''}` : d.check ? `read-only check ${d.check.box}` : d.requester ? requesterText(d.requester) : ''}</span>
                 <DecisionLine d={d} />
               </li>
             ))}

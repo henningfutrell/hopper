@@ -3,13 +3,15 @@
 // token (issue #854) presigned by the AWS SDK's own signer (@smithy/signature-v4), and the Kubernetes API — a
 // TokenRequest, and for a mint test a SelfSubjectReview and the namespace list —, each one call sent with node's own
 // https and the cluster's CA, since a Kubernetes client library would cost more than the calls. A discovered cluster
-// (issue #1766) is described by EKS through the AWS SDK (@aws-sdk/client-eks). A sandbox's token
+// (issue #1766) is described by EKS through the AWS SDK (@aws-sdk/client-eks), in each region EC2 lists for its account
+// (issue #1845, @aws-sdk/client-ec2). A sandbox's token
 // (issue #1371) is bound to a Secret the minter makes for it, and deleting that Secret ends the token at once. Called
 // only after Access allowed the mint. An error says what the outside service answered, never the minting credential.
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { DescribeClusterCommand, EKSClient, ResourceNotFoundException } from '@aws-sdk/client-eks';
+import { DescribeRegionsCommand, EC2Client } from '@aws-sdk/client-ec2';
 import { HttpRequest } from '@smithy/core/protocols';
 import { Hash } from '@smithy/core/serde';
 import { SignatureV4 } from '@smithy/signature-v4';
@@ -110,7 +112,11 @@ const stsAt = (credential: AwsMintingCredential, keys: { AccessKeyId: string; Se
   maxAttempts: 1,
 });
 
+/** How long an account's regions are kept (issue #1845): an account seldom turns a region on or off. */
+const REGIONS_MS = 6 * 60 * 60_000;
+
 export function createCredentialMinter(): CredentialMinter {
+  const regions = new Map<string, { at: number; regions: string[] }>();
   return {
     async awsSession(credential, r) {
       const sts = stsAt(credential, credential);
@@ -185,6 +191,23 @@ export function createCredentialMinter(): CredentialMinter {
       } finally {
         eks.destroy();
       }
+    },
+
+    async awsRegions(session, r) {
+      const key = `${r.account} ${r.endpoint ?? ''}`;
+      const kept = regions.get(key);
+      if (kept && Date.now() - kept.at < REGIONS_MS) return kept.regions;
+      const ec2 = new EC2Client({
+        region: r.region, ...(r.endpoint ? { endpoint: r.endpoint } : {}), maxAttempts: 1,
+        credentials: { accessKeyId: session.AccessKeyId, secretAccessKey: session.SecretAccessKey, sessionToken: session.SessionToken },
+      });
+      const listed = await ec2.send(new DescribeRegionsCommand({}))
+        .catch((e: unknown) => { throw new Error(`EC2 refused DescribeRegions in ${r.region}: ${(e as Error).message}`, { cause: e }); })
+        .finally(() => ec2.destroy());
+      const names = (listed.Regions ?? []).flatMap((x) => (x.RegionName ? [x.RegionName] : [])).sort();
+      if (!names.length) throw new Error(`EC2 listed no regions in ${r.region}`);
+      regions.set(key, { at: Date.now(), regions: names });
+      return names;
     },
 
     async kubeIdentity(reach, token) {

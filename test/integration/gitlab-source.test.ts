@@ -59,6 +59,9 @@ describe('a GitLab source', () => {
     const key = `${gitlab.url}/ada/tools/-/issues/1`;
     const job = await waitFor(async () => (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.find((j) => j.source?.key === key), { what: 'the GitLab issue\'s job' });
     expect(job.source).toMatchObject({ kind: 'gitlab-account', repo: 'ada/tools', number: 1, url: key, origin: 'trusted' });
+    // Its origin acts (issue #655 part 14): who wrote it, each a trusted actor.
+    expect(job.source!.originActs).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'author', login: 'ada', trusted: true })]));
+    expect(job.source!.originActs!.every((x) => x.trusted)).toBe(true);
     expect(job.spec.payload.prompt).toContain(`git push to ${gitlab.url} go through the hopper`);
     // The job can fail before a poll sees the claim on the issue, so wait for the claim's request, not the label.
     await waitFor(() => gitlab.requests.some((r) => r.method === 'PUT' && JSON.stringify(r.body) === JSON.stringify({ add_labels: 'hopper:claimed' })) || undefined, { what: 'the claimed label at GitLab' });
@@ -83,6 +86,7 @@ describe('a GitLab source', () => {
     await app.sync();
     const bobs = await waitFor(async () => (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.find((j) => j.source?.key === card.key), { what: 'the approved card\'s job' });
     expect(bobs.source).toMatchObject({ kind: 'gitlab-account', number: 2, origin: 'approved' });
+    expect(bobs.source!.originActs).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'author', login: 'bob', trusted: false })]));
     expect(bobs.spec.payload.prompt).toContain('Do this.');
   });
 

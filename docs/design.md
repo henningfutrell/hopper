@@ -54,7 +54,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
-| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
+| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); a job's trust and a profile's minimum trust (`trust.ts`, `trust-model.ts`, issue #655); what an edit refuses (`edits.ts`); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662) | http |
@@ -2287,6 +2287,8 @@ builds a job's prompt (`JobSourceContext.yoloMode(repo)`), so a change applies t
 running job keeps what it was told. It never changes what done is. Off by default because a merge with nobody
 reviewing it is a merge nothing else stops where a repository has no branch protection, and a merge to the default
 branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
+**Direct push** (issue #1806, "Direct push" at the end) is set with it, and is no part of the merge: the repositories
+where a job may push straight to the target branch, off unless a person names one, whatever `on` says.
 Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above). Since issue #637
 yolo mode also has the **hopper** merge: following a PR waiting job's pull request (below), it merges one that is ready —
 not a draft, no merge conflicts, its checks passed, or it has none and none started within two minutes of its last push (issue #677, "No checks means ready" below; on this repository the check is `pr / test`, issue #672, `docs/deploy.md` "Local development and tests") — with a merge commit (`GitHubApi.merge`, `PUT
@@ -2426,6 +2428,8 @@ ready").
 issue's (an infrastructure change for a workflow issue). The pull request's own repository comes from its URL, never from
 the job's: the follow reads, merges, moves and closes it there; its card is in that repository's group; its yolo mode,
 change rule, landing branch and tending queue are that repository's (`jobPullRequestRepo`, `src/domain/pull-requests.ts`).
+On a repository the hopper does not work on, yolo mode is on only when a person named it on (issue #1806, "Yolo mode on a
+repository the hopper does not work on").
 Only its issue — labels, the close after a merge — stays in the job's repository.
 
 **A pull request stays in sight while it is open** (issue #763: open pull requests a job opened were on GitHub and not on
@@ -10733,7 +10737,11 @@ may not assume, with nothing to tell them.
 - **Run again when the credential is set.** The vault's set of a minting credential (`recheckUnminted`,
   `src/vault/checks.ts`, in the set's transaction) drops the failed check of each template with an unminted need minted
   from that account or cluster, and records `template.check_requested` `by` `minting credential <name>`. The next check
-  pass runs it. A credential for another account or cluster changes nothing.
+  pass runs it. A credential for another account or cluster changes nothing, but one for an AWS account runs again a
+  check with an unminted cluster need too, as cluster discovery looks in every account (issue #1845).
+- **Run again in an hour** (issue #1845). What the vault can mint also changes outside the hopper: a cluster made, a
+  trust policy fixed, a new build that looks in more places. A check failed so is due again `CHECK_UNMINTED_MS` (an
+  hour) after it ended (`dueForCheck`), and its wait says so.
 - **The job is told.** A template request for such a template is a 409, not a 202 wait (`requestTemplate`,
   `src/skills/template-request.ts`): it names each unminted need and the vault's reason, and the read needs on the same
   account or cluster that a check of another template passed with, to ask for in its place. `template.checked` asks a
@@ -14096,9 +14104,15 @@ type job                 owns: [user]                      # user:u owns job:u/j
 type machine             runs_on: [job]; owner: owns from runs_on          # job runs_on machine
 type template            running: [job]; instance_of: [machine]            # machine instance_of template
                          requester: running or instance_of or runs_on from instance_of or owner from instance_of
-type operation_profile   approved_for: [template]; requester: requester from approved_for
+type trust               holder: [job]                                     # job holder trust:<level> (issue #655)
+type operation_profile   approved_for: [template]; min_trust: [trust]; trust_gated: [job:*]
+                         trust_met: holder from min_trust; below_trust: trust_gated but not trust_met
+                         requester: requester from approved_for but not below_trust
 type asset               grants_<op>: [operation_profile]; can_<op>: requester from grants_<op>
 ```
+
+A **minimum trust** (issue #655 part 15, "Trust stamps") makes a job below it no requester of the profile; a profile with
+none is as the model was before it.
 
 An approval is two tuples (`approvalTuples`): the profile `grants_<op>` the asset, and the template is
 `approved_for` the profile.
@@ -14866,14 +14880,25 @@ credential is opened and never leave the vault; a system secret is never read as
 Argo CD app of it) with no minting credential of its own is found in the AWS accounts: for a `read` only, in every
 account an `aws-account` minting credential mints for (`mintSourceFor`). In each, the vault mints a read session of the
 account's **read role** `hopper-read` (`EKS_READ_ROLE`; EKS maps it to view access), as for an EKS sign-in, and asks EKS
-`DescribeCluster` with it in the credential's region (`CredentialMinter.eksCluster`, `@aws-sdk/client-eks`). The one
-account that has the cluster signs the EKS token with that session; the cluster's API server and CA are EKS's answer.
-None, or several, mint nothing, and the refusal says where the vault looked. An account STS or EKS refuses is passed
+`DescribeCluster` with it (`CredentialMinter.eksCluster`, `@aws-sdk/client-eks`) in every region the account has
+enabled (issue #1845): EC2 `DescribeRegions` with the same session (`CredentialMinter.awsRegions`, `@aws-sdk/client-ec2`,
+asked in the credential's region; the adapter keeps each account's list 6 hours). When EC2 refuses, the vault looks in
+the credential's region only, and says so. A cluster override's `region`, or a credential that names `EksEndpoint`, is
+the one region looked in. The one place (account and region) that has the cluster signs the EKS token with that
+session; the cluster's API server and CA are EKS's answer. None, or several (two accounts, or two regions of one),
+mint nothing, and the refusal says where the vault looked. An account STS refuses, or a region EKS refuses, is passed
 over. The vault picks no credential of several: an account with several refuses the discovery (issue #1761). A
 credential whose STS is not AWS's (`Endpoint`) asks no EKS unless it names `EksEndpoint`. A cluster's own minting
 credential wins, as before; a write on a cluster needs one, naming the role its write is granted to, or a cluster override (below) that names it. `vault.minted`,
 `vault.check_minted` and the mint test name the AWS minting credential the discovery used. A discovered cluster's
 token binds to no Secret (an EKS token cannot). The vault's container takes a discovery in its `mint` op (`discover`).
+
+**An EKS minting credential whose kubeconfig is gone** (issue #1845). An `eks` minting credential for a cluster that
+names a `kubeconfig` vault secret the vault no longer holds is passed over (`mintPassingOver`, `src/vault/mint.ts`, at
+every mint: a job's, a check's, a need step's, topology discovery's and the mint test): the vault mints from where
+`mintSourceFor` says with that credential left out — cluster discovery, for a read —, and the answer's `warning` says
+which credential it passed over and to fix or remove it. When that mints nothing either, the refusal gives both
+reasons. Any other refusal of a cluster's own minting credential stays a refusal: the credential still wins.
 
 **Cluster overrides** (issue #1766 part 2: config, not a vault secret, since a cluster holds no secret;
 `src/domain/clusters.ts`, `src/vault/clusters.ts`). The user's config record `clusters` (`{ "clusters": [...] }`, at
@@ -14919,7 +14944,9 @@ which namespaces it lists (`kubectl get ns`), with the token, where the minting 
 (`CredentialMinter.kubeIdentity`). The answer is the API server, the cluster's `user` (`username`, `groups`) and its
 `namespaces`, and for EKS sign-in the role, its `account` and the session name; never the token. The cluster's refusal is the answer
 (422), with its reason. An answer has `kind`: `aws` or `kube`. A discovered cluster (issue #1766) is tested the same
-way: `credential` is the AWS minting credential it was found with, `roleArn` its account's `hopper-read`.
+way: `credential` is the AWS minting credential it was found with, `roleArn` its account's `hopper-read`, `region` the
+region EKS has it in, and `searched` the regions the vault looked in, by account (issue #1845). `warning`: the cluster's
+own minting credential the vault passed over, as its kubeconfig is gone.
 
 **What is minted** for an operation profile (`mintTarget`, pure):
 
@@ -16943,7 +16970,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 13, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 15, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17304,9 +17331,62 @@ which only a template request makes (issue #716), and the hopper never narrows o
 a reason that says what to ask for. Persisted state: none — requests are kept in memory, and `deny:jev` is one more reason
 id, which the build before verifies (its MAC covers the reasons) and reads as any other.
 
-**Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
-`intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at the skill broker
-(the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+**Origin acts kept with the job** (part 14, `JobSourceRef.originActs`). The issue: "Provenance (captured at intake, stored
+with the snapshot)": the author, the nominator, and the timeline events that matter, each with its actor and `via_app`. The
+hopper already reads these to judge a job's origin (issue #652, "Trusted origin and request cards": the issue's author, and
+the newest `labeled` and `assigned` events from its events; on GitLab also who edited it), and before this part it kept only
+the verdict. Now a job of a trusted origin or of an approved request card keeps its item's **origin acts** as read then: each
+act's `role` (`author`, `labelled`, `assigned`, `edited`), `login` and GitHub or GitLab user `id` when known, `app` (an app or
+bot it was done through, `performed_via_github_app`), and `trusted` (a trusted actor did it, not through an app). A job of an
+approved card keeps the acts no trusted actor did too, so a person sees why it needed an approval.
+
+- Run again and Rework keep the acts of the job they follow, as they keep its origin; a job queued before origins were
+  judged gets them with its origin (`job.origin_judged`).
+- **Shown**: the stamp view (`originActs`, null when none is kept; `hopper job stamp`), the job view (a line `origin`,
+  each act not a trusted actor's marked), and `job.queued`'s `source`.
+- **Jev reads them**: Jev's trust check (part 4) gets them in `source.originActs`, as the issue's "plus the provenance facts".
+- **No rule reads them**: the stamp's level still comes from the job origin and the author (`ruleCeiling`). The acts are a
+  record of what the origin was judged from, not a second judge.
+- Persisted state: one optional field on the job's source. A job made before this part has none, and the build before reads
+  a job with them as before. No migration.
+
+**The stamp in OpenFGA, and a minimum trust** (part 15, `src/authz/trust.ts`, `src/authz/trust-model.ts`). The issue:
+"OpenFGA gets `trust:<level>#holder@job:<id>`. Template approvals can then require a minimum trust"; "an
+`operation_profile` has `min_trust`, and the requester must hold `trust:<level>` at or above it". So:
+
+- **Each live job holds its trust** in OpenFGA: the runtime gives Access the level each live job's stamp verifies at
+  (`trustLevel`), and the hopper writes `trust:<level>#holder@job:<user>/<job>` for that level **and each level below
+  it** (`holderTuples`), so `trust:approved#holder` is every live job at `approved` or above. A quarantined job, a job
+  whose stamp does not verify, and every job while there is no stamp key hold none. A level that changes (a deny, an edit,
+  a quarantine) is pushed with the next change of who is live, within 2 s (`REQUESTERS_CHECK_MS`); a job that is no longer
+  live loses them, as its other tuples.
+- **A minimum trust** on an operation profile (Settings → Access, panel **Minimum trust**; `POST /ui/api/access`
+  `{ action: "min-trust", operation, asset, level }`, `level: null` clears it; least role admin, the instance admin's, as
+  every edit of Access): the hopper keeps `trust:<level>#min_trust@operation_profile:<profile>` with who set it and when,
+  one per profile, and writes `job:*#trust_gated` on that profile with it (`gateTuples`, never stored). The default model
+  (`TRUST_MODEL`): `below_trust: trust_gated but not trust_met`, `trust_met: holder from min_trust`, and the profile's
+  `requester` is `requester from approved_for but not below_trust`. So a job below the minimum is no requester of the
+  profile, whatever its template's approvals say, and its mint is denied: `job <id> is at trust approved, below the
+  minimum trust trusted to read on cluster prod` (`belowMinimum`). A profile with no minimum is as before.
+- **Only a job is gated.** A box (`machine`) and a person (`user`) have no stamp: the minimum does not apply to them. The
+  vault asks each mint as the job (`src/vault/mint.ts`), so a box job is gated by its own level.
+- **A trial** (Try a check) is told a level for its made-up job (`level`, `owner` when none), and records it
+  (`trial.level`). A read-only check's mint (issue #797) is told `owner`: it tests a template, not a job's work.
+- **The permission matrix** shows each job's trust (`RequesterRow.trust`), and a path through a minimum names it and the
+  job's holder tuple (`trustedPath`); a job below it reaches no grant of that profile.
+- **A model without the trust relations** (`trustGaps`: `trust#holder`, `operation_profile#min_trust`,
+  `operation_profile#trust_gated`) writes no trust tuple and still decides mints; a minimum trust is refused (400). A model
+  that drops them is refused while a profile has a minimum (400: clear them first), so no minimum stops counting by an
+  edit. The hopper's own older default is upgraded at the start, as for every relation it writes.
+
+Persisted state: one more relation in the access tuples (`min_trust`), and the new default model as a new version. The
+build before pushes a stored minimum with the model it finds (this build's, which it keeps, since it lacks nothing that
+build needs) but writes no `trust_gated` and no holder: there, no job is below a minimum, so mints are decided as before
+this part. No migration.
+
+**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the edit count,
+the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, the rest of gate 2 at
+the skill broker (the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job
@@ -26945,3 +27025,96 @@ and branch protection on GitHub keeps the rest. Every push and pull request is a
 and opens a pull request there", "refuses a push to a repository its user cannot push to"),
 `test/github-proxy/proxy.test.ts`, `test/github-proxy/contribution.test.ts`,
 `test/integration/github-proxy.test.ts`, `test/integration/contribution.test.ts`, `test/domain/kept-work.test.ts`.
+
+## Direct push (issue #1806, part 2, 2026-10-17)
+
+The owner's decision on issue #1806 adds an opt-in yolo setting: when the user turns it on, the hopper may push straight
+to the target branch, within the user's own GitHub rights; off by default; the UI says plainly what it allows; every push
+is recorded. Part 1 ("A job pushes wherever its user can push") let a job push a branch to any repository its user can
+push to, and kept the ref check: never a default or a release branch.
+
+**The change.**
+- **The setting.** `push` in the user's yolo mode settings (`YoloModeSettings.push`, `owner/repo` lowercased, sorted):
+  the repositories where a job may push straight to the target branch. `directPushFor(settings, repo)`. Saved with yolo
+  mode (`POST /ui/api/yolo-mode`, `push` whole, empty for none; `yolo_mode.changed` carries it), an admin's act, and shown
+  in Settings → Yolo mode → Direct push, one repository a line, with a warning that says what it allows. Any repository,
+  a job repository or not. Absent: none, so a store from before reads as off and the build before it still runs on it.
+- **The target branch.** The repository's landing branch while it has landing batches (issue #1073), else its default
+  branch as GitHub says. On this repository that is `main`, never `dev`: a direct push lands where a pull request would,
+  and the batch runner still decides what reaches `dev`.
+- **The ref check** (`checkPush`, `direct`): with direct push on, the target branch leaves the kept list. Every other
+  release branch, a batch run's branch, a tag and a delete stay refused.
+- **Only a fast-forward** (`createFastForward`, `src/git-mirror/push-lines.ts`): the git broker asks, for each ref update
+  of the target branch that is there already, whether the push only adds commits on top of it. The user's mirror fetches
+  the branch's head when it lacks it, indexes the push's pack in a quarantine, and runs `git merge-base --is-ancestor`.
+  Not a fast-forward: refused (`a job pushes to <branch> only a fast-forward: …`). The hopper cannot check (no mirror, a
+  fetch that fails): refused, never taken (`the hopper could not check …`). The shrink guard runs as on any push.
+- **The record.** The push's `github_proxy.done` names the refs it moved on the target branch (`direct`), on the job's
+  timeline; a refusal is a `github_proxy.refused` with its reason.
+- `hopper-gh help` and the kept work's push brief say a push to the target branch is taken only with direct push on.
+
+**Decisions:**
+- **A setting of its own, not yolo mode's `on`.** Yolo mode is on for every job repository on many hoppers, this one
+  included. Reading it as direct push would widen what a job may do on each of them without anyone turning it on. The
+  decision asks for an opt-in, off by default: a repository is named, or nothing changes.
+- **Per repository only, no switch for every repository.** A switch for all would reach every repository the user can
+  write to, including ones nobody thought of. Naming each is one line more for a person.
+- **Fast-forward only, and fail closed.** A push that rewrites the target branch would erase other people's commits, and
+  GitHub allows it where the branch has no protection. Within the user's rights is a ceiling, not a reason to rewrite
+  history. A check the hopper cannot make refuses: the job pushes a branch and opens a pull request, as without the setting.
+- **The landing branch, not the default branch, on a repository with landing batches.** The default branch there is the
+  tested branch: a push to it would skip the batch run that decides what reaches people.
+- **No comment on the issue.** The decision says every push is recorded on the job and its issue. The job's timeline
+  records it. A comment on GitHub is text the publishing rule keeps neutral, and the hopper posts none outside the listed
+  exceptions; the work item links the job, and its timeline shows the push.
+
+**Left for later parts of issue #1806.** Yolo mode on a repository the hopper does not work on (part 3, below). A push as
+a durable work item (issue #1524 sagas).
+
+**Residual risk.** On a repository a person named, one bad issue or one injected agent can add commits straight to its
+target branch with no review, and whatever that branch triggers runs (a release, an image build, a deploy). It cannot
+rewrite the branch, delete it, push a tag or reach any other release branch; branch protection on GitHub still applies.
+
+**Verification:** `test/github-proxy/direct-push.test.ts` (off, a fast-forward, not one, not checked, the landing branch),
+`test/github-proxy/git.test.ts` (`checkPush` with `direct`), `test/git-mirror/push-lines.test.ts` (fast-forward in real git),
+`test/domain/direct-push.test.ts`, `test/ui/yolo-mode.test.ts`.
+
+## Yolo mode on a repository the hopper does not work on (issue #1806, part 3, 2026-10-17)
+
+The owner's decision on issue #1806: a job may push and open pull requests on any repository its user can push to, and
+the opt-in yolo setting lets the hopper merge with no review, within the user's own GitHub rights, off by default, with
+UI text that says plainly what it allows. Part 1 let a job open the pull request there. The hopper already follows a job's
+pull request in its own repository (issue #1778, "A pull request in another repository"), under that repository's yolo
+mode and change rule — and `yoloModeFor` fell back to `on` for any repository, so a hopper with yolo mode on for its job
+repositories merged a job's pull request on any other repository too, and the change rule's `ready` kinds (docs, low-risk)
+merged there with yolo mode off. Nobody turned that on for those repositories.
+
+**The change.**
+- **`on` covers the job repositories only** (`yoloModeFor(settings, repo, jobRepos)`, `src/domain/yolo-mode.ts`). A
+  repository's own setting (`repos`) still wins everywhere. A GitHub repository (`owner/repo`) that is none of the user's
+  job repositories (`everyJobRepository`) has yolo mode on only when a person named it on. A GitLab project, asked by its
+  URL, is never such a repository: a GitLab job works on its own project only.
+- **No kind merges with no person there** (`mergeRuleFor`): on such a repository not named on, every kind's merge gate is
+  `yolo`, so nothing merges and the card says `yolo off`. Named on, its change rule applies as on a job repository.
+- **The follow, the direct jobs' follow, the repository checks and the Pull requests list** take both from the same two
+  functions (`pullRequestSettings`, `src/users/source-context.ts`; `pullRequestList`).
+- **Settings → Yolo mode**: a repository is added by name (`owner/repo`, **Add, on**), then saved as any per-repository
+  setting (`POST /ui/api/yolo-mode` `repos`; `hopper yolo <owner/repo> on` too). A row that is no job repository says so,
+  its default reads `Does not merge (not a job repository)`, and a note says the switch for every job repository does not
+  reach it and what on allows (`OUTSIDE_YOLO_WARNING`).
+
+**Decisions:**
+- **A person names each repository, as for direct push.** `on` would otherwise reach every repository the user can write
+  to; the decision asks for an opt-in, off by default.
+- **The `ready` gates wait too.** A docs-only change on someone else's repository is still a change nobody reviewed; the
+  change rule is the user's judgement of their own job repositories.
+- **No migration.** The settings' shape does not change. A hopper that merged such a pull request by `on` alone now waits
+  for a person, which is the safe side; the build before it still runs on the store.
+
+**Left for a later part of issue #1806.** A push as a durable work item (issue #1524 sagas).
+
+**Residual risk.** On a repository a person named on, a job's pull request is merged with no review once it is ready, and
+whatever that merge triggers runs. GitHub's branch protection and the user's own rights still apply.
+
+**Verification:** `test/domain/outside-merge.test.ts`, `test/sources/pull-request-list.test.ts` ("a repository the hopper
+does not work on"), `test/ui/yolo-mode.test.ts`.
