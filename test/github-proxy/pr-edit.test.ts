@@ -16,14 +16,15 @@ describe('a pull request edit or close (issue #1734)', () => {
     expect(proxyRequest.safeParse({ op: 'pr.close', repo: 'o/r', number: 8, comment: 'x' }).success).toBe(false);
   });
 
-  it('a job edits or closes only a pull request it opened or its work item\'s, on a job repository', () => {
+  it('a job edits or closes only a pull request it opened or its work item\'s, on any repository (issue #1806)', () => {
     const owns = { jobId: 'j', repo: 'octo/tools', ownsPullRequest: true };
     expect(checkRequest(edit, owns, repos)).toEqual({ ok: true });
     expect(checkRequest(close, owns, repos)).toEqual({ ok: true });
     for (const req of [edit, close]) {
       expect(checkRequest(req, { jobId: 'j', repo: 'octo/tools' }, repos))
         .toEqual({ ok: false, reason: 'a job edits or closes only a pull request it opened, or the pull request of its own work item: not octo/tools#8' });
-      expect(checkRequest({ ...req, repo: 'else/where' }, owns, repos)).toMatchObject({ ok: false });
+      expect(checkRequest({ ...req, repo: 'else/where' }, owns, repos)).toEqual({ ok: true });
+      expect(checkRequest({ ...req, repo: 'else/where' }, { jobId: 'j', repo: 'octo/tools' }, repos)).toMatchObject({ ok: false });
     }
   });
 });
