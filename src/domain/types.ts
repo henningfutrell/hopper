@@ -13,7 +13,7 @@ import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBloc
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
-import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, JobOrigin } from './intake-origin.ts';
+import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, JobOrigin, OriginActor } from './intake-origin.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
 import type { JobRework } from './pull-requests.ts';
@@ -264,8 +264,7 @@ export interface JobSourceRef {
   title?: string;
   /** owner/repo for GitHub. */
   repo?: string;
-  number?: number;
-  author?: string;
+  number?: number; author?: string;
   /** The login the job was taken for (issue #387). Absent on jobs taken before intake by assignee. */
   assignee?: string;
   labels?: string[]; // the item's labels at intake (issue #378); absent on jobs taken before
@@ -276,6 +275,12 @@ export interface JobSourceRef {
    * of a source that does not judge origins, or one taken before origins were judged. Yolo mode does not read it (issue #805).
    */
   origin?: JobOrigin;
+  /**
+   * Its **origin acts** (issue #655 part 14): who wrote the item, who added the label and who assigned it (on GitLab also
+   * who edited it), through which app, and whether a trusted actor did each, as read when its origin was judged. Absent
+   * with no origin, or on a job taken before part 14. A record for people and for Jev's trust check: no rule reads it.
+   */
+  originActs?: OriginActor[];
 }
 
 /** An item's declared parts (issue #729): how many there are, and how many are done. */

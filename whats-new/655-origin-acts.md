@@ -1,0 +1,1 @@
+- A job now shows who wrote, labelled and assigned its issue, and through which app, so you can see where its work came from.

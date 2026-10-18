@@ -96,6 +96,7 @@ export function trustCheckState(job: Pick<Job, 'id' | 'spec' | 'source'>, level:
       source: {
         kind: s.kind, ...(s.repo ? { repo: s.repo } : {}), ...(s.number !== undefined ? { number: s.number } : {}), ...(s.origin ? { origin: s.origin } : {}),
         ...(s.author ? { author: s.author } : {}), ...(s.assignee ? { assignee: s.assignee } : {}), ...(s.labels ? { labels: s.labels } : {}),
+        ...(s.originActs ? { originActs: s.originActs } : {}),
       },
     } : {}),
     untrustedText: prompt.slice(0, CHECK_TEXT_MAX),
