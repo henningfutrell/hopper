@@ -22,6 +22,30 @@
     },
     "version": {
       "type": "string"
+    },
+    "repoCopy": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "tree": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "changed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "tree",
+        "commit",
+        "changed"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

@@ -76,7 +76,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the **bundled skills** — each the plain files of a directory in `bundled/` (`orchestrate/`), its skill version a content hash (`bundled.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`orchestrate`), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
@@ -15180,7 +15180,7 @@ their approvals. Access checks the job (issue #581): its box's template comes fr
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker, the bundled skills (`bundled/`, issue #1909) | engine, http, store, plugins, executors, decider |
+| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker, the library skills it serves by name (`library.ts`, issue #1909) | engine, http, store, plugins, executors, decider |
 
 Tests: `test/integration/skills.test.ts` (the real daemon, a real joined box and client, OpenFGA as a double; the job runs
 the real `hopper-skill`: the catalog in short lines; `github` loaded; a skill the hopper does not have refused with the
@@ -25007,6 +25007,8 @@ draft run stopped on this machine and on an ssh target: the CLI no longer alive,
 
 ## Bundled skills (issue #1909, part 1, 2026-10-18)
 
+Part 2 (below) drops this part's own copy of the skill: `hopper-skill` serves the skill library's built-in `orchestrate`.
+
 **The problem.** A job that planned its work as a task list, fanned out sub-tasks and finished them read how to do it
 from a skill of the user's workflow repositories (`workflow-orchestrate`). A hopper with no such repository gave its jobs
 no way to orchestrate. That skill also used its own tooling (`orchestrate.sh`, a journal in the repository), which a job
@@ -25048,6 +25050,56 @@ with only the hopper's files: the skill loaded with its version on `skill.loaded
 filed once, again with the same key, and again after the job moved to another machine with the new run's token, the old
 token refused; a bad key refused), `test/integration/skills.test.ts` (the catalog and the names a no lists),
 `test/herdr/screen.test.ts` (the task line).
+
+## Library skills through hopper-skill, and the repository's own copy (issue #1909, part 2, 2026-10-18)
+
+**The problem.** After part 1 and issue #1911 part 4 the hopper had two `orchestrate` texts: the one `hopper-skill` served
+(`src/skills/bundled/`) and the skill library's built-in one, which the work skill requires and every code job gets in its
+credentials dir. Two texts drift, and two versions of one name on one job make the record unclear. A job in a repository
+with its own copy of the skill (a workflow repository's `workflow-orchestrate`) followed that copy, but nothing recorded
+which one it used. And a fan-out key was the job's: a Run again, a new job of the same issue, filed its sub-tasks again.
+
+**The change.**
+- **One text.** `src/skills/bundled/` is gone. `hopper-skill` serves the skill library's built-in skill of the name
+  (`src/skills/library.ts`, `SERVED_LINES` in `catalog.ts`): the same files and the same **library skill version** as
+  the work skill's files carry, so `skill.loaded`'s `version` and `job.work_skill_chosen`'s `requires` name one version.
+  The built-in `orchestrate` text took part 1's fan-out key and resume steps.
+- **The repository's own copy.** The skill tells a job that works in a repository with its own copy to follow it (the
+  repository's rules win) and to say so: `sh "$HOPPER_SKILL" orchestrate --repo-copy DIR`. `hopper-skill` reads, with
+  the machine's git, the folder's path in its repository, the git tree and the commit that hold it, and whether it has
+  changes, and sends them; the hopper checks them (`repoCopyOf`: a relative path with no `..`, at most 160 characters, an
+  object id of 40 or 64 hex) and records `skill.loaded` with `repoCopy` beside the hopper's own `version`. A folder in no
+  git repository, or in no commit, is refused by the script (exit 2) before anything is sent. The job's timeline reads
+  `follows the repository's own orchestrate at <path> (tree …, commit …[, with changes]), not the hopper's <version>`
+  (`skillLoadedLine`, `ui/src/model/skills.ts`). A job in a repository with no copy is unchanged, and so is a job in a
+  workflow repository that never says `--repo-copy`: the hopper adds nothing to the repository and reads nothing from it.
+- **A fan-out key is the issue's.** The resend-key replay (`replayOfIssue`, `src/github-proxy/sub-issue-links.ts`) looks
+  first at the job's own requests, then at those of earlier jobs of the same work item (the same `source.key`). So a Run
+  again files a sub-task with the same key, learns the issue an earlier job filed (`replayed`), and files nothing twice. A
+  job of another issue with the same key files its own. A random resend key is unique, so the wider scope changes nothing
+  for it.
+
+**Decisions.**
+- **The job reports the copy; the hopper does not look for it.** Copies have no fixed name or place (`workflow-orchestrate`
+  under `.agents/skills/`, a `.claude/skills/` stub), and only the job knows which one it follows. The hopper reads
+  nothing from the work tree, so every harness and machine works the same way.
+- **The git tree is the copy's version.** It is a content hash git already keeps; the hopper does not hash the files
+  again, and a copy with changes not yet committed says so (`changed`).
+- **The hopper's version stays on the record** beside the copy, so a reader sees both.
+- **The scope of a fan-out key is the work item**, not a new store: the events already hold every key and its answer.
+- **Out of scope.** The issue's scope correction keeps the workflow repositories as they are, so the hopper's other
+  assumptions about them (part 1's "left" list) stay. No other workflow skill is served by name: `work`, `research` and
+  `proposal` reach every job through the skill library already (#1911), and no job needs another one now.
+
+**Verification:** `test/skills/served-skills.test.ts` (the served skill is the library's built-in one, and part 1's copy
+is gone; the catalog; the load and a missing file; the text names the hopper's protocol and `--repo-copy`; `repoCopyOf`
+and its refusals); `test/integration/orchestrate-skill.test.ts` (the real daemon, `hopper-skill` and `hopper-gh`: the
+file in the credentials dir and the load are one text at one version; a Run again's sub-task replayed and another issue's
+filed; a repository's own copy recorded with its tree, commit and changes; a folder in no git repository refused);
+`test/integration/orchestrate-fan-out.test.ts` (end to end: a job loads the skill, files a sub-task with a fan-out key and
+waits on it; the child is a request card, a person approves it, its job opens its pull request, the merge closes the
+child; the parent is woken, files the sub-task again — replayed, one child on GitHub — and finishes);
+`test/ui/skills.test.ts` (the timeline line).
 
 ## The cloud link (issue #467, part 1, 2026-10-17)
 
@@ -28238,7 +28290,7 @@ orchestrate skill" — could not be sure the job had it, and the `orchestrate` s
   another name.
 - **`orchestrate` is a library skill, not a second delivery path.** Issue #1909 (open) adds an `orchestrate` skill to the
   broker's catalog (`hopper-skill`). This part ships the library's own; #1909 can deliver the library's files and drop its
-  copy, so one text exists.
+  copy, so one text exists (done in #1909 part 2: "Library skills through hopper-skill").
 
 **Verification:** `test/domain/skill-library.test.ts` (`requires:` in its three forms, the refusals, the credentials of
 several skills, the job's line); `test/integration/skill-library.test.ts` (the built-in list with `orchestrate`, and `work`

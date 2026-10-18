@@ -52,6 +52,18 @@ export function replayOf(events: LineageEvents, jobId: string, key: string): Pro
   return { requestId, ...(typeof done.data.number === 'number' ? { number: done.data.number } : {}), url: done.data.url, ...(child ? { child } : {}) };
 }
 
+/**
+ * The first answer to a request with resend key `key` from `jobId`, else from an earlier job of the same issue (`sameIssue`):
+ * a **fan-out key** is the issue's (issue #1909), so a Run again, a new job, files nothing an earlier job filed.
+ */
+export function replayOfIssue(events: LineageEvents, jobId: string, key: string, sameIssue: (otherJobId: string) => boolean): ProxyReplay | undefined {
+  const own = replayOf(events, jobId, key);
+  if (own) return own;
+  const earlier = events.recent(LINEAGE_READ, ['github_proxy.done'])
+    .filter((e) => e.data.key === key && e.data.replayed !== true && e.jobId !== undefined && e.jobId !== jobId && sameIssue(e.jobId)).at(-1);
+  return earlier?.jobId ? replayOf(events, earlier.jobId, key) : undefined;
+}
+
 /** Links `child` as a sub-issue of `parent` on GitHub, unless it is one already. Throws `ProxyGitHubError`. */
 export function createSubIssueLinker(o: { apiUrl: string } & TokenSource): (parent: SubIssueOf, child: SubIssueOf) => Promise<void> {
   const req = makeRequest(o.apiUrl, undefined, { kind: 'job' });

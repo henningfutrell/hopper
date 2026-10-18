@@ -20,7 +20,7 @@ import { askOf, type TemplateAsk } from './template-ask.ts';
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
 import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
-import { bundledSkill, bundledText, isBundledSkill } from './bundled.ts';
+import { isServedSkill, repoCopyOf, servedSkill, servedText } from './library.ts';
 
 /** What a job refused for its trust can do (issue #655 part 16): nothing it asks raises its trust. */
 const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the minimum trust in Settings → Access. Find another way.';
@@ -167,10 +167,17 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       record('skill.loaded');
       return { status: 200, text: `${h.text}\n` };
     }
-    // Issue #1909: a bundled skill, its version on the job's timeline, so the job record says which one it got.
-    if (isBundledSkill(name)) {
-      const b = bundledSkill(name);
-      const t = bundledText(b, said);
+    // Issue #1909: a built-in library skill, its version on the job's timeline, so the job record says which one it got;
+    // or the repository's own copy the job follows, its folder, tree and commit.
+    if (isServedSkill(name)) {
+      const b = servedSkill(name);
+      const copy = repoCopyOf({ repoCopy: field(body, 'repoCopy'), tree: field(body, 'tree'), commit: field(body, 'commit'), changed: field(body, 'changed') });
+      if (copy && 'no' in copy) return no(400, copy.no);
+      if (copy) {
+        record('skill.loaded', { version: b.version, repoCopy: copy });
+        return { status: 200, text: `recorded: this job follows the repository's own copy at ${copy.path} (tree ${copy.tree.slice(0, 12)}, commit ${copy.commit.slice(0, 12)}${copy.changed ? ', with changes' : ''}). Its rules win where it differs from the hopper's ${name} ${b.version}.\n` };
+      }
+      const t = servedText(b, said);
       if ('no' in t) return no(404, t.no);
       record('skill.loaded', { version: b.version });
       return { status: 200, text: `${t.text}\n` };

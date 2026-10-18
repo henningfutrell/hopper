@@ -380,7 +380,7 @@ export const EVENT_SCHEMAS = {
   // Skills (issue #582): what a running job asked the hopper to set up, and the answer. On the job's timeline;
   // `decision` names Access's decision (issue #559) when a link was checked.
   'skill.listed': strict(skillAsked),
-  'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional(), version: z.string().optional() }),
+  'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional(), version: z.string().optional(), repoCopy: strict({ path: z.string(), tree: z.string(), commit: z.string(), changed: z.boolean() }).optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
   // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
   ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, ...MACHINE_DRAIN_EVENT_SCHEMAS, ...KEPT_WORK_EVENT_SCHEMAS, ...GIVE_BACK_EVENT_SCHEMAS, ...EVENT_LOOP_EVENT_SCHEMAS, ...PREEMPTION_EVENT_SCHEMAS, ...SKILL_LIBRARY_EVENT_SCHEMAS, // preemption (issue #1525: preemption-schemas.ts), the skill library (issue #1911), the memory alert (issue #868), the disk budget (issue #1120), a discard or a give-back that failed (issue #1194), an event loop stall (issue #1154): machine-memory-schemas.ts, machine-disk-schemas.ts, kept-work-schemas.ts, give-back-schemas.ts, event-loop-schemas.ts
