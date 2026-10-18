@@ -8,11 +8,14 @@
 // through a proxy), HOPPER_WORK_DIR (this host's own), CRASH_CLOUDFLARE_URL and CRASH_NGROK_URL (the providers' fakes), CRASH_MASTER_KEY (the same for every host of a test);
 // HOPPER_TEST_KILL_POINT arms a kill point (src/sagas/kill-points.ts). CRASH_GITHUB_URL (issue #1959): the node:http fake
 // GitHub, and the connected account's job source `github` over it; CRASH_GITHUB_CONNECT, its job repositories (comma
-// separated), connects the account first. With a GitHub, the host syncs once before it serves.
+// separated), connects the account first. With a GitHub, the host syncs once before it serves. CRASH_JOB (`owner/name#N`):
+// the host pulls a job of that issue that sleeps on the local machine, and the ready line names it and its proxy token, so the
+// test asks the GitHub proxy as that job does.
 import '../support/isolate.ts';
 import { cloudflareProvider } from '../../src/remote-access/cloudflare.ts';
 import { ngrokProvider } from '../../src/remote-access/ngrok.ts';
-import { startTestApp } from '../support/app.ts';
+import { proxyToken } from '../../src/github-proxy/token.ts';
+import { lanes, startTestApp } from '../support/app.ts';
 import { TEST_ACCOUNT_TOKEN, connectGitHub, fakeGitHubEnv, githubSource } from '../support/github-account.ts';
 
 const need = (name: string): string => {
@@ -21,17 +24,24 @@ const need = (name: string): string => {
   return v;
 };
 
-const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect } = process.env;
+const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect, CRASH_JOB: issue } = process.env;
 const app = await startTestApp({
   dbPath: need('CRASH_DB_PATH'),
   env: { HOPPER_DATABASE_URL: need('HOPPER_DATABASE_URL'), HOPPER_WORK_DIR: need('HOPPER_WORK_DIR'), ...(github ? fakeGitHubEnv({ url: github }) : {}) },
   secrets: { HOPPER_MASTER_KEY: need('CRASH_MASTER_KEY') },
-  ...(github ? { plugins: { jobSources: [githubSource()] } } : {}),
+  ...(github ? { plugins: { jobSources: [githubSource()], machines: lanes(2) } } : {}),
   seams: {
     ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
   },
 });
 if (connect) connectGitHub(app, connect.split(','), { token: TEST_ACCOUNT_TOKEN, key: need('CRASH_MASTER_KEY') });
 if (github) await app.sync();
+let job: { job: string; proxyToken: string } | undefined;
+if (issue) {
+  const [repo, number] = issue.split('#') as [string, string];
+  const pulled = await app.pull({ op: 'sleep', ms: 600_000 }, { url: `https://github.com/${repo}/issues/${number}`, repo, number: Number(number) });
+  await app.waitForStatus(pulled.id, 'running', 30_000);
+  job = { job: pulled.id, proxyToken: proxyToken(app.user().store.settings.getLinkKey()!.privateKey, app.user().user.id, pulled.id) };
+}
 process.once('SIGTERM', () => { void app.app.stop().finally(() => process.exit(0)); });
-process.stdout.write(`crash-host-ready ${JSON.stringify({ url: app.url, token: await app.login() })}\n`);
+process.stdout.write(`crash-host-ready ${JSON.stringify({ url: app.url, token: await app.login(), ...job })}\n`);
