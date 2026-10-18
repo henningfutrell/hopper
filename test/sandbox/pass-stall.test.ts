@@ -29,8 +29,9 @@ const asked: Template = {
 function setup() {
   let now = T0;
   const runtime = createFakeContainerRuntime();
-  // The tools image build never ends, as a build that hangs on a download.
-  runtime.build = () => new Promise<void>(() => {});
+  // The build of the tools image with kubectl never ends, as a build that hangs on a download.
+  const build = runtime.build!.bind(runtime);
+  runtime.build = (tag, containerfile) => (containerfile.includes('kubectl') ? new Promise<void>(() => {}) : build(tag, containerfile));
   const templates: Template[] = [tooled];
   const recorded: { name: string; state: string }[] = [];
   const warnings: string[] = [];
@@ -60,7 +61,9 @@ describe('the sandbox module\'s passes do not wait for each other (issue #1965)'
     s.at(10_000);
     void s.sandboxes.check();
     await settle();
-    expect(s.recorded).toContainEqual({ name: 'asked-3f433ea5329c', state: 'passed' });
+    // It ran and ended: what its probes found is not this test's.
+    expect(s.recorded.map((r) => r.name)).toEqual(['asked-3f433ea5329c', 'asked-3f433ea5329c']);
+    expect(s.recorded.map((r) => r.state)).toEqual(['running', expect.stringMatching(/^(passed|failed)$/)]);
   });
 
   it('a pass in flight for PASS_STALL_MS is logged once, at a tick', async () => {

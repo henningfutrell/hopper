@@ -10582,6 +10582,12 @@ box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
   which builds the same image. It looks at each image again `WARM_EVERY_MS` (an hour) after, so one the leftover-builds pass
   removed is built again; a build that fails is logged and tried again `WARM_RETRY_MS` (5 minutes) after. The memory of
   what it built is in memory only: a hopper that starts looks at each image once more, which costs an exists call.
+- **Each pass on its own** (issue #1965). The sweep, the read-only check pass and the warm pass each have their own
+  guard: a tick starts each one that is not in flight, and joins one that is. Before, one guard held all three, so a warm
+  pass build (up to 30 minutes, `BUILD_MS`) held every check that `check-template` queued, and nothing in the log said
+  why. A tick that finds a pass in flight `PASS_STALL_MS` (5 minutes) after it started logs it once: `hopper: the <pass>
+  has run for <n> min and has not ended; the next <pass> waits for it`. A pass that fails logs `hopper: the <pass> failed:
+  <reason>` (`src/sandbox/service.ts`).
 - **The time of each part of a step** (issue #1737). `runNeedBox` gives the time of its image (pull and build), the box's
   start (volume, create, start, copy in) and its run (`NeedBoxPhases`), and the line `need box … ended with <exit>` in the
   hopper's log carries them: `(image 0.2 s, start 1.1 s, run 9.8 s)`. A slow step then says which part was slow. The
