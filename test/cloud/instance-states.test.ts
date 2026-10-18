@@ -149,7 +149,7 @@ describe("an instance's machines at hopper.io", () => {
     expect(await rows(s.databaseUrl)).not.toContain('k-desk');
 
     const page = (await s.server.inject({ method: 'GET', url: '/', headers: cookie('ada-session') })).body;
-    expect(page).toContain(`as the instance reported it at ${later(1000).toISOString()}`);
+    expect(page).toContain(`As the instance reported it at ${later(1000).toISOString()}`);
     expect(page).toContain('k-desk');
     expect(page).toContain('online, 1 of 4 lanes in use, executors: claude, codex, takes jobs');
     expect(page).toContain('offline, 0 of 4 lanes in use, executors: claude, codex, takes no job: offline');

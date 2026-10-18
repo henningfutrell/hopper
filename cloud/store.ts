@@ -103,6 +103,8 @@ export interface CloudStore {
   unlinked(installId: string, login: string): Promise<string | undefined>;
   /** Whether the instance is a registration of any account, a tombstone younger than TOMBSTONE_MS, or neither. */
   registrationOf(installId: string, now: Date): Promise<'registered' | 'removed' | 'unknown'>;
+  /** The account the instance is registered to, when that account's login is `login` (any case); else undefined. */
+  registrant(installId: string, login: string): Promise<string | undefined>;
   /** The account, its sessions, its records, its registrations and its deletion sign-ins under way, in one statement,
    * which leaves a tombstone for each registration; and every tombstone older than TOMBSTONE_MS goes. */
   deleteAccount(githubUserId: string, now: Date): Promise<void>;
@@ -209,6 +211,11 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
                                 EXISTS (SELECT 1 FROM registration_tombstone WHERE install_id = $1 AND removed_at > $2) AS removed`,
       [installId, new Date(now.getTime() - TOMBSTONE_MS)]);
       return r.rows[0].registered ? 'registered' : r.rows[0].removed ? 'removed' : 'unknown';
+    },
+    async registrant(installId, login) {
+      const r = await q(`SELECT r.account_id FROM registration r JOIN account a ON a.github_user_id = r.account_id
+               WHERE r.install_id = $1 AND lower(a.login) = $2`, [installId, login.toLowerCase()]);
+      return r.rows[0] ? String(r.rows[0].account_id) : undefined;
     },
     async deleteAccount(githubUserId, now) {
       await q('DELETE FROM registration_tombstone WHERE removed_at <= $1', [new Date(now.getTime() - TOMBSTONE_MS)]);

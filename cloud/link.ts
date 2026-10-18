@@ -7,9 +7,12 @@
 // answered `unregister`, the one message the instance takes for it. A message from an instance is checked against a
 // closed schema and a size cap, as the instance checks hopper.io's (docs/hopper-io-security.md R7). An instance is the
 // registration of one account at a time (issue #465 item 3): registered under another, it moves there. Its hello keeps
-// its last-seen time, and its unlink notice (src/http/cloud-link-messages.ts `unlinkedMessage`) removes it.
+// its last-seen time, and its unlink notice (src/http/cloud-link-messages.ts `unlinkedMessage`) removes it. Its state
+// snapshot (src/domain/hopper-io-state.ts) is kept in memory as its last state (cloud/states.ts), under the account it
+// is registered to, while its link names that account; a move or an unlink drops it.
 import { z } from 'zod';
 import type { RegistrationRequests } from './requests.ts';
+import { instanceState, type InstanceStates } from './states.ts';
 import type { CloudStore } from './store.ts';
 
 /** The most bytes one message from an instance may hold, as the instance's own cap. */
@@ -39,10 +42,14 @@ export interface CloudLinkAnswers {
   hello(o: { installId: string; account: string; now: Date }): Promise<string | undefined>;
   /** The instance's unlink notice, on its own connection (`installId`); true: its registration is removed. */
   unlinked(o: { installId: string; notice: string; now: Date }): Promise<boolean>;
+  /** The instance's state snapshot, on its connection, whose link names `account`; true: kept as its last state. Only a
+   * registration of that account keeps it. */
+  snapshot(o: { installId: string; account: string; text: string; now: Date }): Promise<boolean>;
 }
 
 export function createCloudLinkAnswers(o: {
-  store: Pick<CloudStore, 'register' | 'registrationOf' | 'seen' | 'unlinked' | 'record'>; requests: RegistrationRequests;
+  store: Pick<CloudStore, 'register' | 'registrationOf' | 'registrant' | 'seen' | 'unlinked' | 'record'>;
+  requests: RegistrationRequests; states: InstanceStates;
 }): CloudLinkAnswers {
   return {
     registerMessage({ installId, account, now }) {
@@ -58,6 +65,7 @@ export function createCloudLinkAnswers(o: {
       const githubUserId = request.githubUserId;
       const before = await o.store.register(githubUserId, installId, now);
       if (before === githubUserId) return true;
+      o.states.drop(installId);
       if (before) await o.store.record(before, 'instance_moved', now);
       await o.store.record(githubUserId, 'instance_registered', now);
       return true;
@@ -72,8 +80,16 @@ export function createCloudLinkAnswers(o: {
       const m = UNLINKED.safeParse(parsed(notice));
       if (!m.success || !INSTALL_ID.test(installId) || m.data.installId !== installId) return false;
       const account = await o.store.unlinked(installId, m.data.account.toLowerCase());
-      if (account) await o.store.record(account, 'instance_unlinked', now);
-      return account !== undefined;
+      if (!account) return false;
+      o.states.drop(installId);
+      await o.store.record(account, 'instance_unlinked', now);
+      return true;
+    },
+    async snapshot({ installId, account, text, now }) {
+      const state = INSTALL_ID.test(installId) ? instanceState(text) : undefined;
+      if (!state) return false;
+      const githubUserId = await o.store.registrant(installId, account);
+      return githubUserId !== undefined && o.states.keep({ githubUserId, installId, state, now }) === 'kept';
     },
   };
 }
