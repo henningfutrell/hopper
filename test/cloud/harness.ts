@@ -3,6 +3,8 @@
 import type { LightMyRequestResponse } from 'fastify';
 import pg from 'pg';
 import type { CloudConfig } from '../../cloud/config.ts';
+import type { CloudLinkAnswers } from '../../cloud/link.ts';
+import { createRegistrationRequests } from '../../cloud/requests.ts';
 import { SESSION_COOKIE, SIGN_IN_COOKIE, cloudServer, cookiesOf } from '../../cloud/server.ts';
 import { openCloudStore } from '../../cloud/store.ts';
 import { testDatabaseUrl } from '../support/database.ts';
@@ -22,9 +24,10 @@ export async function setUp() {
   const store = await openCloudStore(databaseUrl);
   stops.push(() => store.close());
   const config: CloudConfig = { databaseUrl, publicUrl: PUBLIC, githubUrl: github.url, clientId: 'hosted-app', clientSecret: SECRET, host: '127.0.0.1', port: 0, trustProxy: false };
-  const server = await cloudServer({ config, store });
+  const requests = createRegistrationRequests();
+  const server = await cloudServer({ config, store, requests });
   stops.push(() => server.close());
-  return { github, store, server, databaseUrl };
+  return { github, store, server, databaseUrl, requests };
 }
 
 export type Set = Awaited<ReturnType<typeof setUp>>;
@@ -68,4 +71,12 @@ export async function rawUser(s: Set, login = 'octo-user'): Promise<{ id: number
   const { accessToken } = s.github.mint(login);
   const r = await rawRequest(s.github.url, { path: '/api/v3/user', headers: { authorization: `token ${accessToken}` } });
   return JSON.parse(r.text) as { id: number };
+}
+
+/** The owner of `githubUserId` enters a code for the instance, and the instance answers `answer` (default `registered`). */
+export async function registerAs(s: Set, link: CloudLinkAnswers, githubUserId: string, installId: string, now: Date,
+  answer = JSON.stringify({ type: 'registration', outcome: 'registered' })): Promise<boolean> {
+  const login = (await s.store.account(githubUserId))!.login;
+  s.requests.enter({ githubUserId, login, installId, code: 'c0de'.repeat(16), now });
+  return link.registration({ installId, account: login, answer, now });
 }
