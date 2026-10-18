@@ -3944,9 +3944,9 @@ Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a Gi
   "requestId": "r2",
   "machine": "box",
   "as": "octocat",
-  "op": "pr.create",
+  "op": "issue.create",
   "repo": "else/where",
-  "reason": "else/where is not one of the repositories the hopper works on, so it does nothing there for a job"
+  "reason": "else/where is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed"
 }
 ```
 

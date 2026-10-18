@@ -166,7 +166,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'minor_decision.settings_changed': { point: 'question-answer', from: { mode: 'shadow', threshold: 0.85 }, to: { mode: 'active', threshold: 0.9 } },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
   'github_proxy.done': { requestId: 'r1', machine: 'desk', as: 'octocat', op: 'issue.create', repo: 'octo/tools', number: 42, url: 'https://github.com/octo/tools/issues/42' },
-  'github_proxy.refused': { requestId: 'r2', machine: 'box', as: 'octocat', op: 'pr.create', repo: 'else/where', reason: 'else/where is not one of the repositories the hopper works on, so it does nothing there for a job' },
+  'github_proxy.refused': { requestId: 'r2', machine: 'box', as: 'octocat', op: 'issue.create', repo: 'else/where', reason: 'else/where is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed' },
   'github_proxy.failed': { requestId: 'r3', machine: 'desk', as: 'octocat', op: 'pr.create', repo: 'octo/tools', error: 'GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)' },
   'vault.secret_set': { name: 'KUBE_TOKEN', by: 'Ada', replaced: false },
   'vault.secret_removed': { name: 'KUBE_TOKEN', by: 'Ada' },

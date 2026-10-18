@@ -1,10 +1,8 @@
 // The git broker (issue #652, design.md "Git through the hopper"): one git smart-HTTP request of a running job — its
 // fetch or its push — done on GitHub with the connection of the job's own user. In order: the job's proxy token (git
 // sends it as the password of Basic auth, from the job's credential helper) and its job at work; the repository: a push
-// only to the job's own one, whether or not it is one of the user's job repositories (issue #1131: a job of the app
-// source, or of a repository chosen no more, has its own repository still), or to another of the user's job repositories
-// (issue #1275: a job whose issue is in one repository and whose change belongs in another), and only when the user can
-// push to it; then
+// to any repository the user can push to, as GitHub says (issue #1806: the job's own one, another job repository, or a
+// repository the hopper does not work on — no hopper rule but the user's own write access), else refused with why; then
 // a push's ref updates, read before anything reaches GitHub (`checkPush`). A fetch goes to GitHub with the user's connection whatever the
 // repository (issue #1015): the job repositories decide intake and where a job pushes, not what it reads, so a job reads
 // any repository its user sees; git's fetch (`git-upload-pack`) only reads, and the token never leaves the hopper. A push is an event on the job's timeline (`github_proxy.done`, `.refused`,
@@ -177,7 +175,8 @@ export function createGitProxy(o: GitProxyOptions) {
       const own = repoOf(job);
       const usedHere = side.jobRepositories().some((x) => same(x, at.repo));
       // `as`: the GitHub identity that acts for the job, its own user's (issue #1380): the account of the job repository it
-      // fetches or pushes (issue #1448); for any other repository — its fork — the account of the job's own repository.
+      // fetches or pushes (issue #1448); for any other repository — its fork, one the hopper does not work on (issue #1806) — the
+      // account of the job's own repository.
       const git = side.git(usedHere ? at.repo : own);
       const acting = 'problem' in git ? {} : { as: git.login };
       const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
@@ -196,17 +195,13 @@ export function createGitProxy(o: GitProxyOptions) {
         try { facts = await git.repo(at.repo); } catch { facts = undefined; }
       }
       const fork = facts !== undefined && facts.fork && [facts.parent, facts.source].some((p) => p !== undefined && same(p, own!));
-      if (push && !toOwn && !usedHere && !fork) {
-        const where = own ? `its own repository (${own}) or another of the repositories the hopper works on${contribution ? ', or to its user\'s fork of its own' : ''}` : 'the repositories the hopper works on';
-        return refuse(`a job pushes only to ${where}`);
-      }
       if ('problem' in git) {
         if (push || usedHere) return refuse(git.problem);
         return text(503, `refused: ${git.problem}`);
       }
       if (push && !fork) {
         try { facts = await git.repo(at.repo); } catch (e) { return refuse(`${at.repo} could not be read: ${(e as Error).message}`); }
-        if (!facts.canPush && !toOwn) return refuse(`your user cannot push to ${at.repo}`);
+        if (!facts.canPush && !toOwn) return refuse(`your user cannot push to ${at.repo}: GitHub gives its connection no write access there`);
         if (!facts.canPush) {
           return refuse(contribution
             ? `your user cannot push to ${at.repo}: contribute through a fork: sh "$HOPPER_GH" repo fork --repo ${at.repo}, then push your branch to the fork`

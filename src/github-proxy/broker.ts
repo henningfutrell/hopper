@@ -27,7 +27,7 @@ import { isGitLabItem } from '../domain/gitlab-account.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { checkRequest, filedNote, PR_OWNED, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
 import { prWaitOver, unfollowedWait, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
@@ -200,7 +200,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
           return { status: 502, body: { error: (e as Error).message, requestId } };
         }
       }
-      const owns = req.op === 'pr.edit' || req.op === 'pr.close' ? { ownsPullRequest: user.ownsPullRequest?.(job, req.repo, req.number) === true } : {};
+      const owns = PR_OWNED.includes(req.op) && 'number' in req ? { ownsPullRequest: user.ownsPullRequest?.(job, req.repo, req.number) === true } : {};
       const asker: ProxyAsker = {
         jobId: job.id, contribution, ...(login ? { login } : {}), ...facts, ...owns,
         ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
