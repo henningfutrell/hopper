@@ -21,9 +21,12 @@
 // the hopper's wait; for a job on a wait for its own command, the engine is told (`polled`).
 // A resend key (issue #1607, sub-issue-links.ts): an issue create or comment sent again with the key it was sent with is
 // answered the first answer, from its events (`replayed`), or, while the first is still at GitHub, the same answer as it.
+// After a crash (issue #1959 part 2, resend.ts): such a write is recorded `github_proxy.sending` before its call, and its text
+// ends with a post key; sent again with no answer recorded, it is looked for on GitHub first (`found`), so it is made once.
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { isGitLabItem } from '../domain/gitlab-account.ts';
+import { postKeySince, withPostKey } from '../domain/post-key.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
@@ -32,6 +35,7 @@ import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQ
 import { prWaitOver, unfollowedWait, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
+import { passProxyKillPoint, proxyPostKey } from './resend.ts';
 import type { ProxyReplay } from './sub-issue-links.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
@@ -54,6 +58,8 @@ export interface ProxyUser {
   ownsPullRequest?(job: Job, repo: string, number: number): boolean;
   /** The first answer to the job's request with resend key `key` (issue #1607); undefined: none yet. Absent: none is kept. */
   replay?(jobId: string, key: string): ProxyReplay | undefined;
+  /** When the job's request with resend key `key` was first sent, with no answer recorded (issue #1959 part 2); undefined: never. */
+  sending?(jobId: string, key: string): string | undefined;
 }
 
 /**
@@ -148,7 +154,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       let login = connection?.login(repoOf(job));
       let acting: { as?: string } = login ? { as: login } : {};
       // Who asked and from where stay in the hopper: the job's timeline.
-      const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
+      const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed' | 'github_proxy.sending', data: Record<string, unknown>): void => {
         user.record({ type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, ...data } });
       };
       const refuse = (status: number, reason: string, req?: { op?: string; repo?: string }): ProxyAnswer => {
@@ -259,7 +265,11 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       };
       const masked = maskRequest(req);
       const parent: IssueParent | undefined = masked.op === 'issue.create' && jobRepo && issue !== undefined ? { repo: jobRepo, number: issue, required: masked.required === true } : undefined;
-      const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId, parent)}` } : masked;
+      // A write with a resend key ends with its post key (issue #1959 part 2): what a look-up after a crash finds it by.
+      const postKey = resendKey !== undefined ? proxyPostKey(job.source?.key ?? job.id, resendKey) : undefined;
+      const keyed = (text: string): string => (postKey ? withPostKey(text, postKey) : text);
+      const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: keyed(`${masked.body}${filedNote(job.id, requestId, parent)}`) }
+        : masked.op === 'issue.comment' ? { ...masked, body: keyed(masked.body) } : masked;
       // A repo query (issue #1074): what the cache kept, when it answers now; the ledger's word on the item beside it.
       const read = isRead(req.op);
       const key = queryKey(req);
@@ -280,15 +290,23 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       }
       try {
         const routeTo = parent?.required && login ? { labels: [ROUTE_LABEL], assignees: [login] } : undefined;
-        const result = await api.perform(sent, parent?.required ? { subIssueOf: parent, ...routeTo } : undefined);
+        const filed = parent?.required ? { subIssueOf: parent, ...routeTo } : undefined;
+        // Sent before with no answer recorded (a hopper killed meanwhile): what GitHub made then is looked for first.
+        const since = postKey ? user.sending?.(job.id, resendKey!) : undefined;
+        if (postKey) record('github_proxy.sending', { op: req.op, repo: req.repo, ...('number' in req ? { number: req.number } : {}), key: resendKey });
+        if (!read) passProxyKillPoint(req.op, 'before-send');
+        const found = since && postKey && login ? await api.find?.(sent, postKey, postKeySince(since), login, filed) : undefined;
+        const result = found ?? await api.perform(sent, filed);
+        if (!read) passProxyKillPoint(req.op, 'after-send');
         if (read) {
           const at = now();
           cache.put(key, result, at);
           return answered(result, 'github', at);
         }
         if ('number' in req) cache.forget(req.repo, req.number);
-        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}), ...(resendKey ? { key: resendKey } : {}) });
-        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result } };
+        const was = found ? { found: true } : {};
+        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}), ...(resendKey ? { key: resendKey } : {}), ...was });
+        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, ...was } };
         const { subIssue, subIssueError, unassigned } = result as { subIssue?: boolean; subIssueError?: string; unassigned?: string[] };
         user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
           requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,
@@ -299,7 +317,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         const routed = routeTo ? { routed: true, waitOn: `issue ${req.repo}#${String(result.number)}` } : {};
         // A link GitHub refused is kept, and tried again until it is made (issue #1607).
         const later = parent.required && subIssue === false ? { subIssueLater: true } : {};
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required, ...later, ...routed } };
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required, ...later, ...routed, ...was } };
       } catch (e) {
         const status = e instanceof ProxyGitHubError ? e.status : undefined;
         const error = (e as Error).message;

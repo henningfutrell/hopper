@@ -110,7 +110,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     const [sent] = created(t.github);
     expect(sent!.auth).toBe('token test-account-token');
     expect(sent!.body).toEqual({ title: 'Priority 0 is dropped', body: expect.stringContaining('The queue view drops a job\'s "priority" when it is 0.') });
-    expect(String(sent!.body.body)).toMatch(new RegExp(`Filed through hopper for job \`${job.id}\` \\(request \`${String(answer.requestId)}\`\\)\\. It is not a job: it waits for a person to triage it\\.$`));
+    expect(String(sent!.body.body)).toMatch(new RegExp(`Filed through hopper for job \`${job.id}\` \\(request \`${String(answer.requestId)}\`\\)\\. It is not a job: it waits for a person to triage it\\.\n\n<!-- hopper post proxy-[0-9a-f]{24} -->$`));
     expect(t.github.issues[0]).toMatchObject({ labels: [], assignees: [] });
 
     const [done] = eventsOf(t.app, ADMIN_ID, 'github_proxy.done');
@@ -137,7 +137,7 @@ describe('GitHub through the hopper (issue #563)', () => {
 
     const comment = await hopperGh(t.root, env, ['issue', 'comment', '7', '--repo', 'octo/tools', '--body', 'Found the cause.']);
     expect(json(comment)).toMatchObject({ ok: true, op: 'issue.comment', number: 7, url: expect.stringContaining('/octo/tools/issues/7#issuecomment-') });
-    expect(t.github.requests.find((r) => r.method === 'POST' && r.path.endsWith('/issues/7/comments'))?.body).toEqual({ body: 'Found the cause.' });
+    expect(t.github.requests.find((r) => r.method === 'POST' && r.path.endsWith('/issues/7/comments'))?.body).toEqual({ body: expect.stringMatching(/^Found the cause\.\n\n<!-- hopper post proxy-[0-9a-f]{24} -->$/) });
 
     const view = await hopperGh(t.root, env, ['issue', 'view', '7', '--repo', 'octo/tools']);
     expect(json(view)).toMatchObject({ ok: true, number: 7, title: 'Make it faster', state: 'open', author: 'someone', labels: ['hopper'], body: 'Please.' });
@@ -208,7 +208,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(done.map((e) => e.data.source).reverse()).toEqual(['github', 'github', 'github', 'github', 'github', 'cache', 'cache', 'cache', 'cache', 'cache']);
 
     await ask(['issue', 'comment', '7', '--body', 'Pushed a fix.']);
-    expect(await ask(['issue', 'comments', '7'])).toMatchObject({ source: 'github', comments: [{ body: 'Looks good.' }, { body: 'Pushed a fix.' }] });
+    expect(await ask(['issue', 'comments', '7'])).toMatchObject({ source: 'github', comments: [{ body: 'Looks good.' }, { body: expect.stringMatching(/^Pushed a fix\./) }] });
     expect(gets('issues/7/comments')).toBe(2);
   });
 

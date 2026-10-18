@@ -13,4 +13,5 @@ export { createPrWaits, GITHUB_STREAM_TYPES, PR_WAIT_OWNER, type PrWaits, type P
 export * from './script.ts';
 export { HCURL_SH, RETRY_AFTER_TRIES, TRACE_HEADER_SH } from './retry-after.ts';
 export { createSubIssueLinker, createSubIssueLinks, replayOf, replayOfIssue, SUB_ISSUE_LINK_MS, type LineageEvents, type ProxyReplay, type SubIssueLinks } from './sub-issue-links.ts';
+export { findPosted, passProxyKillPoint, proxyKillPoint, proxyPostKey, sendingSince, type Posted } from './resend.ts';
 export { holdsProxyToken, parseProxyToken, proxyToken, type ProxyTokenParts } from './token.ts';
