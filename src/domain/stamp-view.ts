@@ -50,7 +50,7 @@ export function stampView(key: Buffer | undefined, job: Pick<Job, 'id' | 'spec' 
     level: level ?? null,
     brake: { strictness: brake.strictness, needs: brake.min, at: brake.at },
     startHold: (key ? stampHold(key, job, brake) : undefined) ?? null,
-    gate2: !key || autoApprovable(key, job) ? 'auto' : 'person',
+    gate2: !key || autoApprovable(key, job, brake) ? 'auto' : 'person',
     doorsOpen: !key || opensDoors(key, job),
     checkDue: key ? checkDue(key, job) : false,
   };

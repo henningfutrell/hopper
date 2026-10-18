@@ -52,7 +52,7 @@ describe('the stamp view (issue #655, part 10)', () => {
       stamp: { level: 'approved', reasons: held.stamp!.reasons, by: 'intake', at: held.stamp!.at },
       verifies: 'yes', level: 'approved',
       brake: { strictness: 'strict', needs: 'trusted', at: { source: 'manual' } },
-      startHold: held.holdReason, gate2: 'auto', doorsOpen: true, checkDue: true,
+      startHold: held.holdReason, gate2: 'person', doorsOpen: true, checkDue: true,
     });
     expect((await hopper(a, ['job', 'stamp', j.id])).json).toEqual(view.body);
     expect((await hopper(a, ['job', 'stamp', j.id.slice(0, 8), '--json'])).json).toEqual(view.body);

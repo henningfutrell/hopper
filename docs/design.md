@@ -16942,7 +16942,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 11, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 12, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17041,7 +17041,8 @@ brake of each waiting job; a change applies at the next Decision with no restart
 (`trust stamp approved is below trusted (intake strictness strict for octo/tools): held — an admin changes the intake
 strictness in Settings → Intake, or a person cancels it`); a job below `approved` keeps the hold text that sends a person
 to Intake. Tightening it holds a waiting job that no longer passes, a job resuming after a question too; a running job
-keeps going and keeps its doors (part 2: doors stay open below the minimum). Nothing is stored on the job: the stamp keeps
+keeps going and keeps its doors (part 2: doors stay open below the minimum), and since part 12 gate 2 asks a person for its
+privileged requests. Nothing is stored on the job: the stamp keeps
 the level, the brake is read where it is needed, so a loosened brake lets the job start at once.
 
 **Jev's trust check** (part 4, `src/domain/trust-check.ts`, `src/engine/trust-checks.ts`; the decision point
@@ -17217,7 +17218,7 @@ between fits in it.
 - `brake`: the intake strictness on the job (`strictness`, the level it `needs`, where it was set `at`), as the engine
   reads it at each Decision, and `startHold`, why the stamp holds the job's start (`stampHold`), else null. A job Jev's
   active check holds says `checkDue: true`; the hold text for that is the engine's, not the stamp's;
-- `gate2`: `auto` (`autoApprovable`) or `person`; `doorsOpen` (`opensDoors`).
+- `gate2`: `auto` (`autoApprovable`, under the job's brake since part 12) or `person`; `doorsOpen` (`opensDoors`).
 
 The job view keeps reading the stamp from the job itself. No migration: nothing is stored.
 
@@ -17242,10 +17243,28 @@ keeps the record in the log and only its id on the row; that moves the check at 
 for no gain in security, since the MAC already shows a changed row. One event, not two: the issue also names
 `intake.restamped`; `by` and `from` say which stamp it is. No migration: nothing new is stored on the job.
 
+**A tightened intake strictness re-checks started jobs at gate 2** (part 12, `gate2Hold`, `gate2Min`, `jobBrake`). The
+issue: "Tightening a brake re-checks live stamps and live sandboxes." Brake 1 holds only a start (part 3), so a job that
+runs when an admin tightens it keeps running and keeps its doors. But gate 2 now reads the brake on the job at each ask:
+it approves the job's privileged requests with no person only while its stamp is at `approved` **and** at the level the
+brake needs (`gate2Min`: the higher of the two). Below it, gate 2 acts as part 7 does below `approved`:
+
+- its **sandbox request** waits for a person: skip sandbox approval, the auto-approve policy, a remembered write approval
+  and a person's approval of its template do not approve it, and a box step runs only from a request a person approved;
+- a **need step** is refused (403): `its trust stamp approved is below trusted (intake strictness strict for the source
+  manual): a need step runs only for a job at trusted or above. Ask for a sandbox a person approves: …`;
+- the **standing read grant** grants it nothing, one it granted before too.
+
+The stamp view says `gate2: person` for such a job, waiting or running. Loosened, the brake lets the toggles and policies
+approve again at once, with no restart. Approve trust does not help here (it gives `approved`, never more): a person
+approves each request, or an admin loosens the brake. Why only gate 2, not a park or a stop: the issue keeps a running
+job going on an edit (part 7) and at the migration, and lets gate 2 treat it lower; a stop on a settings change would
+lose a person's work for a choice that is about new jobs. No migration: nothing is stored.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
 `intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), a
-tightened intake strictness that re-checks running jobs, and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), and
+the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

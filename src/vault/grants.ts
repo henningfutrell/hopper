@@ -11,6 +11,7 @@
 // no job that has not asked yet. A job whose trust stamp is below `approved` (issue #655 part 7) gets none: a person grants it.
 // Nor does a job on a template that sandbox strictness (brake 2, part 8) asks a person for.
 import type { Clock, UserStore } from '../domain/ports.ts';
+import { jobBrake } from '../domain/intake-strictness.ts';
 import type { Job } from '../domain/types.ts';
 import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, readsOnlyInPolicy, STANDING_READ_GRANTER, type VaultGrantAsk } from '../domain/vault-grants.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake } from '../domain/sandbox-strictness.ts';
@@ -37,11 +38,11 @@ export function withVaultGrants(v: Vault, o: {
 
   /**
    * Whether the standing read grant lets `job` ask from a box of `template`: recorded once for each job. Never for a job
-   * below `approved` (issue #655 part 7), one it granted before too, nor for a template sandbox strictness (brake 2, part
+   * below `approved` or its intake strictness (issue #655 parts 7, 12), one it granted before too, nor for a template sandbox strictness (brake 2, part
    * 8) asks a person for.
    */
   function standingGrant(job: Job, template: string): boolean {
-    if (!jobs.autoApprovable(job)) return false;
+    if (jobs.gate2Hold(job, jobBrake(o.store.settings.getIntakeStrictness(), job)) !== undefined) return false;
     const t = v.view().templates.find((x) => x.name === template);
     if (!t || !readsOnlyInPolicy(t, o.store.settings.getReadPolicy())) return false;
     if (personBrake(o.store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, t)) return false;

@@ -2,6 +2,7 @@
 // request approved by a person, or by the user's skip sandbox approval, the auto-approve policy or a remembered write
 // approval (issue #1001). Approved, the job's box steps run, each in a sandbox of its own (issue #1349). Issue #1471: a
 // job's requests are kept from before it starts — the sandboxes its prompt names are asked for then — until it ends.
+import { jobBrake } from '../domain/intake-strictness.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
 import { DEFAULT_SANDBOX_STRICTNESS } from '../domain/sandbox-strictness.ts';
@@ -60,7 +61,8 @@ export function userSandboxRequests(o: {
     approvals: () => store.settings.getSandboxApprovals() ?? NO_SKIPS,
     template: (name) => o.templates().find((t) => t.name === name),
     live: (id) => LIVE.includes(store.jobs.get(id)?.status ?? ''),
-    autoApprovable: (id) => { const j = store.jobs.get(id); return j !== undefined && store.jobs.autoApprovable(j); }, // issue #655 part 7
+    // Issue #655 parts 7 and 12: below approved, or below the intake strictness on it now, a person approves.
+    autoApprovable: (id) => { const j = store.jobs.get(id); return j !== undefined && store.jobs.gate2Hold(j, jobBrake(store.settings.getIntakeStrictness(), j)) === undefined; },
     strictness: () => store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, // issue #655 part 8, brake 2
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
     jobUrl: (id) => store.jobs.get(id)?.source?.url,
