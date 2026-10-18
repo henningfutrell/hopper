@@ -5,10 +5,13 @@
 // Feature: a job reads the topology
 //   Scenario: a running job reads the same graph a person reads, and nothing is recorded
 //   Scenario: no token, a token that is no job's, and the token of a job that ended are refused
+//   Scenario: the topology skill tells a job to read it at HOPPER_URL, never at 127.0.0.1
 import { afterEach, describe, expect, it } from 'vitest';
 import { awsTopology } from '../../src/domain/topology-discover.ts';
 import type { TopologyGraph } from '../../src/domain/topology.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
+import { JOB_TOPOLOGY_PATH } from '../../src/http/job-topology.ts';
+import { skillOf } from '../../src/skills/catalog.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { aws } from '../support/topology-answers.ts';
 
@@ -68,5 +71,12 @@ describe('a job reads the topology (issue #1905)', () => {
     const ended = await read(a, tokenOf(a, job.id));
     expect(ended.status).toBe(401);
     expect(await ended.text()).toMatch(new RegExp(`^no: job ${job.id} is finished, not at work`));
+  });
+
+  it('the topology skill tells a job to read it at HOPPER_URL with its token file, never at 127.0.0.1', () => {
+    const text = skillOf('topology')!.text;
+    expect(text).toContain(`"$HOPPER_URL${JOB_TOPOLOGY_PATH}"`);
+    expect(text).toContain('$HOPPER_TOKEN_FILE');
+    expect(text).not.toMatch(/127\.0\.0\.1|localhost/);
   });
 });
