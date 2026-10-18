@@ -2,7 +2,9 @@
 // token is and its emails, the projects it reaches, a project's open issues with a label —, paged by `x-next-page`; for a job
 // (part 3): a project's default branch, an issue's label events and system notes (who labelled, assigned or edited it), and
 // the hopper's label edits; for a job's merge request (issue #1642): one issue, the merge requests that close it, and one
-// merge request with its pipeline; the hopper's merge of one (issue #1642 part 2), which closes the issues it closes. Each request is recorded with the token it carried.
+// merge request with its pipeline; the hopper's merge of one (issue #1642 part 2), which closes the issues it closes; for the done
+// criteria (issue #1924 part 4): its head pipeline's jobs and each job's log, its notes, its changed files, and its head commit.
+// Each request is recorded with the token it carried.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gitBackend } from './fake-git.ts';
@@ -25,6 +27,11 @@ export interface FakeGitLabIssue {
 export interface FakeGitLabMergeRequest {
   project: string; iid: number; closes: number[]; state: 'opened' | 'closed' | 'merged'; createdAt: string; mergedAt?: string;
   draft?: boolean; conflicts?: boolean; pipeline?: string; sha?: string; updatedAt?: string; mergeRefusal?: number;
+  /**
+   * Issue #1924 part 4: its head pipeline's jobs, each with its log (`trace`); its notes (`system`: GitLab's own line); its changed
+   * files (absent: none); its head commit's time (default its `createdAt`).
+   */
+  jobs?: { name: string; status: string; trace?: string }[]; notes?: { body: string; at: string; system?: boolean }[]; files?: string[]; committedAt?: string;
 }
 
 export interface FakeGitLab {
@@ -67,8 +74,35 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
   const mergeRequestJson = (x: FakeGitLabMergeRequest, one: boolean) => ({
     iid: x.iid, web_url: `${fakeUrl}/${x.project}/-/merge_requests/${x.iid}`, state: x.state, draft: x.draft ?? false, has_conflicts: x.conflicts ?? false,
     target_branch: 'main', source_branch: `issue-${x.closes[0] ?? x.iid}`, created_at: x.createdAt, updated_at: x.updatedAt ?? x.createdAt, merged_at: x.mergedAt ?? null, sha: x.sha ?? 'abc123', description: x.closes.map((n) => `Closes #${n}`).join('\n'),
-    ...(one ? { head_pipeline: x.pipeline ? { id: 1, status: x.pipeline } : null } : {}),
+    ...(one ? { head_pipeline: x.pipeline ? { id: x.iid, status: x.pipeline } : null } : {}),
   });
+  /** What the done criteria read (issue #1924 part 4): a pipeline's jobs, a job's log, a merge request's notes and diffs, a commit. */
+  const doneFacts = (res: ServerResponse, url: URL, projects: string[]): boolean => {
+    const at = /^\/api\/v4\/projects\/([^/]+)\/(pipelines\/(\d+)\/jobs|jobs\/(\d+)\/trace|merge_requests\/(\d+)\/(notes|diffs)|repository\/commits\/([^/]+))$/.exec(url.pathname);
+    if (!at) return false;
+    const project = decodeURIComponent(at[1]!);
+    const mine = fake.mergeRequests.filter((x) => x.project === project && projects.includes(project));
+    if (at[3]) {
+      const found = mine.find((x) => x.iid === Number(at[3]));
+      if (!found) { send(res, 404, { message: '404 Not found' }); return true; }
+      paged(res, url, (found.jobs ?? []).map((j, i) => ({ id: found.iid * 100 + i, name: j.name, status: j.status })));
+    } else if (at[4]) {
+      const id = Number(at[4]), found = mine.find((x) => x.iid === Math.floor(id / 100))?.jobs?.[id % 100];
+      if (!found) { send(res, 404, { message: '404 Not found' }); return true; }
+      res.writeHead(200, { 'content-type': 'text/plain' }); res.end(found.trace ?? '');
+    } else if (at[5]) {
+      const found = mine.find((x) => x.iid === Number(at[5]));
+      if (!found) { send(res, 404, { message: '404 Not found' }); return true; }
+      paged(res, url, at[6] === 'notes'
+        ? (found.notes ?? []).map((n, i) => ({ id: i + 1, body: n.body, system: n.system ?? false, created_at: n.at, updated_at: n.at }))
+        : (found.files ?? []).map((f) => ({ old_path: f, new_path: f })));
+    } else {
+      const found = mine.find((x) => (x.sha ?? 'abc123') === decodeURIComponent(at[7]!));
+      if (!found) { send(res, 404, { message: '404 Commit Not Found' }); return true; }
+      send(res, 200, { id: found.sha ?? 'abc123', committed_date: found.committedAt ?? found.createdAt });
+    }
+    return true;
+  };
   const read = (req: IncomingMessage): Promise<string> => new Promise((r) => { let b = ''; req.on('data', (c: Buffer) => { b += c.toString(); }); req.on('end', () => r(b)); });
   /** A git request (part 3): only with a token GitLab takes, as Basic auth's password, as GitLab answers a private project. */
   const git = (req: IncomingMessage, res: ServerResponse, url: URL): boolean => {
@@ -104,6 +138,7 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
       if (!user.projects.includes(project)) return send(res, 404, { message: '404 Project Not Found' });
       return send(res, 200, { path_with_namespace: project, default_branch: fake.defaultBranches.get(project) ?? 'main' });
     }
+    if (doneFacts(res, url, user.projects)) return;
     const mr = /^\/api\/v4\/projects\/([^/]+)\/merge_requests\/(\d+)(\/merge)?$/.exec(url.pathname);
     if (mr) {
       const project = decodeURIComponent(mr[1]!), iid = Number(mr[2]);
