@@ -10,12 +10,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const A = 'a'.repeat(16);
 const B = 'b'.repeat(16);
-const builtIn = (name: string, text: string) => ({ name, builtIn: true, description: text, latest: { name, version: A, seq: 0, source: { kind: 'built-in' }, by: 'the hopper' }, versions: 1 });
+const builtIn = (name: string, text: string) => ({ name, builtIn: true, description: text, latest: { name, version: A, seq: 0, source: { kind: 'built-in' }, by: 'the hopper' }, versions: 1, requires: name === 'work' ? ['orchestrate'] : [] });
 const LIBRARY = {
   skills: [
     builtIn('work', 'Do the work end to end.'), builtIn('research', 'Research, then report.'), builtIn('proposal', 'Propose paths.'),
-    { name: 'orchestrate', builtIn: false, description: 'Task lists.', latest: { name: 'orchestrate', version: B, seq: 1, source: { kind: 'imported', repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 1 },
-    { name: 'deep-research', builtIn: false, description: 'Dig deep.', latest: { name: 'deep-research', version: B, seq: 2, source: { kind: 'created' }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 2 },
+    { name: 'orchestrate', builtIn: false, description: 'Task lists.', latest: { name: 'orchestrate', version: B, seq: 1, source: { kind: 'imported', repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 1, requires: [] },
+    { name: 'deep-research', builtIn: false, description: 'Dig deep.', latest: { name: 'deep-research', version: B, seq: 2, source: { kind: 'created' }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 2, requires: ['orchestrate', 'gone'] },
   ],
   workSkills: { kinds: {}, repos: { 'octo/site': { research: 'deep-research' } } },
   defaults: { code: 'work', research: 'research', proposal: 'proposal' },
@@ -108,6 +108,8 @@ describe('the Skills page (issue #1911)', () => {
     expect(skill('deep-research').textContent).toContain('written by an admin');
     expect(skill('deep-research').textContent).toContain(B.slice(0, 8));
     expect(skill('deep-research').textContent).toContain('2 versions');
+    expect(skill('work').textContent).toContain('requires orchestrate');
+    expect(skill('deep-research').textContent).toContain('requires orchestrate, gone (not in the library)');
     expect(buttonIn(skill('work'), 'Edit')).toBeUndefined();
     expect(buttonIn(skill('work'), 'Remove')).toBeUndefined();
   });

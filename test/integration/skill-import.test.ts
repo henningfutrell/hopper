@@ -50,8 +50,8 @@ async function start() {
   });
   apps.push(app);
   connectGitHub(app, ['octo/tools'], { token: github.mint('owner').accessToken });
-  put(github, 'skills/orchestrate/SKILL.md', '---\nname: orchestrate\ndescription: Task lists and tiers.\n---\nv1');
-  put(github, 'skills/orchestrate/scripts/orchestrate.sh', 'echo v1\n');
+  put(github, 'skills/workflow-orchestrate/SKILL.md', '---\nname: orchestrate\ndescription: Task lists and tiers.\n---\nv1');
+  put(github, 'skills/workflow-orchestrate/scripts/orchestrate.sh', 'echo v1\n');
   put(github, 'skills/other/SKILL.md', 'other');
   put(github, 'README.md', 'not a skill');
   return { app, github, root, held: h.held, token: await app.login() };
@@ -65,16 +65,16 @@ const skillOf = (v: SkillLibraryView, name: string) => v.skills.find((s) => s.na
 describe('a skill imported from a repository (issue #1911)', () => {
   it('imports the folder\'s files with the account of the repository, records where they came from, and a job on a fresh machine gets them', async () => {
     const t = await start();
-    const imported = await change(t, { action: 'import', repo: REPO, path: 'skills/orchestrate' });
+    const imported = await change(t, { action: 'import', repo: REPO, path: 'skills/workflow-orchestrate' });
     expect(imported.status, imported.body.error).toBe(200);
     const head = t.github.heads![`${REPO}@HEAD`]!;
-    expect(skillOf(imported.body, 'orchestrate')).toMatchObject({
+    expect(skillOf(imported.body, 'workflow-orchestrate')).toMatchObject({
       builtIn: false, description: 'Task lists and tiers.', versions: 1,
-      latest: { seq: 1, source: { kind: 'imported', repo: REPO, path: 'skills/orchestrate', ref: 'HEAD', commit: head } },
+      latest: { seq: 1, source: { kind: 'imported', repo: REPO, path: 'skills/workflow-orchestrate', ref: 'HEAD', commit: head } },
     });
-    const one = (await t.app.api('GET', '/api/skill-library/orchestrate')).body;
+    const one = (await t.app.api('GET', '/api/skill-library/workflow-orchestrate')).body;
     expect(one.skill.files).toEqual({ 'SKILL.md': '---\nname: orchestrate\ndescription: Task lists and tiers.\n---\nv1', 'scripts/orchestrate.sh': 'echo v1\n' });
-    expect(eventsOf(t, 'library_skill.saved').map((e) => e.data)).toEqual([expect.objectContaining({ name: 'orchestrate', seq: 1, source: { kind: 'imported', repo: REPO, path: 'skills/orchestrate', ref: 'HEAD', commit: head } })]);
+    expect(eventsOf(t, 'library_skill.saved').map((e) => e.data)).toEqual([expect.objectContaining({ name: 'workflow-orchestrate', seq: 1, source: { kind: 'imported', repo: REPO, path: 'skills/workflow-orchestrate', ref: 'HEAD', commit: head } })]);
     // Read with the user's own connection.
     expect(t.github.requests.some((r) => r.path.includes('/git/trees/') && r.auth !== '')).toBe(true);
 
@@ -84,7 +84,7 @@ describe('a skill imported from a repository (issue #1911)', () => {
     expect(named.status, named.body.error).toBe(200);
     expect(skillOf(named.body, 'mine')!.latest.source).toEqual({ kind: 'imported', repo: REPO, path: 'skills/other', ref: 'dev', commit: head });
 
-    await t.app.ui('/ui/api/work-skills', { kinds: { code: 'orchestrate' } }, { token: t.token });
+    await t.app.ui('/ui/api/work-skills', { kinds: { code: 'workflow-orchestrate' } }, { token: t.token });
     const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools' });
     const env = await waitFor(async () => t.held.get(job.id)?.env, { what: `job ${job.id} to run` });
     expect(readFileSync(join(t.root, env.HOPPER_WORK_SKILL!.replace('SKILL.md', 'scripts/orchestrate.sh')), 'utf8')).toBe('echo v1\n');
@@ -93,16 +93,16 @@ describe('a skill imported from a repository (issue #1911)', () => {
 
   it('refresh reads the same folder at the same ref again: a new version only when it changed, and each refresh recorded', async () => {
     const t = await start();
-    await change(t, { action: 'import', repo: REPO, path: 'skills/orchestrate' });
-    const same = await change(t, { action: 'refresh', name: 'orchestrate' });
+    await change(t, { action: 'import', repo: REPO, path: 'skills/workflow-orchestrate' });
+    const same = await change(t, { action: 'refresh', name: 'workflow-orchestrate' });
     expect(same.status, same.body.error).toBe(200);
-    expect(skillOf(same.body, 'orchestrate')!.versions).toBe(1);
+    expect(skillOf(same.body, 'workflow-orchestrate')!.versions).toBe(1);
 
-    put(t.github, 'skills/orchestrate/SKILL.md', 'v2');
-    const changed = await change(t, { action: 'refresh', name: 'orchestrate' });
-    expect(skillOf(changed.body, 'orchestrate')).toMatchObject({ versions: 2, latest: { seq: 2, source: { kind: 'imported', ref: 'HEAD', commit: t.github.heads![`${REPO}@HEAD`] } } });
-    expect((await t.app.api('GET', '/api/skill-library/orchestrate')).body.skill.files['SKILL.md']).toBe('v2');
-    expect(eventsOf(t, 'library_skill.refreshed').map((e) => [e.data.name, e.data.changed, e.data.version !== undefined])).toEqual([['orchestrate', true, true], ['orchestrate', false, true]]);
+    put(t.github, 'skills/workflow-orchestrate/SKILL.md', 'v2');
+    const changed = await change(t, { action: 'refresh', name: 'workflow-orchestrate' });
+    expect(skillOf(changed.body, 'workflow-orchestrate')).toMatchObject({ versions: 2, latest: { seq: 2, source: { kind: 'imported', ref: 'HEAD', commit: t.github.heads![`${REPO}@HEAD`] } } });
+    expect((await t.app.api('GET', '/api/skill-library/workflow-orchestrate')).body.skill.files['SKILL.md']).toBe('v2');
+    expect(eventsOf(t, 'library_skill.refreshed').map((e) => [e.data.name, e.data.changed, e.data.version !== undefined])).toEqual([['workflow-orchestrate', true, true], ['workflow-orchestrate', false, true]]);
     expect(eventsOf(t, 'library_skill.saved').map((e) => e.data.seq)).toEqual([2, 1]);
   });
 
@@ -113,14 +113,14 @@ describe('a skill imported from a repository (issue #1911)', () => {
     expect(none.body.error).toMatch(/no SKILL\.md/);
     expect((await change(t, { action: 'import', repo: REPO, path: 'skills/nope' })).status).toBe(404);
     expect((await change(t, { action: 'import', repo: REPO, path: 'skills/../x' })).status).toBe(400);
-    expect((await change(t, { action: 'import', repo: REPO, path: 'skills/orchestrate', name: 'work' })).status).toBe(409);
+    expect((await change(t, { action: 'import', repo: REPO, path: 'skills/workflow-orchestrate', name: 'work' })).status).toBe(409);
     expect((await change(t, { action: 'refresh', name: 'work' })).status).toBe(409);
     expect((await change(t, { action: 'refresh', name: 'nope' })).status).toBe(404);
-    await change(t, { action: 'import', repo: REPO, path: 'skills/orchestrate' });
-    expect((await change(t, { action: 'import', repo: REPO, path: 'skills/orchestrate' })).status).toBe(409);
+    await change(t, { action: 'import', repo: REPO, path: 'skills/workflow-orchestrate' });
+    expect((await change(t, { action: 'import', repo: REPO, path: 'skills/workflow-orchestrate' })).status).toBe(409);
     // An edit is the person's: refresh would lose it.
-    await change(t, { action: 'edit', name: 'orchestrate', files: { 'SKILL.md': 'mine' } });
-    expect((await change(t, { action: 'refresh', name: 'orchestrate' })).body.error).toMatch(/edited since/);
+    await change(t, { action: 'edit', name: 'workflow-orchestrate', files: { 'SKILL.md': 'mine' } });
+    expect((await change(t, { action: 'refresh', name: 'workflow-orchestrate' })).body.error).toMatch(/edited since/);
     expect((await change(t, { action: 'import', repo: REPO, path: 'skills/other', name: 'sneaky' }, null)).status).toBe(403);
     expect(eventsOf(t, 'library_skill.refreshed')).toEqual([]);
   });
