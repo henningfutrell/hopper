@@ -58,6 +58,26 @@ describe('GET /api/jobs/graph (issue #900)', () => {
     expect(g.stages).toEqual({ partly_done: 1, done: 1 });
   });
 
+  it('answers an issue no job here works from its work item: done, though its jobs are gone from the graph (issue #1895)', async () => {
+    const a = await start();
+    const root = await a.pull({ op: 'echo' }, { key: 'item-1' });
+    await a.waitForStatus(root.id, 'finished');
+    const { store } = a.user();
+    store.jobs.update(root.id, { source: issue(1) });
+    for (const number of [3, 4]) store.events.append({ type: 'job.child_issue_filed', jobId: root.id, data: { parent: { repo: 'acme/app', number: 1 }, child: { repo: 'acme/app', number, url: issue(number).url }, required: true, requestId: `r${number}` } } as Parameters<typeof store.events.append>[0]);
+    // Issue 3's job finished days ago, out of the queue's window, and GitHub closed the issue: its item is done, and no job
+    // of it is in the graph.
+    const old = await a.pull({ op: 'echo' }, { key: issue(3).key });
+    await a.waitForStatus(old.id, 'finished');
+    store.jobs.update(old.id, { finishedAt: '2026-01-01T00:00:00.000Z' });
+    store.events.append({ type: 'work_item.issue_closed', data: { key: issue(3).key, reason: 'completed', via: 'delivery' } } as Parameters<typeof store.events.append>[0]);
+    expect(store.workItems.get(issue(3).key)?.state).toBe('done');
+
+    const g = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
+    expect(g.nodes.find((n) => n.id === 'issue:acme/app#3')).toMatchObject({ stage: 'done', stageText: 'Done' });
+    expect(g.nodes.find((n) => n.id === 'issue:acme/app#4')).toMatchObject({ stage: 'no_job', stageText: 'Not started' });
+  });
+
   it('answers an open question and an open hand-off as nodes of their job', async () => {
     const a = await start();
     const asks = await a.pull({ op: 'ask', message: 'Which store should the cache use?' }, { key: 'item-5' });
