@@ -27,12 +27,14 @@ describe('the item lifecycle', () => {
     expect(checkOf('partly_done', T0)?.deadline).toBe(at(24 * 60));
   });
 
-  it('blocks an item a job holds past its deadline as stale only when no live job of it holds it', () => {
+  it('blocks an item a job holds past its deadline as stale only when no job of it is found', () => {
     const live = { id: 'j1', status: 'running', ended: false, updatedAt: T0 };
     for (const state of ['queued', 'working', 'waiting_outside'] as const) {
       const held = item({ state, eventState: state });
       // A live job holds it: its lane and its own wait have their own deadlines.
       expect(correctionOf(held, live, false, at(61))).toBeUndefined();
+      // Its job ended a moment ago: folded again from its end once that settles, never blocked.
+      expect(correctionOf(held, { ...ended, updatedAt: at(60) }, false, at(61))).toBeUndefined();
       // No job, or its job is gone: stale, but only past the deadline.
       expect(correctionOf(held, undefined, false, at(59))).toBeUndefined();
       expect(correctionOf(held, undefined, false, at(61))).toEqual({ kind: 'block', key: KEY, from: state, cause: 'stale' });

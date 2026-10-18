@@ -207,7 +207,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const replay = d.replay as { type: EventType; data: Record<string, unknown> } | undefined;
     if (replay) return job && job.id === item.jobId ? applyEvent(item, { type: replay.type, at: event.at, data: replay.data }, key, job) : undefined;
     const cause = BLOCKED_CAUSES.find((c) => c === d.cause);
-    return cause ? move('blocked', { blockedCause: cause, waitingOn: BLOCKED_WORDS[cause] }) : undefined;
+    // Partly done: its merged part is history, so it is not read as the whole item's merge (`stateOf`).
+    return cause ? move('blocked', { blockedCause: cause, waitingOn: BLOCKED_WORDS[cause], ...(base.eventState === 'partly_done' ? { pullRequest: undefined, pullRequestState: undefined } : {}) }) : undefined;
   }
   // A person's Won't do on a blocked item (issue #1891): dropped. Only a blocked item.
   if (event.type === 'work_item.dropped') return item?.eventState === 'blocked' ? move('dropped', { waitingOn: undefined }) : undefined;

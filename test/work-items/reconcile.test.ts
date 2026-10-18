@@ -173,7 +173,11 @@ describe('the item reconciler', () => {
 
     expect(reconciler(store, () => at(23 * 60)).reconcileOnce()).toBe(0);
     expect(reconciler(store, () => at(24 * 60)).reconcileOnce()).toBe(1);
-    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale', pullRequest: PR });
+    // Its merged part is history: the item is not read as done by that merge.
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
+    expect(store.workItems.get(KEY)?.pullRequest).toBeUndefined();
+    store.workItems.rebuild();
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
   });
 
   it('runs an item whose pull request was closed without a merge again once; a second close waits on a person', async () => {
