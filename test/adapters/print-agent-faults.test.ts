@@ -72,7 +72,7 @@ describe.each(AGENTS)('the %s executor, on a CLI that misbehaves', (agent) => {
     process.env.FAKE_AGENT_HUGE_MB = '8';
     const out = await runIn('huge');
     expect(out.kind).toBe('finished');
-    const summary = out.kind === 'finished' ? String(out.result!.summary) : '';
+    const summary = out.kind === 'finished' ? (out.result as { summary: string }).summary : '';
     expect(summary.length).toBeLessThanOrEqual(2000);
     if (agent !== 'claude') expect(summary).toBe('I wrote greeting.txt.');
   }, 30_000);
