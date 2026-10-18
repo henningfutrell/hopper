@@ -4,15 +4,19 @@
 // drift, out-of-band writes); a timeline entry on Infra picks its node too, so the node picked is the page's. Each source says when it
 // was read, and a stale one says why. The page loads the graph (infra.tsx) and shows this panel always: an empty graph says
 // how a check fills it. Discover now (part 3) asks the hopper to read every account and cluster its vault mints for, as its
-// schedule does every 6 hours. Read-only: nothing here acts on a cloud or a cluster.
-import { Network, RefreshCw } from 'lucide-react';
+// schedule does every 6 hours. Two views of the same graph and the same filters (issue #1893): Graph, and Globe (the nodes
+// at their AWS region, topology-globe.tsx); with no WebGL the Globe shows the graph and says why. Read-only: nothing here
+// acts on a cloud or a cluster.
+import { Globe, Network, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { post } from '@/lib/api';
 import type { TimelineEntry } from '@/model/infra-plans';
+import { webglAvailable } from '@/model/topology-globe';
 import { nodeEntries, DRAW_MAX, filterChoices, filterGraph, layout, neighbours, sideOf, sourceName, sourceState, type TopologyFilter } from '@/model/topology';
 import { KIND, KIND_TONE } from './infra-timeline';
+import { GlobeView } from './topology-globe';
 import type { GraphNode, NodeKind, TopologyGraph } from '../../../src/domain/types.ts';
 
 const SELECT = 'h-8 rounded-md border bg-transparent px-2 text-sm';
@@ -119,7 +123,15 @@ function DiscoverNow({ onGraph }: { onGraph: (g: TopologyGraph) => void }) {
 /** `selected` and `onSelect`: the node picked, the page's, so an Infra timeline entry picks its node here too. `onGraph`: the graph after Discover now. */
 export function TopologyPanel({ g, timeline, selected, onSelect: setSelected, onGraph }: { g: TopologyGraph; timeline: readonly TimelineEntry[]; selected?: string; onSelect: (id: string) => void; onGraph?: (g: TopologyGraph) => void }) {
   const [f, setF] = useState<TopologyFilter>({});
+  const [view, setView] = useState<'graph' | 'globe'>('graph');
+  const [noGlobe, setNoGlobe] = useState<string | undefined>();
   const shown = useMemo(() => filterGraph(g, f), [g, f]);
+  const pickView = (v: 'graph' | 'globe'): void => {
+    setView(v);
+    if (v === 'globe' && !webglAvailable()) setNoGlobe('this browser has no WebGL');
+  };
+  const graph = shown.nodes.length > DRAW_MAX ? <Empty>{shown.nodes.length} nodes: too many to draw. Pick an account, a cluster, a region or a kind.</Empty>
+    : <Drawing nodes={shown.nodes} links={shown.links} selected={selected} onSelect={setSelected} />;
   const node = g.nodes.find((n) => n.id === selected);
   const stale = g.sources.filter((s) => sourceState(s).stale).length;
   return (
@@ -135,11 +147,20 @@ export function TopologyPanel({ g, timeline, selected, onSelect: setSelected, on
             })}
           </ul>
           {stale > 0 && <p className="text-xs text-warn">{stale === 1 ? 'One source is' : `${stale} sources are`} stale: the graph shows their last good snapshot.</p>}
-          <Filters g={g} f={f} onF={setF} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Filters g={g} f={f} onF={setF} />
+            <div data-slot="topology-views" className="ml-auto flex gap-1">
+              <Button size="sm" variant={view === 'graph' ? 'secondary' : 'ghost'} aria-pressed={view === 'graph'} onClick={() => pickView('graph')}><Network />Graph</Button>
+              <Button size="sm" variant={view === 'globe' ? 'secondary' : 'ghost'} aria-pressed={view === 'globe'} onClick={() => pickView('globe')}><Globe />Globe</Button>
+            </div>
+          </div>
+          {view === 'globe' && noGlobe && <p data-slot="topology-globe-fallback" role="status" className="text-xs text-warn">The globe cannot be drawn: {noGlobe}. The graph shows instead.</p>}
           {shown.nodes.length === 0 ? <Empty>No node holds every filter.</Empty>
-            : shown.nodes.length > DRAW_MAX ? <Empty>{shown.nodes.length} nodes: too many to draw. Pick an account, a cluster, a region or a kind.</Empty>
-            : <Drawing nodes={shown.nodes} links={shown.links} selected={selected} onSelect={setSelected} />}
-          <p className="text-xs text-muted-foreground">{shown.nodes.length} nodes, {shown.links.length} links. Orange: AWS; green: Kubernetes; blue: a cluster; faint: named by a link only. Click a node.</p>
+            : view === 'globe' && !noGlobe ? <GlobeView g={g} shown={shown} selected={selected} onSelect={setSelected} onFail={setNoGlobe} />
+            : graph}
+          <p className="text-xs text-muted-foreground">{shown.nodes.length} nodes, {shown.links.length} links. {view === 'globe' && !noGlobe
+            ? 'Green: a region, larger with more nodes; orange: the region picked; a line: links between two regions. Click a region.'
+            : 'Orange: AWS; green: Kubernetes; blue: a cluster; faint: named by a link only. Click a node.'}</p>
           {node && <Details g={g} node={node} timeline={timeline} onSelect={setSelected} />}
           <KindList kinds={filterChoices(g).kinds} nodes={shown.nodes} onSelect={setSelected} />
         </>
