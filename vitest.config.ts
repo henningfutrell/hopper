@@ -9,7 +9,8 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     // HOPPER_TEST_HOST_SERVICES=0 leaves out the tests that need docker, sshd or LDAP (the pull request check, issue #672);
     // no container runtime leaves out every test that starts a container, and says so (issue #1038).
-    exclude: testExclude(process.env, { runtime: containerRuntime(process.env), say: (line) => console.warn(line) }),
+    // The cloud acceptance tests (issue #1956) run on their own: `npm run test:cloud`, vitest.cloud.config.ts.
+    exclude: [...testExclude(process.env, { runtime: containerRuntime(process.env), say: (line) => console.warn(line) }), 'test/cloud-acceptance/**'],
     testTimeout: 15000,
     pool: 'forks',
     // One run root as TMPDIR, and teardown of all the run left (test/support/run.ts, first: its

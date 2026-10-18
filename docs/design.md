@@ -86,7 +86,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
+| `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the **kill points** a test of the crash harness ends the process at, off in a deploy (`kill-points.ts`, issue #1954, "The crash harness"); the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
@@ -28458,3 +28458,62 @@ part whose plan replaces a resource is not partly done, met it is, a merged part
 (over a fake GitLab: a plan job's log that replaces a resource with the pipeline green is not done and reworks, a plan job not
 passed or none, a plan in a note since the head commit, a paths skill, a closed issue as before, yolo mode held and then
 merged, a person-merges path held), `test/domain/conditional-skills.test.ts` (a rule naming a GitLab project in a subgroup).
+
+## The crash harness (issue #1954, part 1, 2026-10-18)
+
+**Why.** Every restart and saga test before stopped a hopper cleanly: its coordinator released its leases and each step
+saw its abort. A crash does none of that. The harness proves the saga rules (#1524, #1662) for a process that ends with
+SIGKILL, or whose database connection drops while a step's record commits.
+
+**Kill points** (`src/sagas/kill-points.ts`). The coordinator passes one before each step's do or compensation starts
+(its try already recorded) and one after it answered, before its record: `saga:<kind>:<step>:before-do`, `after-do`,
+`before-compensate`, `after-compensate`. `killPoint(name)` ends the process with SIGKILL when the test run armed that name
+(`HOPPER_TEST_KILL_POINT`, `<name>` or `<name>#<n>` for its nth pass) and only in a test run (`HOPPER_TEST_RUN`, which only
+the test suite's setup sets, `test/support/run.ts`). A deploy sets neither, so each point is one environment read and goes
+on. `killPointsOf(definition)` lists the points of a saga kind, in step order: what a test and the randomised run pick from.
+
+**Hosts** (`test/crash/host.ts`, `test/crash/harness.ts`). Each hopper is a process of its own that runs the real
+composition root (`startApp`, through `test/support/app.ts`'s seams) over the test's schema, with its own work dir and one
+master key for all hosts of the test. The outside services are loopback fakes in the test process, so what they count
+outlives the hopper that called them. A killed host holds its saga leases until they end; the test ends them at once
+(`endLeases`), as their time would.
+
+**A dropped connection** (`test/support/stalling-proxy.ts`). The hopper reaches Postgres through the proxy, which ends the
+connection at the nth statement that holds a text: before Postgres reads it (the statement never ran), or once Postgres
+answered it (it ran and committed, and the hopper never hears so). A saga's record is one statement, so it is all there
+or not there.
+
+**The randomised run** (`test/crash/random.test.ts`). Each seed picks a provider, whether the provider refuses the mint,
+and a kill point (a compensation's when it refuses). `HOPPER_CRASH_SEEDS` seeds (default 2) from `HOPPER_CRASH_SEED`
+(default from the clock); a failure names the seed and the kill point, so the same run is made again with that seed.
+
+**What part 1 covers: the remote access mint saga** (#1609). A kill at each kill point of each provider's mint, a kill
+before and after its compensation, and a connection dropped before and after the record of a step commits: a second
+hopper ends the saga, with one tunnel and one DNS record at Cloudflare (one credential and one domain at ngrok) and remote
+access on, or, after a compensation, nothing at the provider and remote access off.
+
+**What it found.** The mint's `record` step was not idempotent. A crash after it wrote the tunnel into the settings and
+before the saga recorded the step left a try that threw ("the settings no longer ask for this tunnel"): the saga then
+compensated, released the tunnel, and left remote access on with no tunnel. The step now finds the same tunnel kept and
+goes on.
+
+**Decisions.**
+- **The host runs `startApp` through the test seams, not `node src/main.ts`.** The daemon's own entry has no seam for the
+  outside services' URLs (the tunnel providers have none in the environment), and a test-only setting for each would be
+  production surface. `startApp` is the composition root `main.ts` calls; only the seams differ.
+- **Kill points sit in the coordinator only, for now.** The step boundaries of every saga kind come from one place. A
+  GitHub call and its record inside a step, and an outbox send and its `sent` mark, are later parts.
+- **The drop is at a statement, not mid-transaction.** A saga's record is one `UPDATE`, which Postgres commits alone, so
+  "dropped mid-commit" is "dropped after Postgres answered it". A record of several statements needs a point inside its
+  transaction: a later part.
+
+**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); two
+hosts racing one lease under a skewed clock; landing batches killed between each GitHub write and its event (#1589); kill
+points between a GitHub call and its record and between an outbox send and its `sent` mark; the nightly run of N seeds and
+the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
+(a workflow file: a change to CI, which a job does not make from an issue's text).
+
+**Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
+outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
+each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks).
