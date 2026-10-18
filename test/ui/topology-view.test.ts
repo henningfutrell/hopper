@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Infra → Topology (ui/src/views/topology.tsx, issue #1781): the panel draws the graph, a click on a node shows its
+// Topology (ui/src/views/topology.tsx, issue #1781): the panel draws the graph, a click on a node shows its
 // details, its neighbours and the Infra changes that touched it, a stale source says why, and an empty topology says how a
 // check fills it. The Applies and drift feed (ui/src/views/infra-timeline.tsx) links each entry to the nodes it touched.
 import { act, createElement, useState } from 'react';
