@@ -10,6 +10,7 @@ const SIGN_IN = 'Until you come back from GitHub, or for 10 minutes.';
 const RECORD = 'For 90 days, or until you delete your hopper.io account.';
 const REGISTRATION = 'Until you remove the instance or unlink it on the instance, it is registered under another account, or you delete your hopper.io account.';
 const REGISTRATION_NAME = 'Until you change it, or as long as the registration.';
+const MACHINE_NAME = 'Until you clear it, remove the instance or unlink it on the instance, it is registered under another account, or you delete your hopper.io account.';
 const TOMBSTONE = 'For 90 days after the removal or the deletion of the account.';
 const MIGRATION = 'As long as hopper.io runs. It is about hopper.io, not about you.';
 
@@ -29,13 +30,16 @@ export const PRIVACY_NOTE: PrivacyField[] = [
   { table: 'sign_in', column: 'deletes', what: 'The account a deletion is to delete.', why: 'To delete only the account you confirm at GitHub.', kept: SIGN_IN },
   { table: 'record', column: 'id', what: 'A number for each record.', why: 'To show records in order.', kept: RECORD },
   { table: 'record', column: 'account_id', what: 'The account the record is about.', why: 'To show you only your own records.', kept: RECORD },
-  { table: 'record', column: 'kind', what: 'What was done: a sign-in, a sign-out, a deletion confirmed as another GitHub account, or an instance registered, named, removed, unlinked or registered under another account.', why: 'So you can see what was done on your account.', kept: RECORD },
+  { table: 'record', column: 'kind', what: 'What was done: a sign-in, a sign-out, a deletion confirmed as another GitHub account, an instance registered, named, removed, unlinked or registered under another account, or a machine named.', why: 'So you can see what was done on your account.', kept: RECORD },
   { table: 'record', column: 'at', what: 'When it was done.', why: 'So you can see when it was done.', kept: RECORD },
   { table: 'registration', column: 'account_id', what: 'The account that registered a hopper instance.', why: 'To show you only your own instances.', kept: REGISTRATION },
   { table: 'registration', column: 'install_id', what: 'The id of a hopper instance you registered: random, made by the instance. It names no person and no machine.', why: 'To know the instance again when it registers or connects.', kept: REGISTRATION },
   { table: 'registration', column: 'created_at', what: 'When you registered the instance.', why: 'To show when the instance was registered.', kept: REGISTRATION },
   { table: 'registration', column: 'name', what: 'The name you gave the instance at hopper.io, if any. The instance does not send it.', why: 'To show you which instance is which.', kept: REGISTRATION_NAME },
   { table: 'registration', column: 'seen_at', what: 'When the instance last connected to hopper.io.', why: 'To show you whether the instance still connects.', kept: REGISTRATION },
+  { table: 'machine_name', column: 'install_id', what: 'The id of the instance a machine you named belongs to.', why: 'To show the name under that instance only.', kept: MACHINE_NAME },
+  { table: 'machine_name', column: 'machine_key', what: 'The key the instance gives that machine: opaque, made by the instance. It is not the machine\'s name or address.', why: 'To know the machine again in the next state the instance reports.', kept: MACHINE_NAME },
+  { table: 'machine_name', column: 'name', what: 'The name you gave the machine at hopper.io. The instance does not send it.', why: 'To show you which machine is which.', kept: MACHINE_NAME },
   { table: 'registration_tombstone', column: 'install_id', what: 'The id of an instance you removed, or of a deleted account. Nothing of the account.', why: 'hopper.io cannot reach an instance, so it tells the instance at its next connection that its registration is gone.', kept: TOMBSTONE },
   { table: 'registration_tombstone', column: 'removed_at', what: 'When the instance was removed, or the account deleted.', why: 'To delete the tombstone after 90 days.', kept: TOMBSTONE },
   { table: 'cloud_migration', column: 'version', what: 'Which changes to its tables hopper.io made.', why: 'To make each change once.', kept: MIGRATION },

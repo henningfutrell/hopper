@@ -5,6 +5,8 @@
 // it confirms a deletion; a **hopper.io record** of each act on the account, its kind and time only, for RECORD_MS
 // (docs/hopper-io-security.md R6, R5); a **registration** of each instance the account registered, its instance id only;
 // with the name its owner gave it and when the instance last said hello, one per instance id (issue #465);
+// a **machine name** its owner gave a machine of a registered instance, by the instance id and the machine's opaque key
+// from its state snapshot, gone with the registration or at a move to another account (issue #465 item 4);
 // and a **registration tombstone** per registration a deletion or its owner removed, the instance id and the time only, for
 // TOMBSTONE_MS, so the instance learns it at its next hello (cloud/link.ts). No GitHub token is kept. A deleted account
 // takes its sessions, records and registrations with it.
@@ -26,12 +28,18 @@ export const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000;
 
 /** What a hopper.io record says was done on the account. */
 export type RecordKind = 'signed_in' | 'signed_out' | 'deletion_refused'
-  | 'instance_registered' | 'instance_renamed' | 'instance_removed' | 'instance_unlinked' | 'instance_moved';
+  | 'instance_registered' | 'instance_renamed' | 'instance_removed' | 'instance_unlinked' | 'instance_moved' | 'machine_renamed';
 export interface CloudRecord { kind: RecordKind; at: Date }
 /** One registration as its account's owner reads it: the name is theirs, the last-seen time the instance's last hello. */
-export interface CloudInstance { installId: string; name?: string; registeredAt: Date; seenAt?: Date }
-/** The most characters of an instance's name at hopper.io. */
+export interface CloudInstance {
+  installId: string; name?: string; registeredAt: Date; seenAt?: Date;
+  /** The owner's name for each machine they named, by the machine's key in the instance's state snapshot. */
+  machineNames?: Record<string, string>;
+}
+/** The most characters of an instance's name, and of a machine's, at hopper.io. */
 export const INSTANCE_NAME_MAX = 64;
+/** The most machine names one instance keeps: as many machines as one state snapshot holds (R7). */
+export const MACHINE_NAMES_MAX = 500;
 
 const MIGRATIONS: string[] = [
   `CREATE TABLE account (
@@ -63,6 +71,14 @@ const MIGRATIONS: string[] = [
    CREATE UNIQUE INDEX registration_install ON registration (install_id);
    ALTER TABLE record DROP CONSTRAINT record_kind_check, ADD CONSTRAINT record_kind_check CHECK (kind IN ('signed_in',
      'signed_out', 'deletion_refused', 'instance_registered', 'instance_renamed', 'instance_removed', 'instance_unlinked', 'instance_moved'));`,
+  // Machine names (issue #465 item 4): the owner's, by the instance id and the machine's opaque key; gone with the registration.
+  `CREATE TABLE machine_name (
+     install_id text NOT NULL REFERENCES registration (install_id) ON DELETE CASCADE,
+     machine_key text NOT NULL CHECK (machine_key ~ '^[A-Za-z0-9_-]{1,64}$'),
+     name text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 64), PRIMARY KEY (install_id, machine_key));
+   ALTER TABLE record DROP CONSTRAINT record_kind_check, ADD CONSTRAINT record_kind_check CHECK (kind IN ('signed_in',
+     'signed_out', 'deletion_refused', 'instance_registered', 'instance_renamed', 'instance_removed', 'instance_unlinked',
+     'instance_moved', 'machine_renamed'));`,
 ];
 
 export const hashOf = (token: string): string => createHash('sha256').update(token).digest('hex');
@@ -88,7 +104,7 @@ export interface CloudStore {
   takeSignIn(state: string, now: Date): Promise<SignInUnderWay | undefined>;
   /** Keeps the instance as the registration of the account, one per instance id, and drops a tombstone of the
    * instance. A registration under another account is replaced, with its name and last-seen time. The account it was
-   * registered under before, if any. */
+   * registered under before, if any. A move drops the instance's machine names. */
   register(githubUserId: string, installId: string, now: Date): Promise<string | undefined>;
   /** The instance said hello now: its registration's last-seen time. */
   seen(installId: string, now: Date): Promise<void>;
@@ -96,6 +112,9 @@ export interface CloudStore {
   instances(githubUserId: string): Promise<CloudInstance[]>;
   /** Names the account's own instance; undefined clears the name. False: the account has no such instance. */
   rename(githubUserId: string, installId: string, name: string | undefined): Promise<boolean>;
+  /** Names a machine of the account's own instance by its key; undefined clears the name. 'full': MACHINE_NAMES_MAX other
+   * machines of the instance are named. */
+  nameMachine(githubUserId: string, installId: string, machineKey: string, name: string | undefined): Promise<'named' | 'no-instance' | 'full'>;
   /** Removes the account's own instance, with a tombstone so its next hello is answered `unregister`. False: no such. */
   remove(githubUserId: string, installId: string, now: Date): Promise<boolean>;
   /** Removes the instance's registration when its account's login is `login`, with no tombstone: the instance unlinked.
@@ -170,7 +189,8 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
     },
     async register(githubUserId, installId, now) {
       const r = await q(`WITH t AS (DELETE FROM registration_tombstone WHERE install_id = $2),
-               old AS (SELECT account_id FROM registration WHERE install_id = $2)
+               old AS (SELECT account_id FROM registration WHERE install_id = $2),
+               m AS (DELETE FROM machine_name WHERE install_id = $2 AND (SELECT account_id FROM old) <> $1)
                INSERT INTO registration (account_id, install_id, created_at) VALUES ($1, $2, $3)
                ON CONFLICT (install_id) DO UPDATE SET account_id = EXCLUDED.account_id,
                  created_at = CASE WHEN registration.account_id = EXCLUDED.account_id THEN registration.created_at ELSE EXCLUDED.created_at END,
@@ -184,15 +204,32 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
       await q('UPDATE registration SET seen_at = $2 WHERE install_id = $1', [installId, now]);
     },
     async instances(githubUserId) {
-      const r = await q('SELECT install_id, name, created_at, seen_at FROM registration WHERE account_id = $1 ORDER BY created_at, install_id', [githubUserId]);
+      const r = await q(`SELECT install_id, name, created_at, seen_at,
+               (SELECT json_object_agg(m.machine_key, m.name) FROM machine_name m WHERE m.install_id = r.install_id) AS machine_names
+               FROM registration r WHERE account_id = $1 ORDER BY created_at, install_id`, [githubUserId]);
       return r.rows.map((x) => ({
         installId: String(x.install_id), ...(x.name ? { name: String(x.name) } : {}), registeredAt: new Date(x.created_at as string),
         ...(x.seen_at ? { seenAt: new Date(x.seen_at as string) } : {}),
+        ...(x.machine_names ? { machineNames: x.machine_names as Record<string, string> } : {}),
       }));
     },
     async rename(githubUserId, installId, name) {
       const r = await q('UPDATE registration SET name = $3 WHERE account_id = $1 AND install_id = $2', [githubUserId, installId, name ?? null]);
       return (r.rowCount ?? 0) > 0;
+    },
+    async nameMachine(githubUserId, installId, machineKey, name) {
+      const own = await q('SELECT 1 FROM registration WHERE account_id = $1 AND install_id = $2', [githubUserId, installId]);
+      if (!own.rowCount) return 'no-instance';
+      if (name === undefined) {
+        await q('DELETE FROM machine_name WHERE install_id = $1 AND machine_key = $2', [installId, machineKey]);
+        return 'named';
+      }
+      // A name for a machine already named, or a new one while fewer than MACHINE_NAMES_MAX are.
+      const r = await q(`INSERT INTO machine_name (install_id, machine_key, name)
+               SELECT $1, $2, $3 WHERE EXISTS (SELECT 1 FROM machine_name WHERE install_id = $1 AND machine_key = $2)
+                 OR (SELECT count(*) FROM machine_name WHERE install_id = $1) < $4
+               ON CONFLICT (install_id, machine_key) DO UPDATE SET name = EXCLUDED.name`, [installId, machineKey, name, MACHINE_NAMES_MAX]);
+      return (r.rowCount ?? 0) > 0 ? 'named' : 'full';
     },
     async remove(githubUserId, installId, now) {
       const r = await q(`WITH r AS (DELETE FROM registration WHERE account_id = $1 AND install_id = $2 RETURNING install_id),
