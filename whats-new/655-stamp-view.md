@@ -1,0 +1,1 @@
+- You can now ask the hopper what a job's trust stamp says: its trust level, whether the stamp is genuine, and what it stops — the start, sandbox approvals with no person, or all of the job's access. Use the command line or the API.

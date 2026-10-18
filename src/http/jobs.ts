@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import { failureSettingsOf } from '../domain/failures.ts';
+import { brakeOf, DEFAULT_INTAKE_STRICTNESS } from '../domain/intake-strictness.ts';
 import { jobBom } from '../domain/job-bom.ts';
 import { jobIdStarting } from '../domain/job-id-start.ts';
 import { jobGraph, type JobGraphLink } from '../domain/job-graph.ts';
@@ -39,6 +40,8 @@ export const JOB_GRAPH_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/jobs/graph', tag: 'Jobs', summary: 'The job graph', description: 'Where every job stands and how the jobs hang together (issue #900): nodes (jobs, issues, pull requests), each with its stage — `queued`, `running`, `waiting`, `pr_open`, `partly_done`, `done`, `failed`, `cancelled`, `superseded` (a failed or cancelled job a later job of its issue, its issue\'s close, a merge or a dismissal took the place of: no failure, issue #1036) — each job\'s failure, and each issue\'s stage, as the work-item ledger has its item (issue #1067: a failed job is `failed` only while its item is, `waiting` with `handedOff` while its item is handed to a person on it) —, or `no_job` for an issue no job works —, `done` with `awaitsBatch` for an issue that waits on its batch (issue #1337: merged into the landing branch, its batch run closes it), a job\'s task count, lane, machine, time in stage (`stageSince`) and pull request with its checks; a partly done job names the pull request that blocks the rest and what runs after its merge. Typed edges: `parent`, `follow_up`, `works`, `next_part`, `rerun`, `spawned`, `plan_apply`, `opened`, `waits_on_merge`, `closes`, `blocked_by` (an issue to an issue that blocks it), `stacked_on` (a pull request to the open one whose head branch is its base), `asks` (a job to its open question) and `hands_off` (a job to its open hand-off): an open question or hand-off is a node too, at `waiting`. `trees`: each group of connected nodes with its root and the nodes that block it (`blocking`). `stages`: how many jobs are in each stage. In plain words (issue #935): a node\'s `label` is its title, its repository and number apart; `stageText` says where it stands (`Building it (attempt 2 of 3)`, `PR open: checks running`, `Waiting on you: approve the plan`); `waitsOnYou` marks what waits on the person; a job\'s `phase`, `attempt` and `attempts`; each tree\'s `summary` is one line. The jobs are those `/api/queue` holds, the jobs whose pull request is open, the jobs with an open question or hand-off, the newest job of each of their issues, and the jobs these ran again, forked from or carried out. The Jobs view\'s graph and list.', returns: '`JobGraph` `{ nodes: JobGraphNode[], edges: JobGraphEdge[], trees: JobTree[], stages }`' },
   // A job's parts list (issue #935).
   { method: 'get', path: '/api/jobs/:id/bom', tag: 'Jobs', summary: 'A job\'s parts list', description: 'Everything one job touched or made (issue #935), grouped: `asked` (its issue, follow-ups it filed, rework asked), `work` (each run, its task list, lane, time, its usage — the share of each usage limit its runs burned and what they used of the machine —, the jobs that ran it again), `code` (its pull request, checks, branch, every commit, the files it changes, each push, its place in the merge order, merge), `outputs` (artifacts and their revisions, its plan or research report, the help pages and What\'s new lines its pull request changes), `infra` (plans and their approvals, minted credentials, drift, vault grants asked), `decisions` (questions and who answered them, overrides, its hand-off) and `machines` (the machines it ran on, Windows steps). Each part has its `status` — `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` — and its page (`href`, in the UI) or `url` (on GitHub); what waits on the person comes first. `header`: what was asked, where it stands and what is next, in plain words; `summary`: one line. `events`: the job\'s newest events, newest first. 404: no such job. The job page.', returns: '`JobBom` `{ jobId, header, summary, parts: BomPart[], events }`' },
+  // A job's trust stamp (issue #655 part 10).
+  { method: 'get', path: '/api/jobs/:id/stamp', tag: 'Jobs', summary: 'A job\'s trust stamp', description: 'What the job\'s trust stamp says and does (issue #655, design.md "Trust stamps"), by its id or its short id. `stamp`: the stamp as kept — `level`, `reasons`, `by`, `at`, `was` (a quarantined job\'s level before), `check` (Jev\'s trust check) — never its MAC; null: none. `verifies`: `yes`, `no` (the job or its stamp changed outside the hopper), `missing`, or `unknown` (the hopper has no stamp key). `level`: the level as verified, else null. `brake`: the intake strictness on the job — `strictness`, the level it `needs` to start, and where it was set (`at`). `startHold`: why the stamp holds the job\'s start, else null. `gate2`: `auto` (its sandbox requests may be approved with no person) or `person`. `doorsOpen`: whether its proxy token opens the hopper\'s doors. `checkDue`: whether Jev\'s trust check is due. Read only.', returns: '`StampView` `{ jobId, stamp, verifies, level, brake, startHold, gate2, doorsOpen, checkDue }`', errors: [404, 409] },
 ];
 
 /** The job graph's bounds: followed jobs read, steps back along a job's origins, lineage links read. */
@@ -149,16 +152,28 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     return { notes: job.notes ?? [] };
   });
 
-  // By its id, or its short id (issue #1780): the start of its id, as the views show it.
-  app.get('/api/jobs/:id', async (req) => {
+  // A job's trust stamp (issue #655 part 10): the stamp with no MAC, whether it verifies, the intake strictness on the job
+  // and what the stamp holds or lets through at the start and at gate 2.
+  app.get('/api/jobs/:id/stamp', async (req) => {
     const { id } = parseWith(idParams, req.params);
     const { store } = o.tenant(req);
-    const exact = store.jobs.get(id);
-    if (exact) return withPhase(exact);
-    const started = jobIdStarting(store.jobs.list().map((j) => j.id), id);
-    if (started.ambiguous) throw new HttpError(409, `${started.ambiguous} jobs have an id that starts with ${id}: give more of it`);
-    const job = started.id ? store.jobs.get(started.id) : undefined;
-    if (!job) throw new HttpError(404, `job ${id} not found`);
-    return withPhase(job);
+    const job = byIdOrShortId(store.jobs, id);
+    return store.jobs.stampView(job, brakeOf(store.settings.getIntakeStrictness() ?? DEFAULT_INTAKE_STRICTNESS, job.source));
   });
+
+  app.get('/api/jobs/:id', async (req) => {
+    const { id } = parseWith(idParams, req.params);
+    return withPhase(byIdOrShortId(o.tenant(req).store.jobs, id));
+  });
+}
+
+/** A job by its id, or its short id (issue #1780): the start of its id, as the views show it. 404: none; 409: more than one. */
+function byIdOrShortId(jobs: TenantParts['store']['jobs'], id: string): Job {
+  const exact = jobs.get(id);
+  if (exact) return exact;
+  const started = jobIdStarting(jobs.list().map((j) => j.id), id);
+  if (started.ambiguous) throw new HttpError(409, `${started.ambiguous} jobs have an id that starts with ${id}: give more of it`);
+  const job = started.id ? jobs.get(started.id) : undefined;
+  if (!job) throw new HttpError(404, `job ${id} not found`);
+  return job;
 }
