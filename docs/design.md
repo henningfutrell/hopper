@@ -28732,3 +28732,63 @@ to an in-memory MCP server double; the drift check for `fake-cursor-agent.mjs`.
 **Verification:** `test/support/fake-model-server.test.ts` (each API's answer, streamed and not, each fault, a side
 call, the proxy); `test/support/event-drift.test.ts` (kinds, paths, a field and a kind the real CLI does not print);
 `test/acceptance/print-agents.test.ts` and `test/acceptance/fake-drift.test.ts` (the real CLIs, where installed).
+
+## Acceptance tests, part 2: faults of the CLI, hooks and MCP, the TUI's screens (issue #1958, 2026-10-18)
+
+**Why.** Part 1 tested the faults of a model. A CLI also misbehaves by itself: it stops mid-line, prints a broken line,
+asks on a terminal it does not have, prints too much, prints bytes that are not UTF-8, or ends with no answer. And the
+herdr fakes record Claude Code's screens once; nothing showed when the real TUI changed them.
+
+**Faults of a CLI** (`test/adapters/print-agent-faults.test.ts`, `FAKE_AGENT_MODE` in `test/adapters/fake-print-agent.mjs`,
+each in the CLI's own shape, for codex, opencode, omp and claude):
+
+| Fault | The job |
+|---|---|
+| `partial-hang`: the events before the answer, half a line, then nothing | fails when the turn's timeout ends it |
+| `malformed`: a cut line before the answer | finishes: an event stream skips a line that is not JSON; claude's one result, cut, fails ("printed no JSON result") |
+| `permission-prompt`: a prompt on a terminal it does not have, exit 1 | fails with what the CLI said |
+| `huge`: megabytes of tool output before the answer | finishes, its summary capped at 2000 characters |
+| more than 64 MiB on a stream | fails: "printed more than 64 MiB" (the run's buffer, `src/executors/command.ts`; before, Node's "stdout maxBuffer length exceeded") |
+| `non-utf8`: a byte that is not UTF-8 in the answer | finishes; the byte reads as U+FFFD |
+| `no-final`: the events before the answer only, exit 0 | fails: "answered no message" (claude: "printed no JSON result") |
+
+**Hooks and MCP** (`test/acceptance/hooks-mcp.test.ts`, the **MCP server double** `test/support/fake-mcp-server.ts`). What
+the hopper configures for a print-mode run is the plugin's own `args` and the job's environment. The test gives the
+claude plugin `--mcp-config` (the double) and `--settings` with a `PostToolUse` hook, and the **fake model server** scripts
+a call of the double's tool. It asserts that the tool reached the model as `mcp__double__echo`, the double took the call,
+the hook fired on it with the job's `HOPPER_JOB_ID`, and the tool's answer went back to the model. Hooks are Claude
+Code's; the other CLIs are not in this test.
+
+**The screen-drift check** (`test/acceptance/tui-screens.test.ts`, `test/support/screen-drift.ts`; opt-in,
+`HOPPER_ACCEPTANCE_TUI=1`, for the nightly run). The real Claude Code TUI starts in a real herdr pane of a throwaway
+session with an empty home, against the fake model server. The hopper's own `startupStep` takes it past each screen to
+its prompt, then one turn runs. Each screen is matched to its recording in `src/executors/herdr/fake-screens.ts` (trust,
+imports, API key, bypass, the prompt's chrome), and every recorded line must be on the real screen with whitespace
+removed (a pane wraps a long path mid-word). The test fails on a screen the fakes do not record, a screen the hopper
+would ask a person about, or a recorded line the real screen no longer shows, and names it. Each capture goes to
+`HOPPER_ACCEPTANCE_TUI_OUT` when set (the nightly run's artifacts). `HOPPER_ACCEPTANCE_TUI_DIR` names a short directory
+where the temp dir's path is too long for herdr's session socket.
+
+**Decisions.**
+- **Onboarding is seeded done**, as the hopper's own seed writes it. Claude's first-run screens check
+  `api.anthropic.com`, which the fake server's proxy refuses, so the theme and login screens are not checked here.
+- **The MCP server double is written here, not taken from `@modelcontextprotocol/sdk`.** The SDK is no dependency of this
+  repository; the double answers four JSON-RPC methods in about 40 lines, and a dependency install for a test double costs
+  more than that code.
+- **The TUI run is opt-in**, not on whenever claude and herdr are found: it starts a herdr server, and it is the nightly
+  run's.
+
+**Found.** Claude Code 2.1.292's startup screens, in a home with onboarding done: trust, then the API key, then bypass.
+Its trust and bypass dialogs show lines the recordings leave out ("Claude Code'll be able to read, edit, and execute files
+here.", the security link); the hopper reads none of them.
+
+**Left for later parts.** The CI run of the acceptance tests on pull requests and the nightly run that sets
+`HOPPER_ACCEPTANCE_TUI=1` and keeps `HOPPER_ACCEPTANCE_TUI_OUT` as artifacts: workflow files, a change to CI, which a job
+does not make from an issue's text. The drift check for `fake-cursor-agent.mjs`: Cursor's agent cannot be pointed at
+another server, so no run of it is free of a real model.
+
+**Verification:** `test/adapters/print-agent-faults.test.ts` (each fault, each CLI); `test/support/fake-mcp-server.test.ts`
+and `test/support/screen-drift.test.ts` (no CLI needed); `test/acceptance/hooks-mcp.test.ts` (claude, where installed);
+`test/acceptance/tui-screens.test.ts` (opt-in; it failed with the recorded bypass dialog's "Yes, I accept" changed, and
+named that line).
+
