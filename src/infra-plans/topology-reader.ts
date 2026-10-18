@@ -1,13 +1,15 @@
 // What reads an AWS account and a Kubernetes cluster for topology discovery (issue #1781 part 3, design.md "The
 // infrastructure topology"): the `TopologyReader` port over the AWS SDK and @kubernetes/client-node, with the credential
-// the vault minted (a `hopper-read` session, a read token). Read calls only: list and describe. Each list is read page by
+// the vault minted (a `hopper-read` session, a read token). Read calls only: list and describe. An account is read in each
+// region it has enabled (issue #1864); its global lists (IAM roles, S3 buckets) in its home region only. Each list is read page by
 // page, at most NODES_MAX items; a list the credential may not read is left out, and a source none of whose lists can be
 // read throws the first error. The answers are in the AWS CLI's and kubectl's shapes, so the same mappers read them.
-import { DescribeVpcsCommand, EC2Client } from '@aws-sdk/client-ec2';
+import { DescribeRegionsCommand, DescribeVpcsCommand, EC2Client } from '@aws-sdk/client-ec2';
 import { DescribeClusterCommand, EKSClient, ListClustersCommand } from '@aws-sdk/client-eks';
 import { DescribeLoadBalancersCommand, ElasticLoadBalancingV2Client } from '@aws-sdk/client-elastic-load-balancing-v2';
 import { IAMClient, ListRolesCommand } from '@aws-sdk/client-iam';
 import { DescribeDBInstancesCommand, RDSClient } from '@aws-sdk/client-rds';
+import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
 import { ListQueuesCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { AppsV1Api, CoreV1Api, KubeConfig, NetworkingV1Api } from '@kubernetes/client-node';
 import type { TopologyReader } from '../domain/ports.ts';
@@ -18,13 +20,15 @@ import { NODES_MAX } from '../domain/topology.ts';
 export interface AwsSender { send(command: unknown, o?: { abortSignal?: AbortSignal }): Promise<unknown>; destroy?(): void }
 
 /** The AWS clients a read uses, made with the session and the region (and one endpoint for all, when given). */
-export type AwsClients = Record<'eks' | 'ec2' | 'elb' | 'rds' | 'sqs' | 'iam', AwsSender>;
+export type AwsClients = Record<'eks' | 'ec2' | 'elb' | 'rds' | 'sqs' | 'iam' | 's3', AwsSender>;
 
 type ClientConfig = { region: string; endpoint?: string; credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string }; maxAttempts: number };
 
 const sdkClients = (c: ClientConfig): AwsClients => ({
   eks: new EKSClient(c) as AwsSender, ec2: new EC2Client(c) as AwsSender, elb: new ElasticLoadBalancingV2Client(c) as AwsSender,
   rds: new RDSClient(c) as AwsSender, sqs: new SQSClient(c) as AwsSender, iam: new IAMClient(c) as AwsSender,
+  // One endpoint for all (an AWS other than AWS's) names no bucket in its host.
+  s3: new S3Client({ ...c, ...(c.endpoint ? { forcePathStyle: true } : {}) }) as AwsSender,
 });
 
 type Page = Record<string, unknown>;
@@ -45,9 +49,9 @@ async function paged<T>(send: AwsSender, signal: AbortSignal, ask: (token: strin
 }
 
 /** Each list read, or left out when it cannot be; the first error when none can be read. */
-async function eachList<T extends object>(what: string, lists: { [K in keyof T]: () => Promise<T[K]> }): Promise<Partial<T>> {
+async function eachList<T extends object>(what: string, lists: { [K in keyof T]?: () => Promise<T[K]> }): Promise<Partial<T>> {
   const keys = Object.keys(lists) as (keyof T)[];
-  const read = await Promise.allSettled(keys.map((k) => lists[k]()));
+  const read = await Promise.allSettled(keys.map((k) => lists[k]!()));
   const out: Partial<T> = {};
   read.forEach((r, i) => { if (r.status === 'fulfilled') out[keys[i]!] = r.value; });
   const failed = read.find((r): r is PromiseRejectedResult => r.status === 'rejected');
@@ -57,9 +61,9 @@ async function eachList<T extends object>(what: string, lists: { [K in keyof T]:
 
 const partitionOf = (region: string): string => (region.startsWith('cn-') ? 'aws-cn' : region.startsWith('us-gov-') ? 'aws-us-gov' : 'aws');
 
-/** An account in a region, read with `clients`. */
-export async function readAws(clients: AwsClients, r: { account: string; region: string }, signal: AbortSignal): Promise<AwsAnswers> {
-  const { eks, ec2, elb, rds, sqs, iam } = clients;
+/** An account in a region, read with `clients`; `regional`: without the global lists (IAM roles, S3 buckets). */
+export async function readAws(clients: AwsClients, r: { account: string; region: string; regional?: true }, signal: AbortSignal): Promise<AwsAnswers> {
+  const { eks, ec2, elb, rds, sqs, iam, s3 } = clients;
   const lists = await eachList<Omit<AwsAnswers, 'account' | 'region' | 'partition'>>(`the AWS account ${r.account} in ${r.region}`, {
     clusters: async () => {
       const names = await paged<string>(eks, signal, (nextToken) => new ListClustersCommand({ ...(nextToken ? { nextToken } : {}) }), 'clusters', (p) => textOf(p.nextToken));
@@ -76,7 +80,11 @@ export async function readAws(clients: AwsClients, r: { account: string; region:
     loadBalancers: async () => (await paged<NonNullable<AwsAnswers['loadBalancers']>[number]>(elb, signal, (Marker) => new DescribeLoadBalancersCommand({ ...(Marker ? { Marker } : {}) }), 'LoadBalancers', (p) => textOf(p.NextMarker))).filter((l) => textOf(l.LoadBalancerArn) && textOf(l.LoadBalancerName)),
     databases: async () => (await paged<NonNullable<AwsAnswers['databases']>[number]>(rds, signal, (Marker) => new DescribeDBInstancesCommand({ ...(Marker ? { Marker } : {}) }), 'DBInstances', (p) => textOf(p.Marker))).filter((d) => textOf(d.DBInstanceArn) && textOf(d.DBInstanceIdentifier)),
     queues: async () => paged<string>(sqs, signal, (NextToken) => new ListQueuesCommand({ ...(NextToken ? { NextToken } : {}) }), 'QueueUrls', (p) => textOf(p.NextToken)),
-    roles: async () => (await paged<NonNullable<AwsAnswers['roles']>[number]>(iam, signal, (Marker) => new ListRolesCommand({ ...(Marker ? { Marker } : {}) }), 'Roles', (p) => (p.IsTruncated === true ? textOf(p.Marker) : undefined))).filter((x) => textOf(x.Arn) && textOf(x.RoleName)),
+    ...(r.regional ? {} : {
+      roles: async () => (await paged<NonNullable<AwsAnswers['roles']>[number]>(iam, signal, (Marker) => new ListRolesCommand({ ...(Marker ? { Marker } : {}) }), 'Roles', (p) => (p.IsTruncated === true ? textOf(p.Marker) : undefined))).filter((x) => textOf(x.Arn) && textOf(x.RoleName)),
+      buckets: async () => (await paged<Page>(s3, signal, (ContinuationToken) => new ListBucketsCommand({ ...(ContinuationToken ? { ContinuationToken } : {}) }), 'Buckets', (p) => textOf(p.ContinuationToken)))
+        .flatMap((b) => (textOf(b.Name) ? [{ Name: textOf(b.Name)!, ...(textOf(b.BucketRegion) ? { BucketRegion: textOf(b.BucketRegion)! } : {}) }] : [])),
+    }),
   });
   return { account: r.account, region: r.region, partition: partitionOf(r.region), ...lists };
 }
@@ -117,19 +125,24 @@ export async function readKube(r: Parameters<TopologyReader['kube']>[0], signal:
 
 /** The reader. `awsClients`: what makes the AWS clients (default the SDK's), so a test sends to a fake. */
 export function createTopologyReader(o: { awsClients?: (c: ClientConfig) => AwsClients } = {}): TopologyReader {
+  const withClients = async <T>(r: Parameters<TopologyReader['aws']>[0], read: (clients: AwsClients) => Promise<T>): Promise<T> => {
+    const s = r.session;
+    const clients = (o.awsClients ?? sdkClients)({
+      region: r.region, ...(r.endpoint ? { endpoint: r.endpoint } : {}), maxAttempts: 2,
+      credentials: { accessKeyId: s.AccessKeyId, secretAccessKey: s.SecretAccessKey, sessionToken: s.SessionToken },
+    });
+    try {
+      return await read(clients);
+    } finally {
+      for (const c of Object.values(clients)) c.destroy?.();
+    }
+  };
   return {
-    async aws(r, signal) {
-      const s = r.session;
-      const clients = (o.awsClients ?? sdkClients)({
-        region: r.region, ...(r.endpoint ? { endpoint: r.endpoint } : {}), maxAttempts: 2,
-        credentials: { accessKeyId: s.AccessKeyId, secretAccessKey: s.SecretAccessKey, sessionToken: s.SessionToken },
-      });
-      try {
-        return await readAws(clients, r, signal);
-      } finally {
-        for (const c of Object.values(clients)) c.destroy?.();
-      }
-    },
+    awsRegions: (r, signal) => withClients(r, async ({ ec2 }) => {
+      const page = (await ec2.send(new DescribeRegionsCommand({}), { abortSignal: signal })) as Page;
+      return listOf<Page>(page, 'Regions').flatMap((x) => textOf(x.RegionName) ?? []);
+    }),
+    aws: (r, signal) => withClients(r, (clients) => readAws(clients, r, signal)),
     kube: (r, signal) => readKube(r, signal),
   };
 }

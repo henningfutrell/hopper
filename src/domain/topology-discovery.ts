@@ -1,7 +1,7 @@
 // Topology discovery inside the hopper (issue #1781 part 3, design.md "The infrastructure topology"): what one user's
 // discovery run reads, and the keys of its sagas. It reads each AWS account an `aws-account` minting credential mints for,
-// as the account's read role `hopper-read`, and each Kubernetes cluster: those EKS lists in the accounts, and those a
-// `cluster` minting credential mints for. Read-only: nothing here acts on a cloud or a cluster. Pure.
+// as the account's read role `hopper-read`, in every region it has enabled, and each Kubernetes cluster: those EKS lists in
+// the accounts, and those a `cluster` minting credential or a cluster override names. Read-only: nothing here acts on a cloud or a cluster. Pure.
 import type { Asset } from './access.ts';
 import type { ClusterOverride } from './clusters.ts';
 import type { Minted } from './minting.ts';
@@ -23,8 +23,13 @@ export const DISCOVERY_EVERY_MS = 6 * 60 * 60 * 1000;
  * source none of whose lists can be read throws, saying why.
  */
 export interface TopologyReader {
-  /** The account in the region, as the session sees it. `endpoint`: one endpoint for every service (an AWS other than AWS's). */
-  aws(r: { account: string; region: string; endpoint?: string; session: Extract<Minted, { kind: 'aws' }> }, signal: AbortSignal): Promise<AwsAnswers>;
+  /** The regions the account has enabled (EC2 `DescribeRegions`), asked in `region`. `endpoint` as for `aws`. */
+  awsRegions(r: { account: string; region: string; endpoint?: string; session: Extract<Minted, { kind: 'aws' }> }, signal: AbortSignal): Promise<string[]>;
+  /**
+   * The account in the region, as the session sees it. `endpoint`: one endpoint for every service (an AWS other than
+   * AWS's). `regional`: the region's own lists only, not the global ones (IAM roles, S3 buckets), which the home region reads.
+   */
+  aws(r: { account: string; region: string; endpoint?: string; session: Extract<Minted, { kind: 'aws' }>; regional?: true }, signal: AbortSignal): Promise<AwsAnswers>;
   /** The cluster `cluster` (its node's id) at `server`, as the token sees it. */
   kube(r: { cluster: string; name: string; server: string; certificateAuthorityData?: string; token: string }, signal: AbortSignal): Promise<KubeAnswers>;
 }
@@ -38,21 +43,36 @@ export function discoveryTargets(secrets: readonly { mints?: Asset }[]): Discove
   return { accounts: of('aws-account'), clusters: of('cluster') };
 }
 
-/** A cluster to read: its name (what the vault mints a token for) and its node's id (an EKS cluster's ARN, else its name). */
-export interface ClusterToRead { name: string; id: string }
+/**
+ * A cluster to read: its name (what the vault mints a token for), its node's id (an EKS cluster's ARN, else its name), and
+ * `listed` when EKS listed it in an account.
+ */
+export interface ClusterToRead { name: string; id: string; listed?: true }
 
 /**
- * The clusters to read: each EKS cluster the accounts listed, by its ARN, then each cluster with a minting credential of its
- * own that no account listed, by its name. One name EKS has in two accounts is read twice: the vault refuses both, and says why.
- * A cluster an override (issue #1766) names for EKS (`eksName`, in its one `account` when it names one) is minted for by the
- * override's name, the hopper's.
+ * The clusters to read (issue #1864: discovery decides, not the vault's entry names): each EKS cluster the accounts listed,
+ * by its ARN, then each cluster with a minting credential of its own or an override that no account listed, by its name. A
+ * cluster no account listed is a source only when the vault mints for it, or when it held a snapshot before
+ * (`readClusters`), so a stale entry is no source. One name EKS has in two accounts is read twice: the vault refuses both,
+ * and says why. A cluster an override (issue #1766) names for EKS (`eksName`, in its one `account` when it names one) is
+ * minted for by the override's name, the hopper's.
  */
 export function clustersToRead(listed: readonly NonNullable<AwsAnswers['clusters']>[number][], own: readonly string[], overrides: readonly ClusterOverride[] = []): ClusterToRead[] {
   const nameOf = (c: { name: string; arn: string }): string =>
     overrides.find((o) => (o.eksName ?? o.name) === c.name && (!o.account || c.arn.split(':')[4] === o.account))?.name ?? c.name;
-  const out = listed.map((c) => ({ name: nameOf(c), id: c.arn }));
-  for (const name of own) if (!out.some((c) => c.name === name)) out.push({ name, id: name });
+  const out: ClusterToRead[] = listed.map((c) => ({ name: nameOf(c), id: c.arn, listed: true }));
+  for (const name of [...own, ...overrides.map((o) => o.name)]) if (!out.some((c) => c.name === name)) out.push({ name, id: name });
   return out.filter((c, i) => out.findIndex((d) => d.id === c.id) === i);
+}
+
+/** The keys of discovery's cluster sources that never held a snapshot and that this run did not report (`reported`: ids). */
+export function neverReadClusters(kept: readonly TopologySource[], reported: readonly string[]): string[] {
+  return kept.flatMap((s) => (s.source.kind === 'kubernetes' && s.reporter === DISCOVERY_REPORTER && !s.lastGood && !reported.includes(s.source.cluster) ? [s.key] : []));
+}
+
+/** The regions to read in an account (issue #1864): its home region (the minting credential's) first, then each one listed, once. */
+export function regionsToRead(home: string, listed: readonly string[]): { region: string; home: boolean }[] {
+  return [{ region: home, home: true }, ...[...new Set(listed)].filter((r) => r !== home).sort().map((region) => ({ region, home: false }))];
 }
 
 /** An account the vault minted nothing for: each source of it kept is read again as failed, so its snapshot says why. */
