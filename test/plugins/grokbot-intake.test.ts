@@ -135,4 +135,18 @@ describe('Grok Bot routine: intake stopped', () => {
     expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.disk_over_budget', ...over }));
     expect(r.hits[1]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.disk_within_budget', machineId: 'desk', usedBytes: 41e9, budgetBytes: 50e9 }));
   });
+  it('posts work_item.person_asked (issue #1891): a blocked item waits on a person, with what it waits on', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const key = 'https://github.com/octocat/hello/issues/828';
+    for (const l of listeners) l({ ...event('work_item.person_asked', { key, cause: 'pr_closed', jobId: 'j1', pullRequest: 'https://github.com/octocat/hello/pull/830' }), jobId: 'j1' });
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({
+      source: 'hopper', kind: 'work_item.person_asked', jobId: 'j1', issueUrl: key, cause: 'pr_closed',
+      waitingOn: 'a person: its pull request was closed without a merge', pullRequest: 'https://github.com/octocat/hello/pull/830',
+    }));
+  });
 });

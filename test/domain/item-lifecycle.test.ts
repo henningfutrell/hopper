@@ -76,4 +76,20 @@ describe('the item lifecycle', () => {
     expect(correctionOf(open, ended, false, at(61))).toEqual({ kind: 'block', key: KEY, from: 'pr_open', cause: 'stale' });
     expect(correctionOf(item({ state: 'pr_open', eventState: 'pr_open' }), ended, true, at(61))).toEqual({ kind: 'block', key: KEY, from: 'pr_open', cause: 'no_pr' });
   });
+
+  it('asks a person once about a blocked item that is stuck work; never one it runs again by itself, nor one asked already', () => {
+    const PR = 'https://github.com/o/r/pull/2';
+    const stale = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'stale', pullRequest: PR });
+    expect(correctionOf(stale, ended, false, at(1))).toBeUndefined();
+    expect(correctionOf(stale, ended, false, at(3))).toEqual({ kind: 'ask', key: KEY, cause: 'stale', jobId: 'j1', pullRequest: PR });
+    expect(correctionOf({ ...stale, personAsked: true }, ended, false, at(3))).toBeUndefined();
+    // For want of a pull request: only once Failures lists it, as its report names one a moment after the job's end.
+    const noPr = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'no_pr' });
+    expect(correctionOf(noPr, ended, false, at(5))).toBeUndefined();
+    expect(correctionOf(noPr, ended, false, at(10))).toEqual({ kind: 'ask', key: KEY, cause: 'no_pr', jobId: 'j1' });
+    // Closed once: the reconciler runs it again, no person is asked. Closed twice: a person is asked.
+    const closed = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'pr_closed', closedWithoutMerge: 1, pullRequest: PR });
+    expect(correctionOf(closed, { ...ended, status: 'running', ended: false }, false, at(3))).toBeUndefined();
+    expect(correctionOf({ ...closed, closedWithoutMerge: 2 }, ended, false, at(3))).toEqual({ kind: 'ask', key: KEY, cause: 'pr_closed', jobId: 'j1', pullRequest: PR });
+  });
 });
