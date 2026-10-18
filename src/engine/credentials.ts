@@ -12,6 +12,9 @@ import type { EngineContext } from './context.ts';
 /** What to do when a machine cannot reach the hopper (issue #695). */
 export const REACH_ACTION = 'Set an address this machine reaches as the link base (Settings → Artifacts), or join the machine with Add machine: a client target\'s jobs reach the hopper through its client';
 
+/** The machine cannot reach the hopper at the URL the job would be given (issue #695): why, and what to do. */
+export class Unreached extends Error {}
+
 /** The job's credentials dir under its scratch dir. */
 export const credentialsDirOf = (scratch: string): string => `${scratch}/credentials`;
 
@@ -21,7 +24,7 @@ const pathsUnder = (dir: string, paths: Record<string, string>): Record<string, 
 /**
  * The variables a job runs with: its proxy files kept under `scratch` on its machine first. `note` says why a job runs
  * without the GitHub proxy: its machine reaches no hopper URL, or its connection keeps no files. Throws when the machine
- * cannot reach the hopper at the URL the job would be given (issue #695): the job fails with the reason.
+ * cannot reach the hopper at the URL the job would be given (issue #695): `Unreached`, with the reason (job-run.ts `place`).
  */
 export async function placeCredentials(
   c: Pick<EngineContext, 'jobProxy'>, job: Job, machine: MachineSnapshot, shell: MachineShell | undefined, scratch: string, make: boolean,
@@ -38,7 +41,7 @@ export async function placeCredentials(
     note(`it runs without the hopper's GitHub proxy: ${(e as Error).message}`);
     return {};
   }
-  if (unreached) throw new Error(`${unreached}. ${REACH_ACTION}`);
+  if (unreached) throw new Unreached(`${unreached}. ${REACH_ACTION}`);
   return { ...pathsUnder(dir, proxy.paths), ...proxy.vars };
 }
 

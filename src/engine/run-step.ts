@@ -103,7 +103,7 @@ async function holdThroughLinkLoss(c: EngineContext, executor: Executor, job: Jo
 export async function runStep(c: EngineContext, e: RunEntry, d: JobRunData, takenUp: TakenUp | undefined): Promise<Partial<JobRunData>> {
   const { store } = c;
   const started = runJob(c, d);
-  if (d.gone || d.outcome || !started) return {};
+  if (d.gone || d.outcome || d.unreached !== undefined || !started) return {};
   // Cancelled before it ran (its pane opening): the task is not sent; the end's cleanup closes the pane.
   if (e.cancelReason !== undefined) return { outcome: { kind: 'failed', error: 'aborted' }, ...cancelOf(e) };
   const executor = c.executors.get(started.spec.executor);
@@ -164,6 +164,8 @@ export async function runStep(c: EngineContext, e: RunEntry, d: JobRunData, take
   }
   // Shutdown, or another hopper took it (issue #1662): the job stays running in the store; the step is done again.
   if (left(c, e)) throw new Error('the run is left here: this hopper stops, or another one holds the job');
+  // Its machine out of reach of the hopper at its start (issue #1920): queued again by the end step.
+  if (e.unreached !== undefined && e.cancelReason === undefined) return { unreached: e.unreached };
   // Its pane gone when its run was taken up (issue #1569): the move says why, as a restart's recovery does.
   const lostWhy = takenUp && lost === 'gone' ? { lostWhy: `its pane was gone after ${takenUp === 'daemon restart' ? 'a daemon restart' : 'its hopper stopped'}` } : {};
   return { outcome, ...(lost ? { lost } : {}), ...lostWhy, ...cancelOf(e) };

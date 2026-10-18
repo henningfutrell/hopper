@@ -16677,9 +16677,19 @@ again; never sign in another way. Path 1 (the hopper holds the job through a lin
 machine's own connection — this machine, ssh, or the client's `POST /reach {url}` (signed like every client call). It is
 curl, which the job's tools use too, at `<url>/job/stream` without a token: any answer of the hopper's (401 included) is a
 reach; no answer, a name that does not resolve, a refused address (421) or a 5xx (a proxy whose hopper does not answer)
-is not, and curl missing is said. Not reached: the job fails at once with `this machine cannot reach the hopper at <url>:
-<why>` and the action (`REACH_ACTION`: set an address this machine reaches as the link base, or join the machine as a
-client target), never a mid-job question. A client older than the check has no `/reach`: its jobs start unchecked, and
+is not, and curl missing is said. Not reached: the reason is `this machine cannot reach the hopper at <url>: <why>` and
+the action (`REACH_ACTION`: set an address this machine reaches as the link base, or join the machine as a client
+target), never a mid-job question. A resuming job fails at once with it: it returns to the pane it holds there.
+
+**A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
+machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
+jobs, and its jobs were given a loopback URL it does not reach: each failed at once. Now a fresh start that the reach check
+finds out of reach holds that machine: for ten minutes (`REACH_HOLD_MS`) it carries the reason as its **address
+problem**, so the decider holds a new job there (`addressHolds`) and the Machines view shows it off-network. The job is
+queued again (`job.requeued`, the reason), never failed, and is placed on a machine that reaches the hopper, or waits,
+held with the reason. After the ten minutes the next job placed there checks again. The hold is in the memory of the
+hopper whose start found it: a restart forgets it, and the next start there finds it again. A probe's own address
+problem (an ssh target's) wins over it. A client older than the check has no `/reach`: its jobs start unchecked, and
 the hopper loads its release there as for any client.
 
 **Never a GitHub sign-in.** The protocol line on GitHub (`GITHUB_PROXY_LINE`) says: when the hopper cannot be reached,
@@ -16698,8 +16708,8 @@ after the hold, never sent again once connected), `test/github-proxy/retry-after
 with Retry-After, stops after its tries, and never sends a 500 or a plain 503 again), `test/client/reach.test.ts` (the check on this machine and
 on a client: reached, a name not resolved, 421, 502, no curl), `test/integration/client-door.test.ts` (a real joined
 client: the job is given the door, checked first, and `hopper-skill` works through it),
-`test/integration/github-proxy.test.ts` (a job whose machine cannot reach the hopper fails at its start, with the
-action), `test/herdr/executor-login.test.ts` (a GitHub login reported again fails the job).
+`test/integration/github-proxy.test.ts` (a job whose machine cannot reach the hopper is queued again at its start, and
+the machine holds it, with the action), `test/engine/reach-holds.test.ts` (the hold and its end), `test/herdr/executor-login.test.ts` (a GitHub login reported again fails the job).
 
 ## herdr client and server on an ssh target (issue #741, 2026-10-10)
 
