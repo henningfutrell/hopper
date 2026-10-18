@@ -4,7 +4,7 @@
 // pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
 /** Where the hopper makes a decider call. */
-export const DECISION_POINTS = ['question-risk', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order', 'intake-trust', 'sandbox-request'] as const;
+export const DECISION_POINTS = ['question-risk', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order', 'intake-trust', 'intake-kind', 'sandbox-request'] as const;
 export type DecisionPoint = typeof DECISION_POINTS[number];
 /**
  * A point the hopper no longer asks at, which events from before still name: `question-answer`, Jev picking a question's
@@ -33,6 +33,7 @@ export const DEFAULT_MINOR_DECISION_SETTINGS: MinorDecisionSettings = {
   'intake-order': { mode: 'shadow', threshold: 0.85 },
   'merge-order': { mode: 'shadow', threshold: 0.85 },
   'intake-trust': { mode: 'shadow', threshold: 0.85 },
+  'intake-kind': { mode: 'shadow', threshold: 0.85 },
   'sandbox-request': { mode: 'shadow', threshold: 0.85 },
 };
 
@@ -65,6 +66,10 @@ export const DECISION_POINT_TEXT: Readonly<Record<DecisionPoint, { label: string
   'intake-trust': {
     label: 'The trust of a job before it starts',
     describe: 'A job would start on the trust rules alone. Jev reads its text and where it came from, and keeps its trust level or lowers it, with a reason. Jev can never raise it. Active, the job waits for the check, and a check with no sure answer lowers it: a person then approves its trust on the job.',
+  },
+  'intake-kind': {
+    label: 'The kind of a job before it starts',
+    describe: 'A job from a job source would do the work its item asks for. Jev reads its text and picks the kind: the work, research, or a proposal. Jev can only ask for research or a proposal, which change nothing, never for more. Active, the job waits for the check; a check with no sure answer keeps the work.',
   },
   'sandbox-request': {
     label: 'A sandbox request no person would read',

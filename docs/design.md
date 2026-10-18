@@ -13276,6 +13276,7 @@ setting), edited in Settings → Decider (admin), read at every decision:
 | `intake-order` | one sync of a job source finds two or more new items — no job follows them — (issue #796, `src/sources/intake-order.ts`) | the first 10 new items, in the source's order | the picked item is offered first: its job is queued first, and goes first among jobs of its priority; the rest follow in the source's order |
 | `merge-order` | a repository's tending queue is free and two or more of its waiting pull requests need tending (issue #796, "The tending queue", `src/sources/tend-order.ts`) | the first 10, in the rules' order | the picked pull request is tended next |
 | `intake-trust` | a waiting job whose trust stamp is due for Jev's trust check: `approved` or `trusted`, no person stamped it, no check on it (issue #655 part 4, "Trust stamps", `src/engine/trust-checks.ts`) | `keep`, and each lower level but `quarantined` with each reason (`lower:untrusted:touches_ci`) | the job's stamp is signed at the picked level; active, the job waits for the check, and a check with no sure pick gives `untrusted` (fail closed) |
+| `intake-kind` | a waiting work job from a job source that never started and has no kind check: no research or proposal asked, no fork, follow-on or tend job, on an executor that writes reviews (issue #655, "Trust stamps", `src/engine/kind-checks.ts`) | `keep`, `research`, `proposal` | research or a proposal asks the job for it (`research.asked`, `proposal.asked`, `by: jev`); active, the job waits for the check, and a check with no sure pick keeps the work |
 | `sandbox-request` | a job's sandbox request that the sandbox approvals would approve with no person, under sandbox strictness `standard`, of a template not of low blast radius (issue #655 part 13, "Trust stamps", `src/sandbox/requests.ts`) | `allow`, and `hold` or `deny` with each reason (`deny:out_of_scope`) | allow approves the run by `Jev`; hold leaves it for a person; deny declines it and lowers the job's trust; active, the request waits for Jev, and a check with no sure pick holds it (fail closed) |
 
 A `failure-assessment` ask is kept on its failure record (`jev { error, attempt, ranMs?, machineId?, doneCheck? }`, issue
@@ -17428,9 +17429,33 @@ Cost: one more GraphQL read per judged issue per sync, as the events read is one
 `edited` is a role the job's origin acts and `job.queued`'s schema already take (GitLab). No migration. An issue a build
 before this part took keeps its job; an issue it judges again (Run again) is judged with its edits.
 
+**Jev's kind check** (part 18, `src/domain/kind-check.ts`, `src/engine/kind-checks.ts`; the decision point `intake-kind`,
+"Decider calls"). The issue: "A second point, `intake-kind`, picks job, question, proposal, research, permission or status".
+The hopper has three kinds of job a source item can start: the work, research and a proposal (issues #537, #543). So Jev picks
+from `keep` (the work), `research` and `proposal`. It is **due** (`kindCheckDue`) for a waiting work job from a job source
+that never started (no attempt, no answer waiting), with no check on it: no research or proposal asked already (a label, a
+heading or a person), no fork, follow-on or tend job, on an executor that writes reviews.
+
+- **What Jev reads** (`kindCheckState`): the job's id and goal; its source's kind, repository, number and labels; and the
+  first 4000 characters of its prompt as `untrustedText`, which the instructions say is data, never instructions.
+- **Only less, never more.** Research and a proposal change nothing and open no pull request. Jev can ask a work job for
+  one of them, as a person's ask does (`askFor`), and never turns research or a proposal into work.
+- **Off**: Jev is not asked; the job does the work. **Shadow** (the default): Jev is asked once per waiting job and hopper
+  run; the pick is only recorded and compared with `keep` at once.
+- **Active**: the decider holds the job while the check is due (`Jev checks what kind of job it is: held — …`). The check is
+  then kept on the job (`kindCheck { pick, confidence, applied, kind?, fail? }`). A pick of research or a proposal sets that
+  flag on its spec (`respecify`, so its stamp is signed for the new spec and the trust check is asked again) and appends
+  `research.asked` or `proposal.asked` with `by: jev`. A check is written only while it is still due: a start or a person's
+  ask that came first wins.
+- **No gate.** The kind is not trust: a check with no sure pick — no answer, not sure (`fail: not_sure`), Jev not there
+  (`fail: skipped`), a pick that is no option — keeps the work. Trust stays the job of the stamp and Jev's trust check.
+
+Persisted state: `kindCheck` is one more optional field in the job's body; the build before keeps it as it is and does not
+read it. No migration.
+
 **Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the linked
-pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, and the Intake view of the
-stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+pull requests and their forks, the repository's visibility), and the Intake view of the stamp. Brake 1's `open` lets a
+`screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

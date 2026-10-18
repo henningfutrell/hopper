@@ -10,6 +10,7 @@ import type { PriorityLanes } from './priority-lanes.ts';
 import type { BlastRadius } from './blast-radius.ts';
 import type { PlacementPicks } from './lane-calls.ts';
 import type { TrustChecks } from './trust-checks.ts';
+import { KIND_CHECK_PENDING, type KindChecks } from './kind-checks.ts';
 import { CHECK_PENDING } from '../domain/trust-stamp.ts';
 import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
@@ -18,13 +19,16 @@ import { queueOrder } from './queue-order.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
 
+/** Jev's checks before a job's first start (issue #655): its trust and its kind. */
+export interface PreStartChecks { trust: TrustChecks; kind: KindChecks }
+
 const WAITING = ['queued', 'held'] as const;
 const RUNNING = ['claimed', 'running'] as const;
 
 /** A job's expected cost, where one is known (issue #688). */
 export type ExpectedCostOf = (job: Job) => ExpectedCost | undefined;
 
-async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks, trust: TrustChecks): Promise<{ machines: MachineSnapshot[]; inputs: () => DecisionInputs }> {
+async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks, checks: PreStartChecks): Promise<{ machines: MachineSnapshot[]; inputs: () => DecisionInputs }> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
   const signedOut = signedOutOf(c.usage().map((u) => ({ name: u.name, state: u.state?.() })));
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
@@ -36,10 +40,11 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const sandboxesHeld = c.sandboxesHeld(waiting);
     const preemption = preemptionInput(preemptionSettings(c.store), c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined));
     const strictness = c.store.settings.getIntakeStrictness() ?? DEFAULT_INTAKE_STRICTNESS;
-    // Jev's trust check (issue #655 part 4): asked after this Decision's transaction; active, a job waits for it.
-    const checking = trust.of(waiting);
+    // Jev's trust check (issue #655 part 4) and kind check: asked after this Decision's transaction; active, a job waits for them.
+    const checking = checks.trust.of(waiting);
+    const kindChecking = checks.kind.of(waiting);
     const stampHeld = waiting.flatMap((j) => {
-      const reason = c.store.jobs.stampHold(j, brakeOf(strictness, j.source)) ?? (checking(j) ? CHECK_PENDING : undefined);
+      const reason = c.store.jobs.stampHold(j, brakeOf(strictness, j.source)) ?? (checking(j) ? CHECK_PENDING : kindChecking(j) ? KIND_CHECK_PENDING : undefined);
       return reason ? [{ jobId: j.id, reason }] : [];
     });
     return {
@@ -193,9 +198,9 @@ function failRetiredPins(c: EngineContext, machines: readonly MachineSnapshot[])
 }
 
 /** Returns the claims whose executors the caller must start, and the jobs it must park for preemption, outside the transaction. */
-export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks, trust: TrustChecks): Promise<Applied> {
+export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks, checks: PreStartChecks): Promise<Applied> {
   const none: Applied = { claims: [], preempts: [] };
-  const { machines, inputs } = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected, picks, trust);
+  const { machines, inputs } = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected, picks, checks);
   if (c.stopping()) return none;
   freeStrandedLanes(c);
   failRetiredPins(c, machines);
