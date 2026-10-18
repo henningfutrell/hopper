@@ -123,11 +123,21 @@ export async function machineOf(c: EngineContext, laneId: LaneId): Promise<Machi
   return lane ? (await c.machines.list()).find((m) => m.id === lane.machineId) : undefined;
 }
 
-/** The run's outcome without the agent's sign-ins it was given. */
+/** Every string inside a value passed through `mask`. */
+const maskedStrings = (v: unknown, mask: (text: string) => string): unknown => {
+  if (typeof v === 'string') return mask(v);
+  if (Array.isArray(v)) return v.map((x) => maskedStrings(x, mask));
+  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskedStrings(x, mask)]));
+  return v;
+};
+
+/**
+ * The run's outcome without the agent's sign-ins it was given and with GitHub tokens masked (issue #1957): the saga keeps
+ * it in its data, a row of the database, so it is masked before it is kept, not only where the job records it.
+ */
 export function masked(e: RunEntry, outcome: ExecutionOutcome): ExecutionOutcome {
-  if (outcome.kind !== 'failed' || e.given.size === 0) return outcome;
-  const mask = (text: string): string => [...e.given].reduce((t, v) => maskSecret(t, v, 'agent sign-in'), text);
-  return { ...outcome, error: mask(outcome.error), ...(outcome.tail !== undefined ? { tail: mask(outcome.tail) } : {}) };
+  const mask = (text: string): string => maskGitHubTokens([...e.given].reduce((t, v) => maskSecret(t, v, 'agent sign-in'), text));
+  return maskedStrings(outcome, mask) as ExecutionOutcome;
 }
 
 /** An executor call that never rejects: a throw is the run's failure. */
