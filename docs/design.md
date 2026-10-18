@@ -20809,6 +20809,25 @@ and the writes held while a sign-in has ended are the next parts.
 - **Not in this part:** the item saga in the `sagas` table, the label mirror (`labelsFor`) with label drift counted,
   Won't do on a blocked item, deadlines for the states other than PR open, and one notice when an item is blocked.
 
+**Part 4: labels mirror the database.**
+- **`labelsFor`** (`src/sources/github/item-labels.ts`, pure): the end labels a work item's state wants on its issue. An
+  item a job works (queued, working, waiting outside) carries none; PR open carries `hopper:pr-ready`, or
+  `hopper:partly-done` for a part; blocked carries `hopper:blocked`, or `hopper:pr-closed` when its pull request was
+  closed without a merge. The other states are not judged: their labels depend on more than the state (a hand-off, a
+  failure, a part merged).
+- **The label mirror** (`src/sources/github/label-mirror.ts`). At each discover, each listed issue's end labels are
+  compared with its item (`labelDrift`). It reads only what the discover listed and the ledger: no call of its own, no
+  new poll. An item that moved in the last two minutes, or with outbox rows not sent, is not judged: its move's own writes
+  are on their way. A **label drift** is logged once and counted (`hopper.work_items.label_drift`, by state and whether
+  it is corrected), until it changes or ends.
+- **A blocked item's labels are corrected.** Its drift becomes GitHub outbox rows (act `mirror`, tagged with its state
+  and cause), coalesced into one remove call and one add call, so `hopper:pr-ready` comes off an item the item reconciler
+  blocked (the #465 case) and `hopper:blocked` goes on, or `hopper:pr-closed` after a second close. The send makes its
+  repository due, so the next discover lists the new labels; the act once sent adds no row before that.
+- **Not in this part:** a correction of the other states' drift (only counted), rows written in the transaction of each
+  state change, the item saga in the `sagas` table, Won't do on a blocked item, deadlines for the states other than PR
+  open, and one notice when an item is blocked.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
@@ -20817,6 +20836,9 @@ names one; PR open past its deadline blocked as stale; two hosts on one database
 Part 3: `test/work-items/reconcile.test.ts` (closed once, run again once and no second while it runs; closed twice, a
 person decides), `test/store/tenant-migration-83.test.ts`, `test/sources/github-follow-merged-part.test.ts` (a merged
 mention ends the follow as a part; one merged before the job began does not).
+Part 4: `test/sources/github-item-labels.test.ts` (each state's labels, the drift), `test/sources/github-label-mirror.test.ts`
+(the #465 case corrected in one coalesced change, once; a second close; another state's drift logged once and not
+corrected; an item that moved a moment ago not judged).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

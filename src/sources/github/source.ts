@@ -41,6 +41,7 @@ import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, u
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
+import { createLabelMirror } from './label-mirror.ts';
 import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import { priorityOf, readProjects } from './priority.ts';
@@ -181,6 +182,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
+  const workItem = o.intake?.workItem;
+  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
@@ -264,6 +267,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (intake) { openRequests(o.name, intake, requests, opened); withdrawRequests(o.name, intake, requests, { repos, repoErrors: found.repoErrors }, opened); }
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
+      mirror?.check(found.seen);
       repoErrors = found.repoErrors;
       outcomes = next; approvals.listed(next);
       outbox.listed(round);

@@ -40,6 +40,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       // Merged into the landing branch, its batch run not yet on the tested branch (issue #1175): no reopened card.
       awaitsBatch: (key) => awaitsBatch(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined, clock().getTime()),
       // Promoted with its batch, its issue still open (issue #1232): the sync closes it, once.
+      // Its end labels mirror its state (issue #1891, the label mirror).
+      workItem: (key) => store.workItems.get(key),
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
