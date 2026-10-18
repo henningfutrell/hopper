@@ -8,7 +8,7 @@ import type { Probe, ProbeCatalog, ProbeRun } from '../domain/read-only-check.ts
 import { stateProbeKey } from '../domain/state-backend.ts';
 
 /** The words of a refusal from AWS, Kubernetes, helm, terraform, or a read-only wrapper on PATH. */
-export const DENIAL = /AccessDenied|UnauthorizedOperation|not authorized to perform|is forbidden|Forbidden|refused by the read-only wrapper/;
+export const DENIAL = /AccessDenied|UnauthorizedOperation|Encoded authorization failure message|not authorized to perform|is forbidden|Forbidden|refused by the read-only wrapper/;
 
 /** The tiny stack terraform's probes plan and apply: one SSM parameter, made by nothing else. */
 const STACK = `mkdir -p "$HOME/tf" && cd "$HOME/tf"
