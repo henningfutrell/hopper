@@ -1,0 +1,44 @@
+# The cloud acceptance tests (issue #1956, test/cloud-acceptance/README.md): a session the vault mints, used by the real
+# `aws` CLI, curl's SigV4 and the AWS SDK against a mock AWS (moto) behind the policy-assert proxy, through the hopper's
+# real composition root. Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
+# plans or the tests themselves: they start containers and take minutes, so `pr / test` leaves them out.
+# Read-only and with no secrets: `pull_request`, never `pull_request_target`. moto, Postgres and the AWS CLI are public
+# images; nothing reaches a real cloud.
+name: cloud-acceptance
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main, dev, beta, stable]
+    paths:
+      - src/vault/**
+      - src/sandbox/**
+      - src/infra-plans/**
+      - src/domain/minting.ts
+      - test/cloud-acceptance/**
+      - test/support/policy-assert-proxy.ts
+      - vitest.cloud.config.ts
+      - .github/workflows/cloud-acceptance.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cloud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: docker pull -q docker.io/motoserver/moto:5.1.14 && docker pull -q docker.io/amazon/aws-cli:2.31.18
+      - run: npm run test:cloud
