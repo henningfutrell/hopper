@@ -87,7 +87,7 @@ else if (kind === 'codex') {
   const user = { role: 'user', content: [{ type: 'text', text: argv.at(-1) }] };
   const assistant = mode === 'error'
     ? { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'No API key found for anthropic' }
-    : { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: reply }], stopReason: 'stop', errorMessage: null };
+    : { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: reply }], stopReason: 'stop' };
   out({ type: 'agent_end', messages: [user, { role: 'assistant', content: [{ type: 'text', text: 'Looking at it.' }], stopReason: 'toolUse' }, assistant] });
 } else if (kind === 'claude') {
   // One JSON result, as claude 2.1.292 prints it (fields the hopper does not read left out); its own error says so with is_error.

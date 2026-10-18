@@ -17,7 +17,7 @@ const LIBRARY = {
     { name: 'orchestrate', builtIn: false, description: 'Task lists.', latest: { name: 'orchestrate', version: B, seq: 1, source: { kind: 'imported', repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 1, requires: [] },
     { name: 'deep-research', builtIn: false, description: 'Dig deep.', latest: { name: 'deep-research', version: B, seq: 2, source: { kind: 'created' }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 2, requires: ['orchestrate', 'gone'] },
   ],
-  workSkills: { kinds: {}, repos: { 'octo/site': { research: 'deep-research' } } },
+  workSkills: { kinds: {}, repos: { 'octo/site': { research: 'deep-research' } }, rules: [{ skill: 'orchestrate', repos: ['octo/infra'], paths: ['*.tf'] }] },
   defaults: { code: 'work', research: 'research', proposal: 'proposal' },
   kinds: ['code', 'research', 'proposal'],
 };
@@ -197,5 +197,47 @@ describe('the Skills page (issue #1911)', () => {
     const remove = buttonIn(skill('deep-research'), 'Remove')!;
     expect(remove.disabled).toBe(true);
     expect(skill('deep-research').textContent).toContain('octo/site: Research');
+  });
+});
+
+describe('the skill rules editor (issue #1924 part 5)', () => {
+  const rules = () => page()!.querySelector('[data-slot="skill-rules"]')!;
+  const rule = (i: number) => rules().querySelectorAll('[data-slot="skill-rule"]')[i]!;
+  const form = () => rules().querySelector('[data-slot="skill-rule-editor"]')!;
+  const field = (name: string) => form().querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+
+  it('lists each rule with its skill and conditions', async () => {
+    await boot();
+    expect(rules().querySelectorAll('[data-slot="skill-rule"]')).toHaveLength(1);
+    expect(rule(0).textContent).toContain('orchestrate');
+    expect(rule(0).textContent).toContain('repository octo/infra and the change touches *.tf');
+  });
+
+  it('adds a rule: every rule is sent, the new one last', async () => {
+    const daemon = await boot();
+    await click(buttonIn(rules(), 'Add a rule'));
+    await pick(form().querySelector<HTMLSelectElement>('select[name="rule-skill"]')!, 'deep-research');
+    expect(buttonIn(form(), 'Save rule')!.disabled).toBe(true);
+    expect(form().textContent).toContain('Name at least one condition');
+    await type(field('rule-labels'), 'iac, gitops');
+    await click(field('rule-kind-code'));
+    await click(buttonIn(form(), 'Save rule'));
+    await vi.waitFor(() => expect(posted(daemon, '/ui/api/work-skills')).toEqual([{ rules: [
+      { skill: 'orchestrate', repos: ['octo/infra'], paths: ['*.tf'] },
+      { skill: 'deep-research', labels: ['iac', 'gitops'], kinds: ['code'] },
+    ] }]));
+  });
+
+  it('edits a rule in its place, and removes one', async () => {
+    const daemon = await boot();
+    await click(buttonIn(rule(0), 'Edit'));
+    expect(field('rule-repos').value).toBe('octo/infra');
+    expect(field('rule-paths').value).toBe('*.tf');
+    await type(field('rule-paths'), '*.tf, *.tfvars');
+    await click(buttonIn(form(), 'Save rule'));
+    await vi.waitFor(() => expect(posted(daemon, '/ui/api/work-skills')).toEqual([{ rules: [{ skill: 'orchestrate', repos: ['octo/infra'], paths: ['*.tf', '*.tfvars'] }] }]));
+    await vi.waitFor(() => expect(rules().querySelector('[data-slot="skill-rule-editor"]')).toBeNull());
+    await click(buttonIn(rule(0), 'Remove'));
+    await vi.waitFor(() => expect(posted(daemon, '/ui/api/work-skills')[1]).toEqual({ rules: [] }));
   });
 });

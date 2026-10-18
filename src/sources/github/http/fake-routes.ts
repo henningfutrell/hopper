@@ -83,6 +83,14 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
   if (!m || !issue) return notFound;
   const sub = m[2] ?? '';
   if (req.method === 'GET' && sub === '') return { status: 200, body: restIssue(repo, issue) };
+  // A close (issue #1959: Decline's close as not planned); a second close of a closed issue changes nothing, as on GitHub.
+  if (req.method === 'PATCH' && sub === '' && body.state === 'closed') {
+    if (issue.state !== 'closed') {
+      const now = ctx.now().toISOString();
+      Object.assign(issue, { state: 'closed', closedBy: ctx.login, closedAt: now, updatedAt: now, ...(typeof body.state_reason === 'string' ? { stateReason: body.state_reason } : {}) });
+    }
+    return { status: 200, body: restIssue(repo, issue) };
+  }
   if (req.method === 'GET' && sub === '/comments') {
     const p = paginate(ctx, req, issue.comments.map((c) => restComment(repo, issue.number, c)));
     return { status: 200, body: p.items, headers: p.headers };

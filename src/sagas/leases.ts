@@ -3,6 +3,7 @@
 // holds it. The host renews every lease it holds every 10 s, and its own host lease with them, so another host sees it
 // live; it releases them all when it stops. A host that stops without that renews nothing: 30 s on, its leases end and
 // another host takes each at its next pass. The lease owner is the saga coordinator's (`sagaOwner`).
+// The leases are timed on the database's clock (issue #1954), so a host whose clock is off takes none another holds.
 // A pass asks its lease on each tick (issue #1662), so a lease asks the database once a second at most: between asks
 // its last answer stands. A held lease stays held by the renewal; a host that does not hold it takes it a second later.
 import { hostLease, SWEEP_LEASE_MS, SWEEP_LEASE_RENEW_MS, type SweepLease, type SweepLeaseRepository } from '../domain/leases.ts';
@@ -21,16 +22,15 @@ export interface HostLeases {
   stop(): void;
 }
 
-export function createHostLeases(o: { repo: SweepLeaseRepository; owner: string; clock: { now(): Date }; logger: { warn(line: string): void } }): HostLeases {
+export function createHostLeases(o: { repo: SweepLeaseRepository; owner: string; logger: { warn(line: string): void } }): HostLeases {
   const { repo, owner } = o;
-  const at = (ms = 0): string => new Date(o.clock.now().getTime() + ms).toISOString();
   /** The leases this host held at its last ask: a hold that was not among them is taken. */
   const held = new Set<string>();
   let stopped = false;
-  const hold = (name: string): boolean => repo.hold(name, owner, at(SWEEP_LEASE_MS), at());
+  const hold = (name: string): boolean => repo.hold(name, owner, SWEEP_LEASE_MS);
   hold(hostLease(owner));
   const timer = setInterval(() => {
-    try { repo.renew(owner, at(SWEEP_LEASE_MS)); hold(hostLease(owner)); } catch (e) { o.logger.warn(`hopper: renewing the sweep leases failed: ${(e as Error).message}`); }
+    try { repo.renew(owner, SWEEP_LEASE_MS); hold(hostLease(owner)); } catch (e) { o.logger.warn(`hopper: renewing the sweep leases failed: ${(e as Error).message}`); }
   }, SWEEP_LEASE_RENEW_MS);
   timer.unref();
   return {
@@ -51,7 +51,7 @@ export function createHostLeases(o: { repo: SweepLeaseRepository; owner: string;
       };
       return { hold: ask };
     },
-    live: (other) => other === owner || repo.live(hostLease(other), at()),
+    live: (other) => other === owner || repo.live(hostLease(other)),
     stop() {
       clearInterval(timer);
       stopped = true;

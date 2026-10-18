@@ -7,7 +7,8 @@
 //   the real login; the fetch guard below still applies.
 // - `claude` on PATH is a guard that answers `--version` (detection) and refuses everything else,
 //   so a built-in instance left at its default `bin` (claude-plan's background `/usage` read,
-//   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`.
+//   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`; the acceptance tests
+//   (test/acceptance/, issue #1958) name the real one, found past this guard, and point it at the fake model server.
 // - XDG_RUNTIME_DIR is a throwaway dir in the real one (isolateRuntimeDir below, issue #1295).
 // - fetch() to anything but a loopback host rejects, so a webhook can never reach a real URL.
 // - KUBERNETES_SERVICE_HOST is unset, so a test run in a pod (a lane pod's job) reads as a host install does; a test

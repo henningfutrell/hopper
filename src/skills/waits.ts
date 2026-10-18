@@ -25,8 +25,11 @@ const VAULT_CHANGES: readonly EventType[] = [
   // A sandbox request (issue #991): approved, declined, its box started or not.
   'vault.sandbox_approved', 'vault.sandbox_declined', 'vault.sandbox_started', 'vault.sandbox_failed',
 ];
-/** The fields of a request that are asked again; `wait` and `timeout` are the watch's. */
-const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs', 'template'];
+/**
+ * The fields of a request that are asked again; `wait` and `timeout` are the watch's. Issue #1966: a template request's
+ * vault secrets, egress hosts and image too, or a request with them and no need is asked again with no need, and refused.
+ */
+const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs', 'template', 'secrets', 'egress', 'image'];
 
 /** One user's side: their job stream, and their event log to hear the vault's changes on. */
 export interface WaitUser {

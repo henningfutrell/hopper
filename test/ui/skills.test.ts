@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, ruleLine, settingsNaming, skillLoadedLine, sourceLine, workSkillChosenLine,
-  conditionalSkillsChosenLine,
+  conditionalSkillsChosenLine, emptyRuleDraft, ruleDraftOf, ruleDraftProblem, ruleOfDraft, ruleRows,
 } from '../../ui/src/model/skills.ts';
 import type { SkillLibraryView } from '../../src/domain/skill-library.ts';
 
@@ -113,6 +113,33 @@ describe('conditional skills (issue #1924)', () => {
     const rules = { ...view, workSkills: { ...view.workSkills, rules: [{ skill: 'my-work', repos: ['octo/infra'], labels: ['iac', 'gitops'] }] } };
     expect(settingsNaming(rules, 'my-work')).toContain('a skill rule: repository octo/infra and label iac or gitops');
     expect(ruleLine({ skill: 'iac', kinds: ['code'] })).toBe('kind of work Code work');
+    // Part 5: a rule's paths read in the line too.
+    expect(ruleLine({ skill: 'iac', repos: ['octo/infra'], paths: ['*.tf', 'modules/**'] })).toBe('repository octo/infra and the change touches *.tf or modules/**');
+  });
+
+  it('a rule as the editor holds it, and back: words split at commas and spaces, repositories lowercased, empty conditions dropped (part 5)', () => {
+    const rule = { skill: 'my-work', repos: ['octo/infra'], labels: ['iac', 'gitops'], kinds: ['code' as const], paths: ['*.tf'] };
+    expect(ruleDraftOf(rule)).toEqual({ skill: 'my-work', repos: 'octo/infra', labels: 'iac, gitops', kinds: ['code'], paths: '*.tf' });
+    expect(ruleOfDraft(ruleDraftOf(rule))).toEqual(rule);
+    expect(ruleOfDraft({ skill: 'my-work', repos: ' Octo/Infra,  group/sub/name ', labels: '', kinds: [], paths: '*.tf, src/**' }))
+      .toEqual({ skill: 'my-work', repos: ['octo/infra', 'group/sub/name'], paths: ['*.tf', 'src/**'] });
+    expect(emptyRuleDraft(view)).toEqual({ skill: 'work', repos: '', labels: '', kinds: [], paths: '' });
+  });
+
+  it('says what stops a save of a rule before the daemon does (part 5)', () => {
+    const draft = { skill: 'my-work', repos: '', labels: 'iac', kinds: [], paths: '' };
+    expect(ruleDraftProblem(view, draft)).toBeUndefined();
+    expect(ruleDraftProblem(view, { ...draft, skill: 'gone' })).toBe('gone is not in the library.');
+    expect(ruleDraftProblem(view, { ...draft, labels: '' })).toBe('Name at least one condition: a repository, a label, a kind of work or a path.');
+    expect(ruleDraftProblem(view, { ...draft, repos: 'octo' })).toBe('octo is no repository: write owner/name, or a GitLab project\'s group/name.');
+    expect(ruleDraftProblem(view, { ...draft, paths: '../secrets/*' })).toBe('../secrets/* is no relative path glob.');
+    expect(ruleDraftProblem(view, { ...draft, paths: '/etc/*' })).toBe('/etc/* is no relative path glob.');
+  });
+
+  it('lists the rules in their order, each with its line (part 5)', () => {
+    const rules = { ...view, workSkills: { ...view.workSkills, rules: [{ skill: 'my-work', labels: ['iac'] }, { skill: 'deep-research', kinds: ['research' as const] }] } };
+    expect(ruleRows(rules)).toEqual([{ index: 0, skill: 'my-work', line: 'label iac' }, { index: 1, skill: 'deep-research', line: 'kind of work Research' }]);
+    expect(ruleRows(view)).toEqual([]);
   });
 
   it('the job\'s timeline names each conditional skill it got, its version, why, and what the hopper checks', () => {

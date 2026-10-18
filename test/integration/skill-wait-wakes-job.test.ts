@@ -7,6 +7,9 @@
 //   Scenario: a job on its own wait asked for a sandbox without --wait; a person approves the template; its sandbox runs
 //     are approved, and the hopper ends the job's wait with how to run its steps
 //   Scenario: asked again without --wait, the job's request keeps the one watch it has
+//   Scenario: a sandbox request with a vault secret and an egress host and no need (issue #1966): a person approves its
+//     template; the hopper asks again with the secret and the host, and ends the job's wait with the approval, not with
+//     a refusal for a missing need
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -102,6 +105,24 @@ describe('an answer the hopper gives ends the job\'s own wait (issue #998)', () 
     expect(herdr.prompts[1]!.text).toContain(`sandbox: the sandbox runs of template ${t!.name} are approved for this job`);
     const ended = events.filter((e) => e.type === 'job.wait_ended');
     expect(ended.map((e) => (e.data as { by: string }).by)).toEqual(['hopper']);
+  });
+
+  it('a request with a vault secret and an egress host and no need is asked again with them (issue #1966)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WAIT, DONE] });
+    const { a, token } = await boot(herdr);
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'E2E_PASSWORD', value: 'E2E_PASSWORD-value-0123456789' }, { token })).status).toBe(200);
+    expect((await a.ui('/ui/api/sandbox-approvals', { skipSandboxApproval: true }, { token })).status).toBe(200);
+    const job = await waitingJob(a);
+    const creds = credentials(a, job.id);
+
+    const first = await skill(a, creds, ['sandbox', '--secrets', 'E2E_PASSWORD', '--egress', 'auth.example.test:443', '--image', 'test', '--why', 'Run the sign-in end-to-end test']);
+    expect(first.code, first.stdout).toBe(3);
+    const [t] = await asked(a, token);
+    expect((await a.ui('/ui/api/vault', { action: 'approve-template', name: t!.name }, { token })).status).toBe(200);
+
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(herdr.prompts[1]!.text).toContain(`sandbox: the sandbox runs of template ${t!.name} are approved for this job`);
+    expect(herdr.prompts[1]!.text).not.toContain('name what the work needs');
   });
 
   it('asked again without --wait, the job\'s request keeps the one watch it has', async () => {

@@ -10582,6 +10582,12 @@ box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
   which builds the same image. It looks at each image again `WARM_EVERY_MS` (an hour) after, so one the leftover-builds pass
   removed is built again; a build that fails is logged and tried again `WARM_RETRY_MS` (5 minutes) after. The memory of
   what it built is in memory only: a hopper that starts looks at each image once more, which costs an exists call.
+- **Each pass on its own** (issue #1965). The sweep, the read-only check pass and the warm pass each have their own
+  guard: a tick starts each one that is not in flight, and joins one that is. Before, one guard held all three, so a warm
+  pass build (up to 30 minutes, `BUILD_MS`) held every check that `check-template` queued, and nothing in the log said
+  why. A tick that finds a pass in flight `PASS_STALL_MS` (5 minutes) after it started logs it once: `hopper: the <pass>
+  has run for <n> min and has not ended; the next <pass> waits for it`. A pass that fails logs `hopper: the <pass> failed:
+  <reason>` (`src/sandbox/service.ts`).
 - **The time of each part of a step** (issue #1737). `runNeedBox` gives the time of its image (pull and build), the box's
   start (volume, create, start, copy in) and its run (`NeedBoxPhases`), and the line `need box … ended with <exit>` in the
   hopper's log carries them: `(image 0.2 s, start 1.1 s, run 9.8 s)`. A slow step then says which part was slow. The
@@ -12301,8 +12307,11 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   approved text and its rows commit together, or neither does). Sent rows are kept 7 days.
 - **Sending** (`src/sources/github/outbox.ts`, `JobSource.flushOutbox`; when, `src/sources/outbox-flush.ts`). The rows due
   are sent in one batch: half a second after an intake action (`OUTBOX_BATCH_MS`), so the clicks of a burst go together,
-  and every 5 s (`OUTBOX_EVERY_MS`) from the start on, so a restart sends what a stopped hopper left — a row it left
-  `sending` is `pending` again; labels and assignees are idempotent, so a second send of the same change does no harm.
+  and every 5 s (`OUTBOX_EVERY_MS`) from the start on, so a restart sends what a stopped hopper left. A send **claims**
+  its rows (issue #1959): one `UPDATE` makes the rows due `sending` until the claim ends (`OUTBOX_CLAIM_MS`, 2 minutes,
+  renewed before each call), so of two hoppers on one database one sends each row; a row a stopped or killed hopper left
+  `sending` is due again once its claim ends. Labels and assignees are idempotent, so a second send of the same change
+  does no harm.
   A comment is not (issue #1590): its first line is a hidden key (`<!-- job-hopper v1 kind=outbox id=… -->`, a hash of
   its first row's source, id and time), and its send lists the issue's comments first: one that carries the key is the
   post a stop left unrecorded, and the row is `sent` with no second comment. The key is in the form the context filter
@@ -26268,7 +26277,10 @@ closes):
   write by a coordinator that lost the lease is refused, and its step is told to end (its signal). A hopper that stops
   renews nothing: when its lease ends, any hopper's next pass (at start, then every 5 s) claims the saga and goes on from
   its last committed step — on another host as well, since nothing of it is on the first. A hopper that stops on purpose
-  releases its leases at once: the step in flight is not counted as failed, and another host takes it with no wait.
+  releases its leases at once: the step in flight is not counted as failed, and another host takes it with no wait. The
+  lease is timed on the database's clock (`clock_timestamp()`, `src/store/db-clock.ts`, issue #1954): a host whose own clock
+  is off neither takes a lease another host holds nor keeps one past its end. The saga's next try (`nextAt`) stays on the
+  host's clock: a skewed clock moves a try earlier or later, and never lets two hosts run one step.
 - **Tries and backoff.** A step that fails is tried again after a backoff that doubles from 1 s to 5 minutes, five tries in
   all (a step may name its own count). Past them the saga compensates.
 - **Compensation.** On an abort (`abort`, by any host: the holder reads it before its next step, and the step in flight is
@@ -26297,7 +26309,7 @@ database").
 - **The instance's table, not a user's.** A saga's host is the hopper, not a user: a coordinator takes the sagas due of
   every user in one read, and the lease is one row's columns.
 - **A lease in the row, not an advisory lock.** An advisory lock is held by a connection, so it ties the saga to the host of
-  that connection and gives no time-out a dead host can lose by; a lease row ends by itself, on any host's clock.
+  that connection and gives no time-out a dead host can lose by; a lease row ends by itself, on the database's clock.
 - **Our own coordinator, not a workflow engine** (Temporal, a job-queue library). The hopper's store is synchronous Postgres
   in one process (design.md "Database"); an engine would be a second service to run and a second store. The record, the
   lease and the backoff are about 200 lines over the store the hopper has.
@@ -27204,7 +27216,8 @@ sweep, the failure assessor's sweep, the TL;DR sweep and the artifacts' retentio
 kept the jobs to stop when cut off in memory only, so a client restart while cut off forgot them.
 
 **The sweep lease** (`SweepLease`, `src/domain/leases.ts`; the instance's `sweep_leases` table, migration 50,
-`src/store/sweep-leases.ts`). The model is the saga lease: a row per sweep name with an owner and an until. A pass asks
+`src/store/sweep-leases.ts`). The model is the saga lease: a row per sweep name with an owner and an until, on the
+database's clock (issue #1954), so a host whose clock is off takes no lease another holds. A pass asks
 `hold()` first: one statement takes the lease or renews it when no other owner holds it now, and the pass runs only while
 this host holds it. `hold()` also says whether the host took it just now (`taken`): from another host that stopped, or at its
 first ask. The host's **host leases** (`createHostLeases`, `src/sagas/leases.ts`) renew every lease the host holds every 10 s,
@@ -28299,7 +28312,7 @@ requires `orchestrate`, and one not in the library: the files, the event's `requ
 required skill reaches the next job and not a later start of this one); `test/ui/skills.test.ts` and
 `test/ui/skills-view.test.ts` (the requires line, the timeline line).
 
-## Conditional skills (issue #1924, parts 1 to 4, 2026-10-18)
+## Conditional skills (issue #1924, parts 1 to 5, 2026-10-18)
 
 **Problem.** A job that changed infrastructure code opened its pull request and ended done while most of its `terraform
 plan` checks were red and one plan replaced a resource. The plan summary showed the delete, but nothing made the job read
@@ -28436,7 +28449,22 @@ skill's machine-checkable criteria itself before it takes the job as done.
 - **The words are shared.** The GitLab miss and hold use the GitHub source's texts (`missText`, `holdText`), so the
   assessor, the brief and the Pull requests card read them the same way.
 
-**Left for later parts.** The Skills page's editor for the skill rules (they are set through the API now).
+**As built (part 5).**
+- **The Skills page edits the skill rules** (`ui/src/views/skill-rules.tsx`, its pure part in `ui/src/model/skills.ts`). A
+  panel Skill rules, below Work skills, lists each rule in its order: its skill and its conditions as one line
+  (`ruleLine`, now with `the change touches <globs>`). An admin adds a rule, edits one in its place, or removes one. The
+  editor holds a library skill, the repositories, labels and paths as words split at commas and spaces, and a box per kind
+  of work. It says what stops a save before Save (`ruleDraftProblem`, a copy of `skillRuleProblem`; the daemon checks again
+  and has the last word). Each save sends every rule to `POST /ui/api/work-skills` (`rules`, in place of the ones before),
+  as the daemon keeps them (`ruleOfDraft`: repositories lowercased, empty conditions dropped), and the page shows the view
+  it answers. The next job gets the change; a running job keeps what it got.
+
+**Decisions (part 5).**
+- **Each save sends the whole list.** The route takes every rule in place of the ones before, so the page sends the list it
+  shows with the one change. Nothing new on the daemon: no rule id, no route per rule.
+- **Words in one field, split at commas and spaces.** A repository, a label and a glob hold no space, so one text field per
+  condition is enough, and it reads as the rule line does.
+
 
 **Verification:** `test/domain/conditional-skills.test.ts` (a rule's match and why, its problems, the settings' change,
 done.json and its refusal, the plan's destroy counts, each miss, the prompt line, the delivery paths);
@@ -28507,13 +28535,148 @@ goes on.
   "dropped mid-commit" is "dropped after Postgres answered it". A record of several statements needs a point inside its
   transaction: a later part.
 
-**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); two
-hosts racing one lease under a skewed clock; landing batches killed between each GitHub write and its event (#1589); kill
-points between a GitHub call and its record and between an outbox send and its `sent` mark; the nightly run of N seeds and
+**Part 2: two hosts racing one lease under a skewed clock** (2026-10-18). A host can take its clock from
+`CRASH_CLOCK_SKEW_MS` (`test/crash/host.ts`: its `Date` that far ahead or behind, as a machine's clock that is off). The
+first host holds the mint saga while a provider call hangs; the second host's clock is ahead by two leases, or the first's
+is behind by two. **What it found:** each host timed a lease on its own clock. The second host read the first's live lease
+as ended, took the saga and ran the step the first ran, then the whole mint. The sweep leases had the same fault. Now the
+store times both leases on the database's clock (`src/store/db-clock.ts`: `clock_timestamp()` as text in the format of
+`toISOString`, so the rows kept need no migration), and the repositories take a lease's length, not its end: `claim(id,
+{ owner, ms })`, `hold(name, owner, ms)`, `renew(owner, ms)`, `live(name)`. Unit tests that moved a fake clock to end a
+lease now end it in the database (`endLeases`).
+**Decisions (part 2).**
+- **The database's clock, not a bound on the skew.** The hosts on one database share one clock already; a bound on skew is
+  a rule a machine's clock can break. A `nextAt` stays on the host's clock: it decides when a try is due, not who holds it.
+- **Job leases and the wait-check leases are not in this part.** `job_leases` and `wait_check_leases` also compare a
+  host's times; they are listed below.
+
+**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); the
+job leases (`src/store/job-leases.ts`) and the wait-check leases (`src/store/wait-check-leases.ts`) on the database's
+clock too, with a skewed-clock test each; landing batches killed between each GitHub write and its event (#1589); kill
+points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
 
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks).
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock).
+
+## The GitHub outbox under crashes and faults (issue #1959, part 1, 2026-10-18)
+
+**Why.** Issue #1590 posted a comment once after a stop between its post and its row, in a unit test. Nothing proved the
+outbox ("GitHub outbox") end to end: a process killed between a send and `sent` for each write kind, two hoppers on one
+database, and GitHub's faults while the outbox drains.
+
+**What it found.** Each hopper sent the same rows. A hopper at its start set every row left `sending` back to `pending`,
+also a row another live hopper was sending, and sent it again: a comment held at GitHub was posted twice. Nothing else
+kept two hoppers apart either: each read the rows due and marked them `sending` in two statements.
+
+**The claim** (`claim`, `src/store/github-outbox.ts`; `OUTBOX_CLAIM_MS`, `src/domain/github-outbox.ts`). One `UPDATE`
+takes the source's rows due — `pending` ones and `sending` ones whose claim ended — and makes them `sending` with the
+claim's end as `next_at`. Postgres checks a row another send claimed meanwhile again and skips it, so of two hoppers one
+gets each row. The send renews the claim of its rows before each call. The claim is 2 minutes: longer than a call's longest
+wait at the rate limiter (60 s). A row a killed or stopped hopper left is sent again once its claim ends, by any hopper.
+The start no longer resets rows (`recover` is gone). A clean stop releases what its send claimed and did not send
+(`releaseOutbox`, at the sync loop's stop): the send makes no more calls, and those rows are due again at once, so a
+restart sends them without waiting for the claim.
+
+**Kill points** (`outboxKillPoint`, `src/sources/github/outbox.ts`): `outbox:<op>:before-send` before each coalesced call,
+and `outbox:<op>:after-send` once GitHub answered it, before its rows are `sent` and their events recorded.
+
+**The crash tests** (`test/crash/outbox-kill.test.ts`, `test/crash/outbox-world.ts`). A host runs the connected account's
+job source over the node:http fake GitHub in the test process (`CRASH_GITHUB_URL`). A person declines a request card with
+Close (`remove_labels`, `comment`, `close_not_planned`) and assigns another issue (`add_assignees`); a label mirror row
+adds an end label (`add_labels`). The first host is killed at each kill point of each kind; once the claims end, a second
+host sends what is left. GitHub then holds each effect once: the label off, one comment (posted once, found by its key
+when GitHub took it before the kill), the close, the assignee, the label; each act's event is recorded once. Two live
+hosts: a comment held at GitHub while the second host starts is posted once.
+
+**The fault tests** (`test/integration/github-outbox-faults.test.ts`; the fake's `fail` with headers, `dropAfter` and
+`hold`). A 5xx is tried again after its backoff, the item showing the next attempt and why. A 403 secondary rate limit
+with `Retry-After` holds every call of the account until then (the fake hears nothing), and the rows drain with each write
+once. A write GitHub applied whose answer never came (the connection cut) is sent again: the close and the assignment are
+idempotent, the comment is found by its key. A row GitHub refused for good fails its item's later rows with it — nothing
+after it is sent —, is listed with Retry, and the other item goes on; Retry sends the item's calls in order. While GitHub
+holds the outbox's calls, a person's action answers at once (issue #1194).
+
+**Decisions.**
+- **A claim with an end, not an owner.** A host's identity is not in the user's schema, and a killed host never releases
+  anything. The end time alone frees what a dead host held, as the saga lease does. The price: a restart after a crash
+  sends what was in flight up to 2 minutes later. A clean stop releases its rows at once, the row of a call GitHub has not
+  answered too, as before: if GitHub applies that call only after the next start read the issue's comments, its comment
+  is posted twice. The window is the time a request a stopped process sent takes to reach GitHub.
+- **The outbox's own write kinds only.** An issue edit, a pull request's edit, close or draft, an issue a job files and a
+  sub-issue link are not outbox rows: a job asks for them through the GitHub proxy, or the source's report makes them.
+  They are the next part.
+- **The fake GitHub's faults sit in the fake** (`src/sources/github/http/fake-server.ts`), not in a proxy: the routes are
+  matched there already, and a drop after the write needs the fake's own state.
+
+**Left for later parts.** The GitHub proxy's writes under a kill (an issue a job files found by its key before it is
+made again, a sub-issue link, an issue edit, a pull request's edit, close and draft); a person's Merge now, Close PR and
+give-back rows under a kill (the sync loop's acts); a randomised run over the outbox's kill points.
+
+**Verification:** `test/store/github-outbox.test.ts` (a claim takes each row once, a claim that ended is taken again, a
+failed row never); `test/sources/github-outbox-comment-once.test.ts` (a comment left `sending` is sent once its claim
+ends; two outboxes on one store); `test/crash/outbox-kill.test.ts`; `test/integration/github-outbox-faults.test.ts`.
+
+## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
+
+**Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event
+shapes taken from the real CLIs once. Nothing showed when a real CLI changed its output, and the faults of a model
+(429, overloaded, a stream that breaks) were not tested at all.
+
+**The fake model server** (`test/support/fake-model-server.ts`, `fake-model-anthropic.ts`, `fake-model-openai.ts`). A
+loopback HTTP server that speaks the Anthropic Messages API (`/v1/messages`), the OpenAI Responses API (`/v1/responses`)
+and the Chat Completions API (`/v1/chat/completions`), streamed or not. A test gives it a script of **model steps**, one
+per turn of the conversation: text (with reasoning before it, and a delay between the events for slow tokens), a tool
+call, or a fault — `rate-limited` (429), `overloaded` (529 on the Messages API, 503 on OpenAI's), `server-error` (500),
+`cut` (the stream ends after its first delta), `malformed` (an event that is not JSON in place of a text delta, or a body
+that is not JSON when no stream was asked for). A request that offers no tools is a CLI's side call and takes no step.
+The server is also the run's proxy (`HTTPS_PROXY`): a CLI's call to anywhere else (telemetry, an update check, a model
+catalog) is refused there and recorded, so nothing leaves the machine.
+
+**The real CLIs** (`test/support/real-agents.ts`). For each print-mode CLI, how it is pointed at the server with a dummy
+key: claude by `ANTHROPIC_BASE_URL`; codex by a model provider given with `-c` (Responses API, no retries); opencode by
+`OPENCODE_CONFIG_CONTENT` (its `openai` provider at the server); omp by a `models.yml` in the throwaway home (Chat
+Completions). The CLI is `HOPPER_ACCEPTANCE_<AGENT>_BIN`, else the first on PATH that is no shell script: the test
+isolation's `claude` guard, and the wrappers that would find it, are passed over. A CLI not found skips its tests.
+Cursor's agent is not covered: its endpoint cannot be set.
+
+**What the tests prove** (`test/acceptance/print-agents.test.ts`, through `createPrintAgentExecutor`, in the job's
+sandbox and runtime as a job runs). Each CLI completes a job (a tool call writes the file, the answer ends with
+`HOPPER_DONE`), asks a question and resumes the same session (the resumed request carries the question and the answer),
+and fails on each fault with no file written.
+
+**The schema-drift check** (`test/acceptance/fake-drift.test.ts`, `test/support/event-drift.ts`). The real CLI and
+`fake-print-agent.mjs` play the same turn. Every field of every event the fake prints must be in the real CLI's events of
+the same kind (its `type`, with its `item`'s or `part`'s type); the check names the event kind or the field that is not.
+
+**What it found.**
+- The omp fake printed `errorMessage: null` on an answer with no error; omp 18.7 prints no such field. The fake no longer
+  does.
+- opencode 1.19 retries a 5xx answer and a cut stream with a growing backoff and no limit, and omp 18.7 a 429 and a 5xx
+  (still at it after 150 s): only the turn's timeout (`timeoutMs`) ends such a job. The test says so for each
+  (`retriesPastTimeout`), so a change in it shows.
+- claude, after a cut stream, asks again with no stream: the `cut` fault ends that connection too.
+- claude, on a malformed stream, asks again with no stream; codex reads an item whole from `response.output_item.done`,
+  not from its deltas. The `malformed` fault breaks both, so neither reads a damaged answer as done.
+
+**Decisions.**
+- **The CLIs reach the network only through the server.** The proxy variables and each CLI's own switches
+  (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `OPENCODE_DISABLE_MODELS_FETCH`) keep a run on loopback. A network
+  namespace (`unshare -rn`) would hide the server from the CLI, which the executor starts in the test's namespace.
+- **A side call takes no step.** A CLI's title, quota or summary calls differ by version; a step taken by one would make
+  the script depend on that version.
+
+**Left for later parts.** The CI run of these tests on pull requests (the CLIs installed on the runner) and the nightly
+run (workflow files: a change to CI, which a job does not make from an issue's text); the nightly run of the real Claude
+Code TUI in a real herdr pane against the server, with its screens diffed against `src/executors/herdr/fake-screens.ts`
+and written as artifacts; the fault modes of `fake-print-agent.mjs` (partial stream then hang, malformed line, permission
+prompt, huge output, non-UTF-8, exit with no final event); a scripted tool call that fires a configured hook, and a call
+to an in-memory MCP server double; the drift check for `fake-cursor-agent.mjs`.
+
+**Verification:** `test/support/fake-model-server.test.ts` (each API's answer, streamed and not, each fault, a side
+call, the proxy); `test/support/event-drift.test.ts` (kinds, paths, a field and a kind the real CLI does not print);
+`test/acceptance/print-agents.test.ts` and `test/acceptance/fake-drift.test.ts` (the real CLIs, where installed).

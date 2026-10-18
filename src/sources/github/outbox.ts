@@ -20,6 +20,8 @@
 // action's local change stays committed; a new connection sends the rows.
 // A comment is posted once (issue #1590): its first line is a hidden key made from its first row, and a comment that
 // already carries it (a post whose row a stop left `sending`) answers the send in place of a second one.
+// A send claims its rows (issue #1959, `OUTBOX_CLAIM_MS`), and renews the claim before each call: a second hopper on the
+// database sends none of them meanwhile. A row a stopped or killed hopper left `sending` is sent again once its claim ends.
 import { createHash } from 'node:crypto';
 import type { ActingPerson } from '../../domain/failures.ts';
 import type { IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
@@ -29,9 +31,10 @@ import type { ResolutionWrite } from '../../domain/types.ts';
 import type { AfterAnswerTiming } from '../../domain/types.ts';
 import { createAfterAnswerTimings } from '../after-answer-timings.ts';
 import {
-  OUTBOX_ATTEMPTS, coalesce, jobActMarkers, notIntake, outboxBackoffMs,
+  OUTBOX_ATTEMPTS, OUTBOX_CLAIM_MS, coalesce, jobActMarkers, notIntake, outboxBackoffMs,
   type GitHubOutboxRepository, type OutboxAct, type OutboxActs, type OutboxChange, type OutboxGiveBack, type OutboxGiveBackMore, type OutboxInput, type OutboxRow,
 } from '../../domain/github-outbox.ts';
+import { killPoint } from '../../sagas/kill-points.ts';
 import { outboxBatch, outboxCall } from '../../telemetry/sources.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
 
@@ -43,6 +46,12 @@ export type OutboxSend = (repo: string, key: string, change: OutboxChange, once?
 /** A comment's hidden first line, from its call's first row: the same after a restart, another for each row kept. */
 const onceMarker = (r: OutboxRow): string =>
   `<!-- job-hopper v1 kind=outbox id=${createHash('sha256').update(`${r.source}\n${r.id}\n${r.createdAt}`).digest('hex').slice(0, 16)} -->`;
+
+/**
+ * The kill points of one coalesced call (issue #1959, design.md "The crash harness"): before it is sent, and once GitHub
+ * answered it, before its rows are `sent`.
+ */
+export const outboxKillPoint = (op: OutboxChange['op'], at: 'before-send' | 'after-send'): string => `outbox:${op}:${at}`;
 
 /** A row failed for good, and why: what its act says once. */
 export type OutboxGaveUp = (row: OutboxRow, error: string) => void;
@@ -79,11 +88,15 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
   /** The act sent for each item and the discover it was sent in, until a later discover listed it: a second click writes nothing more. */
   const recent = new Map<string, { act: OutboxAct; tag: string; round: number }>();
   let round = 0;
-  let recovered = false;
   let flushing: Promise<{ due: number; wrote: string[] }> | undefined;
   let lastSentAt: string | undefined;
+  /** The rows the send under way claimed; `released`: the sync loop stopped, and the send makes no more calls. */
+  let claimed = new Set<number>();
+  let released = false;
   const timings = createAfterAnswerTimings(() => clock.now());
   const now = () => clock.now().toISOString();
+  /** When a claim made or renewed now ends (issue #1959). */
+  const claimEnd = () => new Date(clock.now().getTime() + OUTBOX_CLAIM_MS).toISOString();
   const openOf = (key: string) => rows.open(o.source).filter((r) => r.key === key);
 
   /** Each item's marker from its intake action's rows not sent: failed when a row failed, else running, with its next attempt while it waits its backoff. */
@@ -122,24 +135,28 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
   }
 
   async function sendDue(send: OutboxSend, gaveUp?: OutboxGaveUp): Promise<{ due: number; wrote: string[] }> {
-    if (!recovered) { rows.recover(o.source); recovered = true; }
     if (o.connected?.() === false) return { due: 0, wrote: [] };
-    const due = rows.due(o.source, now());
+    if (released) return { due: 0, wrote: [] };
+    const due = rows.claim(o.source, now(), claimEnd());
     if (due.length === 0) return { due: 0, wrote: [] };
-    rows.update(due.map((r) => r.id), { state: 'sending' });
+    claimed = new Set(due.map((r) => r.id));
     const byId = new Map(due.map((r) => [r.id, r]));
     const wrote = new Set<string>();
     const plans = coalesce(due);
     outboxBatch(due.length, plans.reduce((n, p) => n + p.calls.length, 0));
     for (const plan of plans) {
       if (plan.cancelled.length) rows.update(plan.cancelled, { state: 'sent', sentAt: now() });
-      if (o.connected?.() === false) { rows.update(plan.calls.flatMap((c) => c.rows), { state: 'pending' }); continue; }
+      if (o.connected?.() === false) { rows.update(plan.calls.flatMap((c) => c.rows), { state: 'pending', nextAt: now() }); continue; }
       const left = new Map<number, number>();
       for (const c of plan.calls) for (const id of c.rows) left.set(id, (left.get(id) ?? 0) + 1);
       for (const call of plan.calls) {
+        if (released) break;
+        rows.update([...left.keys()], { nextAt: claimEnd() });
+        killPoint(outboxKillPoint(call.change.op, 'before-send'));
         const startedAt = performance.now();
         try {
           await send(plan.repo, plan.key, call.change, call.change.op === 'comment' ? onceMarker(byId.get(Math.min(...call.rows))!) : undefined);
+          killPoint(outboxKillPoint(call.change.op, 'after-send'));
         } catch (e) {
           outboxCall('failed');
           const endedAt = performance.now();
@@ -158,6 +175,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
         wrote.add(plan.repo);
       }
     }
+    claimed = new Set();
     rows.prune(new Date(clock.now().getTime() - KEEP_SENT_MS).toISOString());
     return { due: due.length, wrote: [...wrote] };
   }
@@ -216,6 +234,12 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
     flush(send: OutboxSend, gaveUp?: OutboxGaveUp): Promise<{ due: number; wrote: string[] }> {
       flushing ??= sendDue(send, gaveUp).finally(() => { flushing = undefined; });
       return flushing;
+    },
+    /** At the sync loop's stop: no more calls, and the rows claimed and not sent are due again at once (issue #1959). */
+    release(): void {
+      released = true;
+      const left = rows.open(o.source).filter((r) => claimed.has(r.id) && r.state === 'sending').map((r) => r.id);
+      if (left.length) rows.update(left, { state: 'pending', nextAt: now() });
     },
     /** A person's Retry: the item's failed rows are sent again, from their first attempt. Answers how many. */
     retry(key: string): number {
@@ -312,7 +336,11 @@ export function memoryGitHubOutbox(): GitHubOutboxRepository {
     add(input, at) { for (const r of input) { const id = next++; kept.set(id, { ...structuredClone(r), id, state: 'pending', attempts: 0, nextAt: at, createdAt: at }); } },
     open: (source) => list((r) => r.source === source && r.state !== 'sent'),
     of: (source, key) => list((r) => r.source === source && r.key === key),
-    due: (source, at) => list((r) => r.source === source && r.state === 'pending' && r.nextAt <= at),
+    claim(source, at, until) {
+      const mine = list((r) => r.source === source && (r.state === 'pending' || r.state === 'sending') && r.nextAt <= at);
+      for (const r of mine) kept.set(r.id, { ...kept.get(r.id)!, state: 'sending', nextAt: until });
+      return mine.map((r) => ({ ...r, state: 'sending' as const, nextAt: until }));
+    },
     update(ids, patch) {
       for (const id of ids) {
         const row = kept.get(id);
@@ -322,7 +350,6 @@ export function memoryGitHubOutbox(): GitHubOutboxRepository {
         kept.set(id, n);
       }
     },
-    recover(source) { let n = 0; for (const r of kept.values()) if (r.source === source && r.state === 'sending') { r.state = 'pending'; n++; } return n; },
     prune(before) { let n = 0; for (const [id, r] of kept) if (r.state === 'sent' && (r.sentAt ?? '') < before) { kept.delete(id); n++; } return n; },
   };
 }

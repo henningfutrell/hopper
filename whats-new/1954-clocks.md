@@ -1,0 +1,1 @@
+- Two hoppers on one database no longer do the same work twice when their clocks do not agree.

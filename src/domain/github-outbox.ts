@@ -94,13 +94,15 @@ export interface GitHubOutboxRepository {
   add(rows: OutboxInput[], at: string): void;
   /** The source's rows not sent: pending, sending and failed, oldest first. */
   open(source: string): OutboxRow[];
-  /** The source's pending rows due at `at`, oldest first. */
-  due(source: string, at: string): OutboxRow[];
+  /**
+   * Claims the source's rows due at `at` — pending ones, and `sending` ones whose claim ended (a stopped or killed hopper
+   * left them) — for a send, until `until`, in one statement: of two hoppers on one database one gets each row (issue
+   * #1959). Answers them `sending`, oldest first.
+   */
+  claim(source: string, at: string, until: string): OutboxRow[];
   update(ids: number[], patch: OutboxPatch): void;
   /** The source's rows of one item, sent ones too (until pruned), oldest first. */
   of(source: string, key: string): OutboxRow[];
-  /** Rows a stopped process left `sending` go back to `pending`: their calls are sent again (labels and assignees are idempotent). */
-  recover(source: string): number;
   /** Sent rows sent before `before` go. */
   prune(before: string): number;
 }
@@ -172,6 +174,13 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
     return { repo, key, calls, cancelled: [...new Set(cancelled)].filter((id) => !inCalls.has(id)) };
   });
 }
+
+/**
+ * How long a send holds the rows it claimed (issue #1959), renewed before each call: no other hopper sends them meanwhile.
+ * A row a stopped or killed hopper left `sending` is sent again once its claim ends. Longer than a call's longest wait at
+ * the rate limiter (`SOURCE_DEFER_AFTER_MS`, 60 s).
+ */
+export const OUTBOX_CLAIM_MS = 2 * 60_000;
 
 /** How many attempts a row gets before it is `failed` and waits for a person's Retry. */
 export const OUTBOX_ATTEMPTS = 5;

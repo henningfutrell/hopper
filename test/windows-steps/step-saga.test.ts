@@ -13,6 +13,7 @@ import type { WindowsHost, WindowsStepHost } from '../../src/domain/windows-step
 import { createSagaCoordinator, type SagaCoordinator } from '../../src/sagas/coordinator.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { createWindowsSteps, STEP_INTERRUPTED, WINDOWS_STEP_SAGA, windowsStepSaga, type WindowsSteps } from '../../src/windows-steps/index.ts';
+import { endLeases } from '../crash/harness.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
 
 const temp = useTempStore();
@@ -117,7 +118,8 @@ describe('a Windows step as a saga (issue #1611)', () => {
     expect(w.scratch.has(HOST.name)).toBe(true);
 
     const b = hopper(url, 'host-b', w, clock);
-    later(clock, LEASE_MS + 1);
+    // A lease ends on the database's clock (issue #1954).
+    endLeases(url);
     await b.c.pass();
     expect(b.store.sagas.get(sagaOf(b, first))?.state).toBe('done');
     // It may have had its effect: it is not run again, and the job's poll gets one result that says so.

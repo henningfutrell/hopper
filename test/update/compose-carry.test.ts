@@ -1,6 +1,7 @@
-// Issue #697: compose.yaml is the one the image ships with, replaced whole at each update, so what an install changed in it moves
-// to .env first: the published port's bind address, the port, and the hopper's own settings. What .env cannot hold — a
-// service of the install's own, a host folder mounted into a service, a key the shipped file never sets — moves to
+// Issue #697: compose.yaml is the one the image ships with, replaced whole at each update, so what an install changed in it is
+// carried over: the published port's bind address, the port, and the hopper's own settings become the defaults of the new
+// compose.yaml's own variables (issues #894, #970: no .env is read or written). What compose.yaml cannot name — a service of
+// the install's own, a host folder mounted into a service, a key the shipped file never sets — moves to
 // compose.override.yaml, which compose reads beside it.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,7 +21,7 @@ describe('carrying an install\'s own settings out of its compose.yaml (issue #69
     expect(carryLocalSettings(SHIPPED, SHIPPED)).toEqual({ env: [], notes: [] });
   });
 
-  it('moves an old LAN install\'s bind address, LAN names and public URL to .env lines', () => {
+  it('moves an old LAN install\'s bind address, LAN names and public URL to the settings the new compose.yaml takes as its defaults', () => {
     const r = carryLocalSettings(OLD_LAN, SHIPPED);
     expect(r.env).toEqual(['HOPPER_BIND=0.0.0.0', 'HOPPER_LAN_NAMES=hopper,lanbox', 'HOPPER_PUBLIC_URL=https://hopper.example.test']);
     expect(r.notes).toEqual([]);
@@ -38,7 +39,7 @@ describe('carrying an install\'s own settings out of its compose.yaml (issue #69
   });
 });
 
-describe('moving what .env cannot hold to compose.override.yaml (issue #697)', () => {
+describe('moving what compose.yaml cannot name to compose.override.yaml (issue #697)', () => {
   it('moves nothing from the shipped compose.yaml itself', () => {
     expect(carryOverride(SHIPPED, SHIPPED, undefined)).toEqual({ override: undefined, notes: [] });
   });
