@@ -113,7 +113,7 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
           name: o.name, kind, whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
           ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
-          ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o),
+          ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o), connected: () => accounts.account(provider) !== undefined,
         }),
       };
     }

@@ -15,6 +15,9 @@
 // `pullRequest`); one failed for good is said once (`gaveUp`). So is a person's act that gives an ended job's item back
 // (`giveBackAct`: Run again and Rework, part 4; Retry, Continue, I fixed it, Push it and Tend again, part 5), op
 // `give_back`, sent by `giveBack`, and said once by `giveBackFailed`.
+// A reconnect needed holds the writes (issue #1891): while the connected account is expired (`connected` false), nothing is
+// sent, and a call that fails once it is leaves its rows pending, with why and no attempt counted, never failed. The
+// action's local change stays committed; a new connection sends the rows.
 // A comment is posted once (issue #1590): its first line is a hidden key made from its first row, and a comment that
 // already carries it (a post whose row a stop left `sending`) answers the send in place of a second one.
 import { createHash } from 'node:crypto';
@@ -67,6 +70,8 @@ export interface GitHubOutboxOptions {
   record?(type: string, data: Record<string, unknown>): void;
   /** A row GitHub took: what the source knows of its item follows it. */
   sent?(row: OutboxRow): void;
+  /** Whether the connected account is connected and not expired (issue #1891); false: the rows wait for a new connection. Absent: always. */
+  connected?(): boolean;
 }
 
 export function createGitHubOutbox(o: GitHubOutboxOptions) {
@@ -103,6 +108,8 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
 
   /** The calls' rows a failed call leaves: each waits its backoff, or is failed when GitHub refused it or it was its last attempt. Answers those failed. */
   function failed(left: OutboxRow[], e: unknown): OutboxRow[] {
+    // The account is expired: the rows wait for a new connection, with no attempt counted (issue #1891).
+    if (o.connected?.() === false) { rows.update(left.map((r) => r.id), { state: 'pending', lastError: message(e), nextAt: now() }); return []; }
     const permanent = e instanceof GitHubApiError || e instanceof SourceError ? e.permanent : !(e instanceof TypeError);
     const retryAt = e instanceof GitHubApiError ? e.retryAt : undefined;
     for (const r of left) {
@@ -116,6 +123,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
 
   async function sendDue(send: OutboxSend, gaveUp?: OutboxGaveUp): Promise<{ due: number; wrote: string[] }> {
     if (!recovered) { rows.recover(o.source); recovered = true; }
+    if (o.connected?.() === false) return { due: 0, wrote: [] };
     const due = rows.due(o.source, now());
     if (due.length === 0) return { due: 0, wrote: [] };
     rows.update(due.map((r) => r.id), { state: 'sending' });
@@ -125,6 +133,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
     outboxBatch(due.length, plans.reduce((n, p) => n + p.calls.length, 0));
     for (const plan of plans) {
       if (plan.cancelled.length) rows.update(plan.cancelled, { state: 'sent', sentAt: now() });
+      if (o.connected?.() === false) { rows.update(plan.calls.flatMap((c) => c.rows), { state: 'pending' }); continue; }
       const left = new Map<number, number>();
       for (const c of plan.calls) for (const id of c.rows) left.set(id, (left.get(id) ?? 0) + 1);
       for (const call of plan.calls) {

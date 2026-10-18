@@ -94,6 +94,8 @@ export interface GitHubSourceOptions {
   listings?: GitHubListingRepository; outbox?: import('../../domain/github-outbox.ts').GitHubOutboxRepository;
   /** The intake sync interval, in ms, read at each discover (issue #985). Default: DEFAULT_RATE_LIMITER's. */
   listingEveryMs?: () => number;
+  /** Whether the connected account is connected and not expired (issue #1891): while not, the outbox's rows wait. Absent: always. */
+  connected?: () => boolean;
 }
 
 export const MIGRATION_RELEASED = 'released a claim with no holder recorded and no job in this hopper';
@@ -178,7 +180,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   };
 
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
-  const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
+  const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {

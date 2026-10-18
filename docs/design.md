@@ -12313,6 +12313,13 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   the fifth attempt, leaves them `failed`. While the outbox tries again by itself the item's `writeBehind` is `running`, with
   its next `attempt` and the `error` of the try before (as issue #1194 part 8 had it); a failed row shows `failed` with why.
   The same act sent again sends failed rows again, from their first attempt.
+- **A reconnect needed holds the writes** (issue #1891). While the connected account is **expired** (`connected`, from
+  the account source), the outbox sends nothing. A call that fails once the account is expired — the token read refused,
+  or GitHub refused the token and the renewer ended the connection — leaves its rows `pending`, with the error and no
+  attempt counted: they are never `failed` for it, and no act is told it gave up. Later issues of the same batch make no
+  call. The action's own local change stays committed: the database is the source of truth. The owner gets the one notice
+  of the expired account (`connected_account.expired`), and every screen asks to connect again; once a connection is
+  there, the rows go through at the next send.
 - **Syncs never wait for it.** A discover lists what GitHub says. An issue with rows not sent is not taken (`held`): the
   sync neither overtakes the action (a job before its approved comments are read, before `hopper:done` is gone) nor undoes
   it. The listing is not overlaid with the rows' labels: a job taken on a label not yet removed would get its claim label
@@ -22665,7 +22672,7 @@ on at a signed-in machine, with no person.
   - the machine that raised the question has a **signed-out tool** that keeps the job's executor off it;
   - the job names no machine of its own (`spec.machineId`: a person's or a routing rule's pin stays);
   - another machine is online, runs the job's executor, has no signed-out tool for it, and a usage source reads its tool
-    signed in as an identity (`signedInOf`): a machine with no usage source, or a read that failed, is not a target.
+    signed in as an identity (`connectedOf`): a machine with no usage source, or a read that failed, is not a target.
   It is not required that a lane is free there now: the job waits in the queue for one, as any job does.
 - **How.** The hopper takes a checkpoint of the job ("Checkpoints and resume elsewhere"), then, in one transaction, parks it
   (`recordPark`) and answers its question as `signed-out-move` (`SIGNED_OUT_MOVE_BY`, a trail attempt of role `fixed`, its
@@ -22697,7 +22704,7 @@ one, its usage source sets `Account.expiresAt` (ISO); the tool accounts carry it
 within a day (`EXPIRY_WARNING_MS`), or has ended, with "sign it in again from Accounts" (`signedOutLines`,
 `ui/src/model/tool-accounts.ts`, read against the server's minute).
 
-Tests: `test/decider/signed-out.test.ts` (`signedOutMove`, `signedInOf`, a job resuming elsewhere kept off),
+Tests: `test/decider/signed-out.test.ts` (`signedOutMove`, `connectedOf`, a job resuming elsewhere kept off),
 `test/integration/signed-out-move.test.ts` (a job held on a signed-out machine starts again on the signed-in one, its
 question answered by the move; it stays with no machine signed in; it stays with a checkpoint that holds work and no session),
 `test/herdr/startup-screens.test.ts` (the unsent text after the answer elsewhere), `test/http/tool-accounts.test.ts`,
@@ -24212,7 +24219,7 @@ the person (`identityName`: name, username, email or subject, the first the real
 - **An act is recorded by the verified email of the session's user** (`src/http/ui/sessions.ts` `personOf`). Every `by`
   a UI session or an API token writes — settings changes, approvals, grants, artifacts, promotions, vault changes, the
   instance's own settings — and every acting person (`ActingPerson.person`: notes, hand-offs, failures, pull request acts,
-  direct jobs, terminals) names it. `signedInOf` (`src/http/tenants.ts`) carries the user's email, read from the users
+  direct jobs, terminals) names it. `connectedOf` (`src/http/tenants.ts`) carries the user's email, read from the users
   when an act asks for it.
 - **A user with no email yet keeps the name the realm gave.** A GitHub-signed-in user from before part 7 has none until
   their next GitHub sign-in; a realm that vouches for no email gives none.

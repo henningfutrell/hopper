@@ -1,0 +1,1 @@
+- When GitHub asks you to connect again, the changes you made in the hopper wait and reach GitHub once you connect, in place of failing.
