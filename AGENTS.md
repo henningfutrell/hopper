@@ -131,7 +131,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   before it is stored and never ends the acting admin's own admin session. No sign-in (`none`) is only ever explicit.
 - **Jobs come only from a trusted origin** (issue #652, `docs/design.md` "Trusted origin and request cards"): an issue
   becomes a job only when the user's trusted actors — Access decides (OpenFGA `intake#can_start_jobs`) — wrote, labelled
-  and assigned it, not through an app or as a bot, and no job filed it; any other is a request card a person approves, and
+  and assigned it, not through an app or as a bot, nobody but them edited its title or body (issue #655 part 17), and no job filed it; any other is a request card a person approves, and
   its job runs the approved text. A GitLab issue (issue #1448, `docs/design.md` "Jobs through GitLab") becomes a job only when
   the user's GitLab account — Access decides (`intake#can_start_jobs`, a `gitlab_account` by its GitLab and user id) — wrote,
   labelled and assigned it, and nobody else edited its title or description; any other is a request card a person approves, as on GitHub, and its job runs the approved text (issue #1642). Approve is a person's act through the UI session, never a job's. One exception, the

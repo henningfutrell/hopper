@@ -16764,7 +16764,10 @@ is a job only from a trusted origin, or from a request card a person approved**,
 source would take and that has no job that has not ended, the source reads the issue's events (`GitHubApi.issueEvents`,
 REST `GET /repos/{o}/{r}/issues/{n}/events`, `labeled` and `assigned` only) and names three acts: who wrote it, who added
 the source label (the newest `labeled` event of that label), and who assigned it to the user (the newest `assigned`
-event of the connected login). Each counts only when a **trusted actor** did it:
+event of the connected login). Since issue #655 part 17 it also reads who edited the issue's title or body
+(`GitHubApi.issueEdits`, GraphQL `userContentEdits` and `RenamedTitleEvent`, the newest 50 of each; `editActs`), as GitLab's
+origin does (issue #1642): one `edited` act per editor. Edits that cannot be read are one edit by nobody known. Each counts
+only when a **trusted actor** did it:
 
 - an app or a bot never is one: an actor of GitHub type `Bot`, a `name[bot]` login, or an act `performed_via_github_app`;
 - this hopper's own **Assign to me** (issue #440) goes through the hopper's app as the user: it is the user's act when the
@@ -16970,7 +16973,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 16, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 17, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17404,9 +17407,30 @@ quarantined job meets no minimum, and a job whose stamp does not verify meets no
 A deny by policy is no deny of part 5: the job's trust stays, and Jev's sandbox check is not asked. Access reads the minima
 as kept (`minTrusts`), so a change applies at the next ask, with no restart. Persisted state: none.
 
-**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the edit count,
-the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, and the Intake view of
-the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+**Edits in the origin** (part 17, `editActs`, `originsOf` in `src/sources/github/origin.ts`). The issue's rule: "Any actor
+on the timeline who is not trusted, and who edited the body or set a nominating event: at most `untrusted`". Before this
+part a GitHub issue's origin read only who wrote, labelled and assigned it (issue #652), so a collaborator who is no trusted
+actor could rewrite the body of the user's own issue before a sync took it, and the job ran that text at `owner`. Now the
+origin reads who edited its title or body too, as on GitLab (issue #1642):
+
+- **An edit by someone who is no trusted actor**, or by an app or a bot (a `name[bot]` login), makes the issue a **request
+  card**: `edited by <login>, not a trusted actor`, `edited by an app or a bot (<login>)`. A job made from it is
+  `untrusted` by the rules (no job origin) until a person approves its text; then it is `approved`, as for any card.
+- **Edits that cannot be read** are one edit by nobody known (`who edited it is not known`): the issue is a card. A GitHub
+  API with no edit read (`issueEdits` absent) reads none, as before.
+- **The job keeps its editors** in its origin acts (part 14): one `edited` act per editor, in the order of their first edit,
+  each with whether a trusted actor did it. The stamp view, the job view and Jev's trust check show them; the request card
+  shows them with the other acts.
+- **Only an issue the source judges** is read: one with no job that has not ended, one to run again, or one waiting for its
+  origin. A job that started keeps its origin; an edit after its start lowers it at gate 2 (part 7).
+
+Cost: one more GraphQL read per judged issue per sync, as the events read is one REST read. Persisted state: none new —
+`edited` is a role the job's origin acts and `job.queued`'s schema already take (GitLab). No migration. An issue a build
+before this part took keeps its job; an issue it judges again (Run again) is judged with its edits.
+
+**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the linked
+pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, and the Intake view of the
+stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

@@ -26,17 +26,19 @@ A **trusted actor** is a GitHub account whose acts can start your jobs. By defau
 
 The hopper keeps each trusted actor by its GitHub user id, not by its login. When a person renames their GitHub account, they stay trusted. When another account takes an old login, it does not get the trust.
 
-An issue has a **trusted origin** when all three acts come from trusted actors:
+An issue has a **trusted origin** when all of these acts come from trusted actors:
 
 - who wrote the issue,
 - who added the source label (the newest time it was added),
-- who assigned the issue to you (the newest time it was assigned).
+- who assigned the issue to you (the newest time it was assigned),
+- each person who edited the issue's title or body.
 
 These never count as trusted actors:
 
 - an app or a bot (a `name[bot]` login, or an act done through a GitHub App),
 - a login that is not in your trusted actors,
-- an act the hopper cannot find in the issue's events.
+- an act the hopper cannot find in the issue's events,
+- an edit when the hopper cannot read the issue's edits.
 
 **Assign to me** in Intake counts as your own act, because the hopper does it for you.
 
@@ -53,7 +55,7 @@ An open, labelled issue that is assigned to you, but is not of a trusted origin,
 The card shows:
 
 - why it is a request (one reason per line, for example `written by octocat, not a trusted actor`),
-- who wrote, labelled and assigned the issue (green when trusted),
+- who wrote, labelled, assigned and edited the issue (green when trusted),
 - the title and the body, as plain text.
 
 When you approve a card, the hopper records that title and body as the approved text. The job runs exactly that text.
@@ -166,7 +168,7 @@ After intake, a new job also passes the queue gate. Set it in the **Queue** view
 ## What the hopper does for you
 
 - It lists every open labelled issue in your job repositories in **Intake**, with `taken` or the one reason it was not taken. It drops nothing silently.
-- It reads the issue's events to find who wrote, labelled and assigned it.
+- It reads the issue's events and edits to find who wrote, labelled, assigned and edited it.
 - It puts the issue's text into the job's prompt inside an untrusted block. The job reads it as data, not as instructions.
 - Only the assignee's comments reach the job.
 - It releases its own stale claims: a claim of yours with no job here.

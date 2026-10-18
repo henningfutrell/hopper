@@ -1,6 +1,7 @@
 // An issue's origin at intake (issue #652, domain/intake-origin.ts): who wrote it, and who added the label and the
-// assignment the hopper takes it by — the newest of each, from its events. Each act counts only when a trusted actor did
-// it, not through an app or as a bot; this hopper's own Assign to me is the user's act. An issue a job filed is never of
+// assignment the hopper takes it by — the newest of each, from its events —, and who edited its title or body (issue
+// #655 part 17, as on GitLab). Each act counts only when a trusted actor did it, not through an app or as a bot; this
+// hopper's own Assign to me is the user's act. An issue a job filed is never of
 // a trusted origin. Not trusted: the text a person approved, when its title and body hash the same, makes it approved;
 // else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies;
 // a card that leaves Intake with no approval or decline records `source.request_withdrawn` (issue #1067, part 4).
@@ -13,6 +14,7 @@ import {
   FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type ItemHistory, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
 import type { IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
+import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
 import { DONE_OPEN } from './discover.ts';
 
@@ -70,10 +72,33 @@ async function eventsOf(api: GitHubApi, issue: GitHubIssue): Promise<IssueEvent[
   }
 }
 
+/** Who edited the issue's title or body (issue #655 part 17): one act per editor, in the order of their first edit. */
+export function editActs(edits: readonly ItemEdit[]): Act[] {
+  const seen = new Set<string>();
+  const acts: Act[] = [];
+  for (const e of edits) {
+    if (seen.has(e.editor.toLowerCase())) continue;
+    seen.add(e.editor.toLowerCase());
+    acts.push({ role: 'edited', login: e.editor, ...(isBotLogin(e.editor) ? { app: e.editor } : {}) });
+  }
+  return acts;
+}
+
+/** The edit acts of an issue; none when the API reads no edits. Edits that cannot be read are one edit by nobody known, which no trusted actor holds. */
+async function editsOf(api: GitHubApi, issue: GitHubIssue): Promise<Act[]> {
+  if (!api.issueEdits) return [];
+  try {
+    return editActs(await api.issueEdits(issue.repo, issue.number));
+  } catch (err) {
+    console.warn(`hopper: the edits of ${issue.url} could not be read: ${(err as Error).message}`);
+    return [{ role: 'edited' }];
+  }
+}
+
 /** The origin of each issue, by its URL: the trusted actors asked once for every login the issues name. */
 export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitHubIssue[], label: string, connected: string): Promise<Map<string, OriginVerdict>> {
   const acts = new Map<string, Act[]>();
-  for (const i of issues) acts.set(i.url, originActs(i, await eventsOf(api, i), label, connected, trust.assignedHere(i.url)));
+  for (const i of issues) acts.set(i.url, [...originActs(i, await eventsOf(api, i), label, connected, trust.assignedHere(i.url)), ...await editsOf(api, i)]);
   const asked = new Map<string, ActorRef>();
   for (const a of [...acts.values()].flat()) if (!a.app && a.login && !asked.has(a.login.toLowerCase())) asked.set(a.login.toLowerCase(), { login: a.login.toLowerCase(), ...(a.id !== undefined ? { id: a.id } : {}) });
   const answers = asked.size > 0 ? await trust.trusted([...asked.values()], connected) : new Map();
@@ -82,7 +107,7 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
     const actors = acts.get(i.url)!.map((a): OriginActor => ({ ...a, trusted: !a.app && a.login !== undefined && answers.get(a.login.toLowerCase())?.allowed === true }));
     const unavailable = actors.map((a) => (a.login ? answers.get(a.login.toLowerCase()) : undefined)).find((x) => x?.unavailable);
     const why = [
-      ...actors.map(untrustedReason).filter((r): r is string => r !== undefined),
+      ...new Set(actors.map(untrustedReason).filter((r): r is string => r !== undefined)),
       ...(FILED_BY_JOB.test(i.body) ? [FILED_BY_JOB_REASON] : []),
       ...(unavailable ? [`${UNCHECKED}: ${unavailable.reason}`] : []),
     ];

@@ -205,7 +205,8 @@ describe('Item snapshots (issue #662)', () => {
     const a = await boot(gh);
     await a.login();
     const { issue, first, jobsFor } = await failedOnce(gh, a);
-    gh.editIssue(REPO, issue.number, { body: EDITED }, 'someone-else');
+    // The user's own edit: an edit by someone who is no trusted actor makes the item a request card (issue #655 part 17).
+    gh.editIssue(REPO, issue.number, { body: EDITED }, 'owner');
     gh.removeLabel(REPO, issue.number, 'hopper:failed');
     await a.sync();
     const next = await waitFor(async () => (await jobsFor()).find((j) => j.id !== first.id), { what: 'the new job' });
