@@ -5,7 +5,7 @@
 // of a name that is not allowed fail as an unknown name does (ENOTFOUND), with the same words.
 // Allowed: unix sockets; loopback (`localhost`, `*.localhost`, 127.0.0.0/8, ::1, the unspecified address); this
 // machine's own name; and the host of every `HOPPER_TEST_*` URL — the test Postgres (and so the host testcontainers
-// maps its containers to) and the opt-in real-service tests (`HOPPER_TEST_SOLR_URL`, `HOPPER_TEST_VAULT_ADDR`, ...).
+// maps its containers to, or TESTCONTAINERS_HOST_OVERRIDE) and the opt-in real-service tests (`HOPPER_TEST_SOLR_URL`, `HOPPER_TEST_VAULT_ADDR`, ...).
 // Loaded by test/support/isolate.ts in every worker, and by NODE_OPTIONS (`--import`) in every node process a test
 // starts. Imports nothing of hopper.
 import dns from 'node:dns';
@@ -45,6 +45,7 @@ export function allowedHost(host: string, env: NodeJS.ProcessEnv = process.env):
   const h = bare(host);
   if (h === '' || h === 'localhost' || h.endsWith('.localhost') || loopbackAddress(h)) return true;
   if (h === hostname().toLowerCase()) return true;
+  if (env.TESTCONTAINERS_HOST_OVERRIDE && bare(env.TESTCONTAINERS_HOST_OVERRIDE) === h) return true;
   return testServiceHosts(env).includes(h);
 }
 

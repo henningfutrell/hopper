@@ -88,6 +88,7 @@ describe('socket-level test isolation', () => {
     for (const host of ['localhost', 'a.localhost', '127.0.0.9', '::1', '[::1]', '::ffff:127.0.0.1']) expect(allowedHost(host)).toBe(true);
     expect(allowedHost('svc.example.net', { HOPPER_TEST_SOLR_URL: 'http://svc.example.net:8983/solr/hopper' })).toBe(true);
     expect(allowedHost('svc.example.net', { OTHER_URL: 'http://svc.example.net/' })).toBe(false);
+    expect(allowedHost('172.17.0.1', { TESTCONTAINERS_HOST_OVERRIDE: '172.17.0.1' })).toBe(true);
     expect(allowedHost('192.0.2.1')).toBe(false);
   });
 
