@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckCredential, OperationProfile, Probe } from '../../src/domain/types.ts';
 import { markRuns, type ProbeMarks } from '../../src/domain/read-only-check.ts';
-import { checkEnv, checkScript, readResults } from '../../src/sandbox/check-script.ts';
+import { checkEnv, checkScript, judge, readResults } from '../../src/sandbox/check-script.ts';
 import { HELM_LIST_NOTE, HOPPER_PROBES, PROBES, probeCatalog } from '../../src/sandbox/probes.ts';
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
 
@@ -248,6 +248,11 @@ esac`, [read('aws-account', '123456789012')]);
   *) exit 1 ;;
 esac`, [read('aws-role', '123456789012/hopper-read')]);
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true, exit: 254 });
+  });
+
+  it('an output that is only an encoded authorization failure message is a refusal (issue #1904)', () => {
+    const run = HOPPER_PROBES.runsFor([read('aws-role', '123456789012/hopper-read')]).find((r) => r.probe.id === 'aws.ec2-create-tags')!;
+    expect(judge(run, 254, `Encoded authorization failure message: ${'Ab3_-x9'.repeat(100)}`)).toEqual({ outcome: 'denied', passed: true });
   });
 
   it('a long output with no refusal in it is still an error (issue #1904)', async () => {
