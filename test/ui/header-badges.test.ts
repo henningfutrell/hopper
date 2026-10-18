@@ -13,7 +13,7 @@ const job = (id: string, o: Partial<Job> = {}): Job => ({
 const lane = (n: number, state: Lane['state']): Lane => ({ id: `m1/lane-${n}`, machineId: 'm1', state, openedAt: '2026-10-03T10:00:00Z' });
 const machine = (lanes: Lane[]): MachineView => ({ id: 'm1', label: 'laptop', maxLanes: 6, online: true, executors: ['test'], lanes, usage: [] });
 const inFlight: InFlight = { total: 8, running: 6, ownCommand: 0, pullRequests: 2 };
-const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: 3, dropped: 0 };
+const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: 3, blocked: 0, dropped: 0 };
 
 describe('header badges (issue #1181)', () => {
   it('each badge is its card\'s total', () => {
