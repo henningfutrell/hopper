@@ -8,7 +8,9 @@
 // through a proxy), HOPPER_WORK_DIR (this host's own), CRASH_CLOUDFLARE_URL and CRASH_NGROK_URL (the providers' fakes), CRASH_MASTER_KEY (the same for every host of a test);
 // HOPPER_TEST_KILL_POINT arms a kill point (src/sagas/kill-points.ts). CRASH_GITHUB_URL (issue #1959): the node:http fake
 // GitHub, and the connected account's job source `github` over it; CRASH_GITHUB_CONNECT, its job repositories (comma
-// separated), connects the account first. With a GitHub, the host syncs once before it serves.
+// separated), connects the account first. With a GitHub, the host syncs once before it serves. CRASH_CLOCK_SKEW_MS puts
+// this host's clock that far ahead of the real time (behind, when negative), as a machine whose clock is off: every
+// `new Date()` and `Date.now()`.
 import '../support/isolate.ts';
 import { cloudflareProvider } from '../../src/remote-access/cloudflare.ts';
 import { ngrokProvider } from '../../src/remote-access/ngrok.ts';
@@ -22,6 +24,18 @@ const need = (name: string): string => {
 };
 
 const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect } = process.env;
+
+const skew = Number(process.env.CRASH_CLOCK_SKEW_MS ?? 0);
+if (skew) {
+  const RealDate = Date;
+  globalThis.Date = class extends RealDate {
+    constructor(...a: unknown[]) {
+      if (a.length) super(...(a as [string])); else super(RealDate.now() + skew);
+    }
+    static override now(): number { return RealDate.now() + skew; }
+  } as DateConstructor;
+}
+
 const app = await startTestApp({
   dbPath: need('CRASH_DB_PATH'),
   env: { HOPPER_DATABASE_URL: need('HOPPER_DATABASE_URL'), HOPPER_WORK_DIR: need('HOPPER_WORK_DIR'), ...(github ? fakeGitHubEnv({ url: github }) : {}) },

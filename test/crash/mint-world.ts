@@ -32,7 +32,7 @@ export interface World {
   url: string;
   cf: FakeCloudflare;
   ng: FakeNgrok;
-  host(o?: { killPoint?: string; databaseUrl?: string }): Promise<CrashHost>;
+  host(o?: { killPoint?: string; databaseUrl?: string; clockSkewMs?: number }): Promise<CrashHost>;
   close(): Promise<void>;
 }
 
@@ -45,7 +45,7 @@ export async function world(o: { fail?: boolean } = {}): Promise<World> {
   const base: Omit<HostOptions, 'killPoint'> = { dbPath: db.dbPath, databaseUrl: url, fakes: { cloudflare: cf.url, ngrok: ng.url } };
   return {
     dbPath: db.dbPath, url, cf, ng,
-    host: (h = {}) => startHost({ ...base, ...(h.databaseUrl ? { databaseUrl: h.databaseUrl } : {}), ...(h.killPoint ? { killPoint: h.killPoint } : {}) }),
+    host: (h = {}) => startHost({ ...base, ...(h.databaseUrl ? { databaseUrl: h.databaseUrl } : {}), ...(h.killPoint ? { killPoint: h.killPoint } : {}), ...(h.clockSkewMs ? { clockSkewMs: h.clockSkewMs } : {}) }),
     close: async () => { await cf.close(); await ng.close(); db.cleanup(); },
   };
 }

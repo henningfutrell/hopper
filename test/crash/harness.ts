@@ -46,6 +46,8 @@ export interface HostOptions {
   connectGitHub?: string[];
   /** The kill point to end this host at. */
   killPoint?: string;
+  /** How far this host's clock is ahead of the real time (behind, when negative), as a machine's clock that is off. */
+  clockSkewMs?: number;
 }
 
 const children = new Set<ChildProcess>();
@@ -61,6 +63,7 @@ export function startHost(o: HostOptions): Promise<CrashHost> {
       ...(o.fakes.cloudflare ? { CRASH_CLOUDFLARE_URL: o.fakes.cloudflare } : {}), ...(o.fakes.ngrok ? { CRASH_NGROK_URL: o.fakes.ngrok } : {}),
       ...(o.fakes.github ? { CRASH_GITHUB_URL: o.fakes.github } : {}), ...(o.connectGitHub ? { CRASH_GITHUB_CONNECT: o.connectGitHub.join(',') } : {}),
       ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}),
+      ...(o.clockSkewMs ? { CRASH_CLOCK_SKEW_MS: String(o.clockSkewMs) } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
