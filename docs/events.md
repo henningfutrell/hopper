@@ -5256,6 +5256,31 @@ Version 1 (`docs/schemas/work_item.reconciled.v1.json`). The item reconciler cor
 }
 ```
 
+## `work_item.dropped`
+
+Version 1 (`docs/schemas/work_item.dropped.v1.json`). A person pressed Won't do on a blocked work item in Intake (issue #1891, design.md "The item lifecycle"): `key` is the item's source key, `source` the job source that listed it, `jobId` its newest job, `cause` why it was blocked (`no_pr`, `stale`, `pr_closed`), `by` who pressed it. The item is dropped at once; its issue's blocked label goes and `hopper:rejected` comes on through the GitHub outbox, so no hopper takes it again until a person runs it again. Moves the item only while it is blocked, so a second one changes nothing.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `jobId` | string | no |
+| `cause` | `stale` \| `no_pr` \| `pr_closed` | no |
+| `by` | object | no |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/owner/repo/issues/9",
+  "jobId": "job-1",
+  "cause": "pr_closed",
+  "by": {
+    "person": "ada",
+    "via": "ui"
+  }
+}
+```
+
 ## `job.pull_request_classified`
 
 Version 1 (`docs/schemas/job.pull_request_classified.v1.json`). A followed pull request's change kind (issue #1076), new or changed: `kind` — `docs` (docs or comments only), `tests`, `low_risk`, `code` or `sensitive` (auth, secrets, migrations, the sandbox, CI, infra, dependencies, agent instructions, or a line a content rule matches) —, read from the files and lines it changes by the repository's change rule, and `why`: a few files and the rule each matched. The kind names its merge gate: merged when ready with no person, merged when ready only with yolo mode on, or merged only by a person. The work-item ledger keeps it on the item.

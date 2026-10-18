@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { PULL_REQUEST_WAITS, WORK_ITEM_STATES } from '../domain/work-items.ts';
 import { BLOCKED_CAUSES } from '../domain/item-lifecycle.ts';
+import { ACTION_VIAS } from '../domain/failures.ts';
 
 const strict = z.strictObject;
 const via = z.enum(['delivery', 'read']);
@@ -19,5 +20,10 @@ export const WORK_ITEM_EVENT_SCHEMAS = {
   'work_item.reconciled': strict({
     key: z.string(), from: z.enum(WORK_ITEM_STATES), jobId: z.string().optional(), cause: z.enum(BLOCKED_CAUSES).optional(),
     replay: strict({ type: z.enum(['job.finished', 'job.failed', 'job.cancelled', 'job.rejected']), data: z.record(z.string(), z.unknown()) }).optional(),
+  }),
+  // A person's Won't do on a blocked item (issue #1891): the item is dropped.
+  'work_item.dropped': strict({
+    source: z.string(), key: z.string(), jobId: z.string().optional(), cause: z.enum(BLOCKED_CAUSES).optional(),
+    by: strict({ person: z.string(), via: z.enum(ACTION_VIAS) }).optional(),
   }),
 };

@@ -2336,7 +2336,7 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 | still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
 | merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
-| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again). Closed on GitHub (no person's Close PR, not superseded), its item is blocked (`pr_closed`, issue #1891): the first time in a row the item reconciler runs it again by itself, which takes the label off; a second time a person decides ("The item lifecycle") |
+| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again). Closed on GitHub (no person's Close PR, not superseded), its item is blocked (`pr_closed`, issue #1891): the first time in a row the item reconciler runs it again by itself, which takes the label off; a second time a person decides: Run again or Won't do on its row in Intake ("The item lifecycle") |
 | none named, none open, and a pull request of the issue's repository that mentions it merged since the job began (issue #1891) | named, and ended as a merged part: the job's own "Part of #N" first (issue #1231), else one that only mentions the issue (`mention: true`), such as a pull request of several issues. The next part is taken, or the issue is done when every declared part is done |
 | none named, one found open (issue #1891) | named from now on (`pullRequest`, `part` for a part); an issue the report left `hopper:blocked` gets `hopper:pr-ready`, or `hopper:partly-done` for a part, in its place |
 | still open, or none found yet, and the issue closed as not planned (issue #428) | abandoned: `job.pull_request_abandoned`; `follow: abandoned`, followed no more and never merged, yolo mode or not; the pull request is left as it is; `hopper:pr-ready`, `hopper:partly-done` and `hopper:failed` come off and no end label goes on. A person's Merge now or Close PR still goes through. Reopened with the pull request still open, reconciling (issue #763) follows it again |
@@ -20828,6 +20828,24 @@ and the writes held while a sign-in has ended are the next parts.
   state change, the item saga in the `sagas` table, Won't do on a blocked item, deadlines for the states other than PR
   open, and one notice when an item is blocked.
 
+**Part 5: Won't do and Run again on a blocked item, in Intake.**
+- **Won't do** (intake action `wont_do`). Discover offers it on an issue its labels keep out as blocked (`hopper:blocked`
+  or `hopper:pr-closed`); the act goes through only when the ledger holds the item `blocked`, as the database is the
+  truth, else it is refused with the state the ledger has. It records `work_item.dropped` at once (with the job source,
+  the item's newest job, the blocked cause and who pressed it), and the reducer drops a blocked item, only a blocked
+  one, so a second press changes nothing. Its GitHub change is outbox rows kept in the same transaction, coalesced into
+  one remove call — the end labels and the claim the last listing showed — and one add call, `hopper:rejected`, so no
+  hopper takes the issue again and no one edits `hopper:pr-closed` on GitHub. Labels only: no comment, and the issue
+  stays open. A second press before the next listing adds no row. Run again on its job later takes `hopper:rejected` off
+  as it takes any end label off.
+- **Run again on the same row.** The row of a blocked item names its newest job (`liveIntake`), and offers Run again on
+  it, the job's own give-back (a row of the GitHub outbox, issue #1238).
+- **Failures** points there: the stuck cause `pr_open_stale` says to press Run again or Won't do on the item's row in
+  Intake. It keeps no per-item buttons of its own, as no other stuck cause does.
+- **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, a
+  correction of the other states' label drift, deadlines for the states other than PR open, and one notice when an item
+  is blocked.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
@@ -20839,6 +20857,9 @@ mention ends the follow as a part; one merged before the job began does not).
 Part 4: `test/sources/github-item-labels.test.ts` (each state's labels, the drift), `test/sources/github-label-mirror.test.ts`
 (the #465 case corrected in one coalesced change, once; a second close; another state's drift logged once and not
 corrected; an item that moved a moment ago not judged).
+Part 5: `test/domain/work-items-wont-do.test.ts` (a blocked item dropped, a person's move; once), `test/sources/github-wont-do.test.ts`
+(offered on a blocked issue, dropped at once and its labels in one coalesced change; a second press adds nothing; refused
+when the ledger does not hold the item blocked), `test/sources/intake-live.test.ts`, `test/ui/intake-wont-do.test.ts`.
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
