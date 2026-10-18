@@ -44,9 +44,11 @@ describe('a poison failure (issue #1961)', () => {
     const a = await boot();
     const { store } = a.user();
     // The sweep reads the newest first: good failures on both sides of the poison one.
-    const before = [1, 2].map((n) => failed(a, { executor: 'test', payload: {} }, `HOPPER_FAILED the tests do not pass ${n}`));
+    // Four other causes, so no Recurring problem groups them.
+    const good = (error: string) => failed(a, { executor: 'test', payload: {} }, error);
+    const before = ['HOPPER_FAILED the tests do not pass', 'HOPPER_FAILED lint found problems'].map(good);
     const poison = failed(a, { executor: 'test' } as unknown as JobSpec, 'HOPPER_FAILED the build broke');
-    const after = [3, 4].map((n) => failed(a, { executor: 'test', payload: {} }, `HOPPER_FAILED the tests do not pass ${n}`));
+    const after = ['HOPPER_FAILED the docs are out of date', 'HOPPER_FAILED a type error'].map(good);
 
     for (const j of [...before, ...after]) {
       const assessed = await waitFor(() => store.jobs.get(j.id)!.assessment, { what: `job ${j.id} assessed` });

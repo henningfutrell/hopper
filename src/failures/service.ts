@@ -18,6 +18,7 @@
 // A job whose own pull request's checks are red goes on to fix them, its failed checks run again first (issue #1230). One
 // whose own pull request has merge conflicts or is a draft goes on to finish it (issue #1265). The same failure as its
 // item's run before stops the item for a person, with no Jev pick (issue #1461). A finished job's kept work is pushed by itself, once (issue #1472, `autoPush`).
+// A failure whose assessment throws is a poison failure (issue #1961, `poison.ts`): handed to a person with the reason.
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   failureSettingsOf, jobPriorityTag, type ActingPerson, type Discarding, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
@@ -30,12 +31,10 @@ import { createJevSteps, type JevCase } from './jev.ts';
 import { attemptOf, causeInputOf, recentOf, repeatedOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts'; import { createChecksRed, type ChecksRedOptions } from './checks-red.ts'; import { createUnfinished, type UnfinishedDeps } from './unfinished.ts';
 import { rerunRecordOf, retryable } from './rerun.ts'; import { settleLiveAgain } from './continued.ts';
-import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
-import { createWorkCheck } from './work-check.ts';
-import { createDoneAtSource, createWorkLook, DONE_NOTE, lookedAgain } from './done-at-source.ts';
-import { createBackfill } from './backfill.ts'; import { autoPush, type Sessions } from './kept-work.ts';
-import type { FailureAction, Failures } from './failures.ts';
-import { signatureOf } from './signature.ts';
+import { createHandoffs, type HandoffsOptions } from './handoffs.ts'; import { createPoison } from './poison.ts';
+import { createWorkCheck } from './work-check.ts'; import { createDoneAtSource, createWorkLook, DONE_NOTE, lookedAgain } from './done-at-source.ts';
+import { createBackfill } from './backfill.ts'; import { autoPush, type Sessions } from './kept-work.ts'; import { killPoint } from '../sagas/kill-points.ts';
+import type { FailureAction, Failures } from './failures.ts'; import { signatureOf } from './signature.ts';
 import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts'; import { soleLease, type SweepLease } from '../domain/leases.ts';
 
@@ -97,7 +96,7 @@ export function createFailures(o: FailuresOptions): Failures {
   const lookAgain = async (id: string): Promise<void> => { if (!stopped && await lookedAgain(store, o.doneAtSource, id) && !stopped) doneWhenAssessed.add(id); };
 
   /** Its latest run has a record — unless the job was continued since (issue #551): its new failure is assessed anew. */
-  const assessedRun = (jobId: string): boolean => { const r = store.failures.forJob(jobId); return r !== undefined && !(r.outcome === 'retried' && r.nextJobId === jobId); };
+  const assessedRun = (jobId: string): boolean => { const r = store.failures.forJob(jobId); return r !== undefined && !(r.outcome === 'retried' && r.nextJobId === jobId); }, poison = createPoison({ store, now, assessedRun, afterRecord: (r) => handoffs.afterRecord(r), logger: o.logger });
 
   /** The open problem of a signature whose scope covers this machine. */
   const openFor = (signature: string, machineId: string | undefined): Problem | undefined =>
@@ -108,9 +107,10 @@ export function createFailures(o: FailuresOptions): Failures {
     if (stopped) return;
     let grouped = false;
     let jevCase: JevCase | undefined;
+    if (poison.skips(jobId)) return;
     const doneNow = doneWhenAssessed.delete(jobId);
     let finish = false;
-    store.tx(() => {
+    try { store.tx(() => {
       const job = store.jobs.get(jobId);
       if (!job || job.status !== 'failed' || job.assessment || assessedRun(jobId)) return;
       const s = settings();
@@ -185,7 +185,8 @@ export function createFailures(o: FailuresOptions): Failures {
           data: { problemId: problem.id, signature, title: problem.title, opened, general: problem.general, decision: problem.decision, scope: problem.scope, affected: problem.jobIds.length },
         });
       }
-    });
+      killPoint('failures:assess:before-commit'); }); } catch (e) { poison.handOff(jobId, e); return; } // A poison failure (issue #1961): a person's, never blocking the others.
+    killPoint('failures:assess:after-commit');
     if (finish) o.finishShipped(jobId, { summary: DONE_NOTE });
     if (grouped) o.trigger('failure.grouped');
     if (jevCase) jevSteps.ask(jevCase);
