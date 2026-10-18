@@ -325,6 +325,11 @@ tombstones, in `cloud/` (decision 2).
   instance while its link names the owner's account. `registration` takes the account from that request. The owner reads
   the open requests, and why an instance did not take a code, at `GET /api/account/registration-requests`. Tests:
   `test/cloud/registration-requests.test.ts`.
+- **Instance states** (issue #465 part 8, `docs/design.md` "Instance states at hopper.io"). `snapshot` in `cloud/link.ts`
+  takes an instance's state snapshot, checks it against hopper.io's own copy of the schema and a size cap, and keeps it in
+  memory only (`cloud/states.ts`), while the instance is registered to the account its link names. `GET /api/account/instances`
+  and `GET /` show each instance's machines under it, with when hopper.io got the state. A removal, an unlink, a move and
+  an account deletion drop it. Tests: `test/cloud/instance-states.test.ts`.
 - Personal accounts only (decision 3). No route accepts a hopper.io session on an instance, and no
   instance realm changes (decision 4).
 - Tests: `test/cloud/sign-in.test.ts`, `test/cloud/delete-account.test.ts`, `test/cloud/records.test.ts`,
