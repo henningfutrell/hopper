@@ -287,10 +287,10 @@ export function createFailures(o: FailuresOptions): Failures {
         if (!stopped) prune();
       } catch (e) {
         o.logger.warn(`hopper: the failure sweep failed: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
-        sweeping = undefined;
       }
-    })();
+      // Cleared after the assignment (issue #1961): a pass that ends before its first await — the lease held by another
+      // host, a throw — cleared it before, then was kept as the sweep under way, so no sweep ran on this host again.
+    })().finally(() => { sweeping = undefined; });
     return sweeping;
   }
 
