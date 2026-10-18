@@ -20760,7 +20760,8 @@ and the writes held while a sign-in has ended are the next parts.
 
 - **Each state's promise** (`src/domain/item-lifecycle.ts`, pure). Every **work item state** not ended has an **owner**
   — `scheduler`, `lane_worker`, `github_observer`, `assessor`, `reconciler` or `person` —, how often it is checked, and
-  for PR open a **deadline**, an hour from `state_since` (issue #1231's rule). `done` and `dropped` have none. Each kind
+  for PR open a **deadline**, an hour from `state_since` (issue #1231's rule; part 7 gives the other states no person holds
+  one). `done` and `dropped` have none. Each kind
   of move names its owner too (`transitionOwner`). The ledger keeps the owner, the next check and the deadline of each
   row as columns (`owner`, `next_check_at`, `deadline`; tenant migration 82, which also rebuilds the ledger; a rebuild
   adds the columns when the table has none, so `hopper ledger rebuild` writes them too).
@@ -20863,6 +20864,21 @@ and the writes held while a sign-in has ended are the next parts.
 - **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, a
   correction of the other states' label drift, and deadlines for the states other than PR open.
 
+**Part 7: deadlines for the states other than PR open.**
+- **Each state no person holds has a deadline** (`checkOf`), from `state_since`: queued, working and waiting outside an
+  hour, partly done a day, PR open an hour as before. A state a person holds has none: waiting for approval (a request card
+  waits as long as a person likes), needs you, blocked, and failed (Failures lists it for a person already).
+- **Past it with no move, the item is blocked as `stale`** (`correctionOf`), and then asked about once (part 6). A state a
+  job holds (`JOB_HELD`: queued, working, waiting outside) is stale only when no job of the item is found — none named, or
+  the one it names is gone. A live job's lane and its own wait have their own deadlines, so an item a job holds is never
+  stale while the job is there; an ended one is folded again from its end, as before (now also from waiting outside).
+- **A partly done item a day on with no job for its next part is stale.** Its merged part is history: the block lets go of
+  it (`pullRequest`), so `stateOf` does not read the part's merge as the whole item's.
+- The deadline column of a row is written at the row's next change, or by `hopper ledger rebuild`. The reconciler does not
+  read the column: it works the deadline out from `state_since`, so no migration is needed.
+- **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, and a
+  correction of the other states' label drift.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
@@ -20880,6 +20896,9 @@ when the ledger does not hold the item blocked), `test/sources/intake-live.test.
 Part 6: `test/domain/work-items-person-asked.test.ts` (asked once; forgotten on a move out of blocked or a new cause),
 `test/domain/item-lifecycle.test.ts` (asked only about stuck work, once), `test/work-items/reconcile.test.ts` (a stale item
 and a second close asked about once), `test/plugins/grokbot-intake.test.ts` (the post).
+Part 7: `test/domain/item-lifecycle.test.ts` (each state's deadline; stale only with no job of the item found; partly done a
+day on; a state a person holds never), `test/work-items/reconcile.test.ts` (an approved request card with no job blocked as
+stale, asked once, a new job takes it over; a live queued job never; partly done a day on, not read as done).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

@@ -1,5 +1,5 @@
-// The item lifecycle (issue #1891): each state not ended has an owner and a next check, PR open a deadline, a state that
-// waits on a pull request needs one, and the reconciler's correction is what the item broke, else nothing.
+// The item lifecycle (issue #1891): each state not ended has an owner and a next check, each state no person holds a
+// deadline, a state that waits on a pull request needs one, and the reconciler's correction is what the item broke, else nothing.
 import { describe, expect, it } from 'vitest';
 import { blockedStuck, checkOf, correctionOf, hasReference, RUN_AGAIN_WINDOW_MS, transitionOwner } from '../../src/domain/item-lifecycle.ts';
 import { WORK_ITEM_STATES, type WorkItem } from '../../src/domain/work-items.ts';
@@ -11,14 +11,50 @@ const item = (o: Partial<WorkItem>): WorkItem => ({ key: KEY, state: 'queued', s
 const ended = { id: 'j1', status: 'finished', ended: true, updatedAt: T0 };
 
 describe('the item lifecycle', () => {
-  it('every state not ended has an owner and a next check; only PR open has a deadline; done and dropped have none', () => {
+  it('every state not ended has an owner and a next check; each state no person holds a deadline; done and dropped have none', () => {
     for (const s of WORK_ITEM_STATES) {
       const c = checkOf(s, T0);
       if (s === 'done' || s === 'dropped') expect(c).toBeUndefined();
       else expect(c?.owner).toBeDefined();
+      // A person, or the failure assessor that hands it to one, holds it as long as they like: no deadline.
+      if (c?.owner === 'person' || c?.owner === 'assessor') expect(c.deadline).toBeUndefined();
+      else if (c) expect(c.deadline).toBeDefined();
     }
     expect(checkOf('pr_open', T0)).toEqual({ owner: 'github_observer', nextCheckAt: at(5), deadline: at(60) });
-    expect(checkOf('queued', T0, at(7))).toEqual({ owner: 'scheduler', nextCheckAt: at(12) });
+    expect(checkOf('queued', T0, at(7))).toEqual({ owner: 'scheduler', nextCheckAt: at(12), deadline: at(60) });
+    expect(checkOf('working', T0)?.deadline).toBe(at(60));
+    expect(checkOf('waiting_outside', T0)?.deadline).toBe(at(60));
+    expect(checkOf('partly_done', T0)?.deadline).toBe(at(24 * 60));
+  });
+
+  it('blocks an item a job holds past its deadline as stale only when no job of it is found', () => {
+    const live = { id: 'j1', status: 'running', ended: false, updatedAt: T0 };
+    for (const state of ['queued', 'working', 'waiting_outside'] as const) {
+      const held = item({ state, eventState: state });
+      // A live job holds it: its lane and its own wait have their own deadlines.
+      expect(correctionOf(held, live, false, at(61))).toBeUndefined();
+      // Its job ended a moment ago: folded again from its end once that settles, never blocked.
+      expect(correctionOf(held, { ...ended, updatedAt: at(60) }, false, at(61))).toBeUndefined();
+      // No job, or its job is gone: stale, but only past the deadline.
+      expect(correctionOf(held, undefined, false, at(59))).toBeUndefined();
+      expect(correctionOf(held, undefined, false, at(61))).toEqual({ kind: 'block', key: KEY, from: state, cause: 'stale' });
+      expect(correctionOf({ ...held, jobId: undefined }, undefined, false, at(61))).toEqual({ kind: 'block', key: KEY, from: state, cause: 'stale' });
+    }
+    // Waiting outside with its job ended: folded again from that end, as queued and working are.
+    expect(correctionOf(item({ state: 'waiting_outside', eventState: 'waiting_outside' }), ended, false, at(3))).toEqual({ kind: 'replay', key: KEY, jobId: 'j1', from: 'waiting_outside' });
+  });
+
+  it('blocks an item partly done a day on with no next part as stale', () => {
+    const part = item({ state: 'partly_done', eventState: 'partly_done', pullRequest: 'https://github.com/o/r/pull/2', pullRequestState: 'merged' });
+    expect(correctionOf(part, ended, false, at(23 * 60))).toBeUndefined();
+    expect(correctionOf(part, ended, false, at(24 * 60))).toEqual({ kind: 'block', key: KEY, from: 'partly_done', cause: 'stale' });
+  });
+
+  it('never blocks an item a person or the failure assessor holds, however long it waits', () => {
+    for (const state of ['waiting_for_approval', 'needs_you', 'failed'] as const) {
+      expect(correctionOf(item({ state, eventState: state }), ended, false, at(30 * 24 * 60))).toBeUndefined();
+      expect(correctionOf(item({ state, eventState: state, jobId: undefined }), undefined, false, at(30 * 24 * 60))).toBeUndefined();
+    }
   });
 
   it('each move names its owner', () => {

@@ -1,0 +1,1 @@
+- An issue that stays too long with nothing working on it, or that waits a day for its next part, is now marked blocked, and the hopper tells you once.

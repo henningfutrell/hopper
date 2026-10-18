@@ -33,21 +33,26 @@ interface StatePromise { owner: ItemOwner; checkMs: number; deadlineMs?: number 
 const MINUTE = 60_000;
 
 /**
- * The promise of each state not ended. Only `pr_open` has a deadline: an hour on with no open pull request a job follows,
- * it is stale (issue #1231, `prOpenStuck`). A state a job or a person holds has none: a job's lane, its own wait and a
- * person's answer have their own deadlines, and a request card waits as long as a person likes.
+ * The promise of each state not ended. A state no person holds has a deadline: past it with no move, the item is stale.
+ * PR open, an hour on with no open pull request a job follows (issue #1231, `prOpenStuck`). A state a job holds (queued,
+ * working, waiting outside), an hour on with no job of the item found: a live job's lane, its own wait and a person's answer
+ * have their own deadlines (`JOB_HELD`). Partly done, a day on with no job for its next part. A state a person holds has
+ * none: a request card, a question and a blocked item wait as long as a person likes, and a failed item is in Failures.
  */
 const PROMISES: Readonly<Partial<Record<WorkItemState, StatePromise>>> = {
   waiting_for_approval: { owner: 'person', checkMs: 30 * MINUTE },
-  queued: { owner: 'scheduler', checkMs: 5 * MINUTE },
-  working: { owner: 'lane_worker', checkMs: 5 * MINUTE },
+  queued: { owner: 'scheduler', checkMs: 5 * MINUTE, deadlineMs: 60 * MINUTE },
+  working: { owner: 'lane_worker', checkMs: 5 * MINUTE, deadlineMs: 60 * MINUTE },
   needs_you: { owner: 'person', checkMs: 30 * MINUTE },
-  waiting_outside: { owner: 'lane_worker', checkMs: 30 * MINUTE },
+  waiting_outside: { owner: 'lane_worker', checkMs: 30 * MINUTE, deadlineMs: 60 * MINUTE },
   pr_open: { owner: 'github_observer', checkMs: 5 * MINUTE, deadlineMs: 60 * MINUTE },
-  partly_done: { owner: 'scheduler', checkMs: 30 * MINUTE },
+  partly_done: { owner: 'scheduler', checkMs: 30 * MINUTE, deadlineMs: 24 * 60 * MINUTE },
   failed: { owner: 'assessor', checkMs: 30 * MINUTE },
   blocked: { owner: 'person', checkMs: 5 * MINUTE },
 };
+
+/** The states a job of the item holds: past the deadline, stale only when no job of the item is found. */
+export const JOB_HELD: readonly WorkItemState[] = ['queued', 'working', 'waiting_outside'];
 
 /** The states an item ends in: no owner, no check. */
 export const ENDED_STATES: readonly WorkItemState[] = ['done', 'dropped'];
@@ -130,17 +135,18 @@ export const RECONCILE_GRACE_MS = 2 * MINUTE;
 
 /**
  * What the reconciler corrects of `item` at `now`, else undefined. `job`: the job the item names (undefined: none, or
- * none found); `follows`: a job follows the item's open pull request. An item queued or working whose job ended is folded
+ * none found); `follows`: a job follows the item's open pull request. An item a job holds (`JOB_HELD`) whose job ended is folded
  * again from that job's end (the item names its newest job, so no live job comes after it), and so is an item blocked for
  * want of a pull request whose finished job's report has named one since; an item past its deadline in PR open with no
- * open pull request a job follows is blocked: `no_pr` with none named, else `stale`. An item blocked because its pull
+ * open pull request a job follows is blocked: `no_pr` with none named, else `stale`. Any other state past its deadline is
+ * blocked as `stale`: one a job holds only with no job of the item found, partly done with no job for its next part. An item blocked because its pull
  * request was closed without a merge for the first time in a row (`runsAgainBySelf`) runs again: its ended job's Run again.
  * A blocked item that is stuck work for a person (`blockedStuck`) and not asked about yet gets its one notice (`ask`).
  */
 export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, follows: boolean, now: string): ItemCorrection | undefined {
   const settledBefore = Date.parse(now) - RECONCILE_GRACE_MS;
   if (Date.parse(item.eventAt) > settledBefore) return undefined;
-  if ((item.state === 'queued' || item.state === 'working') && job?.ended && job.id === item.jobId
+  if (JOB_HELD.includes(item.state) && job?.ended && job.id === item.jobId
     && (job.updatedAt === undefined || Date.parse(job.updatedAt) <= settledBefore)) {
     return { kind: 'replay', key: item.key, jobId: job.id, from: item.state };
   }
@@ -155,6 +161,13 @@ export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, foll
     if (deadline === undefined || Date.parse(now) < Date.parse(deadline)) return undefined;
     if (item.pullRequest === undefined) return { kind: 'block', key: item.key, from: item.state, cause: 'no_pr' };
     if (item.pullRequestState !== 'open' || !follows) return { kind: 'block', key: item.key, from: item.state, cause: 'stale' };
+  } else if (item.state !== 'blocked') {
+    const deadline = checkOf(item.state, item.stateSince)?.deadline;
+    // Its job found: live, its own deadlines hold it; ended, it is folded again from its end, above or once that settles.
+    const held = job !== undefined && job.id === item.jobId;
+    if (deadline !== undefined && Date.parse(now) >= Date.parse(deadline) && !(JOB_HELD.includes(item.state) && held)) {
+      return { kind: 'block', key: item.key, from: item.state, cause: 'stale' };
+    }
   }
   if (item.state === 'blocked' && item.blockedCause !== undefined && item.personAsked !== true && blockedStuck(item, now)) {
     return { kind: 'ask', key: item.key, cause: item.blockedCause, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), ...(item.pullRequest !== undefined ? { pullRequest: item.pullRequest } : {}) };
