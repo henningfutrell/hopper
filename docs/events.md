@@ -2365,11 +2365,11 @@ Version 1 (`docs/schemas/priority_lanes.settings_changed.v1.json`). An admin sav
 
 ## `proposal.asked`
 
-Version 1 (`docs/schemas/proposal.asked.v1.json`). A person asked a job that has not started for a proposal (issue #537): when it starts, its agent is told to write one instead of doing the work. A job from an item labelled `hopper:proposal` is asked from the start, with no event.
+Version 1 (`docs/schemas/proposal.asked.v1.json`). A person asked a job that has not started for a proposal (issue #537): when it starts, its agent is told to write one instead of doing the work. A job from an item labelled `hopper:proposal` is asked from the start, with no event. `by` `user`: a person asked; `jev`: Jev's kind check (issue #655, the decision point `intake-kind`, active) asked a work job from a job source before its first start.
 
 | field | type | required |
 |---|---|---|
-| `by` | `user` | yes |
+| `by` | `user` \| `jev` | yes |
 
 ```json
 {
@@ -2636,11 +2636,11 @@ Version 1 (`docs/schemas/proposal.followed_on.v1.json`). An accepted proposal's 
 
 ## `research.asked`
 
-Version 1 (`docs/schemas/research.asked.v1.json`). A person asked a job that has not started to research (issue #543): when it starts, its agent is told to research and write a research report instead of doing the work. A job from an item labelled `hopper:research`, or with a Research heading in its body, is asked from the start, with no event.
+Version 1 (`docs/schemas/research.asked.v1.json`). A person asked a job that has not started to research (issue #543): when it starts, its agent is told to research and write a research report instead of doing the work. A job from an item labelled `hopper:research`, or with a Research heading in its body, is asked from the start, with no event. `by` `user`: a person asked; `jev`: Jev's kind check (issue #655, the decision point `intake-kind`, active) asked a work job from a job source before its first start.
 
 | field | type | required |
 |---|---|---|
-| `by` | `user` | yes |
+| `by` | `user` \| `jev` | yes |
 
 ```json
 {
@@ -3236,12 +3236,12 @@ Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machin
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`, `intake-trust`, `sandbox-request`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`, `intake-trust`, `intake-kind`, `sandbox-request`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `intake-kind` \| `sandbox-request` \| `question-answer` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
@@ -3288,7 +3288,7 @@ Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided aft
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `intake-kind` \| `sandbox-request` \| `question-answer` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -3312,7 +3312,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `intake-kind` \| `sandbox-request` \| `question-answer` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -3331,7 +3331,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `intake-kind` \| `sandbox-request` \| `question-answer` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 

@@ -15,6 +15,7 @@
         "intake-order",
         "merge-order",
         "intake-trust",
+        "intake-kind",
         "sandbox-request",
         "question-answer"
       ]
