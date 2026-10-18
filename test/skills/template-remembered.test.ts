@@ -22,7 +22,7 @@ function user(o: { remembered?: RememberedWrite[]; approvals?: SandboxApprovals 
     templates: () => [...templates.values()],
     async save(t) {
       saved.push(t);
-      templates.set(t.name, { ...t, pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'high', reasons: [] } } as unknown as TemplateView);
+      templates.set(t.name, { ...t, pending: { secrets: [], image: true, egress: [], profiles: [...t.profiles] }, gives: [], radius: { level: 'high', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
     },
     async approve(name, by) {

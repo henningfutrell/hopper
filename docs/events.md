@@ -4156,13 +4156,14 @@ Version 1 (`docs/schemas/vault.master_key_rotated.v1.json`). The hopper's admin 
 
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, its `probeMarks` when it has any (issue #916: a read probe of the read-only check marked `expect-denied` or `skip`), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), its `egress` hosts when it names any (issue #1875: each `host:port` its boxes may reach through the egress proxy), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, its `probeMarks` when it has any (issue #916: a read probe of the read-only check marked `expect-denied` or `skip`), and who saved it. A scope wider than the one approved, a new image, or a new egress host, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
 | `image` | string | yes |
 | `tools` | string[] | no |
+| `egress` | string[] | no |
 | `secrets` | string[] | yes |
 | `profiles` | object[] | no |
 | `probeMarks` | object | no |
@@ -4206,13 +4207,14 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`.
 
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
 | `image` | string | yes |
 | `tools` | string[] | no |
+| `egress` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
 

@@ -39,7 +39,7 @@ describe('a terraform workspace in the read-only check (issue #715)', () => {
     const saved = await asked(a, token);
     expect(saved.profiles.find((p) => p.asset.kind === 'terraform-workspace')).toEqual({ operation: 'read', asset: { kind: 'terraform-workspace', name: 'shop-prod' }, backend });
     // The read policy's approval stands: a backend changes no profile, so nothing waits for a person.
-    expect(saved.pending).toEqual({ secrets: [], image: false, profiles: [] });
+    expect(saved.pending).toEqual({ secrets: [], image: false, egress: [], profiles: [] });
     await a.app.sandboxes.check();
     const t = await asked(a, token);
     expect(t.check, JSON.stringify(t.check)).toMatchObject({ state: 'passed' });

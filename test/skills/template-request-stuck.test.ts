@@ -20,7 +20,7 @@ function user(...kept: TemplateView[]) {
     templates: () => [...templates.values()],
     async save(t) {
       saved.push(t.name);
-      templates.set(t.name, { ...t, savedBy: 'job j1', savedAt: '2030-01-02T00:00:00.000Z', pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
+      templates.set(t.name, { ...t, savedBy: 'job j1', savedAt: '2030-01-02T00:00:00.000Z', pending: { secrets: [], image: true, egress: [], profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
     },
     approve: async () => ({ ok: true }),
@@ -73,7 +73,7 @@ describe('a template a person changed since a job asked for it (issue #1468)', (
   const changed = (savedBy: string): TemplateView => ({
     name, image: IMAGE, secrets: [], savedBy, savedAt: '2030-01-03T00:00:00.000Z',
     profiles: [{ operation: 'read', asset: { kind: 'aws-role', name: `${ACCOUNT}/ReadOnly` } }, { operation: 'write', asset: { kind: 'cluster', name: 'lab' } }],
-    pending: { secrets: [], image: true, profiles: [] }, gives: [], radius: { level: 'low', reasons: [] },
+    pending: { secrets: [], image: true, egress: [], profiles: [] }, gives: [], radius: { level: 'low', reasons: [] },
   }) as unknown as TemplateView;
 
   it('the refusal names its needs now, so a job can ask for those', async () => {

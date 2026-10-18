@@ -76,7 +76,7 @@ describe('Needs you rows (issue #897)', () => {
 });
 
 const template = (o: Partial<TemplateView> = {}): TemplateView => ({
-  name: 't', image: 'img', secrets: [], profiles: [], gives: [], pending: { image: false, secrets: [], profiles: [] },
+  name: 't', image: 'img', secrets: [], profiles: [], gives: [], pending: { image: false, secrets: [], egress: [], profiles: [] },
   approval: { by: 'admin', at: '2026-10-01T00:00:00.000Z', image: 'img', secrets: [] },
   ...o,
 } as unknown as TemplateView);
@@ -85,9 +85,9 @@ describe('Access requests: what waits on a person (issue #897)', () => {
   it('a template waits when it was never approved, or a new image, secret or profile waits', () => {
     expect(templateWaits(template())).toBe(false);
     expect(templateWaits(template({ approval: undefined }))).toBe(true);
-    expect(templateWaits(template({ pending: { image: true, secrets: [], profiles: [] } }))).toBe(true);
-    expect(templateWaits(template({ pending: { image: false, secrets: ['K'], profiles: [] } }))).toBe(true);
-    expect(templateWaits(template({ pending: { image: false, secrets: [], profiles: [{ operation: 'apply', asset: { kind: 'cluster', name: 'lab' } }] } }))).toBe(true);
+    expect(templateWaits(template({ pending: { image: true, secrets: [], egress: [], profiles: [] } }))).toBe(true);
+    expect(templateWaits(template({ pending: { image: false, secrets: ['K'], egress: [], profiles: [] } }))).toBe(true);
+    expect(templateWaits(template({ pending: { image: false, secrets: [], egress: [], profiles: [{ operation: 'apply', asset: { kind: 'cluster', name: 'lab' } }] } }))).toBe(true);
   });
 
   it('counts credential requests, vault grant asks and templates that wait; none for no view', () => {
