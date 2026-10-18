@@ -13,8 +13,8 @@
 //     Then the job is not left: the next sweep assesses it again
 import { describe, expect, it } from 'vitest';
 import type { UserStore } from '../../src/domain/ports.ts';
+import { StoreError } from '../../src/domain/store-error.ts';
 import { createPoison } from '../../src/failures/poison.ts';
-import { StoreError } from '../../src/store/db.ts';
 
 function poisonWith(tx: () => never) {
   const lines: string[] = [];

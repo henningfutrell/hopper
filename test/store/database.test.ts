@@ -3,7 +3,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { numberPlaceholders, openDb, parseDatabaseUrl, StoreError } from '../../src/store/db.ts';
+import { StoreError } from '../../src/domain/store-error.ts';
+import { numberPlaceholders, openDb, parseDatabaseUrl } from '../../src/store/db.ts';
 import { testPostgres } from '../support/database.ts';
 import { stallingProxy } from '../support/stalling-proxy.ts';
 import { spec, useTempStore } from './helpers.ts';

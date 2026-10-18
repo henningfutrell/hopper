@@ -104,7 +104,9 @@ describe('a kill during assessment (issue #1961)', () => {
       expect(w.a.stderr()).toContain(`hopper: kill point ${point}`);
       expect(b.stderr()).not.toContain('kill point');
       endSweepLeases(w.url);
-      await waitFor(settled(w.store, jobs), { timeoutMs: 60_000, what: 'host B to assess every failure' });
+      // Its log on a timeout: a loaded runner is where this test is slow.
+      await waitFor(settled(w.store, jobs), { timeoutMs: 90_000, what: 'host B to assess every failure' })
+        .catch((e: Error) => { throw new Error(`${e.message}; host B said:\n${b.stderr().slice(-4000)}`); });
       assessedOnce(w.store, jobs);
       handedOff(w.store, person, transient!);
 

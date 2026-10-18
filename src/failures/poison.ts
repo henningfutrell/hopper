@@ -1,8 +1,11 @@
 // A poison failure (issue #1961): a failed job whose own data makes the assessment throw. It is handed to a person
 // with the reason, in one transaction, as any job-specific failure is, and never assessed again: the sweep goes on
 // to the other failures. A poison failure whose hand-off throws too is left, said once; it never blocks the others.
+// A store that fails (a StoreError: a lock wait past its time, a dropped connection) is not poison: the job stays
+// unassessed and is not left, so the next sweep assesses it.
 import type { UserStore } from '../domain/ports.ts';
 import type { FailureRecord } from '../domain/types.ts';
+import { StoreError } from '../domain/store-error.ts';
 import { signatureOf } from './signature.ts';
 
 export interface PoisonDeps {
@@ -24,6 +27,10 @@ export function createPoison(d: PoisonDeps): { handOff(jobId: string, e: unknown
     skips: (jobId) => left.has(jobId),
     handOff(jobId, e) {
       const message = firstLine(e instanceof Error ? e.message : String(e)) || 'an error with no message';
+      if (e instanceof StoreError) {
+        d.logger.warn(`hopper: the assessment of job ${jobId} failed in the store: ${message}; the sweep tries again`);
+        return;
+      }
       d.logger.warn(`hopper: the assessment of job ${jobId} failed: ${message}; it is handed to a person`);
       try {
         d.store.tx(() => {
@@ -47,6 +54,7 @@ export function createPoison(d: PoisonDeps): { handOff(jobId: string, e: unknown
           });
         });
       } catch (again) {
+        if (again instanceof StoreError) return void d.logger.warn(`hopper: job ${jobId} could not be handed to a person: ${again.message}; the sweep tries again`);
         left.add(jobId);
         d.logger.warn(`hopper: job ${jobId} could not be handed to a person either: ${again instanceof Error ? again.message : String(again)}; the assessor leaves it`);
       }
