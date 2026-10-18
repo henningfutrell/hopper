@@ -26271,7 +26271,10 @@ closes):
   write by a coordinator that lost the lease is refused, and its step is told to end (its signal). A hopper that stops
   renews nothing: when its lease ends, any hopper's next pass (at start, then every 5 s) claims the saga and goes on from
   its last committed step — on another host as well, since nothing of it is on the first. A hopper that stops on purpose
-  releases its leases at once: the step in flight is not counted as failed, and another host takes it with no wait.
+  releases its leases at once: the step in flight is not counted as failed, and another host takes it with no wait. The
+  lease is timed on the database's clock (`clock_timestamp()`, `src/store/db-clock.ts`, issue #1954): a host whose own clock
+  is off neither takes a lease another host holds nor keeps one past its end. The saga's next try (`nextAt`) stays on the
+  host's clock: a skewed clock moves a try earlier or later, and never lets two hosts run one step.
 - **Tries and backoff.** A step that fails is tried again after a backoff that doubles from 1 s to 5 minutes, five tries in
   all (a step may name its own count). Past them the saga compensates.
 - **Compensation.** On an abort (`abort`, by any host: the holder reads it before its next step, and the step in flight is
@@ -26300,7 +26303,7 @@ database").
 - **The instance's table, not a user's.** A saga's host is the hopper, not a user: a coordinator takes the sagas due of
   every user in one read, and the lease is one row's columns.
 - **A lease in the row, not an advisory lock.** An advisory lock is held by a connection, so it ties the saga to the host of
-  that connection and gives no time-out a dead host can lose by; a lease row ends by itself, on any host's clock.
+  that connection and gives no time-out a dead host can lose by; a lease row ends by itself, on the database's clock.
 - **Our own coordinator, not a workflow engine** (Temporal, a job-queue library). The hopper's store is synchronous Postgres
   in one process (design.md "Database"); an engine would be a second service to run and a second store. The record, the
   lease and the backoff are about 200 lines over the store the hopper has.
@@ -27207,7 +27210,8 @@ sweep, the failure assessor's sweep, the TL;DR sweep and the artifacts' retentio
 kept the jobs to stop when cut off in memory only, so a client restart while cut off forgot them.
 
 **The sweep lease** (`SweepLease`, `src/domain/leases.ts`; the instance's `sweep_leases` table, migration 50,
-`src/store/sweep-leases.ts`). The model is the saga lease: a row per sweep name with an owner and an until. A pass asks
+`src/store/sweep-leases.ts`). The model is the saga lease: a row per sweep name with an owner and an until, on the
+database's clock (issue #1954), so a host whose clock is off takes no lease another holds. A pass asks
 `hold()` first: one statement takes the lease or renews it when no other owner holds it now, and the pass runs only while
 this host holds it. `hold()` also says whether the host took it just now (`taken`): from another host that stopped, or at its
 first ask. The host's **host leases** (`createHostLeases`, `src/sagas/leases.ts`) renew every lease the host holds every 10 s,
@@ -28525,8 +28529,24 @@ goes on.
   "dropped mid-commit" is "dropped after Postgres answered it". A record of several statements needs a point inside its
   transaction: a later part.
 
-**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); two
-hosts racing one lease under a skewed clock; landing batches killed between each GitHub write and its event (#1589); kill
+**Part 2: two hosts racing one lease under a skewed clock** (2026-10-18). A host can take its clock from
+`CRASH_CLOCK_SKEW_MS` (`test/crash/host.ts`: its `Date` that far ahead or behind, as a machine's clock that is off). The
+first host holds the mint saga while a provider call hangs; the second host's clock is ahead by two leases, or the first's
+is behind by two. **What it found:** each host timed a lease on its own clock. The second host read the first's live lease
+as ended, took the saga and ran the step the first ran, then the whole mint. The sweep leases had the same fault. Now the
+store times both leases on the database's clock (`src/store/db-clock.ts`: `clock_timestamp()` as text in the format of
+`toISOString`, so the rows kept need no migration), and the repositories take a lease's length, not its end: `claim(id,
+{ owner, ms })`, `hold(name, owner, ms)`, `renew(owner, ms)`, `live(name)`. Unit tests that moved a fake clock to end a
+lease now end it in the database (`endLeases`).
+**Decisions (part 2).**
+- **The database's clock, not a bound on the skew.** The hosts on one database share one clock already; a bound on skew is
+  a rule a machine's clock can break. A `nextAt` stays on the host's clock: it decides when a try is due, not who holds it.
+- **Job leases and the wait-check leases are not in this part.** `job_leases` and `wait_check_leases` also compare a
+  host's times; they are listed below.
+
+**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); the
+job leases (`src/store/job-leases.ts`) and the wait-check leases (`src/store/wait-check-leases.ts`) on the database's
+clock too, with a skewed-clock test each; landing batches killed between each GitHub write and its event (#1589); kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28534,7 +28554,8 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks).
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock).
 
 ## The GitHub outbox under crashes and faults (issue #1959, part 1, 2026-10-18)
 

@@ -31,7 +31,7 @@ beforeEach(() => { vi.useFakeTimers({ now: 0 }); });
 afterEach(() => { for (const l of leases.splice(0)) l.stop(); vi.useRealTimers(); });
 
 const host = (r: SweepLeaseRepository, owner: string): HostLeases => {
-  const l = createHostLeases({ repo: r, owner, clock: { now: () => new Date() }, logger: quiet });
+  const l = createHostLeases({ repo: r, owner, logger: quiet });
   leases.push(l);
   return l;
 };

@@ -45,7 +45,7 @@ afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c();
 function host(url: string, name: string): { instance: InstanceStore; store: UserStore; leases: HostLeases } {
   const instance = openInstanceStore({ url, clock });
   const store = instance.userStore(instance.users.get(ADMIN_ID)!);
-  const leases = createHostLeases({ repo: instance.sweepLeases, owner: `test/${name}/${Math.random().toString(36).slice(2, 8)}`, clock, logger: quiet });
+  const leases = createHostLeases({ repo: instance.sweepLeases, owner: `test/${name}/${Math.random().toString(36).slice(2, 8)}`, logger: quiet });
   cleanups.push(() => { leases.stop(); store.close(); instance.close(); });
   return { instance, store, leases };
 }

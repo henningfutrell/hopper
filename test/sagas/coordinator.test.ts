@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { InstanceStore } from '../../src/domain/ports.ts';
 import { createSagaCoordinator, type SagaCoordinator, type SagaDefinition, type SagaStepContext } from '../../src/sagas/coordinator.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
+import { endLeases } from '../crash/harness.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
 
 const temp = useTempStore();
@@ -99,7 +100,7 @@ describe('sagas', () => {
   const hopper = (url: string, owner: string, w: ReturnType<typeof world>, clock: ReturnType<typeof fixedClock>) => {
     const store = openInstanceStore({ url, clock });
     opened.push(store);
-    // A stopped hopper renews nothing: its lease ends LEASE_MS after its last write.
+    // A stopped hopper renews nothing: its lease ends LEASE_MS after its last write, on the database's clock (endLeases).
     const c = createSagaCoordinator({ repo: store.sagas, definitions: [w.definition], owner, clock, idGen: () => `saga-${++ids}`, logger: quiet, leaseMs: LEASE_MS, renewMs: 1e9 });
     coordinators.push(c);
     return { store, c };
@@ -150,7 +151,7 @@ describe('sagas', () => {
         expect(b.store.sagas.get(s.id)?.state).toBe('running');
         expect(w.calls.get(step)).toBe(1);
 
-        later(clock, LEASE_MS + 1);
+        endLeases(url);
         await b.c.pass();
         const end = b.store.sagas.get(s.id);
         expect(end?.state).toBe('done');
@@ -186,7 +187,7 @@ describe('sagas', () => {
     await stopped;
     const b = hopper(url, 'host-b', w, clock);
     expect(b.c.abort(s.id, 'the job was cancelled')).toBe(true);
-    later(clock, LEASE_MS + 1);
+    endLeases(url);
     await b.c.pass();
     expect(b.store.sagas.get(s.id)?.state).toBe('compensated');
     // The worktree its do made before the stop is removed too, though its do was never recorded done.

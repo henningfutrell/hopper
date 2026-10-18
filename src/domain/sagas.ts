@@ -52,8 +52,11 @@ export interface Saga {
   endedAt?: string;
 }
 
-/** A host's hold on a saga: until `until`, no other host drives it. It ends with the host, so another host claims it. */
-export interface SagaLease { owner: string; until: string }
+/**
+ * A host's hold on a saga: for `ms` from its last renewal, on the database's clock (issue #1954), no other host drives
+ * it. It ends with the host, so another host claims it.
+ */
+export interface SagaLease { owner: string; ms: number }
 
 /** The sagas, in the instance's `sagas` table. */
 export interface SagaRepository {
@@ -61,17 +64,17 @@ export interface SagaRepository {
   begin(saga: Saga): Saga;
   get(id: string): Saga | undefined;
   /**
-   * Takes or renews the lease of a saga not ended, when no other owner holds one until after `now`. The saga, else
-   * undefined (another host holds it, or it ended).
+   * Takes or renews the lease of a saga not ended, when no other owner holds one that has not ended on the database's
+   * clock. The saga, else undefined (another host holds it, or it ended).
    */
-  claim(id: string, lease: SagaLease, now: string): Saga | undefined;
+  claim(id: string, lease: SagaLease): Saga | undefined;
   /** Writes the saga only while `owner` holds its lease; whether it was written. An ended saga's lease is released. */
   save(saga: Saga, owner: string): boolean;
   /** Releases `owner`'s lease. */
   release(id: string, owner: string): void;
   /** Records an abort, whoever holds the lease: the holder reads it before its next step. Whether it was recorded. */
   requestAbort(id: string, abort: { at: string; reason: string }): boolean;
-  /** The sagas not ended whose next try is due by `now` and that no other owner holds: oldest first. */
+  /** The sagas not ended whose next try is due by `now` and whose lease, if any, ended on the database's clock: oldest first. */
   due(now: string, limit: number): Saga[];
   /** The sagas not ended, oldest first. */
   open(): Saga[];
