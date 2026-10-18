@@ -15,10 +15,11 @@ export const KIND_LABEL: Readonly<Record<WorkKind, string>> = { code: 'Code work
 /** The short form of a version id, as the page shows it. */
 export const shortVersion = (version: string): string => version.slice(0, 8);
 
-/** Where a version came from: built-in, written by a person, or a copy of another skill's version. */
+/** Where a version came from: built-in, written by a person, a copy of another skill's version, or a repository's folder. */
 export function sourceLine(v: Pick<LibrarySkillVersion, 'source' | 'by'>): string {
   if (v.source.kind === 'built-in') return 'built-in';
   if (v.source.kind === 'created') return `written by ${v.by}`;
+  if (v.source.kind === 'imported') return `imported from ${v.source.repo}${v.source.path ? `/${v.source.path}` : ''} at ${v.source.ref} ${shortVersion(v.source.commit)}, by ${v.by}`;
   return `a copy of ${v.source.name} ${shortVersion(v.source.version)}, by ${v.by}`;
 }
 

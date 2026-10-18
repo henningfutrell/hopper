@@ -49,7 +49,7 @@ async function start() {
     env: { HOPPER_GITHUB_URL: github.url, HOPPER_GITHUB_CLIENT_ID: 'gh-client-id', HOPPER_GITHUB_APP_SLUG: 'hopper-test' },
   });
   apps.push(app);
-  connectGitHub(app, ['octo/tools']);
+  connectGitHub(app, ['octo/tools'], { token: github.mint('owner').accessToken });
   put(github, 'skills/orchestrate/SKILL.md', '---\nname: orchestrate\ndescription: Task lists and tiers.\n---\nv1');
   put(github, 'skills/orchestrate/scripts/orchestrate.sh', 'echo v1\n');
   put(github, 'skills/other/SKILL.md', 'other');

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "repo",
+    "path",
+    "ref",
+    "commit",
+    "version",
+    "changed",
+    "by"
+  ],
+  "additionalProperties": false
+}

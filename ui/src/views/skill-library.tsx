@@ -1,8 +1,9 @@
 // The Library panel of the Skills page (issue #1911, design.md "The Skills page"): one library skill — its name, source,
 // version and description, its files on demand — and what a person does to it: Edit one of their own (a new version, the
 // name stays), Duplicate any one under a new name (a built-in one is changed this way), Remove one of their own after a
-// confirm, which no setting may name. The editor writes a skill's files: a SKILL.md and the text files beside it.
-import { Copy, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
+// confirm, which no setting may name; Refresh an imported one from its repository. The editor writes a skill's files: a
+// SKILL.md and the text files beside it. The import form names a folder of a GitHub repository to import a skill from.
+import { Copy, Download, FileText, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
@@ -103,6 +104,10 @@ export function LibrarySkill({ view, skill, onChange }: { view: SkillLibraryView
         <div className="ml-auto flex flex-wrap items-center gap-1">
           <Button size="sm" variant="ghost" onClick={() => (open.kind === 'files' ? setOpen({ kind: 'none' }) : read('files'))}><FileText /> {open.kind === 'files' ? 'Hide files' : 'Show files'}</Button>
           {authed && !skill.builtIn && <Button size="sm" variant="ghost" disabled={busy} onClick={() => read('edit')}><Pencil /> Edit</Button>}
+          {authed && latest.source.kind === 'imported' && (
+            <Button size="sm" variant="ghost" disabled={busy} title={`Read ${latest.source.repo} at ${latest.source.ref} again`}
+              onClick={() => void act({ action: 'refresh', name: skill.name }, `Skill ${skill.name} refreshed; a new version only when its files changed`)}><RefreshCw /> Refresh</Button>
+          )}
           {authed && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOpen({ kind: 'duplicate', name: `${skill.name}-copy` })}><Copy /> Duplicate</Button>}
           {authed && !skill.builtIn && (named.length > 0
             ? <Button size="sm" variant="ghost" disabled title="A work skill setting names it"><Trash2 /> Remove</Button>
@@ -137,6 +142,40 @@ export function LibrarySkill({ view, skill, onChange }: { view: SkillLibraryView
                 ))}
               </div>
             ))}
+    </div>
+  );
+}
+
+const REPO = /^[^/\s]+\/[^/\s]+$/;
+
+/** Imports a skill from a folder of a GitHub repository: read with the person's own GitHub connection, at a ref it follows. */
+export function SkillImport({ onSaved, onCancel }: { onSaved: (v: SkillLibraryView) => void; onCancel: () => void }) {
+  const [form, setForm] = useState({ repo: '', path: '', ref: '', name: '' });
+  const [busy, setBusy] = useState(false);
+  const field = (key: keyof typeof form, placeholder: string) => (
+    <Input name={`import-${key}`} className="font-mono text-xs" value={form[key]} placeholder={placeholder} disabled={busy}
+      aria-invalid={key === 'repo' && form.repo !== '' && !REPO.test(form.repo.trim())} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
+  );
+  const save = async () => {
+    setBusy(true);
+    const body = { action: 'import', repo: form.repo.trim(), path: form.path.trim(), ...(form.ref.trim() ? { ref: form.ref.trim() } : {}), ...(form.name.trim() ? { name: form.name.trim() } : {}) };
+    const ok = await changeLibrary('/ui/api/skill-library', body, onSaved, `Skill imported from ${body.repo}`);
+    setBusy(false);
+    if (ok) onCancel();
+  };
+  return (
+    <div data-slot="skill-import" className="space-y-2 rounded-md border p-3">
+      <p className="text-xs text-muted-foreground">The folder that holds the skill&apos;s SKILL.md, read with your GitHub connection. Refresh reads it again at the same ref.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {field('repo', 'owner/name')}
+        {field('path', 'folder, e.g. skills/orchestrate (empty: the root)')}
+        {field('ref', 'branch or tag (empty: the default branch)')}
+        {field('name', 'skill name (empty: the folder\'s name)')}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={busy || !REPO.test(form.repo.trim())} onClick={() => void save()}><Download /> Import skill</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
+      </div>
     </div>
   );
 }
