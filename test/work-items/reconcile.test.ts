@@ -15,6 +15,10 @@
 //     Given an item in PR open whose job no longer follows its pull request
 //     When the reconciler runs an hour on
 //     Then the item is blocked as stale
+//   Scenario: a state a job holds, past its deadline with no live job
+//     Given an approved request card whose job was never queued, or an item partly done with no next part
+//     When the reconciler runs past the state's deadline
+//     Then the item is blocked as stale, a person is asked once, and a new job of the item takes it over
 //   Scenario: a pull request closed without a merge
 //     Given a job whose pull request was closed on GitHub without a merge
 //     When the reconciler runs
@@ -123,6 +127,57 @@ describe('the item reconciler', () => {
     expect(reconciled(store)).toHaveLength(1);
     expect(store.events.recent(10, ['work_item.person_asked']).map((e) => e.data)).toEqual([{ key: KEY, cause: 'stale', jobId: job.id, pullRequest: PR }]);
     expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale', personAsked: true });
+  });
+
+  it('blocks an item queued with no live job past its deadline as stale, asks once, and a new job takes it over', () => {
+    const store = t.open(t.url());
+    cleanups.push(() => store.close());
+    store.events.append({ type: 'source.request_opened', data: { source: 'github', key: KEY }, at: T0 });
+    store.events.append({ type: 'source.request_approved', data: { source: 'github', key: KEY }, at: T0 });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'queued' });
+    expect(store.workItems.get(KEY)?.jobId).toBeUndefined();
+
+    expect(reconciler(store, () => at(30)).reconcileOnce()).toBe(0);
+    expect(reconciler(store, () => at(61)).reconcileOnce()).toBe(1);
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
+    expect(reconciled(store).map((e) => e.data)).toEqual([{ key: KEY, from: 'queued', cause: 'stale' }]);
+    // One notice, then nothing more.
+    expect(reconciler(store, () => at(70)).reconcileOnce()).toBe(1);
+    expect(reconciler(store, () => at(80)).reconcileOnce()).toBe(0);
+    expect(store.events.recent(10, ['work_item.person_asked']).map((e) => e.data)).toEqual([{ key: KEY, cause: 'stale' }]);
+    // A new job of the item takes it over.
+    const job = store.jobs.create(spec, 50, ref);
+    store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority: 50 }, at: at(90) });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'queued', jobId: job.id });
+    expect(store.workItems.get(KEY)?.blockedCause).toBeUndefined();
+  });
+
+  it('never blocks an item queued whose job lives, however long it waits', () => {
+    const store = t.open(t.url());
+    cleanups.push(() => store.close());
+    const job = store.jobs.create(spec, 50, ref);
+    store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority: 50 }, at: T0 });
+    expect(reconciler(store, () => at(24 * 60)).reconcileOnce()).toBe(0);
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'queued', jobId: job.id });
+  });
+
+  it('blocks an item partly done a day on with no next part as stale', () => {
+    const store = t.open(t.url());
+    cleanups.push(() => store.close());
+    const job = store.jobs.create(spec, 50, ref);
+    store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority: 50 }, at: T0 });
+    store.jobs.update(job.id, { status: 'finished', finishedAt: T0, sourceState: { source: { pullRequest: PR, follow: 'merged' } } });
+    store.events.append({ type: 'job.finished', jobId: job.id, data: { result: 'part done', partlyDone: PR }, at: T0 });
+    store.events.append({ type: 'job.pull_request_merged', jobId: job.id, data: { pullRequest: PR, part: true }, at: T0 });
+    expect(store.workItems.get(KEY)?.state).toBe('partly_done');
+
+    expect(reconciler(store, () => at(23 * 60)).reconcileOnce()).toBe(0);
+    expect(reconciler(store, () => at(24 * 60)).reconcileOnce()).toBe(1);
+    // Its merged part is history: the item is not read as done by that merge.
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
+    expect(store.workItems.get(KEY)?.pullRequest).toBeUndefined();
+    store.workItems.rebuild();
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
   });
 
   it('runs an item whose pull request was closed without a merge again once; a second close waits on a person', async () => {

@@ -5,7 +5,7 @@
 // on the running job: a hopper that stops renews nothing, and once the lease ends another hopper's saga pass goes on from
 // the last committed step. A run step tried again watches the pane its first try left (reattach), so the task is sent
 // once. Without the saga (no coordinator), the runner drives the same steps itself, in memory.
-import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
+import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
 import type { TaskCount } from '../domain/task-count.ts';
 import { keptTreeOf, keptWorkOf, WORK_EVENTS, type Job, type KeptTree, type LaneId, type MachineSnapshot } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
@@ -15,7 +15,7 @@ import { workSkillOf } from '../skill-library/index.ts';
 import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
-import { agentSignIn, placeCredentials } from './credentials.ts';
+import { agentSignIn, placeCredentials, Unreached } from './credentials.ts';
 import { moveLost, type Lost } from './lost-move.ts';
 import { nudgeCheck } from './nudge-check.ts';
 import { runNotes } from './notes.ts';
@@ -63,6 +63,8 @@ export interface JobRunData {
   park?: true;
   /** Taken up again with an executor that is safe to run again from scratch: queued again, as at a restart. */
   requeue?: TakenUp;
+  /** Its machine cannot reach the hopper (issue #1920): the machine is held, and the job is queued again, with why. */
+  unreached?: string;
 }
 
 interface Progress { message?: string | undefined; tasks?: TaskCount | undefined }
@@ -82,6 +84,8 @@ export interface RunEntry {
   given: Set<string>;
   /** The credentials the `credentials` step placed: the pane's first start takes them, so they are placed once. */
   placed?: { scratch: string; make: boolean; machine: string; env: Record<string, string> };
+  /** Its start found its machine out of reach of the hopper (issue #1920): why, for the job queued again. */
+  unreached?: string;
   progress?: { report(message?: string, tasks?: TaskCount): void; flush(): void };
 }
 
@@ -163,7 +167,7 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
       const memo = e.placed;
       e.placed = undefined;
       const placed = memo && memo.scratch === scratch && memo.make === make && memo.machine === on.id ? memo.env
-        : await placeCredentials(c, j, on, executor?.machineShell?.(on), scratch, make, (line) => progress.report(line));
+        : await place(c, e, j, on, executor?.machineShell?.(on), scratch, make, (line) => progress.report(line));
       const signIn = await agentSignIn(c, j, on);
       for (const value of Object.values(signIn)) e.given.add(value);
       return { ...c.traceContext(j.id), ...placed, ...signIn };
@@ -181,6 +185,25 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
     // A missed heartbeat of its machine (issue #1569): its checkpoint now, while the machine may still answer.
     missedHeartbeat: () => c.checkpoints?.soon(j.id),
   };
+}
+
+/**
+ * The job's way to the hopper placed on `on` (credentials.ts). A machine that cannot reach the hopper (issue #1920) is
+ * held, so it takes no new job for a while, and a fresh start there is queued again to be placed elsewhere
+ * (`e.unreached`), never failed for the machine it was placed on. A resuming job returns to the pane it holds there: it fails.
+ */
+async function place(
+  c: EngineContext, e: RunEntry, j: Job, on: MachineSnapshot, shell: MachineShell | undefined, scratch: string, make: boolean, note: (line: string) => void,
+): Promise<Record<string, string>> {
+  try {
+    return await placeCredentials(c, j, on, shell, scratch, make, note);
+  } catch (err) {
+    if (err instanceof Unreached && c.reachHolds) {
+      c.reachHolds.hold(on.id, err.message);
+      if (j.pendingAnswer === undefined) e.unreached = `machine ${on.id}: ${err.message}`;
+    }
+    throw err;
+  }
 }
 
 const withKeptTree = (keptTree: KeptTree | undefined): { keptTree?: KeptTree } => (keptTree ? { keptTree } : {});
@@ -221,11 +244,11 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       const at = executor.credentialsAt(contextOf(c, e, d, job, machine));
       if (!at) return {};
       try {
-        const env = await placeCredentials(c, job, machine, executor.machineShell?.(machine), at.scratch, at.makeWorkTree, (line) => progressOf(c, e, d).report(line));
+        const env = await place(c, e, job, machine, executor.machineShell?.(machine), at.scratch, at.makeWorkTree, (line) => progressOf(c, e, d).report(line));
         e.placed = { scratch: at.scratch, make: at.makeWorkTree, machine: machine.id, env };
         return { credentials: { scratch: at.scratch, env } };
       } catch {
-        return {};
+        return e.unreached !== undefined ? { unreached: e.unreached } : {};
       }
     },
 
@@ -233,11 +256,12 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
     async pane(e: RunEntry, d: JobRunData, again = false): Promise<Partial<JobRunData>> {
       const job = runJob(c, d);
       const executor = job && c.executors.get(job.spec.executor);
-      if (!job || !splits(d, job, executor)) return {};
+      if (!job || d.unreached !== undefined || !splits(d, job, executor)) return {};
       const machine = await machineOf(c, d.laneId);
       const ended = machine ? await guarded(e, async () => (await executor.open(contextOf(c, e, d, job, machine), again)) ?? { kind: 'finished', result: OPENED })
         : { kind: 'failed' as const, error: `machine of lane ${d.laneId} is not attached` };
       if (left(c, e)) throw new Error('the run is left here');
+      if (e.unreached !== undefined && e.cancelReason === undefined) return { unreached: e.unreached };
       // Parked while its pane opened (issue #501): parked as a run is, by the checkpoint step.
       if (e.parking && e.cancelReason === undefined) return { park: true };
       if (!(ended.kind === 'finished' && ended.result === OPENED)) return { outcome: ended, ...cancelOf(e) };
@@ -264,7 +288,9 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       if (d.park) { requeuePreempted(c, d.jobId); return {}; }
       const job = runJob(c, d);
       if (!job || job.status !== 'running') return {};
-      if (d.requeue) { const why = d.requeue; store.tx(() => { const j = runJob(c, d); if (j) requeue(c, j, j.status, why); }); return {}; }
+      // Taken up again, or its machine out of reach of the hopper (issue #1920): queued again, to be placed elsewhere.
+      const why = d.requeue ?? d.unreached;
+      if (why !== undefined) { store.tx(() => { const j = runJob(c, d); if (j) requeue(c, j, j.status, why); }); return {}; }
       progressOf(c, e, d).flush();
       const outcome = d.outcome ?? { kind: 'failed', error: 'the run left no outcome' };
       // A cancel this hopper took after the step that kept the outcome.

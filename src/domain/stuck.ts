@@ -56,7 +56,7 @@ const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> 
   tend_refused: { what: 'Pull requests the hopper cannot tend', todo: 'Read why on its card in Pull requests, and remove the block.' },
   parked: { what: 'Parked jobs', todo: 'Answer its question in Parked, then pick it up.' },
   own_wait: { what: 'Jobs stuck on their own wait, past its deadline', todo: 'End its wait or cancel it, on the job.' },
-  pr_open_stale: { what: 'Items blocked with no pull request to wait on, or with their pull request closed without a merge', todo: 'Look at its issue and its pull request on GitHub. Then, on its row in Intake, press Run again when work is left, else press Won\'t do.' },
+  pr_open_stale: { what: 'Items blocked with no pull request to wait on, with their pull request closed without a merge, or past their deadline with no move', todo: 'Look at its issue and its pull request on GitHub. Then, on its row in Intake, press Run again when work is left, else press Won\'t do.' },
 };
 
 /** An open hand-off's cause: its card's recommended resolution, or taken soon when that is refused for a short time. */

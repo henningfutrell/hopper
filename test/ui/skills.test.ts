@@ -3,15 +3,15 @@
 // draft and what is wrong with them, and the line a job's timeline shows for the work skill it got.
 import { describe, expect, it } from 'vitest';
 import {
-  draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, settingsNaming, sourceLine, workSkillChosenLine,
+  draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, settingsNaming, sourceLine, workSkillChosenLine,
 } from '../../ui/src/model/skills.ts';
 import type { SkillLibraryView } from '../../src/domain/skill-library.ts';
 
 const view: SkillLibraryView = {
   skills: [
-    { name: 'work', builtIn: true, description: 'Do the work.', latest: { name: 'work', version: 'a'.repeat(16), seq: 0, source: { kind: 'built-in' }, by: 'the hopper' }, versions: 1 },
-    { name: 'deep-research', builtIn: false, description: 'Dig deep.', latest: { name: 'deep-research', version: 'b'.repeat(16), seq: 3, source: { kind: 'created' }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 3 },
-    { name: 'my-work', builtIn: false, description: 'Mine.', latest: { name: 'my-work', version: 'c'.repeat(16), seq: 1, source: { kind: 'duplicated', name: 'work', version: 'a'.repeat(16) }, by: 'an admin', at: '2026-10-18T11:00:00.000Z' }, versions: 1 },
+    { name: 'work', builtIn: true, description: 'Do the work.', latest: { name: 'work', version: 'a'.repeat(16), seq: 0, source: { kind: 'built-in' }, by: 'the hopper' }, versions: 1, requires: ['deep-research', 'gone'] },
+    { name: 'deep-research', builtIn: false, description: 'Dig deep.', latest: { name: 'deep-research', version: 'b'.repeat(16), seq: 3, source: { kind: 'created' }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 3, requires: [] },
+    { name: 'my-work', builtIn: false, description: 'Mine.', latest: { name: 'my-work', version: 'c'.repeat(16), seq: 1, source: { kind: 'duplicated', name: 'work', version: 'a'.repeat(16) }, by: 'an admin', at: '2026-10-18T11:00:00.000Z' }, versions: 1, requires: [] },
   ],
   workSkills: { kinds: { research: 'deep-research' }, repos: { 'octo/site': { code: 'my-work' }, 'octo/api': { research: 'deep-research', proposal: 'my-work' } } },
   defaults: { code: 'work', research: 'research', proposal: 'proposal' },
@@ -23,6 +23,9 @@ describe('where a skill came from', () => {
     expect(sourceLine(view.skills[0]!.latest)).toBe('built-in');
     expect(sourceLine(view.skills[1]!.latest)).toBe('written by an admin');
     expect(sourceLine(view.skills[2]!.latest)).toBe(`a copy of work ${'a'.repeat(8)}, by an admin`);
+    const imported = { kind: 'imported' as const, repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) };
+    expect(sourceLine({ source: imported, by: 'an admin' })).toBe(`imported from octo/workflows/skills/orchestrate at HEAD ${'c'.repeat(8)}, by an admin`);
+    expect(sourceLine({ source: { ...imported, path: '', ref: 'dev' }, by: 'an admin' })).toBe(`imported from octo/workflows at dev ${'c'.repeat(8)}, by an admin`);
   });
 });
 
@@ -79,5 +82,17 @@ describe('the work skill a job got, on its timeline', () => {
       .toBe(`research: deep-research ${'b'.repeat(8)} (version 3), by the repository's setting`);
     expect(workSkillChosenLine({ kind: 'code', name: 'work', version: 'a'.repeat(16), seq: 0, from: 'default' }))
       .toBe(`code: work ${'a'.repeat(8)} (built-in), by the default`);
+  });
+
+  it('names the skills it got beside it, and the ones the library did not have', () => {
+    expect(workSkillChosenLine({ kind: 'code', name: 'work', version: 'a'.repeat(16), seq: 0, from: 'default', requires: [{ name: 'orchestrate', version: 'c'.repeat(16), seq: 0 }], missing: ['gone'] }))
+      .toBe(`code: work ${'a'.repeat(8)} (built-in), by the default; with orchestrate ${'c'.repeat(8)}; not in the library: gone`);
+  });
+});
+
+describe('the skills a skill requires', () => {
+  it('names each one, and says which the library does not have; none: no line', () => {
+    expect(requiresLine(view, view.skills[0]!)).toBe('requires deep-research, gone (not in the library)');
+    expect(requiresLine(view, view.skills[1]!)).toBeUndefined();
   });
 });

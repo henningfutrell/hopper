@@ -1,6 +1,7 @@
 ---
 name: work
 description: How a hopper job does the work of an issue, from the first read to a pull request that is ready for review.
+requires: orchestrate
 ---
 
 # Work
@@ -13,7 +14,8 @@ Use this skill when the job must change code or text in a repository.
 2. Read the issue and its discussion. Find what it asks, and what it does not ask.
 3. Look for work that already exists: an open pull request for the issue, an earlier part, or the same fix on the default
    branch under another issue.
-4. Make a task list. Each task is one step that takes the job to done.
+4. Make a task list. Each task is one step that takes the job to done. When the work has more than a few steps, follow
+   the `orchestrate` skill, which comes with this one.
 
 ## While you work
 

@@ -184,6 +184,7 @@
         "preemption.settings_changed",
         "library_skill.saved",
         "library_skill.removed",
+        "library_skill.refreshed",
         "work_skills.changed",
         "job.work_skill_chosen",
         "job.preempted",

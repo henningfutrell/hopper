@@ -32,7 +32,7 @@ import { batchClosingIssues, MERGE_STANDS } from '../domain/work-item-landing.ts
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
-import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { workSkillOf } from '../skill-library/index.ts';
+import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { workSkillOf } from '../skill-library/index.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
@@ -92,6 +92,8 @@ export interface UserGitHubProxy {
   infraPlans: InfraPlans;
   /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. The infrastructure topology (issue #1781). */
   outOfBand: OutOfBandChanges; topology: Topology;
+  /** A library skill's folder read from a repository (issue #1911): this user's own connection, the account of the repository. */
+  skillSource: SkillSource;
 }
 
 export interface UserGitHubProxyOptions {
@@ -214,8 +216,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     jobProxy(job, machine) {
       const url = o.url(machine);
       if (!url) return undefined;
-      // The job's work skill (issue #1911): the version chosen at its first start, its files beside the scripts.
-      const chosen = workSkillOf(o.store, job); const skill = workSkillCredentials(chosen.chosen, chosen.files);
+      // The job's work skill (issue #1911): the version chosen at its first start, its files and the skills it requires beside the scripts.
+      const chosen = workSkillOf(o.store, job); const skill = workSkillCredentials(chosen.skills);
       return {
         url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
@@ -242,6 +244,10 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         login: (repo) => o.accounts.account(keyOf(repo)),
       },
       reports,
+      skillSource: (repo) => {
+        const key = keyOf(repo);
+        return !o.accounts.account(key) ? { problem: notMineAt(key, notMine) } : createSkillSourceGitHub({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused) });
+      },
       reads: (repo) => {
         const key = keyOf(repo);
         return !o.accounts.account(key) ? { problem: notMineAt(key, notMine) } : createProxyApi({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused), kind: 'per_job_read' });

@@ -1,9 +1,9 @@
 // The Skills page (issue #1911, design.md "The Skills page"), pure: where each library skill came from, which skill each
 // kind of work gets and which setting chose it, which settings name a skill, a draft's files and what is wrong with them,
-// and the line a job's timeline shows for its work skill. The name and path checks copy the daemon's
+// the skills a skill requires, and the line a job's timeline shows for its work skill. The name and path checks copy the daemon's
 // (src/domain/skill-library.ts: skillNameProblem, skillFilesProblem) so the page says what is wrong before Save; the
 // daemon checks again and has the last word.
-import type { LibrarySkillVersion, SkillLibraryView, WorkKind, WorkSkillChoice, WorkSkillChosen, WorkSkillFrom } from '../../../src/domain/skill-library.ts';
+import type { LibrarySkillSummary, LibrarySkillVersion, SkillLibraryView, WorkKind, WorkSkillChoice, WorkSkillChosen, WorkSkillFrom } from '../../../src/domain/skill-library.ts';
 
 export const SKILL_FILE = 'SKILL.md';
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -15,10 +15,11 @@ export const KIND_LABEL: Readonly<Record<WorkKind, string>> = { code: 'Code work
 /** The short form of a version id, as the page shows it. */
 export const shortVersion = (version: string): string => version.slice(0, 8);
 
-/** Where a version came from: built-in, written by a person, or a copy of another skill's version. */
+/** Where a version came from: built-in, written by a person, a copy of another skill's version, or a repository's folder. */
 export function sourceLine(v: Pick<LibrarySkillVersion, 'source' | 'by'>): string {
   if (v.source.kind === 'built-in') return 'built-in';
   if (v.source.kind === 'created') return `written by ${v.by}`;
+  if (v.source.kind === 'imported') return `imported from ${v.source.repo}${v.source.path ? `/${v.source.path}` : ''} at ${v.source.ref} ${shortVersion(v.source.commit)}, by ${v.by}`;
   return `a copy of ${v.source.name} ${shortVersion(v.source.version)}, by ${v.by}`;
 }
 
@@ -72,6 +73,16 @@ export function draftProblem(name: string, rows: readonly DraftFile[]): string |
 
 const FROM: Readonly<Record<WorkSkillFrom, string>> = { repo: "the repository's setting", user: 'your setting', default: 'the default' };
 
-/** A job's `job.work_skill_chosen` as one line: the kind, the skill, its version, and which setting chose it. */
-export const workSkillChosenLine = (c: WorkSkillChosen): string =>
-  `${c.kind}: ${c.name} ${shortVersion(c.version)} (${c.seq === 0 ? 'built-in' : `version ${c.seq}`}), by ${FROM[c.from]}`;
+/** A job's `job.work_skill_chosen` as one line: the kind, the skill, its version, which setting chose it, the skills it got beside it and the ones it did not. */
+export function workSkillChosenLine(c: WorkSkillChosen): string {
+  const requires = c.requires?.length ? `; with ${c.requires.map((r) => `${r.name} ${shortVersion(r.version)}`).join(', ')}` : '';
+  const missing = c.missing?.length ? `; not in the library: ${c.missing.join(', ')}` : '';
+  return `${c.kind}: ${c.name} ${shortVersion(c.version)} (${c.seq === 0 ? 'built-in' : `version ${c.seq}`}), by ${FROM[c.from]}${requires}${missing}`;
+}
+
+/** The skills a library skill requires, the ones the library does not have said so; undefined when it requires none. */
+export function requiresLine(view: SkillLibraryView, skill: Pick<LibrarySkillSummary, 'requires'>): string | undefined {
+  if (!skill.requires?.length) return undefined;
+  const there = new Set(view.skills.map((s) => s.name));
+  return `requires ${skill.requires.map((n) => (there.has(n) ? n : `${n} (not in the library)`)).join(', ')}`;
+}

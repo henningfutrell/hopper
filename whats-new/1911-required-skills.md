@@ -1,0 +1,1 @@
+- A skill can now name other skills it needs, and each job gets them with it. The hopper now also ships a skill that helps jobs plan work of many steps, and every code job gets it.

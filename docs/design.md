@@ -66,7 +66,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
-| `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says | engine, http, store, plugins, decider |
+| `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8) | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
@@ -78,7 +78,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
-| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill, chosen at its first start and kept (`index.ts`). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
+| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill, chosen at its first start and kept (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
@@ -16677,9 +16677,19 @@ again; never sign in another way. Path 1 (the hopper holds the job through a lin
 machine's own connection — this machine, ssh, or the client's `POST /reach {url}` (signed like every client call). It is
 curl, which the job's tools use too, at `<url>/job/stream` without a token: any answer of the hopper's (401 included) is a
 reach; no answer, a name that does not resolve, a refused address (421) or a 5xx (a proxy whose hopper does not answer)
-is not, and curl missing is said. Not reached: the job fails at once with `this machine cannot reach the hopper at <url>:
-<why>` and the action (`REACH_ACTION`: set an address this machine reaches as the link base, or join the machine as a
-client target), never a mid-job question. A client older than the check has no `/reach`: its jobs start unchecked, and
+is not, and curl missing is said. Not reached: the reason is `this machine cannot reach the hopper at <url>: <why>` and
+the action (`REACH_ACTION`: set an address this machine reaches as the link base, or join the machine as a client
+target), never a mid-job question. A resuming job fails at once with it: it returns to the pane it holds there.
+
+**A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
+machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
+jobs, and its jobs were given a loopback URL it does not reach: each failed at once. Now a fresh start that the reach check
+finds out of reach holds that machine: for ten minutes (`REACH_HOLD_MS`) it carries the reason as its **address
+problem**, so the decider holds a new job there (`addressHolds`) and the Machines view shows it off-network. The job is
+queued again (`job.requeued`, the reason), never failed, and is placed on a machine that reaches the hopper, or waits,
+held with the reason. After the ten minutes the next job placed there checks again. The hold is in the memory of the
+hopper whose start found it: a restart forgets it, and the next start there finds it again. A probe's own address
+problem (an ssh target's) wins over it. A client older than the check has no `/reach`: its jobs start unchecked, and
 the hopper loads its release there as for any client.
 
 **Never a GitHub sign-in.** The protocol line on GitHub (`GITHUB_PROXY_LINE`) says: when the hopper cannot be reached,
@@ -16698,8 +16708,8 @@ after the hold, never sent again once connected), `test/github-proxy/retry-after
 with Retry-After, stops after its tries, and never sends a 500 or a plain 503 again), `test/client/reach.test.ts` (the check on this machine and
 on a client: reached, a name not resolved, 421, 502, no curl), `test/integration/client-door.test.ts` (a real joined
 client: the job is given the door, checked first, and `hopper-skill` works through it),
-`test/integration/github-proxy.test.ts` (a job whose machine cannot reach the hopper fails at its start, with the
-action), `test/herdr/executor-login.test.ts` (a GitHub login reported again fails the job).
+`test/integration/github-proxy.test.ts` (a job whose machine cannot reach the hopper is queued again at its start, and
+the machine holds it, with the action), `test/engine/reach-holds.test.ts` (the hold and its end), `test/herdr/executor-login.test.ts` (a GitHub login reported again fails the job).
 
 ## herdr client and server on an ssh target (issue #741, 2026-10-10)
 
@@ -20760,7 +20770,8 @@ and the writes held while a sign-in has ended are the next parts.
 
 - **Each state's promise** (`src/domain/item-lifecycle.ts`, pure). Every **work item state** not ended has an **owner**
   — `scheduler`, `lane_worker`, `github_observer`, `assessor`, `reconciler` or `person` —, how often it is checked, and
-  for PR open a **deadline**, an hour from `state_since` (issue #1231's rule). `done` and `dropped` have none. Each kind
+  for PR open a **deadline**, an hour from `state_since` (issue #1231's rule; part 7 gives the other states no person holds
+  one). `done` and `dropped` have none. Each kind
   of move names its owner too (`transitionOwner`). The ledger keeps the owner, the next check and the deadline of each
   row as columns (`owner`, `next_check_at`, `deadline`; tenant migration 82, which also rebuilds the ledger; a rebuild
   adds the columns when the table has none, so `hopper ledger rebuild` writes them too).
@@ -20863,6 +20874,46 @@ and the writes held while a sign-in has ended are the next parts.
 - **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, a
   correction of the other states' label drift, and deadlines for the states other than PR open.
 
+**Part 7: deadlines for the states other than PR open.**
+- **Each state no person holds has a deadline** (`checkOf`), from `state_since`: queued, working and waiting outside an
+  hour, partly done a day, PR open an hour as before. A state a person holds has none: waiting for approval (a request card
+  waits as long as a person likes), needs you, blocked, and failed (Failures lists it for a person already).
+- **Past it with no move, the item is blocked as `stale`** (`correctionOf`), and then asked about once (part 6). A state a
+  job holds (`JOB_HELD`: queued, working, waiting outside) is stale only when no job of the item is found — none named, or
+  the one it names is gone. A live job's lane and its own wait have their own deadlines, so an item a job holds is never
+  stale while the job is there; an ended one is folded again from its end, as before (now also from waiting outside).
+- **A partly done item a day on with no job for its next part is stale.** Its merged part is history: the block lets go of
+  it (`pullRequest`), so `stateOf` does not read the part's merge as the whole item's.
+- The deadline column of a row is written at the row's next change, or by `hopper ledger rebuild`. The reconciler does not
+  read the column: it works the deadline out from `state_since`, so no migration is needed.
+- **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, and a
+  correction of the other states' label drift.
+
+**Part 8: a block's labels in the block's transaction, and no second copy of the item.**
+- **The reconciler's block writes its labels** (`blockLabels`, `src/sources/github/item-labels.ts`; `rowsOf`,
+  `src/work-items/reconcile.ts`). A block of an item whose newest job is a GitHub job keeps its issue's label change as
+  GitHub outbox rows (act `mirror`, tag `blocked:<cause>`, as the label mirror tags its own) in the transaction of its
+  `work_item.reconciled` event: the end labels of the state it leaves come off (PR open's `hopper:pr-ready` and
+  `hopper:partly-done`, partly done's `hopper:partly-done`), and the blocked label goes on. The rows coalesce into one
+  remove call and one add call, and the job's source sends them within `OUTBOX_EVERY_MS`, not at the next discover. A
+  remove of a label the issue does not carry changes nothing (GitHub's 404 is ignored), so the rows need no read of the
+  labels. When the rows cannot be kept, the block is not kept either, and the next pass tries both again. A block of an
+  item with no GitHub job (an approved request card that never got a job) writes none: no job names its source, and the
+  label mirror corrects its labels at the next discover, as in part 4.
+- **The other moves write their labels as before.** A job's end, the follow of its pull request and a person's act change
+  GitHub's labels themselves, or through the outbox (Won't do, Run again), and the ledger then folds what they did. The
+  reconciler is the one owner that moves an item in the database with no GitHub act: so it is the one that needs rows of
+  its own.
+- **The item's saga is its event stream, with `work_items` its projection; no `sagas` row.** The `sagas` table is the
+  instance's, and its coordinator drives steps in order; a work item is a user's, moved by its events in the user's
+  schema, in the event's own transaction. A second copy of each item in the instance's table could not be written in that
+  transaction, and two copies of one state are the drift this issue is about. What the issue asks of the saga is in the
+  ledger already: one row per issue (key: its URL), a pure transition table and its invariants (`item-lifecycle.ts`,
+  `work-items.ts`), an owner, a next check and a deadline per row, one host at a time (the sweep lease), and a replay
+  (`hopper ledger rebuild`).
+- **Not in milestone 1:** a correction of the other states' label drift. It is logged and counted (part 4); the issue
+  names its correction as the follow-up.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
@@ -20880,6 +20931,12 @@ when the ledger does not hold the item blocked), `test/sources/intake-live.test.
 Part 6: `test/domain/work-items-person-asked.test.ts` (asked once; forgotten on a move out of blocked or a new cause),
 `test/domain/item-lifecycle.test.ts` (asked only about stuck work, once), `test/work-items/reconcile.test.ts` (a stale item
 and a second close asked about once), `test/plugins/grokbot-intake.test.ts` (the post).
+Part 7: `test/domain/item-lifecycle.test.ts` (each state's deadline; stale only with no job of the item found; partly done a
+day on; a state a person holds never), `test/work-items/reconcile.test.ts` (an approved request card with no job blocked as
+stale, asked once, a new job takes it over; a live queued job never; partly done a day on, not read as done).
+Part 8: `test/sources/github-item-labels.test.ts` (`blockLabels` of each state), `test/work-items/reconcile-labels.test.ts`
+(a block's rows kept with it, coalesced into one remove and one add, once; no block when its rows cannot be kept; no rows
+with no GitHub job).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -27800,3 +27857,102 @@ repository rows, the settings that name a skill, a draft's rows and problems, th
 version; a choice for every repository and back to the default; a choice per repository and a new repository; create with
 a second file; edit with the name fixed; duplicate of a built-in at the version shown; the files shown, and a skill a setting
 names kept from removal with the reason).
+
+## Importing a skill (issue #1911, part 3, 2026-10-18)
+
+Before: a person wrote a library skill by hand or copied one. A skill that lives in a repository — a workflow repository's
+`orchestrate`, for example — had to be copied file by file, and a change there did not reach the copy.
+
+- **Import** (`POST /ui/api/skill-library`, `action: 'import'`; `importSkill`, `src/skill-library/import.ts`). A person
+  names a GitHub repository (`repo`), the folder in it that holds the skill's `SKILL.md` (`path`; empty: the root), a `ref`
+  to follow (a branch or tag; default `HEAD`, the default branch) and, optionally, a `name` (default: the folder's last
+  part, else the repository's name, as a skill name, `importedName`). The hopper reads the folder with the user's own
+  GitHub connection — the account of the repository (issue #1448) —, never a job's, and keeps its files as version 1 of a
+  new skill of the user's. The version's source says where it came from: `{ kind: 'imported', repo, path, ref, commit }`,
+  the commit read. Recorded as `library_skill.saved` with that source.
+- **The read** (`createSkillSourceGitHub`, `src/skill-library/github.ts`): the ref's head commit
+  (`GET …/commits/{ref}`), the trees down the folder's path one part at a time (a large repository's whole tree is never
+  read), the folder's tree with `recursive=1`, then each file's blob. Before any file is read, `skillTreeFiles` (pure) refuses
+  a folder with no `SKILL.md`, more than 32 files or a file over 64 KiB; then the version's own limits apply. A file that is
+  no UTF-8 text is refused: a library skill holds text files only. A truncated tree is refused.
+- **Refresh** (`action: 'refresh'`, `refreshSkill`). It reads the newest version's folder again at the ref it follows. When
+  the files changed, it keeps a new version (`library_skill.saved`); either way it records `library_skill.refreshed` (repo,
+  path, ref, the commit read, the version, `changed`, by). A skill a person edited since its import is not refreshed: its
+  newest version is no import, and a refresh would drop the edit. Import the folder under another name instead.
+- **Refusals.** 400: a folder path that leaves the repository or has strange parts, a folder that is no skill; 404: no such
+  repository, ref or folder (GitHub's 404 or 422); 409: a name in use (a built-in one too), GitHub not connected, a
+  built-in skill's refresh, a skill edited since its import; 502: GitHub failed.
+- **Permissions.** `skill-library:edit.import` and `skill-library:edit.refresh`, an admin's, in the **Skills** section of
+  the scope registry with the other actions.
+- **The Skills page.** **Import** in the Library panel opens a form (repository, folder, ref, name). An imported skill's
+  source reads `imported from <repo>/<path> at <ref> <commit>, by …`, and it has **Refresh**.
+
+**Decisions.**
+- **GitHub's API, not a clone.** The hopper reads only the folder, with the connection it already has, and keeps no clone
+  on any machine: the skill moves with its jobs as every library skill does (issue #1524).
+- **A ref, not a commit, is followed.** The import records the commit it read; a refresh reads the ref's head again. To pin
+  a commit, name a tag.
+- **A refresh is a person's act**, not a schedule: each new version is one a person asked for, and a running job never sees
+  a change (it keeps the version of its first start).
+- **An edited import is not refreshed.** The person's edit wins; refreshing over it would lose work silently.
+- **Repositories beyond the job repositories.** A workflow repository is seldom a job repository; the account of the
+  repository reads it when its install reaches it, else GitHub refuses and the hopper says so.
+
+**Left for later parts.** A skill that depends on another, delivered with it; the `orchestrate` skill, which issue #1909
+bakes into the hopper (it can then be a built-in library skill, or imported from a workflow repository with this part).
+
+**Verification:** `test/domain/skill-import.test.ts` (the folder path, the tree's files and their refusals, the default
+name); `test/integration/skill-import.test.ts` (on the real database and HTTP edge, against the fake GitHub: an import with
+its source and event, read with the user's connection, under a name and a ref of its own; a job on a fresh machine gets the
+imported files; a refresh with no change and one with a change, and their events; the refusals and no change with no
+session); `test/integration/skill-library.test.ts` (the two new scopes); `test/ui/skills.test.ts` (the imported source
+line); `test/ui/skills-view.test.ts` (Import and Refresh send their actions).
+
+## Skills that require others, and the built-in orchestrate skill (issue #1911, part 4, 2026-10-18)
+
+Before: a job got one library skill. A skill that leans on another one — a way of working that says "plan with the
+orchestrate skill" — could not be sure the job had it, and the `orchestrate` skill was in no library.
+
+- **`requires:`** (`skillRequires`, `src/domain/skill-library.ts`, pure). A `SKILL.md`'s front matter names the skills it
+  requires: on its line, apart by commas, in brackets or not, or one `- name` a line below it. Each must be a skill name,
+  at most 8 (`skillFilesProblem`, so create, edit, import and refresh refuse a bad one with 400). A name the library does not
+  have is not refused when the skill is kept: a skill imported from a repository may require one that is imported later.
+- **The choice** (`workSkillOf`, `src/skill-library/index.ts`). At a job's first start, after its work skill, the hopper
+  takes each skill it requires, and theirs, breadth first, each once, at its newest version, at most
+  `SKILL_MAX_REQUIRED` (8). `job.work_skill_chosen` now carries `requires` (each `name`, `version`, `seq`) and `missing`
+  (a name the library has no skill of, or past the limit). Each later start gets the same versions; when one of them is
+  gone, the job chooses again, as for the work skill itself. An older event with no `requires` keeps its choice.
+- **Delivery.** Each required skill's files go into the job's credentials dir beside the work skill's, each in its own
+  `work-skill/<name>/`. `HOPPER_WORK_SKILL` still names the work skill's `SKILL.md`. The `[hopper work skill]` line adds
+  `It requires <name> (version <v>): read its SKILL.md in ../<name>/ …` for each one, and `The library has no skill <name>
+  that it requires: go on without it.` for each missing one.
+- **The built-in `orchestrate` skill** (`src/skill-library/built-in/orchestrate/SKILL.md`): plan a job of many steps as
+  a task list with an acceptance test for each task, run independent tasks side by side, fan out a deliverable of its own
+  as a required child issue, wait on it with `HOPPER_WAITING`, resume from the state that stays (branch, pull request,
+  child issues), and finish by the job's done line. The built-in `work` skill requires it, so every code job gets it, on any
+  machine, with no workflow repository. A person duplicates it to change it, or imports a workflow repository's own
+  version under another name and names that in their skill's `requires:`.
+- **The Skills page.** Each skill says which skills it requires, and marks one the library does not have
+  (`requiresLine`, `ui/src/model/skills.ts`). The job's timeline line for `job.work_skill_chosen` adds `; with <name>
+  <version>` and `; not in the library: <names>`.
+
+**Decisions.**
+- **Front matter, not a field of the version.** The skill's own text says what it requires, so an imported skill carries
+  its requirements from its repository, and a copy carries them too. No migration: the versions kept are unchanged.
+- **A missing required skill does not stop a job, and does not stop a save.** The job's line says it is missing, and the
+  page says so before any job runs. Refusing the save would block an import whose required skill comes from a second import.
+- **Removal is not refused** while another skill requires the removed one: only a setting holds a skill in place, as in
+  part 1. The page then marks the requirement as not in the library.
+- **The newest version of each required skill**, chosen at the job's first start and kept: the same rule as the work
+  skill. A skill cannot pin the version of a skill it requires; a person who wants that duplicates the required skill under
+  another name.
+- **`orchestrate` is a library skill, not a second delivery path.** Issue #1909 (open) adds an `orchestrate` skill to the
+  broker's catalog (`hopper-skill`). This part ships the library's own; #1909 can deliver the library's files and drop its
+  copy, so one text exists.
+
+**Verification:** `test/domain/skill-library.test.ts` (`requires:` in its three forms, the refusals, the credentials of
+several skills, the job's line); `test/integration/skill-library.test.ts` (the built-in list with `orchestrate`, and `work`
+requiring it; a job on a fresh machine gets `orchestrate` beside `work`; a user's skill that requires a user's skill that
+requires `orchestrate`, and one not in the library: the files, the event's `requires` and `missing`, the line; an edit of a
+required skill reaches the next job and not a later start of this one); `test/ui/skills.test.ts` and
+`test/ui/skills-view.test.ts` (the requires line, the timeline line).
