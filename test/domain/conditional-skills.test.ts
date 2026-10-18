@@ -2,10 +2,11 @@
 // repository, its labels, its kind of work —, why each one, and the done criteria the hopper checks before the job is done.
 import { describe, expect, it } from 'vitest';
 import {
-  allowedDeletesIn, conditionalSkillsCredentials, criteriaLine, destroyedAddresses, doneCriteriaOf, doneFileProblem, pathsApply, planDestroys, ruleMatch,
+  allowedDeletesIn, conditionalSkillsCredentials, criteriaLine, destroyedAddresses, doneCriteriaOf, doneFileProblem, mergeHolds, pathsApply, planDestroys, ruleMatch,
   skillRuleProblem, unmetCriteria, withConditionalSkills, type ConditionalSkillChosen, type DoneCriterion,
 } from '../../src/domain/conditional-skills.ts';
 import { namedSkills, patchWorkSkills, skillFilesProblem } from '../../src/domain/skill-library.ts';
+import { builtInSkills } from '../../src/skill-library/index.ts';
 
 const job = { repo: 'Octo/Infra', labels: ['hopper', 'IaC'], kind: 'code' as const };
 
@@ -159,5 +160,37 @@ describe('delivery', () => {
     expect(c.files['conditional-skill/iac/done.json']).toBe('b');
     expect(c.files['conditional-skill/INDEX.md']).toMatch(/iac\/SKILL\.md.*label iac/s);
     expect(conditionalSkillsCredentials([], {})).toEqual({ files: {}, paths: {} });
+  });
+});
+
+describe('a person-merges criterion (issue #1924 part 3)', () => {
+  const GITOPS: DoneCriterion[] = [{ kind: 'person-merges', paths: ['**/overlays/production/**'] }];
+
+  it('is a valid done criterion, with or without paths; its paths are relative globs', () => {
+    expect(doneFileProblem(JSON.stringify({ criteria: GITOPS }))).toBeUndefined();
+    expect(doneFileProblem(JSON.stringify({ criteria: [{ kind: 'person-merges' }] }))).toBeUndefined();
+    expect(doneFileProblem(JSON.stringify({ criteria: [{ kind: 'person-merges', paths: '*.yaml' }] }))).toMatch(/person-merges's "paths"/);
+    expect(doneFileProblem(JSON.stringify({ criteria: [{ kind: 'person-merges', paths: ['../x/**'] }] }))).toMatch(/person-merges's "paths"/);
+  });
+
+  it("holds the hopper's merge of a change to its paths, or of one whose files are not known; never a done-check miss", () => {
+    expect(mergeHolds(GITOPS, { files: ['apps/web/overlays/production/kustomization.yaml'] })).toEqual(['a person merges a change to **/overlays/production/**, not the hopper']);
+    expect(mergeHolds(GITOPS, { files: ['apps/web/overlays/staging/kustomization.yaml'] })).toEqual([]);
+    expect(mergeHolds(GITOPS, {})).toHaveLength(1);
+    expect(mergeHolds(GITOPS, { files: ['a.yaml'], filesCut: true })).toHaveLength(1);
+    expect(mergeHolds([{ kind: 'person-merges' }], { files: ['a.yaml'] })).toEqual(['a person merges it, not the hopper']);
+    expect(mergeHolds([{ kind: 'plan-destroy' }], {})).toEqual([]);
+    expect(unmetCriteria(GITOPS, { checks: [], comments: [] })).toEqual([]);
+  });
+
+  it('is said plainly in the prompt', () => {
+    expect(criteriaLine(GITOPS)).toBe('a person merges a change to **/overlays/production/**, not the hopper');
+  });
+
+  it('the built-in gitops skill carries it', () => {
+    const gitops = builtInSkills().find((s) => s.name === 'gitops');
+    expect(gitops && doneFileProblem(gitops.files['done.json'] ?? '')).toBeUndefined();
+    expect(doneCriteriaOf(gitops!.files).map((c) => c.kind)).toEqual(['person-merges']);
+    expect(skillFilesProblem(gitops!.files)).toBeUndefined();
   });
 });

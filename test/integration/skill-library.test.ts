@@ -69,7 +69,7 @@ describe('the skill library (issue #1911)', () => {
     const t = await start();
     const first = await library(t);
     expect(first.skills.map((s) => [s.name, s.builtIn, s.latest.seq, s.requires])).toEqual([
-      ['work', true, 0, ['orchestrate']], ['research', true, 0, []], ['proposal', true, 0, []], ['orchestrate', true, 0, []], ['iac', true, 0, []],
+      ['work', true, 0, ['orchestrate']], ['research', true, 0, []], ['proposal', true, 0, []], ['orchestrate', true, 0, []], ['iac', true, 0, []], ['gitops', true, 0, []],
     ]);
     expect(first.workSkills).toEqual({ kinds: {}, repos: {} });
     expect(first.defaults).toEqual({ code: 'work', research: 'research', proposal: 'proposal' });
@@ -164,7 +164,7 @@ describe('the skill library (issue #1911)', () => {
     });
     expect((await change(t, { action: 'create', name: 'sneaky', files: { 'SKILL.md': 'x' } }, null)).status).toBe(403);
     expect((await t.app.ui('/ui/api/work-skills', { kinds: { code: 'research' } })).status).toBe(403);
-    expect((await library(t)).skills.map((s) => s.name)).toEqual(['work', 'research', 'proposal', 'orchestrate', 'iac']);
+    expect((await library(t)).skills.map((s) => s.name)).toEqual(['work', 'research', 'proposal', 'orchestrate', 'iac', 'gitops']);
     expect(eventsOf(t, 'library_skill.saved')).toEqual([]);
   });
 });
