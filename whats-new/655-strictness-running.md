@@ -1,0 +1,1 @@
+- When an admin makes the intake rules stricter, a job that already runs and no longer meets them now needs a person's approval for each sandbox it asks for.

@@ -95,15 +95,16 @@ export function turnCommand(jobId: string, run: string): string {
 /**
  * What a turn's scope runs (issue #1295), `sh -c` of it: the job's own container runtime, with its socket started in the
  * scope, then the job's sandbox around the agent's `run`, as around Claude in a pane, and the socket stopped when the agent
- * ends; its exit code is the agent's. What the setup prints stays out of the agent's answer. A runtime that wrote no
- * environment, or a sandbox that could not be set up, ends the turn (exit 125): it would run next to the host's runtime.
+ * ends, the turn ending only once it did (issue #1840); its exit code is the agent's. What the setup prints stays out of
+ * the agent's answer. A runtime that wrote no environment, or a sandbox that could not be set up, ends the turn (exit 125):
+ * it would run next to the host's runtime.
  * A machine where bubblewrap cannot run runs the agent as before, with the job's runtime and its guards.
  */
 export function isolatedTurn(jobId: string, scratch: string, run: string): string {
   const fail = (what: string): string => `{ printf '%s\\n' ${shellQuote(`hopper: the job ${what} could not be set up`)} >&2; exit 125; }`;
   return `{ ${runtimeCommand(jobId, scratch, false)}; } >/dev/null 2>&1; [ -r ${shellQuote(runtimeEnvOf(scratch))} ] || ${fail('container runtime')}; `
     + `case $( { ${sandboxCommand(scratch)}; } 2>/dev/null) in *hopper-sandbox-on) w=${shellQuote(`${scratch}/${SANDBOX_SUBDIR}/run`)};; *hopper-sandbox-none) w=;; *) ${fail('sandbox')};; esac; `
-    + `${turnServiceCommand(jobId, scratch)} \${w:+"$w"} ${run}; r=$?; [ -n "$sp" ] && kill "$sp" 2>/dev/null; exit $r`;
+    + `${turnServiceCommand(jobId, scratch)} \${w:+"$w"} ${run}; r=$?; [ -n "$sp" ] && { kill "$sp"; wait "$sp"; } 2>/dev/null; exit $r`;
 }
 
 /** A first turn's text: the job's prompt, what it is told besides (notes, a brief), and the protocol. */

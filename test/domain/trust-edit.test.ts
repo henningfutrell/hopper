@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest';
 import {
   autoApprovable, EDIT_REASON, editedStamp, quarantinedStamp, ruleCeiling, signStamp, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type TrustStamp,
 } from '../../src/domain/trust-stamp.ts';
+import { brakeOf, DEFAULT_INTAKE_STRICTNESS } from '../../src/domain/intake-strictness.ts';
 import type { Job, JobSourceRef } from '../../src/domain/types.ts';
 import { job } from '../decider/support.ts';
 
 const KEY = Buffer.alloc(32, 7);
 const AT = '2026-10-17T10:00:00.000Z';
 const LATER = '2026-10-17T11:00:00.000Z';
+const STANDARD = brakeOf(DEFAULT_INTAKE_STRICTNESS, undefined);
 
 const github = (over: Partial<JobSourceRef> = {}): JobSourceRef => ({
   source: 'github', kind: 'github-account', key: 'https://github.com/o/r/issues/1', repo: 'o/r', number: 1,
@@ -57,13 +59,13 @@ describe('an edit of a started job\'s item', () => {
 describe('gate 2\'s automatic approvals', () => {
   it('need a stamp that verifies at approved or above', () => {
     const at = (level: TrustStamp['level']) => { const j = job('a', { source: github() }); return { ...j, stamp: signStamp(KEY, j, { level, reasons: [], by: 'intake', at: AT }) }; };
-    expect(autoApprovable(KEY, at('owner'))).toBe(true);
-    expect(autoApprovable(KEY, at('trusted'))).toBe(true);
-    expect(autoApprovable(KEY, at('approved'))).toBe(true);
-    expect(autoApprovable(KEY, at('screened'))).toBe(false);
-    expect(autoApprovable(KEY, at('untrusted'))).toBe(false);
-    expect(autoApprovable(KEY, at('quarantined'))).toBe(false);
-    expect(autoApprovable(KEY, job('b', { source: github() }))).toBe(false);
-    expect(autoApprovable(KEY, { ...at('owner'), id: 'c' })).toBe(false);
+    expect(autoApprovable(KEY, at('owner'), STANDARD)).toBe(true);
+    expect(autoApprovable(KEY, at('trusted'), STANDARD)).toBe(true);
+    expect(autoApprovable(KEY, at('approved'), STANDARD)).toBe(true);
+    expect(autoApprovable(KEY, at('screened'), STANDARD)).toBe(false);
+    expect(autoApprovable(KEY, at('untrusted'), STANDARD)).toBe(false);
+    expect(autoApprovable(KEY, at('quarantined'), STANDARD)).toBe(false);
+    expect(autoApprovable(KEY, job('b', { source: github() }), STANDARD)).toBe(false);
+    expect(autoApprovable(KEY, { ...at('owner'), id: 'c' }, STANDARD)).toBe(false);
   });
 });

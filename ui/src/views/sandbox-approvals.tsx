@@ -44,6 +44,10 @@ const STATE_TEXT: Record<SandboxRequestView['state'], string> = {
   waiting: 'waits for a person', approved: 'approved: each step runs in a sandbox of its own', declined: 'declined',
 };
 
+/** Jev's sandbox-request check on a waiting request (issue #655 part 13): it checks it now, or held it for a person, with why. */
+const jevText = (jev: NonNullable<SandboxRequestView['jev']>): string =>
+  jev.state === 'checking' ? 'Jev checks it now: it approves it, or leaves it to a person.' : `Jev held it for a person${jev.reason ? `: ${jev.reason}` : ''}.`;
+
 function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; template?: TemplateView | undefined; secrets: readonly VaultSecret[]; can: boolean }) {
   const [reason, setReason] = useState('');
   const [declining, setDeclining] = useState(false);
@@ -65,6 +69,7 @@ function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; templat
         <span className="text-xs text-warn">{STATE_TEXT[r.state]}</span>
       </div>
       <SandboxAsk purpose={r.purpose} plan={r.plan} job={{ id: r.jobId, title: r.jobTitle, url: r.jobUrl }} needs={template?.profiles} secrets={secrets} />
+      {r.jev && <p data-slot="sandbox-request-jev" className="text-xs text-warn">{jevText(r.jev)}</p>}
       <p className="text-xs text-muted-foreground">Asked at {r.askedAt}.</p>
       {can ? (
         <div className="flex flex-wrap items-center gap-2">

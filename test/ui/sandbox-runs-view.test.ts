@@ -12,7 +12,8 @@ const WAITING = {
   purpose: 'Read the bill of the UAT account', plan: 'aws ce get-cost-and-usage',
 };
 const RUNNING = { id: 'q2', jobId: 'a1b2c3d4-0000-4000-8000-000000000002', template: 'asked-3f2a9c1d0e4b', state: 'approved', askedAt: '2026-10-13T09:00:00.000Z', approvedBy: 'skip sandbox approval' };
-const WAITING_2 = { ...WAITING, id: 'q3', jobId: 'c1b2c3d4-0000-4000-8000-000000000003', jobTitle: 'Read the cluster', template: 'asked-9a8b7c6d5e4f' };
+// Issue #655 part 13: Jev's sandbox check held this one for a person, with why.
+const WAITING_2 = { ...WAITING, id: 'q3', jobId: 'c1b2c3d4-0000-4000-8000-000000000003', jobTitle: 'Read the cluster', template: 'asked-9a8b7c6d5e4f', jev: { state: 'held', reason: 'the job reaches a target it has no reason to know' } };
 const WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } };
 const HIGH = {
   name: 'asked-0a1b2c3d4e5f', image: 'ghcr.io/henningfutrell/hopper:box-claude', secrets: [], profiles: [WRITE], gives: [], savedBy: 'job j', savedAt: '2026-10-13T09:00:00.000Z',
@@ -285,5 +286,13 @@ describe('Settings → Vault: remembered write approvals (issue #1001)', () => {
     await act(async () => { buttonIn(approvals()!, 'Save time limit').click(); });
     await vi.waitFor(() => expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-approvals')).toHaveLength(2));
     expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-approvals')[1]!.body).toEqual({ rememberWritesHours: 24 });
+  });
+});
+
+describe('Jev\'s sandbox check on a waiting run (issue #655 part 13)', () => {
+  it('a run Jev held says so, with why; one Jev did not check says nothing of Jev', async () => {
+    await boot('#access-requests', runs);
+    expect(card('q3').querySelector('[data-slot="sandbox-request-jev"]')?.textContent).toBe('Jev held it for a person: the job reaches a target it has no reason to know.');
+    expect(card('q1').querySelector('[data-slot="sandbox-request-jev"]')).toBeNull();
   });
 });

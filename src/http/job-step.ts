@@ -39,9 +39,11 @@
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { jobBrake } from '../domain/intake-strictness.ts';
 import { mintKindFor } from '../domain/minting.ts';
 import { NEED_STEP_KEY } from '../domain/need-steps.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake, sandboxBrakeText } from '../domain/sandbox-strictness.ts';
+import { gate2Min } from '../domain/trust-stamp.ts';
 import type { Job, JobStatus, TemplateView } from '../domain/types.ts';
 import { STEP_INPUTS_MAX_BYTES } from '../domain/windows-steps.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
@@ -101,10 +103,14 @@ const asked = (reply: FastifyReply, started: { id: string } | { status: number; 
 
 const ASK_SANDBOX = (needs: string): string => `Ask for a sandbox a person approves: sh "$HOPPER_SKILL" sandbox --needs "${needs}" --why "<why the job needs it>"`;
 
-/** Why gate 2 refuses the job a need step (issue #655 part 7): its trust stamp is below `approved`; undefined: it does not. */
+/**
+ * Why gate 2 refuses the job a need step (issue #655 parts 7, 12): its trust stamp is below `approved`, or below the level
+ * the intake strictness on it needs now; undefined: it does not.
+ */
 function belowApproved(t: TenantParts, job: Job, needs: string): string | undefined {
-  if (t.store.jobs.autoApprovable(job)) return undefined;
-  return `its trust stamp ${t.store.jobs.trustLevel(job) ?? 'does not verify and'} is below approved: a need step runs only for a job at approved or above. ${ASK_SANDBOX(needs)}`;
+  const brake = jobBrake(t.store.settings.getIntakeStrictness(), job);
+  const why = t.store.jobs.gate2Hold(job, brake);
+  return why ? `${why}: a need step runs only for a job at ${gate2Min(brake)} or above. ${ASK_SANDBOX(needs)}` : undefined;
 }
 
 /** Why brake 2 refuses a need step of `template` (issue #655 part 8): a person approves each of its runs; undefined: it does not. */

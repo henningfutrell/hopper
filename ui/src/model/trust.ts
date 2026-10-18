@@ -41,12 +41,14 @@ const CHECK_REASON: Readonly<Record<string, string>> = {
 
 /** A person's deny at gate 2 (src/domain/trust-stamp.ts DENY_REASON): a declined sandbox request. */
 const DENY_REASON = 'deny:sandbox';
+/** Jev's deny at gate 2 (src/domain/trust-stamp.ts JEV_DENY_REASON, part 13): its sandbox-request check denied a request. */
+const JEV_DENY_REASON = 'deny:jev';
 /** An edit of a started job's item (src/domain/trust-stamp.ts EDIT_REASON). */
 const EDIT_REASON = 'edit:text';
 
 /** The last reason that lowered the stamp: a deny's, an edit's, or Jev's trust check's id; undefined: none lowered it. */
 const loweredBy = (job: Pick<Job, 'stamp'>): string | undefined =>
-  job.stamp?.reasons.filter((r) => r === DENY_REASON || r === EDIT_REASON || r.startsWith('jev:')).at(-1);
+  job.stamp?.reasons.filter((r) => r === DENY_REASON || r === JEV_DENY_REASON || r === EDIT_REASON || r.startsWith('jev:')).at(-1);
 
 /** Below this a job is held for a person (src/domain/trust-stamp.ts DISPATCH_MIN): `untrusted`, `screened`. */
 const BELOW_APPROVED: readonly Level[] = ['untrusted', 'screened'];
@@ -56,6 +58,7 @@ export function trustCheckText(job: Pick<Job, 'stamp'>): string | undefined {
   const r = loweredBy(job);
   if (!r || !job.stamp || !BELOW_APPROVED.includes(job.stamp.level)) return undefined;
   if (r === DENY_REASON) return 'A person declined its sandbox request';
+  if (r === JEV_DENY_REASON) return 'Jev denied its sandbox request';
   if (r === EDIT_REASON) return 'Its item was edited after it started';
   const id = r.slice('jev:'.length);
   return `Jev's trust check lowered it: ${CHECK_REASON[id] ?? id}`;

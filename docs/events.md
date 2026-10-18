@@ -1303,14 +1303,15 @@ Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item
 
 ## `job.quarantined`
 
-Version 1 (`docs/schemas/job.quarantined.v1.json`). A person, or an agent over the API, quarantined the job (issue #655, `POST /ui/api/jobs/:id/quarantine`): its trust stamp is signed `quarantined`, so the decider holds it, and its proxy token opens no door of the hopper (the GitHub proxy, git, the vault, skills, steps, artifacts, its stream) — a running job keeps its pane, but reaches nothing through the hopper. `was`: its trust level before, the level a lift gives back; absent when its stamp did not verify. `reason` `deny:sandbox`: a person's second deny at gate 2 in the job quarantined it (part 5: a declined sandbox request), or a deny of a job at `untrusted`. Who (`person`) and how (`via`).
+Version 1 (`docs/schemas/job.quarantined.v1.json`). A person, or an agent over the API, quarantined the job (issue #655, `POST /ui/api/jobs/:id/quarantine`): its trust stamp is signed `quarantined`, so the decider holds it, and its proxy token opens no door of the hopper (the GitHub proxy, git, the vault, skills, steps, artifacts, its stream) — a running job keeps its pane, but reaches nothing through the hopper. `was`: its trust level before, the level a lift gives back; absent when its stamp did not verify. `reason` `deny:sandbox`: a person's second deny at gate 2 in the job quarantined it (part 5: a declined sandbox request), or a deny of a job at `untrusted`; `deny:jev`: Jev's deny was the second (part 13). Who (`person`) and how (`via`), or `by` `jev` for Jev's deny.
 
 | field | type | required |
 |---|---|---|
 | `was` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
 | `reason` | string | no |
-| `person` | string | yes |
-| `via` | `ui` \| `cli` \| `api` | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+| `by` | `jev` | no |
 
 ```json
 {
@@ -1340,7 +1341,7 @@ Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with
 
 ## `job.trust_lowered`
 
-Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`). Or (part 7) a sync saw the item of a started job edited: its stamp drops to `untrusted`, `by` `edit`, with `reason` `edit:text`; the job goes on with the text it started with, and gate 2 then approves nothing for it with no person until a person approves its trust.
+Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`). Or (part 13) Jev's sandbox check denied a sandbox request, `by` `jev`, with `reason` `deny:jev`; it counts with a person's denies. Or (part 7) a sync saw the item of a started job edited: its stamp drops to `untrusted`, `by` `edit`, with `reason` `edit:text`; the job goes on with the text it started with, and gate 2 then approves nothing for it with no person until a person approves its trust.
 
 | field | type | required |
 |---|---|---|
@@ -3235,12 +3236,12 @@ Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machin
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`, `intake-trust`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`, `intake-trust`, `sandbox-request`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
@@ -3287,7 +3288,7 @@ Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided aft
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -3311,7 +3312,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -3330,7 +3331,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `question-answer` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `intake-trust` \| `sandbox-request` \| `question-answer` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 
@@ -3944,9 +3945,9 @@ Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a Gi
   "requestId": "r2",
   "machine": "box",
   "as": "octocat",
-  "op": "pr.create",
+  "op": "issue.create",
   "repo": "else/where",
-  "reason": "else/where is not one of the repositories the hopper works on, so it does nothing there for a job"
+  "reason": "else/where is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed"
 }
 ```
 
@@ -4793,7 +4794,7 @@ Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked 
 
 ## `vault.sandbox_approved`
 
-Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before, or `Jev` when Jev's sandbox check (issue #655 part 13, the decision point `sandbox-request` active) allowed a run one of those would approve. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.
 
 | field | type | required |
 |---|---|---|
@@ -4812,7 +4813,7 @@ Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was
 
 ## `vault.sandbox_declined`
 
-Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline. Issue #655 part 9: `by` is `the hold timeout` when no person answered it within 24 hours; that deny is of this request only, and lowers no trust.
+Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline. Issue #655 part 9: `by` is `the hold timeout` when no person answered it within 24 hours; that deny is of this request only, and lowers no trust. Part 13: `by` is `Jev` when Jev's sandbox check (the decision point `sandbox-request` active) denied it, with its reason: a deny at gate 2, which lowers the job's trust as a person's does (`job.trust_lowered`, `job.quarantined`).
 
 | field | type | required |
 |---|---|---|

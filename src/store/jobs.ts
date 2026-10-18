@@ -1,7 +1,7 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import {
-  autoApprovable, checkDue, checkedStamp, deniedStamp, editedStamp, childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampedEvent, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy, type StampedEvent, type TrustLevel,
+  checkDue, checkedStamp, deniedStamp, editedStamp, childLevel, gate2Hold, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampedEvent, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy, type StampedEvent, type TrustLevel,
 } from '../domain/trust-stamp.ts';
 import { stampView } from '../domain/stamp-view.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
@@ -213,11 +213,11 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
       if (!key || !cur || !trustApprovable(key, cur)) return undefined;
       return write(id, (j) => ({ ...j, stamp: trustApprovedStamp(key, j, c.clock.now().toISOString()) }));
     },
-    deny(id) {
+    deny(id, by) {
       const key = stampKey;
       const cur = get(id);
       if (!key || !cur || TERMINAL_STATUSES.includes(cur.status)) return undefined;
-      const stamp = deniedStamp(key, cur, c.clock.now().toISOString());
+      const stamp = deniedStamp(key, cur, c.clock.now().toISOString(), by);
       return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
     },
     edited(id) {
@@ -227,8 +227,8 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
       const stamp = editedStamp(key, cur, c.clock.now().toISOString());
       return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
     },
-    autoApprovable(job) {
-      return stampKey ? autoApprovable(stampKey, job) : true;
+    gate2Hold(job, brake) {
+      return stampKey ? gate2Hold(stampKey, job, brake) : undefined;
     },
     trustLevel(job) {
       return stampKey ? verifiedLevel(stampKey, job) : undefined;

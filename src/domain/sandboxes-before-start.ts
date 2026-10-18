@@ -24,14 +24,17 @@ export function namedTemplates(text: string, names: readonly string[]): string[]
 }
 
 /**
- * Why the job's sandbox requests hold it, or undefined: a request that waits for a person, or an approved one whose
- * template is not ready. A declined request holds nothing: a person said no, and the job is told so when it asks.
+ * Why the job's sandbox requests hold it, or undefined: a request that waits for a person or for Jev's check (issue #655
+ * part 13), or an approved one whose template is not ready. A declined request holds nothing: a person said no, and the
+ * job is told so when it asks.
  */
 export function sandboxesHold(requests: readonly SandboxRequestView[], templates: readonly TemplateView[]): string | undefined {
-  const waiting = requests.filter((r) => r.state === 'waiting').map((r) => r.template);
+  const waiting = requests.filter((r) => r.state === 'waiting' && r.jev?.state !== 'checking').map((r) => r.template);
+  const checking = requests.filter((r) => r.state === 'waiting' && r.jev?.state === 'checking').map((r) => r.template);
   const notReady = requests.filter((r) => r.state === 'approved' && !templates.some((t) => t.name === r.template && templateReady(t))).map((r) => r.template);
   const why = [
     ...(waiting.length ? [`the sandbox runs of template ${waiting.join(', ')} wait for a person on Access requests`] : []),
+    ...(checking.length ? [`Jev checks the sandbox runs of template ${checking.join(', ')}`] : []),
     ...(notReady.length ? [`template ${notReady.join(', ')} ${notReady.length > 1 ? 'wait' : 'waits'} for a person or for its read-only check on Access requests`] : []),
   ];
   return why.length ? `${SANDBOXES_HOLD}: ${why.join('; ')}` : undefined;

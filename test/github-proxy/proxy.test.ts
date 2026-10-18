@@ -64,7 +64,7 @@ describe('who may ask what', () => {
     expect(checkRequest({ op: 'pr.create', repo: 'octo/tools', head: 'x', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true });
     expect(checkRequest({ op: 'pr.create', repo: 'octo/site', head: 'x', title: 't', body: 'b' }, { jobId: 'j' }, repos)).toEqual({ ok: true });
-    expect(checkRequest({ op: 'pr.create', repo: 'else/where', head: 'x', title: 't', body: 'b' }, own, repos)).toMatchObject({ ok: false });
+    expect(checkRequest({ op: 'pr.create', repo: 'else/where', head: 'x', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true }); // issue #1806
   });
 
   it('a job opens a pull request from its user\'s fork only on its own repository (issue #1275)', () => {
@@ -89,11 +89,23 @@ describe('who may ask what', () => {
   });
 
   it('nobody: a repository the hopper does not work on', () => {
-    expect(checkRequest({ ...create, repo: 'else/where' }, own, repos)).toEqual({ ok: false, reason: 'else/where is not one of the repositories the hopper works on, so it does nothing there for a job' });
+    expect(checkRequest({ ...create, repo: 'else/where' }, own, repos)).toEqual({ ok: false, reason: 'else/where is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed' });
     expect(checkRequest(create, own, [])).toMatchObject({ ok: false });
   });
 
-  it('a job reads on any repository its user\'s connection sees; it writes only on the job repositories (issue #1015)', () => {
+  it('on a repository the hopper does not work on: a job opens a pull request, and marks ready, edits or closes only its own (issue #1806)', () => {
+    expect(checkRequest({ op: 'pr.create', repo: 'else/where', head: 'issue-7-fix', title: 't', body: 'b' }, own, repos)).toEqual({ ok: true });
+    for (const req of [
+      { op: 'pr.ready', repo: 'else/where', number: 9 }, { op: 'pr.close', repo: 'else/where', number: 9 },
+      { op: 'pr.edit', repo: 'else/where', number: 9, title: 't' },
+    ] as ProxyRequest[]) {
+      expect(checkRequest(req, { ...own, ownsPullRequest: true }, repos)).toEqual({ ok: true });
+      expect(checkRequest(req, { ...own, ownsPullRequest: false }, repos)).toEqual({ ok: false, reason: 'else/where is not one of the repositories the hopper works on: there a job marks ready, edits or closes only a pull request it opened' });
+    }
+    expect(checkRequest({ op: 'pr.ready', repo: 'octo/site', number: 9 }, { ...own, ownsPullRequest: false }, repos)).toEqual({ ok: true });
+  });
+
+  it('a job reads on any repository its user\'s connection sees; it writes issues only on the job repositories (issue #1015)', () => {
     for (const req of [
       { op: 'issue.view', repo: 'else/where', number: 1 }, { op: 'pr.view', repo: 'else/where', number: 1 },
       { op: 'repo.view', repo: 'else/where' }, { op: 'check.log', repo: 'else/where', number: 1 },
@@ -103,7 +115,6 @@ describe('who may ask what', () => {
     for (const req of [
       create, { op: 'issue.comment', repo: 'else/where', number: 1, body: 'b' }, { op: 'issue.close', repo: 'else/where', number: 1 },
       { op: 'pr.ready', repo: 'else/where', number: 1 }, { op: 'repo.fork', repo: 'else/where' },
-      { op: 'pr.create', repo: 'else/where', head: 'b', title: 't', body: 'b' },
     ] as ProxyRequest[]) expect(checkRequest({ ...req, repo: 'else/where' }, own, repos)).toMatchObject({ ok: false });
   });
 });

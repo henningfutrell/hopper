@@ -12,7 +12,7 @@ import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
-import { HOLD_TIMEOUT, type SandboxRequestView } from '../domain/sandbox-approvals.ts';
+import { HOLD_TIMEOUT, JEV_APPROVER, type SandboxRequestView } from '../domain/sandbox-approvals.ts';
 import { nameWithoutEmail } from '../domain/users.ts';
 import { needsOf, SANDBOX_SKILL, TEMPLATE_SKILL, type AskAbout, type TemplateAnswer } from './template-request.ts';
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
@@ -199,14 +199,22 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
         return { status: 202, text: `${t.text} Then the sandbox runs of it wait for approval.${later}` };
       }
       const r = user.sandbox(t.template, job, about);
-      if (r.state === 'waiting') return { status: 202, text: `waiting: the sandbox runs of template ${t.template} wait for a person to approve them on Access requests.${later}` };
+      if (r.state === 'waiting') return { status: 202, text: `${waitingText(t.template, r)}${later}` };
       if (r.state === 'declined') return no(403, declinedText(t.template, r));
       return approved(t.template, r);
     }
 
-    /** Why the job's sandbox runs of `template` are declined: a person said no, or none answered in time (issue #655 part 9). */
+    /** Who the job's waiting sandbox runs of `template` wait for: a person, or Jev's check first (issue #655 part 13). */
+    function waitingText(template: string, r: SandboxRequestView): string {
+      if (r.jev?.state === 'checking') return `waiting: Jev checks the sandbox runs of template ${template}; it approves them, or asks a person to approve them on Access requests.`;
+      const held = r.jev?.state === 'held' ? ` Jev held them for a person${r.jev.reason ? `: ${r.jev.reason}` : ''}.` : '';
+      return `waiting: the sandbox runs of template ${template} wait for a person to approve them on Access requests.${held}`;
+    }
+
+    /** Why the job's sandbox runs of `template` are declined: a person or Jev said no (issue #655 part 13), or none answered in time (part 9). */
     function declinedText(template: string, r: SandboxRequestView): string {
       if (r.declinedBy === HOLD_TIMEOUT) return `the hopper declined the sandbox runs of template ${template}: ${r.reason ?? 'no person answered in time'}. Find another way.`;
+      if (r.declinedBy === JEV_APPROVER) return `Jev declined the sandbox runs of template ${template}: ${r.reason ?? 'no reason given'}. Find another way.`;
       return `a person declined the sandbox runs of template ${template}: ${r.reason ?? 'no reason given'}. Find another way.`;
     }
 
@@ -232,7 +240,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       }
       const r = user.sandbox(name, job, about);
       const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
-      if (r.state === 'waiting') return { status: 202, text: `waiting: the sandbox runs of template ${name} wait for a person to approve them on Access requests.${later}` };
+      if (r.state === 'waiting') return { status: 202, text: `${waitingText(name, r)}${later}` };
       if (r.state === 'declined') return no(403, declinedText(name, r));
       if (!templateReady(t)) return { status: 202, text: `waiting: the sandbox runs of template ${name} are approved, but the template waits for a person or for its read-only check on Access requests.${later}` };
       return approved(name, r);

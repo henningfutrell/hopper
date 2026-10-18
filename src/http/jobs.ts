@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import { failureSettingsOf } from '../domain/failures.ts';
-import { brakeOf, DEFAULT_INTAKE_STRICTNESS } from '../domain/intake-strictness.ts';
+import { jobBrake } from '../domain/intake-strictness.ts';
 import { jobBom } from '../domain/job-bom.ts';
 import { jobIdStarting } from '../domain/job-id-start.ts';
 import { jobGraph, type JobGraphLink } from '../domain/job-graph.ts';
@@ -158,7 +158,7 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     const { id } = parseWith(idParams, req.params);
     const { store } = o.tenant(req);
     const job = byIdOrShortId(store.jobs, id);
-    return store.jobs.stampView(job, brakeOf(store.settings.getIntakeStrictness() ?? DEFAULT_INTAKE_STRICTNESS, job.source));
+    return store.jobs.stampView(job, jobBrake(store.settings.getIntakeStrictness(), job));
   });
 
   app.get('/api/jobs/:id', async (req) => {

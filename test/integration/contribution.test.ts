@@ -20,11 +20,11 @@
 //   Scenario: the repository takes no issues
 //     Then the fork's issues are turned on, and the job files its issue on the fork, linked back to upstream/lib#7
 //   Scenario: a repository that is no fork of the job's own
-//     Then a push to it and an issue on it are refused
+//     Then a push to it is taken where its user can push (issue #1806), and an issue on it is refused
 //   Scenario: a repository its user can push to
 //     Then the hopper forks nothing: the job pushes a branch there
 //   Scenario: Contribution turned off after the fork was made
-//     Then a push to the fork and a pull request from it are refused
+//     Then a push to the fork is taken (its user can push there, issue #1806), and a pull request from it is refused
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -219,19 +219,17 @@ describe('the contribution flow (issue #429)', () => {
     expect((await gh(['issue', 'view', '1', '--repo', 'owner/lib'])).answer).toMatchObject({ ok: true, number: 1 });
   });
 
-  it('refuses a repository that is no fork of the job\'s own: no push, no issue', async () => {
+  it('a repository that is no fork of the job\'s own: a push where its user can push (issue #1806), no issue', async () => {
     const t = await start();
     await turnOn(t);
     t.github.forks = { 'owner/x': 'elsewhere/x' };
     await bareRepo(t.gitRoot, 'owner/x');
     const { gh, work, git } = await running(t);
     const at = await work('owner/x', 'x');
-    const pushed = await git(['push', 'origin', 'HEAD:refs/heads/fix/empty-input'], at);
-    expect(pushed.code).not.toBe(0);
-    expect(pushed.stderr).toContain('a job pushes only to its own repository (upstream/lib) or another of the repositories the hopper works on, or to its user\'s fork of its own');
-    expect(await branchesOf(t, 'owner/x')).toEqual(['dev']);
+    expect(await git(['push', 'origin', 'HEAD:refs/heads/fix/empty-input'], at)).toMatchObject({ code: 0 });
+    expect(await branchesOf(t, 'owner/x')).toEqual(['dev', 'fix/empty-input']);
     const issue = await gh(['issue', 'create', '--repo', 'owner/x', '--title', 'x', '--body', 'y']);
-    expect(issue.answer.error).toBe('refused: owner/x is not one of the repositories the hopper works on, so it does nothing there for a job');
+    expect(issue.answer.error).toBe('refused: owner/x is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed');
   });
 
   it('a repository the user can push to is not forked: the job pushes a branch there', async () => {
@@ -246,17 +244,14 @@ describe('the contribution flow (issue #429)', () => {
     expect(other.answer.error).toBe('refused: a job forks only its own repository (octo/tools)');
   });
 
-  it('turned off after the fork was made: a push to the fork and a pull request from it are refused', async () => {
+  it('turned off after the fork was made: a push to the fork is taken (its user can push there, issue #1806), a pull request from it is refused', async () => {
     const t = await start();
     await turnOn(t);
     const { gh, work, git } = await running(t);
     expect((await gh(['repo', 'fork', '--repo', 'upstream/lib'])).code).toBe(0);
     const at = await work('owner/lib', 'fork');
     await turnOn(t, false);
-    const pushed = await git(['push', 'origin', 'HEAD:refs/heads/fix/empty-input'], at);
-    expect(pushed.code).not.toBe(0);
-    expect(pushed.stderr).toContain('a job pushes only to its own repository (upstream/lib) or another of the repositories the hopper works on');
-    expect(await branchesOf(t, 'owner/lib')).toEqual(['dev']);
+    expect(await git(['push', 'origin', 'HEAD:refs/heads/fix/empty-input'], at)).toMatchObject({ code: 0 });
     const pr = await gh(['pr', 'create', '--repo', 'upstream/lib', '--head', 'owner:fix/empty-input', '--title', 'x', '--body', 'y']);
     expect(pr.answer.error).toBe(`refused: ${OFF}`);
   });
