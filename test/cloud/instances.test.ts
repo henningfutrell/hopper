@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCloudLinkAnswers } from '../../cloud/link.ts';
 import { SESSION_COOKIE } from '../../cloud/server.ts';
-import { PUBLIC, rows, setUp, stopAll, type Set } from './harness.ts';
+import { PUBLIC, registerAs, rows, setUp, stopAll, type Set } from './harness.ts';
 
 afterEach(stopAll);
 
@@ -24,7 +24,6 @@ const INSTANCE = '7f0c2a4e1d1b4c55';
 const OTHER = '0b9e8d7c6a5f4e3d';
 const t0 = new Date('2026-10-17T12:00:00Z');
 const later = (ms: number) => new Date(t0.getTime() + ms);
-const registered = JSON.stringify({ type: 'registration', outcome: 'registered' });
 const form = { 'content-type': 'application/x-www-form-urlencoded' };
 const cookie = (session: string) => ({ cookie: `${SESSION_COOKIE}=${session}` });
 
@@ -33,7 +32,7 @@ async function withAccounts(s: Set) {
   await s.store.signedIn({ githubUserId: GRACE, login: 'grace' });
   await s.store.openSession('ada-session', ADA, new Date());
   await s.store.openSession('grace-session', GRACE, new Date());
-  return createCloudLinkAnswers({ store: s.store });
+  return createCloudLinkAnswers({ store: s.store, requests: s.requests });
 }
 const instances = async (s: Set, session: string) =>
   (await s.server.inject({ method: 'GET', url: '/api/account/instances', headers: cookie(session) })).json().instances as Record<string, unknown>[];
@@ -45,12 +44,12 @@ describe("a hopper.io account's instances", () => {
   it('holds many instances; one that registers under another account moves there, never twice', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
-    await link.registration({ githubUserId: ADA, installId: OTHER, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
+    await registerAs(s, link, ADA, OTHER, t0);
     expect((await instances(s, 'ada-session')).map((i) => i.installId).sort()).toEqual([OTHER, INSTANCE]);
     expect(await kinds(s, ADA)).toEqual(['instance_registered', 'instance_registered']);
 
-    await link.registration({ githubUserId: GRACE, installId: INSTANCE, answer: registered, now: later(1000) });
+    await registerAs(s, link, GRACE, INSTANCE, later(1000));
     expect((await instances(s, 'ada-session')).map((i) => i.installId)).toEqual([OTHER]);
     expect((await instances(s, 'grace-session')).map((i) => i.installId)).toEqual([INSTANCE]);
     expect(await kinds(s, ADA)).toEqual(['instance_moved', 'instance_registered', 'instance_registered']);
@@ -62,26 +61,26 @@ describe("a hopper.io account's instances", () => {
   it('keeps the last-seen time at a hello of a registered instance, and keeps the name when it registers again', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
     expect((await instances(s, 'ada-session'))[0]).toEqual({ installId: INSTANCE, registeredAt: t0.toISOString() });
 
     await link.hello({ installId: INSTANCE, account: 'ada', now: later(5000) });
     await link.hello({ installId: '1111222233334444', account: 'ada', now: later(5000) });
     expect(await post(s, `/account/instances/${INSTANCE}/name`, 'ada-session', 'name=Kitchen+box')).toMatchObject({ statusCode: 303 });
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: later(6000) });
+    await registerAs(s, link, ADA, INSTANCE, later(6000));
     expect((await instances(s, 'ada-session'))[0]).toEqual({
       installId: INSTANCE, name: 'Kitchen box', registeredAt: t0.toISOString(), seenAt: later(5000).toISOString(),
     });
     expect(await kinds(s, ADA)).toEqual(['instance_renamed', 'instance_registered']);
 
-    await link.registration({ githubUserId: GRACE, installId: INSTANCE, answer: registered, now: later(7000) });
+    await registerAs(s, link, GRACE, INSTANCE, later(7000));
     expect((await instances(s, 'grace-session'))[0]).toEqual({ installId: INSTANCE, registeredAt: later(7000).toISOString() });
   });
 
   it('lists only the signed-in account\'s instances, and nothing without a session', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: GRACE, installId: OTHER, answer: registered, now: t0 });
+    await registerAs(s, link, GRACE, OTHER, t0);
     expect(await instances(s, 'ada-session')).toEqual([]);
     expect((await s.server.inject({ method: 'GET', url: '/api/account/instances' })).statusCode).toBe(401);
   });
@@ -89,8 +88,8 @@ describe("a hopper.io account's instances", () => {
   it('names only its own instance, with a name of 1 to 64 characters and no control character, from hopper.io itself', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
-    await link.registration({ githubUserId: GRACE, installId: OTHER, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
+    await registerAs(s, link, GRACE, OTHER, t0);
 
     expect((await post(s, `/account/instances/${OTHER}/name`, 'ada-session', 'name=Mine')).statusCode).toBe(404);
     expect((await post(s, `/account/instances/${INSTANCE}/name`, 'ada-session', `name=${'x'.repeat(65)}`)).statusCode).toBe(400);
@@ -110,8 +109,8 @@ describe("a hopper.io account's instances", () => {
   it('removes its own instance at hopper.io; the next hello is answered unregister', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
-    await link.registration({ githubUserId: GRACE, installId: OTHER, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
+    await registerAs(s, link, GRACE, OTHER, t0);
 
     expect((await post(s, `/account/instances/${OTHER}/remove`, 'ada-session')).statusCode).toBe(404);
     expect((await post(s, `/account/instances/${INSTANCE}/remove`, 'ada-session', '', 'https://elsewhere.example')).statusCode).toBe(403);
@@ -127,8 +126,8 @@ describe("a hopper.io account's instances", () => {
   it("removes the registration at the instance's unlink notice, and only the instance's own", async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
-    await link.registration({ githubUserId: GRACE, installId: OTHER, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
+    await registerAs(s, link, GRACE, OTHER, t0);
     const notice = (installId: string, account: string) => JSON.stringify({ type: 'unlinked', installId, account });
 
     for (const [installId, text] of [
@@ -150,7 +149,7 @@ describe("a hopper.io account's instances", () => {
   it('shows the instances on the page, the name escaped', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
     await post(s, `/account/instances/${INSTANCE}/name`, 'ada-session', `name=${encodeURIComponent('<b>box</b>')}`);
     const home = await s.server.inject({ method: 'GET', url: '/', headers: cookie('ada-session') });
     expect(home.body).toContain(INSTANCE);

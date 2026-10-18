@@ -16,7 +16,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCloudLinkAnswers } from '../../cloud/link.ts';
 import { TOMBSTONE_MS } from '../../cloud/store.ts';
-import { rows, setUp, stopAll, type Set } from './harness.ts';
+import { registerAs, rows, setUp, stopAll, type Set } from './harness.ts';
 
 afterEach(stopAll);
 
@@ -28,20 +28,19 @@ const t0 = new Date('2026-10-17T12:00:00Z');
 const later = (ms: number) => new Date(t0.getTime() + ms);
 /** The rows of one table, by its place in rows(): 4 registration, 5 registration_tombstone. */
 const table = async (s: Set, i: number) => (JSON.parse(await rows(s.databaseUrl)) as { r: Record<string, unknown> }[][])[i]!.map((x) => x.r);
-const registered = JSON.stringify({ type: 'registration', outcome: 'registered' });
 
 async function withAccounts(s: Set) {
   await s.store.signedIn({ githubUserId: ADA, login: 'ada' });
   await s.store.signedIn({ githubUserId: GRACE, login: 'grace' });
-  return createCloudLinkAnswers({ store: s.store });
+  return createCloudLinkAnswers({ store: s.store, requests: s.requests });
 }
 
 describe("hopper.io's registrations", () => {
   it('keeps an instance that answers registered, once', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    expect(await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 })).toBe(true);
-    expect(await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: later(1000) })).toBe(true);
+    expect(await registerAs(s, link, ADA, INSTANCE, t0)).toBe(true);
+    expect(await registerAs(s, link, ADA, INSTANCE, later(1000))).toBe(true);
     const kept = await table(s, 4);
     expect(kept).toHaveLength(1);
     expect(kept[0]).toMatchObject({ install_id: INSTANCE, account_id: Number(ADA) });
@@ -56,16 +55,16 @@ describe("hopper.io's registrations", () => {
       JSON.stringify({ type: 'unregistration', outcome: 'unregistered' }),
       'not json',
       JSON.stringify({ type: 'registration', outcome: 'registered', pad: 'x'.repeat(2000) }),
-    ]) expect(await link.registration({ githubUserId: ADA, installId: INSTANCE, answer, now: t0 })).toBe(false);
-    expect(await link.registration({ githubUserId: ADA, installId: 'not an id', answer: registered, now: t0 })).toBe(false);
+    ]) expect(await registerAs(s, link, ADA, INSTANCE, t0, answer)).toBe(false);
+    expect(await registerAs(s, link, ADA, 'not an id', t0)).toBe(false);
     expect(await table(s, 4)).toEqual([]);
   });
 
   it("after the account's deletion, tells the instance at its next hello, and keeps nothing of the account", async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
-    await link.registration({ githubUserId: GRACE, installId: OTHER, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
+    await registerAs(s, link, GRACE, OTHER, t0);
     expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(1000) })).toBeUndefined();
 
     await s.store.deleteAccount(ADA, later(2000));
@@ -87,11 +86,11 @@ describe("hopper.io's registrations", () => {
   it('deletes a tombstone older than TOMBSTONE_MS at the next write; the hello then gets no answer', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
     await s.store.deleteAccount(ADA, t0);
     expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(TOMBSTONE_MS + 1) })).toBeUndefined();
 
-    await link.registration({ githubUserId: GRACE, installId: OTHER, answer: registered, now: later(TOMBSTONE_MS + 1) });
+    await registerAs(s, link, GRACE, OTHER, later(TOMBSTONE_MS + 1));
     await s.store.deleteAccount(GRACE, later(TOMBSTONE_MS + 1));
     expect((await table(s, 5)).map((r) => r.install_id)).toEqual([OTHER]);
   });
@@ -99,9 +98,9 @@ describe("hopper.io's registrations", () => {
   it('drops the tombstone when the instance registers again, under another account', async () => {
     const s = await setUp();
     const link = await withAccounts(s);
-    await link.registration({ githubUserId: ADA, installId: INSTANCE, answer: registered, now: t0 });
+    await registerAs(s, link, ADA, INSTANCE, t0);
     await s.store.deleteAccount(ADA, later(1000));
-    await link.registration({ githubUserId: GRACE, installId: INSTANCE, answer: registered, now: later(2000) });
+    await registerAs(s, link, GRACE, INSTANCE, later(2000));
     expect(await link.hello({ installId: INSTANCE, account: 'grace', now: later(3000) })).toBeUndefined();
     expect(await table(s, 5)).toEqual([]);
   });
