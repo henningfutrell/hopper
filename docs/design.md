@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it, and for a job's done criteria a pipeline's jobs, a job's log, a merge request's notes and changed files and a commit's time (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), a GitLab job's done criteria on its merge request (`done-criteria.ts`, issue #1924 part 4), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
-| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), a write a crash left found by its post key and the proxy's kill points (`resend.ts`, issue #1959 part 2, "The GitHub proxy under crashes"), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
@@ -14514,8 +14514,8 @@ one) it sends the same request again with the same key, up to 5 times. The hoppe
 `github_proxy.done`; a request of the same job with a key already done is answered that first answer again (`replayed:
 true`, the first `requestId`, the lineage as its events say), recorded as `github_proxy.done` with `replayed`, and nothing
 reaches GitHub. While the first is still at GitHub, the second waits for its answer. A new command is a new key, so the
-same text sent twice on purpose is two comments. Not covered: the hopper stopping after GitHub made the issue and before
-it recorded `github_proxy.done`.
+same text sent twice on purpose is two comments. The hopper stopping after GitHub made the issue and before it recorded
+`github_proxy.done`: the post key finds it (issue #1959 part 2, "The GitHub proxy under crashes").
 
 **Audit.** Every outcome but a token that names no job is an event on the job's timeline: `github_proxy.done` (`op`,
 `repo`, `number`, `url`), `github_proxy.refused` (`reason`) or `github_proxy.failed` (`error`), each with `requestId`,
@@ -28599,6 +28599,58 @@ give-back rows under a kill (the sync loop's acts); a randomised run over the ou
 **Verification:** `test/store/github-outbox.test.ts` (a claim takes each row once, a claim that ended is taken again, a
 failed row never); `test/sources/github-outbox-comment-once.test.ts` (a comment left `sending` is sent once its claim
 ends; two outboxes on one store); `test/crash/outbox-kill.test.ts`; `test/integration/github-outbox-faults.test.ts`.
+
+## The GitHub proxy under crashes (issue #1959, part 2, 2026-10-18)
+
+**Why.** Part 1 proved the GitHub outbox under kills and faults. A job's own writes go another way: through the GitHub proxy
+("GitHub through the hopper"). The resend key (issue #1607) answers a request sent again from its `github_proxy.done`. A
+hopper killed after GitHub made the issue or the comment, and before it recorded that event, left nothing to answer from:
+the same request sent again to the next hopper made the issue or the comment a second time. The new crash test shows it on
+the code before this change: an issue, a required child and a comment made twice.
+
+**The change** (`src/github-proxy/resend.ts`, the broker). A write with a resend key (`issue.create`, `issue.comment`):
+- is recorded `github_proxy.sending` (`op`, `repo`, `number`, `key`) before its call;
+- ends with a **post key** (`src/domain/post-key.ts`, "Posted once"): `proxy-` and 24 hex characters of a hash of the resend
+  key and its scope, the job's issue (a fan-out key is the issue's, issue #1909), else the job;
+- sent again with a key that was sending before and has no answer recorded, is looked for on GitHub first
+  (`ProxyApi.find`), from an hour before that first send: the issues the job's account made (`creator`, `state=all`), or
+  the comments on the issue. Found, it is answered (`found: true` on the answer and on `github_proxy.done`), and a required
+  child is linked as a sub-issue unless it is one already. Not found, it is made.
+
+An edit, a close or a ready of a pull request has no key: it is the same change when made twice. A sub-issue link is
+checked before it is made.
+
+**Kill points** (`proxyKillPoint`): `proxy:<op>:before-send` before each write's call, `proxy:<op>:after-send` once GitHub
+answered it, before `github_proxy.done` is recorded, and `proxy:issue.create:before-link` between a required child and its
+sub-issue link.
+
+**The crash tests** (`test/crash/proxy-kill.test.ts`, `test/crash/proxy-world.ts`). A host runs a job of issue #7 that
+sleeps on the local machine (`CRASH_JOB`); the test asks the proxy as the job does, with its proxy token. For each write — a
+follow-up issue, a required child, a comment, a pull request's edit, close and ready — and each kill point, the first host
+is killed. The same request, with the same resend key, goes to a second host on the same database. GitHub then holds each
+effect once: one issue, linked once, labelled and assigned as a routed child; one comment; the edit, the close, the ready;
+and `github_proxy.done` is recorded once. The fake GitHub is `test/support/fake-forges.ts`, in the test process.
+
+**The fault test** (`test/integration/proxy-resend.test.ts`). GitHub makes the issue or the comment and then answers 502;
+the job sends the same `--key` again: it is found, made once.
+
+**Decisions.**
+- **An event, not a table.** The intent is one event on the job's timeline, as the answer is. The look-up reads the
+  newest 1000 `github_proxy.sending` events, as the replay reads `github_proxy.done`.
+- **A look-up only after a send with no answer.** A first send costs GitHub nothing more. Only a key seen sending before
+  pays a list read.
+- **The post key hashes the resend key.** A job may choose its key (`--key`); the hash keeps it, and the job's issue, off
+  GitHub.
+
+**Residual risk, stated.** As in "Posted once": a call GitHub finishes only after the look-up found nothing makes a second
+one. A routed child whose assignee GitHub dropped, and whose second assign a kill stopped, is found unassigned.
+
+**Left for later parts.** A person's Merge now, Close PR and give-back rows under a kill (the sync loop's acts); a pull
+request a job opens (`pr.create`, no resend key: GitHub refuses a second one from the same head); a randomised run over
+the outbox's and the proxy's kill points.
+
+**Verification:** `test/crash/proxy-kill.test.ts` (13 scenarios; with the look-up turned off, the four after-send and
+before-link cases of an issue and a comment fail); `test/integration/proxy-resend.test.ts`.
 
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
