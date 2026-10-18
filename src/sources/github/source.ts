@@ -251,7 +251,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         const v = verdicts.get(issue.url);
         if (v && 'request' in v) { requests.set(issue.url, v.request); continue; }
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), assignee);
-        items.push(v ? { ...item, origin: v.origin } : item);
+        items.push(v ? { ...item, origin: v.origin, originActs: v.acts } : item);
       }
       // A card a rule approves (issue #1268) is the hopper's approval, no card: the next sync takes it.
       const autos = await approvals.auto(requests, [...taken, ...found.seen]); next = next.map((x) => autoOutcome(x, autos.get(x.key)) ?? requestOutcome(x, requests.get(x.key), o.trust));

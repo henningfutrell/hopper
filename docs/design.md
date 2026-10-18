@@ -16943,7 +16943,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 13, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 14, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17304,8 +17304,27 @@ which only a template request makes (issue #716), and the hopper never narrows o
 a reason that says what to ask for. Persisted state: none — requests are kept in memory, and `deny:jev` is one more reason
 id, which the build before verifies (its MAC covers the reasons) and reads as any other.
 
-**Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
-`intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at the skill broker
+**Origin acts kept with the job** (part 14, `JobSourceRef.originActs`). The issue: "Provenance (captured at intake, stored
+with the snapshot)": the author, the nominator, and the timeline events that matter, each with its actor and `via_app`. The
+hopper already reads these to judge a job's origin (issue #652, "Trusted origin and request cards": the issue's author, and
+the newest `labeled` and `assigned` events from its events; on GitLab also who edited it), and before this part it kept only
+the verdict. Now a job of a trusted origin or of an approved request card keeps its item's **origin acts** as read then: each
+act's `role` (`author`, `labelled`, `assigned`, `edited`), `login` and GitHub or GitLab user `id` when known, `app` (an app or
+bot it was done through, `performed_via_github_app`), and `trusted` (a trusted actor did it, not through an app). A job of an
+approved card keeps the acts no trusted actor did too, so a person sees why it needed an approval.
+
+- Run again and Rework keep the acts of the job they follow, as they keep its origin; a job queued before origins were
+  judged gets them with its origin (`job.origin_judged`).
+- **Shown**: the stamp view (`originActs`, null when none is kept; `hopper job stamp`), the job view (a line `origin`,
+  each act not a trusted actor's marked), and `job.queued`'s `source`.
+- **Jev reads them**: Jev's trust check (part 4) gets them in `source.originActs`, as the issue's "plus the provenance facts".
+- **No rule reads them**: the stamp's level still comes from the job origin and the author (`ruleCeiling`). The acts are a
+  record of what the origin was judged from, not a second judge.
+- Persisted state: one optional field on the job's source. A job made before this part has none, and the build before reads
+  a job with them as before. No migration.
+
+**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the edit count,
+the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at the skill broker
 (the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a

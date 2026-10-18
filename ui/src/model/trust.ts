@@ -66,3 +66,19 @@ export function trustCheckText(job: Pick<Job, 'stamp'>): string | undefined {
 
 /** Whether the job view offers Approve trust: a job that has not ended that Jev's trust check, a deny or an edit lowered below approved. */
 export const trustApprovalOffered = (job: Pick<Job, 'status' | 'stamp'>): boolean => quarantineOffered(job) && trustCheckText(job) !== undefined;
+
+type OriginAct = NonNullable<NonNullable<Job['source']>['originActs']>[number];
+
+const ROLE_TEXT: Record<OriginAct['role'], string> = { author: 'written', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
+const DID_TEXT: Record<OriginAct['role'], string> = { author: 'wrote', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
+
+/**
+ * The job's origin acts (part 14) in plain words: who wrote, labelled and assigned its item, through which app, and whether
+ * a trusted actor did each (src/domain/intake-origin.ts). None: the job keeps none.
+ */
+export function originActLines(job: Pick<Job, 'source'>): { text: string; trusted: boolean }[] {
+  return (job.source?.originActs ?? []).map((a) => ({
+    text: a.login ? `${ROLE_TEXT[a.role]} by ${a.login}${a.app ? ` through ${a.app}` : ''}` : `who ${DID_TEXT[a.role]} it is not known`,
+    trusted: a.trusted,
+  }));
+}
