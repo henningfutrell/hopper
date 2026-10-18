@@ -270,6 +270,11 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     hopper.io, never sent by the instance (R5), and escaped on the page (T3). A removal leaves a tombstone (R1: the instance
     takes `unregister`, which changes its registration only). The instance's unlink notice removes only the registration of
     the instance on whose connection it came, under the account it names. R6: each is a hopper.io record.
+  - R3: **registration requests** (issue #465 part 7, `docs/design.md` "Registration requests at hopper.io"): the owner
+    enters the instance id with the code. hopper.io gives the code as `register` only to that instance while its link names
+    the owner's account, and keeps a registration only for the instance's `registered` answer to that request, under the
+    account whose owner entered the code. R4: the code is kept in memory only, 10 minutes at most, never in the store; R7:
+    at most 10 open requests per account, the sign-in limit per address.
   - Not yet: the R6 records of the cloud link and remote actions at hopper.io (with #464),
     and the connection that carries the registration messages and the hello (#464).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
