@@ -29,7 +29,7 @@ describe('Intake names each issue\'s repository (issue #1463)', () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     const why = group(view()!, 'not-assigned').querySelector('[data-intake-group-why]')!;
-    expect(why.textContent).toBe('Intake takes a labelled issue only when it is assigned to you. Nothing works on these issues until you assign them to you.');
+    expect(why.textContent).toBe('Intake takes a labelled issue only when it is assigned to you, or when you comment /hopper run on it. Nothing works on these issues until you do.');
   });
 
   it('with issues of one repository there is no repository filter', async () => {

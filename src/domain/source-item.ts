@@ -4,6 +4,7 @@ import type { ItemComment, ItemEdit, ItemText } from './item-snapshots.ts';
 import type { Parts } from './types.ts';
 import type { JobOrigin, OriginActor } from './intake-origin.ts';
 import type { LinkedPullRequest, RepoVisibility } from './linked-pulls.ts';
+import type { ReviewKind } from './review.ts';
 
 /** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
 export interface SourceItem {
@@ -32,6 +33,8 @@ export interface SourceItem {
   number?: number;
   /** Its declared parts and how many are done (issue #729); absent: it declares none. */
   parts?: Parts;
+  /** What its account's comment command asks the job for beside the work (issue #655 part 21); absent: nothing. */
+  asks?: ReviewKind[];
   /** Executor for the job (from source config), and an optional model. */
   executor: string;
   model?: string;

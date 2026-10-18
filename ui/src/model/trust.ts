@@ -70,8 +70,8 @@ export const trustApprovalOffered = (job: Pick<Job, 'status' | 'stamp'>): boolea
 
 type OriginAct = NonNullable<NonNullable<Job['source']>['originActs']>[number];
 
-const ROLE_TEXT: Record<OriginAct['role'], string> = { author: 'written', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
-const DID_TEXT: Record<OriginAct['role'], string> = { author: 'wrote', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
+const ROLE_TEXT: Record<OriginAct['role'], string> = { author: 'written', labelled: 'labelled', assigned: 'assigned', edited: 'edited', nominated: 'nominated' };
+const DID_TEXT: Record<OriginAct['role'], string> = { author: 'wrote', labelled: 'labelled', assigned: 'assigned', edited: 'edited', nominated: 'nominated' };
 
 /**
  * The job's origin acts (part 14) in plain words: who wrote, labelled and assigned its item, through which app, and whether

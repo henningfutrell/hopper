@@ -16985,7 +16985,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 20, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 21, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17512,8 +17512,34 @@ but Intake listed only a source's items, not the jobs a stamp holds. Now Intake 
 
 No route, no event, no persisted state: the daemon already sends each held job with its hold reason and stamp.
 
-**Not in these parts** (left on the issue): the nomination by a comment command. Brake 1's `open` lets a
-`screened` job start; only Jev's check gives that level now.
+**The comment command** (part 21, `src/domain/comment-command.ts`; `nominated` in `src/sources/github/discover.ts`,
+`nominatedAct` in `src/sources/github/origin.ts`). The issue's Decision N, recommended N1 + N3: the assignment, and "a comment
+command `/hopper run|research|propose`". Before this part only the assignment nominated an issue. Now:
+
+- **What a command is**: a comment whose first line that is not empty is `/hopper run`, `/hopper research` or `/hopper
+  propose` (any case, nothing more on the line). A quote, a code span or words after the verb are no command.
+- **Whose command counts**: only the source's connected account's, the login an issue must be assigned to, and only its
+  newest command on the issue. A command whose comment was edited since it was written (`updated_at` is not `created_at`,
+  or not known) is none: a collaborator who can edit a comment could have written it.
+- **It nominates** a labelled issue not assigned to the account: discover reads the comments of each such issue (one read,
+  kept with the listing as a job's reads are, issue #985) and takes it as an assigned one. Its origin has the act
+  `nominated` (the command's writer, and the app it was written through) in place of `assigned`, judged as every act: through
+  an app (`performed_via_github_app`, the Cursor case of the issue) it is no trusted act, and the issue is a request card
+  (`nominated by an app or a bot (<app>)`). The author, the label and the edits are judged as before. After a rejection,
+  only a command written since takes the issue again, as only an assignment since does.
+- **It asks for the kind**, on an assigned issue too: `research` and `propose` set the job's research or proposal flag at
+  its start, as the label `hopper:research` or a Research heading does (issue #543). `run` asks for the work.
+- **No job writes one**: the GitHub proxy refuses a job's comment that is a command (`JOB_COMMAND`, `checkRequest`), so a
+  job cannot nominate an issue in the user's name. A connection through the hopper's app marks a job's comment with the app
+  anyway; a connection by token does not, so the refusal is the guard.
+- The job keeps the act in its origin acts (part 14): the stamp view, the job view and Jev's trust check show it.
+
+Cost: one comments read per labelled issue not assigned to the account, read again only when the listing shows the issue
+changed. Persisted state: `nominated` is one more origin act role in the job's source and in `job.queued`,
+`source.request_approved` and `source.request_auto_approved`; the build before reads a job with it and shows the role as it
+is. No migration. Not in this part: N2 (watched repositories) and N4 (a Projects field), which the issue does not recommend.
+
+Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

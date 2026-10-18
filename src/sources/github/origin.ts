@@ -1,7 +1,8 @@
 // An issue's origin at intake (issue #652, domain/intake-origin.ts): who wrote it, and who added the label and the
 // assignment the hopper takes it by — the newest of each, from its events —, and who edited its title or body (issue
 // #655 part 17, as on GitLab). Each act counts only when a trusted actor did it, not through an app or as a bot; this
-// hopper's own Assign to me is the user's act. An issue that may be taken also gets its links (part 19): its repository's
+// hopper's own Assign to me is the user's act. An issue a comment command nominated (part 21) has that command as its
+// `nominated` act in place of the assignment: by the account, through an app or not. An issue that may be taken also gets its links (part 19): its repository's
 // visibility and the pull requests its text names, which its job keeps and no rule reads. An issue a job filed is never of
 // a trusted origin. Not trusted: the text a person approved, when its title and body hash the same, makes it approved;
 // else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies;
@@ -14,6 +15,7 @@
 import {
   FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type ItemHistory, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
+import type { CommentCommand } from '../../domain/comment-command.ts';
 import type { IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { linkedRefs, type LinkedItem, type LinkedPullRequest, type RepoVisibility } from '../../domain/linked-pulls.ts';
@@ -147,10 +149,21 @@ export async function linksOf(api: GitHubApi, trust: IntakeTrust, issues: GitHub
   return links;
 }
 
-/** The origin of each issue, by its URL: the trusted actors asked once for every login the issues name. */
-export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitHubIssue[], label: string, connected: string): Promise<Map<string, OriginVerdict>> {
+/** The act of a comment command (issue #655 part 21): its writer, and the app it was written through. */
+export const nominatedAct = (c: CommentCommand): Act => ({ role: 'nominated', login: c.login, ...(c.app ? { app: c.app } : {}) });
+
+/**
+ * The origin of each issue, by its URL: the trusted actors asked once for every login the issues name. An issue in
+ * `nominated` has its command's act in place of the assignment's.
+ */
+export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitHubIssue[], label: string, connected: string,
+  nominated: ReadonlyMap<string, CommentCommand> = new Map()): Promise<Map<string, OriginVerdict>> {
   const acts = new Map<string, Act[]>();
-  for (const i of issues) acts.set(i.url, [...originActs(i, await eventsOf(api, i), label, connected, trust.assignedHere(i.url)), ...await editsOf(api, i)]);
+  for (const i of issues) {
+    const command = nominated.get(i.url);
+    const own = originActs(i, await eventsOf(api, i), label, connected, trust.assignedHere(i.url)).map((a) => (command && a.role === 'assigned' ? nominatedAct(command) : a));
+    acts.set(i.url, [...own, ...await editsOf(api, i)]);
+  }
   const asked = new Map<string, ActorRef>();
   for (const a of [...acts.values()].flat()) if (!a.app && a.login && !asked.has(a.login.toLowerCase())) asked.set(a.login.toLowerCase(), { login: a.login.toLowerCase(), ...(a.id !== undefined ? { id: a.id } : {}) });
   const answers = asked.size > 0 ? await trust.trusted([...asked.values()], connected) : new Map();

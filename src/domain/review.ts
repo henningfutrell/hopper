@@ -313,11 +313,12 @@ const headingOf = (line: string): string | undefined => /^\s{0,3}#{1,6}\s+(.+?)\
 
 /**
  * What a source item asks for (issue #543): a section's label, or a heading of that section in its body (the layout
- * of issue #542: `## Proposal`, `## Research`, `## Special jobs`), in the order the job does them.
+ * of issue #542: `## Proposal`, `## Research`, `## Special jobs`), or `more` (a comment command, issue #655 part 21), in
+ * the order the job does them.
  */
-export function asksOf(labels: readonly string[], body: string): ReviewKind[] {
+export function asksOf(labels: readonly string[], body: string, more: readonly ReviewKind[] = []): ReviewKind[] {
   const headings = new Set(body.split('\n').map(headingOf).filter((h): h is string => h !== undefined));
-  return REVIEW_KINDS.filter((k) => labels.includes(REVIEW_SECTIONS[k].label) || headings.has(REVIEW_SECTIONS[k].heading));
+  return REVIEW_KINDS.filter((k) => labels.includes(REVIEW_SECTIONS[k].label) || headings.has(REVIEW_SECTIONS[k].heading) || more.includes(k));
 }
 
 function labelMap(kind: ReviewKind): Map<string, string> {

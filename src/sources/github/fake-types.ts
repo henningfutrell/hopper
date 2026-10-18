@@ -18,8 +18,8 @@ export interface FakeGitHub extends GitHubApi {
   unassign(repo: string, number: number, login: string): void;
   /** A repository GitHub does not answer for in a repository listing (issue #985), with GitHub's message; undefined answers again. */
   failRepo(repo: string, message: string | undefined): void;
-  /** A comment by `author`; `association`: GitHub's `author_association` of it (issue #435), absent: none told. */
-  addComment(repo: string, number: number, author: string, body: string, association?: string): GitHubComment;
+  /** A comment by `author`; `association`: GitHub's `author_association` of it (issue #435), absent: none told; `viaApp`: the app it was written through (issue #655 part 21). */
+  addComment(repo: string, number: number, author: string, body: string, association?: string, viaApp?: string): GitHubComment;
   /** A `reopened` event by `by` on the issue's timeline (issue #1268); its state is left as it is. */
   reopenedBy(repo: string, number: number, by: FakeActor): void;
   /** Edit the issue's title or body as `editor`, at `at` (default now), kept on its timeline (issue #662); its `updatedAt` becomes `at`. */

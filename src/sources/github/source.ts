@@ -14,6 +14,7 @@
 // while its listing shows no change (`listed-reads.ts`); every other read — before a write — goes to GitHub.
 // Beside intake, a connected account's source reads the user's **tagged items** (issue #1141, `tagged.ts`).
 
+import { commandAsks, commandOf } from '../../domain/comment-command.ts';
 import type { IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
 import type { GitHubListingRepository } from '../../domain/github-listing.ts';
@@ -144,6 +145,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     const unread = known.has(issue.url) && !rerun.has(issue.url) && config.recentComments !== 0;
     const comments = unread || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
     const seen = contextComments(comments, assignee, config.recentComments);
+    // The account's comment command (issue #655 part 21): `research` or `propose` asks the job for that kind.
+    const asks = assignee === undefined ? [] : commandAsks(commandOf(comments, assignee)?.verb ?? 'run');
     const untrusted = untrustedBlock(issue, seen, config.recentComments);
     const parts = await issueParts(issue);
     const context = contextBlock(issue, p, o.yoloMode?.(issue.repo) ?? false, parts);
@@ -152,7 +155,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
       prompt: issuePrompt(untrusted, context), env: issueEnv(issue),
       author: issue.author, ...(assignee !== undefined ? { assignee } : {}), priority: p.priority, priorityReason: p.reason,
-      labels: issue.labels, repo: issue.repo, number: issue.number, ...(parts ? { parts } : {}),
+      labels: issue.labels, repo: issue.repo, number: issue.number, ...(parts ? { parts } : {}), ...(asks.length ? { asks } : {}),
       executor: config.executor,
       ...(config.model ? { model: config.model } : {}),
       ...(issue.body.trim() === '' ? { invalid: 'empty issue body' } : {}),
@@ -244,7 +247,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       // An issue whose job has not ended keeps it, unless that job waits for its origin (the backfill); any other is judged
       // by its origin (issue #652).
       const judged = taken.filter((i) => !waits.waiting.has(i.url) && (!known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url)));
-      const verdicts = await originsOf(api, o.trust, judged, config.label, assignee);
+      const verdicts = await originsOf(api, o.trust, judged, config.label, assignee, found.nominated);
       const requests = await reopenedRequests(api, found.seen, next, o.rerunnable, intake);
       const items: SourceItem[] = [];
       for (const issue of taken.filter((i) => !waits.waiting.has(i.url))) {

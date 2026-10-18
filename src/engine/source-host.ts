@@ -87,8 +87,9 @@ function specFor(item: SourceItem, source: { name: string }, priority: number, r
     executor: f.executor, payload: { prompt: item.prompt, body: item.body, env: item.env }, priority, goal: item.title,
     submittedBy: `${source.name}:${item.author}`, kind: 'coding',
     // Labelled hopper:research or hopper:proposal, or with a Research or Proposal heading in its body (issues #537,
-    // #543; the layout of #542): the job is asked for the research or the proposal, not the work — research first.
-    ...Object.fromEntries(asksOf(item.labels, item.body ?? '').map((k) => [REVIEW_SECTIONS[k].specFlag, true as const])),
+    // #543; the layout of #542), or by its account's comment command (issue #655 part 21): the job is asked for the
+    // research or the proposal, not the work — research first.
+    ...Object.fromEntries(asksOf(item.labels, item.body ?? '', item.asks).map((k) => [REVIEW_SECTIONS[k].specFlag, true as const])),
     // Labelled hopper:specialty (issue #762): it may elbow in past a machine's lane cap; no other job may.
     ...(item.labels.includes(SPECIALTY_LABEL) ? { specialty: true as const } : {}),
   };
