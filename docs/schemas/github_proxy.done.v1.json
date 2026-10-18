@@ -78,6 +78,10 @@
         "replayed": {
           "type": "boolean",
           "const": true
+        },
+        "found": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [

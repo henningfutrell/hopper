@@ -31,6 +31,10 @@ export interface CrashHost {
   ui(path: string, body: unknown): Promise<{ status: number; body: unknown }>;
   /** GET as the admin. */
   get<T>(path: string): Promise<T>;
+  /** The job the host pulled (`HostOptions.job`) and its proxy token: what the job asks the GitHub proxy with. */
+  job?: { id: string; proxyToken: string };
+  /** A GitHub proxy request as hopper-gh sends it (form fields, the job's proxy token); a host killed meanwhile answers status 0. */
+  proxy(fields: Record<string, string>, proxyToken?: string): Promise<{ status: number; body: Record<string, unknown> | undefined }>;
   /** Ends the process with SIGKILL, wherever it is. */
   kill(): Promise<Exit>;
 }
@@ -46,6 +50,8 @@ export interface HostOptions {
   connectGitHub?: string[];
   /** The kill point to end this host at. */
   killPoint?: string;
+  /** `owner/name#N`: the host pulls a job of that issue, which runs on and asks the GitHub proxy (issue #1959). */
+  job?: string;
   /** How far this host's clock is ahead of the real time (behind, when negative), as a machine's clock that is off. */
   clockSkewMs?: number;
 }
@@ -62,7 +68,7 @@ export function startHost(o: HostOptions): Promise<CrashHost> {
       CRASH_MASTER_KEY: MASTER_KEY,
       ...(o.fakes.cloudflare ? { CRASH_CLOUDFLARE_URL: o.fakes.cloudflare } : {}), ...(o.fakes.ngrok ? { CRASH_NGROK_URL: o.fakes.ngrok } : {}),
       ...(o.fakes.github ? { CRASH_GITHUB_URL: o.fakes.github } : {}), ...(o.connectGitHub ? { CRASH_GITHUB_CONNECT: o.connectGitHub.join(',') } : {}),
-      ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}),
+      ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}), ...(o.job ? { CRASH_JOB: o.job } : {}),
       ...(o.clockSkewMs ? { CRASH_CLOCK_SKEW_MS: String(o.clockSkewMs) } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -80,15 +86,24 @@ export function startHost(o: HostOptions): Promise<CrashHost> {
       if (!line) return;
       stdout = '';
       clearTimeout(timer);
-      const { url, token } = JSON.parse(line.slice(READY.length)) as { url: string; token: string };
+      const { url, token, job, proxyToken } = JSON.parse(line.slice(READY.length)) as { url: string; token: string; job?: string; proxyToken?: string };
       const headers = { 'content-type': 'application/json', origin: url, 'x-hopper-session': token };
       resolve({
-        url, token, exited, stderr: () => stderr,
+        url, token, exited, stderr: () => stderr, ...(job && proxyToken ? { job: { id: job, proxyToken } } : {}),
         kill: () => { child.kill('SIGKILL'); return exited; },
         ui: async (path, body) => {
           try {
             const r = await rawRequest(url, { method: 'POST', path, headers, body: JSON.stringify(body) });
             return { status: r.status, body: r.text ? JSON.parse(r.text) as unknown : undefined };
+          } catch { return { status: 0, body: undefined }; }
+        },
+        proxy: async (fields, as = proxyToken) => {
+          try {
+            const r = await rawRequest(url, {
+              method: 'POST', path: '/job/github', body: new URLSearchParams(fields).toString(),
+              headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Bearer ${as ?? ''}` },
+            });
+            return { status: r.status, body: r.text ? JSON.parse(r.text) as Record<string, unknown> : undefined };
           } catch { return { status: 0, body: undefined }; }
         },
         get: async <T>(path: string) => {

@@ -37,7 +37,7 @@ import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from 
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
   createProxyApi, type ProxyApi, holdsProxyToken, isPullRequest, itemOf, knownPullRequest, type KnownPullRequest, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
-  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser, createSubIssueLinker, createSubIssueLinks, replayOfIssue, type SubIssueLinks, PUSH_EVENTS,
+  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser, createSubIssueLinker, createSubIssueLinks, replayOfIssue, sendingSince, type SubIssueLinks, PUSH_EVENTS,
 } from '../github-proxy/index.ts';
 
 /** No AI connection (issue #471): File an issue says so, and drafts nothing. */
@@ -209,6 +209,11 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     replay: (jobId, key) => {
       const issue = o.store.jobs.get(jobId)?.source?.key;
       return replayOfIssue(o.store.events, jobId, key, (other) => issue !== undefined && o.store.jobs.get(other)?.source?.key === issue);
+    },
+    // A send a crash left with no answer (issue #1959 part 2), of the same scope as the replay's.
+    sending: (jobId, key) => {
+      const issue = o.store.jobs.get(jobId)?.source?.key;
+      return sendingSince(o.store.events, jobId, key, (other) => issue !== undefined && o.store.jobs.get(other)?.source?.key === issue);
     },
   };
   /** Where a GitLab job's git goes (issue #1448 part 3): its user's GitLab, rewritten to the hopper's GitLab git route. */

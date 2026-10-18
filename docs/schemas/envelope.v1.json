@@ -208,6 +208,7 @@
         "github_proxy.done",
         "github_proxy.refused",
         "github_proxy.failed",
+        "github_proxy.sending",
         "gitlab_proxy.done",
         "gitlab_proxy.refused",
         "gitlab_proxy.failed",

@@ -1,0 +1,1 @@
+- When the hopper restarts while a job files an issue or posts a comment, the job's issue or comment appears on GitHub once, not twice.

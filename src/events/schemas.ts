@@ -368,15 +368,17 @@ export const EVENT_SCHEMAS = {
   // forked (issue #429): its url, no number; a fork names the fork. A read (a repo query, issue #1074): its `source`; `hopper`
   // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on
   // the job's stream, or `settled` or `none`. A poll (issue #1210): `poll`, how many times the job asked the same read in the window.
-  // An issue create or comment (issue #1607): `key`, the resend key hopper-gh sent with it. A direct push (issue #1806): `direct`, the refs it moved straight on the target branch.
+  // An issue create or comment (issue #1607): `key`, the resend key hopper-gh sent with it; `found` (issue #1959 part 2): found
+  // on GitHub by its post key, made by a send before. A direct push (issue #1806): `direct`, the refs it moved straight on the target branch.
   'github_proxy.done': z.union([
-    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional(), key: z.string().optional(), replayed: z.literal(true).optional() }),
+    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional(), key: z.string().optional(), replayed: z.literal(true).optional(), found: z.literal(true).optional() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()), direct: z.array(z.string()).optional() }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),
   // A push the shrink guard refused (issue #1096): the files it would empty or shrink.
   'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), refs: z.array(z.string()).optional(), reason: z.string(), shrunk: z.array(strict({ path: z.string(), from: z.number().int(), to: z.number().int(), against: z.enum(['base', 'head']) })).optional() }),
-  'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }),
+  // A write with a resend key on its way to GitHub (`sending`, issue #1959 part 2): what a send again after a crash looks for first.
+  'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }), 'github_proxy.sending': strict({ ...proxyAsked, op: z.enum(['issue.create', 'issue.comment']), repo: z.string(), number: z.number().int().optional(), key: z.string() }),
   // Skills (issue #582): what a running job asked the hopper to set up, and the answer. On the job's timeline;
   // `decision` names Access's decision (issue #559) when a link was checked.
   'skill.listed': strict(skillAsked),
