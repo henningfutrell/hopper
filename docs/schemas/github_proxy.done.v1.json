@@ -122,6 +122,12 @@
           "items": {
             "type": "string"
           }
+        },
+        "direct": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

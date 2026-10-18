@@ -1,7 +1,7 @@
 // Yolo mode in the UI (issue #579), pure: one row per job repository and per repository set apart, each saying
 // whether its jobs may merge and why; the summary; and the change a save sends — only what differs.
 import { describe, expect, it } from 'vitest';
-import { YOLO_WARNING, changeKindsText, gateText, parseChangeKinds, repoMerges, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
+import { DIRECT_PUSH_WARNING, YOLO_WARNING, changeKindsText, directPushPatch, directPushText, gateText, parseChangeKinds, repoMerges, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
 
 const view = (on: boolean, repos: Record<string, boolean> = {}, choices = ['owner/a', 'owner/b']) => ({ on, repos, choices: { repos: choices } });
 
@@ -64,4 +64,15 @@ describe('change kinds in the yolo mode panel (issue #1076)', () => {
     expect(gateText('yolo')).toBe('merged when ready only with yolo mode on');
     expect(gateText('person')).toBe('only a person merges');
   });
+
+  it('direct push (issue #1806): the list as text, one repository a line, and the change a save sends', () => {
+    expect(directPushText({ ...view(false), push: ['acme/api', 'zed/tool'] })).toBe('acme/api\nzed/tool');
+    expect(directPushText(view(false))).toBe('');
+    expect(directPushPatch(view(false), ' Acme/API \n\nzed/tool\n')).toEqual({ ok: true, value: { push: ['acme/api', 'zed/tool'] } });
+    expect(directPushPatch({ ...view(false), push: ['acme/api'] }, 'acme/api')).toEqual({ ok: true, value: undefined });
+    expect(directPushPatch({ ...view(false), push: ['acme/api'] }, '')).toEqual({ ok: true, value: { push: [] } });
+    expect(directPushPatch(view(false), 'not a repo')).toEqual({ ok: false, error: 'not owner/repo: not a repo' });
+    expect(DIRECT_PUSH_WARNING).toContain('no person reviews');
+  });
 });
+

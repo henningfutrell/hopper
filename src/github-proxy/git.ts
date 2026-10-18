@@ -1,7 +1,8 @@
 // Git through the hopper (issue #652, design.md "Git through the hopper"): a job's git fetch and push go to the hopper,
 // which does them on GitHub with the connection of the job's own user — the job's machine holds no GitHub token. What a
 // push may change is read from the ref updates at the head of git's receive-pack request, before anything reaches
-// GitHub: a branch of the job's own work, never the default branch, a release branch, a tag or a delete. Pure: no I/O.
+// GitHub: a branch of the job's own work, never the default branch, a release branch, a tag or a delete — but the target
+// branch with direct push on (issue #1806). Pure: no I/O.
 
 import { BATCH_BRANCH_PREFIX, RELEASE_BRANCHES } from '../domain/landing-batches.ts';
 
@@ -53,9 +54,13 @@ export function receivePackCommands(body: Buffer): { ok: true; commands: RefUpda
   return commands.length === 0 ? { ok: false, reason: 'the push names no ref' } : { ok: true, commands, pack };
 }
 
-/** Whether a job may make these ref updates on its own repository, whose default branch is `defaultBranch`. */
-export function checkPush(commands: readonly RefUpdate[], at: { defaultBranch?: string }): { ok: true } | { ok: false; reason: string } {
-  const kept = [...RELEASE_BRANCHES, ...(at.defaultBranch ? [at.defaultBranch.toLowerCase()] : [])];
+/**
+ * Whether a job may make these ref updates on a repository whose default branch is `defaultBranch`. `direct` (issue #1806):
+ * the target branch a job may push straight to, with direct push on; the broker checks that such a push is a fast-forward.
+ */
+export function checkPush(commands: readonly RefUpdate[], at: { defaultBranch?: string; direct?: string }): { ok: true } | { ok: false; reason: string } {
+  const direct = at.direct?.toLowerCase();
+  const kept = [...RELEASE_BRANCHES, ...(at.defaultBranch ? [at.defaultBranch.toLowerCase()] : [])].filter((b) => b !== direct);
   for (const c of commands) {
     if (!c.ref.startsWith('refs/heads/')) return { ok: false, reason: `a job pushes branches only, not ${c.ref}` };
     const branch = c.ref.slice('refs/heads/'.length);

@@ -31,7 +31,7 @@ export function pushBrief(note: string | undefined, auto = false, fresh = false)
     ...(fresh ? ['Its earlier agent session was not recorded, so this is a fresh session: you have none of its history. The task above is the one it worked on.'] : []),
     'Look at what is there first (git status, git log, the branch on the remote). Commit what is not committed, and push the branch.',
     'Then open the pull request the task asks for. Open it as a draft when the work is not finished. Do not start over.',
-    'A push goes to a new branch of any repository your user can push to, never to its default or a release branch. Work in a clone of another repository is pushed to that repository, with a pull request there. When the hopper refuses a push, say in your last message which work stays and why, and end: a person pushes it or discards it.',
+    'A push goes to a new branch of any repository your user can push to, never to its default or a release branch (only with direct push on for the repository, straight to its target branch, as a fast-forward). Work in a clone of another repository is pushed to that repository, with a pull request there. When the hopper refuses a push, say in your last message which work stays and why, and end: a person pushes it or discards it.',
     ...(note ? ['', 'The person\'s note:', note] : []),
   ].join('\n');
 }

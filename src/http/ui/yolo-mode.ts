@@ -5,6 +5,8 @@
 // shows each waiting one with its repository's yolo mode.
 // Change kinds (issue #1076, design.md "Change kinds"): the change-kind rules are saved with yolo mode, whole
 // (`changeKinds`, `null` for the built-in rule): globs, content expressions — each must compile — and each kind's merge gate.
+// Direct push (issue #1806, design.md "Direct push"): saved with it, whole (`push`): the repositories where a job may push
+// straight to the target branch.
 import { everyJobRepository } from '../../domain/job-repositories.ts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -29,12 +31,16 @@ export const changeRulePatch = z.strictObject({
 });
 export const changeKindsBody = z.strictObject({ default: changeRulePatch.optional(), repos: z.record(repoName, changeRulePatch).optional() });
 
-/** Any part; `repos` sets each named repository on or off, or `null` to follow `on` again; `changeKinds` the rules, whole. */
+/**
+ * Any part; `repos` sets each named repository on or off, or `null` to follow `on` again; `changeKinds` the rules, whole;
+ * `push` direct push's repositories, whole (issue #1806), empty for none.
+ */
 export const yoloModeBody = z.strictObject({
   on: z.boolean().optional(),
   repos: z.record(repoName, z.boolean().nullable()).optional(),
   changeKinds: changeKindsBody.nullable().optional(),
-}).refine((b) => b.on !== undefined || b.repos !== undefined || b.changeKinds !== undefined, { message: 'name on, repos or changeKinds' });
+  push: z.array(repoName).max(200).optional(),
+}).refine((b) => b.on !== undefined || b.repos !== undefined || b.changeKinds !== undefined || b.push !== undefined, { message: 'name on, repos, changeKinds or push' });
 
 const settingsOf = (store: UserStore): YoloModeSettings => store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE;
 

@@ -1,0 +1,1 @@
+- You can now let jobs push their work straight to the main branch of a repository you name, in Settings, under Yolo mode. It is off unless you turn it on, and a job can only add to the branch, never rewrite it.
