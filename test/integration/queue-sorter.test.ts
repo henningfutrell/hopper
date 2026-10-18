@@ -46,7 +46,15 @@ async function firstClaimed(a: TestApp, blocker: Job, ids: string[]): Promise<st
   const token = await a.login();
   expect((await a.ui(`/ui/api/jobs/${blocker.id}/cancel`, {}, { token })).status).toBe(200);
   // Two jobs run one after the other in the one lane: on a loaded CI runner that takes more than the default 5 s.
-  for (const id of ids) await a.waitForStatus(id, 'finished', 20000);
+  try {
+    for (const id of ids) await a.waitForStatus(id, 'finished', 20000);
+  } catch (e) {
+    // The lane stayed busy on CI only (issue #1918): say where the blocker and the two jobs stood.
+    const all = [blocker.id, ...ids];
+    const states = await Promise.all(all.map(async (id) => `${id.slice(0, 8)} ${(await a.job(id)).status}`));
+    const events = (await a.events('limit=1000')).filter((x) => all.includes(x.jobId!)).map((x) => `${x.type} ${x.jobId!.slice(0, 8)}`);
+    throw new Error(`${e instanceof Error ? e.message : String(e)}; jobs: ${states.join(', ')}; events: ${events.join(', ')}`, { cause: e });
+  }
   const claims = (await a.events('types=job.claimed&limit=1000')).map((e) => e.jobId).filter((id) => ids.includes(id!));
   return claims[0]!;
 }
