@@ -10,6 +10,7 @@ import type { GitHubCallKind } from '../domain/github-rate-limit.ts';
 import { webOriginOf } from '../sources/github/api.ts';
 import { ACCOUNT_CONNECTION, checksLack } from '../sources/github/checks-fallback.ts';
 import { explained, notAccessible, permissionsOfError } from '../sources/github/http/refusal.ts';
+import { fileAssignedIssue } from '../sources/github/http/file-issue.ts';
 import { jobLog } from '../sources/github/http/rest.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/http/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
@@ -262,8 +263,8 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
     case 'check.log': return checkLog(req, token, webOrigin, r.repo, r.number);
     case 'issue.create': {
       const routed = { ...(filed.labels ? { labels: filed.labels } : {}), ...(filed.assignees ? { assignees: filed.assignees } : {}) };
-      const d = (await req('POST /repos/{owner}/{repo}/issues', { ...at, title: r.title, body: r.body, ...routed, headers })).data as RestIssue;
-      return { number: d.number, url: d.html_url, ...(filed.subIssueOf ? await linkSubIssue(req, headers, filed.subIssueOf, d.id) : {}) };
+      const d = await fileAssignedIssue(req, headers, r.repo, { title: r.title, body: r.body, ...routed });
+      return { number: d.number, url: d.url, ...(d.unassigned ? { unassigned: d.unassigned } : {}), ...(filed.subIssueOf ? await linkSubIssue(req, headers, filed.subIssueOf, d.id) : {}) };
     }
     case 'issue.comment': {
       const d = (await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: r.number, body: r.body, headers })).data as { html_url: string };

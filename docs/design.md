@@ -12941,6 +12941,12 @@ GitHub; and once its job ran and the issue closed, the parent went on waiting on
   and assigns it to the job's user's connected account (`FiledWith`, `src/github-proxy/api.ts`; the broker,
   `src/github-proxy/broker.ts`). The proxy files issues only on the user's job repositories, so a routed child is always
   in a repository the hopper works on. A follow-up is not routed: it waits for a person to triage it, as before.
+- **The assignee is checked** (issue #1856). GitHub drops an assignee it cannot set from a new issue with no error, and
+  keeps the label: such an issue sat in Intake as not assigned to the user, and never became a job. Each issue the hopper
+  files with its label (a routed child, the Add PR checks issue, a landing batch's fix, back-merge or canary issue) goes
+  through `fileAssignedIssue` (`src/sources/github/http/file-issue.ts`): it reads the answer's assignees, sets each
+  dropped one again in a second call, and returns those GitHub still dropped as `unassigned`. The proxy answers them to
+  the job and records them on `job.child_issue_filed`; it never files the issue again.
 - **Trusted origin is unchanged.** The child's text keeps the note `Filed through hopper for job …` (`FILED_BY_JOB`), so it
   is a request card (`a job filed it`) and auto-approval never takes it (issue #1268). Routing saves the trip to GitHub; the
   approval stays a person's act in Intake. The note says so: `Routed by the hopper: Intake lists it as a request card, and
