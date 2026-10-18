@@ -17,6 +17,7 @@
 // (`--head <login>:<branch>`), and file, read and comment on issues on that fork — the **job's fork**, a fork of the
 // job's own repository owned by the user, as GitHub says (the broker reads it): the fork is no job repository.
 import { z } from 'zod';
+import { isCommand } from '../domain/comment-command.ts';
 
 export const PROXY_OPS = [
   'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
@@ -105,6 +106,9 @@ export interface ProxyAsker {
   ownsPullRequest?: boolean;
 }
 
+/** Why a job's comment is refused (issue #655 part 21): a comment command nominates an issue, and a job nominates none. */
+export const JOB_COMMAND = 'a job writes no comment command (/hopper run, research or propose): only a person nominates an issue';
+
 /** Why a job may not work through a fork now (issue #429). */
 export const CONTRIBUTION_OFF = 'contributing through a fork is off: a person turns it on in Settings → Contribution';
 
@@ -161,6 +165,7 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
   if (req.op === 'issue.close' && !(ownRepo && asker.issue === req.number)) {
     return { ok: false, reason: `a job closes only its own issue${asker.repo && asker.issue !== undefined ? ` (${asker.repo}#${asker.issue})` : ', and this job has none'}` };
   }
+  if (req.op === 'issue.comment' && isCommand(req.body)) return { ok: false, reason: JOB_COMMAND };
   if ((req.op === 'pr.edit' || req.op === 'pr.close') && !asker.ownsPullRequest) {
     return { ok: false, reason: `a job edits or closes only a pull request it opened, or the pull request of its own work item: not ${req.repo}#${req.number}` };
   }

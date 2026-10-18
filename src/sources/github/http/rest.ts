@@ -14,7 +14,10 @@ interface RestIssue {
   repository_url?: string;
 }
 interface RestIssueWithRepo extends RestIssue { repository?: { full_name?: string } | null }
-interface RestComment { id: number; body?: string | null; user?: { login?: string } | null; created_at: string; html_url: string; author_association?: string }
+interface RestComment {
+  id: number; body?: string | null; user?: { login?: string } | null; created_at: string; updated_at?: string; html_url: string; author_association?: string;
+  performed_via_github_app?: { slug?: string } | null;
+}
 
 export function issueFrom(i: RestIssue, repo: string): GitHubIssue {
   return {
@@ -36,7 +39,8 @@ export function subIssueFrom(i: RestIssue, repo: string): SubIssue {
 }
 
 function commentFrom(c: RestComment): GitHubComment {
-  return { id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at, url: c.html_url, ...(c.author_association ? { association: c.author_association } : {}) };
+  return { id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at, url: c.html_url, ...(c.author_association ? { association: c.author_association } : {}),
+    ...(c.updated_at ? { updatedAt: c.updated_at } : {}), ...(c.performed_via_github_app?.slug ? { viaApp: c.performed_via_github_app.slug } : {}) };
 }
 
 const auth = (token: string) => ({ authorization: `token ${token}` });

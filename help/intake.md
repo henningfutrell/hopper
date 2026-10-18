@@ -78,6 +78,14 @@ Every later job of the same issue runs the snapshot, not the live issue. This in
 
 If you did all of these steps yourself, the issue has a trusted origin. The job goes into the queue.
 
+In place of step 4, you can write a comment on the issue with only `/hopper run` on its first line. This is a **comment command**. Write it as your connected GitHub account:
+
+- `/hopper run` takes the issue for the work.
+- `/hopper research` takes it and asks the job for research first.
+- `/hopper propose` takes it and asks the job for a proposal first.
+
+Only your newest command counts. A command that someone edited counts as none: write a new one. A command by another person does nothing. A command written through an app makes a request card. A job cannot write a command.
+
 To tune the source, open the `github-account` instance in **Settings → Plugins → Job sources** and set its options. Which repositories it lists is no option: they are the job repositories you chose in Sources.
 
 ### Let other people start jobs
@@ -137,6 +145,7 @@ An issue with the label but not assigned to you shows in Intake with `not assign
 
 - Select **Assign to me** to assign one issue to your account.
 - Select **Assign all N to me** to assign every such issue.
+- Or write the comment command `/hopper run` on the issue (see "Give the hopper a job").
 
 The next sync takes each issue that is also of a trusted origin.
 

@@ -182,7 +182,8 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       const onPull = issues.has(key(repo, n)) ? undefined : acts.comment(repo, n, body, commentId + 1);
       if (onPull) { commentId += 1; return onPull; }
       const i = find(repo, n);
-      const c: GitHubComment = { id: ++commentId, author: human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
+      const at = stamp();
+      const c: GitHubComment = { id: ++commentId, author: human, body, createdAt: at, updatedAt: at, url: `${i.url}#issuecomment-${commentId}` };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
       return { id: c.id, url: c.url };
     },
@@ -259,9 +260,10 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? byAuthor, issue.updatedAt);
       return copy(issue);
     },
-    addComment(repo, n, author, body, association) {
+    addComment(repo, n, author, body, association, viaApp) {
       const i = find(repo, n);
-      const c: GitHubComment = { id: ++commentId, author, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}`, ...(association ? { association } : {}) };
+      const at = stamp();
+      const c: GitHubComment = { id: ++commentId, author, body, createdAt: at, updatedAt: at, url: `${i.url}#issuecomment-${commentId}`, ...(association ? { association } : {}), ...(viaApp ? { viaApp } : {}) };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
       return { ...c };
     },

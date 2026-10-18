@@ -133,6 +133,10 @@ export interface GitHubComment {
   url: string;
   /** GitHub's `author_association` (issue #435: a maintainer's reply answers a thread question); absent: not known. */
   association?: string;
+  /** When it was last edited (issue #655 part 21: an edited comment command counts as none); absent: not known. */
+  updatedAt?: string;
+  /** The app it was written through (`performed_via_github_app`), by its slug; absent: none. */
+  viaApp?: string;
 }
 
 /** The comment a post made (issue #435): its id and link; id 0 when GitHub did not say. */
