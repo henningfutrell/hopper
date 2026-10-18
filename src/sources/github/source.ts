@@ -186,7 +186,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
   const workItem = o.intake?.workItem;
-  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line) }) : undefined;
+  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
