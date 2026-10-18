@@ -60,7 +60,7 @@ export interface JobRepository {
    * its stamp does not verify. `autoApprovable` (part 7): gate 2 may approve the job's requests with no person — its stamp
    * verifies at `approved` or above, or the store has no stamp key.
    */
-  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; autoApprovable(job: Job): boolean; edited(id: JobId): Job | undefined; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined; deny(id: JobId): Job | undefined;
+  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; stampView(job: Job, brake: import('./intake-strictness.ts').Brake): import('./stamp-view.ts').StampView; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; autoApprovable(job: Job): boolean; edited(id: JobId): Job | undefined; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined; deny(id: JobId): Job | undefined;
 }
 
 export interface LaneRepository {

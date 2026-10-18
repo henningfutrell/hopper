@@ -3,6 +3,7 @@ import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import {
   autoApprovable, checkDue, checkedStamp, deniedStamp, editedStamp, childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy,
 } from '../domain/trust-stamp.ts';
+import { stampView } from '../domain/stamp-view.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
 import type { Row } from './db.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
@@ -170,6 +171,9 @@ export function createJobRepository(c: StoreContext): JobRepository {
     },
     stampHold(job, brake) {
       return stampKey ? stampHold(stampKey, job, brake) : undefined;
+    },
+    stampView(job, brake) {
+      return stampView(stampKey, job, brake);
     },
     quarantine(id) {
       const key = stampKey;

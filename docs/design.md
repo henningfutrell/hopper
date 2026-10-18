@@ -16942,7 +16942,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 9, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 10, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17206,10 +17206,25 @@ job no more, and the job is told no when it asks. Requests are kept in memory, a
 the job asks again. 24 hours is fixed, not a setting: the issue names no default, and a person's working day with a night
 between fits in it.
 
+**The stamp view** (part 10, `src/domain/stamp-view.ts`). The issue: "`GET /api/jobs/<id>/stamp`; the CLI with
+`--json`". `GET /api/jobs/:id/stamp` (by its id or its short id, issue #1780; least role viewer) and `hopper job stamp
+<id>` answer one **stamp view** (`stampView`), read only:
+
+- `stamp`: the stamp as kept — `level`, `reasons`, `by`, `at`, `was`, `check` —, each field named, so the MAC never
+  leaves the hopper; null: none;
+- `verifies`: `yes`; `no` (the job or its stamp changed outside the hopper); `missing`; `unknown` (no stamp key: the
+  hopper holds nothing on a stamp, as the store does); and `level`, the level as verified, else null;
+- `brake`: the intake strictness on the job (`strictness`, the level it `needs`, where it was set `at`), as the engine
+  reads it at each Decision, and `startHold`, why the stamp holds the job's start (`stampHold`), else null. A job Jev's
+  active check holds says `checkDue: true`; the hold text for that is the engine's, not the stamp's;
+- `gate2`: `auto` (`autoApprovable`) or `person`; `doorsOpen` (`opensDoors`).
+
+The job view keeps reading the stamp from the job itself. No migration: nothing is stored.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
 `intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), a tightened intake strictness that re-checks running jobs, and the Intake and API
-views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), a
+tightened intake strictness that re-checks running jobs, and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job
