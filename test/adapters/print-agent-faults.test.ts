@@ -77,9 +77,9 @@ describe.each(AGENTS)('the %s executor, on a CLI that misbehaves', (agent) => {
     if (agent !== 'claude') expect(summary).toBe('I wrote greeting.txt.');
   }, 30_000);
 
-  it('output past the run\'s buffer: the job fails and says so, the CLI stopped', async () => {
+  it('output past the run\'s buffer: the job fails and says so', async () => {
     process.env.FAKE_AGENT_HUGE_MB = '70';
-    expect(await runIn('huge')).toEqual({ kind: 'failed', error: `${agent} on local printed more than 64 MiB` });
+    expect(await runIn('huge')).toEqual({ kind: 'failed', error: `${agent} on local: printed more than 64 MiB` });
   }, 60_000);
 
   it('output that is not UTF-8: the bad bytes read as replacement characters, and the answer still reads', async () => {
