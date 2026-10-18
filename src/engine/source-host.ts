@@ -9,6 +9,7 @@ import { settleLiveAgain } from '../failures/continued.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
+import { appendStamped } from './quarantine.ts';
 import { EngineError } from './errors.ts';
 import { changedSince, gateItem, holdForChange, recordSnapshot, refreshEdit, refreshText } from './item-snapshots.ts';
 import { carryNotes } from './notes.ts';
@@ -149,7 +150,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       const known = store.jobs.getBySourceKey(item.key);
       if (known && !isRerunnable(known)) return null;
       const job = store.jobs.create(spec, priority, ref);
-      store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
+      store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } }); appendStamped(store, job);
       // A job that cannot run ran nothing: its item's snapshot waits for a job that can.
       if (gate.record && invalid === undefined) recordSnapshot(c, job, item.key, gate.record, 'intake');
       if (change && invalid === undefined) holdForChange(c, job.id, item.key, change);

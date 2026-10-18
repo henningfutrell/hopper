@@ -1,9 +1,11 @@
 // The stamp as an event (issue #655 part 11): each stamp the job store signs from where a job's work came — at its
 // making, for a new spec, at the backfill, for an origin judged later — is one `intake.stamped` event on the job's
 // timeline, with the level, the reasons, who stamped it and the hash of the spec it covers. The MAC is never in it.
+// At its making, the engine appends it after the job's `job.queued` (`appendStamped`), so a timeline starts queued.
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { specHashOf } from '../../src/domain/trust-stamp.ts';
+import { appendStamped } from '../../src/engine/quarantine.ts';
 import type { JobSourceRef } from '../../src/domain/types.ts';
 import type { UserStore } from '../../src/domain/ports.ts';
 import { spec, useTempStore } from './helpers.ts';
@@ -27,6 +29,8 @@ describe('intake.stamped (issue #655 part 11)', () => {
     const s = t.open(t.url());
     s.jobs.useStampKey(KEY);
     const j = s.jobs.create(spec, 50, issue());
+    expect(stamped(s, j.id)).toEqual([]);
+    appendStamped(s, j);
     expect(stamped(s, j.id)).toEqual([{ level: 'owner', reasons: ['origin:trusted', 'author:assignee'], by: 'intake', spec: specHashOf(spec) }]);
     expect(JSON.stringify(stamped(s, j.id))).not.toContain(j.stamp!.mac);
     s.close();
@@ -37,8 +41,10 @@ describe('intake.stamped (issue #655 part 11)', () => {
     s.jobs.useStampKey(KEY);
     const parent = s.jobs.create(spec, 50, issue());
     const child = s.jobs.create(spec, 50, undefined, parent);
+    appendStamped(s, child);
     expect(stamped(s, child.id)).toEqual([{ level: 'trusted', reasons: [`parent:${parent.id}`], by: 'job', spec: specHashOf(spec) }]);
     const forged = s.jobs.create(spec, 50, undefined, { ...parent, stamp: { ...parent.stamp!, mac: 'x' } });
+    appendStamped(s, forged);
     expect(stamped(s, forged.id)).toEqual([]);
     s.close();
   });
@@ -56,6 +62,7 @@ describe('intake.stamped (issue #655 part 11)', () => {
   it('with no key: no stamp, so no event', () => {
     const s = t.open(t.url());
     const j = s.jobs.create(spec, 50, issue());
+    appendStamped(s, j);
     s.jobs.respecify(j.id, { ...spec, payload: { n: 2 } });
     expect(stamped(s, j.id)).toEqual([]);
     s.close();

@@ -6,6 +6,7 @@
 // proposal records each follow-on's job; the proposal shows each one's live state. Runs inside the review service's tx.
 import type { FollowOnOf, Job, JobSpec, ReviewItem, SelectedPath } from '../domain/types.ts';
 import { priorityTagOf, type EngineContext } from './context.ts';
+import { appendStamped } from './quarantine.ts';
 
 /** Inside the tx that accepted `p`: one follow-on job per selected path; the selection, each with its job. */
 export function createFollowOns(c: EngineContext, parent: Job, p: ReviewItem): SelectedPath[] {
@@ -24,6 +25,7 @@ export function createFollowOns(c: EngineContext, parent: Job, p: ReviewItem): S
     };
     const created = store.jobs.create(spec, parent.priority, source, parent);
     store.events.append({ type: 'job.queued', jobId: created.id, data: { spec, priority: parent.priority, ...(source ? { source } : {}), followOn: { jobId: parent.id, proposalId: p.id, pathId: s.id } } });
+    appendStamped(store, created);
     store.jobs.update(created.id, { accepted: true, followOn });
     return { ...s, jobId: created.id };
   });

@@ -1,0 +1,1 @@
+- A job's timeline now shows the trust level the hopper gave it when it was made, why, and each time the hopper gave it a level again.

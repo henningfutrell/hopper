@@ -103,10 +103,20 @@ function canonical(v: unknown): string {
   return JSON.stringify(v);
 }
 
-const macOf = (key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: Omit<TrustStamp, 'mac'>): string => {
-  const spec = createHash('sha256').update(canonical(job.spec)).digest('hex');
-  return createHmac('sha256', key).update(canonical({ ...s, jobId: job.id, spec })).digest('base64url');
-};
+/** The SHA-256 of a spec as canonical JSON, hex: the text a stamp covers, and that `intake.stamped` names (part 11). */
+export const specHashOf = (spec: Job['spec']): string => createHash('sha256').update(canonical(spec)).digest('hex');
+
+/** What `intake.stamped` says of a stamp signed from where a job came (part 11): never the MAC. */
+export type StampedEvent = { level: TrustLevel; reasons: string[]; by: StampedBy; was?: TrustLevel; from?: TrustLevel; spec: string };
+
+/** The `intake.stamped` data of the job's stamp; `from`: the level its stamp verified at before. Undefined: no stamp. */
+export function stampedEvent(job: Pick<Job, 'spec' | 'stamp'>, from?: TrustLevel): StampedEvent | undefined {
+  const s = job.stamp;
+  return s && { level: s.level, reasons: s.reasons, by: s.by, ...(s.was ? { was: s.was } : {}), ...(from ? { from } : {}), spec: specHashOf(job.spec) };
+}
+
+const macOf = (key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: Omit<TrustStamp, 'mac'>): string =>
+  createHmac('sha256', key).update(canonical({ ...s, jobId: job.id, spec: specHashOf(job.spec) })).digest('base64url');
 
 /** The stamp of `job` at `level`, signed under `key`. */
 export function signStamp(key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: { level: TrustLevel; reasons: string[]; by: StampedBy; at: string; was?: TrustLevel; check?: TrustCheck }): TrustStamp {

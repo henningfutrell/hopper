@@ -10,6 +10,7 @@ import { REVIEW_SECTIONS, backToWorkBrief, DEFAULT_PHASE_SHIFT_SETTINGS, forkAns
   type ForkOf, type Job, type JobPhase, type JobSpec, type PhaseShiftSettings, type PhaseShiftSettingsView, type Question, type QuestionShifts,
   type ReviewItem, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
+import { appendStamped } from './quarantine.ts';
 import { EngineError } from './errors.ts';
 import { parkRefusal, recordPark, releaseParked } from './park.ts';
 import { forksOf, running } from '../questions/stale.ts';
@@ -84,6 +85,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
     };
     const created = store.jobs.create(spec, parent.priority, undefined, parent);
     store.events.append({ type: 'job.queued', jobId: created.id, data: { spec, priority: parent.priority, forkOf: { jobId: parent.id, questionId: q.id, kind: to } } });
+    appendStamped(store, created);
     // A person or an allowed level asked for it: it passes the queue gate at once, pinned where its parent's work tree is.
     const fork = store.jobs.update(created.id, { accepted: true, forkOf, phase: to });
     store.jobs.update(parent.id, { forks: [...(parent.forks ?? []), fork.id] });

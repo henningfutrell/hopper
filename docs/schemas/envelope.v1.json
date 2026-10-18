@@ -91,6 +91,7 @@
         "job.unquarantined",
         "job.trust_lowered",
         "job.trust_approved",
+        "intake.stamped",
         "terminal.opened",
         "terminal.typed",
         "source.stalled",
