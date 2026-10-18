@@ -4,12 +4,16 @@
 //
 // Feature: the hopper discovers each user's topology on a schedule and when a person asks
 //   Scenario: the targets are the accounts and clusters the minting credentials mint for, each once
-//   Scenario: the clusters EKS listed are read by their ARN; a cluster of its own credential that no account listed, by its name;
-//     an EKS alias an override names, by the override's name
+//   Scenario: the clusters EKS listed are read by their ARN; a cluster of its own credential or an override that no account
+//     listed, by its name; an EKS alias an override names, by the override's name
+//   Scenario: a cluster source of discovery that never held a snapshot, and that a run did not report, is forgotten
+//   Scenario: each region of an account is read; the global lists (IAM, S3) in the home region only
 //   Scenario: an account the vault minted nothing for reports each of its kept sources as failed
 //   Scenario: the schedule begins one run per user and slot, and none for a user whose vault mints for nothing
 import { describe, expect, it } from 'vitest';
-import { accountUnread, askedKey, clustersToRead, DISCOVERY_EVERY_MS, discoveryTargets, inBatches, scheduledKey } from '../../src/domain/topology-discovery.ts';
+import {
+  accountUnread, askedKey, clustersToRead, DISCOVERY_EVERY_MS, DISCOVERY_REPORTER, discoveryTargets, inBatches, neverReadClusters, regionsToRead, scheduledKey,
+} from '../../src/domain/topology-discovery.ts';
 import { createTopologyDiscoveries, TOPOLOGY_DISCOVERY_SAGA, type TopologyDiscovery } from '../../src/infra-plans/topology-discovery.ts';
 import type { Saga } from '../../src/domain/sagas.ts';
 import type { SourceReport, TopologySource } from '../../src/domain/topology.ts';
@@ -22,16 +26,40 @@ describe('what a discovery run reads', () => {
     ])).toEqual({ accounts: ['111111111111', '222222222222'], clusters: ['lab'] });
   });
 
-  it('reads the clusters EKS listed by their ARN, then a cluster of its own credential no account listed, by its name', () => {
+  it('reads the clusters EKS listed by their ARN, then a cluster of its own credential or an override no account listed, by its name', () => {
     const prod = { name: 'prod', arn: 'arn:aws:eks:eu-west-1:111111111111:cluster/prod' };
-    expect(clustersToRead([prod, prod], ['prod', 'lab'])).toEqual([{ name: 'prod', id: prod.arn }, { name: 'lab', id: 'lab' }]);
+    expect(clustersToRead([prod, prod], ['prod', 'lab'], [{ name: 'edge' }, { name: 'lab' }])).toEqual([
+      { name: 'prod', id: prod.arn, listed: true }, { name: 'lab', id: 'lab' }, { name: 'edge', id: 'edge' },
+    ]);
     // One name in two accounts: both are read, and the vault refuses both.
     const other = { name: 'prod', arn: 'arn:aws:eks:eu-west-1:222222222222:cluster/prod' };
-    expect(clustersToRead([prod, other], [])).toEqual([{ name: 'prod', id: prod.arn }, { name: 'prod', id: other.arn }]);
+    expect(clustersToRead([prod, other], [])).toEqual([{ name: 'prod', id: prod.arn, listed: true }, { name: 'prod', id: other.arn, listed: true }]);
     // An override names prod-eks for EKS in one account: that cluster is minted for by the hopper's name.
     const alias = { name: 'prod-eks', arn: 'arn:aws:eks:eu-west-1:111111111111:cluster/prod-eks' };
     const there = { name: 'prod-eks', arn: 'arn:aws:eks:eu-west-1:222222222222:cluster/prod-eks' };
-    expect(clustersToRead([alias, there], [], [{ name: 'shop', eksName: 'prod-eks', account: '111111111111' }])).toEqual([{ name: 'shop', id: alias.arn }, { name: 'prod-eks', id: there.arn }]);
+    expect(clustersToRead([alias, there], [], [{ name: 'shop', eksName: 'prod-eks', account: '111111111111' }])).toEqual([
+      { name: 'shop', id: alias.arn, listed: true }, { name: 'prod-eks', id: there.arn, listed: true },
+    ]);
+  });
+
+  it('forgets a cluster source of discovery that never held a snapshot and that this run did not report', () => {
+    const kept = (cluster: string, reporter: string, good: boolean): TopologySource => ({
+      key: `kubernetes/${cluster}`, source: { kind: 'kubernetes', cluster }, reporter, lastRead: { at: 't', ok: good },
+      ...(good ? { lastGood: { at: 't', nodes: [], links: [] } } : {}),
+    });
+    const sources = [
+      kept('uat', DISCOVERY_REPORTER, false), kept('arn:aws:eks:us-east-2:111111111111:cluster/uat-eks', DISCOVERY_REPORTER, false),
+      kept('prod', DISCOVERY_REPORTER, true), kept('lab', 'a check', false),
+      { key: 'aws/111111111111/eu-west-1', source: { kind: 'aws', account: '111111111111', region: 'eu-west-1' }, reporter: DISCOVERY_REPORTER, lastRead: { at: 't', ok: false } } satisfies TopologySource,
+    ];
+    expect(neverReadClusters(sources, ['arn:aws:eks:us-east-2:111111111111:cluster/uat-eks'])).toEqual(['kubernetes/uat']);
+  });
+
+  it('reads each region of an account but the home region without the global lists, and the home region alone when none are listed', () => {
+    expect(regionsToRead('us-east-1', ['us-east-2', 'us-east-1', 'eu-west-1', 'us-east-2'])).toEqual([
+      { region: 'us-east-1', home: true }, { region: 'eu-west-1', home: false }, { region: 'us-east-2', home: false },
+    ]);
+    expect(regionsToRead('us-east-1', [])).toEqual([{ region: 'us-east-1', home: true }]);
   });
 
   it('reports each kept source of an account the vault minted nothing for as failed, so its snapshot says why', () => {

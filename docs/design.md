@@ -26895,19 +26895,29 @@ cluster.
 
 - **Topology discovery inside the hopper** (part 3, `src/infra-plans/topology-discovery.ts`, pure half
   `src/domain/topology-discovery.ts`). The hopper reads a user's topology itself, with the read credentials its vault mints:
-  - **What it reads** (`discoveryTargets`): each account an `aws-account` minting credential mints for, and each cluster a
-    `cluster` minting credential mints for. A namespace's minting credential reads no whole cluster, so none is read for it.
+  - **What it reads** (`discoveryTargets`): each account an `aws-account` minting credential mints for, in every region it
+    has enabled (issue #1864), and the clusters `clustersToRead` names. A namespace's minting credential reads no whole
+    cluster, so none is read for it.
   - **An account.** The vault mints a read session of the account's read role `hopper-read` (`aws-role/<account>/hopper-read`,
     the role cluster discovery signs in as) from the account's one minting credential (issue #1761), as for a mint test: the
     read profile, the read session policies, 900 s, the session named `hopper-topology-discovery` (`awsSessionName`). The
-    reader (`TopologyReader`, a port; `src/infra-plans/topology-reader.ts` over the AWS SDK) asks, in the credential's region,
-    EKS `ListClusters` and `DescribeCluster`, EC2 `DescribeVpcs`, ELBv2 `DescribeLoadBalancers`, RDS `DescribeDBInstances`, SQS
-    `ListQueues` and IAM `ListRoles`, page by page, at most 20000 each: read calls only. A credential that names an STS
+    reader (`TopologyReader`, a port; `src/infra-plans/topology-reader.ts` over the AWS SDK) lists the regions the account has
+    enabled (EC2 `DescribeRegions`, as cluster discovery does, issue #1845; the credential's region alone when they cannot be
+    listed) and asks, in each region (`regionsToRead`), EKS `ListClusters` and `DescribeCluster`, EC2 `DescribeVpcs`, ELBv2
+    `DescribeLoadBalancers`, RDS `DescribeDBInstances` and SQS `ListQueues`; and in the credential's region only (the home
+    region), the global lists too, IAM `ListRoles` and S3 `ListBuckets` (issue #1864); page by page, at most 20000 each: read
+    calls only. Each region is a topology source of its own (`aws/<account>/<region>`). A region other than the home region
+    that cannot be read is no source unless it held a snapshot before, so a region a policy denies adds no failed source.
+    Each EKS cluster is a node in its account and region, `in` its VPC; each S3 bucket is a node (`arn:aws:s3:::<name>`) `in`
+    its account, in the region S3 names. A credential that names an STS
     `Endpoint` (an AWS other than AWS's) is read at that endpoint for every service. A list the session may not read is left
     out; an account none of whose lists answer is reported failed, with the first error.
-  - **A cluster** (`clustersToRead`): each cluster EKS listed, by its ARN, then each cluster of its own minting credential no
-    account listed, by its name; a cluster a cluster override names for EKS (`eksName`, in its `account` when it names one) by
-    the override's name. The vault mints a read token for `cluster/<name>` — its own minting credential, else found in the AWS
+  - **A cluster** (`clustersToRead`): each cluster EKS listed in any region, by its ARN, then each cluster of its own minting
+    credential or of a cluster override that no account listed, by its name; a cluster a cluster override names for EKS
+    (`eksName`, in its `account` when it names one) by the override's name. Discovery decides the clusters, not the vault's
+    entry names (issue #1864): a cluster no account listed and the vault mints no token for (a stale entry) is no source,
+    unless it held a snapshot before; and a cluster source discovery reported that never held a snapshot and that a run did
+    not report again is forgotten (`neverReadClusters`), so a stale entry cannot hide a real cluster. The vault mints a read token for `cluster/<name>` — its own minting credential, else found in the AWS
     accounts as `hopper-read`, the override applied (cluster discovery, issue #1766) — and the reader lists namespaces, deployments,
     services, ingresses and service accounts in every namespace (`@kubernetes/client-node`, 500 a page). A plain `http:` API
     server is taken (the client's `skipTLSVerify`, with no TLS to skip); an `https:` one's certificate is always checked.
