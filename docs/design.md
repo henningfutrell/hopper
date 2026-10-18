@@ -25253,11 +25253,58 @@ config, from the link (issue #464); an unknown name is `other` too.
 
 **Left for later parts of issue #465:** the agent that sends the snapshot and carries the messages (issue #464, which supplies
 `machineKey` and `executorPlugin`); the link state and last-seen time at hopper.io, and one registration per instance id
-(item 3), kept at hopper.io; the open questions (issue #469 decision 6).
+(item 3), kept at hopper.io (part 6, "Instances at hopper.io", built the last-seen time and one registration per instance id);
+the open questions (issue #469 decision 6).
 
 **Verification:** `test/domain/hopper-io-state.test.ts`: a machine's executors named after a host, a custom name and a
 third-party plugin go out only as their kinds (`claude`, `codex`, `herdr-claude`, `other`); none of the names is in the
 snapshot; the schema refuses an executor outside the list and version 1; 50 machines with two executors each fit in 8 KiB.
+
+## Instances at hopper.io (issue #465, part 6, 2026-10-18)
+
+**The problem.** Issue #465 items 1, 3 and 5, at hopper.io (`cloud/`). A **hopper.io registration** was one row per instance
+and account, with its instance id and when. Nothing kept a name, a last-seen time or one registration per instance id, and
+the owner could not see or remove an instance. The instance's unlink notice (part 4) had no reader at hopper.io.
+
+**The change.**
+- **One registration per instance id** (item 3): a unique index on `registration.install_id`. When an instance registers
+  again under the same account, its registration stays, with its name and its last-seen time. Under another account, it
+  moves there: the old registration is replaced, and its name and last-seen time go with it.
+- **The owner's name and the last-seen time** (item 1): `registration.name` (1 to 64 characters, no control character, set
+  only by the owner at hopper.io, never sent by the instance, R5) and `registration.seen_at` (the instance's last hello,
+  `cloud/link.ts` `hello`).
+- **The owner's routes** (`cloud/server.ts`, a hopper.io session, R3: only the signed-in account's own instances):
+  `GET /api/account/instances`; `POST /account/instances/:id/name` (`name`, empty clears it) and
+  `POST /account/instances/:id/remove`, each a form post from hopper.io's own Origin, else 403; another account's instance
+  is 404. The page `GET /` lists them, the name escaped (T3).
+- **Removed at hopper.io** (item 5): the registration goes and leaves a **registration tombstone**, as an account deletion
+  does, so the instance's next hello is answered `unregister` (part 3 takes it). Nothing on the instance is deleted.
+- **Unlinked on the instance** (item 5): `cloud/link.ts` `unlinked` takes the notice (`unlinkedMessage`, part 4) on the
+  instance's own connection. It removes the registration only when the notice names that instance and the account it is
+  registered under; no tombstone, the instance knows. A notice of another shape, size, instance or account changes nothing.
+- **hopper.io records** (R6): `instance_registered`, `instance_renamed`, `instance_removed`, `instance_unlinked`, and
+  `instance_moved` on the account an instance left. The kind and the time only.
+- Migration 5 of `cloud/store.ts`: the two columns, the unique index (of two registrations of one instance, the newer
+  stays) and the record kinds. The privacy note has a line for each new column.
+
+**Decisions:**
+- **One account per instance.** The instance links to one hopper.io account (R3), and decision 3 of
+  `docs/cloud-hosting-identity.md` is personal accounts only. So a registration under a second account replaces the first.
+  Sharing one instance with more accounts stays an open question (issue #469 decision 6).
+- **The name is hopper.io's, not the instance's.** The instance's display name is free text and stays on the instance (R5).
+  The owner names it again at hopper.io.
+- **No link state yet.** "Connected now" needs the connection (issue #464). The last-seen time is what hopper.io can know.
+
+**Left for later parts of issue #465:** the agent that carries the messages and the snapshot and calls `hello`,
+`registration` and `unlinked` (issue #464); the page where the owner enters a registration code at hopper.io, which sends
+`register` on that connection; the link state; the machines at hopper.io (issue #466); the open questions (issue #469
+decision 6).
+
+**Verification:** `test/cloud/instances.test.ts` (real Postgres, real server): an account holds many instances; one that
+registers under another account moves, once, with `instance_moved` on the old account; a hello keeps the last-seen time; the
+name is kept at a second registration and dropped at a move; each account lists, names and removes only its own; a bad
+name, another Origin, no session and an unknown id change nothing; a removal is answered `unregister` at the next hello; the
+unlink notice removes only its own instance's registration; the page escapes the name.
 
 ## Cloud link (issue #464, 2026-10-17 — a design, not built)
 
