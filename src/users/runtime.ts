@@ -324,7 +324,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.
-  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, lease: lease('tldr'), cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) }), itemReconciler = createItemReconciler({ ledger: store.workItems, jobs: store.jobs, events: store.events, lease: lease('item-reconcile'), runAgain: (jobId, brief) => sync.rerun(jobId, 'reconciler', brief), now: () => clock.now().toISOString(), log: (line) => logger.warn(line) }); // the item reconciler (issue #1891)
+  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, lease: lease('tldr'), cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) }), itemReconciler = createItemReconciler({ ledger: store.workItems, jobs: store.jobs, events: store.events, outbox: store.githubOutbox, lease: lease('item-reconcile'), runAgain: (jobId, brief) => sync.rerun(jobId, 'reconciler', brief), now: () => clock.now().toISOString(), log: (line) => logger.warn(line) }); // the item reconciler (issue #1891)
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({

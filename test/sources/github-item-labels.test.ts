@@ -1,7 +1,7 @@
 // Labels mirror the database (issue #1891): the end labels an issue should carry are a pure function of its work item's
 // state, and a drift is what a discover saw against them.
 import { describe, expect, it } from 'vitest';
-import { labelDrift, labelsFor } from '../../src/sources/github/item-labels.ts';
+import { blockLabels, labelDrift, labelsFor } from '../../src/sources/github/item-labels.ts';
 
 describe('labelsFor: the end labels a state wants (issue #1891)', () => {
   it('a job at work: no end label', () => {
@@ -42,5 +42,20 @@ describe('labelDrift: what a discover saw against the state (issue #1891)', () =
 
   it('a second close: hopper:pr-closed wanted, hopper:blocked off', () => {
     expect(labelDrift({ state: 'blocked', blockedCause: 'pr_closed' }, ['hopper:blocked'])).toEqual({ remove: ['hopper:blocked'], add: ['hopper:pr-closed'], missing: true });
+  });
+});
+
+describe('blockLabels: the label change of a block the item reconciler makes (issue #1891, part 8)', () => {
+  it('PR open blocked as stale: its waiting labels come off, hopper:blocked goes on', () => {
+    expect(blockLabels('pr_open', 'stale')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: ['hopper:blocked'] });
+    expect(blockLabels('pr_open', 'no_pr')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: ['hopper:blocked'] });
+  });
+
+  it('partly done blocked as stale: hopper:partly-done comes off', () => {
+    expect(blockLabels('partly_done', 'stale')).toEqual({ remove: ['hopper:partly-done'], add: ['hopper:blocked'] });
+  });
+
+  it('a state a job holds: nothing to take off', () => {
+    for (const state of ['queued', 'working', 'waiting_outside'] as const) expect(blockLabels(state, 'stale')).toEqual({ remove: [], add: ['hopper:blocked'] });
   });
 });
