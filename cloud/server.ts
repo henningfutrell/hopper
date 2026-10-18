@@ -15,6 +15,9 @@
 //   GET  /api/account/instances its registrations as JSON (issue #465), else 401
 //   POST /account/instances/:id/name    names its own instance (`name`, empty clears it)
 //   POST /account/instances/:id/remove  removes its own instance; its next hello is answered `unregister`
+//   POST /account/instances/register    the owner's code for an instance (`installId`, `code`): a registration request,
+//                               in memory only, that the instance gets as `register` (cloud/requests.ts)
+//   GET  /api/account/registration-requests  its open requests as JSON, never the code, else 401
 //   GET  /privacy               the privacy note (cloud/privacy.ts), signed in or not
 import { randomBytes } from 'node:crypto';
 import rateLimit from '@fastify/rate-limit';
@@ -26,6 +29,7 @@ import { webFlow } from '../src/connected-accounts/web-flow.ts';
 import type { CloudConfig } from './config.ts';
 import { INSTALL_ID } from './link.ts';
 import { NEVER_KEPT, PRIVACY_NOTE } from './privacy.ts';
+import { REQUESTS_PER_ACCOUNT, type RegistrationRequests, type RequestRefusal, type RequestView } from './requests.ts';
 import { INSTANCE_NAME_MAX, SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudInstance, type CloudStore, type RecordKind } from './store.ts';
 
 export const SESSION_COOKIE = 'hopper_io_session';
@@ -38,6 +42,12 @@ const RECORD_LABELS: Record<RecordKind, string> = {
   instance_registered: 'Instance registered', instance_renamed: 'Instance named', instance_removed: 'Instance removed',
   instance_unlinked: 'Instance unlinked on the instance', instance_moved: 'Instance registered under another account',
 };
+const REFUSAL_LABELS: Record<RequestRefusal, string> = {
+  'not-linked': 'it is not linked to hopper.io', 'other-account': 'it is linked to another hopper.io account',
+  'no-code': 'the code is wrong, spent or expired',
+};
+/** A registration code as the instance mints it: 32 random bytes as hex (src/http/cloud-link.ts). */
+const REGISTRATION_CODE = /^[0-9a-f]{64}$/;
 const PRIVACY_LINK = '<p><a href="/privacy">What hopper.io keeps</a></p>';
 
 /** An instance's name as its owner typed it: trimmed; '' clears it; undefined: refused (too long, a control character). */
@@ -51,6 +61,14 @@ const instanceRow = (i: CloudInstance): string => `<li><strong>${i.name ? html(i
   + `<form method="post" action="/account/instances/${i.installId}/name"><input name="name" maxlength="${INSTANCE_NAME_MAX}"`
   + ` value="${i.name ? html(i.name) : ''}" aria-label="Name"> <button type="submit">Name</button></form>`
   + `<form method="post" action="/account/instances/${i.installId}/remove"><button type="submit">Remove</button></form></li>`;
+
+const requestRow = (r: RequestView): string => `<li>${r.installId}: ${r.refused
+  ? `the instance did not take the code: ${REFUSAL_LABELS[r.refused]}. Get a new code on the instance.`
+  : `waiting for the instance until ${r.expiresAt.toISOString()}`}</li>`;
+const REGISTER_FORM = '<form method="post" action="/account/instances/register"><p>Register an instance. On the instance,'
+  + ' open Settings, then hopper.io, and get a registration code. Its instance id is in Settings, then Version.</p>'
+  + '<input name="installId" maxlength="16" aria-label="Instance id" required> <input name="code" maxlength="80"'
+  + ' aria-label="Registration code" autocomplete="off" required> <button type="submit">Register</button></form>';
 
 /** Sign-ins per address (docs/hopper-io-security.md R7): a start and its callback each count. */
 export const SIGN_IN_LIMIT = { max: 30, timeWindow: '1 minute' };
@@ -78,8 +96,10 @@ export function cookiesOf(header: string | undefined): Map<string, string> {
   return out;
 }
 
-export async function cloudServer(o: { config: CloudConfig; store: CloudStore; now?: () => Date }): Promise<FastifyInstance> {
-  const { config, store } = o;
+export async function cloudServer(o: {
+  config: CloudConfig; store: CloudStore; requests: RegistrationRequests; now?: () => Date;
+}): Promise<FastifyInstance> {
+  const { config, store, requests } = o;
   const now = o.now ?? (() => new Date());
   const app = cloudApp(config);
   const flow = webFlow(app, config.clientSecret, `${config.publicUrl}${CALLBACK_PATH}`);
@@ -90,7 +110,7 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
   // Behind a reverse proxy the address is the client's, from X-Forwarded-For, only when the runtime says so.
   const server = Fastify({ logger: false, trustProxy: config.trustProxy });
   await server.register(rateLimit, { global: false });
-  // The forms post urlencoded; only an instance's name form has a field hopper.io reads (`name`).
+  // The forms post urlencoded; only an instance's name and register forms have fields hopper.io reads.
   server.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, body));
   server.addHook('onSend', async (_req, reply) => { reply.headers(SECURITY_HEADERS); });
 
@@ -107,10 +127,11 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
     const avatar = a.avatarUrl ? `<img src="${html(a.avatarUrl)}" alt="" width="40" height="40"> ` : '';
     const records = (await store.records(a.githubUserId, now())).map((r) => `<li>${r.at.toISOString()}: ${RECORD_LABELS[r.kind]}</li>`).join('');
     const instances = (await store.instances(a.githubUserId)).map(instanceRow).join('') || '<li>No instance is registered.</li>';
+    const open = requests.of(a.githubUserId, now()).map(requestRow).join('');
     return page(reply, 200, `<h1>hopper.io</h1><p>${avatar}Signed in as <strong>${html(a.login)}</strong>.</p>`
       + '<form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>'
       + '<form method="post" action="/account/delete"><p>Delete your hopper.io account. You sign in with GitHub again to confirm.</p>'
-      + `<button type="submit">Delete account</button></form><h2>Your instances</h2><ul>${instances}</ul><h2>What was done on your account</h2><ul>${records}</ul>${PRIVACY_LINK}`);
+      + `<button type="submit">Delete account</button></form><h2>Your instances</h2><ul>${instances}</ul>${REGISTER_FORM}${open ? `<ul>${open}</ul>` : ''}<h2>What was done on your account</h2><ul>${records}</ul>${PRIVACY_LINK}`);
   });
 
   /** To GitHub, with the state also in this browser's cookie; `deletes`: the account the sign-in confirms the deletion of. */
@@ -194,6 +215,28 @@ export async function cloudServer(o: { config: CloudConfig; store: CloudStore; n
       installId: i.installId, ...(i.name ? { name: i.name } : {}), registeredAt: i.registeredAt.toISOString(),
       ...(i.seenAt ? { seenAt: i.seenAt.toISOString() } : {}),
     })) };
+  });
+
+  server.get('/api/account/registration-requests', async (req, reply) => {
+    const a = await signedIn(req);
+    if (!a) return reply.code(401).send({ error: 'not signed in' });
+    return { requests: requests.of(a.githubUserId, now()).map((r) => ({
+      installId: r.installId, expiresAt: r.expiresAt.toISOString(), ...(r.refused ? { refused: r.refused } : {}),
+    })) };
+  });
+
+  server.post('/account/instances/register', { config: { rateLimit: SIGN_IN_LIMIT } }, async (req, reply) => {
+    if (req.headers.origin !== config.publicUrl) return reply.code(403).send({ error: 'only from hopper.io itself' });
+    const a = await signedIn(req);
+    if (!a) return reply.code(401).send({ error: 'not signed in' });
+    const fields = new URLSearchParams(typeof req.body === 'string' ? req.body : '');
+    const installId = (fields.get('installId') ?? '').trim().toLowerCase();
+    const code = (fields.get('code') ?? '').trim().toLowerCase();
+    if (!INSTALL_ID.test(installId) || !REGISTRATION_CODE.test(code)) return reply.code(400).send({ error: 'an instance id of 16 and a code of 64 hex characters' });
+    if (requests.enter({ githubUserId: a.githubUserId, login: a.login, installId, code, now: now() }) === 'full') {
+      return reply.code(429).send({ error: `at most ${REQUESTS_PER_ACCOUNT} registration requests open` });
+    }
+    return reply.redirect('/', 303);
   });
 
   /** The signed-in account and the instance id of a form post from hopper.io itself, else the reply already sent. */

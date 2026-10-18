@@ -1,12 +1,15 @@
 // hopper.io's side of the cloud link's registration messages (issue #463 decision 5, issue #465), transport-free: the
-// connection (issue #464) is not built. The instance answers `register` with `{ type: 'registration', outcome }`
-// (src/http/cloud-link-messages.ts); only `registered` makes a registration of the account whose owner entered the code.
+// connection (issue #464) is not built. The code an account owner entered at hopper.io is a registration request
+// (cloud/requests.ts); `registerMessage` gives it as `register` to the instance it names, while the instance's link names
+// that owner's account, and the instance answers `{ type: 'registration', outcome }` (src/http/cloud-link-messages.ts):
+// only `registered`, to an open request, makes a registration of the account whose owner entered the code (R3).
 // hopper.io cannot reach an instance, so a deletion or its owner's removal leaves a tombstone (cloud/store.ts), and the instance's next hello is
 // answered `unregister`, the one message the instance takes for it. A message from an instance is checked against a
 // closed schema and a size cap, as the instance checks hopper.io's (docs/hopper-io-security.md R7). An instance is the
 // registration of one account at a time (issue #465 item 3): registered under another, it moves there. Its hello keeps
 // its last-seen time, and its unlink notice (src/http/cloud-link-messages.ts `unlinkedMessage`) removes it.
 import { z } from 'zod';
+import type { RegistrationRequests } from './requests.ts';
 import type { CloudStore } from './store.ts';
 
 /** The most bytes one message from an instance may hold, as the instance's own cap. */
@@ -26,8 +29,11 @@ function parsed(text: string): unknown {
 }
 
 export interface CloudLinkAnswers {
-  /** The instance's answer to the `register` its owner's code went in; true: it is now a registration of the account. */
-  registration(o: { githubUserId: string; installId: string; answer: string; now: Date }): Promise<boolean>;
+  /** The `register` message to send the instance, whose link names `account`, while a code its owner entered waits for it. */
+  registerMessage(o: { installId: string; account: string; now: Date }): string | undefined;
+  /** The instance's answer to `register`, on its connection, whose link names `account`; true: it is now a registration
+   * of the account whose owner entered the code. With no open request, nothing. */
+  registration(o: { installId: string; account: string; answer: string; now: Date }): Promise<boolean>;
   /** What hopper.io sends back to an instance's hello: `unregister` for the hello's account when a deletion removed
    * its registration; else nothing. */
   hello(o: { installId: string; account: string; now: Date }): Promise<string | undefined>;
@@ -36,13 +42,20 @@ export interface CloudLinkAnswers {
 }
 
 export function createCloudLinkAnswers(o: {
-  store: Pick<CloudStore, 'register' | 'registrationOf' | 'seen' | 'unlinked' | 'record'>;
+  store: Pick<CloudStore, 'register' | 'registrationOf' | 'seen' | 'unlinked' | 'record'>; requests: RegistrationRequests;
 }): CloudLinkAnswers {
   return {
-    async registration({ githubUserId, installId, answer, now }) {
-      if (!INSTALL_ID.test(installId)) return false;
+    registerMessage({ installId, account, now }) {
+      const r = INSTALL_ID.test(installId) ? o.requests.open(installId, account, now) : undefined;
+      return r ? JSON.stringify({ type: 'register', code: r.code, account: r.login }) : undefined;
+    },
+    async registration({ installId, account, answer, now }) {
+      const request = INSTALL_ID.test(installId) ? o.requests.open(installId, account, now) : undefined;
       const m = REGISTRATION.safeParse(parsed(answer));
-      if (!m.success || m.data.outcome !== 'registered') return false;
+      if (!request || !m.success) return false;
+      if (m.data.outcome !== 'registered') { o.requests.refuse(request, m.data.outcome); return false; }
+      o.requests.take(request);
+      const githubUserId = request.githubUserId;
       const before = await o.store.register(githubUserId, installId, now);
       if (before === githubUserId) return true;
       if (before) await o.store.record(before, 'instance_moved', now);

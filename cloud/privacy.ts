@@ -48,4 +48,5 @@ export const NEVER_KEPT = [
   'No IP address in its database. The sign-in limit counts sign-ins per address in memory, for one minute only.',
   'No browser details, no logs of requests, and no data of other people.',
   'No content of your hopper instances or their jobs.',
+  'No registration code in its database. A code you enter waits in memory only, 10 minutes at most, until your instance takes it.',
 ];
