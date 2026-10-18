@@ -84,8 +84,8 @@ export interface Commands {
   liftQuarantine(id: string, acting: ActingPerson): Job;
   /** Issue #655 part 4: a person approves the trust of a job Jev's trust check lowered: `approved`, never more. job.trust_approved. */
   approveTrust(id: string, acting: ActingPerson): Job;
-  /** Issue #655 part 5: a person denied the job's request at gate 2: its trust one level lower, the second deny quarantines it. */
-  denied(id: string, acting: ActingPerson): Job | undefined;
+  /** Issue #655 parts 5 and 13: a person, or Jev (`jev`), denied the job's request at gate 2: its trust one level lower, the second deny quarantines it. */
+  denied(id: string, acting: ActingPerson | 'jev'): Job | undefined;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }

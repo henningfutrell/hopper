@@ -1,0 +1,1 @@
+- Jev can now check a sandbox request before the approvals let it run with no person: it allows it, holds it for you, or declines it. You turn the check on in Settings → Decider; until then it only records what it would pick.

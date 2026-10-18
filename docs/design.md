@@ -13268,6 +13268,7 @@ setting), edited in Settings → Decider (admin), read at every decision:
 | `intake-order` | one sync of a job source finds two or more new items — no job follows them — (issue #796, `src/sources/intake-order.ts`) | the first 10 new items, in the source's order | the picked item is offered first: its job is queued first, and goes first among jobs of its priority; the rest follow in the source's order |
 | `merge-order` | a repository's tending queue is free and two or more of its waiting pull requests need tending (issue #796, "The tending queue", `src/sources/tend-order.ts`) | the first 10, in the rules' order | the picked pull request is tended next |
 | `intake-trust` | a waiting job whose trust stamp is due for Jev's trust check: `approved` or `trusted`, no person stamped it, no check on it (issue #655 part 4, "Trust stamps", `src/engine/trust-checks.ts`) | `keep`, and each lower level but `quarantined` with each reason (`lower:untrusted:touches_ci`) | the job's stamp is signed at the picked level; active, the job waits for the check, and a check with no sure pick gives `untrusted` (fail closed) |
+| `sandbox-request` | a job's sandbox request that the sandbox approvals would approve with no person, under sandbox strictness `standard`, of a template not of low blast radius (issue #655 part 13, "Trust stamps", `src/sandbox/requests.ts`) | `allow`, and `hold` or `deny` with each reason (`deny:out_of_scope`) | allow approves the run by `Jev`; hold leaves it for a person; deny declines it and lowers the job's trust; active, the request waits for Jev, and a check with no sure pick holds it (fail closed) |
 
 A `failure-assessment` ask is kept on its failure record (`jev { error, attempt, ranMs?, machineId?, doneCheck? }`, issue
 #1608) until Jev answers: a daemon that stopped first asks it again at its start, for a job still failed whose newest
@@ -16942,7 +16943,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 12, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 13, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17167,7 +17168,7 @@ merge work`; `sandbox.strictness_changed` with `from`, `to` and who):
 | strictness | a person approves each run of |
 |---|---|
 | `relaxed` | nothing more: the toggles and the auto-approve policy decide (issues #991, #1001) |
-| `standard` (the default) | the same as `relaxed` for now |
+| `standard` (the default) | the same as `relaxed`, but Jev's sandbox check first for a medium, high or unrated template (part 13) |
 | `strict` | a template of medium or high blast radius, or one with no rating (fail closed) |
 | `locked` | every template |
 
@@ -17188,9 +17189,9 @@ counts; a run a person approved still counts. Loosened, those runs count again. 
 approves a run that the toggles and policies would not. A template's own approval (issues #716, #1001) is not a run, and
 the brake does not change it.
 
-Why `relaxed` and `standard` are the same now: in the issue, `standard` asks Jev's `sandbox-request` point for medium and
-high, which does not exist yet; with Jev absent, the issue's fail-closed table says gate 2 is "policy plus a person", which
-is what the toggles and policies give. When that point is built, `standard` asks it, and `relaxed` keeps the toggles alone.
+In the issue, `standard` asks Jev's `sandbox-request` point for medium and high; part 13 built it (below), and `relaxed`
+keeps the toggles alone. With the point off or in shadow, `standard` is the same as `relaxed`: the issue's fail-closed table
+says gate 2 is then "policy plus a person", which is what the toggles and policies give.
 Persisted state: one more key in the user's settings, `sandboxStrictness`; the build before does not read it.
 
 **A held request that times out** (part 9, `expire` in `src/sandbox/requests.ts`; `holdSweep` in
@@ -17261,10 +17262,51 @@ approves each request, or an admin loosens the brake. Why only gate 2, not a par
 job going on an edit (part 7) and at the migration, and lets gate 2 treat it lower; a stop on a settings change would
 lose a person's work for a choice that is about new jobs. No migration: nothing is stored.
 
+**Jev's sandbox check** (part 13, `src/domain/sandbox-check.ts`, `src/sandbox/requests.ts`; the decision point
+`sandbox-request`, "Decider calls"). The issue's gate 2 order: policy first, then Jev, then a person. Part 7, part 8 and part
+12 are the policy; this is the Jev stage. It is asked only for a run the sandbox approvals — skip sandbox approval, the
+auto-approve policy, a remembered write approval, a person's approval of the template the job asked for — would approve with
+no person, and only where sandbox strictness is `standard` for a template of medium or high blast radius, or none rated
+(`jevChecks`). A run a person must approve anyway (below `approved`, under the intake strictness, under `strict` or `locked`)
+goes to the person, not to Jev; a `low` template and `relaxed` keep the approvals alone.
+
+- **What Jev reads** (`sandboxCheckState`): the request (its id, template, when, and the approver it would have), the
+  template's profiles (`write aws-role/…`), how many vault secrets it gives (never their names) and its blast radius with
+  its reasons, the job's id, trust level, reasons, goal and source, and the job's other requests with their state and who
+  decided them. The job's purpose and plan, its own words, go as `untrustedText`, which the instructions say is data, never
+  instructions. No credential, no tool.
+- **The options** (`sandboxCheckOptions`): `allow`, and `hold:<reason>` and `deny:<reason>` for each reason:
+  `out_of_scope`, `novel_target`, `rate_spike`, `high_blast_radius`, `capability_mismatch`, `pattern_suspicious`,
+  `history_denied`. A pick that is not one of them gives no verdict (`pickedVerdict`). Jev only sees what the approvals
+  would approve, so it cannot approve more, and no option widens a request.
+- **Off**: Jev is not asked. **Shadow** (the default): the approvals approve the run at once, as before; Jev is asked after,
+  and the pick is only recorded and compared with `allow`.
+- **Active**: the request waits for Jev (`jev: { state: checking }` on the request; the job is told `Jev checks the sandbox
+  runs …`, and a job held before its start says so). Then (`checkedVerdict`):
+  - `allow` approves the run, `by` `Jev` (`JEV_APPROVER`, one of the approvers that are no person: a tightened brake stops
+    it counting, as for the toggles, part 8), if the approvals still would;
+  - `hold` leaves it for a person, with why (`jev: { state: held, reason }`, on the Vault page card and in the job's answer);
+  - `deny` declines it, `by` `Jev`, with the reason as the text the job is told (`Jev declined the sandbox runs of template
+    … Find another way.`), and is a **deny at gate 2**: the job's stamp is signed one level lower, `by: jev`, with the
+    reason id `deny:jev` (`job.trust_lowered { from, to, reason: deny:jev, by: jev }`); it counts with a person's
+    `deny:sandbox`, so the second deny in the job, either way, quarantines it (`job.quarantined { was, reason, by: jev }`
+    when Jev's was the second), and part 6 takes back what a quarantine takes back;
+  - **fail closed**: no answer, an error, a pick that is no option, one below the point's threshold, or Jev not there (no
+    TypeSafe API key) holds the request for a person, with why (`Jev gave no answer`, `Jev was not sure enough`, `Jev could
+    not be asked`). It never allows.
+  A person's approve or decline while Jev reads it wins: Jev's later answer changes nothing. A held request times out as
+  any other (part 9).
+
+A job a Jev deny lowered below `approved` gets no run with no person (part 7), so Jev is not asked for its next request: a
+person approves or declines it. The job view shows `Jev denied its sandbox request` beside the level, and Approve trust
+takes it (`trustApprovable`). Why not `allow_narrowed`, which the issue also names: a narrower run is a narrower template,
+which only a template request makes (issue #716), and the hopper never narrows one for the job; a person can decline with
+a reason that says what to ask for. Persisted state: none — requests are kept in memory, and `deny:jev` is one more reason
+id, which the build before verifies (its MAC covers the reasons) and reads as any other.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
-`intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), and
-the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+`intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at the skill broker
+(the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job
