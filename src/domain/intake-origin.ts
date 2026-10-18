@@ -8,9 +8,10 @@ import { createHash } from 'node:crypto';
 
 /**
  * What an actor did to the issue: wrote it, added the label, assigned it to the user, or edited its title or description
- * (GitLab, issue #1642; GitHub, issue #655 part 17).
+ * (GitLab, issue #1642; GitHub, issue #655 part 17), or nominated it by a comment command in place of the assignment (GitHub,
+ * issue #655 part 21).
  */
-export const ORIGIN_ROLES = ['author', 'labelled', 'assigned', 'edited'] as const;
+export const ORIGIN_ROLES = ['author', 'labelled', 'assigned', 'edited', 'nominated'] as const;
 export type OriginRole = typeof ORIGIN_ROLES[number];
 
 /** One act of an issue's origin, and whether the user's trusted actors hold it. */
@@ -133,8 +134,8 @@ export function toldFor(actors: readonly ActorRef[], act: ActorRef): string[] {
   }))].sort();
 }
 
-const ROLE_TEXT: Record<OriginRole, string> = { author: 'written', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
-const DID_TEXT: Record<OriginRole, string> = { author: 'wrote', labelled: 'labelled', assigned: 'assigned', edited: 'edited' };
+const ROLE_TEXT: Record<OriginRole, string> = { author: 'written', labelled: 'labelled', assigned: 'assigned', edited: 'edited', nominated: 'nominated' };
+const DID_TEXT: Record<OriginRole, string> = { author: 'wrote', labelled: 'labelled', assigned: 'assigned', edited: 'edited', nominated: 'nominated' };
 
 /** Why an act does not count: by an app or a bot, by nobody the events name, or by a login that is no trusted actor. */
 export function untrustedReason(a: OriginActor): string | undefined {

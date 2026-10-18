@@ -37,7 +37,8 @@
               "author",
               "labelled",
               "assigned",
-              "edited"
+              "edited",
+              "nominated"
             ]
           },
           "login": {

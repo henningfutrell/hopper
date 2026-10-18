@@ -19,7 +19,7 @@ import type { DeclineChoice } from '@/model/wire';
 import { approveRequest, declineRequest, loadDeclineDefaults, useApprovals, useDeclineDefaults, waitsForDaemon } from '@/store/intake';
 import { BodyDiff } from './text-change';
 
-const ROLE: Record<IntakeRequest['actors'][number]['role'], string> = { author: 'written by', labelled: 'labelled by', assigned: 'assigned by', edited: 'edited by' };
+const ROLE: Record<IntakeRequest['actors'][number]['role'], string> = { author: 'written by', labelled: 'labelled by', assigned: 'assigned by', edited: 'edited by', nominated: 'nominated by' };
 
 /** Decline's confirm step (issue #1710): each choice with what it does on GitHub, the default chosen first. */
 function DeclineConfirm({ itemKey, first, busy, onDecline, onCancel }: { itemKey: string; first: DeclineChoice; busy: boolean; onDecline: (c: DeclineChoice) => void; onCancel: () => void }) {

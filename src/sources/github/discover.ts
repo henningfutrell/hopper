@@ -10,10 +10,16 @@
 // A claim with no holder predates holders: the intake migration releases it once when no user of this hopper
 // has a job for it; after that it is an older hopper's, respected like any other.
 //
+// A comment command (issue #655 part 21, domain/comment-command.ts) stands in for the assignment: a labelled issue not
+// assigned to the account is taken when the account's newest command on it was not edited (its comments are read, only
+// for such an issue). Its origin then reads the command as the nominating act (origin.ts), and after a rejection only a
+// command written since takes it again.
+//
 // The scope is given: a repo list (the app's installed repos, a connected account's chosen repos), its open labelled
 // issues as the listing cache holds them (issue #985, `listing.ts`). Never a search: the app never passes an empty list,
 // and a connected account's source with none chosen is paused (issue #321).
 
+import { commandOf, type CommentCommand } from '../../domain/comment-command.ts';
 import type { IntakeOutcome, NotTakenGroup } from '../../domain/intake.ts';
 import type { Rejection } from '../../domain/rejection.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
@@ -61,6 +67,8 @@ export interface DiscoverResult {
   released: Released[];
   /** The intake migration ran in this pass: it was asked for and every repo was listed. */
   migrated: boolean;
+  /** The issues taken by a comment command in place of the assignment (issue #655 part 21), by URL. */
+  nominated: Map<string, CommentCommand>;
 }
 
 type DiscoverConfig = Pick<GitHubSourceConfig, 'label' | 'hopperName'>;
@@ -103,17 +111,29 @@ function forThisHopper(i: Pick<GitHubIssue, 'labels'>, name: string | null): boo
   return addressed.length === 0 || (name !== null && addressed.includes(name));
 }
 
-/** The rejected issues not assigned to the account again since their rejection. */
-async function stillRejected(api: GitHubApi, issues: GitHubIssue[], scope: DiscoverScope): Promise<Set<string>> {
+/** The rejected issues not assigned to the account, nor nominated by its command, again since their rejection. */
+async function stillRejected(api: GitHubApi, issues: GitHubIssue[], scope: DiscoverScope, nominated: ReadonlyMap<string, CommentCommand>): Promise<Set<string>> {
   const rejected = scope.rejections && issues.length > 0 ? scope.rejections(issues.map((i) => i.url)) : new Map<string, Rejection>();
   const skipped = new Set<string>();
   for (const i of issues) {
     const r = rejected.get(i.url);
     if (!r?.assignee) continue;
+    const command = nominated.get(i.url);
+    if (command) { if (Date.parse(command.at) <= Date.parse(r.at)) skipped.add(i.url); continue; }
     const assigned = await api.assignedAt(i.repo, i.number, scope.assignee);
     if (assigned === undefined || Date.parse(assigned) <= Date.parse(r.at)) skipped.add(i.url);
   }
   return skipped;
+}
+
+/** An issue's comments, or none when they cannot be read: a command not read nominates nothing. */
+async function commentsOf(api: GitHubApi, i: GitHubIssue) {
+  try {
+    return await api.listComments(i.repo, i.number);
+  } catch (err) {
+    console.warn(`hopper: the comments of ${i.url} could not be read: ${(err as Error).message}`);
+    return [];
+  }
 }
 
 /** A claim's labels: `hopper:claimed`, and this user's holder label when there is one. A release removes both. */
@@ -156,6 +176,11 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });
     else candidates.push(i);
   }
+  const nominated = new Map<string, CommentCommand>();
+  for (const i of issues.filter((x) => reasons.get(x.url)?.reason === NOT_ASSIGNED)) {
+    const command = commandOf(await commentsOf(api, i), scope.assignee);
+    if (command) { nominated.set(i.url, command); reasons.delete(i.url); candidates.push(i); }
+  }
 
   // Claims are judged on the issues the hopper would take, and on those only not assigned to the user: a stale
   // claim there is released too, so assigning the issue later is enough. Such an issue keeps its reason.
@@ -183,8 +208,8 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
     }
   }
 
-  const open = candidates.filter((i) => !reasons.has(i.url));
-  const rejected = await stillRejected(api, open, scope);
+  const open = issues.filter((i) => candidates.includes(i) && !reasons.has(i.url));
+  const rejected = await stillRejected(api, open, scope, nominated);
   for (const url of rejected) reasons.set(url, { reason: REJECTED_BY_YOU });
   return {
     issues: open.filter((i) => !rejected.has(i.url)),
@@ -194,5 +219,6 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
     seen: issues,
     released,
     migrated,
+    nominated,
   };
 }

@@ -130,7 +130,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
 
 /** Why a group's issues are not taken, where the reason on each row does not say it all (issue #1463). */
 const GROUP_WHY: Partial<Record<IntakeGroupKind, string>> = {
-  'not-assigned': 'Intake takes a labelled issue only when it is assigned to you. Nothing works on these issues until you assign them to you.',
+  'not-assigned': 'Intake takes a labelled issue only when it is assigned to you, or when you comment /hopper run on it. Nothing works on these issues until you do.',
 };
 
 /** The outcomes waiting on an intake decision, grouped; with `repo`, only that repository's (issue #1463). */
