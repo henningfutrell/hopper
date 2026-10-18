@@ -1,4 +1,4 @@
-// Infra → Topology → Globe (issue #1893, design.md "The infrastructure topology"): the nodes the filters leave, at the
+// Topology → Globe (issue #1893, design.md "The infrastructure topology"): the nodes the filters leave, at the
 // AWS region they live in, a marker per region and an arc for the links between two regions, drawn with three.js
 // (globe-scene.ts, loaded only here). Each region is listed too, with its counts by kind: a click on a region, on the globe
 // or in the list, lists its nodes, and a click on a node picks it, as on the graph. The nodes with no known place are in a

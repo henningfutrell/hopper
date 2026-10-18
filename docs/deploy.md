@@ -1302,7 +1302,8 @@ Each sync of a job source, and each batch of GitHub changes the outbox sends, is
 "Telemetry: the outbox and the sync"): `hopper.source.sync` and `hopper.outbox.flush` in Tempo, with their GitHub calls,
 and a link to the request that asked for them. The metrics are `hopper_source_sync_duration_seconds` by source and
 outcome, `hopper_outbox_batch_size`, `hopper_outbox_calls_total` by result, and `hopper_outbox_rows_coalesced_total`. `hopper_work_items_label_drift_total` counts issues whose end labels
-differ from their work item's state, by source, state and whether the outbox corrects them (issue #1891, the label mirror).
+differ from their work item's state, by source, state and whether the outbox corrects them (issue #1891, the label mirror),
+and `hopper_work_items_label_corrections_total` counts the corrections the label mirror queued, by source and state (issue #1933).
 
 Two gauges show what runs now (docs/design.md "Telemetry: what runs now"): `hopper_sandboxes`, the sandboxes that run at
 the same time, by kind (`need`, `playground`), place (`local`, `machine`) and state, and `hopper_db_connections`, the

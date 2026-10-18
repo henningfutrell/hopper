@@ -25,6 +25,7 @@ import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, t
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
+import { doneCriteriaHold, doneCriteriaMiss, type JobAllowedDeletes, type JobDoneCriteria } from './done-criteria.ts';
 import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type WaitsOnBatch } from './completion.ts';
 import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
@@ -89,6 +90,10 @@ export interface GitHubSourceOptions {
   yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined; changeRule?: (repo: string) => ChangeRule;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
+  /** The done criteria of the conditional skills a job got (issue #1924): checked on its own pull request before it is done. Absent: none. */
+  doneCriteria?: JobDoneCriteria;
+  /** The deletes a job's issue allows by resource address (issue #1924 part 2): a plan's delete of one does not count. Absent: none. */
+  allowedDeletes?: JobAllowedDeletes;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
   issueGraph?: IssueGraphRecorder;
   /** The listing cache (issue #985) and the GitHub outbox (issue #1238): the user's store. Absent: kept in memory. */
@@ -134,7 +139,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
   const reportContext = () => ({ api, ensuredLabels, ...(o.intake ? { holder: o.intake.holder } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
-  const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
+  const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
+    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}) });
 
   /**
    * The issue's declared parts and how many are done (issue #729). Its merged parts cannot be read now: the ticked ones
@@ -183,7 +189,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
   const workItem = o.intake?.workItem;
-  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line) }) : undefined;
+  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
@@ -305,8 +311,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return (await api.issueEdits(item.repo, item.number)).filter((e) => e.at > since);
     },
     resolved: (job, resolution) => keepResolution(outbox, job, resolution, o.intake?.holder),
-    notComplete(job) {
-      return notComplete(api, job, o.jobArtifacts, waitsOn);
+    async notComplete(job) {
+      return (await notComplete(api, job, o.jobArtifacts, waitsOn)) ?? doneCriteriaMiss(api, job, o.doneCriteria, o.allowedDeletes);
     },
     partlyDone(job) {
       return partlyDone(api, job);

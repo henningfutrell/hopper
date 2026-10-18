@@ -3622,7 +3622,7 @@ Version 1 (`docs/schemas/library_skill.refreshed.v1.json`). A person refreshed a
 
 ## `work_skills.changed`
 
-Version 1 (`docs/schemas/work_skills.changed.v1.json`). A person changed which library skill each kind of work gets (issue #1911): `kinds` for every repository, `repos` per repository (`owner/name` lowercased), which wins; a kind absent gets the built-in default. `from` and `to`. The next job gets it, never a running one.
+Version 1 (`docs/schemas/work_skills.changed.v1.json`). A person changed which library skill each kind of work gets (issue #1911): `kinds` for every repository, `repos` per repository (`owner/name` lowercased), which wins; a kind absent gets the built-in default; `rules`, the skill rules that give a job conditional skills (issue #1924; a rule's `paths`, part 2, are globs of the files the change touches), absent with none. `from` and `to`. The next job gets it, never a running one.
 
 | field | type | required |
 |---|---|---|
@@ -3679,6 +3679,39 @@ Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this jo
     }
   ],
   "missing": []
+}
+```
+
+## `job.conditional_skills_chosen`
+
+Version 1 (`docs/schemas/job.conditional_skills_chosen.v1.json`). The conditional skills this job got beside its work skill (issue #1924), at its first start, because a skill rule matched what it works on: each skill's `name`, `version` and `seq` (0: built in), `why` (the conditions that matched: `repository owner/name`, `label x`, `kind of work k`, `paths a, b`), and `done`, the done criteria of its `done.json` that the done check verifies before the job is done (part 3: `person-merges`, a person merges a change to its `paths`, never the hopper's yolo mode, which reads the criteria again before its merge). `paths` (part 2): the globs of a paths rule; the done check verifies the criteria only when the pull request changes a file they match. Absent: always. Each later start gets the same versions. None when no rule matched.
+
+| field | type | required |
+|---|---|---|
+| `skills` | object[] | yes |
+
+```json
+{
+  "skills": [
+    {
+      "name": "iac",
+      "version": "9a1c3e5f7b2d4068",
+      "seq": 0,
+      "why": [
+        "repository owner/infra"
+      ],
+      "done": [
+        {
+          "kind": "checks-passed",
+          "checks": "terraform plan*"
+        },
+        {
+          "kind": "plan-destroy",
+          "checks": "terraform plan*"
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -5472,7 +5505,7 @@ Version 1 (`docs/schemas/skill.listed.v1.json`). A running job asked the hopper 
 
 ## `skill.loaded`
 
-Version 1 (`docs/schemas/skill.loaded.v1.json`). A running job loaded a skill (issue #582): `skill`, and for a link the `asset` and Access's `decision` (issue #559) that allowed it. The answer names the vault secrets the box may use, never a value.
+Version 1 (`docs/schemas/skill.loaded.v1.json`). A running job loaded a skill (issue #582): `skill`, and for a link the `asset` and Access's `decision` (issue #559) that allowed it. The answer names the vault secrets the box may use, never a value. `version`: for a bundled skill (issue #1909), the skill version the job got, and `asset` the file of it, when it is not the entry.
 
 | field | type | required |
 |---|---|---|
@@ -5482,6 +5515,7 @@ Version 1 (`docs/schemas/skill.loaded.v1.json`). A running job loaded a skill (i
 | `asset` | string | no |
 | `skill` | string | yes |
 | `decision` | string | no |
+| `version` | string | no |
 
 ```json
 {

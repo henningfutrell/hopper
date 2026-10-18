@@ -71,6 +71,8 @@ describe('Won\'t do on a blocked item (issue #1891)', () => {
     const r = await source.intakeAction!({ kind: 'wont_do', keys: [url(1)], acting: ACTING });
     expect(r.failed[url(1)]).toMatch(/not blocked/);
     expect(events).toEqual([]);
-    expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    // Only the label mirror's correction of its PR open drift (issue #1933): Won't do wrote nothing.
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'open', labels: ['hopper', 'hopper:pr-ready'] });
   });
 });

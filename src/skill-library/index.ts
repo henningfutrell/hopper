@@ -14,6 +14,7 @@ import {
   type LibrarySkillSummary, type LibrarySkillVersion, type RequiredSkill, type SkillLibraryView, type WorkSkillChosen, type WorkSkillPatch,
   type WorkSkillSettings,
 } from '../domain/skill-library.ts';
+import { allowedDeletesIn, doneCriteriaOf, ruleMatch, skillRuleProblem, type ConditionalSkillChosen, type DoneCriterion } from '../domain/conditional-skills.ts';
 import type { UserStore } from '../domain/store.ts';
 import type { Job } from '../domain/types.ts';
 
@@ -127,6 +128,8 @@ export function removeSkill(store: UserStore, o: { name: string; by: string; now
 export function changeWorkSkills(store: UserStore, patch: WorkSkillPatch, by: string): LibraryChange<WorkSkillSettings> {
   return store.tx(() => {
     const from = workSkillSettings(store);
+    const problem = patch.rules === undefined ? undefined : Array.isArray(patch.rules) ? patch.rules.map(skillRuleProblem).find((p) => p !== undefined) : 'rules is a list of skill rules';
+    if (problem) return refused('invalid', problem);
     const to = patchWorkSkills(from, patch);
     const missing = namedSkills(to).find((name) => !latestSkill(store, name));
     if (missing) return refused('missing', `no skill ${missing}`);
@@ -136,6 +139,67 @@ export function changeWorkSkills(store: UserStore, patch: WorkSkillPatch, by: st
     }
     return { ok: true as const, value: to };
   });
+}
+
+/** The newest `job.conditional_skills_chosen` of a job (issue #1924); undefined: none was recorded. */
+const conditionalOf = (store: UserStore, jobId: string): ConditionalSkillChosen[] | undefined =>
+  (store.events.recent(1, ['job.conditional_skills_chosen'], jobId)[0]?.data as { skills: ConditionalSkillChosen[] } | undefined)?.skills;
+
+/** The done criteria of the conditional skills `job` got (issue #1924), each with its skill's name and its paths; none: none. */
+export const doneCriteriaOfJob = (store: UserStore, jobId: string): { skill: string; done: DoneCriterion[]; paths?: string[] }[] =>
+  (conditionalOf(store, jobId) ?? []).filter((c) => c.done.length > 0).map((c) => ({ skill: c.name, done: c.done, ...(c.paths ? { paths: c.paths } : {}) }));
+
+/**
+ * The deletes job `jobId`'s issue allows by resource address (issue #1924 part 2): read from the text the job runs — its
+ * item's snapshot, the approved text (issue #662) —, never from the live issue, which anyone who can edit it can change.
+ * No snapshot: none.
+ */
+export function allowedDeletesOfJob(store: UserStore, jobId: string): string[] {
+  const key = store.jobs.get(jobId)?.source?.key;
+  const text = key === undefined ? undefined : store.itemSnapshots.get(key);
+  return text ? allowedDeletesIn([text.body, ...text.comments.map((c) => c.body)]) : [];
+}
+
+/** The conditional skills the skill rules give `job` now, each once, in the rules' order, with why and its done criteria. */
+function chooseConditional(store: UserStore, job: Pick<Job, 'spec' | 'source'>, work: string): { chosen: ConditionalSkillChosen; files: Record<string, string> }[] {
+  const out = new Map<string, { chosen: ConditionalSkillChosen; files: Record<string, string> }>();
+  const signals = { repo: job.source?.repo, labels: job.source?.labels, kind: workKindOf(job.spec) };
+  for (const rule of workSkillSettings(store).rules ?? []) {
+    const why = ruleMatch(rule, signals);
+    const v = why && rule.skill !== work ? latestSkill(store, rule.skill) : undefined;
+    if (!why || !v) continue;
+    const had = out.get(v.name);
+    if (had) {
+      had.chosen.why = [...new Set([...had.chosen.why, ...why])];
+      // A rule with no paths gives it always; two with paths, when either's match.
+      if (!rule.paths?.length) delete had.chosen.paths;
+      else if (had.chosen.paths) had.chosen.paths = [...new Set([...had.chosen.paths, ...rule.paths])];
+      continue;
+    }
+    out.set(v.name, { chosen: { name: v.name, version: v.version, seq: v.seq, why, done: doneCriteriaOf(v.files), ...(rule.paths?.length ? { paths: [...rule.paths] } : {}) }, files: v.files });
+  }
+  return [...out.values()];
+}
+
+/**
+ * The work skill and the conditional skills of `job` (issue #1924), with their files: as chosen at its first start — when
+ * its work skill was chosen, its conditional skills were too, by the skill rules —, while each version is there; recorded
+ * as `job.conditional_skills_chosen` when the rules gave it any. A version that is gone is left out.
+ */
+export function jobSkillsOf(store: UserStore, job: Pick<Job, 'id' | 'spec' | 'source'>): { work: ReturnType<typeof workSkillOf>; conditional: { chosen: ConditionalSkillChosen; files: Record<string, string> }[] } {
+  const before = chosenOf(store, job.id);
+  const work = workSkillOf(store, job);
+  // Kept, not chosen now: the work skill's choice is the one before. Chosen again (a new kind of work, a version gone), so are these.
+  if (before !== undefined && JSON.stringify(before) === JSON.stringify(work.chosen)) {
+    const kept = (conditionalOf(store, job.id) ?? []).flatMap((c) => {
+      const v = versionOf(store, c);
+      return v ? [{ chosen: c, files: v.files }] : [];
+    });
+    return { work, conditional: kept };
+  }
+  const conditional = chooseConditional(store, job, work.chosen.name);
+  if (conditional.length > 0) store.events.append({ type: 'job.conditional_skills_chosen', jobId: job.id, data: { skills: conditional.map((c) => ({ ...c.chosen })) } });
+  return { work, conditional };
 }
 
 /** The newest `job.work_skill_chosen` of a job. */

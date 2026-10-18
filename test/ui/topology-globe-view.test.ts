@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Infra → Topology → Globe (ui/src/views/topology-globe.tsx, issue #1893): the globe beside the graph, on the same graph
+// Topology → Globe (ui/src/views/topology-globe.tsx, issue #1893): the globe beside the graph, on the same graph
 // and the same filters; its regions with their counts, a click on a region lists its nodes and a click on a node shows the
 // same details as the graph; the nodes with no known place in a list of their own; and the graph, saying why, when the
 // browser has no WebGL or the scene cannot start. The three.js scene (globe-scene.ts) needs WebGL, which happy-dom has

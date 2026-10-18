@@ -3,7 +3,8 @@
 // draft and what is wrong with them, and the line a job's timeline shows for the work skill it got.
 import { describe, expect, it } from 'vitest';
 import {
-  draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, settingsNaming, sourceLine, workSkillChosenLine,
+  draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, ruleLine, settingsNaming, sourceLine, workSkillChosenLine,
+  conditionalSkillsChosenLine,
 } from '../../ui/src/model/skills.ts';
 import type { SkillLibraryView } from '../../src/domain/skill-library.ts';
 
@@ -94,5 +95,24 @@ describe('the skills a skill requires', () => {
   it('names each one, and says which the library does not have; none: no line', () => {
     expect(requiresLine(view, view.skills[0]!)).toBe('requires deep-research, gone (not in the library)');
     expect(requiresLine(view, view.skills[1]!)).toBeUndefined();
+  });
+});
+
+describe('conditional skills (issue #1924)', () => {
+  it('a skill rule names a skill for removal, and reads as one line', () => {
+    const rules = { ...view, workSkills: { ...view.workSkills, rules: [{ skill: 'my-work', repos: ['octo/infra'], labels: ['iac', 'gitops'] }] } };
+    expect(settingsNaming(rules, 'my-work')).toContain('a skill rule: repository octo/infra and label iac or gitops');
+    expect(ruleLine({ skill: 'iac', kinds: ['code'] })).toBe('kind of work Code work');
+  });
+
+  it('the job\'s timeline names each conditional skill it got, its version, why, and what the hopper checks', () => {
+    expect(conditionalSkillsChosenLine({ skills: [
+      { name: 'iac', version: 'd'.repeat(16), seq: 0, why: ['repository octo/infra', 'label iac'], done: [{ kind: 'plan-destroy' }] },
+      { name: 'gitops', version: 'e'.repeat(16), seq: 2, why: ['label gitops'], done: [] },
+    ] })).toBe(`conditional skills: iac ${'d'.repeat(8)} (built-in), by repository octo/infra, label iac; done when no terraform plan destroys or replaces a resource; gitops ${'e'.repeat(8)} (version 2), by label gitops`);
+    // Part 3: a person-merges criterion.
+    expect(conditionalSkillsChosenLine({ skills: [
+      { name: 'gitops-deploy', version: 'f'.repeat(16), seq: 0, why: ['label gitops'], done: [{ kind: 'person-merges', paths: ['**/overlays/production/**'] }] },
+    ] })).toBe(`conditional skills: gitops-deploy ${'f'.repeat(8)} (built-in), by label gitops; done when a person merges a change to **/overlays/production/**, not the hopper`);
   });
 });

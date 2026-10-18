@@ -1,22 +1,23 @@
-// Infra → Topology (issue #1781, design.md "The infrastructure topology"): the graph of the services in the user's AWS
+// Topology (issue #1781, design.md "The infrastructure topology"): the graph of the services in the user's AWS
 // accounts and Kubernetes clusters, and what is linked to what. A person filters it by account, cluster, region and kind,
 // and clicks a node to read its details, its neighbours and the Infra changes that touched it (plans, approvals, applies,
-// drift, out-of-band writes); a timeline entry on Infra picks its node too, so the node picked is the page's. Each source says when it
-// was read, and a stale one says why. The page loads the graph (infra.tsx) and shows this panel always: an empty graph says
-// how a check fills it. Discover now (part 3) asks the hopper to read every account and cluster its vault mints for, as its
-// schedule does every 6 hours. Two views of the same graph and the same filters (issue #1893): Graph, and Globe (the nodes
+// drift, out-of-band writes); a timeline entry on Infra opens its node here too, so the node picked is the page's. Each source says when it
+// was read, and a stale one says why; a failed last read shows its error (issue #1943). The page loads the graph
+// (topology-page.tsx, its own page since issue #1943) and shows this panel always: with no source it says why and offers
+// what fills it, in place (topology-sources.tsx). Discover now (part 3) asks the hopper to read every account and cluster
+// its vault mints for, as its schedule does. Two views of the same graph and the same filters (issue #1893): Graph, and Globe (the nodes
 // at their AWS region, topology-globe.tsx); with no WebGL the Globe shows the graph and says why. Read-only: nothing here
 // acts on a cloud or a cluster.
-import { Globe, Network, RefreshCw } from 'lucide-react';
+import { Globe, Network } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
-import { post } from '@/lib/api';
 import type { TimelineEntry } from '@/model/infra-plans';
 import { webglAvailable } from '@/model/topology-globe';
 import { nodeEntries, DRAW_MAX, filterChoices, filterGraph, layout, neighbours, sideOf, sourceName, sourceState, type TopologyFilter } from '@/model/topology';
 import { KIND, KIND_TONE } from './infra-timeline';
 import { GlobeView } from './topology-globe';
+import { DiscoverNow, NoSources, ReadErrors } from './topology-sources';
 import type { GraphNode, NodeKind, TopologyGraph } from '../../../src/domain/types.ts';
 
 const SELECT = 'h-8 rounded-md border bg-transparent px-2 text-sm';
@@ -94,32 +95,6 @@ function Details({ g, node, timeline, onSelect }: { g: TopologyGraph; node: Grap
   );
 }
 
-/** What Discover now answers: how the run ended, and the graph after it. */
-type Discovered = { state: string; error?: string; graph: TopologyGraph };
-
-/** Discover now: the hopper's own read of every account and cluster its vault mints for, with what it said. */
-function DiscoverNow({ onGraph }: { onGraph: (g: TopologyGraph) => void }) {
-  const [busy, setBusy] = useState(false);
-  const [said, setSaid] = useState<{ ok: boolean; words: string } | undefined>();
-  const discover = async () => {
-    setBusy(true); setSaid(undefined);
-    try {
-      const r = await post<Discovered>('/ui/api/topology/discover', {});
-      onGraph(r.graph);
-      setSaid(r.state === 'done' ? { ok: true, words: 'Discovery read every account and cluster the vault mints for.' }
-        : { ok: false, words: `Discovery goes on in the background${r.error ? `: ${r.error}` : ''}.` });
-    } catch (e) {
-      setSaid({ ok: false, words: `Discovery did not run: ${(e as Error).message}` });
-    } finally { setBusy(false); }
-  };
-  return (
-    <div data-slot="topology-discover" className="flex flex-wrap items-center gap-2">
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => { void discover(); }}><RefreshCw />{busy ? 'Discovering…' : 'Discover now'}</Button>
-      {said && <span role="status" className={`text-xs ${said.ok ? 'text-muted-foreground' : 'text-warn'}`}>{said.words}</span>}
-    </div>
-  );
-}
-
 /** `selected` and `onSelect`: the node picked, the page's, so an Infra timeline entry picks its node here too. `onGraph`: the graph after Discover now. */
 export function TopologyPanel({ g, timeline, selected, onSelect: setSelected, onGraph }: { g: TopologyGraph; timeline: readonly TimelineEntry[]; selected?: string; onSelect: (id: string) => void; onGraph?: (g: TopologyGraph) => void }) {
   const [f, setF] = useState<TopologyFilter>({});
@@ -137,9 +112,10 @@ export function TopologyPanel({ g, timeline, selected, onSelect: setSelected, on
   return (
     <Panel title="Topology" icon={Network} count={g.nodes.length || ''} bodyClassName="space-y-3">
       <p className="text-sm text-muted-foreground">The services in your AWS accounts and Kubernetes clusters, and what is linked to what. The hopper reads each account and cluster its vault mints for every 6 hours, as the read role hopper-read; a read-only check can report them too. A source that cannot be read keeps its last good snapshot.</p>
-      {onGraph && <DiscoverNow onGraph={onGraph} />}
-      {g.sources.length === 0 ? <Empty>No topology yet. Set an aws-account minting credential on Settings → Vault, then Discover now. Or a read-only check reports what it finds with POST /ui/api/topology/report and an API token with the scope topology:report.</Empty> : (
+      {g.sources.length === 0 ? <NoSources onGraph={onGraph} /> : (
         <>
+          {onGraph && <DiscoverNow onGraph={onGraph} />}
+          <ReadErrors sources={g.sources} />
           <ul data-slot="topology-sources" className="space-y-0.5 text-xs">
             {g.sources.map((s) => {
               const st = sourceState(s);
@@ -155,7 +131,8 @@ export function TopologyPanel({ g, timeline, selected, onSelect: setSelected, on
             </div>
           </div>
           {view === 'globe' && noGlobe && <p data-slot="topology-globe-fallback" role="status" className="text-xs text-warn">The globe cannot be drawn: {noGlobe}. The graph shows instead.</p>}
-          {shown.nodes.length === 0 ? <Empty>No node holds every filter.</Empty>
+          {g.nodes.length === 0 ? <Empty>No node yet: no source was read without an error.</Empty>
+            : shown.nodes.length === 0 ? <Empty>No node holds every filter.</Empty>
             : view === 'globe' && !noGlobe ? <GlobeView g={g} shown={shown} selected={selected} onSelect={setSelected} onFail={setNoGlobe} />
             : graph}
           <p className="text-xs text-muted-foreground">{shown.nodes.length} nodes, {shown.links.length} links. {view === 'globe' && !noGlobe

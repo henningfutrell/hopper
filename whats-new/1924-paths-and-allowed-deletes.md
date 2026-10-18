@@ -1,0 +1,1 @@
+- A skill rule can now name the files a change touches, such as all Terraform files. The hopper checks that skill's done rules only when the job's pull request changes such a file. An issue can also list the deletes it allows, by resource address, after a line "Allowed deletes:". A plan that deletes only those resources no longer keeps the job from being done.

@@ -1,5 +1,6 @@
 // Known causes (issue #509): the built-in ones, matched by the error text, and the ones a person named for a
 // signature (`NamedCause`), which win. Shared causes first: a machine that cannot be reached is not a hiccup. Pure.
+import { DONE_CRITERIA_UNMET_TEXT } from '../domain/conditional-skills.ts';
 import { OWN_PR_CHECKS_RED_TEXT, OWN_PR_UNFINISHED_TEXT, workShipped, type CauseCheck, type FailureClass, type FailureDecision, type KnownCause, type MachineSnapshot, type NamedCause, type WorkState } from '../domain/types.ts';
 
 interface BuiltinCause extends KnownCause { pattern: RegExp }
@@ -10,6 +11,8 @@ const cause = (c: Omit<BuiltinCause, 'builtin'>): BuiltinCause => ({ ...c, built
 export const OWN_PR_CHECKS_RED = 'own-pr-checks-red';
 /** The cause of a job whose own pull request has merge conflicts or is a draft (issue #1265): the hopper sends it back to finish it. */
 export const OWN_PR_UNFINISHED = 'own-pr-unfinished';
+/** The cause of a job whose conditional skills' done criteria are not met (issue #1924): the hopper sends it back to rework. */
+export const DONE_CRITERIA_UNMET = 'done-criteria-unmet';
 
 export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
   cause({
@@ -83,6 +86,12 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
     id: OWN_PR_UNFINISHED, name: 'Own PR unfinished', cls: 'transient', decision: 'continue', scope: 'machine',
     description: 'The job said it was done, but its own pull request has merge conflicts with its base, or is a draft. The hopper finishes it, not a person: it sends the job back in its own session (else a new job of its item), told to rebase onto the base branch, resolve the conflicts, make the checks pass and push, or to mark the pull request ready. Each send-back counts against the retry limit; only then a person. Its own job\'s: it never groups or holds other jobs.',
     pattern: OWN_PR_UNFINISHED_TEXT,
+  }),
+  // Before Not complete, whose text it shares (issue #1924): its pull request is there, but a done criterion of its skills is not met.
+  cause({
+    id: DONE_CRITERIA_UNMET, name: 'Done criteria unmet', cls: 'transient', decision: 'continue', scope: 'machine',
+    description: 'The job said it was done, and its own pull request is ready for review, but a done criterion of a conditional skill it got is not met: a check it names did not pass, or a terraform plan destroys or replaces a resource. The hopper checks this itself and does not trust the job. It sends the job back in its own session (else a new job of its item), told what it found, to rework it on the same branch. Each send-back counts against the retry limit; then it ends failed with the reason, for a person. Its own job\'s: it never groups or holds other jobs.',
+    pattern: DONE_CRITERIA_UNMET_TEXT,
   }),
   cause({
     id: 'not-complete', name: 'Not complete', cls: 'job', decision: 'person', scope: 'machine',

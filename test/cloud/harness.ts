@@ -3,7 +3,10 @@
 import type { LightMyRequestResponse } from 'fastify';
 import pg from 'pg';
 import type { CloudConfig } from '../../cloud/config.ts';
+import type { CloudLinkAnswers } from '../../cloud/link.ts';
+import { createRegistrationRequests } from '../../cloud/requests.ts';
 import { SESSION_COOKIE, SIGN_IN_COOKIE, cloudServer, cookiesOf } from '../../cloud/server.ts';
+import { createInstanceStates } from '../../cloud/states.ts';
 import { openCloudStore } from '../../cloud/store.ts';
 import { testDatabaseUrl } from '../support/database.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
@@ -22,9 +25,11 @@ export async function setUp() {
   const store = await openCloudStore(databaseUrl);
   stops.push(() => store.close());
   const config: CloudConfig = { databaseUrl, publicUrl: PUBLIC, githubUrl: github.url, clientId: 'hosted-app', clientSecret: SECRET, host: '127.0.0.1', port: 0, trustProxy: false };
-  const server = await cloudServer({ config, store });
+  const requests = createRegistrationRequests();
+  const states = createInstanceStates();
+  const server = await cloudServer({ config, store, requests, states });
   stops.push(() => server.close());
-  return { github, store, server, databaseUrl };
+  return { github, store, server, databaseUrl, requests, states };
 }
 
 export type Set = Awaited<ReturnType<typeof setUp>>;
@@ -49,7 +54,8 @@ export async function signIn(s: Set) {
 export const account = (s: Set, session: string | undefined) =>
   s.server.inject({ method: 'GET', url: '/api/account', ...(session ? { headers: { cookie: `${SESSION_COOKIE}=${session}` } } : {}) });
 
-/** Every row of the store's tables, as JSON: [account, session, sign_in, record, registration, registration_tombstone]. */
+/** Every row of the store's tables, as JSON: [account, session, sign_in, record, registration, registration_tombstone,
+ * machine_name]. */
 export async function rows(databaseUrl: string): Promise<string> {
   const u = new URL(databaseUrl);
   const schema = u.searchParams.get('schema')!;
@@ -58,7 +64,7 @@ export async function rows(databaseUrl: string): Promise<string> {
   await c.connect();
   try {
     const out: unknown[] = [];
-    for (const t of ['account', 'session', 'sign_in', 'record', 'registration', 'registration_tombstone']) out.push((await c.query(`SELECT row_to_json(x) AS r FROM "${schema}".${t} x`)).rows);
+    for (const t of ['account', 'session', 'sign_in', 'record', 'registration', 'registration_tombstone', 'machine_name']) out.push((await c.query(`SELECT row_to_json(x) AS r FROM "${schema}".${t} x`)).rows);
     return JSON.stringify(out);
   } finally { await c.end(); }
 }
@@ -68,4 +74,12 @@ export async function rawUser(s: Set, login = 'octo-user'): Promise<{ id: number
   const { accessToken } = s.github.mint(login);
   const r = await rawRequest(s.github.url, { path: '/api/v3/user', headers: { authorization: `token ${accessToken}` } });
   return JSON.parse(r.text) as { id: number };
+}
+
+/** The owner of `githubUserId` enters a code for the instance, and the instance answers `answer` (default `registered`). */
+export async function registerAs(s: Set, link: CloudLinkAnswers, githubUserId: string, installId: string, now: Date,
+  answer = JSON.stringify({ type: 'registration', outcome: 'registered' })): Promise<boolean> {
+  const login = (await s.store.account(githubUserId))!.login;
+  s.requests.enter({ githubUserId, login, installId, code: 'c0de'.repeat(16), now });
+  return link.registration({ installId, account: login, answer, now });
 }

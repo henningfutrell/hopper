@@ -5,6 +5,7 @@
 // A job's work skill is chosen once, at its first start, and kept: an edit or a new setting reaches the next job, never a
 // running one. A skill may require others (its SKILL.md's `requires:`): they go to the job beside it, each version kept for
 // the job too. Not a skill of the broker (src/skills/, what the hopper sets up for a box), and not a run skill. Pure.
+import { DONE_FILE, doneFileProblem, keptRule, type SkillRule } from './conditional-skills.ts';
 
 /** What a job was asked to do, for its work skill: the work itself (`code`), research, or a proposal; as its job cost kind. */
 export const WORK_KINDS = ['code', 'research', 'proposal'] as const;
@@ -14,7 +15,7 @@ export type WorkKind = typeof WORK_KINDS[number];
 export const workKindOf = (spec: { research?: true; proposal?: true }): WorkKind => (spec.research ? 'research' : spec.proposal ? 'proposal' : 'code');
 
 /** The built-in library skills, by name, and the one each kind of work gets while no setting names another. */
-export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal', 'orchestrate'] as const;
+export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal', 'orchestrate', 'iac', 'gitops-deploy'] as const;
 export const DEFAULT_WORK_SKILLS: Readonly<Record<WorkKind, string>> = { code: 'work', research: 'research', proposal: 'proposal' };
 
 /** The file every library skill has: what the job reads first. */
@@ -110,10 +111,14 @@ export interface SkillLibraryView {
 /** Each kind of work's skill by name; absent: the next setting down. */
 export type WorkSkillChoice = Partial<Record<WorkKind, string>>;
 
-/** The user's choice of work skills: for every repository, and per repository (`owner/name` lowercased), which wins. */
+/**
+ * The user's choice of work skills: for every repository, and per repository (`owner/name` lowercased), which wins; and the
+ * skill rules (issue #1924) that give a job conditional skills beside its work skill. Absent: none.
+ */
 export interface WorkSkillSettings {
   kinds: WorkSkillChoice;
   repos: Record<string, WorkSkillChoice>;
+  rules?: SkillRule[];
 }
 
 export const DEFAULT_WORK_SKILL_SETTINGS: WorkSkillSettings = { kinds: {}, repos: {} };
@@ -150,6 +155,8 @@ export function workSkillFor(s: WorkSkillSettings, repo: string | undefined, kin
 export interface WorkSkillPatch {
   kinds?: Partial<Record<WorkKind, string | null>>;
   repos?: Record<string, Partial<Record<WorkKind, string | null>>>;
+  /** The skill rules, all of them (issue #1924); absent: as they are. */
+  rules?: SkillRule[];
 }
 
 const patched = (choice: WorkSkillChoice, p: Partial<Record<WorkKind, string | null>>): WorkSkillChoice => {
@@ -162,7 +169,7 @@ const patched = (choice: WorkSkillChoice, p: Partial<Record<WorkKind, string | n
   return next;
 };
 
-/** The settings after a change; a repository with no choice left is dropped. */
+/** The settings after a change; a repository with no choice left is dropped, and so are no rules. */
 export function patchWorkSkills(s: WorkSkillSettings, p: WorkSkillPatch): WorkSkillSettings {
   const repos = { ...s.repos };
   for (const [repo, choice] of Object.entries(p.repos ?? {})) {
@@ -171,12 +178,13 @@ export function patchWorkSkills(s: WorkSkillSettings, p: WorkSkillPatch): WorkSk
     if (Object.keys(next).length === 0) delete repos[key];
     else repos[key] = next;
   }
-  return { kinds: patched(s.kinds, p.kinds ?? {}), repos };
+  const rules = (p.rules ?? s.rules ?? []).map(keptRule);
+  return { kinds: patched(s.kinds, p.kinds ?? {}), repos, ...(rules.length > 0 ? { rules } : {}) };
 }
 
 /** Every skill name a setting names. */
 export const namedSkills = (s: WorkSkillSettings): string[] =>
-  [...new Set([...Object.values(s.kinds), ...Object.values(s.repos).flatMap((c) => Object.values(c))].filter((n): n is string => typeof n === 'string'))];
+  [...new Set([...Object.values(s.kinds), ...Object.values(s.repos).flatMap((c) => Object.values(c)), ...(s.rules ?? []).map((r) => r.skill)].filter((n): n is string => typeof n === 'string'))];
 
 /** Why `name` cannot name a library skill, or undefined. */
 export function skillNameProblem(name: string): string | undefined {
@@ -197,6 +205,8 @@ export function skillFilesProblem(files: Record<string, string>): string | undef
     bytes += Buffer.byteLength(files[path], 'utf8');
   }
   if (bytes > SKILL_MAX_BYTES) return `a skill holds at most ${SKILL_MAX_BYTES / 1024} KiB; this is ${bytes} bytes`;
+  const done = files[DONE_FILE] === undefined ? undefined : doneFileProblem(files[DONE_FILE]);
+  if (done) return done;
   const requires = skillRequires(files[SKILL_FILE]!);
   const bad = requires.find((n) => skillNameProblem(n));
   if (bad !== undefined) return `${SKILL_FILE} requires ${JSON.stringify(bad)}: no skill name`;

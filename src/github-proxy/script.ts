@@ -27,8 +27,8 @@ export const PROXY_TOKEN_FILE = 'hopper/token';
 export const PROXY_HELP = `hopper-gh: GitHub through the hopper. The hopper acts with your user's GitHub connection;
 this machine needs no GitHub login. Never run gh auth login or start a device login.
 
-  sh "$HOPPER_GH" issue create   --repo OWNER/NAME --title TITLE (--body TEXT | --body-file FILE) [--required]
-  sh "$HOPPER_GH" issue comment N --repo OWNER/NAME (--body TEXT | --body-file FILE)
+  sh "$HOPPER_GH" issue create   --repo OWNER/NAME --title TITLE (--body TEXT | --body-file FILE) [--required] [--key KEY]
+  sh "$HOPPER_GH" issue comment N --repo OWNER/NAME (--body TEXT | --body-file FILE) [--key KEY]
   sh "$HOPPER_GH" issue view N    --repo OWNER/NAME
   sh "$HOPPER_GH" issue comments N --repo OWNER/NAME     (an issue's or a pull request's comments)
   sh "$HOPPER_GH" issue close N   --repo OWNER/NAME      (this job's own issue only, as completed)
@@ -60,6 +60,8 @@ github, and readAt says when it was read. ledger, when the hopper follows the it
 An issue filed this way says the hopper filed it. A follow-up gets no labels or assignees: a person triages it.
 When no answer comes back to issue create or comment, hopper-gh sends it again by itself: the hopper answers the first
 one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
+With --key KEY (8 to 64 letters, digits, _ or -) you choose the key: the same key from this job, also after it resumed on
+another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the orchestrate skill).
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
 required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open, and gives
 it the job sources' label and your user as assignee, so Intake lists it. When GitHub did not set the assignee, the
@@ -118,15 +120,16 @@ case "$1 $2" in
 esac
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-n=$#; i=0
+n=$#; i=0; ownkey=
 while [ "$i" -lt "$n" ]; do
   a=$1; shift; i=$((i + 1))
   case "$a" in
     --force) set -- "$@" --data-urlencode "force=true" ;;
     --required) set -- "$@" --data-urlencode "required=true" ;;
-    --repo|--title|--body|--head|--base|--body-file|--comment-on|--timeout|--for)
+    --repo|--title|--body|--head|--base|--body-file|--comment-on|--timeout|--for|--key)
       [ "$i" -lt "$n" ] || { echo "hopper-gh: $a needs a value" >&2; exit 2; }
       v=$1; shift; i=$((i + 1))
+      [ "$a" = --key ] && ownkey=1
       if [ "$a" = --body-file ]; then
         [ -r "$v" ] || { echo "hopper-gh: cannot read $v" >&2; exit 2; }
         set -- "$@" --data-urlencode "body@$v"
@@ -144,7 +147,7 @@ token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; tr
 ${HCURL_SH}
 if [ "$op" != pr.wait ]; then
   case $op in
-    issue.create|issue.comment) set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
+    issue.create|issue.comment) [ -n "$ownkey" ] || set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
     *) tries=1 ;;
   esac
   # Sent again with the same key only when no answer came (curl's own error, not GitHub's or the hopper's: 22).

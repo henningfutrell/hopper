@@ -8,6 +8,7 @@ import type { AssetKind, Operation } from '../domain/access.ts';
 import { ARTIFACT_HELP } from '../artifacts/script.ts';
 import { PROXY_HELP } from '../github-proxy/script.ts';
 import { BOX_STEP_HELP, NEED_STEP_HELP, STEP_HELP } from '../windows-steps/script.ts';
+import { BUNDLED_LINES } from './bundled.ts';
 
 /** How the link's credential reaches the tool: the form of the vault's helper (`$HOPPER_SECRET <form> NAME`). */
 export type LinkForm = 'kube' | 'aws';
@@ -143,6 +144,9 @@ export const SKILLS: readonly Skill[] = [
   },
 ];
 
+/** Every skill's name: the catalog's, then the bundled skills (issue #1909). */
+export const SKILL_NAMES: readonly string[] = [...SKILLS.map((s) => s.name), ...Object.keys(BUNDLED_LINES)];
+
 export const skillOf = (name: string): Skill | undefined => SKILLS.find((s) => s.name === name);
 
 /** A skill the hopper does not have, asked for in the job's own words (issue #583): what it takes is the suggested kind. */
@@ -163,7 +167,8 @@ export function credentialText(c: SkillCredential, s: { name: string; kind?: str
 
 /** The catalog: one line per skill, then how to load one. Few tokens: the full text waits for a load. */
 export function catalogText(): string {
-  return `${SKILLS.map((s) => `${s.name}: ${s.line}`).join('\n')}\nLoad one: sh "$HOPPER_SKILL" NAME [ASSET]\nA credential for any other service: sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>" [--why "<what for>"]\n`;
+  const lines = [...SKILLS.map((s) => `${s.name}: ${s.line}`), ...Object.entries(BUNDLED_LINES).map(([name, line]) => `${name}: ${line}`)];
+  return `${lines.join('\n')}\nLoad one: sh "$HOPPER_SKILL" NAME [ASSET]\nA credential for any other service: sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>" [--why "<what for>"]\n`;
 }
 
 /** "a cluster or namespace": the asset kinds a link takes, in words. */

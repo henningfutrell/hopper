@@ -32,7 +32,7 @@ import { batchClosingIssues, MERGE_STANDS } from '../domain/work-item-landing.ts
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
-import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { workSkillOf } from '../skill-library/index.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts';
+import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { jobSkillsOf } from '../skill-library/index.ts'; import { conditionalSkillsCredentials } from '../domain/conditional-skills.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
@@ -216,8 +216,9 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     jobProxy(job, machine) {
       const url = o.url(machine);
       if (!url) return undefined;
-      // The job's work skill (issue #1911): the version chosen at its first start, its files and the skills it requires beside the scripts.
-      const chosen = workSkillOf(o.store, job); const skill = workSkillCredentials(chosen.skills);
+      // The job's work skill (issue #1911) and its conditional skills (issue #1924): the versions chosen at its first start, their files and the skills the work skill requires beside the scripts.
+      const skills = jobSkillsOf(o.store, job); const work = workSkillCredentials(skills.work.skills);
+      const more = conditionalSkillsCredentials(skills.conditional.map((c) => c.chosen), Object.fromEntries(skills.conditional.map((c) => [c.chosen.name, c.files]))); const skill = { files: { ...work.files, ...more.files }, paths: { ...work.paths, ...more.paths } };
       return {
         url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`

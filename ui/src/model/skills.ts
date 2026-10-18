@@ -4,6 +4,7 @@
 // (src/domain/skill-library.ts: skillNameProblem, skillFilesProblem) so the page says what is wrong before Save; the
 // daemon checks again and has the last word.
 import type { LibrarySkillSummary, LibrarySkillVersion, SkillLibraryView, WorkKind, WorkSkillChoice, WorkSkillChosen, WorkSkillFrom } from '../../../src/domain/skill-library.ts';
+import type { ConditionalSkillChosen, DoneCriterion, SkillRule } from '../../../src/domain/conditional-skills.ts';
 
 export const SKILL_FILE = 'SKILL.md';
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -40,8 +41,16 @@ export const repoRows = (view: SkillLibraryView): { repo: string; choice: WorkSk
 /** Each setting that names `name`: `every repository: <kind>`, then `<repo>: <kind>`. The daemon refuses to remove such a skill. */
 export function settingsNaming(view: SkillLibraryView, name: string): string[] {
   const of = (where: string, choice: WorkSkillChoice) => view.kinds.filter((k) => choice[k] === name).map((k) => `${where}: ${KIND_LABEL[k]}`);
-  return [...of('every repository', view.workSkills.kinds), ...repoRows(view).flatMap((r) => of(r.repo, r.choice))];
+  const rules = (view.workSkills.rules ?? []).filter((r) => r.skill === name).map((r) => `a skill rule: ${ruleLine(r)}`);
+  return [...of('every repository', view.workSkills.kinds), ...repoRows(view).flatMap((r) => of(r.repo, r.choice)), ...rules];
 }
+
+/** A skill rule's conditions as one line (issue #1924): each condition, one of its values each. */
+export const ruleLine = (r: SkillRule): string => [
+  ...(r.repos?.length ? [`repository ${r.repos.join(' or ')}`] : []),
+  ...(r.labels?.length ? [`label ${r.labels.join(' or ')}`] : []),
+  ...(r.kinds?.length ? [`kind of work ${r.kinds.map((k) => KIND_LABEL[k]).join(' or ')}`] : []),
+].join(' and ');
 
 /** The first files of a new skill: a SKILL.md with its name and a description to fill in. */
 export const newSkillFiles = (name: string): Record<string, string> => ({
@@ -86,3 +95,14 @@ export function requiresLine(view: SkillLibraryView, skill: Pick<LibrarySkillSum
   const there = new Set(view.skills.map((s) => s.name));
   return `requires ${skill.requires.map((n) => (there.has(n) ? n : `${n} (not in the library)`)).join(', ')}`;
 }
+
+// The daemon's words for the done criteria (src/domain/conditional-skills.ts criteriaLine), copied: the UI imports types only.
+const criteriaLine = (criteria: readonly DoneCriterion[]): string => criteria.map((c) => (c.kind === 'person-merges'
+  ? `a person merges ${c.paths?.length ? `a change to ${c.paths.join(', ')}` : 'it'}, not the hopper`
+  : c.kind === 'checks-passed'
+  ? `every check named ${c.checks} passed`
+  : `no terraform plan ${c.checks === undefined ? '' : `of the checks named ${c.checks} `}destroys or replaces ${(c.max ?? 0) === 0 ? 'a resource' : `more than ${c.max} ${c.max === 1 ? 'resource' : 'resources'}`}`)).join('; ');
+
+/** A job's `job.conditional_skills_chosen` as one line (issue #1924): each skill, its version, why, and what the hopper checks. */
+export const conditionalSkillsChosenLine = (d: { skills: ConditionalSkillChosen[] }): string =>
+  `conditional skills: ${d.skills.map((c) => `${c.name} ${shortVersion(c.version)} (${c.seq === 0 ? 'built-in' : `version ${c.seq}`}), by ${c.why.join(', ')}${c.done.length > 0 ? `; done when ${criteriaLine(c.done)}` : ''}`).join('; ')}`;

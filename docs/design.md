@@ -76,9 +76,9 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the **bundled skills** — each the plain files of a directory in `bundled/` (`orchestrate/`), its skill version a content hash (`bundled.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
-| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill, chosen at its first start and kept (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
+| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
@@ -95,7 +95,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, else from the telemetry setting, off unless one names an exporter (`sdk.ts`, `start.ts`); the setting kept and applied at once (`settings.ts`, "Telemetry settings"); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the steps the hopper does for a job — its worktree, a follow of its pull request, the base merge, a tend, a need box — as spans of the job's trace (`job-steps.ts`, "Telemetry: job steps"); each landing batch run a span, and a deploy span in the trace of each job in it (`deploys.ts`, "Telemetry: a box's own processes and deploys"); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); what runs now — the sandboxes that run at the same time and the store's open connections —, from the readers the parts that hold them add (`live.ts`, "Telemetry: what runs now"); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
-| `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**), its side of the cloud link's registration messages (`link.ts`, transport-free: a registration kept on the instance's `registered`, a tombstone answered `unregister` at the hello), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
+| `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**, the **hopper.io machine names**), its **registration requests** (`requests.ts`: the code an owner entered, in memory only), its **instance states** (`states.ts`: each registered instance's last **hopper.io state snapshot**, checked against hopper.io's own copy of its schema, in memory only), its side of the cloud link's registration messages (`link.ts`, transport-free: a request given as `register` to its instance, a registration kept on that instance's `registered`, a tombstone answered `unregister` at the hello, a snapshot kept as the instance's state), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI of `BOX_AGENTS`, issue #865; herdr; the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — `install.html`, the install page, `guide.html`, the user guide (issue #556), and the **help pages** (issue #790): `help/*.md` rendered by `site/help.ts` into `help/<page>.html`, with each page's Markdown beside it, never copied into `site/`; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/` (it renders the help pages itself, with `marked`, the way `src/help/book.ts` does); of `ui/` only `index.css` and `app/story.ts`; of `help/` only its Markdown; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
@@ -15164,7 +15164,7 @@ JSON. The broker (`src/skills/broker.ts`), in order:
 **The skills** (`src/skills/catalog.ts`, baked in): `help` (the help pages, "Help"), `github` (the text is `hopper-gh`'s help), `kube-diagnostics` (read
 on a cluster or namespace), `aws-diagnostics` (read on an AWS account or role). No skill is special to one outside service: a credential for any
 other service is asked in the job's own words (issue #583, "The dynamic vault"), and the catalog's last line says how.
-The catalog stays under 800 characters.
+The catalog stays under 1100 characters (issues #1905 and #1909 added `topology` and `orchestrate`).
 
 **Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
 (`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
@@ -15180,7 +15180,7 @@ their approvals. Access checks the job (issue #581): its box's template comes fr
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker | engine, http, store, plugins, executors, decider |
+| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker, the bundled skills (`bundled/`, issue #1909) | engine, http, store, plugins, executors, decider |
 
 Tests: `test/integration/skills.test.ts` (the real daemon, a real joined box and client, OpenFGA as a double; the job runs
 the real `hopper-skill`: the catalog in short lines; `github` loaded; a skill the hopper does not have refused with the
@@ -20912,7 +20912,7 @@ and the writes held while a sign-in has ended are the next parts.
   `work-items.ts`), an owner, a next check and a deadline per row, one host at a time (the sweep lease), and a replay
   (`hopper ledger rebuild`).
 - **Not in milestone 1:** a correction of the other states' label drift. It is logged and counted (part 4); the issue
-  names its correction as the follow-up.
+  names its correction as the follow-up, done in issue #1933 ("The label mirror corrects every judged state").
 
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
@@ -20937,6 +20937,28 @@ stale, asked once, a new job takes it over; a live queued job never; partly done
 Part 8: `test/sources/github-item-labels.test.ts` (`blockLabels` of each state), `test/work-items/reconcile-labels.test.ts`
 (a block's rows kept with it, coalesced into one remove and one add, once; no block when its rows cannot be kept; no rows
 with no GitHub job).
+
+### The label mirror corrects every judged state (issue #1933, 2026-10-18)
+
+Follow-up of milestone 1. Before it, the label mirror corrected only a blocked item's drift. Each other judged state's drift
+was only logged and counted.
+
+- **Every judged state's drift is corrected.** An item a job works (queued, working, waiting outside) loses each end label
+  on its issue. An item in PR open loses each end label but its waiting label. The correction is the one path of part 4:
+  GitHub outbox rows (act `mirror`, tag `<state>:<cause>`), coalesced into one remove call and one add call, once. An item
+  that moved in the last two minutes, or that has outbox rows not sent, is not judged. The reconciler of #1892 builds on
+  this path; it adds no second one.
+- **PR open with no waiting label gets one.** `labelsFor` names the label to add: `hopper:partly-done` when the item's
+  pull request is a part, else `hopper:pr-ready`. Either one on the issue is no drift. The ledger does not hold that a pull
+  request is a part; the item's job does (`partlyDone`, or `part` in its source state), so the intake gives the mirror
+  `partOpen(key)`. `labelDrift` has no `missing` flag now: a drift always names the label to add.
+- **Corrections are counted apart.** `hopper.work_items.label_corrections` counts each correction queued, by source and
+  state. `hopper.work_items.label_drift` still counts each drift once, and its `corrected` attribute says whether the
+  mirror queued its correction (false: the same act went through and the next discover still lists the drift).
+
+**Verification:** `test/sources/github-item-labels.test.ts` (PR open's label to add, of a part or not),
+`test/sources/github-label-mirror.test.ts` (a drift of each judged state one coalesced change, once; PR open with no
+waiting label; an item with outbox rows not sent not judged).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -21991,7 +22013,7 @@ and the API for those are follow-ups.
   token with its scope in State and usage, the API door). No token or id: the accounts carry what `parseAuthStatus`
   keeps (email, plan, organization, sign-in method).
 - **CLI.** `hopper accounts` prints that answer (viewer).
-- **UI.** Accounts is a nav group of its own (not Settings, not Machines): `ui/src/views/accounts.tsx`, model
+- **UI.** Accounts is a view of its own (not under Settings), in the nav group Sources & machines since issue #1943: `ui/src/views/accounts.tsx`, model
   `ui/src/model/tool-accounts.ts`, read through the shared polled reads (`useToolAccounts`, every 30 s; a usage source
   emits no event). A card per account: its plan and organization, each machine with its sign-in, read and last-used
   times and why, and its week gauges. The nav badge counts the machines signed out.
@@ -24983,6 +25005,50 @@ of the run stays, the user's config dirs unchanged; a run dir that cannot be rem
 an answer and after a timeout), `test/client/level.test.ts` (the same for a client's run), `test/drafting/run.test.ts` (a
 draft run stopped on this machine and on an ssh target: the CLI no longer alive, its run dir gone).
 
+## Bundled skills (issue #1909, part 1, 2026-10-18)
+
+**The problem.** A job that planned its work as a task list, fanned out sub-tasks and finished them read how to do it
+from a skill of the user's workflow repositories (`workflow-orchestrate`). A hopper with no such repository gave its jobs
+no way to orchestrate. That skill also used its own tooling (`orchestrate.sh`, a journal in the repository), which a job
+on a box does not have, and which keeps state on one machine.
+
+**The change.**
+- A **bundled skill** is the plain files of a directory in `src/skills/bundled/`, shipped with the hopper. The first is
+  `orchestrate/` (`SKILL.md`). Its **skill version** is the first 16 hex of a SHA-256 over its files' names and SHA-256s
+  (`releaseOf`, as a client release and a run skill): the same files are always the same version (`src/skills/bundled.ts`).
+- **Delivery is `hopper-skill`.** Every job of every harness gets `HOPPER_SKILL` in its credentials dir ("Skills: what
+  the hopper can set up for a box"). The catalog lists each bundled skill; `sh "$HOPPER_SKILL" orchestrate` answers its
+  `SKILL.md`, headed `skill orchestrate, version <version>`; `sh "$HOPPER_SKILL" orchestrate FILE` answers another file of
+  it. Nothing is installed on the machine and nothing is read from an outside repository, so a fresh box and a machine
+  with no workflow repository get the same text. The job's task line (`TASKS_LINE`) tells it to load the skill when the
+  work has many steps or sub-tasks.
+- **The job record says which version it got.** `skill.loaded` carries `version` (and `asset`, the file, when it is not
+  the entry), on the job's timeline.
+- **The skill maps onto the hopper's durable model**, with no state only on the machine: the task count is `HOPPER_TASKS`
+  (issue #794); a sub-task that is a deliverable of its own is a **required child** (`hopper-gh issue create --required`,
+  "Routed children"), so a work item of its own (#1524, #1067) that Intake lists; the wait on it is a typed `item` wait
+  (`on: issue OWNER/NAME#N`, #1694), woken when it closes; the issue's completion is the item lifecycle's (#1891): the job
+  never closes its own issue. In-job parallel work uses the harness's sub-agents when it has them, each in a worktree of
+  its own; the skill names no harness.
+- **Fan-out keys.** `hopper-gh issue create|comment --key KEY` sends the job's own **resend key** (issue #1607) in place
+  of a random one. The hopper answers a key of the job's that is already done with its first answer (`replayed`), and the
+  job keeps its id when it resumes on another machine (the lost-machine move, #1569; resume elsewhere, #921). So a job
+  stopped partway files each sub-task again with its key, learns the issue it filed, and files nothing twice. The key is
+  checked as before (8 to 64 of `A-Z a-z 0-9 _ -`); a bad key is refused before anything is filed.
+
+**Left of #1909.** A repository's own skill of the same name overriding the bundled one for its jobs, and the override
+on the job record; dropping the hopper's other assumptions that a job works inside a workflow repository; more of the
+workflow skills, bundled the same way; a fan-out key across the jobs of one issue (a Run again is a new job, so its keys
+are new).
+
+**Verification:** `test/skills/bundled.test.ts` (the version is the content hash; each bundled skill in the catalog;
+the load and a missing file; the orchestrate text names only the hopper's protocol and no workflow repository's tooling),
+`test/integration/orchestrate-skill.test.ts` (the real daemon and the real `hopper-skill` and `hopper-gh`, on a machine
+with only the hopper's files: the skill loaded with its version on `skill.loaded`; a sub-task filed with a fan-out key
+filed once, again with the same key, and again after the job moved to another machine with the new run's token, the old
+token refused; a bad key refused), `test/integration/skills.test.ts` (the catalog and the names a no lists),
+`test/herdr/screen.test.ts` (the task line).
+
 ## The cloud link (issue #467, part 1, 2026-10-17)
 
 Issue #467: an existing self-hosted install — a container or a host install, with one user or several — can be linked to
@@ -25253,11 +25319,202 @@ config, from the link (issue #464); an unknown name is `other` too.
 
 **Left for later parts of issue #465:** the agent that sends the snapshot and carries the messages (issue #464, which supplies
 `machineKey` and `executorPlugin`); the link state and last-seen time at hopper.io, and one registration per instance id
-(item 3), kept at hopper.io; the open questions (issue #469 decision 6).
+(item 3), kept at hopper.io (part 6, "Instances at hopper.io", built the last-seen time and one registration per instance id);
+the open questions (issue #469 decision 6).
 
 **Verification:** `test/domain/hopper-io-state.test.ts`: a machine's executors named after a host, a custom name and a
 third-party plugin go out only as their kinds (`claude`, `codex`, `herdr-claude`, `other`); none of the names is in the
 snapshot; the schema refuses an executor outside the list and version 1; 50 machines with two executors each fit in 8 KiB.
+
+## Instances at hopper.io (issue #465, part 6, 2026-10-18)
+
+**The problem.** Issue #465 items 1, 3 and 5, at hopper.io (`cloud/`). A **hopper.io registration** was one row per instance
+and account, with its instance id and when. Nothing kept a name, a last-seen time or one registration per instance id, and
+the owner could not see or remove an instance. The instance's unlink notice (part 4) had no reader at hopper.io.
+
+**The change.**
+- **One registration per instance id** (item 3): a unique index on `registration.install_id`. When an instance registers
+  again under the same account, its registration stays, with its name and its last-seen time. Under another account, it
+  moves there: the old registration is replaced, and its name and last-seen time go with it.
+- **The owner's name and the last-seen time** (item 1): `registration.name` (1 to 64 characters, no control character, set
+  only by the owner at hopper.io, never sent by the instance, R5) and `registration.seen_at` (the instance's last hello,
+  `cloud/link.ts` `hello`).
+- **The owner's routes** (`cloud/server.ts`, a hopper.io session, R3: only the signed-in account's own instances):
+  `GET /api/account/instances`; `POST /account/instances/:id/name` (`name`, empty clears it) and
+  `POST /account/instances/:id/remove`, each a form post from hopper.io's own Origin, else 403; another account's instance
+  is 404. The page `GET /` lists them, the name escaped (T3).
+- **Removed at hopper.io** (item 5): the registration goes and leaves a **registration tombstone**, as an account deletion
+  does, so the instance's next hello is answered `unregister` (part 3 takes it). Nothing on the instance is deleted.
+- **Unlinked on the instance** (item 5): `cloud/link.ts` `unlinked` takes the notice (`unlinkedMessage`, part 4) on the
+  instance's own connection. It removes the registration only when the notice names that instance and the account it is
+  registered under; no tombstone, the instance knows. A notice of another shape, size, instance or account changes nothing.
+- **hopper.io records** (R6): `instance_registered`, `instance_renamed`, `instance_removed`, `instance_unlinked`, and
+  `instance_moved` on the account an instance left. The kind and the time only.
+- Migration 5 of `cloud/store.ts`: the two columns, the unique index (of two registrations of one instance, the newer
+  stays) and the record kinds. The privacy note has a line for each new column.
+
+**Decisions:**
+- **One account per instance.** The instance links to one hopper.io account (R3), and decision 3 of
+  `docs/cloud-hosting-identity.md` is personal accounts only. So a registration under a second account replaces the first.
+  Sharing one instance with more accounts stays an open question (issue #469 decision 6).
+- **The name is hopper.io's, not the instance's.** The instance's display name is free text and stays on the instance (R5).
+  The owner names it again at hopper.io.
+- **No link state yet.** "Connected now" needs the connection (issue #464). The last-seen time is what hopper.io can know.
+
+**Left for later parts of issue #465:** the agent that carries the messages and the snapshot and calls `hello`,
+`registration` and `unlinked` (issue #464); the page where the owner enters a registration code at hopper.io, which sends
+`register` on that connection (built in part 7, "Registration requests at hopper.io", transport-free); the link state; the machines at hopper.io (issue #466); the open questions (issue #469
+decision 6).
+
+**Verification:** `test/cloud/instances.test.ts` (real Postgres, real server): an account holds many instances; one that
+registers under another account moves, once, with `instance_moved` on the old account; a hello keeps the last-seen time; the
+name is kept at a second registration and dropped at a move; each account lists, names and removes only its own; a bad
+name, another Origin, no session and an unknown id change nothing; a removal is answered `unregister` at the next hello; the
+unlink notice removes only its own instance's registration; the page escapes the name.
+
+## Registration requests at hopper.io (issue #465, part 7, 2026-10-18)
+
+**The problem.** Issue #465 item 2: the instance admin mints a registration code on the instance (part 2), and the account
+owner approves the instance at hopper.io with it. hopper.io had no page to enter the code. Also, `cloud/link.ts`
+`registration` took the account from its caller: any instance that answered `registered` would be kept under any account
+the caller named. An instance whose admin links it to another person's account name could then be registered under that
+account without that person's approval.
+
+**The change.**
+- **The owner enters the code** (`cloud/server.ts`): `POST /account/instances/register` (`installId`, `code`), a form post
+  from hopper.io's own Origin (else 403), signed in (else 401), the sign-in limit per address. The instance id is 16 hex
+  characters and the code 64 (else 400); both are trimmed and taken in lowercase. `GET /` has the form, with where the
+  owner finds the id (Settings → Version) and the code (Settings → hopper.io) on the instance, and lists the open requests.
+  `GET /api/account/registration-requests` answers the account's own: `installId`, `expiresAt`, and `refused` when the
+  instance did not take the code. Never the code.
+- **A registration request** (`cloud/requests.ts`), one per account and instance id: a new code replaces the one before.
+  It is kept in memory only, never in the store, for `REQUEST_MS` (10 minutes, the life of the code on the instance), at
+  most `REQUESTS_PER_ACCOUNT` (10) open per account (else 429) and `REQUESTS_MAX` (10,000) in all (R7).
+- **Only that instance gets it** (`cloud/link.ts`): `registerMessage({ installId, account })` answers
+  `{ type: 'register', code, account }` only for an open request of that instance id whose owner's login is the account
+  the instance's link names (R3). The connection (issue #464) sends it after the hello, and when the owner enters a code
+  while the instance is connected.
+- **Only its answer registers it.** `registration({ installId, account, answer })` takes the account from the open
+  request of that instance and account, not from its caller. `registered` keeps the **hopper.io registration** and
+  drops the request. `not-linked`, `other-account` or `no-code` drops the code and keeps why until the request expires;
+  `GET /` shows it in plain words. Any other answer changes nothing. With no open request, nothing is registered.
+- The privacy note says that no registration code is in hopper.io's database.
+
+**Decisions:**
+- **The owner enters the instance id with the code.** hopper.io cannot tell from a code which instance minted it: the
+  instance keeps only its hash. Without the id, hopper.io would give the code to every instance linked to that account
+  name, and any of them could answer `registered`. The instance id is shown on the instance already (part 1).
+- **In memory, not in the store.** hopper.io must hand the code on, so it cannot keep only a hash. In memory, a database
+  dump of hopper.io holds no code (T1), and no migration is needed. A restart of hopper.io loses the open requests; the
+  owner enters the code again. One hopper.io process holds the requests and the connections; more than one process is
+  decision 7 of issue #469.
+- **No hopper.io record for an entered code.** R6 records each registration (`instance_registered`); an entered code
+  changes nothing until the instance takes it. A new record kind would need a store migration for no new fact.
+- **One request per account and instance id.** A request of another account for the same instance id does not replace
+  it, so another account cannot cancel an owner's request.
+
+**Left for later parts of issue #465:** the connection (issue #464) that sends `registerMessage` and hands the answer to
+`registration`; the link state; the machines at hopper.io (built in part 8, "Instance states at hopper.io"); the open
+questions (issue #469 decision 6).
+
+**Verification:** `test/cloud/registration-requests.test.ts` (real Postgres, real server): the code the owner entered goes
+to its instance as `register`, and its `registered` answer registers it once; another instance, or the instance linked to
+another account, gets no code, and its answer registers nothing; a refusal registers nothing and shows why; a request
+expires; a bad id or code, another Origin or no session keeps nothing, and an 11th open request is 429; each account reads
+only its own requests; the code is never in the store, the page or the API. `test/cloud/registrations.test.ts` and
+`test/cloud/instances.test.ts` now register through a request.
+
+## Instance states at hopper.io (issue #465, part 8, 2026-10-18)
+
+**The problem.** Issue #465 item 4: each instance reports its machines over the link, and hopper.io shows them under their
+instance. Part 5 put the executors in the **hopper.io state snapshot**; the instance makes the snapshot (issue #466). hopper.io
+had no reader for it, and the owner saw no machine.
+
+**The change.**
+- **The instance state** (`cloud/states.ts`): the last snapshot of each registered instance, and when hopper.io got it, in
+  memory only, never in the store. One per instance id, under the account the instance is registered to (R3). At most
+  `STATES_MAX` (10,000) (R7).
+- **Checked before it is kept** (`instanceState`, R7): JSON of at most `SNAPSHOT_MAX_BYTES` (192 KiB; a snapshot of 500
+  machines, each with every executor kind, fits), in `INSTANCE_STATE_SCHEMA`, closed at every level. A key outside the
+  schema, a free-text executor, a machine key that is not opaque, another `schema` version or a negative count is refused,
+  and nothing is kept.
+- **Only its registration keeps it** (`cloud/link.ts` `snapshot({ installId, account, text })`): the connection (issue #464)
+  hands it the snapshot that came on the instance's connection, and the account that link names. It is kept only when the
+  instance is registered to the account of that login (`CloudStore.registrant`). Another account's link, an unknown or
+  removed instance keeps nothing.
+- **Dropped with its registration**: a removal at hopper.io, the unlink notice, a registration under another account, and
+  an account deletion. A restart of hopper.io loses every state; the instance sends a full snapshot when it connects.
+- **Shown to the owner only**: `GET /api/account/instances` gives each instance its `state` (the snapshot as the instance
+  sent it, with `receivedAt`). `GET /` shows it in plain words under the instance: "As the instance reported it at
+  <time>", its version and channel, the job counts, what needs attention, and each machine by its key, online or offline,
+  its lanes in use of its lanes, its executor kinds, and whether it takes jobs or why not. "No state reported yet" when
+  there is none. Every value is escaped (T3).
+- The privacy note says that no instance state is in hopper.io's database.
+
+**Decisions:**
+- **In memory, not in the store.** The snapshot is a full state, sent again at each connect and each change ("Live
+  updates"). In memory, hopper.io keeps no retention period for it (the tracking issue's decision 7 is open), a database
+  dump holds none (T1), and no migration is needed. The cost: after a restart, an instance shows no state until it
+  connects again.
+- **A copy of the schema in `cloud/`.** `cloud/` may not import `src/domain/` (the seam table). A test holds the two
+  schemas to one JSON Schema (`z.toJSONSchema`), so a new field in the instance's schema fails it until hopper.io's copy
+  changes too. hopper.io also checks what it takes, as R7 asks of each side.
+- **No link state, no "offline".** Online or offline is the connection's (issue #464): the page says when hopper.io got
+  the state, so it never shows it as current.
+- **No machine names at hopper.io yet.** The owner reads a machine by its opaque key. A name the owner gives a machine at
+  hopper.io needs a store table and a stable key from the connection (issue #464's `machineKey`); it is left.
+- **The last-seen time stays the hello's.** A snapshot does not change `seen_at`; the connection's heartbeat is #464's.
+
+**Left for later parts of issue #465:** the connection (issue #464) that calls `hello`, `registerMessage`, `registration`,
+`unlinked` and `snapshot`; the link state; the names an owner gives machines at hopper.io; the open questions (issue #469
+decision 6).
+
+**Verification:** `test/cloud/instance-states.test.ts` (real Postgres, real server): a registered instance's last snapshot
+shows under it with when hopper.io got it; an instance that is not registered, or whose link names another account, keeps
+nothing; a snapshot too large, not JSON, of another schema version, with a label, a free-text executor or a host name as
+its key keeps nothing; a removal, an unlink, a move and an account deletion drop it; each account reads only its own; the
+store holds none; the page says when, and escapes; hopper.io's schema is the instance's, and 500 machines fit the cap.
+
+## Machine names at hopper.io (issue #465, part 9, 2026-10-18)
+
+**The problem.** Issue #465 item 4: hopper.io shows each instance's machines under it. The **hopper.io state snapshot**
+names no machine: it carries an opaque key only, since a machine's name is free text and often a host name (R5, "The
+hopper.io state snapshot"). So the owner read each machine by its key, which says nothing to a person. The design gives the
+naming to the owner at hopper.io ("Cloud link", "What may leave the instance").
+
+**The change.**
+- **A hopper.io machine name** (`cloud/store.ts` `machine_name`): the owner's name for one machine, by the instance id and
+  the machine's key in the snapshot. One per machine of an instance; at most `MACHINE_NAMES_MAX` (500, a snapshot's most
+  machines) per instance (R7). The name has the rules of an instance's name: trimmed, at most 64 characters, no control
+  character.
+- **Named by the owner only** (`POST /account/instances/:id/machines/:key/name`, `name`, empty clears it): only from
+  hopper.io's own Origin, signed in, on the account's own instance (R3), for a key in the instance's last state, or one
+  named before (so a name can always be cleared). Each is a hopper.io record, `machine_renamed` (R6).
+- **Shown with the state**: `GET /api/account/instances` gives each instance its `machineNames` (key → name) when it has
+  any. `GET /` shows each machine of the state as its name with the key in brackets, or by its key, with a name form.
+  Every value is escaped (T3).
+- **Gone with the registration**: a removal at hopper.io, the unlink notice and an account deletion (`ON DELETE CASCADE`),
+  and a registration under another account. A registration again under the same account keeps them, as it keeps the
+  instance's name.
+- The privacy note lists the three columns.
+
+**Decisions:**
+- **In the store, not in memory.** A name is the owner's own data, typed at hopper.io, and must outlive a restart; the
+  state it labels is in memory only (part 8).
+- **Keyed by the snapshot's key, as the instance sends it.** hopper.io trusts the key to be stable between snapshots, as
+  "The hopper.io state snapshot" says of `machines[].key`. Until the connection (issue #464) gives the cloud link's
+  `machineKey`, no real key exists; when it changes a key, the old name stays under the old key until the owner clears it.
+- **Only a key the owner sees.** A name for a key not in the last state is refused (404), so the owner cannot fill the
+  table with keys no instance sent. A name kept for a machine no longer in the state stays in the API, and can be cleared.
+- **No merge across instances.** One box under two instances has two keys and two names (item 6: merging is deferred).
+
+**Left for later parts of issue #465:** the connection (issue #464) that calls `hello`, `registerMessage`, `registration`,
+`unlinked` and `snapshot`, and gives the stable `machineKey`; the link state; the open questions (issue #469 decision 6).
+
+**Verification:** `test/cloud/machine-names.test.ts` (real Postgres, real server): the owner names a machine of the state,
+the API and the escaped page show it, an empty name clears it; a key not in the state, another account's instance, a bad
+name or key, another Origin and no session change nothing; the names stay at a new snapshot and a registration again;
+a removal, an unlink, a move and an account deletion drop them; at most 500 per instance.
 
 ## Cloud link (issue #464, 2026-10-17 — a design, not built)
 
@@ -27230,7 +27487,7 @@ cluster.
   links, least role operator; meant for an API token whose grant has the scope `topology:report` (area `topology`, in
   the Infra changes section of the scope registry). The reporter is the API token's label, else who signed in. Each report
   is `infra.topology_reported`: each source's key, `ok`, its counts or its error; never a node; on no job's timeline.
-- **Infra → Topology** (`ui/src/views/topology.tsx`, pure model `ui/src/model/topology.ts`; the Globe view beside it, issue
+- **Topology** (`ui/src/views/topology.tsx`, its own page since issue #1943, "Topology: its own page"; pure model `ui/src/model/topology.ts`; the Globe view beside it, issue
   #1893, "The Topology globe"). The graph, drawn with d3's
   force layout (run to its end, so the same graph is drawn the same way), at most 400 nodes; filters by account, cluster,
   region and kind; a click on a node shows its id, where it is, its attrs, the sources that found it, its neighbours with
@@ -27250,8 +27507,8 @@ cluster.
   `aws-role` (`<account>/<role>`) its IAM role node and its account node, where the apply writes; a `cluster` the cluster
   node of that name; a `namespace` (`<cluster>/<namespace>`) that namespace node of that cluster; a target each node whose id,
   name, alias or attr it is, as before. An `argocd-app` or a `terraform-workspace` names no node. Each entry
-  (`ui/src/views/infra-timeline.tsx`) lists up to three of its nodes; a click picks the node on the Topology panel and scrolls
-  to it, so the node picked is the page's (`infra.tsx`). A node's details list every entry that touched it, newest first, at
+  (`ui/src/views/infra-timeline.tsx`) lists up to three of its nodes; a click opens the node on the Topology page
+  (`#topology/<node id>`, issue #1943). A node's details list every entry that touched it, newest first, at
   most 10: plans, approvals, applies, drift and out-of-band writes, not only the out-of-band changes. In the browser, from
   what the page reads already: no new route, nothing kept.
 
@@ -27367,6 +27624,39 @@ Tests: `test/ui/topology-globe.test.ts` (region to coordinate, a node's region, 
 with no known place and why, a filter, the WebGL check), `test/ui/topology-globe-view.test.ts` (the panel in happy-dom
 with the scene replaced at its module: the regions and arcs drawn, a click on a region and on a node, the filters shared
 with the graph, the graph and why with no WebGL and when the scene cannot start).
+
+## Topology: its own page (issue #1943, 2026-10-18)
+
+Before: the topology and its globe were a panel at the bottom of Infra, and with no source the panel only said where to
+set a credential. A primary view had no top-level home (issue #896), and the sidebar had three groups of one entry each.
+
+- **A top-level view, `#topology`** (`ui/src/views/topology-page.tsx`), in the Infra nav group beside Infra. The panel
+  (`topology.tsx`) is its content: graph and globe, filters, a node's details. It reads `GET /api/topology`, and
+  `GET /api/infra-plans` and `GET /api/out-of-band` for the Infra changes a node's details list (`useLoad`, `NotYet`,
+  `infra-load.tsx`, shared with Infra). `#topology/<node id>` (the id URI-encoded) picks that node.
+- **Infra holds no copy.** One line links to Topology. Infra still reads the graph, only to name the nodes each Applies
+  and drift entry touched; a click on one opens `#topology/<node id>`.
+- **With no source, why and what to do** (`NoSources`, `topology-sources.tsx`). From the vault's view (`useVault`): it
+  mints for no AWS account and no cluster, so there is nothing to read; or it mints for some (each named) and no read
+  reported yet. Either way no read-only check reported a source. In place: **Add an AWS account** and **Add a cluster**
+  open the vault's own form (`SetForm`, `vault.tsx`) with Mints for set to `aws-account/` or `cluster/` (an admin's; any
+  other person reads where an admin adds one); **Discover now** once the vault mints for one (or when the vault's view
+  cannot be read, so nothing hides). The report route for a read-only check is named too.
+- **A failed read shows its error** (`ReadErrors`): each source whose last read failed, its name, when, and the error, in
+  a box of its own above the graph. A graph with sources but no node says no source was read without an error.
+- **Nav groups.** Infra (Infra, Topology); Sources & machines takes Accounts; Set up holds Skills and Settings. No group
+  holds one entry only. Group ids stay (`infra`, `sources-machines`, `settings`), so a collapsed group stays collapsed.
+
+**Decisions:**
+- **Topology in the Infra group**, not a group of its own: the two pages are about the same accounts and clusters, and a
+  group of one entry is what the issue asks to remove.
+- **Accounts beside Machines, Skills beside Settings**: Accounts says who each machine's agent tool is signed in as;
+  Skills is configuration of what jobs get. The heading Settings over one entry Settings became Set up.
+- **The vault's own form, opened in place**: no second form, so what is checked (the name, Mints for, an AWS account's
+  JSON keys) is the vault's.
+
+Tests: `test/ui/topology-page.test.ts` (the page in the whole app: the sidebar entry and no copy on Infra, the empty state
+with and without a minting credential and the add form, a failed read's error, the graph and a linked node).
 
 ## Telemetry: what runs now (issue #1486, part 6, 2026-10-17)
 
@@ -27820,8 +28110,8 @@ session).
 Before: the skill library (part 1) was only in the API. A person could not see which skill each kind of work gets, or
 write one, without a token.
 
-- **A top-level view, `#skills`** (`ui/src/views/skills.tsx`), in a nav group of its own between Infra and Accounts: the
-  skill library's one home. It reads `GET /api/skill-library` once; each change answers the new view, which the page shows.
+- **A top-level view, `#skills`** (`ui/src/views/skills.tsx`), in the nav group Set up with Settings (issue #1943; it was a
+  group of its own): the skill library's one home. It reads `GET /api/skill-library` once; each change answers the new view, which the page shows.
   Loading, an error that says why with **Try again**, or the panels.
 - **Work skills.** One choice per kind of work (Code work, Research, Proposals) for every repository; its empty choice
   names the built-in default. Below it, **Per repository**: a row per repository with a choice of its own, a choice per kind
@@ -27843,7 +28133,7 @@ write one, without a token.
 
 **Decisions.**
 - **A group of its own in the navigation**, not a section of Settings: the issue names the Skills page its own canonical
-  home (issue #896), as the Infra page is.
+  home (issue #896), as the Infra page is. Since issue #1943 it is an entry of the nav group Set up, beside Settings, still its own view.
 - **Each choice saves at once**, one kind per request, as yolo mode's per-repository switches do: there is no draft to lose
   and no version to conflict on, and the event names the one change.
 - **Admins only**, as in part 1: the buttons and choices show only to a session that may change them; any person reads.
@@ -27956,3 +28246,131 @@ requiring it; a job on a fresh machine gets `orchestrate` beside `work`; a user'
 requires `orchestrate`, and one not in the library: the files, the event's `requires` and `missing`, the line; an edit of a
 required skill reaches the next job and not a later start of this one); `test/ui/skills.test.ts` and
 `test/ui/skills-view.test.ts` (the requires line, the timeline line).
+
+## Conditional skills (issue #1924, parts 1 to 3, 2026-10-18)
+
+**Problem.** A job that changed infrastructure code opened its pull request and ended done while most of its `terraform
+plan` checks were red and one plan replaced a resource. The plan summary showed the delete, but nothing made the job read
+it, and the done check trusted the job. A job must get the skills of what it works on, and the hopper must check the
+skill's machine-checkable criteria itself before it takes the job as done.
+
+**As built (part 1).**
+- **Skill rules** (`src/domain/conditional-skills.ts`, pure). The work skill settings (issue #1911) keep `rules`: each a
+  library skill and conditions — `repos`, `labels` (a label such as `iac` declares what the job is), `kinds` (its kind of
+  work) —, one value of each condition named must match, and all conditions named together; at least one. `POST
+  /ui/api/work-skills` takes `rules`, all of them in place of the ones before (`skillRuleProblem`; each skill named must be
+  in the library), recorded in `work_skills.changed`. A skill a rule names cannot be removed. The rules are kept in the
+  user's settings `workSkills`, an optional field: a store with none reads as before.
+- **The choice** (`jobSkillsOf`, `src/skill-library/index.ts`). At a job's first start, when its work skill is chosen, each
+  rule that matches its repository, its item's labels and its kind of work gives its skill's newest version, once each
+  (the work skill itself never again), recorded as `job.conditional_skills_chosen`: name, version, `seq`, `why` (the
+  conditions that matched) and `done` (its done criteria). Each later start reads that event and gets the same versions,
+  on any machine; a rule changed later reaches the next job. A job that matched no rule records nothing.
+- **Delivery.** The skills' files go into the job's credentials dir with the work skill's (`jobProxy`):
+  `conditional-skill/<name>/<path>`, and an index, `conditional-skill/INDEX.md`, that lists each `SKILL.md`, why the job
+  got it and what the hopper checks. `HOPPER_CONDITIONAL_SKILLS` names the index. The job rules end, after the work skill's
+  line, with one `[hopper conditional skills]` line: each skill, its version and why, and the done criteria in plain words.
+- **Done criteria.** A library skill may have a `done.json` beside its `SKILL.md`: `{ "criteria": [...] }`, checked when a
+  version is kept (`doneFileProblem`). `checks-passed` (`checks`: a name, `*` any text): at least one check of the pull
+  request's head commit — a check run or a commit status — matches, and each one that matches passed; a check still
+  running is not passed. `plan-destroy` (`checks` optional, `max` 0 when absent): the `Plan: … N to destroy` lines (a
+  replace counts there; `No changes.` is 0) in the output of those checks (title, summary and text) and in the pull
+  request's comments written or edited since its head commit; none may be over `max`, and one must be there.
+- **The done check** (`src/sources/github/done-criteria.ts`). When the GitHub done check finds the job done and the job
+  got done criteria, the hopper reads the job's own open pull request that is ready for review (the newest): its head
+  commit by its number, its checks with their output (`checkRuns`, `GET …/commits/{ref}/check-runs` and `…/status`), and
+  its comments. A criterion not met keeps the job not done: `PR #N: done criteria of skill <name> not met: <each miss>`.
+  An issue closed (merged, or closed as completed), or no open pull request of the job's own, is judged as before. A read
+  that fails throws: not known is not done.
+- **Rework.** The failure cause **Done criteria unmet** (before Not complete, whose text it shares) is `continue`: the job
+  goes on in its own session and work tree (else a new job of its item), told what the done check found and to fix it on
+  the same branch (`doneCriteriaBrief`). Each send-back counts against the retry limit (`criteriaFixes`); then the
+  decision is a person's, and the job stays failed with the reason.
+- **The built-in `iac` skill** (`src/skill-library/built-in/iac/`): wait for the plan checks after each push and read
+  each root's plan; never apply; never add the MAP tag to a resource that exists; on a replace, find the attribute that
+  forces it and keep its value or narrow `ignore_changes`. Its `done.json`: every check named `*plan*` passed, and no plan
+  of them destroys or replaces a resource. A rule gives it to a job; no rule names it by default.
+- **The job page.** `job.conditional_skills_chosen` on the job's timeline reads `conditional skills: <name> <version>
+  (built-in | version <n>), by <why>; done when <criteria>` (`conditionalSkillsChosenLine`).
+
+**Decisions.**
+- **Rules are a setting, criteria are part of the skill.** Which jobs get a skill is the user's choice per repository and
+  label, as the work skills are; what makes a job of that skill done is versioned with the skill's text, so a job is
+  judged by the version it was given.
+- **A declared kind is a label.** The issue names a declared job kind (`iac`, `gitops`); a label carries it, so no new
+  field on a job or an issue is needed.
+- **The criteria live in the event.** `job.conditional_skills_chosen` carries the criteria, so the done check reads the
+  job's timeline only, and a removed skill still judges the jobs that got it.
+- **Plan text from check output and comments.** A CI can put its plan summary in either. The rule reads both, and asks
+  for at least one plan, so a summary that never comes is a miss, not a pass.
+
+**As built (part 2).**
+- **Paths.** A skill rule may name `paths`: globs of the files the change touches (`*.tf`: a glob with no slash matches a
+  file name in any folder; `src/**`). They are not known at the start, so the rule gives its skill at the first start with
+  why `paths <globs>`, and `job.conditional_skills_chosen` keeps the skill's `paths`. The done check reads the pull
+  request's changed files (the hopper's mirror, `pullRequest`'s `files`) and checks that skill's done criteria only when
+  one file matches (`pathsApply`). Files not known (no mirror) or not all named (`filesCut`): the criteria apply; not known
+  is not a pass. Two rules give one skill: a rule with no paths makes it apply always; two with paths join their globs.
+  The prompt line and the index say `when the change touches <globs>`.
+- **Allowed deletes.** The issue may list the deletes it allows by resource address, after a line `Allowed deletes:`
+  (a heading or bold too): the addresses on that line, in backticks or bare, and the `-`/`*` list right below it
+  (`allowedDeletesIn`). The hopper reads them from the job's approved text, its item's snapshot (issue #662:
+  `allowedDeletesOfJob`), never from the live issue, which an edit can change, and never from the job. For
+  `plan-destroy`, each plan's resource lines before its `Plan:` line name the addresses it destroys or replaces
+  (`# <address> will be destroyed`, `must be replaced`, `is tainted, so must be replaced`, a deposed object); a listed one
+  does not count (`plansIn`). A summary with no resource lines names nothing, so each delete counts. The miss names the
+  addresses the issue does not allow.
+
+**Decisions (part 2).**
+- **A paths rule delivers at the start, and judges at the end.** The job may touch the paths at any time, so it needs the
+  skill's text before it starts; the hopper can only see the paths once the job pushed.
+- **Not known applies the criteria.** With no mirror the changed files are not known: the done check applies the criteria
+  rather than skip them, the same as a plan summary that never comes.
+- **The allowed list is the approved text.** A list in the live issue or the pull request body could be written by anyone
+  who can edit them, or by the job; the snapshot is the text a trusted person wrote or approved.
+
+**As built (part 3).**
+- **Yolo mode reads the done criteria** (`doneCriteriaHold`, `src/sources/github/done-criteria.ts`). Just before the
+  hopper's own merge of a job's ready pull request (`waiting`, `src/sources/github/follow.ts`), it reads the job's done
+  criteria again on that pull request now: its head commit's checks and their output, its comments since that commit, its
+  changed files. A criterion not met, or not known (its checks cannot be read), holds the merge: the reason is kept as
+  `mergeError` (`done criteria of skill <name> not met: …`), the Pull requests card says merge refused with it, and the next
+  sync asks again. Met later, it merges. A person's Merge now is not held. The done check is the same as before.
+- **`person-merges`**, a new done criterion (`paths` optional: relative globs). A pull request that changes a file its paths
+  match (all, absent; files not known, or not all named, count) is merged by a person, never by yolo mode or a change kind's
+  `ready` gate: `done criteria of skill <name>: a person merges a change to <paths>, not the hopper` (`mergeHolds`). It is no
+  miss at the done check: the job is done once its pull request is ready.
+- **The built-in `gitops-deploy` skill** (`src/skill-library/built-in/gitops-deploy/`): a production overlay change is a
+  deploy on merge; the job never merges or applies, and starts the pull request body with a line `Deploys on merge:` that
+  lists each production overlay it touches. Its `done.json`: `person-merges` for `**/overlays/production/**`,
+  `**/overlays/prod/**` and `**/overlays/prd/**`. A rule gives it to a job; no rule names it by default.
+
+**Decisions (part 3).**
+- **The hold is a refused merge.** It is kept as `mergeError`, as GitHub's own refusal is, so the card, the tending queue
+  and the next sync treat it the same: no new wait state, nothing new persisted.
+- **Read again at each sync while held.** A plan comment can come after the checks end; a hold kept with no read could
+  never lift. The cost is one checks read and one comments read per held pull request per sync.
+- **The body flag is the skill's text, not a criterion.** The hopper does not read the pull request body at the done check,
+  and the merge hold already keeps a person in front of the deploy; the line is for that person.
+- **The name is `gitops-deploy`, not `gitops`.** A built-in skill wins over a user's own skill of the same name, and
+  `gitops` is a likely name for one a user made already.
+
+**Left for later parts.** The Skills page's editor for the skill rules (they are set through the API now). Done criteria
+on GitLab merge requests and on pull requests that ship a part.
+
+**Verification:** `test/domain/conditional-skills.test.ts` (a rule's match and why, its problems, the settings' change,
+done.json and its refusal, the plan's destroy counts, each miss, the prompt line, the delivery paths);
+`test/sources/github-done-criteria.test.ts` (a plan that replaces a resource with every check green is not done, a plan
+check still running or none, a plan in a comment since the head commit, no criteria and a closed issue as before);
+`test/failures/done-criteria-unmet.test.ts` (the cause ahead of Not complete, the send-back under the retry limit and a
+person at it, the chain's count, the Continue's brief); `test/integration/conditional-skills.test.ts` (on the real
+database and HTTP edge: the rules and their refusals, a matching job's files, index, line and event, a job no rule
+matches, the versions kept across a change of the rules); `test/ui/skills.test.ts` (the timeline line, a rule naming a
+skill); part 2: `test/domain/conditional-skills.test.ts` (a paths rule's match, `pathsApply`, the destroyed
+addresses, the allowed deletes, an allowed delete not counted), `test/sources/github-done-criteria.test.ts` (a paths skill
+checked only when a changed file matches or the files are not known; an allowed delete), and
+`test/integration/conditional-skills.test.ts` (a paths rule's skill and its paths kept; the allowed deletes from the
+snapshot); part 3: `test/sources/github-yolo-done-criteria.test.ts` (a plan that replaces a resource holds yolo mode's
+merge, met later it merges, a person-merges change held and one outside its paths merged, Merge now still merges, no
+done-check miss), `test/domain/conditional-skills.test.ts` (`person-merges` in done.json, `mergeHolds`, the built-in
+`gitops-deploy` skill), `test/ui/skills.test.ts` (its timeline line).

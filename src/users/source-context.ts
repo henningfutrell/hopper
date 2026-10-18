@@ -2,6 +2,7 @@
 // local job, may be re-run or were rejected (issue #387), and, per source, the claim holder, the intake
 // migration and intake events (issue #440), the user's intake trust (issue #652), the user's yolo mode (issue #579), a job's artifacts (issue #673), the issue graph (issue #437), each read named to search (issue #945), and the listing cache (issue #985).
 // With the user's work dir, the user's mirrors of the job repositories too (issue #858, `<work dir>/git-mirrors`). The connected accounts are added by the runtime.
+import { allowedDeletesOfJob, doneCriteriaOfJob } from '../skill-library/index.ts';
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
@@ -42,6 +43,12 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       // Promoted with its batch, its issue still open (issue #1232): the sync closes it, once.
       // Its end labels mirror its state (issue #1891, the label mirror).
       workItem: (key) => store.workItems.get(key),
+      // Its job follows a part (issue #1933): PR open's waiting label is `hopper:partly-done`.
+      partOpen: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const job = id === undefined ? undefined : store.jobs.get(id);
+        return job?.partlyDone !== undefined || job?.sourceState?.source?.part === true;
+      },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
@@ -54,6 +61,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     githubListings: store.githubListings,
     githubOutbox: store.githubOutbox,
     jobArtifacts: (jobId) => store.artifacts.list({ jobId }).map((a) => ({ id: a.id, ...(a.issue ? { issue: a.issue.url } : {}) })),
+    jobDoneCriteria: (jobId) => doneCriteriaOfJob(store, jobId),
+    jobAllowedDeletes: (jobId) => allowedDeletesOfJob(store, jobId),
   };
 }
 

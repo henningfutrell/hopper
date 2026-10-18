@@ -301,8 +301,8 @@ tombstones, in `cloud/` (decision 2).
   instance id under one account, and when: the instance's own id (8 random bytes as hex), never its name.
   `cloud/link.ts` is hopper.io's side of the cloud link's registration messages, transport-free, as the
   instance's side (`src/http/cloud-link-messages.ts`): the connection (#464) is not built. When the
-  instance answers `{ type: 'registration', outcome: 'registered' }` to the code its owner entered,
-  `registration()` keeps it; a second answer keeps no second row, and any other answer, shape or size
+  instance answers `{ type: 'registration', outcome: 'registered' }` to the code its owner entered (a
+  registration request, part 7 of #465), `registration()` keeps it; a second answer keeps no second row, and any other answer, shape or size
   (over 1024 bytes) keeps nothing. An account deletion deletes the registrations with the account
   (`ON DELETE CASCADE`) and, in the same statement, leaves a `registration_tombstone` for each: the
   instance id and the time, nothing of the account. At the instance's next hello, `hello()` answers
@@ -313,6 +313,27 @@ tombstones, in `cloud/` (decision 2).
   registers again, its tombstone goes. This replaces the registration token of "How linked installs are
   told": the instance proves itself at its hello with its cloud link key (`docs/design.md` "Cloud link"),
   so hopper.io keeps no token for it.
+- **An account's instances** (issue #465 part 6, `docs/design.md` "Instances at hopper.io"). One registration per
+  instance id: an instance that registers under another account moves there. `registration.name` is the owner's name for
+  it, typed at hopper.io; `registration.seen_at` is its last hello. The owner reads them at `GET /api/account/instances`
+  and on `GET /`, names one (`POST /account/instances/:id/name`) and removes one (`POST /account/instances/:id/remove`,
+  with a tombstone, so the instance's next hello is answered `unregister`). `unlinked()` in `cloud/link.ts` takes the
+  instance's unlink notice and removes its registration. Tests: `test/cloud/instances.test.ts`.
+- **Registration requests** (issue #465 part 7, `docs/design.md` "Registration requests at hopper.io"). The owner enters
+  an instance id and its registration code on `GET /` (`POST /account/instances/register`). hopper.io keeps it in memory
+  only (`cloud/requests.ts`), for 10 minutes, and `registerMessage` in `cloud/link.ts` gives it as `register` only to that
+  instance while its link names the owner's account. `registration` takes the account from that request. The owner reads
+  the open requests, and why an instance did not take a code, at `GET /api/account/registration-requests`. Tests:
+  `test/cloud/registration-requests.test.ts`.
+- **Instance states** (issue #465 part 8, `docs/design.md` "Instance states at hopper.io"). `snapshot` in `cloud/link.ts`
+  takes an instance's state snapshot, checks it against hopper.io's own copy of the schema and a size cap, and keeps it in
+  memory only (`cloud/states.ts`), while the instance is registered to the account its link names. `GET /api/account/instances`
+  and `GET /` show each instance's machines under it, with when hopper.io got the state. A removal, an unlink, a move and
+  an account deletion drop it. Tests: `test/cloud/instance-states.test.ts`.
+- **Machine names** (issue #465 part 9, `docs/design.md` "Machine names at hopper.io"). The owner names a machine of the
+  instance's state on `GET /` (`POST /account/instances/:id/machines/:key/name`); `machine_name` keeps it by the instance id
+  and the machine's opaque key, at most 500 per instance. `GET /api/account/instances` gives each instance its
+  `machineNames`. A removal, an unlink, a move and an account deletion drop them. Tests: `test/cloud/machine-names.test.ts`.
 - Personal accounts only (decision 3). No route accepts a hopper.io session on an instance, and no
   instance realm changes (decision 4).
 - Tests: `test/cloud/sign-in.test.ts`, `test/cloud/delete-account.test.ts`, `test/cloud/records.test.ts`,

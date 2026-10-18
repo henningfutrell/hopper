@@ -264,7 +264,28 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     entered the code, and only when the instance answered `registered`; R7: that answer is checked against a closed
     schema and a cap of 1024 bytes, as the instance checks hopper.io's messages. R1: the tombstone's answer is
     `unregister`, a message the instance already takes, which changes its registration only.
-  - Not yet: the R6 records of registration, the cloud link and remote actions at hopper.io (with #465 and #464),
+  - R3: **an account's instances** (issue #465 part 6, `docs/design.md` "Instances at hopper.io"): one registration
+    per instance id, so an instance is under one account at a time. The owner lists, names and removes only their own
+    instances, by a hopper.io session, a form post only from hopper.io's own Origin. The name is the owner's, typed at
+    hopper.io, never sent by the instance (R5), and escaped on the page (T3). A removal leaves a tombstone (R1: the instance
+    takes `unregister`, which changes its registration only). The instance's unlink notice removes only the registration of
+    the instance on whose connection it came, under the account it names. R6: each is a hopper.io record.
+  - R3: **registration requests** (issue #465 part 7, `docs/design.md` "Registration requests at hopper.io"): the owner
+    enters the instance id with the code. hopper.io gives the code as `register` only to that instance while its link names
+    the owner's account, and keeps a registration only for the instance's `registered` answer to that request, under the
+    account whose owner entered the code. R4: the code is kept in memory only, 10 minutes at most, never in the store; R7:
+    at most 10 open requests per account, the sign-in limit per address.
+  - R3, R7: **instance states** (issue #465 part 8, `docs/design.md` "Instance states at hopper.io"): hopper.io keeps an
+    instance's state snapshot only while the instance is registered to the account its link names, and shows it to that
+    account only. R7: it checks each snapshot against its own closed copy of the schema (held to the instance's by a test)
+    and a cap of 192 KiB, and keeps at most 10,000 states. R5, T1: in memory only, never in the store; the page says when
+    hopper.io got it and escapes every value (T3).
+  - R3, R5, R7: **machine names** (issue #465 part 9, `docs/design.md` "Machine names at hopper.io"): the owner names a
+    machine of their own instance at hopper.io, by its opaque key; the instance sends no name (R5). R3: only the account
+    the instance is registered to names it or reads the name, and a move to another account drops the names. R7: only a
+    key in the instance's last state, at most 500 names per instance, 64 characters each; the page escapes them (T3). R6:
+    each is a record.
+  - Not yet: the R6 records of the cloud link and remote actions at hopper.io (with #464),
     and the connection that carries the registration messages and the hello (#464).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
   everything at hopper.io wait for the issues in the table below. The connection's design — its data boundary, no inbound

@@ -82,3 +82,10 @@ const labelDrifts = instrument((m) => m.createCounter('hopper.work_items.label_d
 export function labelDriftSeen(source: string, state: string, corrected: boolean): void {
   labelDrifts().add(1, { 'hopper.job.source': source, 'hopper.work_item.state': state, 'hopper.label_drift.corrected': corrected });
 }
+
+const labelCorrections = instrument((m) => m.createCounter('hopper.work_items.label_corrections', { description: 'Label drifts the label mirror corrected through the GitHub outbox, by state.' }));
+
+/** One label drift corrected: its outbox rows queued (issue #1933). */
+export function labelCorrected(source: string, state: string): void {
+  labelCorrections().add(1, { 'hopper.job.source': source, 'hopper.work_item.state': state });
+}

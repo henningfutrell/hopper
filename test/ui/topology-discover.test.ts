@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Infra → Topology, Discover now (ui/src/views/topology.tsx, issue #1781 part 3): a person asks the hopper to read every
+// Topology, Discover now (ui/src/views/topology-sources.tsx, issue #1781 part 3): a person asks the hopper to read every
 // account and cluster its vault mints for; the panel shows the graph after it, and says when the run goes on or failed.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -53,7 +53,7 @@ describe('Discover now', () => {
     const g = found();
     const onGraph = vi.fn();
     await render(() => json({ state: 'done', graph: g }), onGraph);
-    expect(document.body.textContent).toContain('Set an aws-account minting credential on Settings → Vault, then Discover now');
+    expect(document.body.textContent).toContain('The hopper has no source to read yet');
     await click();
     expect(calls).toEqual([{ method: 'POST', path: '/ui/api/topology/discover', body: '{}' }]);
     expect(onGraph).toHaveBeenCalledWith(g);
