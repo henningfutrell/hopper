@@ -144,7 +144,7 @@ const SETUP_SCRIPT = [
 /**
  * A print-agent turn's socket (issue #1295), after the runtime command in the same shell: the job's runtime socket started
  * in the turn's scope, its pid kept in the shell's `sp` (never in a file the job can write), when the shell has the job's
- * own runtime; `sp` empty otherwise. `kill "$sp"` stops it when the turn ends: nothing of a turn outlives it.
+ * own runtime; `sp` empty otherwise. `kill "$sp"` and `wait "$sp"` stop it when the turn ends: nothing of a turn outlives it.
  */
 export const turnServiceCommand = (jobId: string, scratch: string): string =>
   `sp=; case \${XDG_RUNTIME_DIR:-} in */${RUNTIME_PREFIX}${jobId}) ${shq(`${scratch}/${RUNTIME_SUBDIR}/bin/podman`)} system service --time=0 `
