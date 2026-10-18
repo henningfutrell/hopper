@@ -23,6 +23,9 @@ describe('where a skill came from', () => {
     expect(sourceLine(view.skills[0]!.latest)).toBe('built-in');
     expect(sourceLine(view.skills[1]!.latest)).toBe('written by an admin');
     expect(sourceLine(view.skills[2]!.latest)).toBe(`a copy of work ${'a'.repeat(8)}, by an admin`);
+    const imported = { kind: 'imported' as const, repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) };
+    expect(sourceLine({ source: imported, by: 'an admin' })).toBe(`imported from octo/workflows/skills/orchestrate at HEAD ${'c'.repeat(8)}, by an admin`);
+    expect(sourceLine({ source: { ...imported, path: '', ref: 'dev' }, by: 'an admin' })).toBe(`imported from octo/workflows at dev ${'c'.repeat(8)}, by an admin`);
   });
 });
 

@@ -150,7 +150,8 @@ describe('the skill library (issue #1911)', () => {
     const scopes = Object.fromEntries((section.permissions as { scope: string; role: string }[]).map((p) => [p.scope, p.role]));
     expect(scopes).toEqual({
       'skill-library:read': 'viewer', 'skill-library:edit': 'admin', 'skill-library:edit.create': 'admin', 'skill-library:edit.duplicate': 'admin',
-      'skill-library:edit.edit': 'admin', 'skill-library:edit.remove': 'admin', 'work-skills:edit': 'admin',
+      'skill-library:edit.edit': 'admin', 'skill-library:edit.import': 'admin', 'skill-library:edit.refresh': 'admin', 'skill-library:edit.remove': 'admin',
+      'work-skills:edit': 'admin',
     });
     expect((await change(t, { action: 'create', name: 'sneaky', files: { 'SKILL.md': 'x' } }, null)).status).toBe(403);
     expect((await t.app.ui('/ui/api/work-skills', { kinds: { code: 'research' } })).status).toBe(403);

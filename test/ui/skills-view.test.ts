@@ -14,6 +14,7 @@ const builtIn = (name: string, text: string) => ({ name, builtIn: true, descript
 const LIBRARY = {
   skills: [
     builtIn('work', 'Do the work end to end.'), builtIn('research', 'Research, then report.'), builtIn('proposal', 'Propose paths.'),
+    { name: 'orchestrate', builtIn: false, description: 'Task lists.', latest: { name: 'orchestrate', version: B, seq: 1, source: { kind: 'imported', repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 1 },
     { name: 'deep-research', builtIn: false, description: 'Dig deep.', latest: { name: 'deep-research', version: B, seq: 2, source: { kind: 'created' }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 2 },
   ],
   workSkills: { kinds: {}, repos: { 'octo/site': { research: 'deep-research' } } },
@@ -170,6 +171,21 @@ describe('the Skills page (issue #1911)', () => {
     await type(skill('work').querySelector<HTMLInputElement>('input[name="duplicate-name"]')!, 'my-work');
     await click(buttonIn(skill('work'), 'Make the copy'));
     await vi.waitFor(() => expect(posted(daemon, '/ui/api/skill-library')).toEqual([{ action: 'duplicate', from: 'work', version: A, name: 'my-work' }]));
+  });
+
+  it('imports a skill from a folder of a repository, and refreshes an imported one', async () => {
+    const daemon = await boot();
+    expect(skill('orchestrate').textContent).toContain('imported from octo/workflows/skills/orchestrate at HEAD');
+    expect(buttonIn(skill('deep-research'), 'Refresh')).toBeUndefined();
+    await click(buttonIn(skill('orchestrate'), 'Refresh'));
+    await vi.waitFor(() => expect(posted(daemon, '/ui/api/skill-library')).toEqual([{ action: 'refresh', name: 'orchestrate' }]));
+    await click(buttonIn(page()!, 'Import'));
+    const form = page()!.querySelector('[data-slot="skill-import"]')!;
+    await type(form.querySelector<HTMLInputElement>('input[name="import-repo"]')!, 'octo/workflows');
+    await type(form.querySelector<HTMLInputElement>('input[name="import-path"]')!, 'skills/research');
+    await type(form.querySelector<HTMLInputElement>('input[name="import-ref"]')!, 'main');
+    await click(buttonIn(form, 'Import skill'));
+    await vi.waitFor(() => expect(posted(daemon, '/ui/api/skill-library')[1]).toEqual({ action: 'import', repo: 'octo/workflows', path: 'skills/research', ref: 'main' }));
   });
 
   it('shows a skill\'s files; and a skill a setting names cannot be removed, and says why', async () => {
