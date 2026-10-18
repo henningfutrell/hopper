@@ -144,8 +144,11 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * were judged (tenant migration 39). Held until a sync finds its issue of a trusted origin, or a person approves its
    * request card; then its `source.origin` is set and this goes.
    */
-  /** `stamp`: its trust stamp (issue #655, src/domain/trust-stamp.ts), its trust level signed. Absent: made before stamps, or outside the hopper. */
-  originPending?: true; stamp?: import('./trust-stamp.ts').TrustStamp;
+  /**
+   * `stamp`: its trust stamp (issue #655, src/domain/trust-stamp.ts), its trust level signed. Absent: made before stamps, or outside the hopper.
+   * `kindCheck`: Jev's kind check (issue #655, src/domain/kind-check.ts, the point `intake-kind` active), made before its first start.
+   */
+  originPending?: true; stamp?: import('./trust-stamp.ts').TrustStamp; kindCheck?: import('./kind-check.ts').KindCheck;
   /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
   userRank?: number;
   laneId?: LaneId;

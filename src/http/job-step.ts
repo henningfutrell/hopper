@@ -35,7 +35,8 @@
 // for a need step goes to its need box only; never in an answer to the job. A template a need step asks for is saved and
 // approved only as a template request is (job-skill.ts). Below `approved` (issue #655 part 7), gate 2 gives the job no step
 // with no person: a need step is refused, and a box step runs only from a sandbox request a person approved. Sandbox
-// strictness (brake 2, issue #655 part 8) does the same for the templates it holds.
+// strictness (brake 2, issue #655 part 8) does the same for the templates it holds. A need whose minimum trust the job's
+// stamp does not meet is refused (issue #655 part 16), and a box step of such a template does not run (`runnable`).
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -44,6 +45,7 @@ import { mintKindFor } from '../domain/minting.ts';
 import { NEED_STEP_KEY } from '../domain/need-steps.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake, sandboxBrakeText } from '../domain/sandbox-strictness.ts';
 import { gate2Min } from '../domain/trust-stamp.ts';
+import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
 import type { Job, JobStatus, TemplateView } from '../domain/types.ts';
 import { STEP_INPUTS_MAX_BYTES } from '../domain/windows-steps.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
@@ -147,6 +149,9 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         if (below) return no(reply, 403, below);
         const read = needsOf(needs);
         if (typeof read === 'string') return no(reply, 400, read);
+        // Issue #655 part 16: a need above the job's trust is refused by policy before a template is made for it.
+        const outside = who.t.sandboxRequests.outside(who.job.id, read);
+        if (outside) return no(reply, 403, `${MIN_TRUST_DECLINER} refuses this need step: ${outside}. An admin sets the minimum trust in Settings → Access. Find another way.`);
         // A need the vault mints nothing for is refused before any template is made for it.
         const unminted = read.find((p) => mintKindFor(p.asset.kind) === undefined);
         if (unminted) return no(reply, 400, `${unminted.operation}/${unminted.asset.kind}/${unminted.asset.name}: the hopper mints a credential for a step for an aws-role, a cluster or a namespace only: name aws-role/<account>/<role>, cluster/<name> or namespace/<cluster>/<ns>`);

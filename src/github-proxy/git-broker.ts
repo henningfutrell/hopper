@@ -18,6 +18,8 @@
 // Direct push (issue #1806): with it on for the repository, a person's setting, a push may go straight to the target branch
 // — the landing branch, else the default branch — but only as a fast-forward, as the user's mirror reads it with the push's
 // pack; a push the hopper cannot check is refused, never taken. The push's event names those refs (`direct`).
+// A push kept as a saga (issue #1806, push-saga.ts): a push sent to GitHub is a `git-push` saga first, so a hopper that stops
+// before its event is recorded leaves the record to the next one.
 import { Readable } from 'node:stream';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
@@ -29,6 +31,7 @@ import { CONTRIBUTION_OFF } from './policy.ts';
 import { parseProxyToken } from './token.ts';
 import type { ProxyUser } from './broker.ts';
 import type { ShrunkFile } from '../domain/shrink-guard.ts';
+import type { GitPushes } from './push-saga.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
 /** A push's body unpacked in zlib's thread pool, not on the event loop (issue #1154). */
@@ -67,6 +70,8 @@ export interface GitUser {
   directPush?(repo: string): boolean;
   /** Whether a push from `old` to `new`, with its pack, is a fast-forward (issue #1806); undefined: git cannot say. Absent: no direct push is taken. */
   fastForward?(push: { repo: string; old: string; new: string; pack: Buffer }): Promise<boolean | undefined>;
+  /** Whether the job's log holds an event of request `requestId` (issue #1806, a push kept as a saga). Absent: none. */
+  recorded?(jobId: string, requestId: string): boolean;
 }
 
 /** A git request as the route gets it: the path after `/job/git/`, the query's `service`, the headers git sent, the body. */
@@ -95,6 +100,8 @@ export interface GitProxyOptions {
   fetch?: typeof fetch;
   /** Where its fetches are counted; the process's own unless a test gives one. */
   traffic?: GitHubTraffic;
+  /** Where each push is kept as a saga before it reaches GitHub (issue #1806). Absent: a push is kept nowhere. */
+  pushes?: GitPushes;
 }
 
 const BASIC = /^Basic\s+(\S+)$/i;
@@ -258,17 +265,21 @@ export function createGitProxy(o: GitProxyOptions) {
         }
       }
       if (!push && at.advertise) traffic.gitFetch(at.repo, job.id);
+      const sends = push && !at.advertise;
+      const kept = sends ? o.pushes?.begin(parts.userId, { jobId: job.id, requestId, repo: at.repo, refs, ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}), ...(machine ? { machine } : {}), ...acting, via: usedHere ? at.repo : own }) : undefined;
       try {
         const answer = await forward(r, at, git);
-        if (push && !at.advertise) {
+        if (sends) {
           if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
           else record('github_proxy.failed', { refs: refs.map((c) => c.ref), error: `GitHub answered ${answer.status}` });
         }
         return answer;
       } catch (e) {
         const error = (e as Error).message;
-        if (push && !at.advertise) record('github_proxy.failed', { refs: refs.map((c) => c.ref), error });
+        if (sends) record('github_proxy.failed', { refs: refs.map((c) => c.ref), error });
         return text(502, `GitHub could not be reached: ${error}`);
+      } finally {
+        kept?.settled();
       }
     },
   };

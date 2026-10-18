@@ -49,6 +49,7 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     template: (name) => parts.vault.view().templates.find((t) => t.name === name),
     sandbox: (template, job, about) => parts.sandboxRequests.ask(job.id, template, about),
     sandboxWaits: (template, job) => parts.sandboxRequests.waited(job.id, template),
+    outsideStamp: (profiles, job) => parts.sandboxRequests.outside(job.id, profiles), // issue #655 part 16
   };
 }
 

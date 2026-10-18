@@ -47,7 +47,8 @@ function reviewEvents(kind: ReviewKind) {
   const item = { [t.idField]: z.string(), version: z.number().int().min(1), raisedBy, priority: z.number().optional(), high: z.boolean().optional() };
   const headline = { [first]: z.string().optional() };
   return {
-    asked: strict({ by: z.enum(['user']) }),
+    // `by: jev` (issue #655): Jev's kind check (the point `intake-kind`, active) asked a work job for it before it started.
+    asked: strict({ by: z.enum(['user', 'jev']) }),
     // `paths` (issue #651): how many paths a proposal's version has.
     submitted: strict({ ...item, ...headline, missing: z.array(z.enum(t.parts.map((p) => p.id) as [string, ...string[]])), paths: z.number().int().min(0).optional() }),
     escalated: strict({ ...item, target: stage, reason: z.string(), ...headline }),

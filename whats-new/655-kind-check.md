@@ -1,0 +1,1 @@
+- Jev can now read a new job before it starts and ask it for research or a proposal first, in place of the work, when that fits better. You turn the check on in Settings → Decider.

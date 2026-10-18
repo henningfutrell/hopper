@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
-| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
@@ -13276,6 +13276,7 @@ setting), edited in Settings → Decider (admin), read at every decision:
 | `intake-order` | one sync of a job source finds two or more new items — no job follows them — (issue #796, `src/sources/intake-order.ts`) | the first 10 new items, in the source's order | the picked item is offered first: its job is queued first, and goes first among jobs of its priority; the rest follow in the source's order |
 | `merge-order` | a repository's tending queue is free and two or more of its waiting pull requests need tending (issue #796, "The tending queue", `src/sources/tend-order.ts`) | the first 10, in the rules' order | the picked pull request is tended next |
 | `intake-trust` | a waiting job whose trust stamp is due for Jev's trust check: `approved` or `trusted`, no person stamped it, no check on it (issue #655 part 4, "Trust stamps", `src/engine/trust-checks.ts`) | `keep`, and each lower level but `quarantined` with each reason (`lower:untrusted:touches_ci`) | the job's stamp is signed at the picked level; active, the job waits for the check, and a check with no sure pick gives `untrusted` (fail closed) |
+| `intake-kind` | a waiting work job from a job source that never started and has no kind check: no research or proposal asked, no fork, follow-on or tend job, on an executor that writes reviews (issue #655, "Trust stamps", `src/engine/kind-checks.ts`) | `keep`, `research`, `proposal` | research or a proposal asks the job for it (`research.asked`, `proposal.asked`, `by: jev`); active, the job waits for the check, and a check with no sure pick keeps the work |
 | `sandbox-request` | a job's sandbox request that the sandbox approvals would approve with no person, under sandbox strictness `standard`, of a template not of low blast radius (issue #655 part 13, "Trust stamps", `src/sandbox/requests.ts`) | `allow`, and `hold` or `deny` with each reason (`deny:out_of_scope`) | allow approves the run by `Jev`; hold leaves it for a person; deny declines it and lowers the job's trust; active, the request waits for Jev, and a check with no sure pick holds it (fail closed) |
 
 A `failure-assessment` ask is kept on its failure record (`jev { error, attempt, ranMs?, machineId?, doneCheck? }`, issue
@@ -16764,7 +16765,10 @@ is a job only from a trusted origin, or from a request card a person approved**,
 source would take and that has no job that has not ended, the source reads the issue's events (`GitHubApi.issueEvents`,
 REST `GET /repos/{o}/{r}/issues/{n}/events`, `labeled` and `assigned` only) and names three acts: who wrote it, who added
 the source label (the newest `labeled` event of that label), and who assigned it to the user (the newest `assigned`
-event of the connected login). Each counts only when a **trusted actor** did it:
+event of the connected login). Since issue #655 part 17 it also reads who edited the issue's title or body
+(`GitHubApi.issueEdits`, GraphQL `userContentEdits` and `RenamedTitleEvent`, the newest 50 of each; `editActs`), as GitLab's
+origin does (issue #1642): one `edited` act per editor. Edits that cannot be read are one edit by nobody known. Each counts
+only when a **trusted actor** did it:
 
 - an app or a bot never is one: an actor of GitHub type `Bot`, a `name[bot]` login, or an act `performed_via_github_app`;
 - this hopper's own **Assign to me** (issue #440) goes through the hopper's app as the user: it is the user's act when the
@@ -16970,7 +16974,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 15, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 17, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17384,9 +17388,74 @@ build before pushes a stored minimum with the model it finds (this build's, whic
 build needs) but writes no `trust_gated` and no holder: there, no job is below a minimum, so mints are decided as before
 this part. No migration.
 
-**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the edit count,
-the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, the rest of gate 2 at
-the skill broker (the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+**The request's capabilities against the stamp's** (part 16, `src/domain/stamp-capabilities.ts`; `outsideStamp` in
+`src/sandbox/requests.ts`). The issue's gate 2, policy first: "A request outside the stamp's capabilities is denied", and
+the test "denied by policy, with no Jev call". A stamp's capabilities are the operation profiles whose minimum trust (part
+15) its level meets, as it verifies now; a profile with no minimum is in every stamp. A need above it is **outside the
+stamp** (`outsideStamp`: `the job's trust stamp is approved, below the minimum trust owner to write on aws-account …`; a
+quarantined job meets no minimum, and a job whose stamp does not verify meets none either, as in OpenFGA):
+
+- **At the skill broker**, `sandbox --needs` and `sandbox-template --needs` are refused (403) before a template is made:
+  `the minimum trust refuses these needs: … Asking again does not change it: an admin sets the minimum trust in Settings →
+  Access. Find another way.` A need step (`/job/step?needs=`) is refused the same way, before its template request.
+- **A sandbox request** of a template with such a profile (`sandbox --template NAME`, a template named in the brief before
+  the start, or a template a person approved meanwhile) is declined at once, before the approvals, Jev and a person, by
+  **the minimum trust** (`MIN_TRUST_DECLINER`): `vault.sandbox_declined { by: the minimum trust }`, with the reason the job
+  is told.
+- **Set later**, the minimum stops a run approved before: a box step of that template does not run while the job is below
+  it (`runnable`), whoever approved it; cleared, it runs again. The mint is denied as well (part 15).
+
+A deny by policy is no deny of part 5: the job's trust stays, and Jev's sandbox check is not asked. Access reads the minima
+as kept (`minTrusts`), so a change applies at the next ask, with no restart. Persisted state: none.
+
+**Edits in the origin** (part 17, `editActs`, `originsOf` in `src/sources/github/origin.ts`). The issue's rule: "Any actor
+on the timeline who is not trusted, and who edited the body or set a nominating event: at most `untrusted`". Before this
+part a GitHub issue's origin read only who wrote, labelled and assigned it (issue #652), so a collaborator who is no trusted
+actor could rewrite the body of the user's own issue before a sync took it, and the job ran that text at `owner`. Now the
+origin reads who edited its title or body too, as on GitLab (issue #1642):
+
+- **An edit by someone who is no trusted actor**, or by an app or a bot (a `name[bot]` login), makes the issue a **request
+  card**: `edited by <login>, not a trusted actor`, `edited by an app or a bot (<login>)`. A job made from it is
+  `untrusted` by the rules (no job origin) until a person approves its text; then it is `approved`, as for any card.
+- **Edits that cannot be read** are one edit by nobody known (`who edited it is not known`): the issue is a card. A GitHub
+  API with no edit read (`issueEdits` absent) reads none, as before.
+- **The job keeps its editors** in its origin acts (part 14): one `edited` act per editor, in the order of their first edit,
+  each with whether a trusted actor did it. The stamp view, the job view and Jev's trust check show them; the request card
+  shows them with the other acts.
+- **Only an issue the source judges** is read: one with no job that has not ended, one to run again, or one waiting for its
+  origin. A job that started keeps its origin; an edit after its start lowers it at gate 2 (part 7).
+
+Cost: one more GraphQL read per judged issue per sync, as the events read is one REST read. Persisted state: none new —
+`edited` is a role the job's origin acts and `job.queued`'s schema already take (GitLab). No migration. An issue a build
+before this part took keeps its job; an issue it judges again (Run again) is judged with its edits.
+
+**Jev's kind check** (part 18, `src/domain/kind-check.ts`, `src/engine/kind-checks.ts`; the decision point `intake-kind`,
+"Decider calls"). The issue: "A second point, `intake-kind`, picks job, question, proposal, research, permission or status".
+The hopper has three kinds of job a source item can start: the work, research and a proposal (issues #537, #543). So Jev picks
+from `keep` (the work), `research` and `proposal`. It is **due** (`kindCheckDue`) for a waiting work job from a job source
+that never started (no attempt, no answer waiting), with no check on it: no research or proposal asked already (a label, a
+heading or a person), no fork, follow-on or tend job, on an executor that writes reviews.
+
+- **What Jev reads** (`kindCheckState`): the job's id and goal; its source's kind, repository, number and labels; and the
+  first 4000 characters of its prompt as `untrustedText`, which the instructions say is data, never instructions.
+- **Only less, never more.** Research and a proposal change nothing and open no pull request. Jev can ask a work job for
+  one of them, as a person's ask does (`askFor`), and never turns research or a proposal into work.
+- **Off**: Jev is not asked; the job does the work. **Shadow** (the default): Jev is asked once per waiting job and hopper
+  run; the pick is only recorded and compared with `keep` at once.
+- **Active**: the decider holds the job while the check is due (`Jev checks what kind of job it is: held — …`). The check is
+  then kept on the job (`kindCheck { pick, confidence, applied, kind?, fail? }`). A pick of research or a proposal sets that
+  flag on its spec (`respecify`, so its stamp is signed for the new spec and the trust check is asked again) and appends
+  `research.asked` or `proposal.asked` with `by: jev`. A check is written only while it is still due: a start or a person's
+  ask that came first wins.
+- **No gate.** The kind is not trust: a check with no sure pick — no answer, not sure (`fail: not_sure`), Jev not there
+  (`fail: skipped`), a pick that is no option — keeps the work. Trust stays the job of the stamp and Jev's trust check.
+
+Persisted state: `kindCheck` is one more optional field in the job's body; the build before keeps it as it is and does not
+read it. No migration.
+
+**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the linked
+pull requests and their forks, the repository's visibility), and the Intake view of the stamp. Brake 1's `open` lets a
+`screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job
@@ -25609,7 +25678,7 @@ closes):
 **The kinds.** The composition root gives the coordinator its kinds (`createSagas`, `definitions`): each module that moves its
 work onto a saga defines its own kind. The first is the sandbox module's `need-step` ("Need steps kept as sagas"
 below, part 2); the Windows steps' `windows-step` is another ("Windows sandbox steps", "Windows steps kept as sagas",
-issue #1611).
+issue #1611); a job's push is a `git-push` ("A push kept as a saga", issue #1806).
 
 **What is not done yet** (part 1 ships the saga, its store and its coordinator). The sandbox work — create the sandbox, mint and grant its credentials, set up the worktree, run the executor, push, open the
 pull request, tear down, revoke — moves onto a saga kind in a later part, with the executor's session state (#1465) in its
@@ -27111,10 +27180,48 @@ merged there with yolo mode off. Nobody turned that on for those repositories.
 - **No migration.** The settings' shape does not change. A hopper that merged such a pull request by `on` alone now waits
   for a person, which is the safe side; the build before it still runs on the store.
 
-**Left for a later part of issue #1806.** A push as a durable work item (issue #1524 sagas).
+**Left for a later part of issue #1806.** A push as a durable work item (issue #1524 sagas): part 4, "A push kept as a
+saga" below.
 
 **Residual risk.** On a repository a person named on, a job's pull request is merged with no review once it is ready, and
 whatever that merge triggers runs. GitHub's branch protection and the user's own rights still apply.
 
 **Verification:** `test/domain/outside-merge.test.ts`, `test/sources/pull-request-list.test.ts` ("a repository the hopper
 does not work on"), `test/ui/yolo-mode.test.ts`.
+
+## A push kept as a saga (issue #1806, part 4, 2026-10-17)
+
+The owner's decision on issue #1806: every push is recorded on the job, and pushes are durable work items (issue #1524:
+every call across a system boundary is a persisted record with an idempotency key, resumable on any host after a stop).
+Before, the git broker recorded a push only after GitHub answered it (`github_proxy.done` or `.failed`). A hopper that
+stopped while GitHub had the push recorded nothing: the push could be on GitHub with no event on the job's timeline.
+
+**The change.**
+- **The saga.** The git broker (`createGitProxy`, `pushes`) keeps each push it sends to GitHub as a `git-push` saga
+  (`src/github-proxy/push-saga.ts`, `createGitPushes`), keyed `<job>/<request>`, after every check passed and before
+  GitHub has the push. Its data: the repository, each ref update (`ref`, `old`, `new`), the `direct` refs, the job's
+  machine, the acting login (`as`) and the repository whose account acts (`via`). A push the hopper refuses is no saga:
+  it never reaches GitHub, and its refusal is recorded at once, as before.
+- **Its one step, `settle`.** On the hopper that sends the push, the step waits until the broker recorded the push's
+  event, then ends: one event, as before. The saga's lease is renewed meanwhile.
+- **After a stop.** The next hopper (this one after its start, or another on the database) takes the saga when its lease
+  ends. When the job's log holds an event of the request already (`GitUser.recorded`), it records nothing. Else it reads
+  the refs on GitHub with the user's connection (git's ref advertisement, `info/refs?service=git-upload-pack`): the refs
+  at their `new` commit are recorded as `github_proxy.done`, the others as `github_proxy.failed` (`the hopper stopped
+  before GitHub answered the push, and GitHub does not have it: push again`). A read that fails is tried again with the
+  saga's backoff.
+- **Nothing is pushed again.** The pack lives only in the request. git's push is a compare-and-swap of each ref, and the
+  job's git sends it again when its request failed; the saga only records what GitHub has.
+
+**Decisions:**
+- **The saga records, it does not push.** Keeping the pack to send it again would put up to 512 MB a push into the
+  database, and push a change after the job's git was told that the push failed. The job's own retry is already
+  idempotent: git compares each ref's old commit.
+- **The broker still records in the request.** The event lands before the job's git reads the answer, as before, so a
+  job, a test or a person sees it at once. The saga dedupes by the request id.
+- **No new event field.** The resumed record has the same shape as the broker's; the event schemas do not change, and
+  the build before this one runs on the store.
+
+**Verification:** `test/github-proxy/push-saga.test.ts`, on the real database with two coordinators: a push GitHub
+answers (the saga ends, one event); a hopper stopped while GitHub had the push, and GitHub took it (the next hopper
+records it done) or did not (recorded failed); an event recorded before the stop is not recorded again.

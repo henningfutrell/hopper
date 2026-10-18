@@ -31,6 +31,7 @@ import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
 import { createMachineDrains, drainedMachines, type MachineDrains } from './machine-drains.ts';
 import { createPlacementPicks } from './lane-calls.ts';
 import { createTrustChecks } from './trust-checks.ts';
+import { createKindChecks } from './kind-checks.ts';
 
 import { EngineError } from './errors.ts';
 import { createMissedWakes, wakeOn } from './wait.ts';
@@ -135,7 +136,7 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const { claims, preempts } = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks, trustChecks);
+    const { claims, preempts } = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks, preStart);
     for (const claim of claims) runner.start(claim);
     for (const jobId of preempts) preemptRunning(c, runner, jobId);
   }, (e) => console.error('decision failed', e));
@@ -179,7 +180,8 @@ export function createEngine(o: EngineOptions): Engine {
   const laneTuning = createLaneTuning(c, laneCalls);
   const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
   // Jev's trust check (issue #655 part 4): a job's stamp checked before it starts, the point active.
-  const trustChecks = createTrustChecks(c);
+  // And its kind (issue #655, `intake-kind`): research or a proposal before the work, the point active.
+  const preStart = { trust: createTrustChecks(c), kind: createKindChecks(c) };
   // Several hosts on one database (issues #1627, #1662): each pass over every job or machine runs on its lease's holder.
   const passes = createPassLeases(o.lease);
   // Issue #1571: a wake a stop lost, at start, and on each tick.

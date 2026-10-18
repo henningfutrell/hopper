@@ -1,0 +1,1 @@
+- A job's push is now recorded on its timeline even when the hopper restarts while the push is under way.
