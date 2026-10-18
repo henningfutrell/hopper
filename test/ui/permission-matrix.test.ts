@@ -42,6 +42,7 @@ const VIEW: AccessView = {
     { requester: { kind: 'machine', userId: 'admin', machine: 'box-kube' }, template: 'kubectl-diag', grants: [{ ...readX, path: [instance, ...readX.path] }] },
     { requester: { kind: 'user', userId: 'bob' }, grants: [] },
   ],
+  minTrust: [],
   decisions: [],
 };
 

@@ -3,13 +3,13 @@
 // Issue #581: the requesters — a user owns a job, a job runs on a machine, a machine is an instance of a template — are
 // tuples the hopper writes from who is live, and the path from a requester to an asset names each step.
 import { describe, expect, it } from 'vitest';
-import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, machineTerminalGaps, modelGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, vaultGrantGaps } from '../../src/authz/model.ts';
+import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, machineTerminalGaps, modelGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, trustGaps, vaultGrantGaps } from '../../src/authz/model.ts';
 import { shareTuples, profileId, profileOf, assetObject, approvalTuples, machineObject, relationshipPath, requesterObject, requesterTuples } from '../../src/authz/objects.ts';
 
 describe('the access model', () => {
   it('compiles the default model with no gap', () => {
     const json = compileAccessModel(DEFAULT_ACCESS_MODEL);
-    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['api_token', 'artifact', 'asset', 'github_login', 'gitlab_account', 'intake', 'item', 'job', 'link', 'machine', 'machine_terminal', 'operation_profile', 'search_hit', 'shared_secret', 'system_secret', 'template', 'terminal', 'user', 'vault_grant']);
+    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['api_token', 'artifact', 'asset', 'github_login', 'gitlab_account', 'intake', 'item', 'job', 'link', 'machine', 'machine_terminal', 'operation_profile', 'search_hit', 'shared_secret', 'system_secret', 'template', 'terminal', 'trust', 'user', 'vault_grant']);
     expect(modelGaps(json)).toEqual([]);
     expect(artifactGaps(json)).toEqual([]);
     expect(systemSecretGaps(json)).toEqual([]);
@@ -23,6 +23,7 @@ describe('the access model', () => {
     expect(searchHitGaps(json)).toEqual([]);
     expect(terminalGaps(json)).toEqual([]);
     expect(machineTerminalGaps(json)).toEqual([]);
+    expect(trustGaps(json)).toEqual([]);
   });
 
   it('a model edited before the machine\'s terminal (issue #1128) still decides mints; its gaps are apart, so nobody attaches', () => {

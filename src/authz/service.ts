@@ -7,15 +7,18 @@
 import { randomUUID } from 'node:crypto';
 import { isRefusal, type AccessRepository, type AuthorizationServer, type Clock, type RelationshipTuple, type StoredTuple } from '../domain/ports.ts';
 import type { AccessAnswer, JobStatus, LiveRequesters } from '../domain/types.ts';
+import type { TrustLevel } from '../domain/trust-stamp.ts';
 import { templateRadius, type TemplateScope } from '../blast-radius/template.ts';
 import type { Access, LiveShare } from './access-port.ts';
 import {
-  profileProblem, TEMPLATE_NAME, type RadiusRules,
+  profileProblem, type RadiusRules,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, vaultGrantGaps, type ModelJson } from './model.ts';
-import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, gitlabIntakeActorCheck, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, relationshipPath, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject, keyedByEmail } from './objects.ts';
+import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, trustGaps, vaultGrantGaps, type ModelJson } from './model.ts';
+import { belowMinimum, gateTuples, holderTuples, minTrusts, setMinTrust, trustedPath, trustTuples } from './trust.ts';
+import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, gitlabIntakeActorCheck, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject, keyedByEmail } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
+import { AccessEditError, requestProblem } from './edits.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
 export const LIVE_JOB_STATUSES: readonly JobStatus[] = ['claimed', 'running', 'waiting_answer', 'waiting_on'];
@@ -26,14 +29,7 @@ export const REQUESTERS_CHECK_MS = 2_000;
 const STORE_NAME = 'hopper', DECISIONS_SHOWN = 50, REVOKED_SHOWN = 20;
 export const NOT_CONFIGURED = 'OpenFGA is not set up: set HOPPER_OPENFGA_URL (docs/deploy.md "Access: OpenFGA")';
 
-/** What an edit refused: 400 (not valid), 404 (no such approval) or 409 (the model changed since it was read). */
-export class AccessEditError extends Error {
-  readonly status: 400 | 404 | 409;
-  constructor(status: 400 | 404 | 409, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export { AccessEditError, requestProblem } from './edits.ts';
 
 export type { Access, ArtifactViewer, LiveShare } from './access-port.ts';
 
@@ -64,11 +60,6 @@ const describeAsset = (t: Asset) => `${t.kind} ${t.name}`;
 const keyOf = (ts: RelationshipTuple[]): string => ts.map(tupleKey).sort().join('\n');
 const gapsOf = (dsl: string): string[] => modelGaps(compileAccessModel(dsl));
 
-/** Why a request names no template, operation or asset the model can hold, or undefined. */
-export function requestProblem(r: { template: string; operation: string; asset: { kind: string; name: string } }): string | undefined {
-  if (!TEMPLATE_NAME.test(r.template)) return `template ${JSON.stringify(r.template)} is not a template name (lowercase letters, digits, . _ -)`;
-  return profileProblem(r);
-}
 
 export function createAccess(o: AccessOptions): Access {
   const now = () => o.clock.now().toISOString();
@@ -88,7 +79,7 @@ export function createAccess(o: AccessOptions): Access {
     return (dsl) => (memo?.dsl === dsl ? memo : (memo = { dsl, gaps: gapsIn(compileAccessModel(dsl)) })).gaps;
   };
   const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps), itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps);
-  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), gitlabIntakeGapsOf = gapsMemo(gitlabIntakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps), machineTerminalGapsOf = gapsMemo(machineTerminalGaps);
+  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), gitlabIntakeGapsOf = gapsMemo(gitlabIntakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps), machineTerminalGapsOf = gapsMemo(machineTerminalGaps), trustGapsOf = gapsMemo(trustGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -97,7 +88,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + boxGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + gitlabIntakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length + searchGapsOf(m.dsl).length + terminalGapsOf(m.dsl).length + machineTerminalGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + boxGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + gitlabIntakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length + searchGapsOf(m.dsl).length + terminalGapsOf(m.dsl).length + machineTerminalGapsOf(m.dsl).length + trustGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -114,10 +105,12 @@ export function createAccess(o: AccessOptions): Access {
 
   /** The live shares as tuples, when the model has what they need; else none (a share is then denied, never a mint). */
   const liveShareTuples = (): RelationshipTuple[] => (o.shares && artifactGapsOf(model().dsl).length === 0 ? shareTuples(o.shares()) : []);
+  /** Each live job's trust and each profile's gate (issue #655, part 15), when the model has what they need; else none. */
+  const liveTrustTuples = (): RelationshipTuple[] => (trustGapsOf(model().dsl).length === 0 ? [...trustTuples(o.requesters()), ...gateTuples(o.repo.liveTuples())] : []);
   /** Tuples as OpenFGA is given them: a person by their email (issue #1380). Asked once per use, so a user who takes an email is moved at the next. */
   const emailKeyed = (): ((t: RelationshipTuple) => RelationshipTuple) => keyedByEmail(o.emails?.() ?? new Map());
   /** Who is live and what is shared, as written: a check asks OpenFGA only once it holds both as they are now. */
-  const liveKey = (): string => keyOf([...requesterTuples(o.requesters()), ...liveShareTuples()].map(emailKeyed()));
+  const liveKey = (): string => keyOf([...requesterTuples(o.requesters()), ...liveShareTuples(), ...liveTrustTuples()].map(emailKeyed()));
 
   const push = async (server: AuthorizationServer): Promise<void> => {
     const storeId = await server.store(o.repo.state(KEY_STORE), STORE_NAME);
@@ -131,7 +124,7 @@ export function createAccess(o: AccessOptions): Access {
       pushed = { storeId, version: m.version, modelId };
       o.repo.setState(KEY_PUSHED, JSON.stringify(pushed));
     }
-    const key = emailKeyed(), who = [...requesterTuples(o.requesters()), ...liveShareTuples()].map(key);
+    const key = emailKeyed(), who = [...requesterTuples(o.requesters()), ...liveShareTuples(), ...liveTrustTuples()].map(key);
     const want = new Map([...o.repo.liveTuples().map(plain).map(key), ...who].map((t) => [tupleKey(t), t]));
     const have = new Map((await server.tuples(storeId)).map((t) => [tupleKey(t), t]));
     const writes = [...want].filter(([k]) => !have.has(k)).map(([, t]) => t);
@@ -183,7 +176,7 @@ export function createAccess(o: AccessOptions): Access {
     try {
       const allowed = await server.check(pushed.storeId, pushed.modelId, key({ subject, relation: `can_${r.operation}`, object: assetObject(r.asset) }), contextual.map(key));
       if (!allowed) return { allowed, modelId: pushed.modelId, reason: `${who} is not approved to ${r.operation} on ${describeAsset(r.asset)}` };
-      const path = relationshipPath([...o.repo.liveTuples().map(plain), ...requesterTuples(o.requesters()), ...contextual], subject, profile)?.map(key);
+      const path = trustedPath([...o.repo.liveTuples().map(plain), ...requesterTuples(o.requesters()), ...liveTrustTuples(), ...contextual], subject, profile)?.map(key);
       const through = templateOnPath(path);
       return { allowed, modelId: pushed.modelId, reason: `${through === undefined ? who : `template ${through}`} is approved to ${r.operation} on ${describeAsset(r.asset)}`, ...(path ? { path } : {}) };
     } catch (e) {
@@ -193,9 +186,12 @@ export function createAccess(o: AccessOptions): Access {
     }
   };
 
-  /** OpenFGA's answer for a made-up live job of the template (`job:<kind>/<uuid>`, `running` it, told for this check only): a trial, or a read-only check's mint (issue #797). */
-  const askAsTemplate = (kind: 'trial' | 'check', r: Omit<MintRequest, 'requester'> & { template: string }, job = `job:${kind}/${randomUUID()}`) =>
-    ask(job, [runningTuple(job, r.template)], r, `template ${r.template}`);
+  /**
+   * OpenFGA's answer for a made-up live job of the template (`job:<kind>/<uuid>`, `running` it, told for this check only): a trial, or a read-only
+   * check's mint (issue #797). Its trust (issue #655, part 15) is told too: the level a trial names, else owner, as it is no job from intake.
+   */
+  const askAsTemplate = (kind: 'trial' | 'check', r: Omit<MintRequest, 'requester'> & { template: string; level?: TrustLevel }, job = `job:${kind}/${randomUUID()}`) =>
+    ask(job, [runningTuple(job, r.template), ...(trustGapsOf(model().dsl).length === 0 ? holderTuples(job, r.level ?? 'owner') : [])], r, `template ${r.template}`);
 
   const approvalOf = (approval: StoredTuple): Approval | undefined => {
     const id = approval.object.replace(/^operation_profile:/, '');
@@ -267,7 +263,10 @@ export function createAccess(o: AccessOptions): Access {
       const asks = standing(o.requesters(), requester, o.jobStatus);
       if ('problem' in asks) return record({ ...base, allowed: false, reason: asks.problem });
       const at = asks.template === undefined ? {} : { template: asks.template };
-      return record({ ...base, ...at, ...await ask(requesterObject(requester), [], request, requesterText(requester, asks.template, o.emails?.().get(requester.userId))) });
+      const answer = await ask(requesterObject(requester), [], request, requesterText(requester, asks.template, o.emails?.().get(requester.userId)));
+      // Denied by OpenFGA for a job below the profile's minimum trust (issue #655, part 15): the reason says so.
+      const below = answer.allowed || answer.modelId === undefined ? undefined : belowMinimum(o.requesters(), o.repo.liveTuples(), requester, request, `${operation} on ${describeAsset(asset)}`);
+      return record({ ...base, ...at, ...answer, ...(below ? { reason: below } : {}) });
     },
     async decideCheckMint({ check, template, operation, asset }) {
       const problem = requestProblem({ template, operation, asset });
@@ -276,8 +275,8 @@ export function createAccess(o: AccessOptions): Access {
     async tryCheck(request, by) {
       const problem = requestProblem(request);
       if (problem) throw new AccessEditError(400, problem);
-      const { template, operation, asset } = request;
-      return record({ trial: { by }, template, operation, asset, ...await askAsTemplate('trial', request) });
+      const { template, operation, asset, level } = request;
+      return record({ trial: { by, ...(level ? { level } : {}) }, template, operation, asset, ...await askAsTemplate('trial', request) });
     },
     async approve(template, profile, by) {
       const problem = requestProblem({ template, ...profile });
@@ -287,6 +286,9 @@ export function createAccess(o: AccessOptions): Access {
       o.repo.addTuple(grant, by, at);
       o.repo.addTuple(approval, by, at);
       await changed();
+    },
+    async setMinTrust(profile, level, by) {
+      if (setMinTrust(o.repo, profile, level, { by, at: now(), gaps: trustGapsOf(model().dsl) })) await changed();
     },
     async revoke(id, by) {
       const live = o.repo.liveTuples().find((t) => t.seq === id && t.relation === 'approved_for');
@@ -299,6 +301,8 @@ export function createAccess(o: AccessOptions): Access {
       try { json = compileAccessModel(dsl); } catch (e) { throw new AccessEditError(400, `the model does not parse: ${(e as Error).message}`); }
       const gaps = modelGaps(json);
       if (gaps.length > 0) throw new AccessEditError(400, `the model lacks what the hopper writes or asks: ${gaps.join(', ')}`);
+      const set = minTrusts(o.repo.liveTuples()).length, trust = trustGaps(json);
+      if (set > 0 && trust.length > 0) throw new AccessEditError(400, `the model lacks what a minimum trust needs (${trust.join(', ')}), and ${set} operation profile(s) have one: clear them first`);
       // OpenFGA checks a model further than the DSL: when it can be asked, it must take this one first.
       const storeId = o.repo.state(KEY_STORE);
       let modelId: string | undefined;
@@ -317,7 +321,7 @@ export function createAccess(o: AccessOptions): Access {
     status: () => status,
     view() {
       const live = o.requesters(), key = emailKeyed();
-      const tuples = [...o.repo.liveTuples().map(plain), ...requesterTuples(live)];
+      const tuples = [...o.repo.liveTuples().map(plain), ...requesterTuples(live), ...liveTrustTuples()];
       const all = approvals();
       const scopes = o.templates?.() ?? [];
       const templates = [...new Set([...all.map((a) => a.template), ...scopes.map((s) => s.name)])].sort().map((template) => {
@@ -329,7 +333,7 @@ export function createAccess(o: AccessOptions): Access {
         return a ? [{ ...a, revokedBy: t.revokedBy!, revokedAt: t.revokedAt! }] : [];
       });
       const requesters = requesterRows(live, tuples, all.map((a) => a.profile), key);
-      return { status, model: model(), templates, revoked, requesters, decisions: o.repo.decisions(DECISIONS_SHOWN) };
+      return { status, model: model(), templates, revoked, requesters, decisions: o.repo.decisions(DECISIONS_SHOWN), minTrust: minTrusts(o.repo.liveTuples()) };
     },
     start() {
       upgradeModel();

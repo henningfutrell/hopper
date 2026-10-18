@@ -1,5 +1,6 @@
 // Access in plain words (issues #559, #581): a relationship tuple and a chain of them, as Settings → Access shows an
-// approval and the path that allowed a decision; a requester by its kind and name. Pure.
+// approval and the path that allowed a decision, a job's trust and a profile's minimum trust (issue #655) too; a
+// requester by its kind and name. Pure.
 import type { Requester, RelationshipTuple } from './wire.ts';
 
 const OPERATION_WORD = /^grants_(read|write|sync|apply)$/;
@@ -12,6 +13,7 @@ function objectText(object: string): string {
   const first = id.indexOf('/');
   if (type === 'template') return `template ${id}`;
   if (type === 'user') return `user ${id}`;
+  if (type === 'trust') return `trust ${id}`;
   // A job and a machine are named after their user: `job:<user>/<job>`, `machine:<user>/<name, escaped>`.
   if ((type === 'job' || type === 'machine') && first > 0) return `${type} ${type === 'machine' ? decodeURIComponent(id.slice(first + 1)) : id.slice(first + 1)}`;
   if (type === 'asset' && first > 0) return `${id.slice(0, first)} ${id.slice(first + 1)}`;
@@ -29,6 +31,9 @@ export function tupleText(t: RelationshipTuple): string {
   if (t.relation === 'runs_on') return `${objectText(t.subject)} runs on ${objectText(t.object)}`;
   if (t.relation === 'instance_of') return `${objectText(t.subject)} is an instance of ${objectText(t.object)}`;
   if (t.relation === 'approved_for') return `${objectText(t.subject)} is approved for ${objectText(t.object)}`;
+  // A job's trust and a profile's minimum trust (issue #655, part 15).
+  if (t.relation === 'holder') return `${t.subject.startsWith('job:trial/') || t.subject.startsWith('job:check/') ? 'this job' : objectText(t.subject)} holds ${objectText(t.object)}`;
+  if (t.relation === 'min_trust') return `${objectText(t.object)} needs ${objectText(t.subject)} or higher`;
   const grant = OPERATION_WORD.exec(t.relation);
   if (grant) return `${objectText(t.subject)} grants ${grant[1]} on ${objectText(t.object)}`;
   return `${t.subject} ${t.relation} ${t.object}`;
