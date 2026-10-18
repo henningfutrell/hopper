@@ -8,7 +8,7 @@ import { createSandboxRequests } from '../../src/sandbox/requests.ts';
 import { BEFORE_START_PURPOSE, sandboxesHeld } from '../../src/users/sandbox-requests.ts';
 import { job as waitingJob } from '../decider/support.ts';
 
-const ready = (name: string): TemplateView => ({ name, profiles: [], approval: { by: 'Ada', at: 'now' }, pending: { profiles: [] } }) as unknown as TemplateView;
+const ready = (name: string): TemplateView => ({ name, profiles: [], approval: { by: 'Ada', at: 'now' }, pending: { egress: [], profiles: [] } }) as unknown as TemplateView;
 const templates = [ready('cluster-role-builder'), ready('web')];
 const BRIEF = 'Mint the role. Work in a box of template `cluster-role-builder`: sh "$HOPPER_STEP" box cluster-role-builder --command "…"';
 

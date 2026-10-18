@@ -26075,6 +26075,105 @@ no route. A host added to the allowlist was reached after the reload (200), with
 the real `aws` 2.37.12 and `kubectl` v1.37.1: refused both ways on the internal network (`egress refused`), reached on an
 open one.
 
+## A template's egress hosts (issue #1875, part 1, 2026-10-18)
+
+**The problem.** A job had to run an end-to-end test in a box against a dev host. The box's egress proxy refused the host
+(403): the allowlist held only AWS's endpoints and the minted clusters ("A read-only box's egress"), and a template had
+no way to name another host. A person could not approve "this box may reach this one host".
+
+- **The field** (`Template.egress`, `src/domain/vault.ts`). A list of `host:port`: a lowercase DNS name or an IPv4
+  address, a port from 1 to 65535, no scheme and no wildcard (`egressHostProblem`). The vault saves it in lowercase,
+  each host once, sorted. A save that leaves it out keeps the hosts the template has, as tools do; `[]` removes them. Set
+  in Settings → Vault (the template form), by `POST /ui/api/vault` `save-template` `egress`, or by
+  `hopper template save --egress <host>:<port>` (`none` removes them).
+- **Approved with the image.** `approve-template` keeps the hosts in the approval (`approval.egress`) and in
+  `vault.approved`. A host not in the approval waits for a person (`pending.egress`, `egressPending`): the template gives
+  no vault secret (`givesOf`), it is not ready (`templateReady`), and a box of it takes no job (`approvalWait`). A host
+  removed needs no approval: it narrows what a box may do. The approval card and the template card show the hosts, a
+  waiting one marked.
+- **The blast radius.** Each host is a `medium` line (`rateTemplate`): a place off AWS and the minted clusters where a
+  box can send what it reads. A template's rating is its highest line, so a template of reads and an egress host is
+  medium, and the auto-approve policy's default (low only) leaves it to a person.
+- **The box.** A need box (a need step or a box step) of a template that names egress hosts runs behind the egress
+  proxy, as a read-only box does, a write box too (`Sandboxes.needStep`). Before the box is made, the hopper adds the
+  template's hosts to the **egress allowlist** with the hosts of the step's credentials (`Egress.allow`). The step keeps
+  the template's hosts as they were when it was asked for (`NeedStepTemplate.egress`); a step is asked for only of a
+  ready template, so they are approved hosts.
+
+**Residual risk, stated.** The allowlist is shared, and only grows while the hopper runs: a host one template named
+stays allowed for every box behind the proxy after it, as a cluster's host does. tinyproxy allows a host and a port
+apart (its `Filter` and `ConnectPort`): a box may reach an allowed host on any allowed port. Where the egress is not
+limited — no egress settings, a client target, a Kubernetes box (its own egress policy) — a write box of such a template
+keeps its open egress, as every write box there does.
+
+**Decisions:**
+- **Approved with the image, not apart.** A new host is a new place a box's data can go. It waits as a new image does,
+  and the template gives nothing meanwhile, so no box reaches a host a person did not approve.
+- **Medium, not counted as a vault secret is.** An egress host gives no credential. It widens where data can go, which
+  the rules rate no higher than an unconfirmed reach.
+- **One allowlist, not one per box.** tinyproxy filters by host for all its clients. A proxy per template, or a filter
+  per client, is a larger change for the residual risk above.
+
+Built in part 2 ("The test image, and a template request with secrets, an image and egress hosts"): the test image, and
+a job's template request that asks for vault secrets, that image and egress hosts, which a person approves.
+
+Tests: `test/integration/template-egress.test.ts` (save, approve, widen and narrow through the real routes; the radius;
+a host that is not `host:port` refused), `test/sandbox/template-egress.test.ts` (a write box of a template with hosts
+behind the proxy, the hosts on the allowlist; a read-only box's hosts joined to its clusters; the host's form),
+`test/blast-radius/template-rate.test.ts`, `test/ui/vault.test.ts`.
+
+## The test image, and a template request with secrets, an image and egress hosts (issue #1875, part 2, 2026-10-18)
+
+**The problem.** After part 1 a template could name egress hosts, but a job still could not ask for the template its
+end-to-end test needs. A template request held no vault secret and ran the claude box image only. That image has no
+Python, no browser and no fonts, and behind the egress proxy a box cannot download them.
+
+- **The test image** (`TEST_IMAGE`, `src/sandbox/box-image.ts`; `scripts/box/test.Dockerfile`). The claude box image of
+  the same commit, with Debian bookworm's Python 3 (3.11) in a venv (`/opt/venv`, first on `PATH`), Playwright for Python
+  with Chromium's headless shell (`playwright install --with-deps --only-shell chromium`: the browser's system libraries
+  and Playwright's own fonts), DejaVu, Liberation and Noto Color Emoji fonts, and `requests` and `pytest`. The browsers
+  are in `/opt/playwright` (`PLAYWRIGHT_BROWSERS_PATH`), outside the home, which is a fresh volume in each box. It ends as
+  the box image's user, `agent`: a box runs no image as root. CI publishes it beside the box images
+  (`.github/workflows/image.yml` `box-test`, after `box`, on `box-claude-sha-<commit>`): `box-test` following stable,
+  `box-test-<branch>`, `box-test-sha-<commit>`.
+- **The ask** (`src/skills/template-ask.ts`). `sandbox-template` and `sandbox` also take `--secrets "NAME ..."` (vault
+  secrets by name, at most 8), `--egress "host:port ..."` (egress hosts, at most 8, as `egressHostProblem` reads them) and
+  `--image NAME`, one of the hopper's own box images by its short name (`REQUEST_IMAGES`: `box`, `test`). A job never
+  names an image reference of its own. With a secret or an egress host the needs may be none: an end-to-end test against
+  a dev host needs no operation profile. The vault's own save checks the rest (a secret it holds, never a system secret
+  or a minting credential).
+- **The name.** `asked-` and 12 hex of a SHA-256 over the sorted needs and then `secret:`, `egress:` and `image:` lines.
+  A request that names none of them hashes the needs alone, so the templates asked for before keep their names.
+- **Only a person approves a secret or an egress host.** A request that names one is never approved by the read policy,
+  the auto-approve policy, a remembered write approval or skip template approval (`automaticApprover`): it waits on
+  Access requests, and the answer says why. The test image alone changes nothing of who approves.
+- **Reuse.** A template approved for exactly the request — the same needs, secrets, egress hosts and image, nothing
+  waiting — is used for it, whatever its name. One that gives more (another secret, another host) is never used. A
+  template of the request's name that a person changed is a 409, as before. The ready answer names the sandbox ask by
+  the template (`--template <name>`).
+
+**Not built here (left for later parts of issue #1875).** A box step gets the credentials the hopper mints for its
+template's operation profiles, never its vault secrets (`src/sandbox/need-steps.ts`): a step of a template with vault
+secrets must also get them in the box, after the job's vault grant, masked in the log, and never on the job's machine.
+Then the end-to-end test runs as one box step.
+
+**Decisions:**
+- **An image by its short name only.** "A job never names an image" (AGENTS.md) protects what a box runs. A short name
+  from the hopper's own list keeps it: each one is an image this repository builds and publishes.
+- **A person approves every request with a secret or an egress host.** Issue #1875 asks that the approval of such a
+  template stays with a person. A toggle (skip template approval, auto-approve) is the admin's statement about needs; it
+  says nothing about which secrets a job may get or where a box may send them.
+- **`requests` and `pytest` in the test image.** Common in an end-to-end test of a web app, small, and a box behind the
+  proxy cannot download them.
+
+Tests: `test/skills/template-request-extras.test.ts` (the template saved with what the request names, no needs; a
+person's approval only, every policy and toggle on; ready after it; reuse of one exactly the same and never of a wider
+one; a changed one refused; an image reference, a host that is not `host:port`, a system secret and too many refused),
+`test/scripts/box-test-image.test.ts` (the Containerfile, its user, the workflow's job and tags). Checked by hand with
+rootless Podman: the image built on the published `box-claude`; run as a need box runs (every capability dropped, no new
+privileges, a read-only root, `/tmp` a tmpfs, a fresh home volume) and with no network, Chromium's headless shell
+rendered a page as `agent`.
+
 ## Remote access: the mint as a saga (issue #1609, 2026-10-17)
 
 **The problem.** Remote access's mint ("Remote access providers: the hopper mints the tunnel") made a tunnel, its ingress,

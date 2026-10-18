@@ -244,7 +244,7 @@ describe('the template a Linux step runs in (issue #1007)', () => {
   const view = (name: string, profiles: string[], o: Partial<TemplateView> = {}): TemplateView => ({
     name, image: 'img', secrets: [], savedBy: 'x', savedAt: '2026-10-13T00:00:00Z',
     profiles: profiles.map((p) => { const [operation, kind, ...rest] = p.split('/'); return { operation, asset: { kind, name: rest.join('/') } }; }) as TemplateView['profiles'],
-    pending: { secrets: [], image: false, profiles: [] }, gives: [], radius: { level: 'low', reasons: [] } as unknown as TemplateView['radius'],
+    pending: { secrets: [], image: false, egress: [], profiles: [] }, gives: [], radius: { level: 'low', reasons: [] } as unknown as TemplateView['radius'],
     approval: { image: 'img', secrets: [], by: 'a person', at: '2026-10-13T00:00:00Z' }, ...o,
   });
   const need = [{ operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } }] as const;
@@ -261,8 +261,8 @@ describe('the template a Linux step runs in (issue #1007)', () => {
     const p = ['read/aws-role/123456789012/readonly'];
     const { approval: _a, ...never } = view('never', p);
     expect(coveringTemplate([never as TemplateView], need)).toBeUndefined();
-    expect(coveringTemplate([view('image', p, { pending: { secrets: [], image: true, profiles: [] } })], need)).toBeUndefined();
-    expect(coveringTemplate([view('profile', p, { pending: { secrets: [], image: false, profiles: [need[0]] } })], need)).toBeUndefined();
+    expect(coveringTemplate([view('image', p, { pending: { secrets: [], image: true, egress: [], profiles: [] } })], need)).toBeUndefined();
+    expect(coveringTemplate([view('profile', p, { pending: { secrets: [], image: false, egress: [], profiles: [need[0]] } })], need)).toBeUndefined();
     expect(coveringTemplate([view('check', p, { readOnly: true })], need)).toBeUndefined();
     expect(coveringTemplate([view('checked', p, { readOnly: true, check: { version: '2026-10-13T00:00:00Z', state: 'passed', at: '2026-10-13T00:00:00Z', probes: [] } })], need)?.name).toBe('checked');
   });

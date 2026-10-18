@@ -65,7 +65,7 @@ describe('a template request takes needs in words, or written as needs, or both 
 
   it('the preview shows the needs the words make, and a change in words waits for a person', () => {
     const user = { template: () => undefined, templates: () => [], policy: () => ({ assets: ['cluster/lab'] }), image: 'box' };
-    expect(previewTemplate(user, 'kubectl get pods on cluster lab')).toMatchObject({ needs: ['read on cluster lab'], approvedBy: 'the read policy', readOnly: true });
-    expect(previewTemplate(user, 'delete stuck pods on cluster lab')).toMatchObject({ needs: ['write on cluster lab'], approvedBy: 'a person', readOnly: false });
+    expect(previewTemplate(user, { needs: 'kubectl get pods on cluster lab' })).toMatchObject({ needs: ['read on cluster lab'], approvedBy: 'the read policy', readOnly: true });
+    expect(previewTemplate(user, { needs: 'delete stuck pods on cluster lab' })).toMatchObject({ needs: ['write on cluster lab'], approvedBy: 'a person', readOnly: false });
   });
 });

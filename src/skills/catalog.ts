@@ -87,13 +87,13 @@ export const SKILLS: readonly Skill[] = [
     name: 'sandbox',
     line: 'a box for the needs (--needs "read/cluster/NAME") or a template (--template NAME)',
     // Issue #1001: --why is required; --plan too when a need changes an asset. The person who approves reads both.
-    text: 'sandbox: sh "$HOPPER_SKILL" sandbox --why "<why the job needs it, one or two sentences>" [--plan "<the commands; for each change, what it changes and whether it can be undone>"] (--needs "<operation>/<kind>/<asset> ..." | --template NAME) [--wait]\nA brief that names a template: give --template NAME. The hopper asks for the sandboxes a brief names before the job starts, so they are often approved already.',
+    text: 'sandbox: sh "$HOPPER_SKILL" sandbox --why "<why the job needs it, one or two sentences>" [--plan "<the commands; for each change, what it changes and whether it can be undone>"] (--needs "<operation>/<kind>/<asset> ..." | --template NAME) [--wait]\nA brief that names a template: give --template NAME. The hopper asks for the sandboxes a brief names before the job starts, so they are often approved already.\nIssue #1875: [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] ask for vault secrets, the hosts its sandboxes may reach and the hopper\'s test image (Python, Playwright with Chromium); with --secrets or --egress, --needs may be left out, and a person always approves it.',
   },
   {
     // Issue #716: the template a job's work needs, made by the hopper (src/skills/template-request.ts answers it).
     name: 'sandbox-template',
     line: 'its template only',
-    text: 'sandbox-template: sh "$HOPPER_SKILL" sandbox-template --why "<why>" [--plan "<the plan>"] --needs "<operation>/<kind>/<asset> ..." [--wait]',
+    text: 'sandbox-template: sh "$HOPPER_SKILL" sandbox-template --why "<why>" [--plan "<the plan>"] --needs "<operation>/<kind>/<asset> ..." [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] [--wait]',
   },
   {
     // Issue #624: what a job makes for a person to see. Needs no access: the job's own token is enough.

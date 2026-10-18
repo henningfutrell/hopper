@@ -16,7 +16,7 @@ import type { UserStore } from '../../domain/ports.ts';
 import { CREDENTIAL_NOTE_MAX, systemBackendRefusal, VAULT_REFERENCE_MAX, VAULT_VALUE_MAX, type SystemSecretName } from '../../domain/vault.ts';
 import type { SystemChanger, SystemResult } from '../../vault/system.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import { needsOf, previewTemplate, requestedName, requestTemplate } from '../../skills/template-request.ts';
+import { previewTemplate, requestTemplate } from '../../skills/template-request.ts';
 import { holdsTemplate, type Vault } from '../../vault/vault.ts';
 import { templateRequestUser, vaultAnswer } from '../vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -49,6 +49,8 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({
     action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256),
     profiles: z.array(z.strictObject({ ...profile, backend: stateBackend.optional() })).max(256).optional(), limits: templateLimits.optional(), tools: z.array(z.string().max(32)).max(16).optional(),
+    // The hosts its boxes may reach through the egress proxy (issue #1875): `host:port`. Absent keeps them; `[]` drops them.
+    egress: z.array(z.string().max(260)).max(32).optional(),
     // One of its secrets its boxes' agent signs in with (issue #708, part 10): absent keeps it, null names none.
     agentCredential: z.string().max(64).nullable().optional(),
     // A person's marks on its read probes (issue #916): probe id → `expect-denied` or `skip`. Absent keeps them; `{}` drops them.
@@ -119,16 +121,14 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
       return await vaultAnswer(parts);
     }
     if (edit.action === 'preview-template') {
-      const preview = previewTemplate(templateRequestUser(parts), edit.needs);
+      const preview = previewTemplate(templateRequestUser(parts), { needs: edit.needs });
       if (typeof preview === 'string') throw new HttpError(400, preview);
       return { preview };
     }
     if (edit.action === 'request-template') {
-      const r = await requestTemplate(templateRequestUser(parts), edit.needs, by);
+      const r = await requestTemplate(templateRequestUser(parts), { needs: edit.needs }, by);
       if ('reason' in r) throw new HttpError(r.status, r.reason);
-      const needs = needsOf(edit.needs);
-      const template = typeof needs === 'string' ? undefined : requestedName(needs);
-      return { ...await vaultAnswer(parts), request: { template, ready: r.status === 200, text: r.text } };
+      return { ...await vaultAnswer(parts), request: { template: r.template, ready: r.status === 200, text: r.text } };
     }
     const said = { ...('scope' in edit && edit.scope !== undefined ? { scope: edit.scope } : {}), ...('mints' in edit && edit.mints !== undefined ? { mints: edit.mints } : {}) };
     const r = edit.action === 'set' ? await vault.set({ name: edit.name, value: edit.value, ...said }, by)

@@ -22,7 +22,7 @@ function user(o: { remembered?: RememberedWrite[]; approvals?: SandboxApprovals 
     templates: () => [...templates.values()],
     async save(t) {
       saved.push(t);
-      templates.set(t.name, { ...t, pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'high', reasons: [] } } as unknown as TemplateView);
+      templates.set(t.name, { ...t, pending: { secrets: [], image: true, egress: [], profiles: [...t.profiles] }, gives: [], radius: { level: 'high', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
     },
     async approve(name, by) {
@@ -48,7 +48,7 @@ function user(o: { remembered?: RememberedWrite[]; approvals?: SandboxApprovals 
 describe('a remembered write approval (issue #1001)', () => {
   it('approves a new template whose writes are all remembered, its write profiles with it, with no person', async () => {
     const { u, calls } = user({ remembered: [remembered('write', 'aws-account', '123456789012'), remembered('apply', 'namespace', 'lab/identity')] });
-    const r = await requestTemplate(u, 'read/cluster/lab write/aws-account/123456789012 apply/namespace/lab/identity', 'job j2', 'j2');
+    const r = await requestTemplate(u, { needs: 'read/cluster/lab write/aws-account/123456789012 apply/namespace/lab/identity' }, 'job j2', 'j2');
     expect(r.status).toBe(200);
     expect(calls).toEqual([
       expect.stringMatching(new RegExp(`^approve asked-\\w+ by ${REMEMBERED_APPROVER}$`)),
@@ -59,27 +59,27 @@ describe('a remembered write approval (issue #1001)', () => {
 
   it('a write that is not remembered waits for a person', async () => {
     const { u, calls } = user({ remembered: [remembered('write', 'aws-account', '123456789012')] });
-    const r = await requestTemplate(u, 'write/aws-account/123456789012 write/namespace/lab/identity', 'job j2', 'j2');
+    const r = await requestTemplate(u, { needs: 'write/aws-account/123456789012 write/namespace/lab/identity' }, 'job j2', 'j2');
     expect(r.status).toBe(202);
     expect(calls).toEqual([]);
   });
 
   it('a remembered write and a read the policies do not approve wait for a person', async () => {
     const { u, calls } = user({ remembered: [remembered('write', 'aws-account', '123456789012')], approvals: { ...OFF, autoApprove: { low: false, medium: false, high: false } } });
-    expect((await requestTemplate(u, 'read/cluster/lab write/aws-account/123456789012', 'job j2', 'j2')).status).toBe(202);
+    expect((await requestTemplate(u, { needs: 'read/cluster/lab write/aws-account/123456789012' }, 'job j2', 'j2')).status).toBe(202);
     expect(calls).toEqual([]);
   });
 
   it('the preview says a remembered write approval approves it', () => {
     const { u } = user({ remembered: [remembered('write', 'aws-account', '123456789012')] });
-    expect(previewTemplate(u, 'write/aws-account/123456789012')).toMatchObject({ approvedBy: REMEMBERED_APPROVER, waits: [] });
+    expect(previewTemplate(u, { needs: 'write/aws-account/123456789012' })).toMatchObject({ approvedBy: REMEMBERED_APPROVER, waits: [] });
   });
 });
 
 describe('the purpose and the plan of a template a job asks for (issue #1001)', () => {
   it('keeps the purpose and the plan of the ask that made it', async () => {
     const { u, saved } = user();
-    await requestTemplate(u, 'write/namespace/lab/identity', 'job j1', 'j1', { purpose: 'Create the cluster role for X in identity namespace', plan: 'kubectl apply -f role.yaml (ClusterRole x-reader; undo: kubectl delete)' });
+    await requestTemplate(u, { needs: 'write/namespace/lab/identity' }, 'job j1', 'j1', { purpose: 'Create the cluster role for X in identity namespace', plan: 'kubectl apply -f role.yaml (ClusterRole x-reader; undo: kubectl delete)' });
     expect(saved[0]).toMatchObject({ askedBy: 'j1', purpose: 'Create the cluster role for X in identity namespace', plan: 'kubectl apply -f role.yaml (ClusterRole x-reader; undo: kubectl delete)' });
   });
 });

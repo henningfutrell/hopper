@@ -47,7 +47,7 @@ function hopper(o: { probes?: unknown[]; approved?: boolean; checkedBefore?: boo
   let polls = 0;
   const template = () => ({
     name: 'asked-0a1b2c', savedAt: SAVED, readOnly: true, check,
-    pending: { secrets: [], image: !approved, profiles: [] },
+    pending: { secrets: [], image: !approved, egress: [], profiles: [] },
     ...(approved ? { approval: { image: 'x', secrets: [], by: 'the read policy', at: SAVED } } : {}),
   });
   const ok = (v: unknown): Answer => ({ status: 0, stdout: JSON.stringify(v), stderr: '' });
