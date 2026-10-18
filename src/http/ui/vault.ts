@@ -16,7 +16,7 @@ import type { UserStore } from '../../domain/ports.ts';
 import { CREDENTIAL_NOTE_MAX, systemBackendRefusal, VAULT_REFERENCE_MAX, VAULT_VALUE_MAX, type SystemSecretName } from '../../domain/vault.ts';
 import type { SystemChanger, SystemResult } from '../../vault/system.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import { needsOf, previewTemplate, requestedName, requestTemplate } from '../../skills/template-request.ts';
+import { previewTemplate, requestTemplate } from '../../skills/template-request.ts';
 import { holdsTemplate, type Vault } from '../../vault/vault.ts';
 import { templateRequestUser, vaultAnswer } from '../vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -121,16 +121,14 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
       return await vaultAnswer(parts);
     }
     if (edit.action === 'preview-template') {
-      const preview = previewTemplate(templateRequestUser(parts), edit.needs);
+      const preview = previewTemplate(templateRequestUser(parts), { needs: edit.needs });
       if (typeof preview === 'string') throw new HttpError(400, preview);
       return { preview };
     }
     if (edit.action === 'request-template') {
-      const r = await requestTemplate(templateRequestUser(parts), edit.needs, by);
+      const r = await requestTemplate(templateRequestUser(parts), { needs: edit.needs }, by);
       if ('reason' in r) throw new HttpError(r.status, r.reason);
-      const needs = needsOf(edit.needs);
-      const template = typeof needs === 'string' ? undefined : requestedName(needs);
-      return { ...await vaultAnswer(parts), request: { template, ready: r.status === 200, text: r.text } };
+      return { ...await vaultAnswer(parts), request: { template: r.template, ready: r.status === 200, text: r.text } };
     }
     const said = { ...('scope' in edit && edit.scope !== undefined ? { scope: edit.scope } : {}), ...('mints' in edit && edit.mints !== undefined ? { mints: edit.mints } : {}) };
     const r = edit.action === 'set' ? await vault.set({ name: edit.name, value: edit.value, ...said }, by)

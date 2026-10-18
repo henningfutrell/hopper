@@ -16,6 +16,7 @@ import { HOLD_TIMEOUT, JEV_APPROVER, type SandboxRequestView } from '../domain/s
 import { nameWithoutEmail } from '../domain/users.ts';
 import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
 import { needsOf, SANDBOX_SKILL, TEMPLATE_SKILL, type AskAbout, type TemplateAnswer } from './template-request.ts';
+import { askOf, type TemplateAsk } from './template-ask.ts';
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
 import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
@@ -38,8 +39,8 @@ export interface SkillUser {
   mintsFor(form: LinkForm, asset: Asset): boolean;
   /** The vault asks a person for a credential the box's template does not give (issue #583): waiting, or declined. */
   need(ask: CredentialNeed, asker: { job: Job; machine: string; template: string }): { waiting: string } | { declined: string };
-  /** A template request (issue #716): the hopper makes the template the job's needs say, or says why not. */
-  requestTemplate(needs: string | undefined, job: Job, about?: AskAbout): Promise<TemplateAnswer>;
+  /** A template request (issue #716): the hopper makes the template the job's needs say (and, issue #1875, its secrets, image and egress hosts), or says why not. */
+  requestTemplate(ask: TemplateAsk, job: Job, about?: AskAbout): Promise<TemplateAnswer>;
   /** The user's template of that name, as the vault shows it (issue #1471: a sandbox ask may name one); undefined: none. */
   template(name: string): TemplateView | undefined;
   /** A sandbox request (issue #991): the job's ask for a box of the template, and where it is now; `about`: why, and its plan (issue #1001). */
@@ -152,7 +153,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     const outside = needs === undefined || typeof needs === 'string' ? undefined : user.outsideStamp?.(needs, job);
     if (outside) return no(403, `${MIN_TRUST_DECLINER} refuses these needs: ${outside}. ${MIN_TRUST_ADVICE}`);
     if (name === TEMPLATE_SKILL) {
-      const t = await user.requestTemplate(field(body, 'needs'), job, about);
+      const t = await user.requestTemplate(askOf((k) => field(body, k)), job, about);
       if ('reason' in t) return no(t.status, t.reason);
       if (t.status === 202) return { status: 202, text: `${t.text} Add --wait to have the hopper tell you when it is ready.\n` };
       record('skill.loaded');
@@ -201,7 +202,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     async function sandbox(): Promise<SkillAnswer> {
       const named = field(body, 'template');
       if (named !== undefined) return namedSandbox(named);
-      const t = await user.requestTemplate(field(body, 'needs'), job, about);
+      const t = await user.requestTemplate(askOf((k) => field(body, k)), job, about);
       if ('reason' in t) return no(t.status, t.reason);
       const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
       if (t.status === 202) {

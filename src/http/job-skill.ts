@@ -44,7 +44,7 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     },
     need: (ask, asker) => parts.vault.need(ask, asker),
     // Issue #716: the template the job's needs say, through the vault's own save and approve, the user's read policy deciding.
-    requestTemplate: (needs, job, about) => requestTemplate(templateRequestUser(parts), needs, `job ${job.id}`, job.id, about),
+    requestTemplate: (ask, job, about) => requestTemplate(templateRequestUser(parts), ask, `job ${job.id}`, job.id, about),
     // Issue #991: a box of that template for the job, started once a person or skip sandbox approval approves it.
     template: (name) => parts.vault.view().templates.find((t) => t.name === name),
     sandbox: (template, job, about) => parts.sandboxRequests.ask(job.id, template, about),

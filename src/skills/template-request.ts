@@ -20,6 +20,8 @@
 // the plan of the job that asked for it first, for the card a person decides on.
 // Issue #1779: a template whose check failed as the vault minted nothing for a read need is a 409, not a wait: it cannot
 // pass until a person fixes the minting credential, so the job is told which needs mint, and asks for those.
+// Issue #1875: a request may also name vault secrets, the hopper's test image and egress hosts (template-ask.ts); with a
+// secret or an egress host, its needs may be none, and only a person approves the template.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type Asset, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { OPERATOR_CLI_NAME } from '../domain/failures.ts';
@@ -34,6 +36,7 @@ import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
 import { needsFromWords } from './needs-in-words.ts';
+import { extrasInWords, extrasKey, extrasOf, forPerson, hasExtras, REQUEST_IMAGES, sameExtras, type AskExtras, type TemplateAsk } from './template-ask.ts';
 
 /** The skill name a job asks for a template by. */
 export const TEMPLATE_SKILL = 'sandbox-template';
@@ -108,10 +111,26 @@ const sameNeeds = (a: readonly OperationProfile[], b: readonly OperationProfile[
 };
 const inWords = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
 
-/** The template's name: from the needs alone, in any order. */
-export function requestedName(needs: readonly OperationProfile[]): string {
-  return `asked-${createHash('sha256').update(needs.map(keyOf).sort().join('\n')).digest('hex').slice(0, 12)}`;
+/** The template's name: from the needs alone, in any order; and from the extras when it names any (issue #1875). */
+export function requestedName(needs: readonly OperationProfile[], extras?: AskExtras): string {
+  return `asked-${createHash('sha256').update([...needs.map(keyOf).sort(), ...(extras ? extrasKey(extras) : [])].join('\n')).digest('hex').slice(0, 12)}`;
 }
+
+/** A request read (issue #1875): its needs, its extras, and the image its template runs. */
+interface ReadAsk { needs: OperationProfile[]; extras: AskExtras; image: string }
+
+/** The request read; or why it cannot be. Needs may be none only when it names a vault secret or an egress host. */
+function readAsk(u: Pick<TemplateRequestUser, 'image'>, ask: TemplateAsk): ReadAsk | string {
+  const extras = extrasOf(ask);
+  if (typeof extras === 'string') return extras;
+  const needs = !ask.needs?.trim() && forPerson(extras) ? [] : needsOf(ask.needs);
+  if (typeof needs === 'string') return needs;
+  return { needs, extras, image: extras.image ? REQUEST_IMAGES[extras.image]! : u.image };
+}
+
+/** Whether a template is what the request asks for: the same needs, and the same extras when it names any. */
+const sameAsk = (t: TemplateView, r: ReadAsk): boolean => sameNeeds(t.profiles, r.needs) && (!hasExtras(r.extras) || sameExtras(t, r.extras, r.image));
+const readOnlyOf = (needs: readonly OperationProfile[]): boolean => needs.length > 0 && needs.every((p) => p.operation === 'read');
 
 type Result = { ok: true } | { ok: false; code: string; error: string };
 
@@ -120,7 +139,7 @@ export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
   /** Every template of the user's (issue #998): one approved for the same needs is used for them. */
   templates(): TemplateView[];
-  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string; purpose?: string; plan?: string }, by: string): Promise<Result>;
+  save(t: { name: string; image: string; secrets: string[]; egress?: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string; purpose?: string; plan?: string }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<Result>;
   policy(): ReadPolicy | undefined;
@@ -140,6 +159,7 @@ const STATUS: Record<string, 400 | 409 | 503> = { invalid: 400, conflict: 409 };
 function waitsOf(t: TemplateView): string[] {
   return [
     ...(!t.approval ? ['the template is not approved'] : t.pending.image ? ['its image changed since it was approved'] : []),
+    ...(t.approval && t.pending.secrets.length ? [`its vault secret ${t.pending.secrets.join(', ')} is not approved`] : []),
     ...(t.approval && t.pending.egress.length ? [`its egress host ${t.pending.egress.join(', ')} is not approved`] : []),
     ...t.pending.profiles.map((p) => `${inWords(p)} is not approved`),
   ];
@@ -171,8 +191,9 @@ function cannotMint(u: Pick<TemplateRequestUser, 'templates'>, t: TemplateView, 
 }
 
 /** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */
-function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | undefined): string[] {
+function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | undefined, extras?: AskExtras): string[] {
   return [
+    ...(extras && forPerson(extras) ? ['a vault secret or an egress host is approved by a person only'] : []),
     ...needs.filter((p) => p.operation === 'read' && !inReadPolicy(policy, p.asset)).map((p) => `the read policy does not hold ${inWords(p)}`),
     ...needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} changes the asset`),
   ];
@@ -182,8 +203,8 @@ function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | 
  * A template approved for exactly these needs (issue #998): the same profiles, no vault secret, nothing waiting for a
  * person; one whose read-only check passed first. Undefined when there is none.
  */
-function approvedFor(u: Pick<TemplateRequestUser, 'templates'>, needs: readonly OperationProfile[]): TemplateView | undefined {
-  const same = u.templates().filter((t) => t.secrets.length === 0 && sameNeeds(t.profiles, needs) && waitsOf(t).length === 0);
+function approvedFor(u: Pick<TemplateRequestUser, 'templates'>, r: ReadAsk): TemplateView | undefined {
+  const same = u.templates().filter((t) => (hasExtras(r.extras) ? sameAsk(t, r) : t.secrets.length === 0 && sameNeeds(t.profiles, r.needs)) && waitsOf(t).length === 0);
   return same.find((t) => !checkWait(t)) ?? same[0];
 }
 
@@ -200,7 +221,9 @@ const skipsTemplate = (u: Pick<TemplateRequestUser, 'approvals'>): boolean => (u
  * write approvals (issue #1001: they cover every change, and each read is approved with no person), skip template
  * approval. Undefined: a person. A requested template holds no vault secret, so its radius comes from the needs alone.
  */
-function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals' | 'remembered'>, needs: readonly OperationProfile[]): TemplatePreview['approvedBy'] | undefined {
+function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals' | 'remembered'>, needs: readonly OperationProfile[], extras: AskExtras): TemplatePreview['approvedBy'] | undefined {
+  // Issue #1875: a vault secret or an egress host is a person's to approve, whatever the policies and toggles say.
+  if (forPerson(extras)) return undefined;
   if (outsidePolicy(needs, u.policy()).length === 0) return READ_POLICY_APPROVER;
   const level = rateTemplate({ secrets: [], profiles: [...needs] }, [], DEFAULT_BLAST_RADIUS_SETTINGS.rules).level;
   if (autoApproves(u.approvals?.(), level)) return AUTO_APPROVER;
@@ -209,26 +232,27 @@ function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals' |
 }
 
 /** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
-export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals' | 'remembered'>, said: string | undefined): TemplatePreview | string {
-  const needs = needsOf(said);
-  if (typeof needs === 'string') return needs;
+export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals' | 'remembered'>, ask: TemplateAsk): TemplatePreview | string {
+  const r = readAsk(u, ask);
+  if (typeof r === 'string') return r;
+  const { needs, extras } = r;
   const cannot = uncheckable(needs);
   if (cannot) return cannot;
-  const name = requestedName(needs);
+  const name = requestedName(needs, extras);
   const was = u.template(name);
-  const reused = was && waitsOf(was).length === 0 && sameNeeds(was.profiles, needs) ? undefined : approvedFor(u, needs);
+  const reused = was && waitsOf(was).length === 0 && sameAsk(was, r) ? undefined : approvedFor(u, r);
   if (reused) {
     return {
       template: reused.name, image: reused.image, tools: [...(reused.tools ?? [])], needs: needs.map(inWords),
       readOnly: reused.readOnly === true, approvedBy: approverOf(reused), waits: [], exists: 'same',
     };
   }
-  const approver = automaticApprover(u, needs);
+  const approver = automaticApprover(u, needs, extras);
   return {
-    template: name, image: u.image, tools: toolsForNeeds(needs), needs: needs.map(inWords),
-    readOnly: needs.every((p) => p.operation === 'read'),
-    approvedBy: approver ?? 'a person', waits: approver ? [] : outsidePolicy(needs, u.policy()),
-    ...(was ? { exists: sameNeeds(was.profiles, needs) ? 'same' as const : 'changed' as const } : {}),
+    template: name, image: r.image, tools: toolsForNeeds(needs), needs: [...needs.map(inWords), ...extrasInWords(extras)],
+    readOnly: readOnlyOf(needs),
+    approvedBy: approver ?? 'a person', waits: approver ? [] : outsidePolicy(needs, u.policy(), extras),
+    ...(was ? { exists: sameAsk(was, r) ? 'same' as const : 'changed' as const } : {}),
   };
 }
 
@@ -239,18 +263,19 @@ export interface AskAbout { purpose: string; plan?: string }
  * A request, `by` the job (`job <id>`) or a person; `job`: the id of the job that asks (issue #715: its check's report
  * goes there); `about`: why it asks and its plan (issue #1001).
  */
-export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string, about?: AskAbout): Promise<TemplateAnswer> {
-  const needs = needsOf(said);
-  if (typeof needs === 'string') return { status: 400, reason: needs };
+export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, by: string, job?: string, about?: AskAbout): Promise<TemplateAnswer> {
+  const r = readAsk(u, ask);
+  if (typeof r === 'string') return { status: 400, reason: r };
+  const { needs, extras } = r;
   const cannot = uncheckable(needs);
   if (cannot) return { status: 400, reason: cannot };
-  const asked = requestedName(needs);
+  const asked = requestedName(needs, extras);
   const was = u.template(asked);
   // Issue #998: the template the needs name, when it is approved for them; else another approved for them; else the one
   // the needs name, made now when it is not there.
-  const reused = was && waitsOf(was).length === 0 && sameNeeds(was.profiles, needs) ? undefined : approvedFor(u, needs);
+  const reused = was && waitsOf(was).length === 0 && sameAsk(was, r) ? undefined : approvedFor(u, r);
   const name = reused?.name ?? asked;
-  if (!reused && was && !sameNeeds(was.profiles, needs)) {
+  if (!reused && was && !sameAsk(was, r)) {
     // Issue #1468: the needs it holds now, so a job can ask for those.
     const now = (was.profiles ?? []).map(keyOf).join(' ');
     return {
@@ -259,13 +284,13 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     };
   }
   if (!reused && !was) {
-    const readOnly = needs.every((p) => p.operation === 'read');
-    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}),
+    const readOnly = readOnlyOf(needs);
+    const saved = await u.save({ name, image: r.image, secrets: extras.secrets, ...(extras.egress.length ? { egress: extras.egress } : {}), profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}),
       ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // Only a template made now is approved with no person (automaticApprover): as it is, then each write, sync or apply
     // profile, unless the read policy approved it, which holds reads only.
-    const approver = automaticApprover(u, needs);
+    const approver = automaticApprover(u, needs, extras);
     if (approver) {
       const approved = await u.approve(name, approver);
       if (!approved.ok) return { status: STATUS[approved.code] ?? 503, reason: approved.error };
@@ -279,7 +304,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   if (!t) return { status: 503, reason: `template ${name} was not kept: ask again` };
   const waits = waitsOf(t);
   if (waits.length > 0) {
-    const why = outsidePolicy(needs, u.policy());
+    const why = outsidePolicy(needs, u.policy(), extras);
     return { status: 202, template: name, text: `waiting: template ${name} waits for a person on Access requests: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
   }
   const unminted = unmintedNeeds(t);
@@ -290,8 +315,8 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   return {
     status: 200,
     template: name,
-    text: `${TEMPLATE_SKILL}: template ${name} is ready, ${who}, for: ${needs.map(inWords).join(', ')}.
-Each command that needs it runs in a sandbox of its own, which the hopper destroys when the command ends. Ask for the sandbox runs once: sh "$HOPPER_SKILL" ${SANDBOX_SKILL} --needs "<the same needs>" --wait. Then run each command as a box step: sh "$HOPPER_STEP" box ${name} --command "…".
+    text: `${TEMPLATE_SKILL}: template ${name} is ready, ${who}, for: ${[...needs.map(inWords), ...extrasInWords(extras)].join(', ')}.
+Each command that needs it runs in a sandbox of its own, which the hopper destroys when the command ends. Ask for the sandbox runs once: sh "$HOPPER_SKILL" ${SANDBOX_SKILL} ${hasExtras(extras) ? `--template ${name}` : '--needs "<the same needs>"'} --wait. Then run each command as a box step: sh "$HOPPER_STEP" box ${name} --command "…".
 To run one command that needs it from this job with no sandbox request, run it as a need step: sh "$HOPPER_STEP" need "<the same needs>" --why "…" --command "…".
 Load the skill for each asset; the hopper asks a person for each credential the first time:
 ${loads(needs)}`,

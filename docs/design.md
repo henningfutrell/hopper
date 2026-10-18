@@ -26114,14 +26114,65 @@ keeps its open egress, as every write box there does.
 - **One allowlist, not one per box.** tinyproxy filters by host for all its clients. A proxy per template, or a filter
   per client, is a larger change for the residual risk above.
 
-Left for later parts of issue #1875: a prebuilt test image (non-root, Python, Playwright with Chromium headless shell,
-its libraries and fonts) that a template can name; and a job's template request that asks for vault secrets, that image
-and egress hosts, which a person approves.
+Built in part 2 ("The test image, and a template request with secrets, an image and egress hosts"): the test image, and
+a job's template request that asks for vault secrets, that image and egress hosts, which a person approves.
 
 Tests: `test/integration/template-egress.test.ts` (save, approve, widen and narrow through the real routes; the radius;
 a host that is not `host:port` refused), `test/sandbox/template-egress.test.ts` (a write box of a template with hosts
 behind the proxy, the hosts on the allowlist; a read-only box's hosts joined to its clusters; the host's form),
 `test/blast-radius/template-rate.test.ts`, `test/ui/vault.test.ts`.
+
+## The test image, and a template request with secrets, an image and egress hosts (issue #1875, part 2, 2026-10-18)
+
+**The problem.** After part 1 a template could name egress hosts, but a job still could not ask for the template its
+end-to-end test needs. A template request held no vault secret and ran the claude box image only. That image has no
+Python, no browser and no fonts, and behind the egress proxy a box cannot download them.
+
+- **The test image** (`TEST_IMAGE`, `src/sandbox/box-image.ts`; `scripts/box/test.Dockerfile`). The claude box image of
+  the same commit, with Debian bookworm's Python 3 (3.11) in a venv (`/opt/venv`, first on `PATH`), Playwright for Python
+  with Chromium's headless shell (`playwright install --with-deps --only-shell chromium`: the browser's system libraries
+  and Playwright's own fonts), DejaVu, Liberation and Noto Color Emoji fonts, and `requests` and `pytest`. The browsers
+  are in `/opt/playwright` (`PLAYWRIGHT_BROWSERS_PATH`), outside the home, which is a fresh volume in each box. It ends as
+  the box image's user, `agent`: a box runs no image as root. CI publishes it beside the box images
+  (`.github/workflows/image.yml` `box-test`, after `box`, on `box-claude-sha-<commit>`): `box-test` following stable,
+  `box-test-<branch>`, `box-test-sha-<commit>`.
+- **The ask** (`src/skills/template-ask.ts`). `sandbox-template` and `sandbox` also take `--secrets "NAME ..."` (vault
+  secrets by name, at most 8), `--egress "host:port ..."` (egress hosts, at most 8, as `egressHostProblem` reads them) and
+  `--image NAME`, one of the hopper's own box images by its short name (`REQUEST_IMAGES`: `box`, `test`). A job never
+  names an image reference of its own. With a secret or an egress host the needs may be none: an end-to-end test against
+  a dev host needs no operation profile. The vault's own save checks the rest (a secret it holds, never a system secret
+  or a minting credential).
+- **The name.** `asked-` and 12 hex of a SHA-256 over the sorted needs and then `secret:`, `egress:` and `image:` lines.
+  A request that names none of them hashes the needs alone, so the templates asked for before keep their names.
+- **Only a person approves a secret or an egress host.** A request that names one is never approved by the read policy,
+  the auto-approve policy, a remembered write approval or skip template approval (`automaticApprover`): it waits on
+  Access requests, and the answer says why. The test image alone changes nothing of who approves.
+- **Reuse.** A template approved for exactly the request — the same needs, secrets, egress hosts and image, nothing
+  waiting — is used for it, whatever its name. One that gives more (another secret, another host) is never used. A
+  template of the request's name that a person changed is a 409, as before. The ready answer names the sandbox ask by
+  the template (`--template <name>`).
+
+**Not built here (left for later parts of issue #1875).** A box step gets the credentials the hopper mints for its
+template's operation profiles, never its vault secrets (`src/sandbox/need-steps.ts`): a step of a template with vault
+secrets must also get them in the box, after the job's vault grant, masked in the log, and never on the job's machine.
+Then the end-to-end test runs as one box step.
+
+**Decisions:**
+- **An image by its short name only.** "A job never names an image" (AGENTS.md) protects what a box runs. A short name
+  from the hopper's own list keeps it: each one is an image this repository builds and publishes.
+- **A person approves every request with a secret or an egress host.** Issue #1875 asks that the approval of such a
+  template stays with a person. A toggle (skip template approval, auto-approve) is the admin's statement about needs; it
+  says nothing about which secrets a job may get or where a box may send them.
+- **`requests` and `pytest` in the test image.** Common in an end-to-end test of a web app, small, and a box behind the
+  proxy cannot download them.
+
+Tests: `test/skills/template-request-extras.test.ts` (the template saved with what the request names, no needs; a
+person's approval only, every policy and toggle on; ready after it; reuse of one exactly the same and never of a wider
+one; a changed one refused; an image reference, a host that is not `host:port`, a system secret and too many refused),
+`test/scripts/box-test-image.test.ts` (the Containerfile, its user, the workflow's job and tags). Checked by hand with
+rootless Podman: the image built on the published `box-claude`; run as a need box runs (every capability dropped, no new
+privileges, a read-only root, `/tmp` a tmpfs, a fresh home volume) and with no network, Chromium's headless shell
+rendered a page as `agent`.
 
 ## Remote access: the mint as a saga (issue #1609, 2026-10-17)
 
