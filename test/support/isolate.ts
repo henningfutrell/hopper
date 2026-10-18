@@ -7,7 +7,8 @@
 //   the real login; the fetch guard below still applies.
 // - `claude` on PATH is a guard that answers `--version` (detection) and refuses everything else,
 //   so a built-in instance left at its default `bin` (claude-plan's background `/usage` read,
-//   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`.
+//   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`; the acceptance tests
+//   (test/acceptance/, issue #1958) name the real one, found past this guard, and point it at the fake model server.
 // - XDG_RUNTIME_DIR is a throwaway dir in the real one (isolateRuntimeDir below, issue #1295).
 // - fetch() to anything but a loopback host rejects, so a webhook can never reach a real URL; under it, no client's
 //   connection or DNS lookup leaves this machine (test/support/network-guard.ts, issue #1955), in this worker and,
