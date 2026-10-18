@@ -25,8 +25,18 @@ describe('stampView', () => {
       stamp: { level: 'owner', reasons: ['origin:trusted', 'author:assignee'], by: 'intake', at: AT },
       verifies: 'yes', level: 'owner',
       brake: { strictness: 'standard', needs: 'approved', at: 'default' },
-      startHold: null, gate2: 'auto', doorsOpen: true, checkDue: false,
+      startHold: null, gate2: 'auto', doorsOpen: true, checkDue: false, originActs: null,
     });
+  });
+
+  it('the origin acts kept with the job (part 14): who wrote, labelled and assigned its item, as read at intake', () => {
+    const originActs = [
+      { role: 'author' as const, login: 'stranger', trusted: false },
+      { role: 'labelled' as const, login: 'ada', app: 'cursor', trusted: false },
+      { role: 'assigned' as const, login: 'ada', id: 7, trusted: true },
+    ];
+    const j = stamped(job('a', { source: github({ origin: 'approved', author: 'stranger', originActs }) }));
+    expect(stampView(KEY, j, standard).originActs).toEqual(originActs);
   });
 
   it('a stamp below the brake: the hold says why; gate 2 asks a person (part 12); a check is due for an approved job', () => {

@@ -111,4 +111,15 @@ describe('what Jev reads', () => {
     expect(s).toMatchObject({ job: { id: 'a', level: 'approved' }, source: { kind: 'github-account', repo: 'o/r', author: 'stranger', origin: 'approved' }, textCut: long.length });
     expect((s.untrustedText as string).length).toBe(CHECK_TEXT_MAX);
   });
+
+  it('the origin acts kept with the job (part 14): who wrote, labelled and assigned it, through which app', () => {
+    const originActs = [
+      { role: 'author' as const, login: 'stranger', trusted: false },
+      { role: 'labelled' as const, login: 'ada', app: 'cursor', trusted: false },
+      { role: 'assigned' as const, login: 'ada', trusted: true },
+    ];
+    const j = job('a', { source: github({ origin: 'approved', author: 'stranger', originActs }) });
+    expect(trustCheckState(j, 'approved', ['origin:approved'])).toMatchObject({ source: { originActs } });
+    expect(trustCheckState(job('b', { source: github() }), 'owner', [])).not.toHaveProperty('source.originActs');
+  });
 });
