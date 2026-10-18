@@ -2,7 +2,7 @@
 // repository its user can push to, and the hopper follows it there; it merges it only when a person named that
 // repository on in yolo mode. `on` covers the job repositories only, and so do the kinds merged with no person. Pure.
 import { describe, expect, it } from 'vitest';
-import { CHANGE_KINDS, DEFAULT_CHANGE_RULE, mergeRuleFor, mergesOnReady, yoloModeFor } from '../../src/domain/types.ts';
+import { CHANGE_KINDS, DEFAULT_CHANGE_RULE, mergeRuleFor, mergesOnReady, yoloModeFor, type YoloModeSettings } from '../../src/domain/types.ts';
 
 const JOB_REPOS = ['acme/api'];
 
@@ -26,7 +26,7 @@ describe('yolo mode on a repository the hopper does not work on (issue #1806)', 
   });
 
   it('another repository not named on: no kind is merged with no person, each waits for yolo mode', () => {
-    for (const s of [{ on: true, repos: {} }, { on: true, repos: { 'zed/tool': false } }]) {
+    for (const s of [{ on: true, repos: {} }, { on: true, repos: { 'zed/tool': false } }] as YoloModeSettings[]) {
       const rule = mergeRuleFor(s, 'zed/tool', JOB_REPOS);
       for (const kind of CHANGE_KINDS) expect(rule.merge[kind]).toBe('yolo');
       for (const kind of [...CHANGE_KINDS, undefined]) expect(mergesOnReady(rule, yoloModeFor(s, 'zed/tool', JOB_REPOS), kind)).toBe(false);

@@ -308,7 +308,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       repoChecks: createRepoChecks({
         github: () => { const login = o.accounts.account('github'); return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login }; },
         repos: () => o.store.settings.getJobRepositories('github'), reads: o.store.repoChecks,
-        yolo: (repo) => yoloModeFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+        yolo: (repo) => yoloModeFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(o.store)),
         dismissed: () => o.store.settings.getRepoChecksDismissed(), setDismissed: (repos) => o.store.settings.setRepoChecksDismissed(repos),
         record: (e) => { o.store.events.append(e); }, now: () => o.clock.now().getTime(), log: (l) => o.logger.warn(l),
       }),
