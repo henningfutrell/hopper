@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "code",
+              "research",
+              "proposal"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "code",
+                "research",
+                "proposal"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "kinds",
+        "repos"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "code",
+              "research",
+              "proposal"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "code",
+                "research",
+                "proposal"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "kinds",
+        "repos"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

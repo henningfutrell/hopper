@@ -42,7 +42,9 @@ const runJob = async (a: TestApp, repo?: string) => {
   const before = seen.length;
   await a.pull({}, { executor: 'recorder', ...(repo ? { repo } : {}) });
   await waitFor(async () => seen.length > before, { what: 'the job to start' });
-  return seen.at(-1);
+  // Its work skill's line comes last (issue #1911, test/integration/skill-library.test.ts).
+  expect(seen.at(-1)).toMatch(/\[hopper work skill\] This job's skill for its kind of work \(code\) is work, version [0-9a-f]{16}\.[^\n]*$/);
+  return seen.at(-1)?.replace(/\n?\[hopper work skill\][^\n]*$/, '');
 };
 
 describe('GET /api/job-rules', () => {
