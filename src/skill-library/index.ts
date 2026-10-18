@@ -10,10 +10,12 @@ import { releaseOf } from '../client/release.ts';
 import {
   BUILT_IN_SKILL_NAMES, DEFAULT_WORK_SKILLS, DEFAULT_WORK_SKILL_SETTINGS, namedSkills, patchWorkSkills, skillDescription, skillFilesProblem,
   skillNameProblem, SKILL_FILE, WORK_KINDS, workKindOf, workSkillFor,
-  type LibrarySkillSummary, type LibrarySkillVersion, type WorkSkillChosen, type WorkSkillPatch, type WorkSkillSettings,
+  type LibrarySkillSummary, type LibrarySkillVersion, type SkillLibraryView, type WorkSkillChosen, type WorkSkillPatch, type WorkSkillSettings,
 } from '../domain/skill-library.ts';
 import type { UserStore } from '../domain/store.ts';
 import type { Job } from '../domain/types.ts';
+
+export type { SkillLibraryView };
 
 const BY_HOPPER = 'the hopper';
 
@@ -52,14 +54,6 @@ export function latestSkill(store: UserStore, name: string): LibrarySkillVersion
 }
 
 export const workSkillSettings = (store: UserStore): WorkSkillSettings => store.skillLibrary.getWorkSkills() ?? DEFAULT_WORK_SKILL_SETTINGS;
-
-/** As GET /api/skill-library answers it: every skill, the built-in ones first, and the choice of work skills. */
-export interface SkillLibraryView {
-  skills: LibrarySkillSummary[];
-  workSkills: WorkSkillSettings;
-  defaults: Readonly<Record<string, string>>;
-  kinds: readonly string[];
-}
 
 export function skillLibraryView(store: UserStore): SkillLibraryView {
   const summary = (v: LibrarySkillVersion, versions: number): LibrarySkillSummary =>
