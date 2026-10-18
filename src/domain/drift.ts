@@ -73,7 +73,7 @@ const KIND_WORDS: Record<string, string> = {
 };
 
 /** The states in which an item can be stuck: read first. */
-const STUCK: readonly WorkItemState[] = ['pr_open', 'failed', 'partly_done'];
+const STUCK: readonly WorkItemState[] = ['pr_open', 'failed', 'blocked', 'partly_done'];
 /** A done or dropped item is read only this long after it got there. */
 export const RECENT_MS = 7 * 24 * 3_600_000;
 /** The most items one check reads. */

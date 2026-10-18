@@ -135,4 +135,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // the same name, and `dockerBin` leaves the command executors and claude-plan sources. Config rows only: the build before
   // lists no such machine, and its jobs wait.
   (db) => { containerTargets(db); },
+  // 82: The item lifecycle (issue #1891): each work item's owner, next check and deadline, as columns, and the ledger rebuilt,
+  // so an item in PR open with no pull request is blocked on it. Nullable columns: the build before runs on them, names its
+  // columns when it writes, and reads an item blocked as no state it counts.
+  (db) => { rebuildWorkItems(db); },
 ];

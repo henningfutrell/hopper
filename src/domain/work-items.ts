@@ -8,6 +8,7 @@ import type { DomainEvent, EventType } from './types.ts';
 import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, landingOf, type ItemLanding } from './work-item-landing.ts';
 import type { ChangeKind } from './change-kinds.ts';
 import { waitOnLabel, type WaitOn } from './wait-on.ts';
+import { BLOCKED_CAUSES, BLOCKED_WORDS, hasReference, type BlockedCause } from './item-lifecycle.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -16,11 +17,13 @@ import { waitOnLabel, type WaitOn } from './wait-on.ts';
  * `waiting_outside`: a job waits on something outside (`waitingOn` names it).
  * `pr_open`: its pull request is open, on its way to the merge. `partly_done`: one part merged, the rest runs next.
  * `done`: its pull request merged, or its issue closed as completed. `failed`: its last job failed, nothing took its place
- * and no person dismissed it — the only failure any view counts. `dropped`: dismissed, declined, cancelled, rejected, its
- * pull request closed without a merge, or its issue closed as not planned.
+ * and no person dismissed it — the only failure any view counts. `blocked` (issue #1891): it broke its state's promise
+ * and waits on a person (`blockedCause`: `no_pr`, its job ended done with no pull request to wait on; `stale`, past its
+ * deadline with no move). `dropped`: dismissed, declined, cancelled, rejected, its pull request closed without a merge, or
+ * its issue closed as not planned.
  */
 export const WORK_ITEM_STATES = [
-  'waiting_for_approval', 'queued', 'working', 'needs_you', 'waiting_outside', 'pr_open', 'partly_done', 'done', 'failed', 'dropped',
+  'waiting_for_approval', 'queued', 'working', 'needs_you', 'waiting_outside', 'pr_open', 'partly_done', 'done', 'failed', 'blocked', 'dropped',
 ] as const;
 export type WorkItemState = typeof WORK_ITEM_STATES[number];
 
@@ -84,6 +87,8 @@ export interface WorkItem {
   waitingOn?: string;
   /** The job whose failure it is, while `failed`. */
   failedJobId?: string;
+  /** Why it is blocked, while `blocked` (issue #1891). */
+  blockedCause?: BlockedCause;
   /** The jobs of it whose work was kept, not pushed (`job.work_kept`), until removed. */
   keptWork: string[];
   /** Its merged pull request on its way from the landing branch to the tested branch (issue #1073): `work-item-landing.ts`. */
@@ -111,7 +116,7 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_classified',
   'job.work_kept', 'job.work_removed',
-  'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened',
+  'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened', 'work_item.reconciled',
   ...LANDING_LEDGER_EVENTS,
 ]);
 
@@ -164,9 +169,12 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   const base: Base = item
     ? (({ state: _s, stateSince: _ss, version: _v, ...rest }) => rest)(item)
     : { key, eventState: 'queued', eventAt: event.at, keptWork: [] };
+  // A state that needs a pull request is never written without one (issue #1891): with none, the item is blocked on it.
   const move = (eventState: WorkItemState, change: Partial<Base> = {}): WorkItem => {
     const next: Base = { ...base, ...change, eventState, eventAt: event.at };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
+    if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
+    if (next.eventState !== 'blocked') delete next.blockedCause;
     return settled(item, next, event.at);
   };
   const mark = (change: Partial<Base>): WorkItem => {
@@ -191,11 +199,19 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const reason = typeof d.reason === 'string' ? d.reason : undefined;
     return applyRead(item, { kind: 'issue', at: event.at, state: event.type === 'work_item.issue_closed' ? 'closed' : 'open', ...(reason ? { reason } : {}) });
   }
+  // The item reconciler's correction (issue #1891): folded again from its job's end, or blocked. Only from the state it saw.
+  if (event.type === 'work_item.reconciled') {
+    if (!item || item.state !== d.from) return undefined;
+    const replay = d.replay as { type: EventType; data: Record<string, unknown> } | undefined;
+    if (replay) return job && job.id === item.jobId ? applyEvent(item, { type: replay.type, at: event.at, data: replay.data }, key, job) : undefined;
+    const cause = BLOCKED_CAUSES.find((c) => c === d.cause);
+    return cause ? move('blocked', { blockedCause: cause, waitingOn: BLOCKED_WORDS[cause] }) : undefined;
+  }
   if (!job) return undefined;
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
   if (event.type === 'job.queued') {
-    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, wholeMerged: undefined, pullRequestWait: undefined, changeKind: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
+    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, wholeMerged: undefined, pullRequestWait: undefined, changeKind: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined, blockedCause: undefined });
   }
   // Any job's kept work and pull request: a tend hands a pull request to a newer job, and an older job's merge still counts.
   if (event.type === 'job.work_kept') return item?.keptWork.includes(job.id) ? undefined : mark({ keptWork: [...base.keptWork, job.id] });
@@ -205,13 +221,16 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   // What the follow saw its open pull request wait on: the item's own pull request only.
   if (event.type === 'job.pull_request_seen') {
     const wait = d.wait as PullRequestWait;
-    // A job's end records its pull request only once its report kept it: the first look names it.
-    const named = base.pullRequest === undefined && base.eventState === 'pr_open' && base.jobId === job.id;
+    // A job's end records its pull request only once its report kept it: the first look names it, and an item blocked
+    // for want of one (issue #1891) is in PR open again.
+    const noPullRequest = base.eventState === 'blocked' && base.blockedCause === 'no_pr';
+    const named = base.pullRequest === undefined && (base.eventState === 'pr_open' || noPullRequest) && base.jobId === job.id;
     if (pr === undefined || !(named || (pr === base.pullRequest && base.pullRequestState === 'open')) || (!named && base.pullRequestWait === wait)) return undefined;
-    return mark({
+    const change = {
       pullRequestWait: wait, ...(named ? { pullRequest: pr, pullRequestState: 'open' as const } : {}),
-      ...(base.eventState === 'pr_open' ? { waitingOn: PULL_REQUEST_WAIT_WORDS[wait] } : {}),
-    });
+      ...(base.eventState === 'pr_open' || noPullRequest ? { waitingOn: PULL_REQUEST_WAIT_WORDS[wait] } : {}),
+    };
+    return noPullRequest ? move('pr_open', change) : mark(change);
   }
   // A pull request's change kind (issue #1076): its state stays; any job's, as a tend hands a pull request on.
   if (event.type === 'job.pull_request_classified') {
@@ -393,18 +412,6 @@ export function countStates(items: Iterable<Pick<WorkItem, 'state'>>): Record<Wo
 
 /** The waits of an open pull request that keep its item in flight (issue #1113): its checks run, a job fixes them, or the merge. */
 export const IN_FLIGHT_WAITS: readonly PullRequestWait[] = ['checks_running', 'fixing_checks', 'merge'];
-/** How long an item stays in PR open with no pull request to wait on before it is stuck work (issue #1231): an hour. */
-export const PR_OPEN_STUCK_MS = 60 * 60_000;
-
-/**
- * Whether an item in PR open is stuck (issue #1231): an hour on, it names no open pull request, or no job follows one for
- * it (`follows`), so no follow moves it. The follow moves one whose job's own part merged; what is left waits on a person.
- */
-export function prOpenStuck(item: Pick<WorkItem, 'state' | 'stateSince' | 'pullRequest' | 'pullRequestState'>, follows: boolean, now: number): boolean {
-  if (item.state !== 'pr_open' || now - Date.parse(item.stateSince) < PR_OPEN_STUCK_MS) return false;
-  return item.pullRequest === undefined || item.pullRequestState !== 'open' || !follows;
-}
-
 /** The states an item in flight can be in: what the ledger reads to count them. */
 export const IN_FLIGHT_STATES: readonly WorkItemState[] = ['working', 'pr_open'];
 
@@ -460,6 +467,13 @@ export interface WorkItemLedger {
   counts(): Record<WorkItemState, number>;
   /** How many items are in flight, and in each part (`inFlightOf`, issues #1113, #1164). */
   inFlight(): InFlight;
+  /**
+   * The items not ended whose next check is at or before `now` (issue #1891): the item reconciler's pass, the
+   * longest due first, at most `limit`.
+   */
+  due(now: string, limit: number): WorkItem[];
+  /** The item reconciler checked the item at `version` and found it keeps its promise: it is checked next at `nextCheckAt`. */
+  checked(key: string, version: number, nextCheckAt: string): void;
   /** Replay every event and the issue graph through the reducer, in place of the rows there are. How many items. */
   rebuild(): number;
 }

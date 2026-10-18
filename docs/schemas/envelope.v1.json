@@ -259,6 +259,7 @@
         "job.pull_request_seen",
         "work_item.issue_closed",
         "work_item.issue_reopened",
+        "work_item.reconciled",
         "job.pull_request_classified",
         "skill.listed",
         "skill.loaded",

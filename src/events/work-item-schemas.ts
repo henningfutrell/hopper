@@ -3,7 +3,8 @@
 // from Intake (part 4). Part of EVENT_SCHEMAS
 // (schemas.ts).
 import { z } from 'zod';
-import { PULL_REQUEST_WAITS } from '../domain/work-items.ts';
+import { PULL_REQUEST_WAITS, WORK_ITEM_STATES } from '../domain/work-items.ts';
+import { BLOCKED_CAUSES } from '../domain/item-lifecycle.ts';
 
 const strict = z.strictObject;
 const via = z.enum(['delivery', 'read']);
@@ -14,4 +15,9 @@ export const WORK_ITEM_EVENT_SCHEMAS = {
   // `landing` (issue #1232): the hopper closed it itself, done by a pull request its batch run promoted.
   'work_item.issue_closed': strict({ key: z.string(), reason: z.string().optional(), via: z.enum([...via.options, 'landing']) }),
   'work_item.issue_reopened': strict({ key: z.string(), via }),
+  // The item reconciler's correction (issue #1891): `replay` folds the item again from its job's end event; else `cause` blocks it.
+  'work_item.reconciled': strict({
+    key: z.string(), from: z.enum(WORK_ITEM_STATES), jobId: z.string().optional(), cause: z.enum(BLOCKED_CAUSES).optional(),
+    replay: strict({ type: z.enum(['job.finished', 'job.failed', 'job.cancelled', 'job.rejected']), data: z.record(z.string(), z.unknown()) }).optional(),
+  }),
 };
