@@ -3622,7 +3622,7 @@ Version 1 (`docs/schemas/library_skill.refreshed.v1.json`). A person refreshed a
 
 ## `work_skills.changed`
 
-Version 1 (`docs/schemas/work_skills.changed.v1.json`). A person changed which library skill each kind of work gets (issue #1911): `kinds` for every repository, `repos` per repository (`owner/name` lowercased), which wins; a kind absent gets the built-in default; `rules`, the skill rules that give a job conditional skills (issue #1924), absent with none. `from` and `to`. The next job gets it, never a running one.
+Version 1 (`docs/schemas/work_skills.changed.v1.json`). A person changed which library skill each kind of work gets (issue #1911): `kinds` for every repository, `repos` per repository (`owner/name` lowercased), which wins; a kind absent gets the built-in default; `rules`, the skill rules that give a job conditional skills (issue #1924; a rule's `paths`, part 2, are globs of the files the change touches), absent with none. `from` and `to`. The next job gets it, never a running one.
 
 | field | type | required |
 |---|---|---|
@@ -3684,7 +3684,7 @@ Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this jo
 
 ## `job.conditional_skills_chosen`
 
-Version 1 (`docs/schemas/job.conditional_skills_chosen.v1.json`). The conditional skills this job got beside its work skill (issue #1924), at its first start, because a skill rule matched what it works on: each skill's `name`, `version` and `seq` (0: built in), `why` (the conditions that matched: `repository owner/name`, `label x`, `kind of work k`), and `done`, the done criteria of its `done.json` that the done check verifies before the job is done. Each later start gets the same versions. None when no rule matched.
+Version 1 (`docs/schemas/job.conditional_skills_chosen.v1.json`). The conditional skills this job got beside its work skill (issue #1924), at its first start, because a skill rule matched what it works on: each skill's `name`, `version` and `seq` (0: built in), `why` (the conditions that matched: `repository owner/name`, `label x`, `kind of work k`, `paths a, b`), and `done`, the done criteria of its `done.json` that the done check verifies before the job is done. `paths` (part 2): the globs of a paths rule; the done check verifies the criteria only when the pull request changes a file they match. Absent: always. Each later start gets the same versions. None when no rule matched.
 
 | field | type | required |
 |---|---|---|

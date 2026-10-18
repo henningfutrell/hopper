@@ -26,8 +26,11 @@ The job is done only when all of these are true:
 
 - Every plan check is green, and the verdict is green.
 - No plan destroys or replaces a resource: each plan shows `0 to destroy`. A replace counts as a destroy.
-  When the issue asks for a delete, list each resource address in the pull request body. The hopper's check still
-  counts it, so the job ends failed with the reason, and a person decides.
+  One exception: the issue lists the deletes it allows by resource address, after a line `Allowed deletes:`, for example
+  `Allowed deletes: \`module.app.aws_instance.web[0]\``, or as a list below that line. The hopper does not count a delete
+  or replace of a listed address, when the plan's resource lines name it (`# <address> will be destroyed`,
+  `# <address> must be replaced`). The hopper reads the list from the issue text the job runs, so a job cannot add to it.
+  List each allowed delete in the pull request body too.
 
 The hopper checks these itself before it takes the job as done (`done.json`). A job that ends done with a red plan or a
 delete is sent back to fix it, else it ends failed with the reason.

@@ -210,7 +210,9 @@ export interface JobSourceContext {
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
   /** The done criteria of the conditional skills a job got (issue #1924), by skill: what the done check verifies itself. Absent: none. */
-  jobDoneCriteria?(jobId: string): { skill: string; done: DoneCriterion[] }[];
+  jobDoneCriteria?(jobId: string): { skill: string; done: DoneCriterion[]; paths?: string[] }[];
+  /** The deletes a job's issue allows by resource address (issue #1924 part 2), from the text it runs. Absent: none. */
+  jobAllowedDeletes?(jobId: string): string[];
   /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
   issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
   /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */
