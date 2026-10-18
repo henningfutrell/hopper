@@ -2,15 +2,17 @@
 // under `built-in/`, named by a content id as a run skill is —, the user's own, kept as versions in their database, and
 // the choice of each kind of work's skill. Every change is an event. A job's work skill is chosen at its first start
 // (`job.work_skill_chosen`) and the same version goes to each later start, on any machine: its files go into the job's
-// credentials dir with the hopper's scripts (src/users/github-proxy.ts), and its line into the job rules.
+// credentials dir with the hopper's scripts (src/users/github-proxy.ts), and its line into the job rules. The skills it
+// requires, and theirs, go beside it, each version chosen at the same first start and kept with it.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { releaseOf } from '../client/release.ts';
 import {
   BUILT_IN_SKILL_NAMES, DEFAULT_WORK_SKILLS, DEFAULT_WORK_SKILL_SETTINGS, namedSkills, patchWorkSkills, skillDescription, skillFilesProblem,
-  skillNameProblem, SKILL_FILE, WORK_KINDS, workKindOf, workSkillFor,
-  type LibrarySkillSummary, type LibrarySkillVersion, type SkillLibraryView, type WorkSkillChosen, type WorkSkillPatch, type WorkSkillSettings,
+  skillNameProblem, skillRequires, SKILL_FILE, SKILL_MAX_REQUIRED, WORK_KINDS, workKindOf, workSkillFor,
+  type LibrarySkillSummary, type LibrarySkillVersion, type RequiredSkill, type SkillLibraryView, type WorkSkillChosen, type WorkSkillPatch,
+  type WorkSkillSettings,
 } from '../domain/skill-library.ts';
 import type { UserStore } from '../domain/store.ts';
 import type { Job } from '../domain/types.ts';
@@ -57,7 +59,7 @@ export const workSkillSettings = (store: UserStore): WorkSkillSettings => store.
 
 export function skillLibraryView(store: UserStore): SkillLibraryView {
   const summary = (v: LibrarySkillVersion, versions: number): LibrarySkillSummary =>
-    ({ name: v.name, builtIn: v.source.kind === 'built-in', description: skillDescription(v.files[SKILL_FILE] ?? ''), latest: withoutFiles(v), versions });
+    ({ name: v.name, builtIn: v.source.kind === 'built-in', description: skillDescription(v.files[SKILL_FILE] ?? ''), latest: withoutFiles(v), versions, requires: skillRequires(v.files[SKILL_FILE] ?? '') });
   const own = store.skillLibrary.latest().map((v) => summary(v, store.skillLibrary.versions(v.name).length));
   return { skills: [...builtInSkills().map((v) => summary(v, 1)), ...own], workSkills: workSkillSettings(store), defaults: DEFAULT_WORK_SKILLS, kinds: WORK_KINDS };
 }
@@ -140,23 +142,57 @@ export function changeWorkSkills(store: UserStore, patch: WorkSkillPatch, by: st
 const chosenOf = (store: UserStore, jobId: string): WorkSkillChosen | undefined =>
   store.events.recent(1, ['job.work_skill_chosen'], jobId)[0]?.data as WorkSkillChosen | undefined;
 
+/** A kept version of a skill: a built-in one while this build has it, else the user's by its id. */
+const versionOf = (store: UserStore, r: RequiredSkill): LibrarySkillVersion | undefined => {
+  const v = r.seq === 0 ? builtInOf(r.name) : store.skillLibrary.version(r.name, r.version);
+  return v?.version === r.version ? v : undefined;
+};
+
 /**
- * The work skill of `job` and its files: the one chosen at its first start for its kind of work, while that version is
- * there; else chosen now — by its repository's setting, the user's, else the default — and recorded as
- * `job.work_skill_chosen`. A skill a setting names that is gone, or a built-in version this build no longer has, gives
- * the next choice: the built-in default.
+ * The skills `top` requires, and theirs, breadth first, each once, at their newest version: at most SKILL_MAX_REQUIRED. A
+ * name the library has no skill of, or past the limit, is missing. `top` itself is never required again.
  */
-export function workSkillOf(store: UserStore, job: Pick<Job, 'id' | 'spec' | 'source'>): { chosen: WorkSkillChosen; files: Record<string, string> } {
+function requiredOf(store: UserStore, top: LibrarySkillVersion): { skills: LibrarySkillVersion[]; missing: string[] } {
+  const skills: LibrarySkillVersion[] = [];
+  const missing: string[] = [];
+  const seen = new Set([top.name]);
+  const queue = skillRequires(top.files[SKILL_FILE] ?? '');
+  for (let name = queue.shift(); name !== undefined; name = queue.shift()) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const v = skills.length < SKILL_MAX_REQUIRED ? latestSkill(store, name) : undefined;
+    if (!v) { missing.push(name); continue; }
+    skills.push(v);
+    queue.push(...skillRequires(v.files[SKILL_FILE] ?? ''));
+  }
+  return { skills, missing };
+}
+
+/** A job's work skill and the skills beside it, the work skill first: their names and files. */
+export interface JobSkills { chosen: WorkSkillChosen; files: Record<string, string>; skills: { name: string; files: Record<string, string> }[] }
+
+/**
+ * The work skill of `job` and its files, with the skills it requires: the ones chosen at its first start for its kind of
+ * work, while each version is there; else chosen now — by its repository's setting, the user's, else the default, and
+ * each skill it requires at its newest version — and recorded as `job.work_skill_chosen`. A skill a setting names that is
+ * gone, or a built-in version this build no longer has, gives the next choice: the built-in default.
+ */
+export function workSkillOf(store: UserStore, job: Pick<Job, 'id' | 'spec' | 'source'>): JobSkills {
   const kind = workKindOf(job.spec);
   const kept = chosenOf(store, job.id);
   if (kept?.kind === kind) {
-    const v = kept.seq === 0 ? builtInOf(kept.name) : store.skillLibrary.version(kept.name, kept.version);
-    if (v?.version === kept.version) return { chosen: kept, files: v.files };
+    const v = versionOf(store, kept);
+    const required = (kept.requires ?? []).map((r) => versionOf(store, r));
+    if (v && required.every((r) => r !== undefined)) return { chosen: kept, files: v.files, skills: [v, ...required].map(({ name, files }) => ({ name, files })) };
   }
   const want = workSkillFor(workSkillSettings(store), job.source?.repo, kind);
   const found = latestSkill(store, want.name);
   const v = found ?? builtInOf(DEFAULT_WORK_SKILLS[kind])!;
-  const chosen: WorkSkillChosen = { kind, name: v.name, version: v.version, seq: v.seq, from: found ? want.from : 'default' };
+  const required = requiredOf(store, v);
+  const chosen: WorkSkillChosen = {
+    kind, name: v.name, version: v.version, seq: v.seq, from: found ? want.from : 'default',
+    requires: required.skills.map((r) => ({ name: r.name, version: r.version, seq: r.seq })), missing: required.missing,
+  };
   store.events.append({ type: 'job.work_skill_chosen', jobId: job.id, data: { ...chosen } });
-  return { chosen, files: v.files };
+  return { chosen, files: v.files, skills: [v, ...required.skills].map(({ name, files }) => ({ name, files })) };
 }

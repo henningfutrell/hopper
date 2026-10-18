@@ -3652,7 +3652,7 @@ Version 1 (`docs/schemas/work_skills.changed.v1.json`). A person changed which l
 
 ## `job.work_skill_chosen`
 
-Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this job got (issue #1911), at its first start or when its kind of work changed: its kind of work (`code`, `research`, `proposal`), the skill `name`, its `version` and `seq` (0: built in), and which setting chose it (`repo`, `user`, `default`). Each later start of the job, on any machine, gets the same version.
+Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this job got (issue #1911), at its first start or when its kind of work changed: its kind of work (`code`, `research`, `proposal`), the skill `name`, its `version` and `seq` (0: built in), and which setting chose it (`repo`, `user`, `default`). `requires`: the skills it got beside it because the work skill, or a skill it requires, names them in its SKILL.md's `requires:` — each `name`, `version` and `seq`; `missing`: the ones required that it did not get (not in the library, or past the limit of 8). Both absent on a choice made before skills required others. Each later start of the job, on any machine, gets the same versions.
 
 | field | type | required |
 |---|---|---|
@@ -3661,6 +3661,8 @@ Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this jo
 | `version` | string | yes |
 | `seq` | integer | yes |
 | `from` | `repo` \| `user` \| `default` | yes |
+| `requires` | object[] | no |
+| `missing` | string[] | no |
 
 ```json
 {
@@ -3668,7 +3670,15 @@ Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this jo
   "name": "careful-work",
   "version": "3f9c2a7b1d4e6f80",
   "seq": 2,
-  "from": "user"
+  "from": "user",
+  "requires": [
+    {
+      "name": "orchestrate",
+      "version": "8a1d3c5e7f9b2d40",
+      "seq": 0
+    }
+  ],
+  "missing": []
 }
 ```
 
