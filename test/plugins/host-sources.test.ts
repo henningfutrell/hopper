@@ -165,6 +165,12 @@ describe('the machine-source role', () => {
     ]);
   });
 
+  it('local: its own usage limits reach its machine (issue #1860)', async () => {
+    const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 4, usageLimits: { soft: 0.5, hard: 0.7 } } }] } });
+    await host.start();
+    expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', usageLimits: { soft: 0.5, hard: 0.7 } })]);
+  });
+
   it('local: its reserved lanes reach its machine (issue #372)', async () => {
     const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 4, reservedLanes: 1 } }] } });
     await host.start();

@@ -1,13 +1,17 @@
-import type { Decision, DecisionInputs, Divergence, Lane } from '../domain/types.ts';
+import type { Decision, DecisionInputs, Divergence, Lane, MachineSnapshot } from '../domain/types.ts';
 import { assign, bringsToGate, cleanupHold, effectivePriority, nativeHold, order, pinOf, problemHold } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { idleReason, planGoneLanes, planLanes } from './lanes.ts';
 import { laneSlots } from './priority-lanes.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
-import { laneEffect, placementPressure } from './usage.ts';
+import { laneEffect, machinePolicy, placementPressure } from './usage.ts';
 import { signedOutNote } from './signed-out.ts';
 import { preempt } from './preempt.ts';
+
+/** A machine's own usage limits (issue #1860), as its usage reason names them; nothing when the user's apply. */
+const ownLimits = (m: MachineSnapshot): string =>
+  (m.usageLimits ? `, its own usage limits ${Math.round(m.usageLimits.soft * 100)}% / ${Math.round(m.usageLimits.hard * 100)}%` : '');
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
@@ -38,7 +42,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     for (const t of signedOut) reasons.push(signedOutNote(t));
     const mine = lanes.filter((l) => l.machineId === machine.id);
     const held = mine.filter((l) => l.state !== 'idle');
-    reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
+    reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})${ownLimits(machine)}${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
     for (const e of executors.filter((x) => x.cap !== cap || x.band !== band)) {
       reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }
@@ -54,7 +58,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       ...(signedOut.length ? { signedOut } : {}),
       executors: new Map(executors.map((e) => [e.executor, {
         cap: e.cap, band: e.band, usedFrac: e.usedFrac, assigned: 0,
-        pressure: policy.pacing?.resetAwarePlacement ? placementPressure(machine.id, inputs.usage, inputs.at, policy, e.executor) : 0,
+        pressure: policy.pacing?.resetAwarePlacement ? placementPressure(machine.id, inputs.usage, inputs.at, machinePolicy(machine, policy), e.executor) : 0,
         occupied: held.filter((l) => l.jobId !== undefined && executorOf.get(l.jobId) === e.executor).map((l) => l.id),
       }])),
     };

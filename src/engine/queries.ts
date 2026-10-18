@@ -120,7 +120,7 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
         machines: machines.map((m) => {
           // At the clock, as the decider reads it: a week window in its burn window shows as not throttling (issue #373).
           const { usedFrac, cap, band, executors } = laneEffect(m, readings, policy, c.clock.now().toISOString());
-          return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, executors };
+          return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, executors, ...(m.usageLimits ? { usageLimits: { ...m.usageLimits } } : {}) };
         }),
       };
     },

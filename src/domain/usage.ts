@@ -115,6 +115,8 @@ export interface MachineLaneEffect {
   band: 'offline' | 'free' | 'soft' | 'hard';
   /** Per executor the machine runs, in its order. */
   executors: ExecutorLaneEffect[];
+  /** The machine's own usage limits (issue #1860): the user's usage limits do not change its lane cap. Absent: the user's apply. */
+  usageLimits?: UsageLimitPair;
 }
 
 /** The usage limits (issue #522): the usage fraction where a machine's lanes scale down (soft) and where it starts nothing (hard). */

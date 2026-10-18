@@ -4,6 +4,7 @@
 import { homedir, hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
 import type { DiskReading, DiskThresholds, SweepSettings } from '../domain/machines.ts';
+import type { UsageLimitPair } from '../domain/usage.ts';
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { diskAt, judged } from './disk.ts';
 import { createResourceMeter } from '../client/resources.ts';
@@ -22,6 +23,8 @@ export function createLocalMachineSource(o: {
   elbowIns?: number;
   /** A Windows machine (issue #1350): it alone takes a job with a Windows label. */
   windows?: true;
+  /** Its own usage limits (issue #1860): its lane cap goes by these, not by the user's. */
+  usageLimits?: UsageLimitPair;
   /** The executors registered now; asked on every list(). */
   executors: () => string[];
   id?: string;
@@ -94,6 +97,7 @@ export function createLocalMachineSource(o: {
           ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
           ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}),
           ...(o.windows ? { windows: true as const } : {}),
+          ...(o.usageLimits ? { usageLimits: { ...o.usageLimits } } : {}),
           online: true,
           executors: [...o.executors()],
           ...(o.session ? { herdr: { session: o.session } } : {}),

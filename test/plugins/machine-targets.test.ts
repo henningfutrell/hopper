@@ -128,6 +128,15 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(why(() => targetOf({ name: 'box', plugin: 'container', options: { workTrees } }))).not.toBe('accepted');
   });
 
+  // Issue #1860: a machine's own usage limits, so one of two machines on one account gives way first.
+  it('an attached instance carries its own usage limits; soft at or above hard is refused', () => {
+    expect(targetOf({ name: 'seat', plugin: 'ssh', options: { ssh: 'seat', usageLimits: { soft: 0.5, hard: 0.7 } } })).toMatchObject({ usageLimits: { soft: 0.5, hard: 0.7 } });
+    expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, usageLimits: { soft: 0.4, hard: 0.6 } } })).toMatchObject({ usageLimits: { soft: 0.4, hard: 0.6 } });
+    expect(targetOf({ name: 'seat', plugin: 'ssh', options: { ssh: 'seat' } })).not.toHaveProperty('usageLimits');
+    expect(why(() => targetOf({ name: 'seat', plugin: 'ssh', options: { ssh: 'seat', usageLimits: { soft: 0.7, hard: 0.7 } } }))).toMatch(/soft must be below hard/);
+    expect(why(() => targetOf({ name: 'seat', plugin: 'ssh', options: { ssh: 'seat', usageLimits: { soft: 0.5, hard: 1.5 } } }))).toMatch(/usageLimits/);
+  });
+
   // Issue #372: lanes kept for jobs pinned to the machine.
   it('an attached instance carries its reserved lanes; a negative count is refused', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 4, reservedLanes: 1 } })).toMatchObject({ lanes: 4, reservedLanes: 1 });
