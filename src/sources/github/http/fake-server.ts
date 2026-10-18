@@ -18,8 +18,15 @@ export interface FakeGitHubServer {
   /** e.g. http://127.0.0.1:41234 — the adapter's baseUrl. */
   url: string;
   state: FakeState;
-  /** The next `times` requests matching "METHOD /path" (no query) answer `status`. */
-  fail(route: string, status: number, message?: string, times?: number): void;
+  /** The next `times` requests matching "METHOD /path" (no query) answer `status`, with `headers` (a `retry-after`). */
+  fail(route: string, status: number, message?: string, times?: number, headers?: Record<string, string>): void;
+  /**
+   * The next `times` requests matching the route are done, and then the connection is cut with no answer (issue #1959):
+   * GitHub applied the write, and the hopper never heard so, as after a timeout.
+   */
+  dropAfter(route: string, times?: number): void;
+  /** Requests matching the route wait until `release()`, then go on (issue #1959: GitHub held while the hopper acts). */
+  hold(route: string): { held(): number; release(): void };
   close(): Promise<void>;
 }
 
@@ -38,7 +45,9 @@ function send(res: ServerResponse, r: FakeReply): void {
 
 export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<FakeGitHubServer> {
   const state = buildState(o, new Date().toISOString());
-  const failures = new Map<string, { status: number; message: string; times: number }>();
+  const failures = new Map<string, { status: number; message: string; times: number; headers?: Record<string, string> }>();
+  const drops = new Map<string, number>();
+  const holds = new Map<string, (() => void)[]>();
   const ctx: FakeCtx = { state, opts: o, baseUrl: '', login: o.login ?? 'owner', now: () => new Date() };
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -49,11 +58,16 @@ export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<Fake
     const record: FakeRequestRecord = { method: r.method, path: r.path, query: r.query, auth: 'none', ...(r.body === undefined ? {} : { body: r.body }) };
     state.requests.push(record);
 
-    const failure = failures.get(`${r.method} ${r.path}`);
+    const route = `${r.method} ${r.path}`;
+    const waiting = holds.get(route);
+    if (waiting) await new Promise<void>((resolve) => waiting.push(resolve));
+    const failure = failures.get(route);
     if (failure && failure.times > 0) {
       failure.times -= 1;
-      return send(res, { status: failure.status, body: { message: failure.message } });
+      return send(res, { status: failure.status, body: { message: failure.message }, ...(failure.headers ? { headers: failure.headers } : {}) });
     }
+    const drop = (drops.get(route) ?? 0) > 0;
+    if (drop) drops.set(route, drops.get(route)! - 1);
 
     const m = /^(token|bearer)\s+(\S+)$/i.exec(req.headers.authorization ?? '');
     const credential = m?.[2] ?? '';
@@ -62,6 +76,7 @@ export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<Fake
     record.auth = 'token';
     r.token = token;
     const reply = r.method === 'POST' && r.path === '/graphql' ? graphql(ctx, r) : routeToken(ctx, r);
+    if (drop) { res.socket?.destroy(); return; }
     // A conditional request whose ETag still holds: 304, no body, as GitHub answers it (and does not charge it).
     if (reply.status === 200 && reply.headers?.etag !== undefined && req.headers['if-none-match'] === reply.headers.etag) {
       record.notModified = true;
@@ -80,8 +95,17 @@ export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<Fake
   return {
     url: ctx.baseUrl,
     state,
-    fail(route, status, message = `fake failure ${status}`, times = Number.POSITIVE_INFINITY) {
-      failures.set(route, { status, message, times });
+    fail(route, status, message = `fake failure ${status}`, times = Number.POSITIVE_INFINITY, headers) {
+      failures.set(route, { status, message, times, ...(headers ? { headers } : {}) });
+    },
+    dropAfter(route, times = 1) { drops.set(route, times); },
+    hold(route) {
+      const waiting: (() => void)[] = [];
+      holds.set(route, waiting);
+      return {
+        held: () => waiting.length,
+        release: () => { holds.delete(route); for (const go of waiting.splice(0)) go(); },
+      };
     },
     close() {
       closed ??= new Promise<void>((resolve) => {

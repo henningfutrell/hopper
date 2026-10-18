@@ -12,7 +12,7 @@ import { tempDbPath } from '../support/app.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { waitFor } from '../support/wait.ts';
 import { fakeCloudflare, fakeNgrok, type FakeCloudflare, type FakeNgrok } from '../remote-access/fake-providers.ts';
-import { endLeases, startHost, type CrashHost, type HostOptions } from './harness.ts';
+import { endLeases, killedAt, startHost, type CrashHost, type HostOptions } from './harness.ts';
 
 export const CREDENTIAL = { cloudflare: 'c'.repeat(40), ngrok: 'n'.repeat(40) } as const satisfies Record<RemoteAccessProvider, string>;
 /** The most one scenario takes: two hoppers start, one is killed. */
@@ -53,13 +53,6 @@ export async function world(o: { fail?: boolean } = {}): Promise<World> {
 /** Turns remote access on at `provider` (the request may never be answered: its host is killed). */
 export const turnOn = (h: CrashHost, provider: RemoteAccessProvider) =>
   h.ui('/ui/api/remote-access', { provider, credential: CREDENTIAL[provider], enabled: true });
-
-/** The host was ended by SIGKILL at `point`. */
-export async function killedAt(h: CrashHost, point: string): Promise<void> {
-  const e = await h.exited;
-  expect(e.signal, h.stderr()).toBe('SIGKILL');
-  expect(h.stderr()).toContain(`hopper: kill point ${point}`);
-}
 
 /** The sagas not ended, by kind and state. */
 export function openSagas(url: string): { kind: string; state: string }[] {
