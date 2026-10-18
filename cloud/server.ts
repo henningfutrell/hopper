@@ -12,7 +12,8 @@
 //                               its sessions go, then its grant of the hosted app at GitHub, with that sign-in's token
 //   GET  /api/account           the signed-in account as JSON, else 401
 //   GET  /api/account/records   its hopper.io records as JSON, newest first, else 401
-//   GET  /api/account/instances its registrations as JSON (issue #465), else 401
+//   GET  /api/account/instances its registrations as JSON (issue #465), each with the last state its instance reported
+//                               (cloud/states.ts), else 401
 //   POST /account/instances/:id/name    names its own instance (`name`, empty clears it)
 //   POST /account/instances/:id/remove  removes its own instance; its next hello is answered `unregister`
 //   POST /account/instances/register    the owner's code for an instance (`installId`, `code`): a registration request,
@@ -30,6 +31,7 @@ import type { CloudConfig } from './config.ts';
 import { INSTALL_ID } from './link.ts';
 import { NEVER_KEPT, PRIVACY_NOTE } from './privacy.ts';
 import { REQUESTS_PER_ACCOUNT, type RegistrationRequests, type RequestRefusal, type RequestView } from './requests.ts';
+import type { InstanceStates, KeptState } from './states.ts';
 import { INSTANCE_NAME_MAX, SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudInstance, type CloudStore, type RecordKind } from './store.ts';
 
 export const SESSION_COOKIE = 'hopper_io_session';
@@ -56,8 +58,20 @@ export function instanceName(raw: string): string | undefined {
   return [...name].length > INSTANCE_NAME_MAX || /\p{Cc}/u.test(name) ? undefined : name;
 }
 
-const instanceRow = (i: CloudInstance): string => `<li><strong>${i.name ? html(i.name) : 'No name'}</strong> (${i.installId}),`
-  + ` registered ${i.registeredAt.toISOString()}, last seen ${i.seenAt ? i.seenAt.toISOString() : 'never'}`
+/** An instance's last reported state, in plain words: what the instance said, and when hopper.io got it (T1). */
+const stateHtml = (k: KeptState | undefined): string => {
+  if (!k) return '<p>No state reported yet.</p>';
+  const { instance, queue, attention, machines } = k.state;
+  const rows = machines.map((m) => `<li>${html(m.key)}: ${m.online ? 'online' : 'offline'}, ${m.lanesInUse} of ${m.lanes} lanes in use,`
+    + ` executors: ${m.executors.length ? html(m.executors.join(', ')) : 'none'}, ${m.takesJobs ? 'takes jobs' : `takes no job: ${html(m.notTaking ?? 'unknown')}`}</li>`).join('');
+  return `<p>As the instance reported it at ${k.receivedAt.toISOString()}: version ${html(instance.version)}, channel ${html(instance.channel)};`
+    + ` jobs: ${queue.waiting} waiting, ${queue.running} running, ${queue.locked} locked, gate ${html(queue.gate)};`
+    + ` needs attention: ${attention.questionsAwaitingOwner} questions, ${attention.jobsLocked} locked jobs, ${attention.machinesOffline} machines offline.</p>`
+    + `<ul>${rows || '<li>No machine.</li>'}</ul>`;
+};
+
+const instanceRow = (i: CloudInstance, k: KeptState | undefined): string => `<li><strong>${i.name ? html(i.name) : 'No name'}</strong> (${i.installId}),`
+  + ` registered ${i.registeredAt.toISOString()}, last seen ${i.seenAt ? i.seenAt.toISOString() : 'never'}${stateHtml(k)}`
   + `<form method="post" action="/account/instances/${i.installId}/name"><input name="name" maxlength="${INSTANCE_NAME_MAX}"`
   + ` value="${i.name ? html(i.name) : ''}" aria-label="Name"> <button type="submit">Name</button></form>`
   + `<form method="post" action="/account/instances/${i.installId}/remove"><button type="submit">Remove</button></form></li>`;
@@ -97,9 +111,9 @@ export function cookiesOf(header: string | undefined): Map<string, string> {
 }
 
 export async function cloudServer(o: {
-  config: CloudConfig; store: CloudStore; requests: RegistrationRequests; now?: () => Date;
+  config: CloudConfig; store: CloudStore; requests: RegistrationRequests; states: InstanceStates; now?: () => Date;
 }): Promise<FastifyInstance> {
-  const { config, store, requests } = o;
+  const { config, store, requests, states } = o;
   const now = o.now ?? (() => new Date());
   const app = cloudApp(config);
   const flow = webFlow(app, config.clientSecret, `${config.publicUrl}${CALLBACK_PATH}`);
@@ -126,7 +140,8 @@ export async function cloudServer(o: {
     if (!a) return page(reply, 200, `<h1>hopper.io</h1><p><a href="/auth/github">Sign in with GitHub</a></p>${PRIVACY_LINK}`);
     const avatar = a.avatarUrl ? `<img src="${html(a.avatarUrl)}" alt="" width="40" height="40"> ` : '';
     const records = (await store.records(a.githubUserId, now())).map((r) => `<li>${r.at.toISOString()}: ${RECORD_LABELS[r.kind]}</li>`).join('');
-    const instances = (await store.instances(a.githubUserId)).map(instanceRow).join('') || '<li>No instance is registered.</li>';
+    const instances = (await store.instances(a.githubUserId)).map((i) => instanceRow(i, states.of(a.githubUserId, i.installId))).join('')
+      || '<li>No instance is registered.</li>';
     const open = requests.of(a.githubUserId, now()).map(requestRow).join('');
     return page(reply, 200, `<h1>hopper.io</h1><p>${avatar}Signed in as <strong>${html(a.login)}</strong>.</p>`
       + '<form method="post" action="/auth/sign-out"><button type="submit">Sign out</button></form>'
@@ -169,6 +184,7 @@ export async function cloudServer(o: {
         return page(reply.header('set-cookie', clear), 403, '<p>You confirmed as another GitHub account. Nothing was deleted. <a href="/">Back</a>.</p>');
       }
       await store.deleteAccount(taken.deletes, now());
+      states.dropAccount(taken.deletes);
       const gone = await deleteGrant(accessToken).then(() => true, () => false);
       const grantNote = gone ? '<p>hopper.io no longer has your permission at GitHub.</p>'
         : `<p>GitHub did not remove hopper.io's permission. Remove it at <a href="${GITHUB_AUTHORIZATIONS}">${GITHUB_AUTHORIZATIONS}</a>.</p>`;
@@ -211,10 +227,14 @@ export async function cloudServer(o: {
   server.get('/api/account/instances', async (req, reply) => {
     const a = await signedIn(req);
     if (!a) return reply.code(401).send({ error: 'not signed in' });
-    return { instances: (await store.instances(a.githubUserId)).map((i) => ({
-      installId: i.installId, ...(i.name ? { name: i.name } : {}), registeredAt: i.registeredAt.toISOString(),
-      ...(i.seenAt ? { seenAt: i.seenAt.toISOString() } : {}),
-    })) };
+    return { instances: (await store.instances(a.githubUserId)).map((i) => {
+      const k = states.of(a.githubUserId, i.installId);
+      return {
+        installId: i.installId, ...(i.name ? { name: i.name } : {}), registeredAt: i.registeredAt.toISOString(),
+        ...(i.seenAt ? { seenAt: i.seenAt.toISOString() } : {}),
+        ...(k ? { state: { ...k.state, receivedAt: k.receivedAt.toISOString() } } : {}),
+      };
+    }) };
   });
 
   server.get('/api/account/registration-requests', async (req, reply) => {
@@ -262,6 +282,7 @@ export async function cloudServer(o: {
     const own = await ownInstance(req, reply);
     if (!own) return reply;
     if (!await store.remove(own.account, own.installId, now())) return reply.code(404).send({ error: 'no such instance' });
+    states.drop(own.installId);
     await store.record(own.account, 'instance_removed', now());
     return reply.redirect('/', 303);
   });

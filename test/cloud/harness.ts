@@ -6,6 +6,7 @@ import type { CloudConfig } from '../../cloud/config.ts';
 import type { CloudLinkAnswers } from '../../cloud/link.ts';
 import { createRegistrationRequests } from '../../cloud/requests.ts';
 import { SESSION_COOKIE, SIGN_IN_COOKIE, cloudServer, cookiesOf } from '../../cloud/server.ts';
+import { createInstanceStates } from '../../cloud/states.ts';
 import { openCloudStore } from '../../cloud/store.ts';
 import { testDatabaseUrl } from '../support/database.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
@@ -25,9 +26,10 @@ export async function setUp() {
   stops.push(() => store.close());
   const config: CloudConfig = { databaseUrl, publicUrl: PUBLIC, githubUrl: github.url, clientId: 'hosted-app', clientSecret: SECRET, host: '127.0.0.1', port: 0, trustProxy: false };
   const requests = createRegistrationRequests();
-  const server = await cloudServer({ config, store, requests });
+  const states = createInstanceStates();
+  const server = await cloudServer({ config, store, requests, states });
   stops.push(() => server.close());
-  return { github, store, server, databaseUrl, requests };
+  return { github, store, server, databaseUrl, requests, states };
 }
 
 export type Set = Awaited<ReturnType<typeof setUp>>;

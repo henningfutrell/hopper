@@ -49,4 +49,5 @@ export const NEVER_KEPT = [
   'No browser details, no logs of requests, and no data of other people.',
   'No content of your hopper instances or their jobs.',
   'No registration code in its database. A code you enter waits in memory only, 10 minutes at most, until your instance takes it.',
+  'No state of your instances in its database. The last state an instance reported (counts, and its machines by an opaque key, with no names) is kept in memory only, until you remove the instance or hopper.io restarts.',
 ];

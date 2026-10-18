@@ -32,7 +32,7 @@ const table = async (s: Set, i: number) => (JSON.parse(await rows(s.databaseUrl)
 async function withAccounts(s: Set) {
   await s.store.signedIn({ githubUserId: ADA, login: 'ada' });
   await s.store.signedIn({ githubUserId: GRACE, login: 'grace' });
-  return createCloudLinkAnswers({ store: s.store, requests: s.requests });
+  return createCloudLinkAnswers({ store: s.store, requests: s.requests, states: s.states });
 }
 
 describe("hopper.io's registrations", () => {

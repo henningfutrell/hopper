@@ -275,6 +275,11 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     the owner's account, and keeps a registration only for the instance's `registered` answer to that request, under the
     account whose owner entered the code. R4: the code is kept in memory only, 10 minutes at most, never in the store; R7:
     at most 10 open requests per account, the sign-in limit per address.
+  - R3, R7: **instance states** (issue #465 part 8, `docs/design.md` "Instance states at hopper.io"): hopper.io keeps an
+    instance's state snapshot only while the instance is registered to the account its link names, and shows it to that
+    account only. R7: it checks each snapshot against its own closed copy of the schema (held to the instance's by a test)
+    and a cap of 192 KiB, and keeps at most 10,000 states. R5, T1: in memory only, never in the store; the page says when
+    hopper.io got it and escapes every value (T3).
   - Not yet: the R6 records of the cloud link and remote actions at hopper.io (with #464),
     and the connection that carries the registration messages and the hello (#464).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
