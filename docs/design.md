@@ -54,7 +54,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
-| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
+| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); a job's trust and a profile's minimum trust (`trust.ts`, `trust-model.ts`, issue #655); what an edit refuses (`edits.ts`); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662) | http |
@@ -14102,9 +14102,15 @@ type job                 owns: [user]                      # user:u owns job:u/j
 type machine             runs_on: [job]; owner: owns from runs_on          # job runs_on machine
 type template            running: [job]; instance_of: [machine]            # machine instance_of template
                          requester: running or instance_of or runs_on from instance_of or owner from instance_of
-type operation_profile   approved_for: [template]; requester: requester from approved_for
+type trust               holder: [job]                                     # job holder trust:<level> (issue #655)
+type operation_profile   approved_for: [template]; min_trust: [trust]; trust_gated: [job:*]
+                         trust_met: holder from min_trust; below_trust: trust_gated but not trust_met
+                         requester: requester from approved_for but not below_trust
 type asset               grants_<op>: [operation_profile]; can_<op>: requester from grants_<op>
 ```
+
+A **minimum trust** (issue #655 part 15, "Trust stamps") makes a job below it no requester of the profile; a profile with
+none is as the model was before it.
 
 An approval is two tuples (`approvalTuples`): the profile `grants_<op>` the asset, and the template is
 `approved_for` the profile.
@@ -16962,7 +16968,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 14, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 15, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17342,9 +17348,43 @@ approved card keeps the acts no trusted actor did too, so a person sees why it n
 - Persisted state: one optional field on the job's source. A job made before this part has none, and the build before reads
   a job with them as before. No migration.
 
+**The stamp in OpenFGA, and a minimum trust** (part 15, `src/authz/trust.ts`, `src/authz/trust-model.ts`). The issue:
+"OpenFGA gets `trust:<level>#holder@job:<id>`. Template approvals can then require a minimum trust"; "an
+`operation_profile` has `min_trust`, and the requester must hold `trust:<level>` at or above it". So:
+
+- **Each live job holds its trust** in OpenFGA: the runtime gives Access the level each live job's stamp verifies at
+  (`trustLevel`), and the hopper writes `trust:<level>#holder@job:<user>/<job>` for that level **and each level below
+  it** (`holderTuples`), so `trust:approved#holder` is every live job at `approved` or above. A quarantined job, a job
+  whose stamp does not verify, and every job while there is no stamp key hold none. A level that changes (a deny, an edit,
+  a quarantine) is pushed with the next change of who is live, within 2 s (`REQUESTERS_CHECK_MS`); a job that is no longer
+  live loses them, as its other tuples.
+- **A minimum trust** on an operation profile (Settings → Access, panel **Minimum trust**; `POST /ui/api/access`
+  `{ action: "min-trust", operation, asset, level }`, `level: null` clears it; least role admin, the instance admin's, as
+  every edit of Access): the hopper keeps `trust:<level>#min_trust@operation_profile:<profile>` with who set it and when,
+  one per profile, and writes `job:*#trust_gated` on that profile with it (`gateTuples`, never stored). The default model
+  (`TRUST_MODEL`): `below_trust: trust_gated but not trust_met`, `trust_met: holder from min_trust`, and the profile's
+  `requester` is `requester from approved_for but not below_trust`. So a job below the minimum is no requester of the
+  profile, whatever its template's approvals say, and its mint is denied: `job <id> is at trust approved, below the
+  minimum trust trusted to read on cluster prod` (`belowMinimum`). A profile with no minimum is as before.
+- **Only a job is gated.** A box (`machine`) and a person (`user`) have no stamp: the minimum does not apply to them. The
+  vault asks each mint as the job (`src/vault/mint.ts`), so a box job is gated by its own level.
+- **A trial** (Try a check) is told a level for its made-up job (`level`, `owner` when none), and records it
+  (`trial.level`). A read-only check's mint (issue #797) is told `owner`: it tests a template, not a job's work.
+- **The permission matrix** shows each job's trust (`RequesterRow.trust`), and a path through a minimum names it and the
+  job's holder tuple (`trustedPath`); a job below it reaches no grant of that profile.
+- **A model without the trust relations** (`trustGaps`: `trust#holder`, `operation_profile#min_trust`,
+  `operation_profile#trust_gated`) writes no trust tuple and still decides mints; a minimum trust is refused (400). A model
+  that drops them is refused while a profile has a minimum (400: clear them first), so no minimum stops counting by an
+  edit. The hopper's own older default is upgraded at the start, as for every relation it writes.
+
+Persisted state: one more relation in the access tuples (`min_trust`), and the new default model as a new version. The
+build before pushes a stored minimum with the model it finds (this build's, which it keeps, since it lacks nothing that
+build needs) but writes no `trust_gated` and no holder: there, no job is below a minimum, so mints are decided as before
+this part. No migration.
+
 **Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the edit count,
-the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the rest of gate 2 at the skill broker
-(the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, the rest of gate 2 at
+the skill broker (the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job

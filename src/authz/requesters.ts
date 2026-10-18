@@ -1,7 +1,9 @@
 // Requesters in Access (issue #581), pure: whether a requester — a job, a machine or a user — may ask now and the
 // template it runs as, how a decision names it, and the permission matrix's rows, from who is live and the hopper's rows.
+import type { TrustLevel } from '../domain/trust-stamp.ts';
 import type { LiveRequesters, OperationProfile, RelationshipTuple, Requester, RequesterRow } from '../domain/types.ts';
-import { relationshipPath, requesterObject } from './objects.ts';
+import { requesterObject } from './objects.ts';
+import { trustedPath } from './trust.ts';
 
 /** Why the requester may not ask now (its job not live, its machine no box, no such user), or the template and machine it runs as. */
 export function standing(
@@ -43,10 +45,10 @@ export const templateOnPath = (path: readonly RelationshipTuple[] | undefined): 
 export function requesterRows(
   live: readonly LiveRequesters[], tuples: readonly RelationshipTuple[], profiles: readonly OperationProfile[], shown: (t: RelationshipTuple) => RelationshipTuple = (t) => t,
 ): RequesterRow[] {
-  const row = (requester: Requester, at: { template?: string; machine?: string } = {}): RequesterRow => ({
+  const row = (requester: Requester, at: { template?: string; machine?: string; trust?: TrustLevel } = {}): RequesterRow => ({
     requester, ...at,
     grants: profiles.flatMap((profile) => {
-      const path = relationshipPath(tuples, requesterObject(requester), profile);
+      const path = trustedPath(tuples, requesterObject(requester), profile);
       return path ? [{ profile, path: path.map(shown) }] : [];
     }),
   });
@@ -56,7 +58,9 @@ export function requesterRows(
       row({ kind: 'user', userId: l.userId }),
       ...l.jobs.map((j) => {
         const template = templateOf(j.machine);
-        return row({ kind: 'job', userId: l.userId, jobId: j.jobId }, { ...(template === undefined ? {} : { template }), ...(j.machine === undefined ? {} : { machine: j.machine }) });
+        return row({ kind: 'job', userId: l.userId, jobId: j.jobId }, {
+          ...(template === undefined ? {} : { template }), ...(j.machine === undefined ? {} : { machine: j.machine }), ...(j.trust === undefined ? {} : { trust: j.trust }),
+        });
       }),
       ...l.boxes.map((b) => row({ kind: 'machine', userId: l.userId, machine: b.machine }, { template: b.template })),
     ];
