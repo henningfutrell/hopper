@@ -3,6 +3,7 @@
 // and does not trust the job. A plan that destroys or replaces a resource, or a plan check not passed, keeps it not done.
 import { describe, expect, it } from 'vitest';
 import type { DoneCriterion } from '../../src/domain/conditional-skills.ts';
+import { judge } from '../../src/domain/pull-requests.ts';
 import { matchCause } from '../../src/failures/causes.ts';
 import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
 
@@ -84,5 +85,29 @@ describe('the done criteria of a conditional skill (issue #1924)', () => {
     const other = withCriteria(IAC, AFTER, { allowed: ['aws_s3_bucket.logs'] });
     other.gh.setCheckRuns(other.pr.url, [{ name: 'terraform plan (prod)', state: 'passing', text }]);
     expect(await other.source.notComplete!(other.job)).toMatch(/module\.bastion\[0\]\.aws_instance\.bastion, which the issue does not allow/);
+  });
+
+  it('a pull request that ships a part is checked too: its plan that replaces a resource is no part done (issue #1924 part 4)', async () => {
+    const { gh, source } = setup({}, { doneCriteria: () => [{ skill: 'iac', done: IAC }] });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    const pr = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER, headCommittedAt: AFTER, checks: 'passing' });
+    const n = Number(pr.url.split('/').pop());
+    const job = jobForIssue(1);
+    gh.setCheckRuns(pr.url, [{ name: 'terraform plan (prod)', state: 'passing', text: plan(1) }]);
+    const verdict = await judge(source, job);
+    expect(verdict).toEqual({ done: false, why: `the issue https://github.com/${REPO}/issues/1 is open, and PR #${n}: done criteria of skill iac not met: a terraform plan destroys or replaces 1 resource (terraform plan (prod)); at most 0 may be` });
+    expect(matchCause(`not complete: ${(verdict as { why: string }).why}`, 'sig', [])?.id).toBe('done-criteria-unmet');
+    // Met: the part is done as before.
+    gh.setCheckRuns(pr.url, [{ name: 'terraform plan (prod)', state: 'passing', text: plan(0) }]);
+    expect(await judge(source, job)).toEqual({ done: false, partlyDone: pr.url });
+  });
+
+  it('a merged part is not read again: yolo mode read its criteria before its merge, or a person merged it', async () => {
+    const { gh, source } = setup({}, { doneCriteria: () => [{ skill: 'iac', done: IAC }] });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    const pr = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER, headCommittedAt: AFTER, checks: 'passing' });
+    gh.setCheckRuns(pr.url, [{ name: 'terraform plan (prod)', state: 'passing', text: plan(1) }]);
+    gh.mergePullRequest(pr.url);
+    expect(await judge(source, jobForIssue(1))).toEqual({ done: false, partlyDone: pr.url });
   });
 });
