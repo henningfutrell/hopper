@@ -6,7 +6,9 @@
 // repository or another job repository, where its change may belong), edit or close a pull request it opened or its work
 // item's (issue #1734), close its own issue as completed (issue #652: it holds no GitHub token of its own), and read pull requests and a failed
 // check's log (issue #993), on its user's job repositories; it reads (`READS`) on any repository the connection sees
-// (issue #1015): the job repositories decide intake and where a job writes, not what it reads.
+// (issue #1015): the job repositories decide intake and where a job files issues, not what it reads. On any other
+// repository (issue #1806) a job opens a pull request from a branch it pushed — it pushes wherever its user can, and GitHub
+// alone refuses —, and marks ready, edits or closes only one it opened (`PR_OWNED`); it files and comments on no issue there.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
 // An issue a job files is a child of the job's own issue (issue #729, issue lineage): a follow-up, or — `required` — a
 // required child, linked as a GitHub sub-issue, so the parent is not done while it is open.
@@ -118,11 +120,20 @@ export const isRead = (op: ProxyOp): boolean => READS.includes(op);
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
+/**
+ * What a job asks of one pull request (issue #1806): on a repository the hopper does not work on, only of a pull request it
+ * opened, or its work item's (`ownsPullRequest`).
+ */
+export const PR_OWNED: readonly ProxyOp[] = ['pr.ready', 'pr.edit', 'pr.close'];
+
 /** Whether the asker may have the request done; else why not, in words the job can act on. */
 export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositories: readonly string[]): { ok: true } | { ok: false; reason: string } {
   const onFork = asker.fork !== undefined && same(asker.fork, req.repo);
-  if (!onFork && !READS.includes(req.op) && !jobRepositories.some((r) => same(r, req.repo))) {
-    return { ok: false, reason: `${req.repo} is not one of the repositories the hopper works on, so it does nothing there for a job` };
+  const anywhere = req.op === 'pr.create' || (PR_OWNED.includes(req.op) && asker.ownsPullRequest === true);
+  if (!onFork && !READS.includes(req.op) && !anywhere && !jobRepositories.some((r) => same(r, req.repo))) {
+    return { ok: false, reason: PR_OWNED.includes(req.op)
+      ? `${req.repo} is not one of the repositories the hopper works on: there a job marks ready, edits or closes only a pull request it opened`
+      : `${req.repo} is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed` };
   }
   if (onFork && req.op === 'pr.create') {
     return { ok: false, reason: `open the pull request on ${asker.repo}, from the fork: --repo ${asker.repo} --head ${asker.login}:<branch>` };

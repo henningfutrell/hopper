@@ -41,8 +41,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   honoured only while the job is at work, and after a lost-machine move only the new run's (issue #1569) — asks the hopper to act on GitHub with the job's own user's connection (issue #1380) — the connected account of the repository it names, else of the job's own (issue #1448) —; it changes no job,
   question, webhook or setting, only records what it did. A running job's git (issue #652, `docs/design.md` "Git through the
   hopper"): `GET`/`POST /job/git/<owner>/<name>.git/…`, git's smart HTTP with the job's proxy token as its password, fetches
-  and pushes on GitHub with the job's own user's connection (the account of the repository, issue #1448) — a push only to a branch of the job's own repository or of another of its user's job repositories (issue #1275), or, with
-  the user's **Contribution** on (issue #429, `docs/design.md` "The contribution flow"), of the user's fork of it, never its
+  and pushes on GitHub with the job's own user's connection (the account of the repository, issue #1448) — a push only to a branch of a repository its user can push to, as GitHub says (issue #1806: its own, another job repository,
+  the user's fork, or a repository the hopper does not work on; a fork's pull request only with the user's **Contribution** on, issue #429,
+  `docs/design.md` "The contribution flow"), never its
   default or a release branch, and never a push that brings in its base branch (its pull request's, else the landing branch) and empties or shrinks a file the branch's own change
   did not, or empties a file it only shrank (the shrink guard, issues #1096, #1218; the hopper's own base merge is judged so too, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. A running
   GitLab job's git (issue #1448, `docs/design.md` "Jobs through GitLab"): `GET`/`POST /job/gitlab-git/<project>.git/…`, the same

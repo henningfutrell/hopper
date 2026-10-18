@@ -43,7 +43,7 @@ describe('the contribution flow\'s policy (issue #429)', () => {
     ]) expect(checkRequest(req(r), onFork, repos)).toEqual({ ok: true });
     expect(why(checkRequest(pr('fix/empty', 'owner/lib'), onFork, repos))).toBe('open the pull request on upstream/lib, from the fork: --repo upstream/lib --head owner:<branch>');
     expect(why(checkRequest(req({ op: 'issue.close', repo: 'owner/lib', number: 1 }), onFork, repos))).toMatch(/^on the job's fork owner\/lib a job files, reads and comments on issues/);
-    expect(why(checkRequest(req({ op: 'issue.create', repo: 'owner/lib', title: 't', body: 'b' }), asker, repos))).toBe('owner/lib is not one of the repositories the hopper works on, so it does nothing there for a job');
+    expect(why(checkRequest(req({ op: 'issue.create', repo: 'owner/lib', title: 't', body: 'b' }), asker, repos))).toBe('owner/lib is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed');
   });
 
   it('the steps: clone the fork, follow the contributing rules, push there, the pull request upstream; where the issue goes', () => {

@@ -1,6 +1,6 @@
 // Issue #652: a job holds no GitHub token. Its git fetch and push go to the hopper, which does them on GitHub with the
-// connection of the job's own user; a push changes only a branch of the job's own repository or of another of its user's
-// job repositories (issue #1275), never its default or a release branch. The daemon, store and HTTP edge are real; GitHub is a fake on loopback whose git is git's own
+// connection of the job's own user; a push changes only a branch of a repository its user can push to (issue #1806: its
+// own, another job repository (issue #1275), or one the hopper does not work on), never its default or a release branch. The daemon, store and HTTP edge are real; GitHub is a fake on loopback whose git is git's own
 // `git-http-backend` over bare repositories (test/support/fake-forges.ts); the job runs the real git with the variables
 // it was given, and the credential files the hopper kept for it on its machine.
 //
@@ -18,21 +18,25 @@
 //     When the job pushes a new branch to octo/site, then pushes it again with --force-with-lease
 //     Then both pushes are on GitHub, and on the job's timeline
 //     But a push to octo/site's default branch, or to a job repository its user cannot push to, is refused
-//   Scenario: a job pushes to a repository that is neither its own nor a job repository
-//     Then the push is refused with the reason
+//   Scenario: a job pushes to a repository that is neither its own nor a job repository (issue #1806)
+//     Given a repository the hopper does not work on, which the user can push to
+//     When the job pushes a new branch there and opens a pull request there
+//     Then both are on GitHub and on the job's timeline; an issue there, or a push to its default branch, is refused
+//     But when the user cannot push there, the push is refused with the reason
 //   Scenario: a job of a repository outside the job repositories pushes to its own repository (issue #1131)
 //     Given a job whose own repository is no job repository (a source other than the account's, or one chosen no more)
 //     When the job pushes a branch, then pushes it again with --force-with-lease, as a tend job's rebase does
 //     Then both pushes are on GitHub
 //   Scenario: a job reads a repository its jobs do not use (issue #1015)
 //     Given a private repository outside the job repositories that the user's connection sees
-//     Then the hopper reads it with the user's connection, and pushes nothing there
+//     Then the hopper reads it with the user's connection
 //   Scenario: the job's variables carry no GitHub token and no ssh agent
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { githubTraffic } from '../../src/github-limiter/traffic.ts';
 import { branchesOf, cleanups, eventsOf, running, start, stopGitProxies } from '../support/git-proxy.ts';
+import { hopperGh } from '../support/job-holder.ts';
 
 afterEach(stopGitProxies);
 
@@ -155,7 +159,7 @@ describe('git through the hopper (issue #652)', () => {
     expect(eventsOf(t.app, 'github_proxy.refused').filter((e) => e.jobId === job.id)).toEqual([]);
   });
 
-  it('reads a private repository its jobs do not use with its user\'s connection, and pushes nothing there (issue #1015)', async () => {
+  it('reads a private repository its jobs do not use with its user\'s connection (issue #1015)', async () => {
     const t = await start();
     writeFileSync(join(t.gitRoot, 'elsewhere/lib.git', 'hopper-private'), '');
     const { home, git } = await running(t);
@@ -163,12 +167,48 @@ describe('git through the hopper (issue #652)', () => {
     const reads = t.github.gitRequests.filter((r) => r.path.startsWith('/elsewhere/lib'));
     expect(reads.length).toBeGreaterThan(0);
     for (const r of reads) expect(r.auth).not.toBe('');
+    expect(existsSync(join(home, 'lib', '.git'))).toBe(true);
+  });
+
+  it('pushes a branch to a repository the hopper does not work on, and opens a pull request there (issue #1806)', async () => {
+    const t = await start();
+    const { job, env, home, git } = await running(t, 'octo/tools');
+    expect((await git(['clone', '--quiet', `${t.github.url}/elsewhere/lib.git`, 'lib'])).code).toBe(0);
+    const work = join(home, 'lib');
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'The change belongs here'], work);
+    expect(await git(['push', 'origin', 'HEAD:refs/heads/issue-7-lib'], work)).toMatchObject({ code: 0 });
+    const head = (await git(['rev-parse', 'HEAD'], work)).stdout.trim();
+    expect((await branchesOf(t, 'elsewhere/lib')).stdout).toContain(`issue-7-lib ${head}`);
+    expect(eventsOf(t.app, 'github_proxy.done')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'elsewhere/lib', refs: ['refs/heads/issue-7-lib'], as: 'owner' }) }),
+    ]));
+
+    const pr = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'elsewhere/lib', '--head', 'issue-7-lib', '--title', 'The change', '--body', 'Closes octo/tools#7']);
+    expect(pr).toMatchObject({ code: 0 });
+    expect(JSON.parse(pr.stdout)).toMatchObject({ ok: true, op: 'pr.create', repo: 'elsewhere/lib', number: 1 });
+    expect(await hopperGh(t.root, env, ['pr', 'ready', '1', '--repo', 'elsewhere/lib'])).toMatchObject({ code: 0 });
+    const issue = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'elsewhere/lib', '--title', 'x', '--body', 'y']);
+    expect(JSON.parse(issue.stdout).error).toBe('refused: elsewhere/lib is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed');
+
+    const toMain = await git(['push', 'origin', 'HEAD:refs/heads/dev'], work);
+    expect(toMain.code).not.toBe(0);
+    expect(toMain.stderr).toContain('a job pushes only to a branch of its own work, never to dev');
+  });
+
+  it('refuses a push to a repository the hopper does not work on when its user cannot push there (issue #1806)', async () => {
+    const t = await start();
+    t.github.notPushable = ['elsewhere/lib'];
+    const { job, home, git } = await running(t);
+    expect((await git(['clone', '--quiet', `${t.github.url}/elsewhere/lib.git`, 'lib'])).code).toBe(0);
     const work = join(home, 'lib');
     await git(['commit', '--quiet', '--allow-empty', '-m', 'Not mine'], work);
     const r = await git(['push', 'origin', 'HEAD:refs/heads/issue-7-elsewhere'], work);
     expect(r.code).not.toBe(0);
-    expect(r.stderr).toContain('a job pushes only to its own repository (octo/tools) or another of the repositories the hopper works on');
+    expect(r.stderr).toContain('your user cannot push to elsewhere/lib: GitHub gives its connection no write access there');
     expect(t.github.gitRequests.filter((x) => x.path.startsWith('/elsewhere/lib') && x.path.endsWith('/git-receive-pack'))).toEqual([]);
+    expect(eventsOf(t.app, 'github_proxy.refused')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'elsewhere/lib', reason: expect.stringContaining('cannot push to elsewhere/lib') }) }),
+    ]));
   });
 
   it('refuses a token that is no job\'s, and a job no longer at work', async () => {

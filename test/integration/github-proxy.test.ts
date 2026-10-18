@@ -124,7 +124,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     const { job, env } = await running(t);
     const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'someone/else', '--title', 'x', '--body', 'y']);
     expect(r.code).toBe(1);
-    expect(json(r).error).toBe('refused: someone/else is not one of the repositories the hopper works on, so it does nothing there for a job');
+    expect(json(r).error).toBe('refused: someone/else is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed');
     expect(created(t.github)).toEqual([]);
     expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.refused')).toEqual([expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'issue.create', repo: 'someone/else', as: 'owner' }) })]);
   });
@@ -245,14 +245,14 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(json(ready)).toMatchObject({ ok: true, op: 'pr.ready', number: pr.number, draft: false });
   });
 
-  it('opens a pull request on another of its user\'s job repositories, and none on a repository the hopper does not work on (issue #1275)', async () => {
+  it('opens a pull request on another of its user\'s job repositories (issue #1275), and on a repository the hopper does not work on (issue #1806)', async () => {
     const t = await start();
     const { env } = await running(t, 'octo/tools');
     const r = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/site', '--head', 'issue-7-site', '--title', 'Site', '--body', 'Closes octo/tools#7']);
     expect(json(r)).toMatchObject({ ok: true, op: 'pr.create', head: 'issue-7-site', url: expect.stringContaining('/octo/site/pull/') });
     expect(json(await hopperGh(t.root, env, ['pr', 'ready', String(json(r).number), '--repo', 'octo/site']))).toMatchObject({ ok: true, op: 'pr.ready' });
-    const elsewhere = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'else/where', '--head', 'x', '--title', 'x', '--body', 'x']);
-    expect(json(elsewhere).error).toBe('refused: else/where is not one of the repositories the hopper works on, so it does nothing there for a job');
+    const elsewhere = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'else/where', '--head', 'issue-7-where', '--title', 'Where', '--body', 'Closes octo/tools#7']);
+    expect(json(elsewhere)).toMatchObject({ ok: true, op: 'pr.create', url: expect.stringContaining('/else/where/pull/') }); expect(json(await hopperGh(t.root, env, ['pr', 'ready', String(json(elsewhere).number), '--repo', 'else/where']))).toMatchObject({ ok: true, op: 'pr.ready' });
   });
 
   it('acts for another user\'s job with that user\'s own connection, never the first user\'s; each event names who acted (issue #1380)', async () => {
@@ -272,7 +272,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(writes.map((r) => r.auth)).toEqual(['token guest-token', 'token guest-token']);
 
     const refused = await hopperGh(t.root, env, ['issue', 'comment', '1', '--repo', 'octo/tools', '--body', 'x']);
-    expect(json(refused).error).toBe('refused: octo/tools is not one of the repositories the hopper works on, so it does nothing there for a job');
+    expect(json(refused).error).toBe('refused: octo/tools is not one of the repositories the hopper works on, so it does nothing there for a job but open a pull request from a branch it pushed');
 
     const done = eventsOf(t.app, guest.id, 'github_proxy.done');
     expect(done.map((e) => [e.jobId, e.data.op, e.data.as]).sort()).toEqual([[job.id, 'issue.comment', 'guest-login'], [job.id, 'issue.create', 'guest-login']]);

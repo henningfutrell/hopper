@@ -78,7 +78,7 @@ export const KEPT_AGAIN_EVENTS = [...WORK_EVENTS, 'job.continued'] as const;
 /**
  * Pure: whether the job went on in its kept work tree (`job.continued`: Push it, a Continue) and its reap kept the same
  * work again — no path it did not keep before (issue #1470). Then a push of it is refused or cannot be made from the job
- * (a clone of another repository: a job pushes only to its own), and Push it again only asks the same thing again.
+ * (a clone of a repository its user cannot push to, issue #1806), and Push it again only asks the same thing again.
  * `newestFirst`: the job's `KEPT_AGAIN_EVENTS` as the event log answers them.
  */
 export function keptAgainOf(newestFirst: readonly DomainEvent[]): boolean {

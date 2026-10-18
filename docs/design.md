@@ -14527,10 +14527,10 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
 1. the token: the Basic auth password is a proxy token of a user whose job it names, at work — else **401** (git then
    asks its helper once more and stops);
 2. the path: `owner/name` (`.git` optional) and a smart-HTTP service; dumb HTTP is not served — else **404**;
-3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's) —
-   whether or not it is one of its user's **job repositories** (issue #1131, below) —, to another of its user's job
-   repositories (issue #1275, below), and only when the user can push to it, or to the **job's fork** ("The contribution
-   flow") — else **403** with the reason, which git shows as `remote: …`;
+3. a push (`git-receive-pack`): to any repository the job's user can push to, as GitHub says (issue #1806, "A job pushes
+   wherever its user can push"): the job's **own repository** (its source's, or for a fork its parent's), another of
+   its user's **job repositories**, the **job's fork** ("The contribution flow"), or a repository the hopper does not
+   work on — else **403** with the reason, which git shows as `remote: …`;
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
    a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
@@ -14578,8 +14578,8 @@ setup check and pull-request checks workflow; deploying only a merged and checke
 
 Tests: `test/integration/git-proxy.test.ts` (the real daemon, a fake GitHub serving git with `git-http-backend`, the real
 git with the job's variables: clone and push a branch with the user's token, a forced update; `dev` and `stable` refused
-and a delete refused, nothing changed on GitHub; another repository refused; a repository outside the job repositories
-read with the user's connection; a bad token and an ended job refused; no `GH_TOKEN`, `GH_CONFIG_DIR` or `SSH_AUTH_SOCK`),
+and a delete refused, nothing changed on GitHub; a repository the user cannot push to refused; a repository outside the
+job repositories read with the user's connection and pushed to (issue #1806); a bad token and an ended job refused; no `GH_TOKEN`, `GH_CONFIG_DIR` or `SSH_AUTH_SOCK`),
 `test/github-proxy/git.test.ts` (the pkt-lines, the push check, the path, the git config),
 `test/integration/github-proxy.test.ts` (close the job's own issue, mark ready, another issue refused),
 `test/integration/connected-account-renewal.test.ts` (a source job's variables and files hold no token),
@@ -24046,7 +24046,8 @@ opens only on the job's own repository. The job's issue stays where it is: the p
 (`Closes OWNER/NAME#N`), which GitHub links as a closing reference when the pull request is on its repository's default
 branch, so the completion check finds it among the issue's closing pull requests. `hopper-gh help` says so.
 
-**Not changed.** A repository that is no job repository takes no push from a job but its own (issue #1131). A fetch
+**Not changed.** A repository that is no job repository takes no push from a job but its own (issue #1131; changed by
+issue #1806, "A job pushes wherever its user can push"). A fetch
 reads any repository the user sees (issue #1015). A job without its own repository (a direct job) may push to the job
 repositories too: it was refused all pushes before, with no reason the job repositories did not already settle.
 
@@ -26832,3 +26833,54 @@ its sync.
 the step's parent, attributes and outcome; the box's `TRACEPARENT` names the step; none with telemetry off; no secret,
 box name or template exported. `test/telemetry/deploys.test.ts`: the batch span and its attributes; a deploy span in each
 job's trace, linked to it; failed and restarted; a batch of pull requests no job made; no branch, commit or URL exported.
+
+## A job pushes wherever its user can push (issue #1806, part 1, 2026-10-17)
+
+Decision of the owner on issue #1806, a follow-up of issue #1472 part 2. Before, a job pushed only to its own repository,
+another of its user's job repositories, or its user's fork (issues #1131, #1275, #429). Kept work in a clone of any other
+repository stayed for a person, and Push it was refused for it (issue #1470).
+
+**The decision.** No hopper rule limits where a job pushes but its user's own write access on GitHub. When the user can
+push to a repository, a job can push a branch there and open a pull request there. There is no allow list, no job
+repository requirement and no setting for it. The only refusal is GitHub's own: the user has no write access.
+
+**The change.**
+- The git broker (`createGitProxy`, step 3 of "Git through the hopper") takes a push to any repository. It reads the
+  repository as the user's connection sees it, and refuses the push when `canPush` is false (`your user cannot push to
+  <repo>: GitHub gives its connection no write access there`; the job's own repository keeps its fork hint). The ref
+  check (`checkPush`: a new branch of the job's own work, never the default branch, a release branch, a batch run's branch,
+  a tag or a delete) and the shrink guard apply as on a job repository. Each push is a `github_proxy.done` (or `.refused`)
+  event on the job's timeline, `op: git.push`, as before.
+- The GitHub proxy (`checkRequest`) takes `pr.create` on any repository; GitHub refuses it when the user cannot open it.
+  On a repository the hopper does not work on, a job marks ready, edits or closes only a pull request it opened, or its
+  work item's (`PR_OWNED`, `ownsPullRequest`), and files, comments on and closes no issue.
+- The account that acts on a repository that is no job repository is the account of the job's own repository (issue
+  #1448), as for a fork.
+- `hopper-gh help` and the kept work's push brief (`pushBrief`) say a job pushes to a new branch of any repository its
+  user can push to.
+
+**Not changed.** A fork's pull request (`--head <login>:<branch>`) opens only on the job's own repository, with
+Contribution on. Issues and comments stay on the job repositories. The delivery job rule still sends a change another
+repository needs as a required child issue.
+
+**Left for later parts of issue #1806.** The opt-in yolo setting for a repository the hopper does not work on: today yolo
+mode (issue #637) is set per job repository, and the hopper follows and merges only those pull requests. A push straight
+to the target branch with yolo on is not taken: the ref check still refuses a default or release branch everywhere.
+
+**Decisions:**
+- **`pr.create` on any repository, not only where the job pushed.** A job opens a pull request from a branch; GitHub
+  refuses one whose branch is not there or that the user cannot open. Tracking the job's own pushes per repository adds
+  state for no new protection.
+- **No issues on other repositories.** The owner's decision names pushes and pull requests. Filing an issue on a
+  repository the hopper does not work on stays refused: such an issue is public text no person read first.
+- **A push to the user's own fork with Contribution off is taken.** The user can push to it, and nothing else holds it.
+  A pull request from that fork still needs Contribution on.
+
+**Residual risk.** One bad issue, or one injected agent, can now push a branch to any repository its user can write to,
+and open a pull request there, not only to the job repositories. It still cannot change a default or release branch,
+and branch protection on GitHub keeps the rest. Every push and pull request is an event on the job's timeline.
+
+**Verification:** `test/integration/git-proxy.test.ts` ("pushes a branch to a repository the hopper does not work on,
+and opens a pull request there", "refuses a push to a repository its user cannot push to"),
+`test/github-proxy/proxy.test.ts`, `test/github-proxy/contribution.test.ts`,
+`test/integration/github-proxy.test.ts`, `test/integration/contribution.test.ts`, `test/domain/kept-work.test.ts`.

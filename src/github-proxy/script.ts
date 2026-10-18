@@ -65,9 +65,11 @@ required child: the hopper links it as a sub-issue of this job's issue, which is
 --required only when this job's issue cannot be complete without it; a nice-to-have is a follow-up.
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work, never to a default or a release branch: on this job's own repository, or
-on another of the repositories the hopper works on when the change belongs there (its issue stays on this job's own:
-the pull request body says "Closes OWNER/NAME#N" with this job's issue). A pull request: push the branch first (git
-push), on the repository the pull request is opened on.
+on any other repository your user can push to when the change belongs there (its issue stays on this job's own: the
+pull request body says "Closes OWNER/NAME#N" with this job's issue). When GitHub gives your user no write access there,
+the push is refused and says so. A pull request: push the branch first (git push), on the repository the pull request
+is opened on. On a repository the hopper does not work on, a job opens a pull request, and marks ready, edits or closes
+only the one it opened; it files no issue there.
 Where a pull request stands: pr status. Ask it, not GitHub: the hopper answers from what it already knows (from:
 hopper), the same as its Pull requests list, and reads GitHub only for a pull request it does not know (from: github),
 then answers that read again for a minute (from: cache). To wait on checks, run pr wait, once: do not ask again and
