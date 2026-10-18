@@ -4,6 +4,8 @@
 //
 // Feature: discovery reads an account and a cluster with read calls only
 //   Scenario: every page of each AWS list is read, each EKS cluster described; a list the session may not read is left out
+//   Scenario: a region that is not the home region is read without the global lists (IAM roles, S3 buckets)
+//   Scenario: the regions the account has enabled are listed with the session
 //   Scenario: an account none of whose lists can be read is an error that says why
 //   Scenario: every page of each Kubernetes list is read with the token; a list the token may not read is left out
 //   Scenario: a cluster none of whose lists can be read is an error that says why
@@ -38,6 +40,7 @@ describe('the AWS reader', () => {
       rds: fakeClient(() => ({ DBInstances: [{ DBInstanceArn: 'arn:db', DBInstanceIdentifier: 'orders' }] }), sent),
       sqs: fakeClient(() => ({ QueueUrls: ['https://sqs.eu-west-1.amazonaws.com/111111111111/orders'] }), sent),
       iam: fakeClient(denied, sent),
+      s3: fakeClient((_n, i) => (i.ContinuationToken ? { Buckets: [{ Name: 'logs' }] } : { Buckets: [{ Name: 'orders-data', BucketRegion: 'us-east-2', CreationDate: new Date(0) }, {}], ContinuationToken: 'b2' }), sent),
     };
     const a = await readAws(clients, { account: '111111111111', region: 'eu-west-1' }, signal);
     expect(a).toEqual({
@@ -50,14 +53,36 @@ describe('the AWS reader', () => {
       loadBalancers: [{ LoadBalancerArn: 'arn:lb', LoadBalancerName: 'web', DNSName: 'web.elb' }],
       databases: [{ DBInstanceArn: 'arn:db', DBInstanceIdentifier: 'orders' }],
       queues: ['https://sqs.eu-west-1.amazonaws.com/111111111111/orders'],
+      buckets: [{ Name: 'orders-data', BucketRegion: 'us-east-2' }, { Name: 'logs' }],
     });
     // Read calls only.
     expect(sent.every((s) => /^(List|Describe)/.test(s))).toBe(true);
     expect(sent).toContain('ListClustersCommand {"nextToken":"p2"}');
+    expect(sent).toContain('ListBucketsCommand {"ContinuationToken":"b2"}');
+  });
+
+  it('reads a region that is not the home region without the global lists: no IAM roles, no S3 buckets', async () => {
+    const sent: string[] = [];
+    const one = fakeClient(() => ({}), sent);
+    const a = await readAws({ eks: one, ec2: one, elb: one, rds: one, sqs: one, iam: one, s3: one }, { account: '111111111111', region: 'us-east-2', regional: true }, signal);
+    expect(a).toMatchObject({ account: '111111111111', region: 'us-east-2' });
+    expect(a).not.toHaveProperty('roles');
+    expect(a).not.toHaveProperty('buckets');
+    expect(sent.filter((x) => /^(ListRoles|ListBuckets)/.test(x))).toEqual([]);
+  });
+
+  it('lists the regions the account has enabled, with the session', async () => {
+    const sent: string[] = [];
+    const ec2 = fakeClient(() => ({ Regions: [{ RegionName: 'us-east-1' }, { RegionName: 'us-east-2' }, {}] }), sent);
+    const made: unknown[] = [];
+    const reader = createTopologyReader({ awsClients: (c) => { made.push(c); const one = fakeClient(() => ({}), []); return { eks: one, ec2, elb: one, rds: one, sqs: one, iam: one, s3: one }; } });
+    expect(await reader.awsRegions({ account: '111111111111', region: 'us-east-1', session: SESSION }, signal)).toEqual(['us-east-1', 'us-east-2']);
+    expect(sent).toEqual(['DescribeRegionsCommand {}']);
+    expect(made).toEqual([expect.objectContaining({ region: 'us-east-1', credentials: { accessKeyId: 'ASIA', secretAccessKey: 's', sessionToken: 't' } })]);
   });
 
   it('says why when none of an account\'s lists can be read', async () => {
-    const all = Object.fromEntries(['eks', 'ec2', 'elb', 'rds', 'sqs', 'iam'].map((k) => [k, fakeClient(denied, [])])) as AwsClients;
+    const all = Object.fromEntries(['eks', 'ec2', 'elb', 'rds', 'sqs', 'iam', 's3'].map((k) => [k, fakeClient(denied, [])])) as AwsClients;
     await expect(readAws(all, { account: '111111111111', region: 'cn-north-1' }, signal)).rejects.toThrow('the AWS account 111111111111 in cn-north-1 could not be read: User is not authorized to perform: iam:ListRoles');
   });
 
@@ -68,12 +93,12 @@ describe('the AWS reader', () => {
       awsClients: (c) => {
         made.push(c);
         const one = { send: async () => ({}), destroy: () => { destroyed += 1; } };
-        return { eks: one, ec2: one, elb: one, rds: one, sqs: one, iam: one };
+        return { eks: one, ec2: one, elb: one, rds: one, sqs: one, iam: one, s3: one };
       },
     });
     await reader.aws({ account: '111111111111', region: 'eu-west-1', endpoint: 'http://127.0.0.1:4566', session: SESSION }, signal);
     expect(made).toEqual([{ region: 'eu-west-1', endpoint: 'http://127.0.0.1:4566', maxAttempts: 2, credentials: { accessKeyId: 'ASIA', secretAccessKey: 's', sessionToken: 't' } }]);
-    expect(destroyed).toBe(6);
+    expect(destroyed).toBe(7);
   });
 });
 

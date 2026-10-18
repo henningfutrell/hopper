@@ -29,6 +29,18 @@ describe('the infrastructure topology', () => {
     expect(has(g, k8s('shop/deployment/orders'), 'in', k8s('shop'))).toBe(true);
   });
 
+  it('gives an EKS cluster its account, region and VPC, and an S3 bucket its account and the region S3 names', () => {
+    const t = awsTopology({ ...aws, buckets: [{ Name: 'orders-data', BucketRegion: 'us-east-2' }, { Name: 'logs' }] });
+    expect(t.nodes.find((n) => n.id === CLUSTER)).toMatchObject({ kind: 'cluster', name: 'prod', account: '111111111111', region: 'eu-west-1' });
+    expect(t.links).toContainEqual({ from: CLUSTER, to: 'arn:aws:ec2:eu-west-1:111111111111:vpc/vpc-1', kind: 'in' });
+    expect(t.nodes.filter((n) => n.kind === 'bucket')).toEqual([
+      { id: 'arn:aws:s3:::orders-data', kind: 'bucket', name: 'orders-data', account: '111111111111', region: 'us-east-2' },
+      { id: 'arn:aws:s3:::logs', kind: 'bucket', name: 'logs', account: '111111111111' },
+    ]);
+    expect(t.links).toContainEqual({ from: 'arn:aws:s3:::orders-data', to: 'aws-account:111111111111', kind: 'in' });
+    expect(sourceReportProblem({ source: { kind: 'aws', account: '111111111111', region: 'eu-west-1' }, ok: true, ...t })).toBeUndefined();
+  });
+
   it('links a service to the load balancer in front of it, and a workload to the database and queue it names', () => {
     const g = joinGraph(good());
     expect(has(g, aws.loadBalancers![0]!.LoadBalancerArn, 'routes-to', k8s('shop/service/orders'))).toBe(true);
