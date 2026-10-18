@@ -1,0 +1,1 @@
+- A pull request a job opens on a repository that is not one of your job repositories is now merged only when you turn yolo mode on for that repository. You can add it by name in Settings, under Yolo mode.

@@ -2428,6 +2428,8 @@ ready").
 issue's (an infrastructure change for a workflow issue). The pull request's own repository comes from its URL, never from
 the job's: the follow reads, merges, moves and closes it there; its card is in that repository's group; its yolo mode,
 change rule, landing branch and tending queue are that repository's (`jobPullRequestRepo`, `src/domain/pull-requests.ts`).
+On a repository the hopper does not work on, yolo mode is on only when a person named it on (issue #1806, "Yolo mode on a
+repository the hopper does not work on").
 Only its issue — labels, the close after a merge — stays in the job's repository.
 
 **A pull request stays in sight while it is open** (issue #763: open pull requests a job opened were on GitHub and not on
@@ -27066,9 +27068,8 @@ push to, and kept the ref check: never a default or a release branch.
   records it. A comment on GitHub is text the publishing rule keeps neutral, and the hopper posts none outside the listed
   exceptions; the work item links the job, and its timeline shows the push.
 
-**Left for later parts of issue #1806.** The hopper follows and merges in yolo mode only the pull requests on job
-repositories; a pull request a job opens on another repository is not merged by the hopper. A push as a durable work item
-(issue #1524 sagas).
+**Left for later parts of issue #1806.** Yolo mode on a repository the hopper does not work on (part 3, below). A push as
+a durable work item (issue #1524 sagas).
 
 **Residual risk.** On a repository a person named, one bad issue or one injected agent can add commits straight to its
 target branch with no review, and whatever that branch triggers runs (a release, an image build, a deploy). It cannot
@@ -27077,3 +27078,43 @@ rewrite the branch, delete it, push a tag or reach any other release branch; bra
 **Verification:** `test/github-proxy/direct-push.test.ts` (off, a fast-forward, not one, not checked, the landing branch),
 `test/github-proxy/git.test.ts` (`checkPush` with `direct`), `test/git-mirror/push-lines.test.ts` (fast-forward in real git),
 `test/domain/direct-push.test.ts`, `test/ui/yolo-mode.test.ts`.
+
+## Yolo mode on a repository the hopper does not work on (issue #1806, part 3, 2026-10-17)
+
+The owner's decision on issue #1806: a job may push and open pull requests on any repository its user can push to, and
+the opt-in yolo setting lets the hopper merge with no review, within the user's own GitHub rights, off by default, with
+UI text that says plainly what it allows. Part 1 let a job open the pull request there. The hopper already follows a job's
+pull request in its own repository (issue #1778, "A pull request in another repository"), under that repository's yolo
+mode and change rule — and `yoloModeFor` fell back to `on` for any repository, so a hopper with yolo mode on for its job
+repositories merged a job's pull request on any other repository too, and the change rule's `ready` kinds (docs, low-risk)
+merged there with yolo mode off. Nobody turned that on for those repositories.
+
+**The change.**
+- **`on` covers the job repositories only** (`yoloModeFor(settings, repo, jobRepos)`, `src/domain/yolo-mode.ts`). A
+  repository's own setting (`repos`) still wins everywhere. A GitHub repository (`owner/repo`) that is none of the user's
+  job repositories (`everyJobRepository`) has yolo mode on only when a person named it on. A GitLab project, asked by its
+  URL, is never such a repository: a GitLab job works on its own project only.
+- **No kind merges with no person there** (`mergeRuleFor`): on such a repository not named on, every kind's merge gate is
+  `yolo`, so nothing merges and the card says `yolo off`. Named on, its change rule applies as on a job repository.
+- **The follow, the direct jobs' follow, the repository checks and the Pull requests list** take both from the same two
+  functions (`pullRequestSettings`, `src/users/source-context.ts`; `pullRequestList`).
+- **Settings → Yolo mode**: a repository is added by name (`owner/repo`, **Add, on**), then saved as any per-repository
+  setting (`POST /ui/api/yolo-mode` `repos`; `hopper yolo <owner/repo> on` too). A row that is no job repository says so,
+  its default reads `Does not merge (not a job repository)`, and a note says the switch for every job repository does not
+  reach it and what on allows (`OUTSIDE_YOLO_WARNING`).
+
+**Decisions:**
+- **A person names each repository, as for direct push.** `on` would otherwise reach every repository the user can write
+  to; the decision asks for an opt-in, off by default.
+- **The `ready` gates wait too.** A docs-only change on someone else's repository is still a change nobody reviewed; the
+  change rule is the user's judgement of their own job repositories.
+- **No migration.** The settings' shape does not change. A hopper that merged such a pull request by `on` alone now waits
+  for a person, which is the safe side; the build before it still runs on the store.
+
+**Left for a later part of issue #1806.** A push as a durable work item (issue #1524 sagas).
+
+**Residual risk.** On a repository a person named on, a job's pull request is merged with no review once it is ready, and
+whatever that merge triggers runs. GitHub's branch protection and the user's own rights still apply.
+
+**Verification:** `test/domain/outside-merge.test.ts`, `test/sources/pull-request-list.test.ts` ("a repository the hopper
+does not work on"), `test/ui/yolo-mode.test.ts`.

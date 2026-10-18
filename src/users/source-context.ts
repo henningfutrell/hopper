@@ -4,7 +4,8 @@
 // With the user's work dir, the user's mirrors of the job repositories too (issue #858, `<work dir>/git-mirrors`). The connected accounts are added by the runtime.
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
-import { changeRuleFor, DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
+import { everyJobRepository } from '../domain/job-repositories.ts';
+import { DEFAULT_YOLO_MODE, isRerunnable, mergeRuleFor, yoloModeFor } from '../domain/types.ts';
 import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
@@ -54,10 +55,13 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
   };
 }
 
-/** The user's settings a followed pull request is merged and moved by: yolo mode, the landing branch, the change rule. */
+/**
+ * The user's settings a followed pull request is merged and moved by: yolo mode, the landing branch, the change rule. On a
+ * repository the hopper does not work on, only that repository named on in yolo mode merges (issue #1806).
+ */
 export const pullRequestSettings = (store: UserStore) => ({
-  yoloMode: (repo: string): boolean => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+  yoloMode: (repo: string): boolean => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(store)),
   // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
   landingBranch: (repo: string): string | undefined => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
-  changeRule: (repo: string) => changeRuleFor(store.settings.getYoloMode()?.changeKinds, repo),
+  changeRule: (repo: string) => mergeRuleFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(store)),
 });

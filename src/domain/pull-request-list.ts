@@ -16,9 +16,9 @@ import type { Job } from './types.ts';
 import { DIRECT_SOURCE } from './direct-jobs.ts';
 import { followsWhenEnded, jobPullRequestRepo, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, rebasesWhenBaseMoves, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
-import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
+import { mergeRuleFor, yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 import type { LandingCard } from './work-item-landing.ts';
-import { changeRuleFor, mergesOnReady, type ChangeClass, type ChangeRule } from './change-kinds.ts';
+import { mergesOnReady, type ChangeClass, type ChangeRule } from './change-kinds.ts';
 import type { UntrackedPullRequest } from './untracked-pull-requests.ts';
 
 // The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
@@ -260,10 +260,10 @@ export function pullRequestList(jobs: Job[], newest: (key: string) => Job | unde
   const names: string[] = [];
   for (const r of [...repos, ...waiting.map((j) => jobPullRequestRepo(j)!)]) if (!names.some((n) => n.toLowerCase() === r.toLowerCase())) names.push(r);
   const groups = names.map((repo) => {
-    const on = yoloModeFor(yolo, repo);
+    const on = yoloModeFor(yolo, repo, repos);
     const here = waiting.filter((j) => jobPullRequestRepo(j)!.toLowerCase() === repo.toLowerCase());
     const tendJobs = here.flatMap((j) => tendJobOf(j, newest) ?? []);
-    const rule = changeRuleFor(yolo.changeKinds, repo);
+    const rule = mergeRuleFor(yolo, repo, repos);
     const cards = here.map((j) => cardOf(j, on, rule, now, tendJobOf(j, newest)))
       .sort((a, b) => (a.openedAt ?? a.since ?? '').localeCompare(b.openedAt ?? b.since ?? '') || a.jobId.localeCompare(b.jobId));
     return { repo, yolo: on, pullRequests: withQueue(cards, here, tendJobs, get) };

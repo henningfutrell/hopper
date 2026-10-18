@@ -1,11 +1,13 @@
 // Yolo mode in the UI (issue #579), pure: the rows the panel lists, its summary, and the change a save sends. The
 // change-kind rules (issue #1076) are edited with it as JSON: the admin's own rules, over the built-in rule. Direct push
-// (issue #1806) too: the repositories where a job may push straight to the target branch, one a line.
+// (issue #1806) too: the repositories where a job may push straight to the target branch, one a line. A repository the
+// hopper does not work on (issue #1806 part 3) merges only when named on: the default covers the job repositories only.
 import type { ChangeKindSettings, MergeGate, YoloModeView } from './wire.ts';
 
 /** A repository's own setting: follow the default (`on`), or on or off for it alone. */
 export type YoloSetting = 'default' | 'on' | 'off';
-export interface YoloRow { repo: string; setting: YoloSetting; merges: boolean }
+/** `outside`: none of the job repositories (issue #1806), so the default does not merge there. */
+export interface YoloRow { repo: string; setting: YoloSetting; merges: boolean; outside?: true }
 export interface YoloDraft { on: boolean; repos: Record<string, YoloSetting> }
 export type YoloPatch = { on?: boolean; repos?: Record<string, boolean | null>; push?: string[] };
 
@@ -13,15 +15,21 @@ export const YOLO_WARNING = 'With yolo mode on, the hopper merges a job\'s pull 
   + 'If the repo has no branch protection, nothing else stops the merge, and a merge to the default branch runs whatever it triggers there — '
   + 'a release, an image build, a deploy. Turn it on only for repos where you accept that. A job is done either way: done is its pull request, ready for review.';
 
+/** Yolo mode on a repository the hopper does not work on (issue #1806): what naming it on allows. */
+export const OUTSIDE_YOLO_WARNING = 'A repository below that is not one of your job repositories merges only when you set it on: the switch above does not reach it. '
+  + 'On, the hopper merges a pull request a job opened there once it is ready, with your GitHub account, and no person reviews it first.';
+
+const isOutside = (v: Pick<YoloModeView, 'choices'>, repo: string): boolean => !v.choices.repos.some((r) => r.toLowerCase() === repo.toLowerCase());
+
 const settingOf = (v: Pick<YoloModeView, 'repos'>, repo: string): YoloSetting => {
   const own = v.repos[repo.toLowerCase()];
   return own === undefined ? 'default' : own ? 'on' : 'off';
 };
 
-/** Whether a repository's jobs merge (issue #737): its own setting, else the default. */
-export const repoMerges = (v: Pick<YoloModeView, 'on' | 'repos'>, repo: string): boolean => {
+/** Whether a repository's jobs merge (issue #737): its own setting, else the default, which covers the job repositories only (issue #1806). */
+export const repoMerges = (v: Pick<YoloModeView, 'on' | 'repos' | 'choices'>, repo: string): boolean => {
   const setting = settingOf(v, repo);
-  return setting === 'default' ? v.on : setting === 'on';
+  return setting === 'default' ? v.on && !isOutside(v, repo) : setting === 'on';
 };
 
 /** Every job repository, then each other repository set apart (a job repository no more), with whether its jobs merge. */
@@ -30,7 +38,7 @@ export function yoloRows(v: YoloModeView): YoloRow[] {
   const repos = [...v.choices.repos, ...Object.keys(v.repos).filter((r) => !listed.has(r)).sort()];
   return repos.map((repo) => {
     const setting = settingOf(v, repo);
-    return { repo, setting, merges: repoMerges(v, repo) };
+    return { repo, setting, merges: repoMerges(v, repo), ...(isOutside(v, repo) ? { outside: true as const } : {}) };
   });
 }
 
@@ -50,6 +58,14 @@ export function yoloPatch(v: YoloModeView, d: YoloDraft): YoloPatch | undefined 
   }
   const p: YoloPatch = { ...(d.on !== v.on ? { on: d.on } : {}), ...(Object.keys(repos).length ? { repos } : {}) };
   return Object.keys(p).length ? p : undefined;
+}
+
+/** The draft with repository `text` added, on (issue #1806): `owner/repo`, lowercased, not listed yet; else why not. */
+export function addYoloRepo(d: YoloDraft, text: string): { ok: true; draft: YoloDraft } | { ok: false; error: string } {
+  const repo = text.trim().toLowerCase();
+  if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) return { ok: false, error: 'name a repository as owner/repo' };
+  if (Object.keys(d.repos).some((r) => r.toLowerCase() === repo)) return { ok: false, error: `${repo} is listed already` };
+  return { ok: true, draft: { ...d, repos: { ...d.repos, [repo]: 'on' } } };
 }
 
 /**

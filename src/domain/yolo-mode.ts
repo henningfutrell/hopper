@@ -8,8 +8,11 @@
 // Direct push (issue #1806) is set with it too: the repositories where a job may push straight to the target branch (its
 // landing branch, else its default branch), as a fast-forward, within the user's own write access. Off unless a person
 // names the repository, whatever `on` says: it is no part of the merge.
+// A repository the hopper does not work on (issue #1806 part 3): a job may open a pull request on any repository its user
+// can push to, and the hopper follows it there. `on` covers the job repositories only: the hopper merges on another
+// repository only when a person named it on (`repos`), and only then by its change rule; else every kind waits for yolo mode.
 
-import { DEFAULT_CHANGE_RULE, type ChangeKindSettings, type ChangeRule } from './change-kinds.ts';
+import { CHANGE_KINDS, changeRuleFor, DEFAULT_CHANGE_RULE, type ChangeKindSettings, type ChangeRule } from './change-kinds.ts';
 
 export interface YoloModeSettings {
   /** Every repository's yolo mode unless `repos` names it. */
@@ -41,9 +44,26 @@ export interface YoloModePatch {
 
 const key = (repo: string): string => repo.toLowerCase();
 
-/** Whether a job on `repo` may merge its own pull request. */
-export function yoloModeFor(s: YoloModeSettings, repo: string): boolean {
-  return s.repos[key(repo)] ?? s.on;
+/**
+ * Whether `repo` is one the hopper does not work on (issue #1806): a GitHub repository (`owner/repo`) that is none of the
+ * user's job repositories. A GitLab project, asked by its URL, never is: a GitLab job works on its own project only.
+ */
+const outside = (repo: string, jobRepos: readonly string[]): boolean =>
+  /^[^/\s]+\/[^/\s]+$/.test(repo) && !jobRepos.some((r) => key(r) === key(repo));
+
+/** Whether a job on `repo` may merge its own pull request: its own setting, else `on`, which covers the job repositories `jobRepos` only (issue #1806). */
+export function yoloModeFor(s: YoloModeSettings, repo: string, jobRepos: readonly string[]): boolean {
+  return s.repos[key(repo)] ?? (s.on && !outside(repo, jobRepos));
+}
+
+/**
+ * The change rule the hopper merges a pull request of `repo` by (issue #1076): the user's. On a repository the hopper does
+ * not work on that a person did not name on (issue #1806), every kind's gate is `yolo`: nothing is merged with no person.
+ */
+export function mergeRuleFor(s: YoloModeSettings, repo: string, jobRepos: readonly string[]): ChangeRule {
+  const rule = changeRuleFor(s.changeKinds, repo);
+  if (!outside(repo, jobRepos) || s.repos[key(repo)] === true) return rule;
+  return { ...rule, merge: Object.fromEntries(CHANGE_KINDS.map((k) => [k, 'yolo'])) as ChangeRule['merge'] };
 }
 
 /** Whether a job on `repo` may push straight to its target branch (issue #1806): only when a person named the repository. */
