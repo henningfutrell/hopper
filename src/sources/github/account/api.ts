@@ -5,7 +5,7 @@
 // (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
 import { GitHubApiError, isPermanent, webOriginOf } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
-import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../http/graphql.ts';
+import { closingPullRequest, crossReferences, issueEdits, issuePlace, linkedItem, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../http/graphql.ts';
 import { batchGraphQL } from '../http/graphql-batch.ts';
 import { listRepos } from '../http/graphql-listing.ts';
 import { taggedItems } from '../http/graphql-tagged.ts';
@@ -62,6 +62,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; installUrl?: string 
     subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, (t) => rest.subIssues(req, t, repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, (t) => rest.listComments(req, t, repo, number)),
     issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, (t) => issueEdits(ask, t, repo, number)),
+    linkedItem: (repo, number) => call(`item ${repo}#${number}`, (t) => linkedItem(ask, t, repo, number)),
     issuePlace: (repo, number) => call(`place of ${repo}#${number}`, (t) => issuePlace(ask, t, repo, number)),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, (t) => projectItems(intake, t, owner, number)),
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, (t) => rest.ensureLabel(req, t, repo, name, color, description)),

@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { ACTION_VIAS } from '../domain/failures.ts';
 import { JOB_ORIGINS, ORIGIN_ROLES } from '../domain/intake-origin.ts';
+import { REPO_VISIBILITIES } from '../domain/linked-pulls.ts';
 import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
 import { TELEMETRY_SIGNALS } from '../domain/telemetry-settings.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
@@ -24,6 +25,9 @@ export const jobSourceRef = strict({
   origin: z.enum(JOB_ORIGINS).optional(),
   // Issue #655 part 14: its origin acts, as read when its origin was judged.
   originActs: z.array(strict({ role: z.enum(ORIGIN_ROLES), login: z.string().optional(), id: z.number().int().optional(), app: z.string().optional(), trusted: z.boolean() })).optional(),
+  // Issue #655 part 19: its repository's visibility and its linked pull requests, as read when its origin was judged.
+  visibility: z.enum(REPO_VISIBILITIES).optional(),
+  linkedPulls: z.array(strict({ url: z.string(), author: z.string().optional(), fork: z.boolean().optional(), trusted: z.boolean(), unread: z.literal(true).optional() })).optional(),
 });
 
 export const jobSpec = strict({

@@ -2,8 +2,9 @@
 // (`hopper job stamp <id>`) say of one job's trust stamp. The stamp as kept, never its MAC; whether it verifies; the
 // intake strictness on the job and whether the stamp holds its start; whether gate 2 approves its requests with no
 // person; whether its proxy token opens the hopper's doors; whether Jev's trust check is due; and the job's origin acts
-// (part 14). Read only. Pure: the key is passed in.
+// (part 14), its repository's visibility and its linked pull requests (part 19). Read only. Pure: the key is passed in.
 import type { OriginActor } from './intake-origin.ts';
+import type { LinkedPullRequest, RepoVisibility } from './linked-pulls.ts';
 import type { Brake } from './intake-strictness.ts';
 import {
   autoApprovable, checkDue, opensDoors, stampHold, verifiedLevel, type TrustLevel, type TrustStamp,
@@ -35,6 +36,10 @@ export interface StampView {
   checkDue: boolean;
   /** Its origin acts (part 14): who wrote, labelled and assigned its item, as read at intake. Null: none kept. */
   originActs: OriginActor[] | null;
+  /** Its repository's visibility (part 19), as read at intake. Null: none kept. */
+  visibility: RepoVisibility | null;
+  /** The pull requests its item's text names (part 19), as read at intake. Null: none kept. */
+  linkedPulls: LinkedPullRequest[] | null;
 }
 
 /** The stamp's fields a person reads, named one by one so no MAC and no later field leaks. */
@@ -57,5 +62,7 @@ export function stampView(key: Buffer | undefined, job: Pick<Job, 'id' | 'spec' 
     doorsOpen: !key || opensDoors(key, job),
     checkDue: key ? checkDue(key, job) : false,
     originActs: job.source?.originActs ?? null,
+    visibility: job.source?.visibility ?? null,
+    linkedPulls: job.source?.linkedPulls ?? null,
   };
 }

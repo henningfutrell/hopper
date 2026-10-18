@@ -33,6 +33,7 @@ const CHECK_REASON: Readonly<Record<string, string>> = {
   destructive: 'it deletes, overwrites or force-pushes',
   out_of_scope: 'it works outside its own repository',
   instructs_agent: 'its text gives instructions to the agent or to Jev',
+  fork_code: 'it brings in a pull request of a fork that no trusted actor wrote',
   unclear: 'what it asks for is not clear',
   no_answer: 'Jev gave no answer',
   not_sure: 'Jev was not sure enough',
@@ -81,4 +82,24 @@ export function originActLines(job: Pick<Job, 'source'>): { text: string; truste
     text: a.login ? `${ROLE_TEXT[a.role]} by ${a.login}${a.app ? ` through ${a.app}` : ''}` : `who ${DID_TEXT[a.role]} it is not known`,
     trusted: a.trusted,
   }));
+}
+
+/** `owner/name#N` of a GitHub pull request or issue URL; the URL itself when it is neither. */
+const nameOf = (url: string): string => /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)$/.exec(url)?.slice(1, 3).join('#') ?? url;
+
+/**
+ * The job's links (part 19) in plain words: its repository's visibility, then each pull request its item's text names —
+ * who wrote it, whether it is of a fork, whether a trusted actor wrote it (src/domain/linked-pulls.ts). `warn`: a pull request
+ * no trusted actor wrote, or one not read. None: the job keeps none.
+ */
+export function linkLines(job: Pick<Job, 'source'>): { text: string; warn: boolean; url?: string }[] {
+  const s = job.source;
+  return [
+    ...(s?.visibility ? [{ text: `${s.visibility} repository`, warn: false }] : []),
+    ...(s?.linkedPulls ?? []).map((p) => ({
+      text: p.unread ? `names ${nameOf(p.url)}, which could not be read`
+        : `names ${nameOf(p.url)}${p.fork ? ', of a fork' : ''}${p.author ? `, by ${p.author}` : ''}${p.trusted ? '' : ' (not a trusted actor)'}`,
+      warn: !p.trusted, url: p.url,
+    })),
+  ];
 }

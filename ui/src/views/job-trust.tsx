@@ -2,11 +2,12 @@
 // job is held, and its proxy token opens no door of the hopper (POST /ui/api/jobs/:id/quarantine) — or Lift quarantine,
 // which gives back the level it had (POST /ui/api/jobs/:id/unquarantine). A job Jev's trust check lowered says why, with
 // Approve trust (POST /ui/api/jobs/:id/approve-trust, part 4); so does a job a person's deny lowered (part 5). Its origin
-// acts (part 14) say who wrote, labelled and assigned its item; one no trusted actor did is marked.
+// acts (part 14) say who wrote, labelled and assigned its item; one no trusted actor did is marked. Its links (part 19) say
+// its repository's visibility and the pull requests its item's text names; one no trusted actor wrote is marked.
 import { ShieldCheck, ShieldOff } from 'lucide-react';
 import { Confirm } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
-import { isQuarantined, originActLines, quarantineOffered, trustApprovalOffered, trustCheckText, trustText } from '@/model/trust';
+import { isQuarantined, linkLines, originActLines, quarantineOffered, trustApprovalOffered, trustCheckText, trustText } from '@/model/trust';
 import type { Job } from '@/model/wire';
 import { act } from '@/store';
 import { useCanOperate } from '@/store/selectors';
@@ -19,6 +20,7 @@ export function JobTrust({ job }: { job: Job }) {
   const quarantined = isQuarantined(job);
   const checked = trustCheckText(job);
   const acts = originActLines(job);
+  const links = linkLines(job);
   return (
     <>
       <div className="flex flex-wrap gap-2 text-xs">
@@ -46,6 +48,18 @@ export function JobTrust({ job }: { job: Job }) {
           <span data-slot="job-origin-acts" className="min-w-0 break-words">
             {acts.map((a, i) => (
               <span key={i} className={a.trusted ? undefined : 'text-warn'}>{i > 0 && ' · '}{a.text}{!a.trusted && ' (not a trusted actor)'}</span>
+            ))}
+          </span>
+        </div>
+      )}
+      {links.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="w-20 shrink-0 text-muted-foreground">links</span>
+          <span data-slot="job-links" className="min-w-0 break-words">
+            {links.map((l, i) => (
+              <span key={i} className={l.warn ? 'text-warn' : undefined}>{i > 0 && ' · '}
+                {l.url ? <a href={l.url} target="_blank" rel="noreferrer" className="underline">{l.text}</a> : l.text}
+              </span>
             ))}
           </span>
         </div>

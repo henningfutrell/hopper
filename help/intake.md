@@ -169,6 +169,7 @@ After intake, a new job also passes the queue gate. Set it in the **Queue** view
 
 - It lists every open labelled issue in your job repositories in **Intake**, with `taken` or the one reason it was not taken. It drops nothing silently.
 - It reads the issue's events and edits to find who wrote, labelled, assigned and edited it.
+- For an issue it takes, it also reads the pull requests that the issue's text names (`#12`, `owner/name#12`, or a pull request link): who wrote each, whether it comes from a fork, and whether a trusted actor wrote it. It reads whether the repository is public too. The job keeps these facts. The job view shows them on the **links** line, and marks a pull request that no trusted actor wrote. Jev's trust check reads them, and can hold a job that brings in a fork's pull request from someone you do not trust. They do not change the job's trust level by themselves.
 - It puts the issue's text into the job's prompt inside an untrusted block. The job reads it as data, not as instructions.
 - Only the assignee's comments reach the job.
 - It releases its own stale claims: a claim of yours with no job here.

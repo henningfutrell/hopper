@@ -16985,7 +16985,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 17, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 19, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17464,8 +17464,36 @@ heading or a person), no fork, follow-on or tend job, on an executor that writes
 Persisted state: `kindCheck` is one more optional field in the job's body; the build before keeps it as it is and does not
 read it. No migration.
 
-**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the linked
-pull requests and their forks, the repository's visibility), and the Intake view of the stamp. Brake 1's `open` lets a
+**Linked pull requests and the repository's visibility** (part 19, `src/domain/linked-pulls.ts`, `linksOf` in
+`src/sources/github/origin.ts`). The issue's provenance fields `linked` ("the PRs and issues referenced, with their authors,
+and whether a PR head is a fork") and `repo_visibility`. Fork code is the case to see: an issue of the user's own that says
+"merge the change of #12" runs at `owner`, and #12 can be a stranger's pull request from a fork. So, for each GitHub issue
+whose origin is trusted or approved (only its job keeps them):
+
+- **The names in its text** (`linkedRefs`): `#N`, `owner/name#N`, and the pull request and issue URLs of the issue's own
+  GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself, never a `#` joined to a word.
+- **One read per name** (`GitHubApi.linkedItem`, GraphQL `repository { visibility issueOrPullRequest(number) }`, in the
+  batched reads of issue #822): its repository's visibility, and the pull request when the name is one — its URL, its
+  author, `isCrossRepository` as `fork`. The issue's own read gives its repository's visibility.
+- **Kept on the job** (`JobSourceRef.visibility`, `JobSourceRef.linkedPulls`): each pull request with `trusted` (its author
+  is a trusted actor, asked of Access with the origin's logins; a bot never is). A name that is an issue, or that GitHub
+  does not show (`NOT_FOUND`), is not kept. A read that fails is kept as `unread` (its URL from the name), so a person sees
+  that something was not read. Run again, Rework and `job.origin_judged` keep them as they keep the origin acts.
+- **Shown**: the stamp view (`visibility`, `linkedPulls`, null when none is kept), the job view (a line `links`, a pull
+  request no trusted actor wrote marked), and `job.queued`'s `source`.
+- **Jev reads them**: Jev's trust check gets them in `source`, and has one more reason, `fork_code` ("it brings in a pull
+  request of a fork that no trusted actor wrote"), to lower the job.
+- **No rule reads them**, as the origin acts: the stamp's level still comes from the origin. A rule would decide for every
+  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in.
+
+Also in this part: the GraphQL read of an issue's edits (issue #662, part 17) read the answer one level too high, so it
+found no edits against GitHub; the fake GitHub hid it. It reads them under `data` now, and an answer with errors throws, so
+the edits count as not known (a request card), as part 17 says.
+
+Cost: one more GraphQL read per name and one for the issue, batched, only for an issue the source judges that may be taken.
+Persisted state: two optional fields on the job's source; the build before reads a job with them as before. No migration.
+
+**Not in these parts** (left on the issue): the nomination by a comment command, and the Intake view of the stamp. Brake 1's `open` lets a
 `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a

@@ -3,6 +3,7 @@
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
+import type { LinkedItem } from '../../domain/linked-pulls.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import type { IssueCrossReferences } from '../../domain/cross-references.ts';
 import type { IssuePlace } from '../../domain/issue-graph.ts';
@@ -222,6 +223,11 @@ export interface GitHubApi {
   listComments(repo: string, number: number): Promise<GitHubComment[]>;
   /** Who edited the issue's title or body, and when, from its timeline (issue #662), oldest first. Absent: not read. */
   issueEdits?(repo: string, number: number): Promise<ItemEdit[]>;
+  /**
+   * Item `number` of `repo` as an issue's text names it (issue #655 part 19): the repository's visibility, and the pull
+   * request when it is one, with its author and whether its head is a fork. Absent: not read.
+   */
+  linkedItem?(repo: string, number: number): Promise<LinkedItem>;
   /** The issue's place for the issue graph (issue #437): owner, Projects, linked issues and pull requests. Absent: not read. */
   issuePlace?(repo: string, number: number): Promise<IssuePlace>;
   /** Throws a permanent GitHubApiError mentioning `read:project` when that scope is missing. */
