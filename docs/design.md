@@ -10733,7 +10733,11 @@ may not assume, with nothing to tell them.
 - **Run again when the credential is set.** The vault's set of a minting credential (`recheckUnminted`,
   `src/vault/checks.ts`, in the set's transaction) drops the failed check of each template with an unminted need minted
   from that account or cluster, and records `template.check_requested` `by` `minting credential <name>`. The next check
-  pass runs it. A credential for another account or cluster changes nothing.
+  pass runs it. A credential for another account or cluster changes nothing, but one for an AWS account runs again a
+  check with an unminted cluster need too, as cluster discovery looks in every account (issue #1845).
+- **Run again in an hour** (issue #1845). What the vault can mint also changes outside the hopper: a cluster made, a
+  trust policy fixed, a new build that looks in more places. A check failed so is due again `CHECK_UNMINTED_MS` (an
+  hour) after it ended (`dueForCheck`), and its wait says so.
 - **The job is told.** A template request for such a template is a 409, not a 202 wait (`requestTemplate`,
   `src/skills/template-request.ts`): it names each unminted need and the vault's reason, and the read needs on the same
   account or cluster that a check of another template passed with, to ask for in its place. `template.checked` asks a
@@ -14865,14 +14869,25 @@ credential is opened and never leave the vault; a system secret is never read as
 Argo CD app of it) with no minting credential of its own is found in the AWS accounts: for a `read` only, in every
 account an `aws-account` minting credential mints for (`mintSourceFor`). In each, the vault mints a read session of the
 account's **read role** `hopper-read` (`EKS_READ_ROLE`; EKS maps it to view access), as for an EKS sign-in, and asks EKS
-`DescribeCluster` with it in the credential's region (`CredentialMinter.eksCluster`, `@aws-sdk/client-eks`). The one
-account that has the cluster signs the EKS token with that session; the cluster's API server and CA are EKS's answer.
-None, or several, mint nothing, and the refusal says where the vault looked. An account STS or EKS refuses is passed
+`DescribeCluster` with it (`CredentialMinter.eksCluster`, `@aws-sdk/client-eks`) in every region the account has
+enabled (issue #1845): EC2 `DescribeRegions` with the same session (`CredentialMinter.awsRegions`, `@aws-sdk/client-ec2`,
+asked in the credential's region; the adapter keeps each account's list 6 hours). When EC2 refuses, the vault looks in
+the credential's region only, and says so. A cluster override's `region`, or a credential that names `EksEndpoint`, is
+the one region looked in. The one place (account and region) that has the cluster signs the EKS token with that
+session; the cluster's API server and CA are EKS's answer. None, or several (two accounts, or two regions of one),
+mint nothing, and the refusal says where the vault looked. An account STS refuses, or a region EKS refuses, is passed
 over. The vault picks no credential of several: an account with several refuses the discovery (issue #1761). A
 credential whose STS is not AWS's (`Endpoint`) asks no EKS unless it names `EksEndpoint`. A cluster's own minting
 credential wins, as before; a write on a cluster needs one, naming the role its write is granted to, or a cluster override (below) that names it. `vault.minted`,
 `vault.check_minted` and the mint test name the AWS minting credential the discovery used. A discovered cluster's
 token binds to no Secret (an EKS token cannot). The vault's container takes a discovery in its `mint` op (`discover`).
+
+**An EKS minting credential whose kubeconfig is gone** (issue #1845). An `eks` minting credential for a cluster that
+names a `kubeconfig` vault secret the vault no longer holds is passed over (`mintPassingOver`, `src/vault/mint.ts`, at
+every mint: a job's, a check's, a need step's, topology discovery's and the mint test): the vault mints from where
+`mintSourceFor` says with that credential left out — cluster discovery, for a read —, and the answer's `warning` says
+which credential it passed over and to fix or remove it. When that mints nothing either, the refusal gives both
+reasons. Any other refusal of a cluster's own minting credential stays a refusal: the credential still wins.
 
 **Cluster overrides** (issue #1766 part 2: config, not a vault secret, since a cluster holds no secret;
 `src/domain/clusters.ts`, `src/vault/clusters.ts`). The user's config record `clusters` (`{ "clusters": [...] }`, at
@@ -14918,7 +14933,9 @@ which namespaces it lists (`kubectl get ns`), with the token, where the minting 
 (`CredentialMinter.kubeIdentity`). The answer is the API server, the cluster's `user` (`username`, `groups`) and its
 `namespaces`, and for EKS sign-in the role, its `account` and the session name; never the token. The cluster's refusal is the answer
 (422), with its reason. An answer has `kind`: `aws` or `kube`. A discovered cluster (issue #1766) is tested the same
-way: `credential` is the AWS minting credential it was found with, `roleArn` its account's `hopper-read`.
+way: `credential` is the AWS minting credential it was found with, `roleArn` its account's `hopper-read`, `region` the
+region EKS has it in, and `searched` the regions the vault looked in, by account (issue #1845). `warning`: the cluster's
+own minting credential the vault passed over, as its kubeconfig is gone.
 
 **What is minted** for an operation profile (`mintTarget`, pure):
 

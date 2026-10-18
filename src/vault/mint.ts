@@ -6,7 +6,8 @@
 // timeline. The audit (`vault.minted`) carries Access's decision id beside each mint. The minting credential is opened
 // (or read in its vault backend) in memory, for the one call, and never leaves the hopper.
 import type { Clock, UserStore } from '../domain/ports.ts';
-import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type OperationProfile, type VaultAccess } from '../domain/access.ts';
+import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type Operation, type OperationProfile, type VaultAccess } from '../domain/access.ts';
+import type { ClusterOverride } from '../domain/clusters.ts';
 import { expiryOf, mintTarget, profileInWords, type CallerIdentity, type ClusterIdentity, type Minted, type MintKind, type MintReach, type MintTarget } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
 import { awsRegionOf, awsSessionName, mintingCredentialOf } from '../domain/minting.ts';
@@ -31,11 +32,17 @@ export interface MintAsk { mint: MintKind; operation: string; asset: string; pla
  * (issue #1766) a cluster to find in the AWS accounts: `credential` and `account` then say which minting credential and
  * account it was found with. Never says the minting credential's value.
  */
-export type MintFrom = (from: string | ClusterDiscovery, target: MintTarget, jobId: string, identify?: boolean) => Promise<MintedFrom | { refused: string }>;
+export type MintFrom = (from: string | ClusterDiscovery, target: MintTarget, jobId: string, identify?: boolean) => Promise<MintedFrom | MintRefused>;
+/** Why a mint gave nothing. `kubeconfigGone` (issue #1845): the source was an EKS minting credential whose kubeconfig secret is gone. */
+export interface MintRefused { refused: string; kubeconfigGone?: true }
 export interface MintedFrom {
   minted: Minted; reach: MintReach; roleArn?: string; sessionName?: string; identity?: CallerIdentity; cluster?: ClusterIdentity;
   /** The AWS minting credential and account a discovered cluster's token was signed with (issue #1766). */
   credential?: string; account?: string;
+  /** A discovered cluster (issue #1845): the region EKS has it in, and the regions the vault looked in, by account. */
+  region?: string; searched?: { account: string; regions: string[] }[];
+  /** Why the mint came from somewhere else than the cluster's own minting credential (issue #1845, `mintPassingOver`). */
+  warning?: string;
   /** The Secret the token is bound to (issue #1371), when the target asked for one (`bindTo`) and the credential could: a `token` one, not EKS. */
   bound?: { namespace: string; secret: string };
 }
@@ -66,6 +73,30 @@ export const fromOf = (s: MintSource<{ name: string }>): string | ClusterDiscove
 
 /** The minting credential a mint used, for its record: the source's own, else the AWS one a discovery found it with. */
 export const usedOf = (s: MintSource<{ name: string }>, made: Pick<MintedFrom, 'credential'>): string => ('credential' in s ? s.credential.name : made.credential ?? '');
+
+/**
+ * Mints for `target` from `source` (issue #1845). When that is an EKS minting credential whose kubeconfig secret is gone,
+ * the vault passes over it: it mints from where `again` says with that credential left out — the cluster found in the
+ * AWS accounts —, and `warning` says so. A refusal then says both reasons. Answers the source the mint came from.
+ */
+export async function mintPassingOver<S extends { name: string }>(
+  from: MintFrom, source: MintSource<S>, again: (skip: string) => MintSource<S> | string, target: MintTarget, jobId: string, identify?: boolean,
+): Promise<{ source: MintSource<S>; made: MintedFrom | { refused: string } }> {
+  const made = await from(fromOf(source), target, jobId, identify);
+  if (!('refused' in made) || !made.kubeconfigGone || !('credential' in source)) return { source, made };
+  const skip = source.credential.name;
+  const other = again(skip);
+  const passed = (why: string) => ({ source, made: { refused: `${made.refused}; passed over it: ${why}` } });
+  if (typeof other === 'string') return passed(other);
+  const second = await from(fromOf(other), target, jobId, identify);
+  if ('refused' in second) return passed(second.refused);
+  const warning = `${made.refused}. The vault passed over it and found the cluster in the AWS accounts: fix or remove ${skip} on Settings → Vault`;
+  return { source: other, made: { ...second, warning } };
+}
+
+/** The sources `mintPassingOver` mints from in place of a minting credential it passes over: as `mintSourceFor`, without it. */
+export const sourceWithout = <S extends { name: string; mints?: Asset }>(secrets: readonly S[], target: MintTarget, operation: Operation, clusters: readonly ClusterOverride[]) =>
+  (skip: string): MintSource<S> | string => mintSourceFor(secrets.filter((s) => s.name !== skip), target, operation, clusters);
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;
 
@@ -118,9 +149,10 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     if (planNo) return refuse(planNo, decision);
     const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
 
-    const source = mintSourceFor(vault.list(), target, profile.operation, readClusters(o.store.config));
-    if (typeof source === 'string') return refuse(source, decision);
-    const made = await from(fromOf(source), target, job.id);
+    const clusters = readClusters(o.store.config);
+    const found = mintSourceFor(vault.list(), target, profile.operation, clusters);
+    if (typeof found === 'string') return refuse(found, decision);
+    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, profile.operation, clusters), target, job.id);
     if ('refused' in made) return refuse(made.refused, decision);
     const used = usedOf(source, made);
     const out = made.minted;

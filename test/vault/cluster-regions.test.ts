@@ -71,7 +71,7 @@ describe('a discovery in every region (issue #1845)', () => {
     const f = fakeMinter({ [UAT]: ['us-east-1', 'us-east-2'], [PROD]: ['us-east-1', 'us-east-2'] }, { [UAT]: ['us-east-2'] });
     const made = await fromHere(f, two)(discovery, clusterTarget('uat-eks'), 'job-1');
     expect(f.listed).toEqual([`${UAT} us-east-1`, `${PROD} us-east-1`]);
-    expect(f.described.sort()).toEqual([`${PROD} us-east-1 uat-eks`, `${PROD} us-east-2 uat-eks`, `${UAT} us-east-1 uat-eks`, `${UAT} us-east-2 uat-eks`]);
+    expect(f.described.sort()).toEqual([`${UAT} us-east-1 uat-eks`, `${UAT} us-east-2 uat-eks`, `${PROD} us-east-1 uat-eks`, `${PROD} us-east-2 uat-eks`]);
     expect(made).toMatchObject({
       credential: 'MINTER_UAT', account: UAT, region: 'us-east-2', roleArn: `arn:aws:iam::${UAT}:role/hopper-read`,
       searched: [{ account: UAT, regions: ['us-east-1', 'us-east-2'] }, { account: PROD, regions: ['us-east-1', 'us-east-2'] }],

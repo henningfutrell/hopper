@@ -86,6 +86,7 @@ describe('cluster overrides (issue #1766)', () => {
     expect(JSON.parse(r.out)).toEqual({
       kind: 'kube', asset: { kind: 'cluster', name: 'lab-view' }, credential: 'AWS_LAB', server: kube.url, expiresAt: expect.any(String),
       roleArn: `arn:aws:iam::${ACCOUNT}:role/hopper-read`, account: ACCOUNT, sessionName: 'p2zapwin', user: KUBE_USER, namespaces: KUBE_NAMESPACES,
+      region: 'eu-west-1', searched: [{ account: ACCOUNT, regions: ['eu-west-1'] }],
     });
     expect(sts.seen).toHaveLength(1);
     expect(new URLSearchParams(sts.seen[0]!.body).get('RoleArn')).toBe(`arn:aws:iam::${ACCOUNT}:role/hopper-read`);

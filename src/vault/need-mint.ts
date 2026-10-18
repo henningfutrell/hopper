@@ -12,7 +12,7 @@ import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '
 import { mintSourceFor } from '../domain/cluster-discovery.ts';
 import { readClusters } from './clusters.ts';
 import { AT_WORK } from './box.ts';
-import { fromOf, principalOf, usedOf, type MintFrom, type MintingOptions } from './mint.ts';
+import { mintPassingOver, principalOf, sourceWithout, usedOf, type MintFrom, type MintingOptions } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
 import { appliesRefusal } from '../domain/infra-plans.ts';
 
@@ -55,12 +55,13 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       // No change without a plan (issue #870): every operation but read changes infrastructure.
       const planNo = o.plans ? await o.plans.gate(profile, plan) : profile.operation === 'read' ? undefined : 'no apply without a plan: this hopper keeps no plans';
       if (planNo) return refuse(planNo, decision.id);
-      const source = mintSourceFor(vault.list(), target, profile.operation, readClusters(store.config));
-      if (typeof source === 'string') return refuse(source, decision.id);
+      const clusters = readClusters(store.config);
+      const found = mintSourceFor(vault.list(), target, profile.operation, clusters);
+      if (typeof found === 'string') return refuse(found, decision.id);
       // Held and recorded before the minter makes the Secret (issue #1628): the step's end releases it, whatever the
       // outcome, and a hopper that stops meanwhile leaves it to the reconcile pass. A discovered cluster's EKS token binds to nothing.
-      if (target.kind === 'kube' && target.bindTo && 'credential' in source) o.bindings?.named(step, { credential: source.credential.name, namespace: target.namespace, secret: target.bindTo }, job);
-      const made = await from(fromOf(source), target, job);
+      if (target.kind === 'kube' && target.bindTo && 'credential' in found) o.bindings?.named(step, { credential: found.credential.name, namespace: target.namespace, secret: target.bindTo }, job);
+      const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, profile.operation, clusters), target, job);
       if ('refused' in made) return refuse(made.refused, decision.id);
       // The minting credential's own service took a while: the job must still be at work.
       if (!atWork()) return refuse('the job is not at work: the vault mints for a step only while its job runs', decision.id);

@@ -204,6 +204,12 @@ export interface CredentialMinter {
    * server and CA. Undefined when the session's account has no cluster of that name. `endpoint`: an EKS other than AWS's.
    */
   eksCluster(session: Extract<Minted, { kind: 'aws' }>, r: { cluster: string; region: string; endpoint?: string }): Promise<EksCluster | undefined>;
+  /**
+   * The regions the session's account `account` has enabled, as EC2 in `region` lists them to `session` (issue #1845,
+   * `DescribeRegions`): where a discovery looks for a cluster. Kept for the account a while, as they seldom change.
+   * `endpoint`: an EC2 other than AWS's.
+   */
+  awsRegions(session: Extract<Minted, { kind: 'aws' }>, r: { account: string; region: string; endpoint?: string }): Promise<string[]>;
   /** Who the cluster says `token` is (a SelfSubjectReview: `kubectl auth whoami`), and the namespaces it lists with it (issue #854). */
   kubeIdentity(reach: Extract<MintReach, { kind: 'kube' }>, token: string): Promise<ClusterIdentity>;
   /** Who STS says the minted session is (`GetCallerIdentity`), asked at the credential's STS with the session's keys (issue #781). */
@@ -229,11 +235,16 @@ export interface ClusterIdentity { user: { username: string; groups: string[] };
  * What a mint test answers. AWS: the role, what was asked of STS, and who STS says the session is. A cluster (issue
  * #854): its API server, who it says the token is and its namespaces; for EKS sign-in, the role, its account and the
  * session name. `credential` (issue #1766): the minting credential the test used, the AWS one for a discovered cluster.
+ * `region`, `searched` and `warning` (issue #1845): where a discovered cluster is, where the vault looked, and why.
  * Never a key or a token.
  */
 export type MintTestResult =
   | { kind: 'aws'; asset: Asset; credential: string; roleArn: string; sessionName: string; durationSeconds: number; policyArns: string[]; expiresAt: string; identity: CallerIdentity }
-  | ({ kind: 'kube'; asset: Asset; credential: string; server: string; expiresAt: string; roleArn?: string; account?: string; sessionName?: string } & ClusterIdentity);
+  | ({
+    kind: 'kube'; asset: Asset; credential: string; server: string; expiresAt: string; roleArn?: string; account?: string; sessionName?: string;
+    /** A discovered cluster (issue #1845): the region EKS has it in, where the vault looked, and why it passed over the cluster's own credential. */
+    region?: string; searched?: { account: string; regions: string[] }[]; warning?: string;
+  } & ClusterIdentity);
 
 /** The minting credential's value read as `kind` wants it, or why it cannot be. Never says the value. */
 export function mintingCredentialOf(kind: 'aws', value: string): AwsMintingCredential | string;

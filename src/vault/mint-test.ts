@@ -13,7 +13,7 @@ import type { Asset } from '../domain/access.ts';
 import { MINT_TEST_ID, expiryOf, mintTarget, roleAccountOf, type MintTarget, type MintTestResult } from '../domain/minting.ts';
 import { mintSourceFor } from '../domain/cluster-discovery.ts';
 import { readClusters } from './clusters.ts';
-import { assetOf, fromOf, usedOf, type MintedFrom, type MintFrom } from './mint.ts';
+import { assetOf, mintPassingOver, sourceWithout, usedOf, type MintedFrom, type MintFrom } from './mint.ts';
 
 /** A mint test's answer: what STS said, or why there is none — a bad ask, no minting credential, or STS refused. */
 export type MintTestAnswer = { tested: MintTestResult } | { refused: string; code: 'invalid' | 'not_found' | 'failed' };
@@ -31,9 +31,11 @@ export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events' | 
     if (asset.kind !== 'aws-role' && asset.kind !== 'cluster') return refuse('invalid', `${takes}, not ${asset.kind}/${asset.name}`);
     const target = mintTarget(asset.kind === 'cluster' ? 'kube' : 'aws', { operation: 'read', asset });
     if (typeof target === 'string') return refuse('invalid', target);
-    const source = mintSourceFor(vault.list(), target, 'read', readClusters(o.store.config));
-    if (typeof source === 'string') return refuse(source.startsWith('no ') ? 'not_found' : 'invalid', source);
-    const made = await from(fromOf(source), target, MINT_TEST_ID, true);
+    const clusters = readClusters(o.store.config);
+    const found = mintSourceFor(vault.list(), target, 'read', clusters);
+    if (typeof found === 'string') return refuse(found.startsWith('no ') ? 'not_found' : 'invalid', found);
+    // Issue #1845: a cluster's EKS minting credential whose kubeconfig is gone is passed over, and the answer warns of it.
+    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, 'read', clusters), target, MINT_TEST_ID, true);
     // The answer names the secret the test used (issue #1761), as a tested answer does; a discovery names its accounts.
     const own = 'credential' in source ? source.credential.name : undefined;
     if ('refused' in made) return refuse('failed', own ? `the mint test used ${own}: ${made.refused}` : made.refused, own);
@@ -59,5 +61,6 @@ function testedOf(made: MintedFrom, asset: Asset, credential: string, target: Mi
   }
   if (!made.cluster || made.reach.kind !== 'kube') return undefined;
   const via = made.roleArn && made.sessionName ? { roleArn: made.roleArn, account: made.account ?? roleAccountOf(made.roleArn), sessionName: made.sessionName } : {};
-  return { kind: 'kube', asset, credential, server: made.reach.server, expiresAt, ...via, ...made.cluster };
+  const found = { ...(made.region ? { region: made.region } : {}), ...(made.searched ? { searched: made.searched } : {}), ...(made.warning ? { warning: made.warning } : {}) };
+  return { kind: 'kube', asset, credential, server: made.reach.server, expiresAt, ...via, ...found, ...made.cluster };
 }
