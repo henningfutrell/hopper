@@ -5,6 +5,7 @@
 // same idempotency key (`stepKey`): its receiver must do it once. Every pass takes the sagas due (start, then each
 // PASS_MS), so a saga a stopped hopper left goes on without anyone asking.
 import { compensate, nextOf, newSaga, stepCompensated, stepDone, stepKey, tryFailed, tryStarts, type Saga, type SagaRepository } from '../domain/sagas.ts';
+import { killPoint, sagaKillPoint } from './kill-points.ts';
 
 /** What a step's do and compensation get. */
 export interface SagaStepContext {
@@ -112,6 +113,7 @@ export function createSagaCoordinator(o: SagaCoordinatorOptions): SagaCoordinato
       const step = def.steps.find((t) => t.name === next.step);
       s = tryStarts(s, next.step, now());
       if (!o.repo.save(s, o.owner)) return lost(s);
+      killPoint(sagaKillPoint(s.kind, next.step, next.act === 'do' ? 'before-do' : 'before-compensate'));
       const ac = new AbortController();
       held.step = ac;
       // The lease is renewed while the step runs; lost, the step is told to end.
@@ -122,10 +124,12 @@ export function createSagaCoordinator(o: SagaCoordinatorOptions): SagaCoordinato
       }, renewMs);
       renew.unref();
       const c: SagaStepContext = { saga: s, key: stepKey(s, next.step), data: s.data, signal: ac.signal };
+      let answered = false;
       try {
         if (!step) throw new Error(`no step ${next.step} in saga kind ${s.kind}`);
         if (next.act === 'do') s = stepDone(s, next.step, (await untilAborted(step.do(c), ac.signal)) ?? undefined, now());
         else { await untilAborted(step.compensate?.(c) ?? Promise.resolve(), ac.signal); s = stepCompensated(s, next.step, now()); }
+        answered = true;
       } catch (e) {
         // A stop is no failure: the try was counted, and the next host runs it again with the same key.
         if (stopping) { clearInterval(renew); o.repo.release(id, o.owner); return s; }
@@ -138,6 +142,8 @@ export function createSagaCoordinator(o: SagaCoordinatorOptions): SagaCoordinato
       // An abort asked while the step ran is read before the next one.
       const abort = o.repo.get(id)?.abort;
       if (abort) s = { ...s, abort };
+      // The step's effect is made and not yet recorded: a crash here runs it again, with the same key, on the next host.
+      if (answered) killPoint(sagaKillPoint(s.kind, next.step, next.act === 'do' ? 'after-do' : 'after-compensate'));
       if (!o.repo.save(s, o.owner)) return lost(s);
     }
   };
