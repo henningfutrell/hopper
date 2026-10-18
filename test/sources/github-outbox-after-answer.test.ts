@@ -115,7 +115,7 @@ describe('the give-backs after the answer in the GitHub outbox (issue #1238 part
     await sent();
     expect(world.jobs.size).toBe(2);
     const [row] = rows.of('fake', 'k1');
-    rows.update([row!.id], { state: 'pending', sentAt: undefined });
+    rows.update([row!.id], { state: 'sending', sentAt: undefined, nextAt: row!.createdAt }); // left sending, its claim ended (issue #1959)
     // Its check now refuses: the record already ran again.
     refused.set('rec-1', 'failure rec-1 cannot run again: it already ran again');
     await restart();

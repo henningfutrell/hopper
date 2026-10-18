@@ -1,5 +1,7 @@
 // The GitHub outbox (issue #1238, tenant migration 62, design.md "GitHub outbox"): one row per GitHub change a person's
 // action asked for, the row as JSON, with the columns read by — its source, state and when it is due. Sent rows are pruned.
+// A send claims its rows in one statement (issue #1959): `sending` with its claim's end as `next_at`, so a second hopper on
+// the database takes none of them until the claim ends.
 import type { GitHubOutboxRepository, OutboxInput, OutboxRow } from '../domain/github-outbox.ts';
 import { parse, type StoreContext } from './context.ts';
 
@@ -34,7 +36,11 @@ export function createGitHubOutboxRepository(c: StoreContext): GitHubOutboxRepos
     },
     open: (source) => c.db.all("SELECT id, body FROM github_outbox WHERE source = ? AND state <> 'sent' ORDER BY id", source).map(rowOf),
     of: (source, key) => c.db.all('SELECT id, body FROM github_outbox WHERE source = ? ORDER BY id', source).map(rowOf).filter((r) => r.key === key),
-    due: (source, at) => c.db.all("SELECT id, body FROM github_outbox WHERE source = ? AND state = 'pending' AND next_at <= ? ORDER BY id", source, at).map(rowOf),
+    // One UPDATE: Postgres checks the state and `next_at` of a row another send claimed meanwhile again, so it is skipped.
+    claim: (source, at, until) => c.db.all(
+      `UPDATE github_outbox SET state = 'sending', next_at = ?, body = jsonb_set(jsonb_set(body::jsonb, '{state}', '"sending"'), '{nextAt}', to_jsonb(?::text))::text
+       WHERE source = ? AND state IN ('pending', 'sending') AND next_at <= ? RETURNING id, body`, until, until, source, at,
+    ).map(rowOf).sort((a, b) => a.id - b.id),
     update(ids, patch) {
       c.tx(() => {
         for (const id of ids) {
@@ -44,13 +50,6 @@ export function createGitHubOutboxRepository(c: StoreContext): GitHubOutboxRepos
           if ('lastError' in patch && patch.lastError === undefined) delete next.lastError;
           write(next);
         }
-      });
-    },
-    recover(source) {
-      return c.tx(() => {
-        const rows = c.db.all("SELECT id, body FROM github_outbox WHERE source = ? AND state = 'sending'", source).map(rowOf);
-        for (const r of rows) write({ ...r, state: 'pending' });
-        return rows.length;
       });
     },
     prune: (before) => c.db.run("DELETE FROM github_outbox WHERE state = 'sent' AND sent_at < ?", before).changes,

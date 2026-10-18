@@ -99,7 +99,7 @@ describe('a give-back row sent by the sync loop (issue #1238 part 4)', () => {
     expect(world.jobs.size).toBe(2);
     // The process stopped before the row was marked sent: it is sent again after the start.
     const [row] = rows.of('fake', 'k1');
-    rows.update([row!.id], { state: 'pending', sentAt: undefined });
+    rows.update([row!.id], { state: 'sending', sentAt: undefined, nextAt: row!.createdAt }); // left sending, its claim ended (issue #1959)
     await restart();
     await sent();
     expect(world.jobs.size).toBe(2);

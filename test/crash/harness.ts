@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { expect } from 'vitest';
 import { openDb } from '../../src/store/db.ts';
 import { rawRequest } from '../support/http.ts';
 
@@ -39,8 +40,10 @@ export interface HostOptions {
   dbPath: string;
   /** The database's URL, maybe through a proxy (support/stalling-proxy.ts). */
   databaseUrl: string;
-  /** The providers' fakes. */
-  fakes: { cloudflare: string; ngrok: string };
+  /** The providers' fakes; `github`, the node:http fake GitHub (issue #1959). */
+  fakes: { cloudflare?: string; ngrok?: string; github?: string };
+  /** The job repositories to connect the GitHub account with, at this host's start (the first host of a test). */
+  connectGitHub?: string[];
   /** The kill point to end this host at. */
   killPoint?: string;
 }
@@ -54,7 +57,9 @@ export function startHost(o: HostOptions): Promise<CrashHost> {
     env: {
       ...process.env, CRASH_DB_PATH: o.dbPath, HOPPER_DATABASE_URL: o.databaseUrl,
       HOPPER_WORK_DIR: mkdtempSync(join(tmpdir(), 'crash-host-')),
-      CRASH_CLOUDFLARE_URL: o.fakes.cloudflare, CRASH_NGROK_URL: o.fakes.ngrok, CRASH_MASTER_KEY: MASTER_KEY,
+      CRASH_MASTER_KEY: MASTER_KEY,
+      ...(o.fakes.cloudflare ? { CRASH_CLOUDFLARE_URL: o.fakes.cloudflare } : {}), ...(o.fakes.ngrok ? { CRASH_NGROK_URL: o.fakes.ngrok } : {}),
+      ...(o.fakes.github ? { CRASH_GITHUB_URL: o.fakes.github } : {}), ...(o.connectGitHub ? { CRASH_GITHUB_CONNECT: o.connectGitHub.join(',') } : {}),
       ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -106,6 +111,13 @@ export async function stopHosts(): Promise<void> {
 export function endLeases(databaseUrl: string): void {
   const db = openDb(databaseUrl);
   try { db.run("UPDATE sagas SET lease_until = '1970-01-01T00:00:00.000Z' WHERE lease_owner IS NOT NULL"); } finally { db.close(); }
+}
+
+/** The host was ended by SIGKILL at `point`. */
+export async function killedAt(h: CrashHost, point: string): Promise<void> {
+  const e = await h.exited;
+  expect(e.signal, h.stderr()).toBe('SIGKILL');
+  expect(h.stderr()).toContain(`hopper: kill point ${point}`);
 }
 
 /** A seeded pick (mulberry32): the same seed picks the same kill points, so a failure is reproduced by its seed. */

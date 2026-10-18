@@ -600,8 +600,10 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, P
    * `acts.pullRequest`; it answers the act on its way. `giveBackAct`: a person's act that gives an ended job's item back
    * (Run again and Rework, part 4; Retry, Continue, I fixed it, Push it and Tend again, part 5, with what names their run), a
    * row sent through `acts.giveBack`; it answers the give-back on its way. Either answers undefined when the job names no repository.
+   * `releaseOutbox`, at the sync loop's stop (issue #1959): the send under way makes no more calls, and the rows it claimed
+   * and did not send are due again at once, so the next start sends them without waiting for their claim to end.
    */
-  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>; flushOutbox?(acts?: OutboxActs): Promise<{ due: number; wrote: string[] }>; pullRequestAct?(job: Job, act: PullRequestAct, acting: ActingPerson): PullRequestAct | undefined; giveBackAct?(job: Job, act: OutboxGiveBack, acting?: ActingPerson, more?: OutboxGiveBackMore): OutboxGiveBack | undefined;
+  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>; flushOutbox?(acts?: OutboxActs): Promise<{ due: number; wrote: string[] }>; releaseOutbox?(): void; pullRequestAct?(job: Job, act: PullRequestAct, acting: ActingPerson): PullRequestAct | undefined; giveBackAct?(job: Job, act: OutboxGiveBack, acting?: ActingPerson, more?: OutboxGiveBackMore): OutboxGiveBack | undefined;
 }
 
 /**

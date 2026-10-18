@@ -252,6 +252,7 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
     },
     // Unconnected, the outbox waits (issue #1238): its rows stay pending until a connection sends them.
     flushOutbox: (acts) => current()?.flushOutbox?.(acts) ?? Promise.resolve({ due: 0, wrote: [] }),
+    releaseOutbox: () => current()?.releaseOutbox?.(),
     pullRequestAct: (job, act, acting) => current()?.pullRequestAct?.(job, act, acting),
     giveBackAct: (job, act, acting, more) => current()?.giveBackAct?.(job, act, acting, more),
   };

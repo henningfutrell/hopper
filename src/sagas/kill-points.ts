@@ -1,4 +1,4 @@
-// Kill points (issue #1954, design.md "The crash harness"): named places where the crash harness's test ends this
+// Kill points (issues #1954, #1959, design.md "The crash harness"): named places — a saga step's, a GitHub outbox call's — where the crash harness's test ends this
 // process with SIGKILL, as a crash or a pulled plug does — no stop, no finally, no release of a lease. Off in every
 // deploy: a point is armed only in a test run (HOPPER_TEST_RUN, which only the test suite's setup sets) that names it
 // (HOPPER_TEST_KILL_POINT, `<name>` or `<name>#<n>` for its nth pass). Anything else passes each point and goes on.
