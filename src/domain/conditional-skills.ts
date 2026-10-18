@@ -11,7 +11,7 @@ import { WORK_KINDS, type WorkKind } from './skill-library.ts';
 /** A skill rule: the library skill a job gets when each condition it names matches (one of its values each). */
 export interface SkillRule {
   skill: string;
-  /** `owner/name`, lowercased. */
+  /** `owner/name`, or a GitLab project's whole path (`group/subgroup/name`, issue #1924 part 4), lowercased. */
   repos?: string[];
   /** A label of the job's item, any case. */
   labels?: string[];
@@ -27,7 +27,7 @@ export interface SkillRule {
 export interface RuleSignals { repo?: string | undefined; labels?: readonly string[] | undefined; kind: WorkKind }
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const REPO = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/;
 
 /** Why `rule` cannot be a skill rule, or undefined. */
 export function skillRuleProblem(rule: SkillRule): string | undefined {
@@ -37,7 +37,7 @@ export function skillRuleProblem(rule: SkillRule): string | undefined {
   if (lists.some((l) => l !== undefined && (!Array.isArray(l) || !l.every((v) => typeof v === 'string' && v !== '')))) return `skill rule ${rule.skill}: each condition is a list of words`;
   if (!lists.some((l) => l !== undefined && l.length > 0)) return `skill rule ${rule.skill}: name at least one condition (repos, labels, kinds, paths)`;
   const repo = rule.repos?.find((r) => !REPO.test(r));
-  if (repo !== undefined) return `skill rule ${rule.skill}: ${JSON.stringify(repo)} is no repository: write owner/name`;
+  if (repo !== undefined) return `skill rule ${rule.skill}: ${JSON.stringify(repo)} is no repository: write owner/name, or a GitLab project's group/name`;
   const kind = rule.kinds?.find((k) => !(WORK_KINDS as readonly string[]).includes(k));
   if (kind !== undefined) return `skill rule ${rule.skill}: ${JSON.stringify(kind)} is no kind of work (${WORK_KINDS.join(', ')})`;
   const path = rule.paths?.find((p) => p.startsWith('/') || p.split('/').includes('..'));
@@ -289,8 +289,11 @@ export function conditionalSkillsCredentials(chosen: readonly ConditionalSkillCh
   return { files: out, paths: { [CONDITIONAL_SKILLS_VARIABLE]: INDEX } };
 }
 
-/** The text of a done-check miss by a conditional skill's done criteria (issue #1924, src/sources/github/done-criteria.ts). */
-export const DONE_CRITERIA_UNMET_TEXT = /^not complete:.*\bPR #\d+: done criteria of skill [a-z0-9-]+ not (met|known)/i;
+/**
+ * The text of a done-check miss by a conditional skill's done criteria (issue #1924, src/sources/github/done-criteria.ts): on a
+ * pull request, `PR #N`, or a GitLab merge request, `MR !N` (part 4, src/gitlab/done-criteria.ts).
+ */
+export const DONE_CRITERIA_UNMET_TEXT = /^not complete:.*(?:\bPR #|\bMR !)\d+: done criteria of skill [a-z0-9-]+ not (met|known)/i;
 
 /** What a job sent back for its unmet done criteria is told (issue #1924): what the hopper found, and to fix it on its branch. */
 export function doneCriteriaBrief(error: string, resumes: boolean): string {

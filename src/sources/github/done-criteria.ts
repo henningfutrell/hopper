@@ -32,7 +32,7 @@ export async function doneCriteriaMiss(api: GitHubApi, job: Job, criteria: JobDo
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (!own) return undefined;
   const pr = numberOf(own.url);
-  return missText(url ?? `${repo}#${number}`, pr, await unmetOn(api, repo, pr, all, allowedDeletes?.(job.id) ?? [], own));
+  return missText(url ?? `${repo}#${number}`, `PR #${pr}`, await unmetOn(api, repo, pr, all, allowedDeletes?.(job.id) ?? [], own));
 }
 
 /**
@@ -46,17 +46,26 @@ export async function partCriteriaMiss(api: GitHubApi, job: Job, criteria: JobDo
   if (all.length === 0 || !repo || !number) return undefined;
   const part = await partPullRequest(api, job);
   if (part?.state !== 'open') return undefined;
-  return missText(url ?? `${repo}#${number}`, numberOf(part.url), await unmetOn(api, repo, numberOf(part.url), all, allowedDeletes?.(job.id) ?? []));
+  return missText(url ?? `${repo}#${number}`, `PR #${numberOf(part.url)}`, await unmetOn(api, repo, numberOf(part.url), all, allowedDeletes?.(job.id) ?? []));
 }
 
-/** The done check's words for `unmet` on pull request `pr` of issue `issue`; undefined: met. */
-function missText(issue: string, pr: number, unmet: Unmet): string | undefined {
+/** The done check's words for `unmet` on `change` (`PR #4`, a GitLab merge request `MR !4`) of issue `issue`; undefined: met. */
+export function missText(issue: string, change: string, unmet: Unmet): string | undefined {
   if (unmet === 'none') return undefined;
-  if (unmet.known === false) return `the issue ${issue} is open, and PR #${pr}: done criteria of skill ${unmet.skills.join(', ')} not known: its checks cannot be read`;
-  return unmet.misses.length > 0 ? `the issue ${issue} is open, and ${unmet.misses.map((m) => `PR #${pr}: done criteria of skill ${m.skill} not met: ${m.why}`).join(', and ')}` : undefined;
+  if (unmet.known === false) return `the issue ${issue} is open, and ${change}: done criteria of skill ${unmet.skills.join(', ')} not known: its checks cannot be read`;
+  return unmet.misses.length > 0 ? `the issue ${issue} is open, and ${unmet.misses.map((m) => `${change}: done criteria of skill ${m.skill} not met: ${m.why}`).join(', and ')}` : undefined;
 }
 
-type Unmet = 'none' | { known: false; skills: string[] } | { known: true; misses: { skill: string; why: string }[]; holds: { skill: string; why: string }[] };
+/** Why the hopper does not merge it itself, by `unmet`: each miss and each merge hold; undefined: none. */
+export function holdText(unmet: Unmet): string | undefined {
+  if (unmet === 'none') return undefined;
+  if (unmet.known === false) return `done criteria of skill ${unmet.skills.join(', ')} not known: its checks cannot be read`;
+  const why = [...unmet.misses.map((m) => `done criteria of skill ${m.skill} not met: ${m.why}`), ...unmet.holds.map((h) => `done criteria of skill ${h.skill}: ${h.why}`)];
+  return why.length > 0 ? why.join('; and ') : undefined;
+}
+
+/** The done criteria on one pull request or merge request: none apply, not known, or each skill's misses and merge holds. */
+export type Unmet = 'none' | { known: false; skills: string[] } | { known: true; misses: { skill: string; why: string }[]; holds: { skill: string; why: string }[] };
 
 /**
  * The done criteria of `all` on pull request `pr` of `repo` now: 'none', when no skill applies to the files it changes; not
@@ -91,9 +100,5 @@ async function unmetOn(api: GitHubApi, repo: string, pr: number, all: ReturnType
 export async function doneCriteriaHold(api: GitHubApi, job: Job, repo: string, url: string, criteria: JobDoneCriteria | undefined, allowedDeletes?: JobAllowedDeletes): Promise<string | undefined> {
   const all = criteria?.(job.id) ?? [];
   if (all.length === 0) return undefined;
-  const unmet = await unmetOn(api, repo, numberOf(url), all, allowedDeletes?.(job.id) ?? []);
-  if (unmet === 'none') return undefined;
-  if (unmet.known === false) return `done criteria of skill ${unmet.skills.join(', ')} not known: its checks cannot be read`;
-  const why = [...unmet.misses.map((m) => `done criteria of skill ${m.skill} not met: ${m.why}`), ...unmet.holds.map((h) => `done criteria of skill ${h.skill}: ${h.why}`)];
-  return why.length > 0 ? why.join('; and ') : undefined;
+  return holdText(await unmetOn(api, repo, numberOf(url), all, allowedDeletes?.(job.id) ?? []));
 }

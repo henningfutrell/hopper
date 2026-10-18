@@ -5,11 +5,13 @@
 // anything but the job's own merge request (one opened since the job began), its label removed, or the issue gone, cancels
 // the job; a job on its own wait whose own merge request closed the issue ends finished; a waiting job on the backburner is
 // cancelled. Assignment drift as on GitHub: unassigned while it waits, cancelled; once started, flagged. Only GitLab saying
-// the issue is not there (404, 410) is "gone": any other error skips the job, and is said in the source's detail.
+// the issue is not there (404, 410) is "gone": any other error skips the job, and is said in the source's detail. A job that
+// got done criteria (issue #1924 part 4, done-criteria.ts) is done by its newest ready merge request only when they are met.
 import type { SourceSignal } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import { LABEL_BACKBURNER } from '../sources/github/labels.ts';
 import { GitLabNotFound, GitLabTokenRefused, type GitLabApi, type GitLabMergeRequest } from './api.ts';
+import { mergeRequestMiss, type GitLabDoneCriteria } from './done-criteria.ts';
 
 /** The head pipeline statuses that keep a merge request from done: its checks failed. */
 const FAILED_PIPELINE = 'failed';
@@ -25,13 +27,18 @@ function described(m: GitLabMergeRequest): string {
   return `!${m.iid} (${[m.state, ...why].join(', ')})`;
 }
 
-/** Undefined: the GitLab job is done. Else why not, naming the merge requests looked at. An error asking GitLab throws. */
-export async function notComplete(api: GitLabApi, job: Job): Promise<string | undefined> {
+/**
+ * Undefined: the GitLab job is done. Else why not, naming the merge requests looked at; or its done criteria not met on its
+ * newest ready merge request (`MR !N`). An error asking GitLab throws.
+ */
+export async function notComplete(api: GitLabApi, job: Job, done?: GitLabDoneCriteria): Promise<string | undefined> {
   const { repo: project, number: iid } = job.source ?? {};
   if (!project || !iid) return `job ${job.id} names no GitLab issue`;
   const [issue, list] = await Promise.all([api.issue(project, iid), api.closingMergeRequests(project, iid)]);
   if (issue.state === 'closed' && list.some((m) => m.state === 'merged')) return undefined;
-  if (list.some((m) => isReady(m) || (m.state === 'merged' && since(m.mergedAt, job)))) return undefined;
+  const ready = list.filter(isReady).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (ready) return mergeRequestMiss(api, job, issue.url, ready, done);
+  if (list.some((m) => m.state === 'merged' && since(m.mergedAt, job))) return undefined;
   const state = issue.state === 'opened' ? 'is open' : 'is closed, not by a merge request';
   const found = list.length === 0 ? `no merge request in ${project} closes it`
     : `no merge request that closes it is ready for review or merged since the job began: ${list.map(described).join(', ')}`;
