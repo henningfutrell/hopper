@@ -28299,7 +28299,7 @@ requires `orchestrate`, and one not in the library: the files, the event's `requ
 required skill reaches the next job and not a later start of this one); `test/ui/skills.test.ts` and
 `test/ui/skills-view.test.ts` (the requires line, the timeline line).
 
-## Conditional skills (issue #1924, parts 1 to 4, 2026-10-18)
+## Conditional skills (issue #1924, parts 1 to 5, 2026-10-18)
 
 **Problem.** A job that changed infrastructure code opened its pull request and ended done while most of its `terraform
 plan` checks were red and one plan replaced a resource. The plan summary showed the delete, but nothing made the job read
@@ -28436,7 +28436,22 @@ skill's machine-checkable criteria itself before it takes the job as done.
 - **The words are shared.** The GitLab miss and hold use the GitHub source's texts (`missText`, `holdText`), so the
   assessor, the brief and the Pull requests card read them the same way.
 
-**Left for later parts.** The Skills page's editor for the skill rules (they are set through the API now).
+**As built (part 5).**
+- **The Skills page edits the skill rules** (`ui/src/views/skill-rules.tsx`, its pure part in `ui/src/model/skills.ts`). A
+  panel Skill rules, below Work skills, lists each rule in its order: its skill and its conditions as one line
+  (`ruleLine`, now with `the change touches <globs>`). An admin adds a rule, edits one in its place, or removes one. The
+  editor holds a library skill, the repositories, labels and paths as words split at commas and spaces, and a box per kind
+  of work. It says what stops a save before Save (`ruleDraftProblem`, a copy of `skillRuleProblem`; the daemon checks again
+  and has the last word). Each save sends every rule to `POST /ui/api/work-skills` (`rules`, in place of the ones before),
+  as the daemon keeps them (`ruleOfDraft`: repositories lowercased, empty conditions dropped), and the page shows the view
+  it answers. The next job gets the change; a running job keeps what it got.
+
+**Decisions (part 5).**
+- **Each save sends the whole list.** The route takes every rule in place of the ones before, so the page sends the list it
+  shows with the one change. Nothing new on the daemon: no rule id, no route per rule.
+- **Words in one field, split at commas and spaces.** A repository, a label and a glob hold no space, so one text field per
+  condition is enough, and it reads as the rule line does.
+
 
 **Verification:** `test/domain/conditional-skills.test.ts` (a rule's match and why, its problems, the settings' change,
 done.json and its refusal, the plan's destroy counts, each miss, the prompt line, the delivery paths);

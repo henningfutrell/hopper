@@ -1,0 +1,1 @@
+- You can now add, change and remove the rules that give jobs extra skills on the Skills page. Before, you could set them only through the API.
