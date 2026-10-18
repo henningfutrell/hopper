@@ -29,6 +29,8 @@ export interface NeedStep {
   outputs: string[];
   /** The approved infra plan the step applies. */
   plan?: string;
+  /** A box step's vault secrets, by name (issue #1875): those its template gives, read for the step after the job's vault grant. */
+  secrets?: string[];
   inputsBytes: number;
   createdAt: string;
   /** Its result, once it ended: it ran, it was refused, cancelled, or a hopper stopped while it ran. */

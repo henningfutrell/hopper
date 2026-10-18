@@ -16,7 +16,7 @@ export interface VaultGrant { key: string; job: string; by: string; at: string }
  * Windows host its step runs on (issue #731) —, what it asked for (a secret's name, or `<kind> <operation> <asset>` for a
  * mint), first asked when. Kept in the hopper's memory only. `item`: what it covers, as the view answers it (issue #1124).
  */
-export interface VaultGrantAsk { job: string; key: string; machine?: string; template?: string; windowsHost?: string; names: string[]; askedAt: string; item?: VaultGrantItem }
+export interface VaultGrantAsk { job: string; key: string; machine?: string; template?: string; windowsHost?: string; /** A box step's need box (issue #1875). */ box?: string; names: string[]; askedAt: string; item?: VaultGrantItem }
 
 /** What a grant is kept for: the job's item (its source key); a job of no source, the job itself. */
 export const grantKeyOf = (job: Pick<Job, 'id' | 'source'>): string => job.source?.key ?? job.id;

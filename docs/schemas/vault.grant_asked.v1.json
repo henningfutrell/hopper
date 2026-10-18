@@ -17,6 +17,9 @@
     "windowsHost": {
       "type": "string"
     },
+    "box": {
+      "type": "string"
+    },
     "name": {
       "type": "string"
     }

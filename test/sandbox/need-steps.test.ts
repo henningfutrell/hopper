@@ -203,7 +203,7 @@ describe('a need step kept in the database (issue #1568)', () => {
 describe('a box step (issue #1349)', () => {
   const READ: OperationProfile = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } };
   const ACCOUNT: OperationProfile = { operation: 'read', asset: { kind: 'aws-account', name: '123456789012' } };
-  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE, ACCOUNT], approval: { by: 'Ada' }, pending: { image: false, egress: [], profiles: [] } } as unknown as TemplateView;
+  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE, ACCOUNT], approval: { by: 'Ada' }, gives: [], pending: { image: false, egress: [], profiles: [] } } as unknown as TemplateView;
 
   function boxSteps(templates: TemplateView[]) {
     const minted: OperationProfile[] = [];
@@ -297,7 +297,7 @@ describe('a step\'s credentials end with its sandbox (issue #1371)', () => {
 // A step that only reads runs as before.
 describe('need and box steps with infra applies off (issue #1722)', () => {
   const READ: OperationProfile = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } };
-  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE], approval: { by: 'Ada' }, pending: { image: false, egress: [], profiles: [] } } as unknown as TemplateView;
+  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE], approval: { by: 'Ada' }, gives: [], pending: { image: false, egress: [], profiles: [] } } as unknown as TemplateView;
   const OFF = /^infra applies are off on this hopper: .* goes through CI/;
 
   it('refuses a step with a plan, or one that needs a change, and records why; no box starts', () => {

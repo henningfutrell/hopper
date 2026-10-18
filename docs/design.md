@@ -26152,10 +26152,8 @@ Python, no browser and no fonts, and behind the egress proxy a box cannot downlo
   template of the request's name that a person changed is a 409, as before. The ready answer names the sandbox ask by
   the template (`--template <name>`).
 
-**Not built here (left for later parts of issue #1875).** A box step gets the credentials the hopper mints for its
-template's operation profiles, never its vault secrets (`src/sandbox/need-steps.ts`): a step of a template with vault
-secrets must also get them in the box, after the job's vault grant, masked in the log, and never on the job's machine.
-Then the end-to-end test runs as one box step.
+Built in part 3 ("A box step's vault secrets"): a box step of a template with vault secrets gets them in its box, after
+the job's vault grant, masked in the log, and never on the job's machine.
 
 **Decisions:**
 - **An image by its short name only.** "A job never names an image" (AGENTS.md) protects what a box runs. A short name
@@ -26173,6 +26171,52 @@ one; a changed one refused; an image reference, a host that is not `host:port`, 
 rootless Podman: the image built on the published `box-claude`; run as a need box runs (every capability dropped, no new
 privileges, a read-only root, `/tmp` a tmpfs, a fresh home volume) and with no network, Chromium's headless shell
 rendered a page as `agent`.
+
+## A box step's vault secrets (issue #1875, part 3, 2026-10-18)
+
+**The problem.** After part 2 a job could ask for a template with vault secrets, the test image and an egress host, and
+a person could approve it. But a box step got only the credentials the hopper mints for the template's operation
+profiles ("Box steps"): the end-to-end test could not read the secrets it needs.
+
+- **Which secrets.** A box step of a template gets each vault secret the template gives now (`gives`: its approved
+  scope, while its image and egress hosts are approved ones), but a shared secret and the template's agent credential
+  (a box's own sign-in). The step keeps their names (`NeedStep.secrets`), never a value. The job still names none: a box
+  step takes no `--secret`.
+- **Read when the step runs, after the grant.** For each name the hopper checks that the template still gives it, then
+  asks the vault's step delivery (`forStep`, `src/vault/step-delivery.ts`), as a Windows step does: the job at work, the
+  user's own secret, not a minting credential, and the job's **vault grant** (`src/vault/grants.ts`). With no grant the
+  step does not run (exit 125, the reason) and a person is asked: a grant ask that names the need box (`box`) and the
+  template, `vault.grant_asked` with them. Each delivery is `vault.step_delivered`, `host` the need box; a refusal
+  `vault.step_refused` and `step.refused`. No value is kept in the database or between tries.
+- **Into the box by a copy only.** The secrets go with the step's files (`NeedFiles.secrets`, `src/sandbox/need-box.ts`):
+  a file each under `$HOME/.hopper-need/secrets` (mode 600) and the helper `$HOME/.hopper-need/hopper-secret`, copied in
+  as the box's user once it runs, never in its environment or its script. The command reads one as a box's job does:
+  `"$("$HOPPER_SECRET" get NAME)"`; `HOPPER_SECRETS_DIR` names the directory. A runtime with no copy, or a place on a
+  machine of the user's (which may be the job's own), takes no secret: the step does not run (`NO_SECRET_COPY`).
+- **Never to the job.** Each value is masked in the log the job reads, as a minted credential is. Outputs that hold a
+  value are not given to the job: the step ends with its exit code and `OUTPUTS_HOLD_SECRET`.
+
+**Residual risk, stated.** The command in the box holds the values: it can send one to an egress host the template
+names, which is why a person approves those hosts and the secrets together. The outputs check finds a value only as it
+is: an output that encodes a value (base64, compressed) still comes back. A person reads the step's command before a
+grant when it matters.
+
+**Decisions:**
+- **The template's secrets, not the job's choice.** A box job gets what its template gives; a box step now does too. The
+  approval of the template, and the job's vault grant, are the two acts of a person that decide it.
+- **A copy, not the environment.** A need box's minted credentials come in its environment (a runtime's inspect shows
+  them while the box lives). A vault secret lives longer than a minted session, so it takes the copy, which every runtime
+  beside the hopper has.
+- **A shared secret and the agent credential are not given to a step.** The vault's step delivery gives only the
+  user's own secrets; an agent credential signs in a box's agent, which a step does not run.
+
+Tests: `test/sandbox/box-step-secrets.test.ts` (the need box's real script: each secret a file of mode 600, read with
+the helper, none in the environment; no copy, no step; a box step reads what the template gives, through the vault,
+with the need box and template; the log masked; outputs that hold a value dropped; a refusal ends the step; a secret the
+template no longer gives refused), `test/integration/box-step-secrets.test.ts` (the real daemon, `hopper-skill` and
+`hopper-step`: the template asked for and approved by a person, the step refused until the job's vault grant and a
+grant ask for the box step, then the secret read in the box and masked for the job, `vault.step_delivered`, and an
+output that holds it not brought back).
 
 ## Remote access: the mint as a saga (issue #1609, 2026-10-17)
 
