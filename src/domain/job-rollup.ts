@@ -3,7 +3,8 @@
 // merged for every job that names it — a tend or a rework hands it to a newer job, which follows it to its end —, with no
 // checks or conflicts. Where a work item stands, and so whether a failure is still one, is the work-item ledger's alone
 // (issue #1067): the graph reads it — `stageInItem` settles a job's stage, `ITEM_STAGE` an issue's —, and nothing here
-// derives it. When a job entered its stage (`stageSinceOf`), and an issue that waits on its batch (issue #1337, `awaitBatch`).
+// derives it. When a job entered its stage (`stageSinceOf`), an issue that waits on its batch (issue #1337, `awaitBatch`),
+// and where an issue no job here works stands (issue #1895, `settleIssues`).
 import type { GraphNode } from './issue-graph.ts';
 import { issueNodeId, pullRequestOf, stageAt, stageOf, type JobGraphNode, type JobGraphPullRequest, type JobStage } from './job-graph.ts';
 import type { Job } from './types.ts';
@@ -106,5 +107,23 @@ export function awaitBatch(nodes: Map<string, JobGraphNode>, urls: Iterable<stri
     const id = m ? issueNodeId(m[1]!, Number(m[2])) : undefined;
     const before = id ? nodes.get(id) : undefined;
     if (id && before) nodes.set(id, { ...before, stage: 'done', awaitsBatch: true });
+  }
+}
+
+/**
+ * An issue no job here works (issue #1895): its own state first — closed as completed is done, closed as not planned or as
+ * a duplicate is closed —, then its work item's (its jobs may be gone from the graph), and only an open issue with neither
+ * is not started. The ledger's word on the issue comes before the issue graph's read (`reads`, by node id), which may be
+ * older than its close.
+ */
+export function settleIssues(nodes: Map<string, JobGraphNode>, reads: ReadonlyMap<string, GraphNode['attrs']>, items: Pick<ReadonlyMap<string, WorkItem>, 'get'> | undefined): void {
+  for (const n of nodes.values()) {
+    if (n.kind !== 'issue' || n.stage !== 'no_job') continue;
+    const item = n.url ? items?.get(n.url) : undefined;
+    const read = reads.get(n.id);
+    const state = String((item?.issueState ? item.issueState : read?.state) ?? '').toLowerCase();
+    const reason = String((item?.issueState ? item.issueReason : read?.stateReason) ?? '').toLowerCase();
+    if (state === 'closed') nodes.set(n.id, { ...n, ...(reason === 'not_planned' || reason === 'duplicate' ? { stage: 'cancelled', closed: true } : { stage: 'done' }) });
+    else if (item) nodes.set(n.id, { ...n, stage: ITEM_STAGE[item.state] });
   }
 }

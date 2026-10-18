@@ -19,7 +19,7 @@ import { phaseOf } from './phase.ts';
 import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
 import { countStages, treesOf } from './job-trees.ts';
-import { awaitBatch, ITEM_STAGE, rollUp, stageInItem, stageSinceOf } from './job-rollup.ts';
+import { awaitBatch, ITEM_STAGE, rollUp, settleIssues, stageInItem, stageSinceOf } from './job-rollup.ts';
 import { isInFlight, type WorkItem } from './work-items.ts';
 import type { Job, JobStatus } from './types.ts';
 import type { WaitOn } from './wait-on.ts';
@@ -113,6 +113,8 @@ export interface JobGraphNode {
    * it. Done, whatever its job's end or the ledger says.
    */
   awaitsBatch?: true;
+  /** An issue closed as not planned or as a duplicate (issue #1895): `cancelled`, and its words say "Closed". */
+  closed?: true;
 }
 
 /** One tend of a pull request (issue #927): the job the hopper ran to take the step, its status, and when it started and ended. */
@@ -158,8 +160,11 @@ export interface JobGraphInput {
   handoffs?: readonly JobGraphWait[];
   /** The failure settings' retries per job: a run again's attempt reads "of" one more than it. */
   maxAttempts?: number;
-  /** The work-item ledger's items of the jobs' source keys (issue #1067): where each issue stands, and each failure. */
-  items?: ReadonlyMap<string, WorkItem>;
+  /**
+   * The work-item ledger's items by source key (issue #1067): where each issue stands, and each failure. Asked for the jobs'
+   * issues and for the issues here no job works (issue #1895).
+   */
+  items?: Pick<ReadonlyMap<string, WorkItem>, 'get'>;
   /** The URLs of the issues that wait on their batch (issue #1337): Intake's read of GitHub and the ledger's (`awaitsBatch`). */
   awaitingBatch?: ReadonlySet<string>;
 }
@@ -361,18 +366,14 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       prNode({ url: from.id, state }, state === 'merged' ? 'done' : state === 'open' ? 'pr_open' : 'cancelled');
     }
   }
+  const readOf = new Map<string, GraphNode['attrs']>();
   for (const n of input.issueGraph?.nodes ?? []) {
     const id = graphIssue.get(n.id);
     if (n.kind !== 'issue' || !id || !nodes.has(id)) continue;
-    const before = nodes.get(id)!;
-    const closed = n.attrs.state === 'CLOSED' || n.attrs.state === 'closed';
-    nodes.set(id, {
-      ...before,
-      ...(typeof n.attrs.title === 'string' ? { label: n.attrs.title } : {}),
-      // An issue no job here works shows where GitHub has it: closed is done; open still has no job.
-      ...(before.stage === 'no_job' && closed ? { stage: 'done' } : {}),
-    });
+    readOf.set(id, n.attrs);
+    if (typeof n.attrs.title === 'string') nodes.set(id, { ...nodes.get(id)!, label: n.attrs.title });
   }
+  settleIssues(nodes, readOf, input.items);
 
   // An issue that waits on its batch (issue #1337) is done: its batch run's merge closes it. Only the issues here.
   awaitBatch(nodes, input.awaitingBatch ?? []);

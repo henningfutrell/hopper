@@ -18422,8 +18422,12 @@ mode; the API gives the graph (issue #718's parity).
 the record holds, no new field. `jobGraph({ jobs, links, issueGraph })` makes the nodes (jobs, issues, pull requests) and
 the typed edges (glossary "Job graph"), and `treesOf` the **job trees**: each connected group, rooted at a node no edge
 leads into (an issue first); a node **blocks** the root when it is not `done` or `cancelled`, or leads to one that is not
-(a depth-first walk that counts a cycle once). An issue takes the stage of its newest job; an issue no job works is
-`no_job`, or `done` when the issue graph read it closed.
+(a depth-first walk that counts a cycle once). An issue takes the stage of its newest job. An issue no job here works
+(issue #1895) takes its stage from its own state first: closed as completed is `done`; closed as not planned or as a
+duplicate is `cancelled` with `closed` ("Closed"). The ledger's `issueState` comes before the issue graph's read, which can
+be older than the close. An open issue then takes its work item's stage (`ITEM_STAGE`: its jobs may be gone from the
+graph, so the route looks the item up by the issue's URL), and only an open issue with no item is `no_job` ("Not
+started"). A tree's summary counts such an issue as shipped when `done`, and says how many are closed.
 
 **Where the edges come from.** Nothing new is recorded: `rerunOf` (`next_part` when the job before is partly done, else
 `rerun`), `forkOf` (`spawned`), `followOn` (`plan_apply`), the job's source state (`opened`, `waits_on_merge`), the
@@ -18494,7 +18498,7 @@ settled was said to **block** its root, also a job that only works on its issue.
 - **Stage words** (`src/domain/job-words.ts`, pure). Each node carries `stageText`: Queued, Building it (attempt 2 of
   3), Plan, Research, Waiting on you: answer a question / approve the plan / accept the research / answer it / take it
   over, A person works on it, Parked, PR open: checks running / fixing checks / has merge conflicts / draft / waiting
-  for the merge (issue #1067: never "Ready for review"), Part shipped, Merged, Done, Failed, Cancelled, Not started. An
+  for the merge (issue #1067: never "Ready for review"), Part shipped, Merged, Done, Failed, Cancelled, Closed, Not started. An
   issue says what its item's job says. `waitsOnYou` marks a node that waits on
   the person. The attempt counts the failed runs a run again redoes (`attemptIn`), and its "of" is the failure settings'
   `maxAttempts` plus one, which the route passes in; a next part is no new attempt. The words are made on the server, as
@@ -18536,10 +18540,11 @@ poll: the owner's constraint on the issue.
 - **The route** adds the newest job of each issue it shows (`getBySourceKey`), so an issue whose last job ended before
   the queue's 24-hour window still takes its stage from it.
 
-Left: an issue no job works, closed after its last read, shows `no_job` until a read of it or of an issue that links it
-(each discover reads the open issues of the hopper's label again). Reading closed issues again would be a new poll.
+Left: an issue no job works, with no work item, closed after its last read, shows `no_job` until a read of it or of an
+issue that links it (each discover reads the open issues of the hopper's label again). Reading closed issues again would be
+a new poll. An issue with a work item reads the ledger, which a GitHub delivery moves at the close.
 
-Tests: `test/domain/job-rollup.test.ts`, `test/domain/issue-graph.test.ts` and
+Tests: `test/domain/job-rollup.test.ts`, `test/domain/job-graph-issue-stage.test.ts`, `test/domain/issue-graph.test.ts` and
 `test/sources/issue-place.test.ts` (`stateReason`), `test/integration/job-graph.test.ts` (the newest job of an issue).
 
 ## A job's parts list (issue #935, 2026-10-12)
