@@ -50,8 +50,8 @@ async function start(seams: Parameters<typeof startTestApp>[0]['seams']): Promis
   const db = tempDbPath();
   cleanup = db.cleanup;
   t = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(2) }, ...(seams ? { seams } : {}) });
-  // Jev's trust check (issue #655 part 4) is asked for every job these tests pull: off, so each test reads its own point's picks.
-  t.user(ADMIN_ID).store.settings.setMinorDecisionSettings({ ...DEFAULT_MINOR_DECISION_SETTINGS, 'intake-trust': { mode: 'off', threshold: 0.85 } });
+  // Jev's trust check and kind check (issue #655) are asked for every job these tests pull: off, so each test reads its own point's picks.
+  t.user(ADMIN_ID).store.settings.setMinorDecisionSettings({ ...DEFAULT_MINOR_DECISION_SETTINGS, 'intake-trust': { mode: 'off', threshold: 0.85 }, 'intake-kind': { mode: 'off', threshold: 0.85 } });
   return t;
 }
 
@@ -216,7 +216,8 @@ describe('overrides and the view', () => {
     const v = await view(a);
     expect(v.points.map((p) => [p.point, p.mode, p.threshold])).toEqual([
       ['question-risk', 'shadow', 0.85], ['failure-assessment', 'shadow', 0.85], ['lane-count', 'shadow', 0.85], ['job-machine', 'shadow', 0.85],
-      ['intake-order', 'shadow', 0.85], ['merge-order', 'shadow', 0.85], ['intake-trust', 'off', 0.85], ['sandbox-request', 'shadow', 0.85],
+      ['intake-order', 'shadow', 0.85], ['merge-order', 'shadow', 0.85], ['intake-trust', 'off', 0.85], ['intake-kind', 'off', 0.85],
+      ['sandbox-request', 'shadow', 0.85],
     ]);
   });
 
