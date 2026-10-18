@@ -25,7 +25,9 @@
 // act still goes through. Reopened with that pull request open, reconciling follows it again (issue #763).
 // A merge held (issue #939, merge-gate.ts): ready, it conflicts with a pull request of its repository the hopper merged
 // earlier in the same sync pass, so the hopper does not merge it (`seen.mergeHeldBehind`); the next sync sees it conflict
-// with the new base and tends it. A person's Merge now still merges it.
+// with the new base and tends it. A person's Merge now still merges it. The done criteria of the job's conditional skills
+// (issue #1924 part 3, done-criteria.ts) are read again just before the hopper's merge: one not met, or a `person-merges`
+// that applies, holds it (`mergeError`, asked again next sync); a person's Merge now still merges.
 // The batch first (issue #985, the in-motion cycle): after the source read the followed pull requests in one batch
 // (`readFollowed`), a follow of an open one takes its state from that read, once, and reads GitHub only when something
 // changed that a read must confirm — merged or closed, a new head or base, merge conflicts changed or not known yet, checks
@@ -74,6 +76,11 @@ export interface FollowContext extends ReportContext {
   clock?: Clock;
   /** The batch's answer for pull request `number` of `repo`, taken once (issue #985); absent or undefined: read GitHub. */
   batched?: (repo: string, number: number) => PullRequestState | undefined;
+  /**
+   * Why the hopper does not merge job `job`'s ready pull request `url` of `repo` itself (issue #1924 part 3): its done criteria
+   * not met now, or a person merges it. Absent or undefined: it merges.
+   */
+  mergeHold?: (job: Job, repo: string, url: string) => Promise<string | undefined>;
 }
 
 type PullState = 'open' | 'merged' | 'closed';
@@ -251,6 +258,9 @@ export async function waiting(ctx: FollowContext, job: Job, url: string, before:
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
   if (pr.state !== 'open' || !merges(ctx, repo, change?.kind) || !readyToMerge(seen, now)) return { seen };
   try {
+    // The done criteria of the job's conditional skills, read again now (issue #1924 part 3): not met, the merge waits.
+    const hold = await ctx.mergeHold?.(job, repo, url);
+    if (hold) return { seen: { ...seen, mergeError: hold } };
     const heldBehind = await mergeGateOf(ctx.api).merge(repo, pr.base, url, () => { mark?.(pr.headOid); return ctx.api.merge(repo, numberOf(url)); });
     if (heldBehind) return { seen: { ...seen, mergeHeldBehind: heldBehind } };
     return { ended: 'merged', seen };

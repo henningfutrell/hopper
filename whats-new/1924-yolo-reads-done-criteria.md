@@ -1,0 +1,1 @@
+- When yolo mode is on, the hopper now checks a job's done rules again just before it merges the job's pull request. A plan that deletes a resource now stops the merge. A new built-in skill for GitOps repositories makes sure that a person, not the hopper, merges a change to a production overlay, because that merge is a deploy.

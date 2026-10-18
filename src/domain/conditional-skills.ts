@@ -94,9 +94,14 @@ export function pathsApply(paths: readonly string[] | undefined, pr: { files?: r
  * A done criterion the hopper checks on the job's own pull request: `checks-passed`, at least one check (a check run or a
  * commit status) whose name matches `checks` ran, and each one passed; `plan-destroy`, no terraform plan in the output of the
  * checks `checks` names (every check, absent) or in the pull request's comments since its head commit destroys or replaces
- * more than `max` resources (0, absent), and one such plan is there.
+ * more than `max` resources (0, absent), and one such plan is there; `person-merges`, a person merges it (below).
  */
-export type DoneCriterion = { kind: 'checks-passed'; checks: string } | { kind: 'plan-destroy'; checks?: string; max?: number };
+export type DoneCriterion = { kind: 'checks-passed'; checks: string } | { kind: 'plan-destroy'; checks?: string; max?: number }
+  /**
+   * `person-merges` (part 3): a person merges the pull request, never the hopper's yolo mode, when it changes a file `paths`
+   * matches (always, absent; files not known: it applies). No miss at the done check: it holds the merge only (`mergeHolds`).
+   */
+  | { kind: 'person-merges'; paths?: string[] };
 
 /** The file beside a skill's SKILL.md that holds its done criteria: `{ "criteria": [...] }`. */
 export const DONE_FILE = 'done.json';
@@ -113,7 +118,9 @@ export function doneFileProblem(text: string): string | undefined {
     } else if (c?.kind === 'plan-destroy') {
       if (c.checks !== undefined && (typeof c.checks !== 'string' || c.checks === '')) return `${DONE_FILE}: plan-destroy's "checks" is a name, * for any text`;
       if (c.max !== undefined && (!Number.isInteger(c.max) || (c.max as number) < 0)) return `${DONE_FILE}: plan-destroy's "max" is a whole number, 0 or more`;
-    } else return `${DONE_FILE}: ${JSON.stringify(c?.kind)} is no done criterion (checks-passed, plan-destroy)`;
+    } else if (c?.kind === 'person-merges') {
+      if (c.paths !== undefined && !(Array.isArray(c.paths) && c.paths.every((p) => typeof p === 'string' && p !== '' && !p.startsWith('/') && !p.split('/').includes('..')))) return `${DONE_FILE}: person-merges's "paths" is a list of relative path globs`;
+    } else return `${DONE_FILE}: ${JSON.stringify(c?.kind)} is no done criterion (checks-passed, plan-destroy, person-merges)`;
   }
   return undefined;
 }
@@ -197,6 +204,7 @@ export function unmetCriteria(criteria: readonly DoneCriterion[], pr: { checks: 
   const allowed = new Set(pr.allowed ?? []);
   const out: string[] = [];
   for (const c of criteria) {
+    if (c.kind === 'person-merges') continue;
     const named = c.checks === undefined ? pr.checks : pr.checks.filter((k) => nameMatches(c.checks!, k.name));
     if (c.kind === 'checks-passed') {
       const not = named.filter((k) => k.state !== 'passing');
@@ -227,8 +235,17 @@ export function unmetCriteria(criteria: readonly DoneCriterion[], pr: { checks: 
   return out;
 }
 
+const personMerges = (paths: readonly string[] | undefined): string => `a person merges ${paths?.length ? `a change to ${paths.join(', ')}` : 'it'}, not the hopper`;
+
+/**
+ * Why the hopper must not merge the pull request itself (part 3): each `person-merges` criterion that applies to it, by the
+ * files it changes (`pathsApply`: files not known apply). Empty: no hold.
+ */
+export const mergeHolds = (criteria: readonly DoneCriterion[], pr: { files?: readonly string[] | undefined; filesCut?: true | undefined }): string[] =>
+  criteria.flatMap((c) => (c.kind === 'person-merges' && pathsApply(c.paths, pr) ? [personMerges(c.paths)] : []));
+
 /** The done criteria in plain words, for the job's prompt. */
-export const criteriaLine = (criteria: readonly DoneCriterion[]): string => criteria.map((c) => (c.kind === 'checks-passed'
+export const criteriaLine = (criteria: readonly DoneCriterion[]): string => criteria.map((c) => (c.kind === 'person-merges' ? personMerges(c.paths) : c.kind === 'checks-passed'
   ? `every check named ${c.checks} passed`
   : `no terraform plan ${c.checks === undefined ? '' : `of the checks named ${c.checks} `}destroys or replaces ${(c.max ?? 0) === 0 ? 'a resource' : `more than ${plural(c.max!, 'resource')}`}`)).join('; ');
 
