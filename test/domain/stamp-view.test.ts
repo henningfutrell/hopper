@@ -29,11 +29,11 @@ describe('stampView', () => {
     });
   });
 
-  it('a stamp below the brake: the hold says why; a check is due for an approved job', () => {
+  it('a stamp below the brake: the hold says why; gate 2 asks a person (part 12); a check is due for an approved job', () => {
     const j = stamped(job('a', { source: github({ origin: 'approved', author: 'stranger' }) }));
     const strict = brakeOf({ default: 'strict', sources: {}, repos: {} }, j.source);
     const v = stampView(KEY, j, strict);
-    expect(v).toMatchObject({ verifies: 'yes', level: 'approved', brake: { strictness: 'strict', needs: 'trusted' }, gate2: 'auto', doorsOpen: true, checkDue: true });
+    expect(v).toMatchObject({ verifies: 'yes', level: 'approved', brake: { strictness: 'strict', needs: 'trusted' }, gate2: 'person', doorsOpen: true, checkDue: true });
     expect(v.startHold).toMatch(/^trust stamp approved is below trusted \(intake strictness strict by default\)/);
   });
 
