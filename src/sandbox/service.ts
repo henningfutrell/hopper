@@ -43,8 +43,10 @@ export const COMPOSE_NETWORK = 'hopper_default';
  */
 export const hopperNetwork = (c: { sandboxNetwork?: string | undefined; localMachine: boolean }): string => c.sandboxNetwork ?? (c.localMachine ? 'host' : COMPOSE_NETWORK);
 
-/** How often the hopper burns the boxes an older build launched, and runs the check pass with its sweep. */
+/** How often the hopper burns the boxes an older build launched, and runs the sweep, the check pass and the warm pass. */
 export const PASS_MS = 10_000;
+/** A pass a tick finds still in flight this long after it started is logged, once (issue #1965). */
+export const PASS_STALL_MS = 5 * 60_000;
 /** No box holds a home. */
 const NONE: ReadonlySet<string> = new Set();
 /** A Kubernetes pod always has the pod network: a box on no network (issue #865) does not run there. */
@@ -103,7 +105,7 @@ export interface Sandboxes {
   stepProblem(userId: string, o?: { offline?: true }): Promise<string | undefined>;
   /** One burn pass (burn-launched.ts): each box an older build launched, burned, and its record removed. */
   burnLaunched(): Promise<void>;
-  /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
+  /** One pass of the sweep, the read-only check (issue #716) and the warm pass: each due template is checked; a pass that runs already is joined, each on its own (issue #1965). */
   check(): Promise<void>;
   start(): void;
   /**
@@ -256,14 +258,37 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       o.logger.info(`hopper: sandbox ${r.box} of job ${r.jobId}: the hopper stopped during its step; the run ends as interrupted`);
     }
   };
-  let checking: Promise<void> | undefined;
-  const sweep = async (): Promise<void> => {
+  /**
+   * One pass in flight at a time, each on its own (issue #1965): a warm pass's build of up to 30 min held the check pass
+   * with it, and no queued check ran. A tick that finds the pass in flight joins it, and says so once it ran PASS_STALL_MS.
+   */
+  const inFlight: Promise<void>[] = [];
+  const onePass = (what: string, run: () => Promise<void>): (() => Promise<void>) => {
+    let now: { done: Promise<void>; since: number; told: boolean } | undefined;
+    return () => {
+      const at = o.clock.now().getTime();
+      if (now) {
+        if (!now.told && at - now.since >= PASS_STALL_MS) {
+          now.told = true;
+          o.logger.warn(`hopper: the ${what} has run for ${Math.floor((at - now.since) / 60_000)} min and has not ended; the next ${what} waits for it`);
+        }
+        return now.done;
+      }
+      const pass = { since: at, told: false, done: Promise.resolve() };
+      pass.done = run().catch((e: unknown) => o.logger.warn(`hopper: the ${what} failed: ${e instanceof Error ? e.message : String(e)}`))
+        .finally(() => { if (now === pass) now = undefined; inFlight.splice(inFlight.indexOf(pass.done), 1); });
+      now = pass;
+      inFlight.push(pass.done);
+      return pass.done;
+    };
+  };
+  const sweep = onePass('sandbox sweep', async () => {
     for (const at of sweepPlaces()) await sweepSteps(at).then(() => sweepStepHomes(at));
     closeRemoved();
-  };
-  const check = (): Promise<void> => (checking ??= Promise.all([sweep(), checkPass?.() ?? Promise.resolve(), warmPass?.() ?? Promise.resolve()]).then(() => undefined)
-    .catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))
-    .finally(() => { checking = undefined; }));
+  });
+  const readOnlyChecks = checkPass ? onePass('read-only check pass', checkPass) : undefined;
+  const warm = warmPass ? onePass('warm pass', warmPass) : undefined;
+  const check = (): Promise<void> => Promise.all([sweep(), readOnlyChecks?.(), warm?.()]).then(() => undefined);
 
   const needStep: Sandboxes['needStep'] = async (userId, { offline, ...box }, io, run) => {
     const at = await places.forCheck(userId);
@@ -328,7 +353,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       if (timer) clearInterval(timer);
       timer = undefined;
       dropReader?.(); dropReader = undefined;
-      await Promise.allSettled([running, checking]);
+      await Promise.allSettled([running, ...inFlight]);
     },
   };
 }
