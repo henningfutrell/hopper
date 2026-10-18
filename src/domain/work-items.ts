@@ -8,7 +8,7 @@ import type { DomainEvent, EventType } from './types.ts';
 import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, landingOf, type ItemLanding } from './work-item-landing.ts';
 import type { ChangeKind } from './change-kinds.ts';
 import { waitOnLabel, type WaitOn } from './wait-on.ts';
-import { BLOCKED_CAUSES, BLOCKED_WORDS, hasReference, type BlockedCause } from './item-lifecycle.ts';
+import { BLOCKED_CAUSES, BLOCKED_WORDS, closedOnGitHub, hasReference, type BlockedCause } from './item-lifecycle.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -19,8 +19,8 @@ import { BLOCKED_CAUSES, BLOCKED_WORDS, hasReference, type BlockedCause } from '
  * `done`: its pull request merged, or its issue closed as completed. `failed`: its last job failed, nothing took its place
  * and no person dismissed it — the only failure any view counts. `blocked` (issue #1891): it broke its state's promise
  * and waits on a person (`blockedCause`: `no_pr`, its job ended done with no pull request to wait on; `stale`, past its
- * deadline with no move). `dropped`: dismissed, declined, cancelled, rejected, its pull request closed without a merge, or
- * its issue closed as not planned.
+ * deadline with no move; `pr_closed`, its pull request closed without a merge on GitHub). `dropped`: dismissed, declined,
+ * cancelled, rejected, its pull request closed without a merge by a person's Close PR, or its issue closed as not planned.
  */
 export const WORK_ITEM_STATES = [
   'waiting_for_approval', 'queued', 'working', 'needs_you', 'waiting_outside', 'pr_open', 'partly_done', 'done', 'failed', 'blocked', 'dropped',
@@ -89,6 +89,8 @@ export interface WorkItem {
   failedJobId?: string;
   /** Why it is blocked, while `blocked` (issue #1891). */
   blockedCause?: BlockedCause;
+  /** How many of its pull requests in a row were closed without a merge on GitHub (issue #1891); a merge ends the row. */
+  closedWithoutMerge?: number;
   /** The jobs of it whose work was kept, not pushed (`job.work_kept`), until removed. */
   keptWork: string[];
   /** Its merged pull request on its way from the landing branch to the tested branch (issue #1073): `work-item-landing.ts`. */
@@ -240,7 +242,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   if (event.type === 'job.pull_request_merged') {
     // A stray's merge on GitHub (issue #1420): as a stray's close, it moves no item; only its own pull request's state.
     if (d.stray === true) return pr !== undefined && pr === base.pullRequest ? mark({ pullRequestState: 'merged' as const, pullRequestWait: undefined }) : undefined;
-    const change = { pullRequest: pr, pullRequestState: 'merged' as const, ...(d.part === true ? {} : { wholeMerged: true as const }), pullRequestWait: undefined, waitingOn: undefined };
+    const change = { pullRequest: pr, pullRequestState: 'merged' as const, ...(d.part === true ? {} : { wholeMerged: true as const }), pullRequestWait: undefined, waitingOn: undefined, closedWithoutMerge: undefined };
     if (isActive(base.eventState)) return mark(change);
     return d.part === true ? move('partly_done', { ...change, waitingOn: 'the next part' }) : move('done', change);
   }
@@ -248,7 +250,9 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     // A stray's close (issue #1143 part 4): no job followed it, so it ends no wait of the item; only its own pull request's state.
     if (d.stray === true) return pr !== undefined && pr === base.pullRequest ? mark({ pullRequestState: 'closed' as const, pullRequestWait: undefined }) : undefined;
     const change = { pullRequest: pr, pullRequestState: event.type === 'job.pull_request_closed' ? 'closed' as const : 'abandoned' as const, pullRequestWait: undefined, waitingOn: undefined };
-    return isActive(base.eventState) || base.eventState === 'done' ? mark(change) : move('dropped', change);
+    if (isActive(base.eventState) || base.eventState === 'done') return mark(change);
+    // Closed without a merge on GitHub (issue #1891): the item waits on a run again, the item reconciler's the first time in a row.
+    return closedOnGitHub(event) ? move('blocked', { ...change, blockedCause: 'pr_closed', waitingOn: BLOCKED_WORDS.pr_closed, closedWithoutMerge: (base.closedWithoutMerge ?? 0) + 1 }) : move('dropped', change);
   }
   // Everything else is the current job's: an older job's end moves nothing.
   if (!current) return undefined;

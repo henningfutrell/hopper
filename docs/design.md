@@ -2336,7 +2336,8 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 | still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
 | merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
-| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
+| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again). Closed on GitHub (no person's Close PR, not superseded), its item is blocked (`pr_closed`, issue #1891): the first time in a row the item reconciler runs it again by itself, which takes the label off; a second time a person decides ("The item lifecycle") |
+| none named, none open, and a pull request of the issue's repository that mentions it merged since the job began (issue #1891) | named, and ended as a merged part: the job's own "Part of #N" first (issue #1231), else one that only mentions the issue (`mention: true`), such as a pull request of several issues. The next part is taken, or the issue is done when every declared part is done |
 | none named, one found open (issue #1891) | named from now on (`pullRequest`, `part` for a part); an issue the report left `hopper:blocked` gets `hopper:pr-ready`, or `hopper:partly-done` for a part, in its place |
 | still open, or none found yet, and the issue closed as not planned (issue #428) | abandoned: `job.pull_request_abandoned`; `follow: abandoned`, followed no more and never merged, yolo mode or not; the pull request is left as it is; `hopper:pr-ready`, `hopper:partly-done` and `hopper:failed` come off and no end label goes on. A person's Merge now or Close PR still goes through. Reopened with the pull request still open, reconciling (issue #763) follows it again |
 
@@ -20784,11 +20785,38 @@ and the writes held while a sign-in has ended are the next parts.
 - **Failures.** The stuck cause `pr_open_stale` lists the blocked items (`blockedStuck`): a `no_pr` item only after ten
   minutes, as its report names its pull request a moment after the job's end.
 
+**Part 3: a pull request closed without a merge, and a merged mention.**
+- **`pr_closed`, a new blocked cause.** A pull request closed without a merge on GitHub — not a person's Close PR, not
+  the hopper's close as superseded — moves an item no job acts on to `blocked` (`pr_closed`), not to `dropped`. The item
+  counts its closes in a row (`closedWithoutMerge`); a merge ends the row, a new job does not. A person's Close PR still
+  drops the item.
+- **Run again once, by itself.** The item reconciler's correction `run_again` (`runsAgainBySelf`): an item blocked as
+  `pr_closed` on the first close in a row, within a day of it, whose newest job ended, runs again — Run again on that
+  job, `by: "reconciler"` on `job.rerun`, with a brief that names the closed pull request and asks the new job to learn
+  why. It is no event of its own: the new job's `job.queued` moves the item, and Run again takes `hopper:pr-closed` off.
+  The reconciler starts one run again per item at a time; a refused one is logged and tried again at the next check. A
+  close older than a day — one the rebuild of tenant migration 83 finds — runs nothing by itself.
+- **A second close waits on a person.** The item stays `blocked` (`pr_closed`) and Failures lists it under
+  `pr_open_stale`, where Run again on its job takes it back through the GitHub outbox (a give-back row, issue #1238), with
+  no label to edit on GitHub. An item the reconciler runs again is not listed.
+- **A merged mention ends the wait for a pull request** (`mergedPartOf`, `src/sources/github/follow.ts`). A job that
+  ended naming no pull request, with none open, takes a pull request of its issue's repository that mentions the issue
+  and merged since the job began — its own part first — and ends as a merged part (`mention: true` in its source state).
+  So an item blocked as `no_pr` because a pull request of several issues only mentioned it moves on: `partly_done`, or
+  done when every declared part is done; `hopper:blocked` comes off.
+- **Tenant migration 83** rebuilds the ledger, so an item whose pull request GitHub closed, with its issue still open, is
+  blocked as `pr_closed` and listed in Failures.
+- **Not in this part:** the item saga in the `sagas` table, the label mirror (`labelsFor`) with label drift counted,
+  Won't do on a blocked item, deadlines for the states other than PR open, and one notice when an item is blocked.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
 names one; PR open past its deadline blocked as stale; two hosts on one database, only the lease holder acts),
 `test/store/tenant-migration-82.test.ts`, `test/sources/github-report.test.ts` (blocked with none open; a draft named).
+Part 3: `test/work-items/reconcile.test.ts` (closed once, run again once and no second while it runs; closed twice, a
+person decides), `test/store/tenant-migration-83.test.ts`, `test/sources/github-follow-merged-part.test.ts` (a merged
+mention ends the follow as a part; one merged before the job began does not).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

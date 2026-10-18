@@ -1,0 +1,2 @@
+- When someone closes the hopper's pull request without a merge, the hopper runs the work again once by itself. If that pull request is closed too, Failures lists it for you, and you do not need to change a label on GitHub.
+- An issue whose job ended with no pull request now moves on when a pull request that mentions it merges.

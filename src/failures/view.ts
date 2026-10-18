@@ -164,7 +164,10 @@ function pullRequestCards(store: Pick<UserStore, 'jobs' | 'settings' | 'connecte
   return view.repos.flatMap((g) => g.pullRequests);
 }
 
-/** The jobs of the items blocked with no pull request to wait on (issues #1231, #1891: the item reconciler blocks them): stuck work. */
+/**
+ * The jobs of the items blocked with no pull request to wait on (issues #1231, #1891: the item reconciler blocks them), or
+ * with their pull request closed without a merge on GitHub while the item reconciler does not run them again: stuck work.
+ */
 function prOpenStale(store: Reads, now: Date): string[] {
   return store.workItems.list({ state: ['blocked'] }).filter((i) => blockedStuck(i, now.toISOString())).map((i) => i.jobId ?? i.key);
 }

@@ -49,7 +49,7 @@ import {
 } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
-import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type PullRequestState } from './api.ts';
+import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type PullRequestState, type ReferencingPullRequest } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
 import { isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import { LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
@@ -58,7 +58,8 @@ import { mergeGateOf } from './merge-gate.ts';
 import { closeAfterMerge, closedByMerge, mergedByMarker } from './own-merge.ts';
 import { relabel, type ReportContext } from './report.ts';
 
-interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; mergeChecked?: boolean }
+/** `mention`: the pull request only mentions the issue, with no "Part of #N" (issue #1891): followed as a part all the same. */
+interface Followed { pullRequest?: string; follow?: string; part?: boolean; mention?: boolean; seen?: PullRequestSeen; mergeChecked?: boolean }
 
 /**
  * What following a pull request needs beyond the report's: whether the hopper may merge in a repository (yolo mode), and
@@ -133,22 +134,26 @@ async function openPullRequestOf(api: GitHubApi, repo: string, number: number): 
 }
 
 /**
- * The job's own part ("Part of #N") merged since the job began (issue #1231): a part that merged before the job's end was
- * reported, so the report named none. Followed, it ends as a merged part, and the next part is taken.
+ * A pull request of the issue's repository that mentions the issue and merged since the job began: the job's own part
+ * ("Part of #N", issue #1231), merged before the job's end was reported, so the report named none; else, a part first, any
+ * other that only mentions it (issue #1891: a pull request of several issues, no "Part of #N"), so a job that ended with no
+ * pull request is not followed for ever. Followed, it ends as a merged part: the next part is taken, or the issue is done
+ * when every part it declares is done.
  */
-async function mergedPartOf(api: GitHubApi, repo: string, number: number, job: Job): Promise<{ url: string; part: true } | undefined> {
+async function mergedPartOf(api: GitHubApi, repo: string, number: number, job: Job): Promise<{ url: string; part: true; mention?: true } | undefined> {
   const since = Date.parse(job.createdAt);
+  const part = (pr: ReferencingPullRequest) => isPartOf(pr, repo, number);
   const merged = (await api.referencingPullRequests(repo, number))
-    .filter((pr) => pr.state === 'merged' && isPartOf(pr, repo, number) && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= since)
-    .sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
-  return merged && { url: merged.url, part: true };
+    .filter((pr) => pr.state === 'merged' && (part(pr) || pr.repo.toLowerCase() === repo.toLowerCase()) && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= since)
+    .sort((a, b) => Number(part(b)) - Number(part(a)) || (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
+  return merged && { url: merged.url, part: true, ...(part(merged) ? {} : { mention: true as const }) };
 }
 
 /** Where the named pull request is now; undefined: none is named, or a part names it no more. */
 async function namedStateOf(api: GitHubApi, repo: string, number: number, s: Followed): Promise<{ state: PullState; url: string } | undefined> {
   if (!s.pullRequest) return undefined;
   const mention = (await api.referencingPullRequests(repo, number)).find((pr) => pr.url === s.pullRequest);
-  if (mention) return s.part && !isPartOf(mention, repo, number) ? undefined : { state: mention.state, url: mention.url };
+  if (mention) return s.part && !s.mention && !isPartOf(mention, repo, number) ? undefined : { state: mention.state, url: mention.url };
   // Not a mention (issue #637: a pull request named for the issue only on its branch): asked by its number.
   return { state: (await api.pullRequest(pullRequestRepo(s.pullRequest, repo), numberOf(s.pullRequest)))?.state ?? 'closed', url: s.pullRequest };
 }
@@ -387,7 +392,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     if (!s.pullRequest) {
       const open = await openPullRequestOf(ctx.api, repo, number);
       const found = open ?? await mergedPartOf(ctx.api, repo, number, job);
-      if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}) };
+      if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}), ...('mention' in found && found.mention ? { mention: true } : {}) };
       // Blocked for want of a pull request (issue #1891), one found open: its issue waits on it, as a report says.
       const carried = open ? (await ctx.api.getIssue(repo, number)).labels : [];
       if (open && carried.includes(LABEL_BLOCKED)) await relabel(ctx, repo, number, { remove: [LABEL_BLOCKED], add: [open.part ? LABEL_PARTLY_DONE : LABEL_PR_READY], carried });

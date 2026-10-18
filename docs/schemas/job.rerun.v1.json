@@ -7,7 +7,8 @@
       "enum": [
         "user",
         "assessor",
-        "tending"
+        "tending",
+        "reconciler"
       ]
     },
     "person": {

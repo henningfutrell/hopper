@@ -139,4 +139,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // so an item in PR open with no pull request is blocked on it. Nullable columns: the build before runs on them, names its
   // columns when it writes, and reads an item blocked as no state it counts.
   (db) => { rebuildWorkItems(db); },
+  // 83: A pull request closed without a merge on GitHub blocks its item (issue #1891, `pr_closed`), in place of dropping it:
+  // the ledger rebuilt, so an item whose issue is still open waits on a person. Rows only: the build before reads `blocked`.
+  (db) => { rebuildWorkItems(db); },
 ];
