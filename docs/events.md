@@ -5505,7 +5505,7 @@ Version 1 (`docs/schemas/skill.listed.v1.json`). A running job asked the hopper 
 
 ## `skill.loaded`
 
-Version 1 (`docs/schemas/skill.loaded.v1.json`). A running job loaded a skill (issue #582): `skill`, and for a link the `asset` and Access's `decision` (issue #559) that allowed it. The answer names the vault secrets the box may use, never a value.
+Version 1 (`docs/schemas/skill.loaded.v1.json`). A running job loaded a skill (issue #582): `skill`, and for a link the `asset` and Access's `decision` (issue #559) that allowed it. The answer names the vault secrets the box may use, never a value. `version`: for a bundled skill (issue #1909), the skill version the job got, and `asset` the file of it, when it is not the entry.
 
 | field | type | required |
 |---|---|---|
@@ -5515,6 +5515,7 @@ Version 1 (`docs/schemas/skill.loaded.v1.json`). A running job loaded a skill (i
 | `asset` | string | no |
 | `skill` | string | yes |
 | `decision` | string | no |
+| `version` | string | no |
 
 ```json
 {

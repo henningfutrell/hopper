@@ -76,7 +76,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the **bundled skills** — each the plain files of a directory in `bundled/` (`orchestrate/`), its skill version a content hash (`bundled.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
@@ -15164,7 +15164,7 @@ JSON. The broker (`src/skills/broker.ts`), in order:
 **The skills** (`src/skills/catalog.ts`, baked in): `help` (the help pages, "Help"), `github` (the text is `hopper-gh`'s help), `kube-diagnostics` (read
 on a cluster or namespace), `aws-diagnostics` (read on an AWS account or role). No skill is special to one outside service: a credential for any
 other service is asked in the job's own words (issue #583, "The dynamic vault"), and the catalog's last line says how.
-The catalog stays under 800 characters.
+The catalog stays under 1000 characters (issue #1909 added `orchestrate`).
 
 **Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
 (`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
@@ -15180,7 +15180,7 @@ their approvals. Access checks the job (issue #581): its box's template comes fr
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker | engine, http, store, plugins, executors, decider |
+| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker, the bundled skills (`bundled/`, issue #1909) | engine, http, store, plugins, executors, decider |
 
 Tests: `test/integration/skills.test.ts` (the real daemon, a real joined box and client, OpenFGA as a double; the job runs
 the real `hopper-skill`: the catalog in short lines; `github` loaded; a skill the hopper does not have refused with the
@@ -25004,6 +25004,50 @@ in its callback and never answered.
 of the run stays, the user's config dirs unchanged; a run dir that cannot be removed fails the run with its path, after
 an answer and after a timeout), `test/client/level.test.ts` (the same for a client's run), `test/drafting/run.test.ts` (a
 draft run stopped on this machine and on an ssh target: the CLI no longer alive, its run dir gone).
+
+## Bundled skills (issue #1909, part 1, 2026-10-18)
+
+**The problem.** A job that planned its work as a task list, fanned out sub-tasks and finished them read how to do it
+from a skill of the user's workflow repositories (`workflow-orchestrate`). A hopper with no such repository gave its jobs
+no way to orchestrate. That skill also used its own tooling (`orchestrate.sh`, a journal in the repository), which a job
+on a box does not have, and which keeps state on one machine.
+
+**The change.**
+- A **bundled skill** is the plain files of a directory in `src/skills/bundled/`, shipped with the hopper. The first is
+  `orchestrate/` (`SKILL.md`). Its **skill version** is the first 16 hex of a SHA-256 over its files' names and SHA-256s
+  (`releaseOf`, as a client release and a run skill): the same files are always the same version (`src/skills/bundled.ts`).
+- **Delivery is `hopper-skill`.** Every job of every harness gets `HOPPER_SKILL` in its credentials dir ("Skills: what
+  the hopper can set up for a box"). The catalog lists each bundled skill; `sh "$HOPPER_SKILL" orchestrate` answers its
+  `SKILL.md`, headed `skill orchestrate, version <version>`; `sh "$HOPPER_SKILL" orchestrate FILE` answers another file of
+  it. Nothing is installed on the machine and nothing is read from an outside repository, so a fresh box and a machine
+  with no workflow repository get the same text. The job's task line (`TASKS_LINE`) tells it to load the skill when the
+  work has many steps or sub-tasks.
+- **The job record says which version it got.** `skill.loaded` carries `version` (and `asset`, the file, when it is not
+  the entry), on the job's timeline.
+- **The skill maps onto the hopper's durable model**, with no state only on the machine: the task count is `HOPPER_TASKS`
+  (issue #794); a sub-task that is a deliverable of its own is a **required child** (`hopper-gh issue create --required`,
+  "Routed children"), so a work item of its own (#1524, #1067) that Intake lists; the wait on it is a typed `item` wait
+  (`on: issue OWNER/NAME#N`, #1694), woken when it closes; the issue's completion is the item lifecycle's (#1891): the job
+  never closes its own issue. In-job parallel work uses the harness's sub-agents when it has them, each in a worktree of
+  its own; the skill names no harness.
+- **Fan-out keys.** `hopper-gh issue create|comment --key KEY` sends the job's own **resend key** (issue #1607) in place
+  of a random one. The hopper answers a key of the job's that is already done with its first answer (`replayed`), and the
+  job keeps its id when it resumes on another machine (the lost-machine move, #1569; resume elsewhere, #921). So a job
+  stopped partway files each sub-task again with its key, learns the issue it filed, and files nothing twice. The key is
+  checked as before (8 to 64 of `A-Z a-z 0-9 _ -`); a bad key is refused before anything is filed.
+
+**Left of #1909.** A repository's own skill of the same name overriding the bundled one for its jobs, and the override
+on the job record; dropping the hopper's other assumptions that a job works inside a workflow repository; more of the
+workflow skills, bundled the same way; a fan-out key across the jobs of one issue (a Run again is a new job, so its keys
+are new).
+
+**Verification:** `test/skills/bundled.test.ts` (the version is the content hash; each bundled skill in the catalog;
+the load and a missing file; the orchestrate text names only the hopper's protocol and no workflow repository's tooling),
+`test/integration/orchestrate-skill.test.ts` (the real daemon and the real `hopper-skill` and `hopper-gh`, on a machine
+with only the hopper's files: the skill loaded with its version on `skill.loaded`; a sub-task filed with a fan-out key
+filed once, again with the same key, and again after the job moved to another machine with the new run's token, the old
+token refused; a bad key refused), `test/integration/skills.test.ts` (the catalog and the names a no lists),
+`test/herdr/screen.test.ts` (the task line).
 
 ## The cloud link (issue #467, part 1, 2026-10-17)
 

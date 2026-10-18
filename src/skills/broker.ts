@@ -11,7 +11,7 @@ import { ASSET_KINDS, ASSET_NAME, type Asset, type AssetKind, type MintDecision,
 import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job, JobStatus, NewEvent, OperationProfile } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
-import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
+import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILL_NAMES, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
 import { HOLD_TIMEOUT, JEV_APPROVER, type SandboxRequestView } from '../domain/sandbox-approvals.ts';
 import { nameWithoutEmail } from '../domain/users.ts';
 import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
@@ -20,6 +20,7 @@ import { askOf, type TemplateAsk } from './template-ask.ts';
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
 import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
+import { bundledSkill, bundledText, isBundledSkill } from './bundled.ts';
 
 /** What a job refused for its trust can do (issue #655 part 16): nothing it asks raises its trust. */
 const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the minimum trust in Settings → Access. Find another way.';
@@ -166,13 +167,21 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       record('skill.loaded');
       return { status: 200, text: `${h.text}\n` };
     }
+    // Issue #1909: a bundled skill, its version on the job's timeline, so the job record says which one it got.
+    if (isBundledSkill(name)) {
+      const b = bundledSkill(name);
+      const t = bundledText(b, said);
+      if ('no' in t) return no(404, t.no);
+      record('skill.loaded', { version: b.version });
+      return { status: 200, text: `${t.text}\n` };
+    }
     const known = skillOf(name);
     // A service the hopper has no skill for: asked in the job's words, or one a person already gave a credential for.
     const givenFor = box.secrets.find((s) => s.skill === name);
     const words = own ?? (givenFor ? givenFor.note ?? 'the credential a person gave' : undefined);
     const skill = known ?? (words && SKILL_NAME.test(name) ? askedSkill(name, words.slice(0, 200)) : undefined);
     if (!skill) {
-      return no(404, `the hopper has no skill ${name}. It has: ${SKILLS.map((s) => s.name).join(', ')}. For another service, say what credential it takes: sh "$HOPPER_SKILL" ${SKILL_NAME.test(name) ? name : 'NAME'} --credential "<what it takes>". Else find another way.`);
+      return no(404, `the hopper has no skill ${name}. It has: ${SKILL_NAMES.join(', ')}. For another service, say what credential it takes: sh "$HOPPER_SKILL" ${SKILL_NAME.test(name) ? name : 'NAME'} --credential "<what it takes>". Else find another way.`);
     }
     const loaded = (text: string, decision?: MintDecision): SkillAnswer => {
       record('skill.loaded', decision ? { decision: decision.id } : {});
