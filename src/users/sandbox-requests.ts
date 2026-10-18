@@ -6,9 +6,10 @@ import { jobBrake } from '../domain/intake-strictness.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
 import { DEFAULT_SANDBOX_STRICTNESS } from '../domain/sandbox-strictness.ts';
+import { outsideStamp } from '../domain/stamp-capabilities.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { TemplateView } from '../domain/vault.ts';
-import type { Job } from '../domain/types.ts';
+import type { Job, MinTrust } from '../domain/types.ts';
 import { namedTemplates, sandboxesHold } from '../domain/sandboxes-before-start.ts';
 import { createSandboxRequests, type SandboxRequests, type SandboxRequestsOptions } from '../sandbox/requests.ts';
 import { DEFAULT_MINOR_DECISION_SETTINGS, type JevFirst } from '../domain/minor-decisions.ts';
@@ -79,6 +80,8 @@ export function userSandboxRequests(o: {
   userId: string; store: Pick<UserStore, 'events' | 'settings' | 'jobs'>; templates: () => TemplateView[]; clock: { now(): Date };
   /** Jev, for the `sandbox-request` check (issue #655 part 13); and what lowers a job's trust when Jev denies its run. Absent: no check. */
   jevFirst?: JevFirst; jevDenied?: (jobId: string) => void;
+  /** Each operation profile's minimum trust in Access (issue #655 parts 15, 16): what a job's stamp may ask for. Absent: none. */
+  minTrusts?: () => MinTrust[];
 }): SandboxRequests {
   const { store } = o;
   return createSandboxRequests({
@@ -90,6 +93,8 @@ export function userSandboxRequests(o: {
     live: (id) => LIVE.includes(store.jobs.get(id)?.status ?? ''),
     // Issue #655 parts 7 and 12: below approved, or below the intake strictness on it now, a person approves.
     autoApprovable: (id) => { const j = store.jobs.get(id); return j !== undefined && store.jobs.gate2Hold(j, jobBrake(store.settings.getIntakeStrictness(), j)) === undefined; },
+    // Issue #655 part 16: a need above the job's trust, as its stamp verifies now, is outside the stamp.
+    outsideStamp: (id, profiles) => { const j = store.jobs.get(id); return outsideStamp(j ? store.jobs.trustLevel(j) : undefined, profiles, o.minTrusts?.() ?? []); },
     strictness: () => store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, // issue #655 part 8, brake 2
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
     jobUrl: (id) => store.jobs.get(id)?.source?.url,

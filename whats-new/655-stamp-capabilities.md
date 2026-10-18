@@ -1,0 +1,1 @@
+- A job that asks for a sandbox or a step above its trust level now gets a clear no at once, before a template is made and before anyone is asked. Its trust level stays as it was.

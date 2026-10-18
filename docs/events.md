@@ -4813,7 +4813,7 @@ Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was
 
 ## `vault.sandbox_declined`
 
-Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline. Issue #655 part 9: `by` is `the hold timeout` when no person answered it within 24 hours; that deny is of this request only, and lowers no trust. Part 13: `by` is `Jev` when Jev's sandbox check (the decision point `sandbox-request` active) denied it, with its reason: a deny at gate 2, which lowers the job's trust as a person's does (`job.trust_lowered`, `job.quarantined`).
+Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline. Issue #655 part 9: `by` is `the hold timeout` when no person answered it within 24 hours; that deny is of this request only, and lowers no trust. Part 13: `by` is `Jev` when Jev's sandbox check (the decision point `sandbox-request` active) denied it, with its reason: a deny at gate 2, which lowers the job's trust as a person's does (`job.trust_lowered`, `job.quarantined`). Part 16: `by` is `the minimum trust` when the template has an operation profile whose minimum trust the job's stamp does not meet: declined at once, by policy, before Jev or a person; the job's trust stays.
 
 | field | type | required |
 |---|---|---|

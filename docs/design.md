@@ -16970,7 +16970,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 15, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 16, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17384,9 +17384,29 @@ build before pushes a stored minimum with the model it finds (this build's, whic
 build needs) but writes no `trust_gated` and no holder: there, no job is below a minimum, so mints are decided as before
 this part. No migration.
 
+**The request's capabilities against the stamp's** (part 16, `src/domain/stamp-capabilities.ts`; `outsideStamp` in
+`src/sandbox/requests.ts`). The issue's gate 2, policy first: "A request outside the stamp's capabilities is denied", and
+the test "denied by policy, with no Jev call". A stamp's capabilities are the operation profiles whose minimum trust (part
+15) its level meets, as it verifies now; a profile with no minimum is in every stamp. A need above it is **outside the
+stamp** (`outsideStamp`: `the job's trust stamp is approved, below the minimum trust owner to write on aws-account …`; a
+quarantined job meets no minimum, and a job whose stamp does not verify meets none either, as in OpenFGA):
+
+- **At the skill broker**, `sandbox --needs` and `sandbox-template --needs` are refused (403) before a template is made:
+  `the minimum trust refuses these needs: … Asking again does not change it: an admin sets the minimum trust in Settings →
+  Access. Find another way.` A need step (`/job/step?needs=`) is refused the same way, before its template request.
+- **A sandbox request** of a template with such a profile (`sandbox --template NAME`, a template named in the brief before
+  the start, or a template a person approved meanwhile) is declined at once, before the approvals, Jev and a person, by
+  **the minimum trust** (`MIN_TRUST_DECLINER`): `vault.sandbox_declined { by: the minimum trust }`, with the reason the job
+  is told.
+- **Set later**, the minimum stops a run approved before: a box step of that template does not run while the job is below
+  it (`runnable`), whoever approved it; cleared, it runs again. The mint is denied as well (part 15).
+
+A deny by policy is no deny of part 5: the job's trust stays, and Jev's sandbox check is not asked. Access reads the minima
+as kept (`minTrusts`), so a change applies at the next ask, with no restart. Persisted state: none.
+
 **Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the edit count,
-the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, the rest of gate 2 at
-the skill broker (the request's capabilities against the stamp's), and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+the linked pull requests and their forks, the repository's visibility), Jev's `intake-kind` decision, and the Intake view of
+the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job
