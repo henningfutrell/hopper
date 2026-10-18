@@ -12,7 +12,7 @@
 // on the same item, stops the item (issue #1461): a person, once, and nothing runs it again by itself.
 import type { FailureClass, FailureDecision, FailureSettings, KnownCause, ProblemScope } from '../domain/types.ts';
 import { HOPPER_BUG_CAUSE } from './hopper-bug.ts';
-import { OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED } from './causes.ts';
+import { DONE_CRITERIA_UNMET, OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED } from './causes.ts';
 import { judgeTimeout, type LivenessFacts, type TimeoutKind } from './timed-out.ts';
 
 /** Another item's failure with the same signature, within the grouping window. */
@@ -49,6 +49,8 @@ export interface AssessInput {
   checksFixes?: number;
   /** A job whose own pull request has merge conflicts or is a draft (issue #1265): how many times its chain was sent back for it already. */
   unfinishedFixes?: number;
+  /** A job whose done criteria are not met (issue #1924): how many times its chain was sent back for them already. */
+  criteriaFixes?: number;
   /** The failure of its item's run before it has the same signature (issue #1461, `chain.ts` `repeatedOf`). */
   repeated?: boolean;
   /** Why its cause is not the one its text matches (issue #1522: its work shows its own pull request unfinished or red). */
@@ -123,7 +125,7 @@ const RECOMMENDED: Record<FailureDecision, string> = { retry: 'Retry', hold: 'Ho
 function summaryOf(i: AssessInput, decision: FailureDecision, auto: boolean, title: string | undefined, retryInMs: number | undefined, lead?: string): string {
   lead ??= decision === 'retry' ? (auto ? `Runs again in ${duration(retryInMs ?? 0)}` : 'Retry recommended')
     : decision === 'continue' ? (auto ? (i.cause?.id === OWN_PR_CHECKS_RED ? 'Continues: it fixes the red checks of its pull request'
-      : i.cause?.id === OWN_PR_UNFINISHED ? 'Continues: it finishes its pull request' : 'Continues: it was at work') : 'Continue recommended')
+      : i.cause?.id === OWN_PR_UNFINISHED ? 'Continues: it finishes its pull request' : i.cause?.id === DONE_CRITERIA_UNMET ? 'Continues: it reworks its pull request to meet the done criteria' : 'Continues: it was at work') : 'Continue recommended')
     : decision === 'person' ? 'Needs a person'
       : !auto ? `Grouped: ${title}` : decision === 'redirect' ? `Redirected: ${title}` : `Held: ${title}`;
   const ran = `Ran ${i.attempt} ${i.attempt === 1 ? 'time' : 'times'}${i.job.machineId ? ` on ${i.job.machineId}` : ''}${i.ranMs !== undefined && i.attempt > 1 ? `, the last for ${duration(i.ranMs)}` : i.ranMs !== undefined && i.ranMs >= 1000 ? `, for ${duration(i.ranMs)}` : ''}`;
@@ -203,6 +205,16 @@ function judge(i: AssessInput): Assessment {
       return done('transient', 'continue');
     }
     reasons.push(`retry limit reached: sent back ${fixes} ${fixes === 1 ? 'time' : 'times'} to finish its pull request`);
+    return done('transient', 'person');
+  }
+  // Its done criteria are not met (issue #1924): the same, sent back to rework; at the limit it fails, with the reason, for a person.
+  if (i.cause?.id === DONE_CRITERIA_UNMET) {
+    const fixes = i.criteriaFixes ?? 0;
+    if (fixes < s.maxAttempts) {
+      reasons.push(`a done criterion of its skills is not met: it goes on to rework its pull request (${fixes + 1} of ${s.maxAttempts})`);
+      return done('transient', 'continue');
+    }
+    reasons.push(`retry limit reached: sent back ${fixes} ${fixes === 1 ? 'time' : 'times'} for its done criteria`);
     return done('transient', 'person');
   }
   if (i.cause?.id === 'timed-out') {

@@ -36,7 +36,7 @@ export function createSkillLibraryRepository(c: StoreContext): SkillLibraryRepos
       return r ? parse<WorkSkillSettings>(r.value) : undefined;
     },
     setWorkSkills(s) {
-      c.db.run("INSERT INTO settings (key, value) VALUES ('workSkills', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify({ kinds: s.kinds, repos: s.repos }));
+      c.db.run("INSERT INTO settings (key, value) VALUES ('workSkills', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify({ kinds: s.kinds, repos: s.repos, ...(s.rules?.length ? { rules: s.rules } : {}) }));
     },
   };
 }

@@ -112,7 +112,8 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
   const listing = fakeListing(issues, (m, a) => enter(m, a)); const links = fakeLinks((m, a) => enter(m, a));
   const acts = fakePullActs(pulls, (m, a) => enter(m, a), notFound);
   const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
-  const heads = fakeHeadChecks((m, a) => enter(m, a), (repo, ref) => pulls.find((p) => p.repo === repo && p.headRef === ref)?.url);
+  const pullOf = (repo: string, n: number) => (issues.has(key(repo, n)) ? undefined : pulls.find((p) => p.url === `https://github.com/${repo}/pull/${n}`));
+  const heads = fakeHeadChecks((m, a) => enter(m, a), (repo, ref) => pulls.find((p) => p.repo === repo && (p.headRef === ref || p.headOid === ref))?.url);
 
   const api: GitHubApi = {
     listRepos: listing.listRepos, issuesChangedSince: listing.issuesChangedSince, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn, mergedPullRequestsInto: batched.mergedPullRequestsInto,
@@ -123,7 +124,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     },
     async listComments(repo, n) {
       enter('listComments', [repo, n]);
-      find(repo, n);
+      if (!pullOf(repo, n)) find(repo, n);
       return (comments.get(key(repo, n)) ?? []).map((c) => ({ ...c }));
     },
     async issueEdits(repo, n) {
@@ -234,7 +235,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     ...acts.api,
     jobLog: jobLogs.jobLog,
     rerunJob: jobLogs.rerunJob, workflowRun: jobLogs.workflowRun, pullRequestReviews: reviews.pullRequestReviews,
-    headChecks: heads.headChecks, ...links.api,
+    headChecks: heads.headChecks, checkRuns: heads.checkRuns, ...links.api,
   };
 
   // A connected account's listing across repos.
@@ -261,7 +262,8 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       return copy(issue);
     },
     addComment(repo, n, author, body, association, viaApp) {
-      const i = find(repo, n);
+      // On a pull request too (issue #1924: a plan comment), which has no issue of its own here.
+      const pull = pullOf(repo, n); const i = pull ? { url: pull.url, updatedAt: '' } as GitHubIssue : find(repo, n);
       const at = stamp();
       const c: GitHubComment = { id: ++commentId, author, body, createdAt: at, updatedAt: at, url: `${i.url}#issuecomment-${commentId}`, ...(association ? { association } : {}), ...(viaApp ? { viaApp } : {}) };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
@@ -288,7 +290,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    setHeadChecks: heads.setHeadChecks, setJobLog: jobLogs.setJobLog, setWorkflowRun: jobLogs.setWorkflowRun, setReviews: reviews.setReviews, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
+    setHeadChecks: heads.setHeadChecks, setCheckRuns: heads.setCheckRuns, setJobLog: jobLogs.setJobLog, setWorkflowRun: jobLogs.setWorkflowRun, setReviews: reviews.setReviews, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods, ...fakeChangedLines((m, a) => enter(m, a), (url) => diffs.get(url)),
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {

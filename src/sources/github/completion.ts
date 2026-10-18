@@ -218,7 +218,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
  * part of it, or only referencing it in its own repository with no closing keyword for another issue (issue #1522: a
  * referencing one is the job's too, so its miss names it by number).
  */
-async function ownOpenPullRequests(api: GitHubApi, job: Job, repo: string, number: number): Promise<OpenPullRequest[]> {
+export async function ownOpenPullRequests(api: GitHubApi, job: Job, repo: string, number: number): Promise<OpenPullRequest[]> {
   const referencing = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase()
     && (isPartOf(pr, repo, number) || !worksOnAnotherIssue(pr, repo, number)));
   const closing = await api.openClosingPullRequests(repo, number);

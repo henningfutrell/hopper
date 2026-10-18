@@ -78,7 +78,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
-| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill, chosen at its first start and kept (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
+| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
@@ -27956,3 +27956,77 @@ requiring it; a job on a fresh machine gets `orchestrate` beside `work`; a user'
 requires `orchestrate`, and one not in the library: the files, the event's `requires` and `missing`, the line; an edit of a
 required skill reaches the next job and not a later start of this one); `test/ui/skills.test.ts` and
 `test/ui/skills-view.test.ts` (the requires line, the timeline line).
+
+## Conditional skills (issue #1924, part 1, 2026-10-18)
+
+**Problem.** A job that changed infrastructure code opened its pull request and ended done while most of its `terraform
+plan` checks were red and one plan replaced a resource. The plan summary showed the delete, but nothing made the job read
+it, and the done check trusted the job. A job must get the skills of what it works on, and the hopper must check the
+skill's machine-checkable criteria itself before it takes the job as done.
+
+**As built (part 1).**
+- **Skill rules** (`src/domain/conditional-skills.ts`, pure). The work skill settings (issue #1911) keep `rules`: each a
+  library skill and conditions — `repos`, `labels` (a label such as `iac` declares what the job is), `kinds` (its kind of
+  work) —, one value of each condition named must match, and all conditions named together; at least one. `POST
+  /ui/api/work-skills` takes `rules`, all of them in place of the ones before (`skillRuleProblem`; each skill named must be
+  in the library), recorded in `work_skills.changed`. A skill a rule names cannot be removed. The rules are kept in the
+  user's settings `workSkills`, an optional field: a store with none reads as before.
+- **The choice** (`jobSkillsOf`, `src/skill-library/index.ts`). At a job's first start, when its work skill is chosen, each
+  rule that matches its repository, its item's labels and its kind of work gives its skill's newest version, once each
+  (the work skill itself never again), recorded as `job.conditional_skills_chosen`: name, version, `seq`, `why` (the
+  conditions that matched) and `done` (its done criteria). Each later start reads that event and gets the same versions,
+  on any machine; a rule changed later reaches the next job. A job that matched no rule records nothing.
+- **Delivery.** The skills' files go into the job's credentials dir with the work skill's (`jobProxy`):
+  `conditional-skill/<name>/<path>`, and an index, `conditional-skill/INDEX.md`, that lists each `SKILL.md`, why the job
+  got it and what the hopper checks. `HOPPER_CONDITIONAL_SKILLS` names the index. The job rules end, after the work skill's
+  line, with one `[hopper conditional skills]` line: each skill, its version and why, and the done criteria in plain words.
+- **Done criteria.** A library skill may have a `done.json` beside its `SKILL.md`: `{ "criteria": [...] }`, checked when a
+  version is kept (`doneFileProblem`). `checks-passed` (`checks`: a name, `*` any text): at least one check of the pull
+  request's head commit — a check run or a commit status — matches, and each one that matches passed; a check still
+  running is not passed. `plan-destroy` (`checks` optional, `max` 0 when absent): the `Plan: … N to destroy` lines (a
+  replace counts there; `No changes.` is 0) in the output of those checks (title, summary and text) and in the pull
+  request's comments written or edited since its head commit; none may be over `max`, and one must be there.
+- **The done check** (`src/sources/github/done-criteria.ts`). When the GitHub done check finds the job done and the job
+  got done criteria, the hopper reads the job's own open pull request that is ready for review (the newest): its head
+  commit by its number, its checks with their output (`checkRuns`, `GET …/commits/{ref}/check-runs` and `…/status`), and
+  its comments. A criterion not met keeps the job not done: `PR #N: done criteria of skill <name> not met: <each miss>`.
+  An issue closed (merged, or closed as completed), or no open pull request of the job's own, is judged as before. A read
+  that fails throws: not known is not done.
+- **Rework.** The failure cause **Done criteria unmet** (before Not complete, whose text it shares) is `continue`: the job
+  goes on in its own session and work tree (else a new job of its item), told what the done check found and to fix it on
+  the same branch (`doneCriteriaBrief`). Each send-back counts against the retry limit (`criteriaFixes`); then the
+  decision is a person's, and the job stays failed with the reason.
+- **The built-in `iac` skill** (`src/skill-library/built-in/iac/`): wait for the plan checks after each push and read
+  each root's plan; never apply; never add the MAP tag to a resource that exists; on a replace, find the attribute that
+  forces it and keep its value or narrow `ignore_changes`. Its `done.json`: every check named `*plan*` passed, and no plan
+  of them destroys or replaces a resource. A rule gives it to a job; no rule names it by default.
+- **The job page.** `job.conditional_skills_chosen` on the job's timeline reads `conditional skills: <name> <version>
+  (built-in | version <n>), by <why>; done when <criteria>` (`conditionalSkillsChosenLine`).
+
+**Decisions.**
+- **Rules are a setting, criteria are part of the skill.** Which jobs get a skill is the user's choice per repository and
+  label, as the work skills are; what makes a job of that skill done is versioned with the skill's text, so a job is
+  judged by the version it was given.
+- **A declared kind is a label.** The issue names a declared job kind (`iac`, `gitops`); a label carries it, so no new
+  field on a job or an issue is needed.
+- **The criteria live in the event.** `job.conditional_skills_chosen` carries the criteria, so the done check reads the
+  job's timeline only, and a removed skill still judges the jobs that got it.
+- **Plan text from check output and comments.** A CI can put its plan summary in either. The rule reads both, and asks
+  for at least one plan, so a summary that never comes is a miss, not a pass.
+
+**Left for later parts.** Selection by the paths a change touches (`*.tf`, `src/**`): those are known only once the job
+pushed, so they need a check at the done check, not at the start. Allowed deletes the issue lists by resource address
+(the plan's own resource lines, compared with the issue's list). The Skills page's editor for the skill rules (they are
+set through the API now). The gitops skill (production overlays are deploys on merge: flagged in the pull request body,
+never merged by the hopper). Yolo mode reading the done criteria before a merge. Done criteria on GitLab merge requests and on
+pull requests that ship a part.
+
+**Verification:** `test/domain/conditional-skills.test.ts` (a rule's match and why, its problems, the settings' change,
+done.json and its refusal, the plan's destroy counts, each miss, the prompt line, the delivery paths);
+`test/sources/github-done-criteria.test.ts` (a plan that replaces a resource with every check green is not done, a plan
+check still running or none, a plan in a comment since the head commit, no criteria and a closed issue as before);
+`test/failures/done-criteria-unmet.test.ts` (the cause ahead of Not complete, the send-back under the retry limit and a
+person at it, the chain's count, the Continue's brief); `test/integration/conditional-skills.test.ts` (on the real
+database and HTTP edge: the rules and their refusals, a matching job's files, index, line and event, a job no rule
+matches, the versions kept across a change of the rules); `test/ui/skills.test.ts` (the timeline line, a rule naming a
+skill).
