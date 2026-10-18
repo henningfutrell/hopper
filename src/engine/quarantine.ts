@@ -3,8 +3,10 @@
 // its pane, but reaches no GitHub, git, vault, skill or step through the hopper. Only a person lifts it, to the level the
 // job had before. Each is one event, with who acted. A person approves the trust of a job Jev's trust check lowered (part 4).
 // A person's deny at gate 2 lowers a job's trust one level, and the second quarantines it (part 5).
-import { DENY_REASON } from '../domain/trust-stamp.ts';
+// The stamp intake signed at a job's making is `intake.stamped`, after its `job.queued` (part 11).
+import { DENY_REASON, stampedEvent } from '../domain/trust-stamp.ts';
 import { TERMINAL_STATUSES, type ActingPerson, type Job } from '../domain/types.ts';
+import type { UserStore } from '../domain/ports.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -58,4 +60,10 @@ export function recordDeny(c: EngineContext, id: string, acting: ActingPerson): 
   if (next.stamp.level === 'quarantined') c.store.events.append({ type: 'job.quarantined', jobId: id, data: { was: from, reason: DENY_REASON, ...acting } });
   else c.store.events.append({ type: 'job.trust_lowered', jobId: id, data: { from, to: next.stamp.level, reason: DENY_REASON, by: 'person', ...acting } });
   return next;
+}
+
+/** In the tx, after the new job's `job.queued`: the stamp intake signed at its making, as `intake.stamped`. None: no stamp. */
+export function appendStamped(store: UserStore, job: Job): void {
+  const data = stampedEvent(job);
+  if (data) store.events.append({ type: 'intake.stamped', jobId: job.id, data });
 }

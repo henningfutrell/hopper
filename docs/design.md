@@ -16942,7 +16942,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 10, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 11, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17221,8 +17221,29 @@ between fits in it.
 
 The job view keeps reading the stamp from the job itself. No migration: nothing is stored.
 
+**The stamp as an event** (part 11, `intake.stamped`). The issue: "It goes in the event log (`intake.stamped`). The job
+row keeps only the record id." Each stamp the job store signs **from where the job came** is one event on the job's
+timeline, so the log shows the level the job got, why, and for which text:
+
+- at its making: `by` `intake`, or `job` for a job a job made (a follow-on, a fork). The engine appends it right after the
+  job's `job.queued` (`appendStamped`, `src/engine/quarantine.ts`), so a job's timeline still starts with `job.queued`;
+- for a new spec (`respecify`), at the backfill (`backfill`), and when a sync judges the job's origin later (`restamp`,
+  `by` `intake`; `by` `person` when a quarantine stays on it): the store tells it after the write (`onStamped`, which the
+  user store wires to the event log, in the same transaction).
+
+The data (`stampedEvent`, `src/domain/trust-stamp.ts`): `level`, `reasons`, `by`, `was` (a quarantined job's level
+before), `from` (the level the stamp verified at before, when it had one), and `spec`: the SHA-256 of the spec as
+canonical JSON, the hash the MAC covers (`specHashOf`). The MAC is never in it. A job with no stamp — no stamp key, or a
+parent whose stamp does not verify — gets no event. A person's act, Jev's check, a deny and an edit keep their own events
+(`job.quarantined`, `job.trust_lowered`, …), so they are not told twice.
+
+The stamp stays on the job row, signed, as before: the event is the audit trail, not the source of truth. The issue's S2
+keeps the record in the log and only its id on the row; that moves the check at each Decision from one row to the log,
+for no gain in security, since the MAC already shows a changed row. One event, not two: the issue also names
+`intake.restamped`; `by` and `from` say which stamp it is. No migration: nothing new is stored on the job.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
-`intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
+`intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the
 rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), a
 tightened intake strictness that re-checks running jobs, and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 

@@ -1378,6 +1378,30 @@ Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent wit
 }
 ```
 
+## `intake.stamped`
+
+Version 1 (`docs/schemas/intake.stamped.v1.json`). The job store signed the job's trust stamp from where its work came (issue #655 part 11, design.md "Trust stamps"): at its making (`by` `intake`, or `job` for a job a job made), for a new spec (`respecify`), at the backfill of a job made before stamps (`backfill`), or when a sync judged its origin later (`intake`, or `person` when a quarantine stays). `level` and `reasons`: as on the stamp; `was`: a quarantined job's level before it. `from`: the level its stamp verified at before, when it had one. `spec`: the SHA-256 of the spec the stamp covers, as canonical JSON. The MAC is never in it. A job with no stamp (no stamp key, or a parent whose stamp does not verify) has none.
+
+| field | type | required |
+|---|---|---|
+| `level` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `reasons` | string[] | yes |
+| `by` | `intake` \| `job` \| `respecify` \| `backfill` \| `person` \| `jev` \| `edit` | yes |
+| `was` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
+| `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
+| `spec` | string | yes |
+
+```json
+{
+  "level": "trusted",
+  "reasons": [
+    "origin:trusted"
+  ],
+  "by": "intake",
+  "spec": "9f2c41d0b7e85a3c6d1e04f7a2b9c8d3e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+}
+```
+
 ## `terminal.opened`
 
 Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/screen`), or the machine's (`POST /ui/api/machines/:id/terminal/screen`), which names `machineId` and `paneId` and the job only when one holds that pane. It is the first read of the pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
