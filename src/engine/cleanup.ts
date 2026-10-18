@@ -36,7 +36,8 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
   const deferred = new Map<string, { sourceKey?: string; error: string }>();
 
   const run: Cleanup = async (jobId) => {
-    if (c.keepPanes || running.has(jobId)) return;
+    // Scheduled with setImmediate after the tx that ended the job, so a stop and the store's close can come first (issue #828).
+    if (c.keepPanes || c.stopping() || running.has(jobId)) return;
     const job = c.store.jobs.get(jobId);
     const executor = job ? c.executors.get(job.spec.executor) : undefined;
     if (!job || !ENDED.includes(job.status)) return;
