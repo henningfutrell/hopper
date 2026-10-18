@@ -33,13 +33,16 @@
 // box, burned after the step, and is recorded on the job's timeline (`step.started`, `step.finished`, `step.refused`). A
 // `secret` the host gives goes to the step, after the job's vault grant; a credential minted
 // for a need step goes to its need box only; never in an answer to the job. A template a need step asks for is saved and
-// approved only as a template request is (job-skill.ts).
+// approved only as a template request is (job-skill.ts). Below `approved` (issue #655 part 7), gate 2 gives the job no step
+// with no person: a need step is refused, and a box step runs only from a sandbox request a person approved. Sandbox
+// strictness (brake 2, issue #655 part 8) does the same for the templates it holds.
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { mintKindFor } from '../domain/minting.ts';
 import { NEED_STEP_KEY } from '../domain/need-steps.ts';
-import type { Job, JobStatus } from '../domain/types.ts';
+import { DEFAULT_SANDBOX_STRICTNESS, personBrake, sandboxBrakeText } from '../domain/sandbox-strictness.ts';
+import type { Job, JobStatus, TemplateView } from '../domain/types.ts';
 import { STEP_INPUTS_MAX_BYTES } from '../domain/windows-steps.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
 import { NEED_STEP_INPUTS_MAX_BYTES } from '../sandbox/need-steps.ts';
@@ -96,9 +99,19 @@ const asked = (reply: FastifyReply, started: { id: string } | { status: number; 
   ('no' in started ? no(reply, started.status, started.no)
     : reply.code(202).header(STEP_HEADER.id, started.id).type('text/plain; charset=utf-8').send(`started: step ${started.id}\n`));
 
-/** The templates of the job's approved sandbox requests: the boxes its box steps may name (issue #1349). */
-const approvedSandboxes = (t: TenantParts, job: Job): string[] =>
-  t.sandboxRequests.list().filter((r) => r.jobId === job.id && r.state === 'approved').map((r) => r.template);
+const ASK_SANDBOX = (needs: string): string => `Ask for a sandbox a person approves: sh "$HOPPER_SKILL" sandbox --needs "${needs}" --why "<why the job needs it>"`;
+
+/** Why gate 2 refuses the job a need step (issue #655 part 7): its trust stamp is below `approved`; undefined: it does not. */
+function belowApproved(t: TenantParts, job: Job, needs: string): string | undefined {
+  if (t.store.jobs.autoApprovable(job)) return undefined;
+  return `its trust stamp ${t.store.jobs.trustLevel(job) ?? 'does not verify and'} is below approved: a need step runs only for a job at approved or above. ${ASK_SANDBOX(needs)}`;
+}
+
+/** Why brake 2 refuses a need step of `template` (issue #655 part 8): a person approves each of its runs; undefined: it does not. */
+function braked(t: TenantParts, template: TemplateView, needs: string): string | undefined {
+  const b = personBrake(t.store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, template);
+  return b ? `${sandboxBrakeText(b)}: a person approves each run of the template ${template.name}, and a need step has no approval of its own. ${ASK_SANDBOX(needs)}` : undefined;
+}
 
 /** `skillWaits`: a Linux step's template is asked for through them (issue #1007), so a wait for it ends the job's own wait. */
 export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skillWaits: SkillWaits }): void {
@@ -110,7 +123,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
       const who = askerOf(o.tenants, req.headers.authorization);
       if ('status' in who) return no(reply, who.status, who.text);
       const hosts = who.t.windowsSteps.hosts();
-      const boxes = approvedSandboxes(who.t, who.job);
+      const boxes = who.t.sandboxRequests.runnable(who.job.id);
       const text = (hosts.length === 0
         ? 'The hopper has no Windows host: a person adds one in Settings → Windows hosts.\n'
         : hosts.map((h) => `${h.name}  ${h.workDir}${h.label ? `  ${h.label}` : ''}${h.secrets?.length ? `  secrets: ${h.secrets.join(', ')}` : ''}\n`).join(''))
@@ -124,6 +137,8 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
       const query = (req.query ?? {}) as Record<string, unknown>;
       const needs = one(query.needs);
       if (needs !== undefined) {
+        const below = belowApproved(who.t, who.job, needs);
+        if (below) return no(reply, 403, below);
         const read = needsOf(needs);
         if (typeof read === 'string') return no(reply, 400, read);
         // A need the vault mints nothing for is refused before any template is made for it.
@@ -140,6 +155,8 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
           template = steps.covering(read);
           if (!template) return no(reply, 503, 'the template for these needs is ready, but no need box can run it yet: ask again in a minute');
         }
+        const brake = braked(who.t, template, needs);
+        if (brake) return no(reply, 403, brake);
         // `ready`: only whether a template is ready for the needs (hopper-step asks so while it waits), no step run.
         if (one(query.ready) !== undefined) return reply.type('text/plain; charset=utf-8').send(`ready: template ${template.name} covers ${read.length === 1 ? 'the need' : `the ${read.length} needs`}\n`);
         const command = one(query.command), timeout = one(query.timeout), planId = one(query.planId), key = one(query.key);
@@ -163,7 +180,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         const inputs = await bodyOf(req, NEED_STEP_INPUTS_MAX_BYTES);
         if (typeof inputs === 'string') return no(reply, 400, inputs);
         return asked(reply, who.t.needSteps.box(who.job, {
-          box, approved: approvedSandboxes(who.t, who.job), outputs: all(query.output), secrets: all(query.secret),
+          box, approved: who.t.sandboxRequests.runnable(who.job.id), outputs: all(query.output), secrets: all(query.secret),
           ...(command !== undefined ? { command } : {}), ...(timeout !== undefined ? { timeout } : {}), ...(planId !== undefined ? { plan: planId } : {}),
         }, { key, inputs }));
       }

@@ -1,0 +1,1 @@
+- The telemetry now shows the work in a sandbox inside a job's trace, and when a job's change reached the next update channel.

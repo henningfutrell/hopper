@@ -1340,14 +1340,14 @@ Version 1 (`docs/schemas/job.unquarantined.v1.json`). A person, or an agent with
 
 ## `job.trust_lowered`
 
-Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`).
+Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #655 part 4, the decision point `intake-trust` active) lowered the job's trust stamp before it started, `from` its level `to` a lower one: a pick with its reason, or — no answer, not sure, Jev not there — `untrusted` (fail closed). `reason`: the reason id added to the stamp (`jev:touches_ci`, `jev:no_answer`). `by`: `jev`. Or (part 5) a person's deny at gate 2 lowered a job one level, `by` `person`, with `reason` `deny:sandbox` (a declined sandbox request), who (`person`) and how (`via`); the second deny in the job quarantines it (`job.quarantined`). Or (part 7) a sync saw the item of a started job edited: its stamp drops to `untrusted`, `by` `edit`, with `reason` `edit:text`; the job goes on with the text it started with, and gate 2 then approves nothing for it with no person until a person approves its trust.
 
 | field | type | required |
 |---|---|---|
 | `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
 | `to` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
 | `reason` | string | yes |
-| `by` | `jev` \| `person` | yes |
+| `by` | `jev` \| `person` \| `edit` | yes |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -1362,7 +1362,7 @@ Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #
 
 ## `job.trust_approved`
 
-Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check lowered (issue #655 part 4, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
+Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check, a deny at gate 2 or an edit of its item lowered (issue #655 parts 4, 5 and 7, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
 
 | field | type | required |
 |---|---|---|
@@ -1375,6 +1375,30 @@ Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent wit
   "from": "untrusted",
   "person": "ada",
   "via": "ui"
+}
+```
+
+## `intake.stamped`
+
+Version 1 (`docs/schemas/intake.stamped.v1.json`). The job store signed the job's trust stamp from where its work came (issue #655 part 11, design.md "Trust stamps"): at its making (`by` `intake`, or `job` for a job a job made), for a new spec (`respecify`), at the backfill of a job made before stamps (`backfill`), or when a sync judged its origin later (`intake`, or `person` when a quarantine stays). `level` and `reasons`: as on the stamp; `was`: a quarantined job's level before it. `from`: the level its stamp verified at before, when it had one. `spec`: the SHA-256 of the spec the stamp covers, as canonical JSON. The MAC is never in it. A job with no stamp (no stamp key, or a parent whose stamp does not verify) has none.
+
+| field | type | required |
+|---|---|---|
+| `level` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | yes |
+| `reasons` | string[] | yes |
+| `by` | `intake` \| `job` \| `respecify` \| `backfill` \| `person` \| `jev` \| `edit` | yes |
+| `was` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
+| `from` | `quarantined` \| `untrusted` \| `screened` \| `approved` \| `trusted` \| `owner` | no |
+| `spec` | string | yes |
+
+```json
+{
+  "level": "trusted",
+  "reasons": [
+    "origin:trusted"
+  ],
+  "by": "intake",
+  "spec": "9f2c41d0b7e85a3c6d1e04f7a2b9c8d3e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
 }
 ```
 
@@ -3633,6 +3657,40 @@ Version 1 (`docs/schemas/allowed_hosts.changed.v1.json`). The hopper's admin cha
 }
 ```
 
+## `telemetry.changed`
+
+Version 1 (`docs/schemas/telemetry.changed.v1.json`). The hopper's admin changed the telemetry setting (issue #1486, design.md "Telemetry settings"): whether the hopper exports its traces, metrics and logs over OTLP, the endpoint, and which signals. It applies at once, while the launch's OTEL_* variables name no exporter. `from` and `to` are the whole settings: `on`, `endpoint` (an http or https URL with no user, password or query), `signals`; `by`, who. Never a header or a credential. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": false,
+    "endpoint": "",
+    "signals": [
+      "traces",
+      "metrics",
+      "logs"
+    ]
+  },
+  "to": {
+    "on": true,
+    "endpoint": "http://collector:4318",
+    "signals": [
+      "traces",
+      "metrics",
+      "logs"
+    ]
+  },
+  "by": "admin"
+}
+```
+
 ## `source_email_match.changed`
 
 Version 1 (`docs/schemas/source_email_match.changed.v1.json`). The hopper's admin turned the source email match on or off (issue #1380): whether a GitHub account a person connects from Sources must have, among its verified emails, the email they signed in with. `on`, the new setting; `by`, who. An instance event: in every user's log.
@@ -4687,6 +4745,36 @@ Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the
 }
 ```
 
+## `sandbox.strictness_changed`
+
+Version 1 (`docs/schemas/sandbox.strictness_changed.v1.json`). An admin changed the sandbox strictness in Settings → Vault (issue #655, brake 2): which sandbox runs gate 2 may approve with no person, `default`, by blast radius level (`radius`) and by template (`templates`). `relaxed` and `standard`: the approval toggles and policies decide; `strict`: a person approves each run of a medium or high radius template, or one with no rating; `locked`: a person approves each run. It applies at once. `from` and `to`, `by` who changed it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "default": "standard",
+    "radius": {},
+    "templates": {}
+  },
+  "to": {
+    "default": "standard",
+    "radius": {
+      "high": "strict"
+    },
+    "templates": {
+      "aws-prod": "locked"
+    }
+  },
+  "by": "Ada"
+}
+```
+
 ## `vault.sandbox_requested`
 
 Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked the hopper for a box of a template (issue #991, `sh "$HOPPER_SKILL" sandbox --needs …`, or `--template NAME`, issue #1471), or the hopper asked for one before the job started, as the job's prompt names the template (issue #1471): the sandbox request `request`, kept in memory. It waits for a person on Access requests unless skip sandbox approval is on. On the job's timeline.
@@ -4724,7 +4812,7 @@ Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was
 
 ## `vault.sandbox_declined`
 
-Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline. Issue #655 part 9: `by` is `the hold timeout` when no person answered it within 24 hours; that deny is of this request only, and lowers no trust.
 
 | field | type | required |
 |---|---|---|

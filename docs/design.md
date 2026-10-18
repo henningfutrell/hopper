@@ -92,7 +92,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name as steps, find what a mint cut short made, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`, issue #1609) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
-| `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, off unless they name an exporter (`sdk.ts`, `start.ts`); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the steps the hopper does for a job — its worktree, a follow of its pull request, the base merge, a tend — as spans of the job's trace (`job-steps.ts`, "Telemetry: job steps"); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); what runs now — the sandboxes that run at the same time and the store's open connections —, from the readers the parts that hold them add (`live.ts`, "Telemetry: what runs now"); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
+| `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, else from the telemetry setting, off unless one names an exporter (`sdk.ts`, `start.ts`); the setting kept and applied at once (`settings.ts`, "Telemetry settings"); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the steps the hopper does for a job — its worktree, a follow of its pull request, the base merge, a tend, a need box — as spans of the job's trace (`job-steps.ts`, "Telemetry: job steps"); each landing batch run a span, and a deploy span in the trace of each job in it (`deploys.ts`, "Telemetry: a box's own processes and deploys"); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); what runs now — the sandboxes that run at the same time and the store's open connections —, from the readers the parts that hold them add (`live.ts`, "Telemetry: what runs now"); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**), its side of the cloud link's registration messages (`link.ts`, transport-free: a registration kept on the instance's `registered`, a tombstone answered `unregister` at the hello), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI of `BOX_AGENTS`, issue #865; herdr; the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -15906,6 +15906,8 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
   spec's goal as the title, its body, and the comments its prompt carried, read back (`commentsInPrompt`: from the
   untrusted block, or from the end of the context block for a prompt from before it). A comment cut
   short in the prompt reads back short, so that item's next job holds once: safe, never a run of unapproved text.
+- **A started job's item edited** (issue #655 part 7): the job goes on with its text, and its trust stamp drops to
+  `untrusted` (`refreshEdit`, `Job.editSeen`); "Trust stamps" holds the rule.
 - **Not built.** A gate re-entry for the card once the intake gate (issue #655) ships; until then the card stands alone.
   A history of every snapshot (the events keep each hash). A snapshot for a source with no `withText` (the GitHub sources
   are the only ones with item text).
@@ -16940,7 +16942,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 6, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 11, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -16966,7 +16968,7 @@ its parent's level as it verifies then, and never `owner` (`childLevel`); a pare
 can lower a job to the second.
 
 **The stamp** (`Job.stamp`): `{ v: 1, level, reasons, by, at, mac }`. `by`: `intake` (the store made the job), `job` (a job
-made it), `respecify` (its spec changed), `backfill` (made before stamps). `mac` is HMAC-SHA256 under the user's **stamp
+made it), `respecify` (its spec changed), `backfill` (made before stamps), `person`, `jev`, `edit` (an edit of its item after the start, part 7). `mac` is HMAC-SHA256 under the user's **stamp
 key** over the other fields, the job's id and the SHA-256 of its spec as canonical JSON (keys sorted). The stamp key is
 HKDF of the hopper's link key for the user (issue #308), label `hopper-job-stamp/1`, as the proxy token's key is (issue
 #563): never stored, never sent. So a stamp of another job, a raised level or a changed prompt does not verify.
@@ -17125,10 +17127,125 @@ item again, after they looked at why the job was quarantined. A stamp that does 
 hopper) stops steps too, as it closes the doors; it revokes no grant, since no `job.quarantined` is recorded. Its sandbox
 requests are not dropped: approving one of a quarantined job runs nothing, as each step is refused at the door.
 
+**An edit after the start, and gate 2 below `approved`** (part 7, `editedStamp`, `autoApprovable`; `refreshEdit` in
+`src/engine/item-snapshots.ts`). The issue: "An edit (a new hash on a sync): a job that is queued is held [...]. A running
+job continues, but gate 2 drops it to `untrusted` for new requests until a person approves the new snapshot." A queued job
+is held already: its item snapshot holds it with a text change ("Item snapshots", issue #662), and Accept the new text makes a
+new spec, which Jev's check reads again (part 4). This part does the rest:
+
+- **A started job** — one that is not waiting with no attempt: running, waiting on a question or a wait, parked, or back in
+  the queue after a run — whose item's title or body a sync sees changed since the snapshot goes on with the text it
+  started with. Its stamp is signed `untrusted`, `by: edit`, with the reason id `edit:text`; Jev's check stays on it
+  (`job.trust_lowered { from, to: untrusted, reason: edit:text, by: edit }`). The live text is kept as the job's
+  `editSeen`, so the same text lowers it once; a later, other edit lowers it again. Comments are no edit (issue #747). A job
+  at `untrusted` or lower, quarantined, or whose stamp does not verify keeps its stamp; the text is still seen.
+- **Below `approved`, gate 2 gives the job nothing with no person** (`autoApprovable`: the stamp verifies at `approved` or
+  above). Whatever lowered it — an edit, Jev's check, a deny:
+  - its **sandbox request** waits for a person: skip sandbox approval, the auto-approve policy, a remembered write approval
+    and a person's approval of its template do not approve it (`src/sandbox/requests.ts`);
+  - a **box step** runs only from a request a person approved (`approvedBy` not one of the approvers that are no person);
+  - a **need step** is refused (403): `its trust stamp untrusted is below approved: a need step runs only for a job at approved
+    or above. Ask for a sandbox a person approves: sh "$HOPPER_SKILL" sandbox --needs "…" --why "…"`;
+  - the **standing read grant** grants it nothing, one it granted before too: a person grants the item.
+- **A person approves its trust** (part 4's Approve trust, `trustApprovable`, now for an edit too): `approved`, never more.
+  The job view shows `Its item was edited after it started` beside the level. A job lowered by an edit that waits again (a
+  question) says why: `trust stamp untrusted is below approved (its item was edited after it started): held — a person
+  approves its trust on the job, or cancels it`.
+
+What gate 2 keeps: the job's doors stay open below `approved` (part 2; only a quarantine closes them), so the job still
+pushes to its own branch, opens its pull request and reads through the GitHub proxy. A vault grant a person made stays, and a
+template's approval stays: a template is not a job's. Persisted state: `edit` is one more value of `by` and `edit:text` one
+more reason id, which the build before verifies (its MAC covers every field but `mac`); `editSeen` is one more field in the
+job's body, which it ignores, so it may lower the same edit once more.
+
+**Sandbox strictness: brake 2** (part 8, `src/domain/sandbox-strictness.ts`). The issue: "Brake 2, sandbox strictness,
+per template and per blast-radius level". An admin sets which sandbox runs gate 2 may approve with no person, in Settings →
+Vault (`GET /api/sandbox-strictness`, `POST /ui/api/sandbox-strictness`, least role admin, a box action of kind `approve or
+merge work`; `sandbox.strictness_changed` with `from`, `to` and who):
+
+| strictness | a person approves each run of |
+|---|---|
+| `relaxed` | nothing more: the toggles and the auto-approve policy decide (issues #991, #1001) |
+| `standard` (the default) | the same as `relaxed` for now |
+| `strict` | a template of medium or high blast radius, or one with no rating (fail closed) |
+| `locked` | every template |
+
+It is set by default, per blast radius level (`radius`) and per template (`templates`, by name). The most specific wins:
+the template, else its radius level, else the default (`sandboxBrakeOf`). Where it asks a person (`personBrake`), it acts
+as part 7 does below `approved`, for that template only:
+
+- a **sandbox request** waits for a person: skip sandbox approval, the auto-approve policy, a remembered write approval and a
+  person's approval of the template do not approve it (`src/sandbox/requests.ts`);
+- a **box step** runs only from a request a person approved (`runnable`, which also holds part 7's rule);
+- a **need step** of that template is refused (403): `sandbox strictness locked for the template dig: a person approves each
+  run of the template dig, and a need step has no approval of its own. Ask for a sandbox a person approves: …`;
+- the **standing read grant** grants nothing on a box of that template, one it granted before too.
+
+It is read at each ask and each step, so a change applies at once, with no restart. **Tightened, it re-checks**: a run
+that a toggle or a policy approved before no longer lets a box step run, and the standing read grant it gave no longer
+counts; a run a person approved still counts. Loosened, those runs count again. It only takes approvals away: no strictness
+approves a run that the toggles and policies would not. A template's own approval (issues #716, #1001) is not a run, and
+the brake does not change it.
+
+Why `relaxed` and `standard` are the same now: in the issue, `standard` asks Jev's `sandbox-request` point for medium and
+high, which does not exist yet; with Jev absent, the issue's fail-closed table says gate 2 is "policy plus a person", which
+is what the toggles and policies give. When that point is built, `standard` asks it, and `relaxed` keeps the toggles alone.
+Persisted state: one more key in the user's settings, `sandboxStrictness`; the build before does not read it.
+
+**A held request that times out** (part 9, `expire` in `src/sandbox/requests.ts`; `holdSweep` in
+`src/users/sandbox-requests.ts`). The issue: "`hold` timed out with no answer: treated as deny for this request only". A
+sandbox request that waits 24 hours (`SANDBOX_HOLD_MS`) with no person's answer is declined by the hopper: its state
+`declined`, `declinedBy` the **hold timeout** (`HOLD_TIMEOUT`), the reason `no person answered it within 24 hours`, and
+`vault.sandbox_declined { by: the hold timeout }` on the job's timeline, which wakes a job that waits on it (`--wait`). The
+job is told `the hopper declined the sandbox runs of template <name>: no person answered it within 24 hours. Find another
+way.` — not that a person declined. It is a deny **for this request only**: no person said no, so it is no deny of part 5,
+and the job's trust stamp stays. A person's approve or decline after it is 409, as for any request that no longer waits.
+The hopper looks for overdue requests at each ask and list, and once a minute (`HOLD_SWEEP_MS`), so a job is told even when
+nobody opens the Vault page. A request held before the start (issue #1471) times out the same way: declined, it holds the
+job no more, and the job is told no when it asks. Requests are kept in memory, as before: a restart forgets them, and
+the job asks again. 24 hours is fixed, not a setting: the issue names no default, and a person's working day with a night
+between fits in it.
+
+**The stamp view** (part 10, `src/domain/stamp-view.ts`). The issue: "`GET /api/jobs/<id>/stamp`; the CLI with
+`--json`". `GET /api/jobs/:id/stamp` (by its id or its short id, issue #1780; least role viewer) and `hopper job stamp
+<id>` answer one **stamp view** (`stampView`), read only:
+
+- `stamp`: the stamp as kept — `level`, `reasons`, `by`, `at`, `was`, `check` —, each field named, so the MAC never
+  leaves the hopper; null: none;
+- `verifies`: `yes`; `no` (the job or its stamp changed outside the hopper); `missing`; `unknown` (no stamp key: the
+  hopper holds nothing on a stamp, as the store does); and `level`, the level as verified, else null;
+- `brake`: the intake strictness on the job (`strictness`, the level it `needs`, where it was set `at`), as the engine
+  reads it at each Decision, and `startHold`, why the stamp holds the job's start (`stampHold`), else null. A job Jev's
+  active check holds says `checkDue: true`; the hold text for that is the engine's, not the stamp's;
+- `gate2`: `auto` (`autoApprovable`) or `person`; `doorsOpen` (`opensDoors`).
+
+The job view keeps reading the stamp from the job itself. No migration: nothing is stored.
+
+**The stamp as an event** (part 11, `intake.stamped`). The issue: "It goes in the event log (`intake.stamped`). The job
+row keeps only the record id." Each stamp the job store signs **from where the job came** is one event on the job's
+timeline, so the log shows the level the job got, why, and for which text:
+
+- at its making: `by` `intake`, or `job` for a job a job made (a follow-on, a fork). The engine appends it right after the
+  job's `job.queued` (`appendStamped`, `src/engine/quarantine.ts`), so a job's timeline still starts with `job.queued`;
+- for a new spec (`respecify`), at the backfill (`backfill`), and when a sync judges the job's origin later (`restamp`,
+  `by` `intake`; `by` `person` when a quarantine stays on it): the store tells it after the write (`onStamped`, which the
+  user store wires to the event log, in the same transaction).
+
+The data (`stampedEvent`, `src/domain/trust-stamp.ts`): `level`, `reasons`, `by`, `was` (a quarantined job's level
+before), `from` (the level the stamp verified at before, when it had one), and `spec`: the SHA-256 of the spec as
+canonical JSON, the hash the MAC covers (`specHashOf`). The MAC is never in it. A job with no stamp — no stamp key, or a
+parent whose stamp does not verify — gets no event. A person's act, Jev's check, a deny and an edit keep their own events
+(`job.quarantined`, `job.trust_lowered`, …), so they are not told twice.
+
+The stamp stays on the job row, signed, as before: the event is the audit trail, not the source of truth. The issue's S2
+keeps the record in the log and only its id on the row; that moves the check at each Decision from one row to the log,
+for no gain in security, since the MAC already shows a changed row. One event, not two: the issue also names
+`intake.restamped`; `by` and `from` say which stamp it is. No migration: nothing new is stored on the job.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
-`intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy, Jev's `sandbox-request` and its denies, its brake), the restamp on
-an edit seen at a sync, and the Intake and API views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
+`intake-kind` decision, the stamp as OpenFGA tuples (`trust:<level>#holder@job`), the
+rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), a
+tightened intake strictness that re-checks running jobs, and the Intake view of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
 job's stamp and edits its source before a restart gets the stamp the rules give the edited row. Between starts, such a job
@@ -26630,3 +26747,88 @@ job's root; a throw records only its kind; a job no trace holds; the herdr start
 `test/integration/job-steps-trace.test.ts` (the real daemon, the fake GitHub): a base merge and the hopper's merge in the
 job's trace, the base merge linked to its sync; a conflict the mirror cannot merge, tended, and the tend job linked to
 the tend; no pull request URL or text exported.
+
+## Telemetry settings (issue #1486, part 8, 2026-10-17)
+
+The issue asks for an OTLP exporter configured through the hopper's settings and UI, and through the usual `OTEL_*`
+launch environment. Parts 1 to 7 read only the launch's variables.
+
+**The change.**
+- **The telemetry setting** (`src/domain/telemetry-settings.ts`), the hopper's admin's, in Settings → Telemetry or
+  through the API, never in a file: `on`, the OTLP `endpoint` (an http or https URL with no user, password, query or
+  fragment; each signal goes to `<endpoint>/v1/<signal>`) and the `signals` (`traces`, `metrics`, `logs`). Kept in the
+  instance's settings, key `telemetry` (`src/store/telemetry-settings.ts`); never set, it is off with every signal. A
+  record of another shape reads as the default, so a build before this one and a build after it read the same store.
+- **The launch wins.** When the launch's `OTEL_*` variables name an exporter (`telemetryWanted`, part 1), they configure
+  telemetry for the life of the process, and the setting is only kept. Else the setting does.
+- **It applies at once** (`src/telemetry/start.ts` `apply`): the SDK that runs is shut down — what it holds is flushed —
+  and one is started from the setting, in order, one at a time. The SDK gets the setting's exporters, OTLP over HTTP and
+  protobuf, for the signals it names and none other (`sdk.ts` `otlp`); the exporters still read the launch's other OTLP
+  variables, such as `OTEL_EXPORTER_OTLP_HEADERS`. The daemon applies the kept setting at its start
+  (`src/telemetry/settings.ts`). A start that fails leaves telemetry off and logs the error's kind.
+- **Routes** (`src/http/ui/telemetry-settings.ts`): `GET /api/telemetry-settings`, the instance admin's read: the setting,
+  `source` (`launch`, `settings` or `off`), `exporting` and `protocol`; `POST /ui/api/telemetry-settings`, role admin,
+  the whole setting. A change is `telemetry.changed`, with the settings before and after and who changed it.
+- **The Settings section** (`ui/src/views/telemetry-settings.tsx`): on or off, the endpoint, the signals, and a line that
+  says where the config comes from now.
+
+**Why no header in the setting.** A collector's header is usually its API key: a credential the hopper is given for an
+outside service. Such a credential comes from the runtime ("Secrets"), so it stays `OTEL_EXPORTER_OTLP_HEADERS` at
+launch, and the endpoint takes no user, password or query, where a credential could hide.
+
+**Why one protocol.** OTLP over HTTP and protobuf is the OpenTelemetry default and every collector takes it. `http/json`
+and `grpc` stay at launch (`OTEL_EXPORTER_OTLP_PROTOCOL`), with the other exporters.
+
+**What a change loses.** A span still open when the SDK changes belongs to the SDK that is shut down, and is not
+exported. Each job's next span joins its trace again.
+
+**Left for the next parts** (the pull request lists them): a box's own processes; deploy. Both are part 9, below.
+
+**Tests.** `test/telemetry/settings-export.test.ts` (a stand-in collector on loopback, no timing asserted): off until the
+setting turns it on, then spans and metrics reach the endpoint with the launch's headers, and off again flushes and
+stops; only the signals named go out, under the endpoint's own path; the launch wins. `test/integration/telemetry-settings.test.ts`
+(the real daemon and database): off by default; on exports the daemon's spans at once; the event; a bad setting is 400;
+kept across a restart and applied at the start. `test/domain/telemetry-settings.test.ts` and
+`test/ui/telemetry-settings.test.ts`: the endpoint's rules, the record, the UI's line.
+
+## Telemetry: a box's own processes and deploys (issue #1486, part 9, 2026-10-17)
+
+Part 8 left two stages of a job's trace: the work in a sandbox box, and the deploy. A box's processes ran with no trace
+context: a need box gets its environment from the hopper, not from the job. A job's change reaches people through a
+landing batch run (issue #1073), and no span showed it.
+
+**The change.**
+- **A need box's run is a job step** (`src/sandbox/service.ts` `needStep`; design.md "Telemetry: job steps"): the step
+  `need_box`, a child of the job's run span. It covers each way a box runs: a need step, a box step and a container
+  target's command. Outcome: the sandbox run's outcome (`succeeded`, `failed`, `timed-out`, `cancelled`).
+  `hopper.sandbox.place`: `local` (beside the hopper) or `machine` (on a client target).
+- **The box runs with the step's trace context** (`traceEnv`, `src/telemetry/jobs.ts`): `TRACEPARENT`, and `TRACESTATE`
+  when there is one, in the box's environment, beside the step's own variables. The box's script keeps them, so the
+  command and every process it starts see them. A tool in the box that reads `TRACEPARENT` and exports on its own joins
+  the job's trace under the step. Telemetry off: no variable is set.
+- **A landing batch run is a span** (`src/telemetry/deploys.ts`, `traceDeploys`, one per user's runtime beside the job
+  traces): `hopper.landing_batch`, the root of a trace of its own, from `landing_batch.started` to `landing_batch.promoted`,
+  `landing_batch.failed`, or `landing_batch.restarted`. Attributes: `hopper.repo`, the batch's `hopper.pull_request.number`,
+  `hopper.landing_batch.merges` (how many pull requests) and `hopper.landing_batch.outcome` (`promoted`, `failed`,
+  `restarted`). A daemon that stops ends an open one as `restarted`.
+- **A job's deploy span** (`hopper.job.deploy`): for each pull request in the batch that a job of the user named, a span
+  in that job's trace, a child of its pull request span, else its root, while the hopper remembers the job
+  (`jobStepParent`). It lasts as long as the batch run, links to it, and ends with its outcome. The job is found by the
+  pull request's repository and number, from the job's events.
+- **Metric**: `hopper.landing_batch.duration` by outcome. The telemetry summary keeps it with the job spans as `deploy`.
+
+Only ids, numbers and enums go out: no branch, commit, URL, check name or reason.
+
+**Why a batch run is the deploy.** A job has no deploy step of its own: its pull request merges to `main`, and its change
+reaches people when a batch run of `main` merges into `dev` (AGENTS.md "Changes reach people"). `beta`, `canary` and
+`stable` move by `scripts/promote.sh` or the canary window, for many batches at a time: they are not in a job's trace.
+A batch serves many jobs, so it has a trace of its own, and each job gets a span that links to it, as a job step links to
+its sync.
+
+**Not built.** Spans for `scripts/promote.sh` and the canary window. A box's own export: the hopper gives the box no
+`OTEL_*` variable, as it gives a job none (part 4).
+
+**Tests.** `test/telemetry/box-trace.test.ts` (in-memory exporter, the container runtime double, no timing asserted):
+the step's parent, attributes and outcome; the box's `TRACEPARENT` names the step; none with telemetry off; no secret,
+box name or template exported. `test/telemetry/deploys.test.ts`: the batch span and its attributes; a deploy span in each
+job's trace, linked to it; failed and restarted; a batch of pull requests no job made; no branch, commit or URL exported.

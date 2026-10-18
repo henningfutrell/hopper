@@ -1259,7 +1259,15 @@ events.
 ## Telemetry
 
 The hopper exports OpenTelemetry traces, metrics and logs (issue #1486, docs/design.md "Telemetry"). It is off until the
-launch names an exporter, with the usual `OTEL_*` variables. Nothing else is needed, and nothing is set in a file.
+launch names an exporter, with the usual `OTEL_*` variables, or the hopper's admin turns it on in Settings → Telemetry.
+Nothing else is needed, and nothing is set in a file.
+
+**In Settings** (docs/design.md "Telemetry settings"): turn on the export, give the collector's OTLP endpoint (for example
+`http://collector:4318`; each signal goes to its `/v1/traces`, `/v1/metrics` or `/v1/logs`) and pick the signals. It
+applies at once, with no restart, over OTLP HTTP and protobuf. A header the collector needs, such as its API key, is still
+given at launch as `OTEL_EXPORTER_OTLP_HEADERS`. When the launch names an exporter, the launch wins, and Settings says so.
+
+**At launch:**
 
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — your collector, for example `http://collector:4318`. Setting it turns telemetry on.
 - `OTEL_EXPORTER_OTLP_PROTOCOL` — `http/protobuf` (the compose default), `http/json` or `grpc`.
@@ -1300,6 +1308,11 @@ The steps the hopper does for a job are spans of the job's trace (docs/design.md
 merge, Merge now, Close PR), `hopper.job.base_merge` and `hopper.job.tend`. Each has its outcome, and a link to the sync
 or request that ran it. A job that a tend starts links to that tend. The metric is `hopper_job_step_duration_seconds` by
 step and outcome, and the Telemetry panel lists the steps with the job spans.
+
+A need box's run is the step `hopper.job.need_box`, and the box runs with its `TRACEPARENT`: a tool in the box that
+exports on its own joins the job's trace (docs/design.md "Telemetry: a box's own processes and deploys"). Each landing
+batch run is a trace of its own, `hopper.landing_batch`, and each job in the batch gets a `hopper.job.deploy` span that
+links to it. The metric is `hopper_landing_batch_duration_seconds` by outcome.
 
 On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
 

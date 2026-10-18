@@ -1,0 +1,1 @@
+- When nobody answers a job's request for a sandbox within 24 hours, the hopper now declines it and tells the job. The job's trust does not change.

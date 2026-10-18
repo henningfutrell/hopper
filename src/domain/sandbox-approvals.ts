@@ -51,6 +51,10 @@ export const SKIP_SANDBOX_APPROVER = 'skip sandbox approval';
 export const AUTO_APPROVER = 'the auto-approve policy';
 /** Who approves a template or a run that a person's remembered write approvals cover (issue #1001). */
 export const REMEMBERED_APPROVER = 'a remembered write approval';
+/** How long a request waits for a person before the hopper declines it (issue #655 part 9: a held request that times out). */
+export const SANDBOX_HOLD_MS = 24 * 60 * 60 * 1000;
+/** Who declined a request no person answered in time: not a person, so it lowers no trust (issue #655 part 9). */
+export const HOLD_TIMEOUT = 'the hold timeout';
 /**
  * The approvers that are no person: a template one of them approved does not approve a run for its job, and a profile one
  * of them approved is not remembered.
@@ -108,4 +112,6 @@ export interface SandboxRequestView {
   approvedBy?: string;
   /** Why it was declined. */
   reason?: string;
+  /** Who declined it: a person, or the hold timeout when no person answered in time (issue #655 part 9). */
+  declinedBy?: string;
 }

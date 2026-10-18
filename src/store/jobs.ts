@@ -1,8 +1,9 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import {
-  checkDue, checkedStamp, deniedStamp, childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy,
+  autoApprovable, checkDue, checkedStamp, deniedStamp, editedStamp, childLevel, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampedEvent, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy, type StampedEvent, type TrustLevel,
 } from '../domain/trust-stamp.ts';
+import { stampView } from '../domain/stamp-view.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
 import type { Row } from './db.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
@@ -26,7 +27,7 @@ const chunks = (ids: readonly string[]): string[][] => {
  * once a second, and the call blocks the event loop. A get sends the kept version and is answered the body only when
  * the row is at another one.
  */
-export function createJobRepository(c: StoreContext): JobRepository {
+export function createJobRepository(c: StoreContext, onStamped: (jobId: string, data: StampedEvent) => void = () => {}): JobRepository {
   const kept = new Map<string, { v: string; job: Job }>();
   /** The user's trust stamp key (issue #655): absent until the runtime gives it, and then no job is stamped or checked. */
   let stampKey: Buffer | undefined;
@@ -34,6 +35,15 @@ export function createJobRepository(c: StoreContext): JobRepository {
   const stampByRules = (key: Buffer, job: Job, by: StampedBy, cap?: Job['stamp']): Job['stamp'] => {
     const ceiling = ruleCeiling(job);
     return signStamp(key, job, { level: cap ? lowest(ceiling.level, cap.level) : ceiling.level, reasons: ceiling.reasons, by, at: c.clock.now().toISOString() });
+  };
+  /**
+   * The job as written, its stamp told as `intake.stamped` (issue #655 part 11); `from`: the level it verified at before.
+   * Not at `create`: its caller appends `job.queued` first, then the stamp (`appendStamped`), so a job's timeline starts queued.
+   */
+  const told = (job: Job, from?: TrustLevel): Job => {
+    const data = stampedEvent(job, from);
+    if (data) onStamped(job.id, data);
+    return job;
   };
   const keep = (r: Row): Job => {
     const job = parse<Job>(r.body);
@@ -139,37 +149,44 @@ export function createJobRepository(c: StoreContext): JobRepository {
       return write(id, (cur) => applyPatch<Job>(cur, patch));
     },
     respecify(id, spec) {
-      return write(id, (cur) => {
+      let had: TrustLevel | undefined;
+      const job = write(id, (cur) => {
         const next = { ...cur, spec };
         if (!stampKey) return next;
         // Stamped again for the new spec, at the level it had or lower; a stamp that does not verify now stays as it is.
         // Jev's check was on the old text: the new one is checked again.
-        const had = verifiedLevel(stampKey, cur);
+        had = verifiedLevel(stampKey, cur);
         if (had === undefined || !cur.stamp) return next;
         const { check: _old, ...was } = cur.stamp;
         const stamp = signStamp(stampKey, next, { ...was, level: had, by: 'respecify', at: c.clock.now().toISOString() });
         return { ...next, stamp };
       });
+      return had === undefined ? job : told(job, had);
     },
     useStampKey(key) {
       stampKey = key;
       const unstamped = c.db.all(`SELECT id FROM jobs WHERE status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(',')}) ORDER BY seq`, ...TERMINAL_STATUSES)
         .map((r) => String(r.id)).filter((id) => get(id)?.stamp === undefined);
-      for (const id of unstamped) write(id, (cur) => ({ ...cur, stamp: backfillStamp(key, cur) }));
+      for (const id of unstamped) told(write(id, (cur) => ({ ...cur, stamp: backfillStamp(key, cur) })));
       return unstamped;
     },
     restamp(id) {
       const key = stampKey;
       if (!key) return get(id)!;
-      return write(id, (cur) => {
+      let from: TrustLevel | undefined;
+      return told(write(id, (cur) => {
         const stamp = stampByRules(key, cur, 'intake');
+        from = verifiedLevel(key, cur);
         // A quarantine stays: the rules' level is the one its lift gives back (issue #655, part 2).
-        if (verifiedLevel(key, cur) !== 'quarantined') return { ...cur, stamp };
+        if (from !== 'quarantined') return { ...cur, stamp };
         return { ...cur, stamp: quarantinedStamp(key, { ...cur, stamp }, c.clock.now().toISOString()) };
-      });
+      }), from);
     },
     stampHold(job, brake) {
       return stampKey ? stampHold(stampKey, job, brake) : undefined;
+    },
+    stampView(job, brake) {
+      return stampView(stampKey, job, brake);
     },
     quarantine(id) {
       const key = stampKey;
@@ -202,6 +219,16 @@ export function createJobRepository(c: StoreContext): JobRepository {
       if (!key || !cur || TERMINAL_STATUSES.includes(cur.status)) return undefined;
       const stamp = deniedStamp(key, cur, c.clock.now().toISOString());
       return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
+    },
+    edited(id) {
+      const key = stampKey;
+      const cur = get(id);
+      if (!key || !cur || TERMINAL_STATUSES.includes(cur.status)) return undefined;
+      const stamp = editedStamp(key, cur, c.clock.now().toISOString());
+      return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
+    },
+    autoApprovable(job) {
+      return stampKey ? autoApprovable(stampKey, job) : true;
     },
     trustLevel(job) {
       return stampKey ? verifiedLevel(stampKey, job) : undefined;

@@ -56,7 +56,8 @@ export const OPERATOR_USAGE = `  hopper job show <id>                           
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
   hopper job quarantine|unquarantine <id>            quarantine a job: held, and it reaches nothing through the hopper; or lift it
-  hopper job approve-trust <id>                      approve the trust of a job Jev's check or a deny lowered
+  hopper job approve-trust <id>                      approve the trust of a job Jev's check, a deny or an edit lowered
+  hopper job stamp <id>                              a job's trust stamp: its level, whether it verifies, and what it holds (start, gate 2, doors)
 ${DISMISS_USAGE}
 ${DIRECT_USAGE}
 ${QUEUE_USAGE}
@@ -130,13 +131,15 @@ function jobCall(args: string[]): Call {
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' }, note: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
+  if (!id || extra.length > 0) throw usage('job show|stamp|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes, note = values.note;
   // End a job's own wait (issue #1779: a stranded one too), as the job's End wait button.
   if (verb === 'end-wait' && notes === undefined && values.reason === undefined) return { role: 'operator', path: `${at}/end-wait`, body: async () => (note === undefined ? {} : { note }) };
   if (verb === 'end-wait' || note !== undefined) throw usage('job end-wait <id> [--note <text>]');
   // The whole job as the job view reads it; a held job's `holdReason` says why it is held, and one on its own wait what it waits on (issue #1780).
   if (verb === 'show' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}`, pick: (j) => ({ ...(j as Job), ...ownWaitOf(j as Job) }) };
+  // Its trust stamp (issue #655 part 10): whether it verifies, and what it holds or lets through.
+  if (verb === 'stamp' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}/stamp` };
   if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
   if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
   if (verb === 'reject' || verb === 'cancel') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
@@ -151,7 +154,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job show|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
+  throw usage('job show|stamp|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */

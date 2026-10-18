@@ -79,7 +79,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
   // Rebuilt when it missed an event: one the build before appended, or one a fold of users moved in (issue #1067).
   workItems.catchUp();
   return {
-    jobs: createJobRepository(ctx),
+    jobs: createJobRepository(ctx, (jobId, data) => events.append({ type: 'intake.stamped', jobId, data })),
     lanes: createLaneRepository(ctx),
     decisions: createDecisionRepository(ctx),
     events,

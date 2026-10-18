@@ -51,7 +51,7 @@ describe('jobs pulled from a source', () => {
     expect(unknown.error).toMatch(/unknown executor nope/);
     const empty = await t.pull({ op: 'echo' }, { invalid: 'empty issue body' });
     expect(empty).toMatchObject({ status: 'failed', error: 'empty issue body' });
-    expect(typesFor(await t.events(), empty.id).slice(0, 2)).toEqual(['job.queued', 'job.failed']);
+    expect(typesFor(await t.events(), empty.id).slice(0, 3)).toEqual(['job.queued', 'intake.stamped', 'job.failed']);
     await waitFor(() => t.source.reports.some((r) => r.kind === 'failed' && r.job.id === empty.id), { what: 'failed report' });
     expect(t.source.reports.filter((r) => r.job.id === empty.id).map((r) => r.kind)).toEqual(['claimed', 'failed']);
   });
@@ -91,6 +91,8 @@ describe('jobs pulled from a source', () => {
     });
     const types = typesFor(events, job.id);
     expect(types[0]).toBe('job.queued');
+    // Its trust stamp, signed at its making, right after (issue #655 part 11).
+    expect(types[1]).toBe('intake.stamped');
     for (const ty of ['job.prioritized', 'job.claimed', 'job.started', 'job.progressed', 'job.finished']) expect(types).toContain(ty);
     expect(types.indexOf('job.claimed')).toBeLessThan(types.indexOf('job.started'));
     expect(types.lastIndexOf('job.progressed')).toBeLessThan(types.indexOf('job.finished'));

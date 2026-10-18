@@ -112,6 +112,13 @@ export function jobStepParent(jobId: string): Span | undefined {
 /** A propagator's field as an environment variable: `traceparent` → `TRACEPARENT`. */
 const envName = (field: string): string => field.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
 
+/** The variables that name `span` (else the active span) to a process, OpenTelemetry's environment carrier: none when no span is there. */
+export function traceEnv(span: Span | undefined = trace.getActiveSpan()): Record<string, string> {
+  const carrier: Record<string, string> = {};
+  if (span && trace.isSpanContextValid(span.spanContext())) propagation.inject(trace.setSpan(ROOT_CONTEXT, span), carrier, { set: (c, field, value) => { c[envName(field)] = value; } });
+  return carrier;
+}
+
 /** Follows one user's event log. */
 export function traceJobs(o: TraceJobsOptions): JobTraces {
   const max = o.max ?? 2000;
@@ -219,9 +226,7 @@ export function traceJobs(o: TraceJobsOptions): JobTraces {
   const traceContext = (jobId: string): Record<string, string> => {
     const open = jobs.get(jobId);
     const span = open?.spans.get('run')?.span ?? open?.root;
-    const carrier: Record<string, string> = {};
-    if (span) propagation.inject(trace.setSpan(ROOT_CONTEXT, span), carrier, { set: (c, field, value) => { c[envName(field)] = value; } });
-    return carrier;
+    return span ? traceEnv(span) : {};
   };
 
   const stepParent = (jobId: string): Span | undefined => {

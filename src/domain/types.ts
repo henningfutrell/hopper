@@ -133,8 +133,12 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * keeps the original text, accepts the new text, or cancels it.
    */
   textChange?: TextChange;
-  /** A person kept the original text of its changed item: that live text holds it no more (issue #662). */
-  originalKept?: OriginalKept;
+  /**
+   * `originalKept`: a person kept the original text of its changed item: that live text holds it no more (issue #662).
+   * `editSeen`: the last edit of its item a sync saw after the job started (issue #655 part 7): it lowered the job's
+   * trust, and that live text lowers it no more. The job runs the text it started with.
+   */
+  originalKept?: OriginalKept; editSeen?: OriginalKept;
   /**
    * Set while its item's origin is not judged (issue #652, the backfill): a job of a GitHub source queued before origins
    * were judged (tenant migration 39). Held until a sync finds its issue of a trusted origin, or a person approves its
@@ -525,7 +529,7 @@ export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettin
 export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
 export * from './stack-resources.ts'; export * from './telemetry-summary.ts';
 export * from './lane-tuning.ts'; export type { GraphNode, LinkKind, NodeKind, SourceView, TopologyGraph, TopologyLink } from './topology.ts';
-export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts'; export type { IntakeStrictness, Strictness } from './intake-strictness.ts';
+export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts'; export type { IntakeStrictness, Strictness } from './intake-strictness.ts'; export type { SandboxStrictness, SandboxStrictnessLevel } from './sandbox-strictness.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
 export * from './check-logs.ts'; export type { WaitCheck, WaitCondition } from './wait-checks.ts';

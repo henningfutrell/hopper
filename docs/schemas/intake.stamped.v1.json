@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "level": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "intake",
+        "job",
+        "respecify",
+        "backfill",
+        "person",
+        "jev",
+        "edit"
+      ]
+    },
+    "was": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
+    },
+    "from": {
+      "type": "string",
+      "enum": [
+        "quarantined",
+        "untrusted",
+        "screened",
+        "approved",
+        "trusted",
+        "owner"
+      ]
+    },
+    "spec": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "level",
+    "reasons",
+    "by",
+    "spec"
+  ],
+  "additionalProperties": false
+}

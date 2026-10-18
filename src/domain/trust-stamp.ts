@@ -5,8 +5,9 @@
 // A person can quarantine a job (part 2): its level is `quarantined` until a person lifts it, and its proxy token opens
 // no door meanwhile, as for a job whose stamp does not verify. Jev's trust check (part 4, ./trust-check.ts) can lower a
 // level the rules gave, never raise it; a person approves the trust of a job it lowered. A person's deny at gate 2 (part
-// 5: a declined sandbox request) lowers the level one step, and the second deny in the job quarantines it. Pure: the key
-// is passed in.
+// 5: a declined sandbox request) lowers the level one step, and the second deny in the job quarantines it. An edit of a
+// started job's item that a sync sees lowers it to `untrusted` (part 7); below `approved`, gate 2 gives the job nothing
+// with no person (`autoApprovable`). Pure: the key is passed in.
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import type { Job } from './types.ts';
 import { brakeWhere, type Brake } from './intake-strictness.ts';
@@ -18,9 +19,10 @@ export type TrustLevel = typeof TRUST_LEVELS[number];
 
 /**
  * Who stamped a job: intake (the store at its making), a job that made it, a new spec, the backfill at a start, a person
- * (a quarantine, its lift, an approval of its trust), or Jev's trust check (part 4).
+ * (a quarantine, its lift, an approval of its trust), Jev's trust check (part 4), or an edit of its item a sync saw after
+ * the job started (part 7).
  */
-export const STAMPED_BY = ['intake', 'job', 'respecify', 'backfill', 'person', 'jev'] as const;
+export const STAMPED_BY = ['intake', 'job', 'respecify', 'backfill', 'person', 'jev', 'edit'] as const;
 export type StampedBy = typeof STAMPED_BY[number];
 
 /** A job's trust stamp: its level, why, who stamped it and when, and the MAC over these, the job's id and its spec. */
@@ -54,6 +56,11 @@ export const DENY_REASON = 'deny:sandbox';
 /** The deny that quarantines a job: the second in the job. */
 const DENIES_TO_QUARANTINE = 2;
 const DENY_TEXT = 'a person declined its sandbox request';
+/** The reason id an edit of a started job's item adds to the stamp's reasons (part 7). It stays. */
+export const EDIT_REASON = 'edit:text';
+const EDIT_TEXT = 'its item was edited after it started';
+/** The level an edit of a started job's item lowers it to: a person reads the new text before gate 2 gives it more. */
+const EDITED_LEVEL: TrustLevel = 'untrusted';
 
 /** The user's stamp key: HKDF of the hopper's link key for that user (issue #308), as the job proxy token's (issue #563). */
 export const stampKeyOf = (linkPrivateKey: string, userId: string): Buffer =>
@@ -96,10 +103,20 @@ function canonical(v: unknown): string {
   return JSON.stringify(v);
 }
 
-const macOf = (key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: Omit<TrustStamp, 'mac'>): string => {
-  const spec = createHash('sha256').update(canonical(job.spec)).digest('hex');
-  return createHmac('sha256', key).update(canonical({ ...s, jobId: job.id, spec })).digest('base64url');
-};
+/** The SHA-256 of a spec as canonical JSON, hex: the text a stamp covers, and that `intake.stamped` names (part 11). */
+export const specHashOf = (spec: Job['spec']): string => createHash('sha256').update(canonical(spec)).digest('hex');
+
+/** What `intake.stamped` says of a stamp signed from where a job came (part 11): never the MAC. */
+export type StampedEvent = { level: TrustLevel; reasons: string[]; by: StampedBy; was?: TrustLevel; from?: TrustLevel; spec: string };
+
+/** The `intake.stamped` data of the job's stamp; `from`: the level its stamp verified at before. Undefined: no stamp. */
+export function stampedEvent(job: Pick<Job, 'spec' | 'stamp'>, from?: TrustLevel): StampedEvent | undefined {
+  const s = job.stamp;
+  return s && { level: s.level, reasons: s.reasons, by: s.by, ...(s.was ? { was: s.was } : {}), ...(from ? { from } : {}), spec: specHashOf(job.spec) };
+}
+
+const macOf = (key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: Omit<TrustStamp, 'mac'>): string =>
+  createHmac('sha256', key).update(canonical({ ...s, jobId: job.id, spec: specHashOf(job.spec) })).digest('base64url');
 
 /** The stamp of `job` at `level`, signed under `key`. */
 export function signStamp(key: Buffer, job: Pick<Job, 'id' | 'spec'>, s: { level: TrustLevel; reasons: string[]; by: StampedBy; at: string; was?: TrustLevel; check?: TrustCheck }): TrustStamp {
@@ -118,8 +135,17 @@ export function verifiedLevel(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp
   return want.length === got.length && timingSafeEqual(want, got) ? s.level : undefined;
 }
 
-/** The last reason id that lowered a level: a deny's or a check's; undefined: none. */
-const lastLowered = (reasons: readonly string[]): string | undefined => reasons.filter((r) => r === DENY_REASON || r.startsWith('jev:')).at(-1);
+/** The last reason id that lowered a level: a deny's, an edit's or a check's; undefined: none. */
+const lastLowered = (reasons: readonly string[]): string | undefined => reasons.filter((r) => r === DENY_REASON || r === EDIT_REASON || r.startsWith('jev:')).at(-1);
+
+/** Why a reason id lowered a level, in words; undefined: it is none that lowers. */
+function loweredText(reasons: readonly string[]): string | undefined {
+  const last = lastLowered(reasons);
+  if (last === DENY_REASON) return DENY_TEXT;
+  if (last === EDIT_REASON) return EDIT_TEXT;
+  const checked = checkReasonOf(reasons);
+  return checked ? `Jev's trust check: ${checkReasonText(checked)}` : undefined;
+}
 
 /**
  * Why a job's stamp holds it: none, one that does not verify, or a level below the level `brake` needs (the dispatch
@@ -133,8 +159,7 @@ export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, 
   if (level === 'quarantined') return QUARANTINED_HOLD;
   const min = brake?.min ?? DISPATCH_MIN;
   if (atLeast(level, min)) return undefined;
-  const checked = checkReasonOf(job.stamp.reasons);
-  const why = lastLowered(job.stamp.reasons) === DENY_REASON ? DENY_TEXT : checked ? `Jev's trust check: ${checkReasonText(checked)}` : undefined;
+  const why = loweredText(job.stamp.reasons);
   if (why && !atLeast(level, DISPATCH_MIN)) return `trust stamp ${level} is below ${min} (${why}): held — a person approves its trust on the job, or cancels it`;
   if (!atLeast(level, DISPATCH_MIN) || !brake) return `trust stamp ${level} is below ${min}: held — a person approves its item in Intake, or cancels it`;
   return `trust stamp ${level} is below ${min} (intake strictness ${brake.strictness} ${brakeWhere(brake)}): held — an admin changes the intake strictness in Settings → Intake, or a person cancels it`;
@@ -167,6 +192,26 @@ export function opensDoors(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>)
 }
 
 /**
+ * Whether gate 2 may approve the job's privileged requests with no person (part 7): its stamp verifies at the dispatch
+ * minimum `approved` or above. Below it — an edit, Jev's check or a deny lowered it — a sandbox request waits for a person,
+ * the standing read grant grants nothing, and a need step is refused.
+ */
+export function autoApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
+  const level = verifiedLevel(key, job);
+  return level !== undefined && atLeast(level, DISPATCH_MIN);
+}
+
+/**
+ * The stamp after a sync saw the item of a started job edited (part 7), at `at`: `untrusted`, with the edit's reason, by
+ * the edit; Jev's check stays on it. Undefined: the job is at `untrusted` or lower already, or its stamp does not verify.
+ */
+export function editedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, at: string): TrustStamp | undefined {
+  const level = verifiedLevel(key, job);
+  if (level === undefined || !job.stamp || rank(level) <= rank(EDITED_LEVEL)) return undefined;
+  return signStamp(key, job, { level: EDITED_LEVEL, reasons: [...job.stamp.reasons, EDIT_REASON], by: 'edit', at, ...(job.stamp.check ? { check: job.stamp.check } : {}) });
+}
+
+/**
  * Whether Jev's trust check is due for the job: its stamp verifies at a level it would start at on the rules alone
  * (`approved`, `trusted`), no person stamped it, and no check was made on it. A new spec or an origin judged later makes a
  * new stamp, so the check is due again.
@@ -185,8 +230,8 @@ export function checkedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'
 }
 
 /**
- * Whether a person may approve the job's trust: Jev's check or a person's deny lowered it below the dispatch minimum, and
- * its stamp verifies.
+ * Whether a person may approve the job's trust: Jev's check, a person's deny or an edit lowered it below the dispatch
+ * minimum, and its stamp verifies.
  */
 export function trustApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
   const level = verifiedLevel(key, job);

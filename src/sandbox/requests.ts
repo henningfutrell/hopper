@@ -9,13 +9,18 @@
 // Issue #1001: a run needs no separate approval when the user's auto-approve policy holds its template's blast radius,
 // or when a person approved the template this job asked for, or waited on: that approval was given for this job's run;
 // or when a person's remembered write approvals cover every change the template makes (src/domain/remembered-writes.ts).
-// A request keeps the job's purpose, its plan and its link, for the person who decides.
+// A request keeps the job's purpose, its plan and its link, for the person who decides. Issue #655 part 7: a job whose
+// trust stamp is below `approved` gets no run with no person: its request waits, whatever the toggles and policies say.
+// Issue #655 part 8: sandbox strictness (brake 2) asks a person for each run of a template it holds, the same way; tightened,
+// a run approved before with no person no longer counts (`runnable`). Issue #655 part 9: a request no person answered
+// within 24 hours is declined by the hopper (`HOLD_TIMEOUT`), for this request only: the job's trust stays.
 import { randomUUID } from 'node:crypto';
 import {
-  AUTO_APPROVER, autoApproves, NO_PERSON, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
+  AUTO_APPROVER, autoApproves, HOLD_TIMEOUT, NO_PERSON, SANDBOX_HOLD_MS, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
 } from '../domain/sandbox-approvals.ts';
 import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
 import type { ReadPolicy } from '../domain/read-policy.ts';
+import { personBrake, type SandboxStrictness } from '../domain/sandbox-strictness.ts';
 import type { NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 
@@ -25,6 +30,10 @@ export interface SandboxRequestsOptions {
   template(name: string): TemplateView | undefined;
   /** Whether the job has not ended (issue #1471: a job waiting to start too): a request of a job that ended is forgotten. */
   live(jobId: string): boolean;
+  /** Whether a run of the job may be approved with no person (issue #655 part 7: its trust stamp is `approved` or above). Absent: yes. */
+  autoApprovable?(jobId: string): boolean;
+  /** Sandbox strictness, brake 2 (issue #655 part 8), read at each ask. Absent: standard, so the toggles decide. */
+  strictness?(): SandboxStrictness;
   jobTitle?(jobId: string): string | undefined;
   /** The job's issue or pull request (issue #1001). */
   jobUrl?(jobId: string): string | undefined;
@@ -35,6 +44,8 @@ export interface SandboxRequestsOptions {
   clock: { now(): Date };
   newId?: () => string;
 }
+
+const HOLD_REASON = `no person answered it within ${SANDBOX_HOLD_MS / 3_600_000} hours`;
 
 export type SandboxRequestResult = { ok: true } | { ok: false; code: 'not_found' | 'conflict'; error: string };
 
@@ -52,6 +63,13 @@ export interface SandboxRequests {
   decline(id: string, reason: string, by: string): SandboxRequestResult;
   /** The requests of jobs not ended, oldest first. */
   list(): SandboxRequestView[];
+  /**
+   * The templates of the job's approved requests that count now: the boxes its box steps may name (issue #1349). One
+   * approved with no person counts only while the job and the brake still let it (issue #655 parts 7 and 8).
+   */
+  runnable(jobId: string): string[];
+  /** Declines each request that waited `SANDBOX_HOLD_MS` for a person, by `HOLD_TIMEOUT` (issue #655 part 9); how many. */
+  expire(): number;
 }
 
 export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequests {
@@ -63,9 +81,25 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     o.record({ type, jobId: r.jobId, data: { request: r.id, template: r.template, ...data } });
   };
 
-  const forget = (): void => {
+  const decline = (r: SandboxRequestView, reason: string, by: string): void => {
+    r.state = 'declined';
+    r.reason = reason;
+    r.declinedBy = by;
+    event(r, 'vault.sandbox_declined', { reason, by });
+  };
+
+  const expire = (): number => {
+    const due = o.clock.now().getTime() - SANDBOX_HOLD_MS;
+    const overdue = [...requests.values()].filter((r) => r.state === 'waiting' && Date.parse(r.askedAt) <= due);
+    for (const r of overdue) decline(r, HOLD_REASON, HOLD_TIMEOUT);
+    return overdue.length;
+  };
+
+  /** The requests of jobs that ended forgotten, and the overdue ones declined: how many were declined. */
+  const forget = (): number => {
     for (const [id, r] of requests) if (!o.live(r.jobId)) requests.delete(id);
     for (const k of waitedOn) if (!o.live(k.slice(0, k.indexOf(' ')))) waitedOn.delete(k);
+    return expire();
   };
 
   /**
@@ -73,7 +107,12 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
    * the template's radius; a person's remembered write approvals that cover the template (issue #1001); a person's
    * approval of the template the job asked for or waited on.
    */
+  /** Whether a run of the job's `template` may be approved with no person: its trust stamp and the brake let it. */
+  const withNoPerson = (jobId: string, template: string): boolean =>
+    o.autoApprovable?.(jobId) !== false && !(o.strictness && personBrake(o.strictness(), o.template(template)));
+
   const approverOf = (jobId: string, template: string): { by: string; radius?: string } | undefined => {
+    if (!withNoPerson(jobId, template)) return undefined;
     if (o.approvals().skipSandboxApproval) return { by: SKIP_SANDBOX_APPROVER };
     const t = o.template(template);
     if (!t) return undefined;
@@ -125,15 +164,20 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     decline(id, reason, by) {
       const r = waiting(id);
       if ('ok' in r) return r;
-      r.state = 'declined';
-      r.reason = reason;
-      event(r, 'vault.sandbox_declined', { reason, by });
+      decline(r, reason, by);
       return { ok: true };
     },
     list() {
       forget();
       return [...requests.values()].map((r) => ({ ...r }));
     },
+    runnable(jobId) {
+      const person = (by: string | undefined): boolean => by !== undefined && !NO_PERSON.includes(by);
+      return [...requests.values()]
+        .filter((r) => r.jobId === jobId && r.state === 'approved' && (person(r.approvedBy) || withNoPerson(jobId, r.template)))
+        .map((r) => r.template);
+    },
+    expire: forget,
   };
 }
 

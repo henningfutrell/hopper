@@ -22,7 +22,10 @@ import { burnLaunched, type Problems } from './burn-launched.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
 import { phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
 import { BOX_LABEL, sweepHomes, USER_LABEL } from './owned.ts';
+import { trace } from '@opentelemetry/api';
 import { liveReader, type LivePoint } from '../telemetry/live.ts';
+import { traceJobStep } from '../telemetry/job-steps.ts';
+import { traceEnv } from '../telemetry/jobs.ts';
 
 export { BOX_IMAGE } from './box-image.ts';
 export { BOX_LABEL, USER_LABEL } from './owned.ts';
@@ -262,6 +265,35 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     .catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))
     .finally(() => { checking = undefined; }));
 
+  const needStep: Sandboxes['needStep'] = async (userId, { offline, ...box }, io, run) => {
+    const at = await places.forCheck(userId);
+    if (!at) return { exit: 125, problem: noPlace() };
+    if (offline && at.runtime.kind === 'kubernetes') return { exit: 125, problem: NO_OFFLINE_POD };
+    const ledger: SandboxRun = { id: run.step, userId, jobId: run.jobId, template: run.template, box: box.name, machine: at.machine, startedAt: o.clock.now().toISOString() };
+    o.runs.start(ledger);
+    stepping.add(box.name); steppingAt.set(box.name, at.machine === LOCAL ? 'local' : 'machine');
+    let r: NeedBoxResult = { exit: 125, problem: 'the step did not end' };
+    try {
+      // Issue #849: a read-only template's box behind the egress proxy, which holds its hosts before the box starts.
+      const egress = box.template.readOnly && !offline ? at.egress : undefined;
+      const held = egress ? await egress.allow(box.reaches ?? []).then(() => undefined, (e: unknown) => (e instanceof Error ? e.message : String(e))) : undefined;
+      if (held) {
+        r = { exit: 125, problem: held };
+        return r;
+      }
+      const placed = offline ? { network: NO_NETWORK } : egress ? { network: egress.network, env: { ...box.env, ...egress.env } } : { network: at.network };
+      let took = '';
+      r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, ...placed }, { ...io, phases: (p) => { took = phaseTimes(p); } });
+      trace.getActiveSpan()?.setAttribute('hopper.sandbox.place', at.machine === LOCAL ? 'local' : 'machine');
+      o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${took}${r.problem ? `: ${r.problem}` : ''}`);
+      return r;
+    } finally {
+      o.runs.end(ledger.id, { at: o.clock.now().toISOString(), exit: r.exit, outcome: outcomeOf(r), ...(r.problem ? { problem: r.problem } : {}) });
+      await burnAfter(at.runtime, ledger);
+      stepping.delete(box.name); steppingAt.delete(box.name);
+    }
+  };
+
   return {
     view(userId) {
       return {
@@ -276,34 +308,8 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       return s?.offline && at.runtime.kind === 'kubernetes' ? NO_OFFLINE_POD : at.runtime.problem();
     },
 
-    async needStep(userId, { offline, ...box }, io, run) {
-      const at = await places.forCheck(userId);
-      if (!at) return { exit: 125, problem: noPlace() };
-      if (offline && at.runtime.kind === 'kubernetes') return { exit: 125, problem: NO_OFFLINE_POD };
-      const ledger: SandboxRun = { id: run.step, userId, jobId: run.jobId, template: run.template, box: box.name, machine: at.machine, startedAt: o.clock.now().toISOString() };
-      o.runs.start(ledger);
-      stepping.add(box.name); steppingAt.set(box.name, at.machine === LOCAL ? 'local' : 'machine');
-      let r: NeedBoxResult = { exit: 125, problem: 'the step did not end' };
-      try {
-        // Issue #849: a read-only template's box behind the egress proxy, which holds its hosts before the box starts.
-        const egress = box.template.readOnly && !offline ? at.egress : undefined;
-        const held = egress ? await egress.allow(box.reaches ?? []).then(() => undefined, (e: unknown) => (e instanceof Error ? e.message : String(e))) : undefined;
-        if (held) {
-          r = { exit: 125, problem: held };
-          return r;
-        }
-        const placed = offline ? { network: NO_NETWORK } : egress ? { network: egress.network, env: { ...box.env, ...egress.env } } : { network: at.network };
-        let took = '';
-        r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, ...placed }, { ...io, phases: (p) => { took = phaseTimes(p); } });
-        o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${took}${r.problem ? `: ${r.problem}` : ''}`);
-        return r;
-      } finally {
-        o.runs.end(ledger.id, { at: o.clock.now().toISOString(), exit: r.exit, outcome: outcomeOf(r), ...(r.problem ? { problem: r.problem } : {}) });
-        await burnAfter(at.runtime, ledger);
-        stepping.delete(box.name); steppingAt.delete(box.name);
-      }
-    },
-
+    // A need box's run is the job's step `need_box` (issue #1486 part 9): the box runs with the step's trace context.
+    needStep: (userId, box, io, run) => traceJobStep(run.jobId, 'need_box', () => needStep(userId, { ...box, env: { ...box.env, ...traceEnv() } }, io, run), outcomeOf),
     burnLaunched: burnPass,
     check,
     start() {

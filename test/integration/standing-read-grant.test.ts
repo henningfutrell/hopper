@@ -13,6 +13,8 @@
 //     And no grant ask waits for a person
 //   Scenario: turned off, a job that has not started gets nothing; the job it granted keeps it
 //   Scenario: on, a job on a template with a read outside the read policy is still refused and a person is asked
+//   Scenario: on, a job whose trust stamp is below approved (issue #655 part 7) is refused and a person is asked
+//   Scenario: on, sandbox strictness locked for the template (issue #655 part 8): refused, and a person is asked
 //   (a write, sync or apply, or a vault secret: test/domain/standing-read-grant.test.ts)
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -97,6 +99,26 @@ describe('the standing read grant (issue #1472)', () => {
     expect((await mint(a, dir, second)).stderr).toMatch(NO_GRANT);
     expect(await asks(a)).toEqual([second.id]);
     expect(await grantEvents(a)).toHaveLength(1);
+  });
+
+  it('on: a job below approved (issue #655 part 7) is refused, and a person is asked', async () => {
+    const { a, session, dir } = await boot();
+    await standing(a, session, true);
+    const job = await running(a);
+    expect(a.user().store.jobs.deny(job.id)!.stamp!.level).toBe('screened');
+    expect((await mint(a, dir, job)).stderr).toMatch(NO_GRANT);
+    expect(await asks(a)).toEqual([job.id]);
+    expect(await grantEvents(a)).toEqual([]);
+  });
+
+  it('on: sandbox strictness locked for the template (issue #655 part 8): the job is refused, and a person is asked', async () => {
+    const { a, session, dir } = await boot();
+    await standing(a, session, true);
+    expect((await a.ui('/ui/api/sandbox-strictness', { default: 'standard', radius: {}, templates: { 'uat-view': 'locked' } }, { token: session })).status).toBe(200);
+    const job = await running(a);
+    expect((await mint(a, dir, job)).stderr).toMatch(NO_GRANT);
+    expect(await asks(a)).toEqual([job.id]);
+    expect(await grantEvents(a)).toEqual([]);
   });
 
   it('on: a job on a template with a read the policy does not hold is refused, and a person is asked', async () => {

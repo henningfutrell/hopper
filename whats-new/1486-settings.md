@@ -1,0 +1,1 @@
+- Admins can now turn on sending the hopper's traces, metrics and logs to their own collector in Settings, with no restart.

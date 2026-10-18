@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ACTION_VIAS } from '../domain/failures.ts';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
 import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
+import { TELEMETRY_SIGNALS } from '../domain/telemetry-settings.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
 // Infra plans (issue #870): their own file, spread with the other features' events.
 export { INFRA_PLAN_EVENT_SCHEMAS as infraPlanEvents } from './infra-plan-schemas.ts';
@@ -147,10 +148,12 @@ const remoteAccessSettings = strict({
 });
 // `intakeReserve` (issue #983), `intakeSyncMinutes` and `prCycleMinutes` (issue #985) are absent from a change made before them.
 const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1), intakeReserve: z.number().int().min(0).optional(), intakeSyncMinutes: z.number().int().min(1).optional(), prCycleMinutes: z.number().int().min(1).optional() });
+const telemetrySettings = strict({ on: z.boolean(), endpoint: z.string(), signals: z.array(z.enum(TELEMETRY_SIGNALS)) });
 export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
   'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, credential: z.enum(['set', 'removed']).optional(), by: z.string() }),
   'allowed_hosts.changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  'telemetry.changed': strict({ from: telemetrySettings, to: telemetrySettings, by: z.string() }),
   'cloud_link.linked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
   'cloud_link.unlinked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
   'cloud_link.registration_code_minted': strict({ installId: z.string(), account: z.string(), expiresAt: z.string(), by: z.string() }),

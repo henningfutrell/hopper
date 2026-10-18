@@ -6,13 +6,16 @@
 // and forgotten, telemetry off) gets its step as a child of the active span. The attributes are the job's id, the step
 // and its outcome, enums only; an error records only its kind. The duration is a metric, and the telemetry summary keeps
 // it with the job spans, telemetry on or off.
+//
+// Part 9 (design.md "Telemetry: a box's own processes"): a need box's run is the step `need_box`, and the box runs with
+// the step's trace context (`traceEnv`), so a tool in the box that reads `TRACEPARENT` joins the job's trace.
 import { context, SpanStatusCode, trace, type Attributes, type Link } from '@opentelemetry/api';
 import type { FollowUp } from '../domain/types.ts';
 import { instrument, tracer } from './instruments.ts';
 import { jobStepParent } from './jobs.ts';
 import { telemetrySummary } from './summary.ts';
 
-export type JobStep = 'worktree' | 'follow' | 'base_merge' | 'tend';
+export type JobStep = 'worktree' | 'follow' | 'base_merge' | 'tend' | 'need_box';
 
 const stepDuration = instrument((m) => m.createHistogram('hopper.job.step.duration', { unit: 's', description: 'How long each step the hopper did for a job took, by step and outcome.' }));
 

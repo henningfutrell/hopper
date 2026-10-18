@@ -2,11 +2,12 @@
 // person unless skip sandbox approval is on; every step an event on the job's timeline. Issue #1349: an approval starts
 // nothing — the job's box steps then run, each in a sandbox of its own.
 import { describe, expect, it } from 'vitest';
-import { AUTO_APPROVER, editedApprovals, NO_SKIPS, sandboxYolo, templateApprovalBy, type SandboxApprovals } from '../../src/domain/sandbox-approvals.ts';
+import { AUTO_APPROVER, editedApprovals, HOLD_TIMEOUT, SANDBOX_HOLD_MS, NO_SKIPS, sandboxYolo, templateApprovalBy, type SandboxApprovals } from '../../src/domain/sandbox-approvals.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { createSandboxRequests } from '../../src/sandbox/requests.ts';
 import { REMEMBERED_APPROVER } from '../../src/domain/remembered-writes.ts';
+import type { SandboxStrictness } from '../../src/domain/sandbox-strictness.ts';
 
 const T = { name: 'asked-1' } as TemplateView;
 
@@ -166,5 +167,124 @@ describe('a remembered write approval and the purpose of a run (issue #1001)', (
     const s = remembering({ remembered: false });
     const r = s.requests.ask('job-2', HIGH.name, { purpose: 'Create the cluster role for X', plan: 'kubectl apply -f role.yaml' });
     expect(r).toMatchObject({ jobTitle: 'title of job-2', jobUrl: 'https://github.com/acme/infra/issues/2', purpose: 'Create the cluster role for X', plan: 'kubectl apply -f role.yaml' });
+  });
+});
+
+describe('a job below approved (issue #655 part 7)', () => {
+  it('gets no run with no person: every automatic approver waits; a person approves it', () => {
+    const events: NewEvent[] = [];
+    const t = { name: 'asked-low', askedBy: 'job-1', approval: { by: 'Ada' }, radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e),
+      approvals: () => ({ skipTemplateApproval: true, skipSandboxApproval: true }),
+      template: (name) => (name === t.name ? t : undefined),
+      live: () => true,
+      autoApprovable: (j) => j !== 'job-1',
+      clock: { now: () => new Date('2026-10-17T10:00:00Z') },
+      newId: () => `r${events.length}`,
+    });
+    const r = requests.ask('job-1', t.name);
+    expect(r.state).toBe('waiting');
+    expect(requests.approve(r.id, 'Ada')).toEqual({ ok: true });
+    expect(requests.ask('job-2', t.name)).toMatchObject({ state: 'approved', approvedBy: 'skip sandbox approval' });
+  });
+});
+
+describe('sandbox strictness (issue #655 part 8, brake 2)', () => {
+  const LOW = { name: 'asked-low', radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
+  const HIGH = { name: 'asked-high', radius: { level: 'high', reasons: [] } } as unknown as TemplateView;
+  function braked(strictness: SandboxStrictness) {
+    const events: NewEvent[] = [];
+    let s = strictness;
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e),
+      approvals: () => ({ skipTemplateApproval: true, skipSandboxApproval: true }),
+      template: (name) => [LOW, HIGH].find((t) => t.name === name),
+      live: () => true,
+      strictness: () => s,
+      clock: { now: () => new Date('2026-10-17T10:00:00Z') },
+      newId: () => `r${events.length}`,
+    });
+    return { requests, set: (to: SandboxStrictness) => { s = to; } };
+  }
+
+  it('strict: a run of a medium or high template waits for a person, whatever the toggles say; a low one does not', () => {
+    const b = braked({ default: 'strict', radius: {}, templates: {} });
+    expect(b.requests.ask('job-1', LOW.name)).toMatchObject({ state: 'approved', approvedBy: 'skip sandbox approval' });
+    const r = b.requests.ask('job-1', HIGH.name);
+    expect(r.state).toBe('waiting');
+    expect(b.requests.approve(r.id, 'Ada')).toEqual({ ok: true });
+    expect(b.requests.runnable('job-1')).toEqual([LOW.name, HIGH.name]);
+  });
+
+  it('locked for a template: every run of it waits for a person', () => {
+    const b = braked({ default: 'standard', radius: {}, templates: { [LOW.name]: 'locked' } });
+    expect(b.requests.ask('job-1', LOW.name).state).toBe('waiting');
+    expect(b.requests.ask('job-1', HIGH.name).state).toBe('approved');
+  });
+
+  it('tightened: a run approved with no person no longer counts; one a person approved still does', () => {
+    const b = braked({ default: 'standard', radius: {}, templates: {} });
+    b.requests.ask('job-1', LOW.name);
+    b.requests.ask('job-1', HIGH.name);
+    expect(b.requests.runnable('job-1')).toEqual([LOW.name, HIGH.name]);
+    b.set({ default: 'locked', radius: {}, templates: {} });
+    expect(b.requests.runnable('job-1')).toEqual([]);
+    b.set({ default: 'standard', radius: {}, templates: {} });
+    expect(b.requests.runnable('job-1')).toEqual([LOW.name, HIGH.name]);
+  });
+
+  it('below approved (part 7), only a person\'s approval counts', () => {
+    const events: NewEvent[] = [];
+    let auto = true;
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e), approvals: () => ({ skipTemplateApproval: true, skipSandboxApproval: true }),
+      template: (name) => (name === LOW.name ? LOW : undefined), live: () => true, autoApprovable: () => auto,
+      clock: { now: () => new Date('2026-10-17T10:00:00Z') }, newId: () => `r${events.length}`,
+    });
+    requests.ask('job-1', LOW.name);
+    expect(requests.runnable('job-1')).toEqual([LOW.name]);
+    auto = false;
+    expect(requests.runnable('job-1')).toEqual([]);
+  });
+});
+
+describe('a held request that times out (issue #655 part 9)', () => {
+  function timed() {
+    const events: NewEvent[] = [];
+    let now = new Date('2026-10-17T10:00:00Z');
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e),
+      approvals: () => NO_SKIPS,
+      template: (name) => (name === T.name ? T : undefined),
+      live: () => true,
+      clock: { now: () => now },
+      newId: () => `r${events.length}`,
+    });
+    return { requests, events, later: (ms: number) => { now = new Date(now.getTime() + ms); } };
+  }
+
+  it('waits 24 hours for a person; then the hopper declines it, for this request only', () => {
+    const s = timed();
+    const r = s.requests.ask('job-1', T.name);
+    s.later(SANDBOX_HOLD_MS - 1);
+    expect(s.requests.expire()).toBe(0);
+    expect(s.requests.ask('job-1', T.name).state).toBe('waiting');
+    s.later(1);
+    expect(s.requests.expire()).toBe(1);
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: r.id, state: 'declined', declinedBy: HOLD_TIMEOUT, reason: 'no person answered it within 24 hours' });
+    expect(s.events.at(-1)).toMatchObject({ type: 'vault.sandbox_declined', jobId: 'job-1', data: { request: r.id, template: T.name, by: HOLD_TIMEOUT, reason: 'no person answered it within 24 hours' } });
+    expect(s.requests.expire()).toBe(0);
+    expect(s.requests.approve(r.id, 'Ada')).toMatchObject({ ok: false, code: 'conflict' });
+  });
+
+  it('an approved or declined request does not time out; a list declines one overdue too', () => {
+    const s = timed();
+    const a = s.requests.ask('job-1', T.name), b = s.requests.ask('job-2', T.name);
+    s.requests.approve(a.id, 'Ada');
+    s.requests.ask('job-3', T.name);
+    s.requests.decline(b.id, 'no', 'Ada');
+    s.later(SANDBOX_HOLD_MS);
+    expect(s.requests.list().map((r) => [r.jobId, r.state, r.declinedBy])).toEqual([['job-1', 'approved', undefined], ['job-2', 'declined', 'Ada'], ['job-3', 'declined', HOLD_TIMEOUT]]);
   });
 });

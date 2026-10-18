@@ -55,9 +55,12 @@ export interface JobRepository {
    * active — undefined, and nothing written, when the check is no longer due; `approveTrust`, a person approves the trust
    * of a job the check (or a deny) lowered, to `approved` — undefined when it may not. `deny` (part 5): a person's deny at
    * gate 2 lowers the job's level one step, the second quarantines it — undefined, and nothing written, when it ended, is
-   * quarantined already, or its stamp does not verify.
+   * quarantined already, or its stamp does not verify. `edited` (part 7): a sync saw the item of the started job edited, so
+   * its level drops to `untrusted` — undefined, and nothing written, when it ended, is at `untrusted` or lower already, or
+   * its stamp does not verify. `autoApprovable` (part 7): gate 2 may approve the job's requests with no person — its stamp
+   * verifies at `approved` or above, or the store has no stamp key.
    */
-  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined; deny(id: JobId): Job | undefined;
+  useStampKey(key: Buffer): string[]; stampHold(job: Job, brake?: import('./intake-strictness.ts').Brake): string | undefined; stampView(job: Job, brake: import('./intake-strictness.ts').Brake): import('./stamp-view.ts').StampView; restamp(id: JobId): Job; quarantine(id: JobId): Job; liftQuarantine(id: JobId): Job; trustLevel(job: Job): import('./trust-stamp.ts').TrustLevel | undefined; opensDoors(job: Job): boolean; autoApprovable(job: Job): boolean; edited(id: JobId): Job | undefined; checkDue(job: Job): boolean; checkTrust(id: JobId, out: import('./minor-decisions.ts').MinorDecisionOutcome): Job | undefined; approveTrust(id: JobId): Job | undefined; deny(id: JobId): Job | undefined;
 }
 
 export interface LaneRepository {

@@ -4,6 +4,7 @@
 // job's requests are kept from before it starts — the sandboxes its prompt names are asked for then — until it ends.
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
+import { DEFAULT_SANDBOX_STRICTNESS } from '../domain/sandbox-strictness.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import type { Job } from '../domain/types.ts';
@@ -59,6 +60,8 @@ export function userSandboxRequests(o: {
     approvals: () => store.settings.getSandboxApprovals() ?? NO_SKIPS,
     template: (name) => o.templates().find((t) => t.name === name),
     live: (id) => LIVE.includes(store.jobs.get(id)?.status ?? ''),
+    autoApprovable: (id) => { const j = store.jobs.get(id); return j !== undefined && store.jobs.autoApprovable(j); }, // issue #655 part 7
+    strictness: () => store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, // issue #655 part 8, brake 2
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
     jobUrl: (id) => store.jobs.get(id)?.source?.url,
     // Issue #1001: a person's remembered write approvals, and the read policy for the reads beside them.
@@ -68,3 +71,18 @@ export function userSandboxRequests(o: {
   });
 }
 
+
+/** How often the hopper looks for a request no person answered in time (issue #655 part 9). */
+export const HOLD_SWEEP_MS = 60_000;
+
+/**
+ * Issue #655 part 9: declines each request that waited too long for a person, once a minute, so a job that waits on it
+ * is woken with the decline (`vault.sandbox_declined`) even when nobody opens the Vault page.
+ */
+export function holdSweep(requests: Pick<SandboxRequests, 'expire'>): { start(): void; stop(): void } {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  return {
+    start() { if (timer) return; timer = setInterval(() => { requests.expire(); }, HOLD_SWEEP_MS); timer.unref(); },
+    stop() { if (timer) clearInterval(timer); timer = undefined; },
+  };
+}
