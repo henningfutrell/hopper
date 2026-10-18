@@ -25,7 +25,7 @@ import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, t
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { doneCriteriaHold, doneCriteriaMiss, type JobAllowedDeletes, type JobDoneCriteria } from './done-criteria.ts';
+import { doneCriteriaHold, doneCriteriaMiss, partCriteriaMiss, type JobAllowedDeletes, type JobDoneCriteria } from './done-criteria.ts';
 import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type WaitsOnBatch } from './completion.ts';
 import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
@@ -312,10 +312,14 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     resolved: (job, resolution) => keepResolution(outbox, job, resolution, o.intake?.holder),
     async notComplete(job) {
-      return (await notComplete(api, job, o.jobArtifacts, waitsOn)) ?? doneCriteriaMiss(api, job, o.doneCriteria, o.allowedDeletes);
+      const why = await notComplete(api, job, o.jobArtifacts, waitsOn);
+      // Not done: a part's unmet done criteria say why in its place, and the job is no part done (issue #1924 part 4).
+      if (why !== undefined) return (await partCriteriaMiss(api, job, o.doneCriteria, o.allowedDeletes)) ?? why;
+      return doneCriteriaMiss(api, job, o.doneCriteria, o.allowedDeletes);
     },
-    partlyDone(job) {
-      return partlyDone(api, job);
+    async partlyDone(job) {
+      const part = await partlyDone(api, job);
+      return part !== undefined && (await partCriteriaMiss(api, job, o.doneCriteria, o.allowedDeletes)) === undefined ? part : undefined;
     },
     unfinishedPullRequest(job) {
       return unfinishedPullRequest(api, job);

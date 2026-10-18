@@ -25,6 +25,8 @@ import { autoApprovedReason, LABEL_HIGH } from '../domain/intake-auto-approve.ts
 import { openRequests, requestOutcome, withdrawRequests } from '../sources/github/origin.ts';
 import { checkJobs, notComplete } from './completion.ts';
 import { endLabels, followMergeRequest, readyMergeRequest } from './follow.ts';
+import { mergeRequestHold } from './done-criteria.ts';
+import type { JobAllowedDeletes, JobDoneCriteria } from '../sources/github/done-criteria.ts';
 
 /** The labels a job's end leaves on a GitLab issue: any of them keeps the issue out until a person removes it. */
 const END_LABELS = [LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, LABEL_PR_READY, LABEL_PR_CLOSED] as const;
@@ -49,6 +51,11 @@ export interface GitLabSourceOptions {
    * Absent: nothing is approved, and an Approve is refused.
    */
   trust?: IntakeTrust; intake?: IntakeContext;
+  /**
+   * The done criteria of a job's conditional skills, and the deletes its issue allows (issue #1924 part 4): checked on its merge
+   * request at the done check and before yolo mode's merge. Absent: none.
+   */
+  doneCriteria?: JobDoneCriteria; allowedDeletes?: JobAllowedDeletes;
 }
 
 const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
@@ -95,6 +102,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
   let repoErrors: Record<string, string> = {};
   let checkErrors: Record<string, string> = {};
   const trust = o.trust ?? NO_INTAKE_TRUST;
+  const done = o.doneCriteria ? { criteria: o.doneCriteria, ...(o.allowedDeletes ? { allowedDeletes: o.allowedDeletes } : {}) } : undefined;
   /** The cards approved here that no sync since listed otherwise: key → the hash approved. The texts opened (`openRequests`). */
   const fresh = new Map<string, string>();
   const opened = new Set<string>();
@@ -222,9 +230,11 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       checkErrors = r.errors;
       return r.signals;
     },
-    notComplete: (job) => o.account.act((a) => notComplete(a, job)),
+    notComplete: (job) => o.account.act((a) => notComplete(a, job, done)),
     mergesOnReady: (project) => yolo(project),
-    follow: (job, act, at) => o.account.act((a) => followMergeRequest({ api: a, yolo: yolo(job.source?.repo ?? ''), now: (o.clock?.now() ?? new Date()).getTime() }, job, act, at)),
+    follow: (job, act, at) => o.account.act((a) => followMergeRequest({
+      api: a, yolo: yolo(job.source?.repo ?? ''), now: (o.clock?.now() ?? new Date()).getTime(), hold: (m) => mergeRequestHold(a, job, m, done),
+    }, job, act, at)),
     async report(r) {
       const before = r.job.sourceState?.source ?? {};
       const project = r.job.source?.repo, iid = r.job.source?.number;

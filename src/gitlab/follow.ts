@@ -9,7 +9,8 @@
 // marker is kept first (issue #1588), so a stop before the record still records the hopper's merge. GitLab's refusal is kept
 // on what is seen (`mergeError`) and asked again at the next follow. Merged: `hopper:done` in place of `hopper:pr-ready`;
 // closed without a merge: `hopper:pr-closed`, which keeps the issue out until a person removes it. A person's Merge now and
-// Close PR are not taken on GitLab yet: they act on GitLab.
+// Close PR are not taken on GitLab yet: they act on GitLab. The job's done criteria (issue #1924 part 4) are read just before
+// the hopper's merge: one not met, or a `person-merges` one that applies, holds it as `mergeError`, asked again at the next follow.
 import { SourceError } from '../domain/ports.ts';
 import { readyToMerge, type ChecksState, type FollowAt, type FollowUp, type Job, type MergeMarker, type PullRequestAct, type PullRequestSeen } from '../domain/types.ts';
 import { LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PR_CLOSED, LABEL_PR_READY } from '../sources/github/labels.ts';
@@ -23,6 +24,8 @@ export interface GitLabFollowContext {
   yolo: boolean;
   /** Now, in ms: the grace window of a merge request with no pipeline. */
   now: number;
+  /** Why the hopper does not merge it itself by the job's done criteria (done-criteria.ts); absent, or undefined: no hold. */
+  hold?: (m: GitLabMergeRequest) => Promise<string | undefined>;
 }
 
 /** A head pipeline's status as checks: absent, none. */
@@ -88,7 +91,9 @@ export async function followMergeRequest(c: GitLabFollowContext, job: Job, act?:
     return { outcome: 'closed', pullRequest: url, part: false, state: { ...rest, pullRequest: url, follow: 'closed' } };
   }
   let seen = seenOf(m);
-  if (c.yolo && m.sha && readyToMerge(seen, c.now)) {
+  const held = c.yolo && m.sha && readyToMerge(seen, c.now) ? await c.hold?.(m) : undefined;
+  if (held !== undefined) seen = { ...seen, mergeError: held };
+  else if (c.yolo && m.sha && readyToMerge(seen, c.now)) {
     const marker: MergeMarker = { pullRequest: url, head: m.sha, byHopper: true };
     at?.keep({ ...rest, pullRequest: url, merging: marker });
     try {
