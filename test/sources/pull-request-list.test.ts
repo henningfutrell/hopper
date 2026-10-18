@@ -259,4 +259,12 @@ describe('a job\'s pull request in another repository (issue #1778)', () => {
     const card = v.repos.find((g) => g.repo === 'owner/infra')!.pullRequests[0]!;
     expect(card).toMatchObject({ repo: 'owner/infra', issue: { number: 1 }, pullRequest: { number: 7, url: other }, yolo: true, base: 'master', waits: 'conflicts' });
   });
+
+  it('a repository the hopper does not work on (issue #1806): yolo mode only when a person named it on, never by on alone', () => {
+    const other = 'https://github.com/zed/tool/pull/7';
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: other, seen: seen({ files: ['README.md'], change: { kind: 'docs', rule: 'x' } }) } } });
+    const group = (yolo: { on: boolean; repos: Record<string, boolean> }) => pullRequestList([job], () => job, yolo, [REPO], NOW, () => undefined).repos.find((g) => g.repo === 'zed/tool')!;
+    expect(group({ on: true, repos: {} })).toMatchObject({ yolo: false, pullRequests: [{ yolo: false, waits: 'yolo off' }] });
+    expect(group({ on: false, repos: { 'zed/tool': true } })).toMatchObject({ yolo: true, pullRequests: [{ yolo: true, waits: 'ready' }] });
+  });
 });
