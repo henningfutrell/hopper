@@ -1,0 +1,1 @@
+- The hopper now checks a skill's done rules on a pull request that ships only part of an issue, and on a GitLab merge request. A plan that deletes a resource in a part, or in a GitLab pipeline, now sends the job back to fix it, and stops yolo mode's merge on GitLab.
