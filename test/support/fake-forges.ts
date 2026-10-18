@@ -289,6 +289,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         return { status: 200, body: { total_count: found.length, incomplete_results: false, items: found.map(restIssue) } };
       }
       if (r.method === 'POST' && path === '/graphql') {
+        // An issue's edits (issue #662) and an item its text names (issue #655 part 19): none, and a private repository.
+        if (/userContentEdits|issueOrPullRequest/.test(String(r.body.query))) return { status: 200, body: { data: { repository: { visibility: 'PRIVATE', issue: {}, issueOrPullRequest: null } } } };
         const id = String((r.body.variables as Record<string, unknown> | undefined)?.id ?? '');
         const pull = pulls.find((p) => `PR_${p.repo}_${p.number}` === id);
         if (!String(r.body.query).includes('markPullRequestReadyForReview') || !pull) return { status: 200, body: { errors: [{ message: `Could not resolve to a node with the global id of '${id}'` }] } };

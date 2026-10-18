@@ -1,0 +1,2 @@
+- A job's page now shows the pull requests that its issue names, who wrote each, and whether one comes from a fork, so you can see when an issue asks to bring in someone else's code.
+- The hopper now sees every edit of a GitHub issue, so an issue that someone outside your trusted actors edited always waits in Intake for your approval.
