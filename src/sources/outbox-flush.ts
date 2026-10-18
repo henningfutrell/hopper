@@ -66,7 +66,7 @@ export function outboxFlushes(c: OutboxFlushContext) {
     start(): void { every = setInterval(all, OUTBOX_EVERY_MS); all(); },
     stop(): void {
       clearInterval(every);
-      for (const slot of c.slots()) { clearTimeout(slot.outboxSoon); delete slot.outboxSoon; delete slot.outboxCauses; }
+      for (const slot of c.slots()) { clearTimeout(slot.outboxSoon); delete slot.outboxSoon; delete slot.outboxCauses; slot.source.releaseOutbox?.(); }
     },
   };
 }

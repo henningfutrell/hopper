@@ -90,6 +90,9 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
   let round = 0;
   let flushing: Promise<{ due: number; wrote: string[] }> | undefined;
   let lastSentAt: string | undefined;
+  /** The rows the send under way claimed; `released`: the sync loop stopped, and the send makes no more calls. */
+  let claimed = new Set<number>();
+  let released = false;
   const timings = createAfterAnswerTimings(() => clock.now());
   const now = () => clock.now().toISOString();
   /** When a claim made or renewed now ends (issue #1959). */
@@ -133,8 +136,10 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
 
   async function sendDue(send: OutboxSend, gaveUp?: OutboxGaveUp): Promise<{ due: number; wrote: string[] }> {
     if (o.connected?.() === false) return { due: 0, wrote: [] };
+    if (released) return { due: 0, wrote: [] };
     const due = rows.claim(o.source, now(), claimEnd());
     if (due.length === 0) return { due: 0, wrote: [] };
+    claimed = new Set(due.map((r) => r.id));
     const byId = new Map(due.map((r) => [r.id, r]));
     const wrote = new Set<string>();
     const plans = coalesce(due);
@@ -145,6 +150,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       const left = new Map<number, number>();
       for (const c of plan.calls) for (const id of c.rows) left.set(id, (left.get(id) ?? 0) + 1);
       for (const call of plan.calls) {
+        if (released) break;
         rows.update([...left.keys()], { nextAt: claimEnd() });
         killPoint(outboxKillPoint(call.change.op, 'before-send'));
         const startedAt = performance.now();
@@ -169,6 +175,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
         wrote.add(plan.repo);
       }
     }
+    claimed = new Set();
     rows.prune(new Date(clock.now().getTime() - KEEP_SENT_MS).toISOString());
     return { due: due.length, wrote: [...wrote] };
   }
@@ -227,6 +234,12 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
     flush(send: OutboxSend, gaveUp?: OutboxGaveUp): Promise<{ due: number; wrote: string[] }> {
       flushing ??= sendDue(send, gaveUp).finally(() => { flushing = undefined; });
       return flushing;
+    },
+    /** At the sync loop's stop: no more calls, and the rows claimed and not sent are due again at once (issue #1959). */
+    release(): void {
+      released = true;
+      const left = rows.open(o.source).filter((r) => claimed.has(r.id) && r.state === 'sending').map((r) => r.id);
+      if (left.length) rows.update(left, { state: 'pending', nextAt: now() });
     },
     /** A person's Retry: the item's failed rows are sent again, from their first attempt. Answers how many. */
     retry(key: string): number {
