@@ -5,10 +5,11 @@
 import { createKubernetesPods, inClusterOptions } from '../../../kubernetes/api.ts';
 import type { KubernetesPods } from '../../../domain/pods.ts';
 import type { MachineSnapshot } from '../../../domain/types.ts';
-import { elbowInsOption, reservedLanesOption } from '../attached.ts';
+import { elbowInsOption, reservedLanesOption, usageLimitsOf, usageLimitsOption } from '../attached.ts';
+import type { UsageLimitPair } from '../../../domain/usage.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 
-export interface KubernetesMachineOptions { label?: string; namespace?: string; lanes: number; reservedLanes?: number; elbowIns?: number; executors: string[] }
+export interface KubernetesMachineOptions { label?: string; namespace?: string; lanes: number; reservedLanes?: number; elbowIns?: number; usageLimits?: UsageLimitPair; executors: string[] }
 
 const PROBE_MS = 30000;
 
@@ -24,6 +25,7 @@ export function kubernetesMachinePlugin(seam?: (namespace?: string) => Kubernete
       lanes: z.number().int().min(0, 'lanes must not be negative').default(4).meta({ description: 'job pods it runs at once; 0 rests it' }),
       reservedLanes: reservedLanesOption(z),
       elbowIns: elbowInsOption(z),
+      usageLimits: usageLimitsOption(z),
       executors: z.array(z.string().min(1)).default(['kubernetes']).meta({ description: 'executor instances that run there: those that start a pod per job' }),
     }),
     async detect(sys, o) {
@@ -54,7 +56,7 @@ export function kubernetesMachinePlugin(seam?: (namespace?: string) => Kubernete
           probe();
           return [{
             id: ctx.instanceName, label: o.label ?? ctx.instanceName, maxLanes: o.lanes, online, executors: [...o.executors],
-            ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}), ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}),
+            ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}), ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...usageLimitsOf(o),
           }];
         },
       };

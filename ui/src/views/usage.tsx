@@ -68,9 +68,12 @@ function LaneEffect({ usage }: { usage: UsageReport }) {
               </div>
               <div className="relative h-2 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${m.label}: ${pct(m.usedFrac)} used`}>
                 <div className={`h-full rounded-full ${m.band === 'hard' ? 'bg-bad' : m.band === 'soft' ? 'bg-warn' : 'bg-ok'}`} style={{ width: pct(Math.min(1, m.usedFrac)) }} />
-                {[soft, hard].map((x) => <div key={x} className="absolute top-0 h-full w-0.5 bg-background" style={{ left: pct(x) }} />)}
+                {(m.usageLimits ? [m.usageLimits.soft, m.usageLimits.hard] : [soft, hard]).map((x) => <div key={x} className="absolute top-0 h-full w-0.5 bg-background" style={{ left: pct(x) }} />)}
               </div>
               <div className="num text-xs text-muted-foreground">{pct(m.usedFrac)} used · {laneEffectText(m)}</div>
+              {m.usageLimits && (
+                <div className="num text-xs text-muted-foreground" data-own-limits={m.machineId}>its own usage limits: {pct(m.usageLimits.soft)} / {pct(m.usageLimits.hard)}</div>
+              )}
               {executorEffectLines(m).map((line) => <div key={line} className="num text-xs text-muted-foreground">{line}</div>)}
             </li>
           ))}
@@ -159,12 +162,14 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
         {online.length > 0 && (
           <ul className="ml-auto flex flex-wrap gap-1.5" aria-label="Lane cap per machine at these limits">
             {online.map((m) => {
-              const cap = capAt(m.maxLanes, m.usedFrac, shown);
+              // A machine with its own usage limits (issue #1860) keeps them whatever the user's are.
+              const cap = capAt(m.maxLanes, m.usedFrac, m.usageLimits ?? shown);
               return (
                 <li key={m.machineId} data-machine-cap={m.machineId} className="num rounded-md border px-2 py-0.5 text-xs">
                   <span className="text-muted-foreground">{m.label || m.machineId}</span>{' '}
                   {cap !== m.cap && <span className="text-muted-foreground line-through">{m.cap}</span>}{cap !== m.cap && ' '}
                   <span className="font-semibold">{cap}</span>/{m.maxLanes} lanes
+                  {m.usageLimits && <span className="text-muted-foreground"> · own limits {pct(m.usageLimits.soft)} / {pct(m.usageLimits.hard)}</span>}
                 </li>
               );
             })}

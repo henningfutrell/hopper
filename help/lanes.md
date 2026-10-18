@@ -33,12 +33,13 @@ When no machine has room, the job **waits** for a lane. It stays queued, and its
 
 The change applies at the next decision. The hopper opens new lanes, or drains busy lanes past the new number. **Machine defaults** on Machines sets the lanes and executors that a new machine starts with.
 
-Two more machine options are in **Settings → Plugins**, in the options of each machine source:
+More machine options are in **Settings → Plugins**, in the options of each machine source:
 
 | Option | What it does | Default |
 |---|---|---|
 | `reservedLanes` | Lanes the machine keeps for jobs pinned to it. Other jobs use at most its lane cap less these. | 0 |
 | `elbowIns` | How many lanes [specialty jobs](#specialty-jobs-elbow-in) may start past the machine's lane cap at the same time. 0: none. | 1 |
+| `usageLimits` | The machine's own [usage limits](#usage-limits), for example `{"soft": 0.5, "hard": 0.7}`. Its lanes go by these, not by the limits on Usage. | the limits on Usage |
 
 ## Usage limits
 
@@ -61,6 +62,16 @@ Saved limits apply at once, with no restart. They win over `HOPPER_SOFT_LIMIT` a
 A usage reading marked informational never limits lanes. In the last hours before a week window resets (`HOPPER_BURN_WINDOW_HOURS`, default 18), that window stops limiting lanes unless it is spent.
 
 The reading that counts is the highest of a machine's limiting budgets (the session and the week). Each budget limits only its own agent's jobs. A job at the critical priority can take one lane past the cap, but never at the hard limit.
+
+### Two machines on one account
+
+Two machines can sign in to one Claude account. Each machine reads the same usage, so by default both lose lanes at the same time. To make one machine give way first:
+
+1. Open **Settings → Plugins**.
+2. In the options of the machine that gives way, set `usageLimits`. Make its hard limit equal to or below the soft limit on Usage. For example, with the limits on Usage at 70% and 95%, set `{"soft": 0.5, "hard": 0.7}`.
+3. Save.
+
+Now, as usage goes up, that machine's lane cap goes down first and is 0 before the other machine loses a lane. The **Usage limits** panel shows `own limits` on that machine, and its lane cap does not change when you move the limits on Usage.
 
 The **Usage limits** panel shows the usage now, its band, and a graph of the last day's reading over the free, soft and hard bands, with each machine's lanes at the limits. You can also click the graph or use the arrow keys to move a handle. **Undo** drops changes you did not save. The panel says which limits apply: the saved ones or the environment's. People who are not admins see the graph without handles. The Dashboard's *Usage over time* graph shows each account's session and week usage as lines. The Usage view's *Usage history* keeps 90 days by default.
 

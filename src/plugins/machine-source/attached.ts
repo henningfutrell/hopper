@@ -5,6 +5,7 @@
 import type { z as Z } from 'zod';
 import type { AttachedMachine } from '../../domain/types.ts';
 import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts';
+import type { UsageLimitPair } from '../../domain/usage.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
 /**
@@ -42,6 +43,20 @@ export const reservedLanesOption = (z: typeof Z) => z.number().int().min(0, 'res
  */
 export const elbowInsOption = (z: typeof Z) => z.number().int().min(0, 'elbowIns must not be negative').optional()
   .meta({ description: 'lanes a job labelled hopper:specialty, or a job that tends a pull request, may start past this machine\'s lane cap at once (default 1); 0: none' });
+
+/**
+ * The machine's own usage limits (issue #1860): its lane cap scales down from `soft` and is 0 at `hard`, whatever the user's
+ * usage limits are. Two machines on one account: give the secondary lower limits, so its lanes give way first. Absent: the user's.
+ */
+export const usageLimitsOption = (z: typeof Z) => z.strictObject({
+  soft: z.number().min(0).max(1),
+  hard: z.number().min(0).max(1),
+}).refine((l) => l.soft < l.hard, 'usageLimits: soft must be below hard').optional()
+  .meta({ description: 'this machine\'s own usage limits, as {"soft": 0.5, "hard": 0.7} (fractions of the usage): its lanes scale down from soft and stop at hard; absent: the usage limits set on Usage. Two machines on one account: give the one that gives way lower limits' });
+
+/** The `usageLimits` field of a machine that has its own; nothing for one that does not. */
+export const usageLimitsOf = (o: { usageLimits?: UsageLimitPair }): { usageLimits?: UsageLimitPair } =>
+  (o.usageLimits ? { usageLimits: { soft: o.usageLimits.soft, hard: o.usageLimits.hard } } : {});
 
 /**
  * A Windows machine (issue #1350): the jobs labelled `hopper:win` or `hopper:windows` go only to one, and wait while none
@@ -99,12 +114,13 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
     reservedLanes: reservedLanesOption(z),
     elbowIns: elbowInsOption(z),
     windows: windowsOption(z),
+    usageLimits: usageLimitsOption(z),
     executors: z.array(z.string().min(1)).default([...executors]).meta({ description: 'executor instances that run there' }),
   };
 }
 
 export interface AttachedOptions {
-  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number;
 }
 
@@ -114,7 +130,7 @@ export const attachedBase = (name: string, o: AttachedOptions) => {
   const sweep = sweepOf(o);
   return {
     name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
-    ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), executors: [...o.executors],
+    ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), ...usageLimitsOf(o), executors: [...o.executors],
     ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
   };
 };

@@ -5,7 +5,7 @@ import type { EventType } from './event-types.ts';
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
-import type { SignedOutTool, UsageReading } from './usage.ts';
+import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
 import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
@@ -328,8 +328,8 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
   configuredLanes?: number;
   /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
   reservedLanes?: number;
-  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. `windows`: a Windows machine (issue #1350), the only kind that takes a job with a Windows label. */
-  elbowIns?: number; windows?: true;
+  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. `windows`: a Windows machine (issue #1350), the only kind that takes a job with a Windows label. `usageLimits`: its own usage limits (issue #1860), its lane cap goes by these, not by the user's; absent: the user's. */
+  elbowIns?: number; windows?: true; usageLimits?: UsageLimitPair;
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];

@@ -2,6 +2,7 @@
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
 import type { ActionVia, MachineSnapshot } from './types.ts';
+import type { UsageLimitPair } from './usage.ts';
 // A Windows host (issue #731) is reached over ssh as an ssh target is, but runs only steps: src/domain/windows-steps.ts.
 export type { WindowsHost, WindowsHostsView } from './windows-steps.ts';
 /**
@@ -85,6 +86,8 @@ interface AttachedBase {
   elbowIns?: number;
   /** A Windows machine (issue #1350): the jobs with a Windows label go only to one. */
   windows?: true;
+  /** Its own usage limits (issue #1860): its lane cap goes by these, not by the user's. */
+  usageLimits?: UsageLimitPair;
 }
 
 export interface SshMachine extends AttachedBase {

@@ -27225,3 +27225,36 @@ stopped while GitHub had the push recorded nothing: the push could be on GitHub 
 **Verification:** `test/github-proxy/push-saga.test.ts`, on the real database with two coordinators: a push GitHub
 answers (the saga ends, one event); a hopper stopped while GitHub had the push, and GitHub took it (the next hopper
 records it done) or did not (recorded failed); an event recorded before the stop is not recorded again.
+
+## A machine's own usage limits (issue #1860, 2026-10-17)
+
+**Problem.** Two machines can sign in to one Claude account: a Windows machine that takes only `hopper:windows`
+work, and a Linux machine added to use the account's spare capacity. Each reads the same account, so their usage
+readings say the same. Both scale their lane cap by the same usage limits. So in the soft band each drains only its
+own lowest-priority lanes, and the secondary machine can spend the last of the budget that the primary's work needs.
+
+Two shapes were offered: an `account` (or `usageGroup`) option that makes machines share one reading, with a
+`usagePriority` per machine; or lower usage limits for the secondary machine. Built the second: the machines already
+read the same numbers (each its own usage source of one account), so a shared reading adds nothing, and a
+per-machine pair of limits is one option and no new grouping concept. It also serves a machine alone, which an
+admin wants to keep below the user's limits.
+
+**As built:**
+- **`usageLimits`**, an optional option of every machine-source plugin (`local`, `ssh`, `container`, `client`,
+  `kubernetes-cluster`): `{ "soft": <0..1>, "hard": <0..1> }`, soft below hard, else the config is refused. Not
+  command-bearing. It reaches the decider on `MachineSnapshot.usageLimits`.
+- **The decider (step 2).** `machinePolicy(m, policy)` (`src/decider/usage.ts`) puts the machine's own limits in
+  place of the user's for that machine: its lane cap, its band, and its placement pressure. Other machines keep the
+  user's limits. The machine's usage reason names them: `seat: 69% used, lane cap 0 of 4 (soft), its own usage
+  limits 50% / 70%`.
+- **Two machines on one account.** Give the secondary limits whose hard limit is at or below the primary's soft
+  limit (e.g. 50% / 70% under the user's 70% / 95%): its lane cap reaches 0 before the primary loses a lane.
+- **Lane tuning** reads the machine's own limits too.
+- **`GET /api/usage`** answers `usageLimits` on that machine's lane effect. The Usage view's lane caps at the
+  limits being edited keep such a machine's cap, and say `own limits`; its Lane effect bar marks its own limits.
+- No stored state changes: the option is in the plugins config, absent on every config before it.
+
+**Verification:** `test/decider/machine-usage-limits.test.ts` (the secondary's cap falls first and is 0 before the
+primary loses a lane; a Decision starts on the primary only; without the option the user's limits apply);
+`test/plugins/machine-targets.test.ts` and `test/plugins/host-sources.test.ts` (the option reaches the machine;
+soft at or above hard refused); `test/ui/usage-limits-view.test.ts` (the cap does not follow the user's limits).
