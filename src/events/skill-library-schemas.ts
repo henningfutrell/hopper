@@ -6,13 +6,13 @@ import { WORK_KINDS } from '../domain/skill-library.ts';
 
 const kind = z.enum(WORK_KINDS);
 const choice = z.partialRecord(kind, z.string());
-const rule = z.strictObject({ skill: z.string(), repos: z.array(z.string()).optional(), labels: z.array(z.string()).optional(), kinds: z.array(kind).optional() });
+const rule = z.strictObject({ skill: z.string(), repos: z.array(z.string()).optional(), labels: z.array(z.string()).optional(), kinds: z.array(kind).optional(), paths: z.array(z.string()).optional() });
 const settings = z.strictObject({ kinds: choice, repos: z.record(z.string(), choice), rules: z.array(rule).optional() });
 const criterion = z.union([
   z.strictObject({ kind: z.literal('checks-passed'), checks: z.string() }),
   z.strictObject({ kind: z.literal('plan-destroy'), checks: z.string().optional(), max: z.number().int().optional() }),
 ]);
-const conditional = z.strictObject({ name: z.string(), version: z.string(), seq: z.number().int(), why: z.array(z.string()), done: z.array(criterion) });
+const conditional = z.strictObject({ name: z.string(), version: z.string(), seq: z.number().int(), why: z.array(z.string()), done: z.array(criterion), paths: z.array(z.string()).optional() });
 const source = z.union([
   z.strictObject({ kind: z.literal('built-in') }), z.strictObject({ kind: z.literal('created') }),
   z.strictObject({ kind: z.literal('duplicated'), name: z.string(), version: z.string() }),
@@ -36,9 +36,9 @@ export const SKILL_LIBRARY_EVENT_DOCS = {
   'library_skill.saved': 'A person kept a new version of a library skill (issue #1911): `name`, its content id `version` and its place `seq` (1, 2, …); `source` says whether a person wrote it (`created`) copied it from another skill\'s version (`duplicated`, with that `name` and `version`), or imported it from a folder of a GitHub repository (`imported`: `repo`, the folder `path` — empty: the root —, the `ref` it follows, the `commit` read). Never its files: GET /api/skill-library/{name} answers them.',
   'library_skill.removed': 'A person removed a library skill of their own (issue #1911): no list shows it, and no new job gets it. Jobs that got one of its versions keep it.',
   'library_skill.refreshed': 'A person refreshed an imported library skill (issue #1911): its folder `path` of `repo` read again at the `ref` it follows, at `commit`. `changed`: the files differ from its newest version, so `version` is a new version (and a `library_skill.saved` beside it); else `version` is the one it had.',
-  'work_skills.changed': 'A person changed which library skill each kind of work gets (issue #1911): `kinds` for every repository, `repos` per repository (`owner/name` lowercased), which wins; a kind absent gets the built-in default; `rules`, the skill rules that give a job conditional skills (issue #1924), absent with none. `from` and `to`. The next job gets it, never a running one.',
+  'work_skills.changed': 'A person changed which library skill each kind of work gets (issue #1911): `kinds` for every repository, `repos` per repository (`owner/name` lowercased), which wins; a kind absent gets the built-in default; `rules`, the skill rules that give a job conditional skills (issue #1924; a rule\'s `paths`, part 2, are globs of the files the change touches), absent with none. `from` and `to`. The next job gets it, never a running one.',
   'job.work_skill_chosen': 'The work skill this job got (issue #1911), at its first start or when its kind of work changed: its kind of work (`code`, `research`, `proposal`), the skill `name`, its `version` and `seq` (0: built in), and which setting chose it (`repo`, `user`, `default`). `requires`: the skills it got beside it because the work skill, or a skill it requires, names them in its SKILL.md\'s `requires:` — each `name`, `version` and `seq`; `missing`: the ones required that it did not get (not in the library, or past the limit of 8). Both absent on a choice made before skills required others. Each later start of the job, on any machine, gets the same versions.',
-  'job.conditional_skills_chosen': 'The conditional skills this job got beside its work skill (issue #1924), at its first start, because a skill rule matched what it works on: each skill\'s `name`, `version` and `seq` (0: built in), `why` (the conditions that matched: `repository owner/name`, `label x`, `kind of work k`), and `done`, the done criteria of its `done.json` that the done check verifies before the job is done. Each later start gets the same versions. None when no rule matched.',
+  'job.conditional_skills_chosen': 'The conditional skills this job got beside its work skill (issue #1924), at its first start, because a skill rule matched what it works on: each skill\'s `name`, `version` and `seq` (0: built in), `why` (the conditions that matched: `repository owner/name`, `label x`, `kind of work k`, `paths a, b`), and `done`, the done criteria of its `done.json` that the done check verifies before the job is done. `paths` (part 2): the globs of a paths rule; the done check verifies the criteria only when the pull request changes a file they match. Absent: always. Each later start gets the same versions. None when no rule matched.',
 } as const;
 
 /** Its examples (examples.ts). */

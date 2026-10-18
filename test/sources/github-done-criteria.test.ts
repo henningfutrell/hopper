@@ -9,10 +9,13 @@ import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
 const AFTER = '2026-10-02T11:00:00.000Z';
 const IAC: DoneCriterion[] = [{ kind: 'checks-passed', checks: '*plan*' }, { kind: 'plan-destroy', checks: '*plan*' }];
 
-function withCriteria(done: DoneCriterion[] | undefined, headCommittedAt = AFTER) {
-  const { gh, source } = setup({}, done ? { doneCriteria: () => [{ skill: 'iac', done }] } : {});
+function withCriteria(done: DoneCriterion[] | undefined, headCommittedAt = AFTER, o: { paths?: string[]; files?: string[]; allowed?: string[] } = {}) {
+  const { gh, source } = setup({}, {
+    ...(done ? { doneCriteria: () => [{ skill: 'iac', done, ...(o.paths ? { paths: o.paths } : {}) }] } : {}),
+    ...(o.allowed ? { allowedDeletes: () => o.allowed! } : {}),
+  });
   gh.createIssue({ repo: REPO, labels: ['hopper'] });
-  const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, headCommittedAt, checks: 'passing' });
+  const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, headCommittedAt, checks: 'passing', ...(o.files ? { files: o.files } : {}) });
   return { gh, source, job: jobForIssue(1), pr, n: Number(pr.url.split('/').pop()) };
 }
 
@@ -57,5 +60,29 @@ describe('the done criteria of a conditional skill (issue #1924)', () => {
     const closed = withCriteria(IAC);
     closed.gh.closeIssue(REPO, 1, 'owner', { at: AFTER });
     expect(await closed.source.notComplete!(closed.job)).toBeUndefined();
+  });
+
+  it('a skill a paths rule gave is checked only when the pull request changes a file its paths match (issue #1924 part 2)', async () => {
+    const red = [{ name: 'terraform plan (prod)', state: 'failing' as const, text: plan(1) }];
+    const docs = withCriteria(IAC, AFTER, { paths: ['*.tf'], files: ['README.md'] });
+    docs.gh.setCheckRuns(docs.pr.url, red);
+    expect(await docs.source.notComplete!(docs.job)).toBeUndefined();
+    const tf = withCriteria(IAC, AFTER, { paths: ['*.tf'], files: ['README.md', 'envs/prod/main.tf'] });
+    tf.gh.setCheckRuns(tf.pr.url, red);
+    expect(await tf.source.notComplete!(tf.job)).toMatch(/done criteria of skill iac not met/);
+    // The changed files not known (no mirror): the criteria apply.
+    const unknown = withCriteria(IAC, AFTER, { paths: ['*.tf'] });
+    unknown.gh.setCheckRuns(unknown.pr.url, red);
+    expect(await unknown.source.notComplete!(unknown.job)).toMatch(/done criteria of skill iac not met/);
+  });
+
+  it('a delete the job\'s issue allows by address does not keep the job not done; another one does', async () => {
+    const text = `  # module.bastion[0].aws_instance.bastion must be replaced\n\n${plan(1)}`;
+    const allowed = withCriteria(IAC, AFTER, { allowed: ['module.bastion[0].aws_instance.bastion'] });
+    allowed.gh.setCheckRuns(allowed.pr.url, [{ name: 'terraform plan (prod)', state: 'passing', text }]);
+    expect(await allowed.source.notComplete!(allowed.job)).toBeUndefined();
+    const other = withCriteria(IAC, AFTER, { allowed: ['aws_s3_bucket.logs'] });
+    other.gh.setCheckRuns(other.pr.url, [{ name: 'terraform plan (prod)', state: 'passing', text }]);
+    expect(await other.source.notComplete!(other.job)).toMatch(/module\.bastion\[0\]\.aws_instance\.bastion, which the issue does not allow/);
   });
 });
