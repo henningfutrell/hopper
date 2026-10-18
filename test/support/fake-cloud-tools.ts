@@ -50,7 +50,11 @@ const TOOLS: Record<string, string> = {
   aws: `case "$*" in
   *"get-caller-identity --query Account"*) echo 123456789012 ;;
   *get-caller-identity*) echo '{"Account":"123456789012","Arn":"arn:aws:sts::123456789012:assumed-role/hopper-read/s"}' ;;
-  *"--dry-run"*) if [ "$MODE" = read-only ]; then echo 'An error occurred (UnauthorizedOperation) when calling the CreateVpc operation: You are not authorized to perform this operation.' >&2; else echo 'An error occurred (DryRunOperation) when calling the CreateVpc operation: Request would have succeeded, but DryRun flag is set.' >&2; fi; exit 254 ;;
+  # The account's one VPC. EC2 looks up the resources a write names before its dry run asks the authorization (issue #882).
+  *"ec2 describe-vpcs"*) echo vpc-0a1b2c3d4e5f60718 ;;
+  *"create-tags"*) case " $* " in *" vpc-0a1b2c3d4e5f60718 "*) ;; *) echo "An error occurred (InvalidVpcID.NotFound) when calling the CreateTags operation: The vpc ID '$5' does not exist" >&2; exit 254 ;; esac
+    if [ "$MODE" = read-only ]; then echo 'An error occurred (UnauthorizedOperation) when calling the CreateTags operation: You are not authorized to perform this operation.' >&2; else echo 'An error occurred (DryRunOperation) when calling the CreateTags operation: Request would have succeeded, but DryRun flag is set.' >&2; fi; exit 254 ;;
+  *"--dry-run"*) if [ "$MODE" = read-only ]; then echo 'An error occurred (UnauthorizedOperation) when calling the CreateTags operation: You are not authorized to perform this operation.' >&2; else echo 'An error occurred (DryRunOperation) when calling the CreateTags operation: Request would have succeeded, but DryRun flag is set.' >&2; fi; exit 254 ;;
   *delete-*) exit 0 ;;
   *) if [ "$MODE" = read-only ]; then echo "An error occurred (AccessDenied) when calling the operation: User is not authorized to perform: $2:$3" >&2; exit 254; fi ;;
 esac`,

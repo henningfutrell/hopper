@@ -217,19 +217,25 @@ esac`);
     const { results, fake } = await run('read-only', [read('aws-role', '123456789012/hopper-read')]);
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true });
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')!.output).toContain('UnauthorizedOperation');
-    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual(['aws ec2 create-vpc --dry-run --cidr-block 10.255.0.0/16']);
+    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual([
+      "aws ec2 describe-vpcs --query Vpcs[0].VpcId --output text",
+      'aws ec2 create-tags --dry-run --resources vpc-0a1b2c3d4e5f60718 --tags Key=hopper-read-only-check,Value=1',
+    ]);
   });
 
-  // Issues #882, #1903: EC2 looks up each resource a write names before its dry run asks the authorization, so a VPC or
-  // instance the account does not hold answers NotFound or InvalidID, never a refusal. The probe names no resource.
-  it('the EC2 write names no resource: an account that holds none still gives its refusal', async () => {
+  // Issue #882: EC2 looks up the VPC before its dry run asks the authorization, so a VPC the account does not hold
+  // answers NotFound and never a refusal. The probe tags a VPC the account holds; with none, it makes one, as a dry run.
+  it('the EC2 write tags a VPC the account holds, or with no VPC makes one, as a dry run: a refusal passes it', async () => {
     const { results, fake } = await runWith('aws', `case "$*" in
-  *--resources*|*--instance-ids*) echo "An error occurred (InvalidID) when calling the CreateTags operation: The ID 'i-00000000000000000' is not valid" >&2; exit 254 ;;
+  *describe-vpcs*) echo None ;;
   *"create-vpc --dry-run"*) echo 'An error occurred (UnauthorizedOperation) when calling the CreateVpc operation: You are not authorized to perform this operation.' >&2; exit 254 ;;
   *) exit 1 ;;
 esac`, [read('aws-account', '123456789012')]);
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true });
-    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual(['aws ec2 create-vpc --dry-run --cidr-block 10.255.0.0/16']);
+    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual([
+      'aws ec2 describe-vpcs --query Vpcs[0].VpcId --output text',
+      'aws ec2 create-vpc --dry-run --cidr-block 10.255.0.0/16',
+    ]);
   });
 
   // Issue #1904: an EC2 refusal of a role ends with its encoded authorization failure message, a blob longer than the end
