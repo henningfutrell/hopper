@@ -1309,6 +1309,11 @@ merge, Merge now, Close PR), `hopper.job.base_merge` and `hopper.job.tend`. Each
 or request that ran it. A job that a tend starts links to that tend. The metric is `hopper_job_step_duration_seconds` by
 step and outcome, and the Telemetry panel lists the steps with the job spans.
 
+A need box's run is the step `hopper.job.need_box`, and the box runs with its `TRACEPARENT`: a tool in the box that
+exports on its own joins the job's trace (docs/design.md "Telemetry: a box's own processes and deploys"). Each landing
+batch run is a trace of its own, `hopper.landing_batch`, and each job in the batch gets a `hopper.job.deploy` span that
+links to it. The metric is `hopper_landing_batch_duration_seconds` by outcome.
+
 On Kubernetes, the Helm chart takes the same variables under `telemetry.env`, and only `OTEL_*` names there:
 
 ```sh
