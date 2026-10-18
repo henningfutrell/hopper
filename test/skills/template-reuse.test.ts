@@ -39,19 +39,19 @@ function user(...kept: TemplateView[]) {
 describe('a request for the needs of an approved template (issue #998)', () => {
   it('uses that template, whatever its name, and makes no second one', async () => {
     const { u, saved } = user(template('aws-readonly'));
-    const r = await requestTemplate(u, NEEDS, 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: NEEDS }, 'job j1', 'j1');
     expect(r).toMatchObject({ status: 200, template: 'aws-readonly' });
     expect('text' in r && r.text).toContain('template aws-readonly is ready, approved by a person');
     // Issue #1007: a job that asked for it to run one command is told how, with no box to start.
     expect('text' in r && r.text).toContain('sh "$HOPPER_STEP" need "<the same needs>"');
     expect(saved).toEqual([]);
-    expect(previewTemplate(u, NEEDS)).toMatchObject({ template: 'aws-readonly', exists: 'same', waits: [] });
+    expect(previewTemplate(u, { needs: NEEDS })).toMatchObject({ template: 'aws-readonly', exists: 'same', waits: [] });
   });
 
   it('prefers it to the template the needs name when that one waits for a person', async () => {
     const name = requestedName(needsOf(NEEDS) as OperationProfile[]);
     const { u, saved } = user(template(name, { approval: undefined, pending: { secrets: [], image: true, egress: [], profiles: [ROLE] } }), template('aws-readonly'));
-    expect(await requestTemplate(u, NEEDS, 'job j1', 'j1')).toMatchObject({ status: 200, template: 'aws-readonly' });
+    expect(await requestTemplate(u, { needs: NEEDS }, 'job j1', 'j1')).toMatchObject({ status: 200, template: 'aws-readonly' });
     expect(saved).toEqual([]);
   });
 
@@ -62,7 +62,7 @@ describe('a request for the needs of an approved template (issue #998)', () => {
       template('wider', { profiles: [ROLE, { operation: 'read', asset: { kind: 'cluster', name: 'lab' } }] }),
     ]) {
       const { u, saved } = user(other);
-      const r = await requestTemplate(u, NEEDS, 'job j1', 'j1');
+      const r = await requestTemplate(u, { needs: NEEDS }, 'job j1', 'j1');
       expect(r).toMatchObject({ template: expect.stringMatching(/^asked-/) });
       expect(saved).toHaveLength(1);
     }

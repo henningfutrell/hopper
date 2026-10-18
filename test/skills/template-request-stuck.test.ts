@@ -34,35 +34,35 @@ function user(...kept: TemplateView[]) {
 describe('a read need on an aws-account in a template of read needs only (issue #1468)', () => {
   it('is refused when it is asked for, names the aws-role need to ask for instead, and saves nothing', async () => {
     const { u, saved } = user();
-    const r = await requestTemplate(u, `read/aws-account/${ACCOUNT}`, 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: `read/aws-account/${ACCOUNT}` }, 'job j1', 'j1');
     expect(r.status).toBe(400);
     expect('reason' in r && r.reason).toContain(`read/aws-account/${ACCOUNT}`);
     expect('reason' in r && r.reason).toContain(`read/aws-role/${ACCOUNT}/<role>`);
     expect(saved).toEqual([]);
-    expect(previewTemplate(u, `read/cluster/lab read/aws-account/${ACCOUNT}`)).toContain(`read/aws-role/${ACCOUNT}/<role>`);
+    expect(previewTemplate(u, { needs: `read/cluster/lab read/aws-account/${ACCOUNT}` })).toContain(`read/aws-role/${ACCOUNT}/<role>`);
   });
 
   it('is refused in plain words too', async () => {
     const { u } = user();
-    expect((await requestTemplate(u, `aws s3 ls in account ${ACCOUNT}`, 'job j1', 'j1')).status).toBe(400);
+    expect((await requestTemplate(u, { needs: `aws s3 ls in account ${ACCOUNT}` }, 'job j1', 'j1')).status).toBe(400);
   });
 
   it('a read need on an Argo CD app is refused the same way: the vault mints nothing for it', async () => {
     const { u } = user();
-    const r = await requestTemplate(u, 'read/argocd-app/web', 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'read/argocd-app/web' }, 'job j1', 'j1');
     expect(r.status).toBe(400);
     expect('reason' in r && r.reason).toContain('read/argocd-app/web: a template of read needs only takes the read-only check');
   });
 
   it('a read need on an aws-role is asked for as before', async () => {
     const { u, saved } = user();
-    expect((await requestTemplate(u, `read/aws-role/${ACCOUNT}/ReadOnly`, 'job j1', 'j1')).status).not.toBe(400);
+    expect((await requestTemplate(u, { needs: `read/aws-role/${ACCOUNT}/ReadOnly` }, 'job j1', 'j1')).status).not.toBe(400);
     expect(saved).toHaveLength(1);
   });
 
   it('in a template that also changes an asset it takes no check, so it is asked for as before', async () => {
     const { u, saved } = user();
-    expect((await requestTemplate(u, `read/aws-account/${ACCOUNT} write/cluster/lab`, 'job j1', 'j1')).status).not.toBe(400);
+    expect((await requestTemplate(u, { needs: `read/aws-account/${ACCOUNT} write/cluster/lab` }, 'job j1', 'j1')).status).not.toBe(400);
     expect(saved).toHaveLength(1);
   });
 });
@@ -78,7 +78,7 @@ describe('a template a person changed since a job asked for it (issue #1468)', (
 
   it('the refusal names its needs now, so a job can ask for those', async () => {
     const { u } = user(changed('a@example.com'));
-    const r = await requestTemplate(u, asked, 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: asked }, 'job j1', 'j1');
     expect(r.status).toBe(409);
     expect('reason' in r && r.reason).toContain(`--needs "read/aws-role/${ACCOUNT}/ReadOnly write/cluster/lab"`);
     expect('reason' in r && r.reason).toContain(`changed template ${name} in Settings → Vault`);
@@ -86,7 +86,7 @@ describe('a template a person changed since a job asked for it (issue #1468)', (
 
   it('says when the operator CLI changed it, not Settings → Vault', async () => {
     const { u } = user(changed(OPERATOR_CLI_NAME));
-    const r = await requestTemplate(u, asked, 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: asked }, 'job j1', 'j1');
     expect(r.status).toBe(409);
     expect('reason' in r && r.reason).toContain(`changed template ${name} through the operator CLI`);
   });

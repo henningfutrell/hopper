@@ -34,7 +34,7 @@ const unminted = { state: 'failed' as const, unminted: [{ asset: { kind: 'aws-ro
 
 describe('a template whose check failed on a mint (issue #1779)', () => {
   it('is refused with the need and the reason, not left waiting', async () => {
-    const r = await requestTemplate(user(template(READONLY, unminted)), READONLY, 'job j1', 'j1');
+    const r = await requestTemplate(user(template(READONLY, unminted)), { needs: READONLY }, 'job j1', 'j1');
     expect(r.status).toBe(409);
     expect('reason' in r && r.reason).toContain(`the vault minted no credential for read on aws-role 123456789012/readonly: ${REFUSED}`);
     expect('reason' in r && r.reason).toContain('Ask for a read need the vault mints for in its place');
@@ -43,19 +43,19 @@ describe('a template whose check failed on a mint (issue #1779)', () => {
   it('names the read needs on the same account a check passed with', async () => {
     const other = template('read/aws-role/123456789012/hopper-read', { state: 'passed' });
     const elsewhere = template('read/aws-role/999999999999/hopper-read', { state: 'passed' });
-    const r = await requestTemplate(user(template(READONLY, unminted), other, elsewhere), READONLY, 'job j1', 'j1');
+    const r = await requestTemplate(user(template(READONLY, unminted), other, elsewhere), { needs: READONLY }, 'job j1', 'j1');
     expect(r.status).toBe(409);
     expect('reason' in r && r.reason).toContain('passed a check: read/aws-role/123456789012/hopper-read. Ask for them in its place');
     expect('reason' in r && r.reason).not.toContain('999999999999');
   });
 
   it('a failure on a network error still waits: the check pass runs it again', async () => {
-    const r = await requestTemplate(user(template(READONLY, { ...unminted, transient: true })), READONLY, 'job j1', 'j1');
+    const r = await requestTemplate(user(template(READONLY, { ...unminted, transient: true })), { needs: READONLY }, 'job j1', 'j1');
     expect(r.status).toBe(202);
   });
 
   it('a failure with no need left unminted still waits for a person', async () => {
-    const r = await requestTemplate(user(template(READONLY, { state: 'failed' })), READONLY, 'job j1', 'j1');
+    const r = await requestTemplate(user(template(READONLY, { state: 'failed' })), { needs: READONLY }, 'job j1', 'j1');
     expect(r.status).toBe(202);
     expect('text' in r && r.text).toContain('A person runs it again');
   });
