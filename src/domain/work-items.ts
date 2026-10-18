@@ -20,7 +20,8 @@ import { BLOCKED_CAUSES, BLOCKED_WORDS, closedOnGitHub, hasReference, type Block
  * and no person dismissed it — the only failure any view counts. `blocked` (issue #1891): it broke its state's promise
  * and waits on a person (`blockedCause`: `no_pr`, its job ended done with no pull request to wait on; `stale`, past its
  * deadline with no move; `pr_closed`, its pull request closed without a merge on GitHub). `dropped`: dismissed, declined,
- * cancelled, rejected, its pull request closed without a merge by a person's Close PR, or its issue closed as not planned.
+ * cancelled, rejected, its pull request closed without a merge by a person's Close PR, its issue closed as not planned, or
+ * blocked and a person's Won't do (`work_item.dropped`).
  */
 export const WORK_ITEM_STATES = [
   'waiting_for_approval', 'queued', 'working', 'needs_you', 'waiting_outside', 'pr_open', 'partly_done', 'done', 'failed', 'blocked', 'dropped',
@@ -118,7 +119,7 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_classified',
   'job.work_kept', 'job.work_removed',
-  'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened', 'work_item.reconciled',
+  'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened', 'work_item.reconciled', 'work_item.dropped',
   ...LANDING_LEDGER_EVENTS,
 ]);
 
@@ -182,8 +183,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   const mark = (change: Partial<Base>): WorkItem => {
     const next: Base = { ...base, ...change };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
-    return settled(item, next, event.at);
-  };
+    return settled(item, next, event.at); };
 
   // A request card, before any job.
   if (event.type === 'source.request_opened') {
@@ -209,6 +209,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const cause = BLOCKED_CAUSES.find((c) => c === d.cause);
     return cause ? move('blocked', { blockedCause: cause, waitingOn: BLOCKED_WORDS[cause] }) : undefined;
   }
+  // A person's Won't do on a blocked item (issue #1891): dropped. Only a blocked item.
+  if (event.type === 'work_item.dropped') return item?.eventState === 'blocked' ? move('dropped', { waitingOn: undefined }) : undefined;
   if (!job) return undefined;
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.

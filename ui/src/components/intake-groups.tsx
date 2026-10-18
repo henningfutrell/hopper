@@ -11,7 +11,9 @@
 // an item whose job ended leaves Needs approval —, and an approved row says what it waits on: no job yet, or its job and state.
 // Assign to me, Release claim and Take off the backburner answer before their GitHub write (issue #1194): from the click on,
 // the row says the write runs and offers that action no more; a write that failed says why, and offers it again.
-import { ExternalLink, Flame, Hand, Loader2, Unlock } from 'lucide-react';
+// A blocked item (issue #1891: no pull request to wait on, or its pull request closed without a merge) offers Won't do,
+// which drops it, its label change a write-behind too, and Run again on its job.
+import { Ban, ExternalLink, Flame, Hand, Loader2, RotateCcw, Unlock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { GhLink } from '@/components/job';
@@ -23,15 +25,16 @@ import { ago } from '@/model/format';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { actFor, useHopper } from '@/store';
+import { giveBack, useGivingBack } from '@/store/give-back';
 import { forgetEndedApprovals, intakeRefusal, keepsPlace, reconcileApprovals, useApprovals } from '@/store/intake';
 import { useCanOperate } from '@/store/selectors';
 
-type Send = 'assign' | 'release' | 'unbackburner';
+type Send = 'assign' | 'release' | 'unbackburner' | 'wont_do';
 
 /** What a write-behind does on GitHub, as the row says it. */
 const WRITE_BEHIND: Partial<Record<IntakeActionKind, string>> = {
   assign: 'assigning to you on GitHub', release: 'releasing the claim on GitHub', unbackburner: 'taking off the backburner on GitHub',
-  approve: 'updating the issue on GitHub',
+  approve: 'updating the issue on GitHub', wont_do: 'marking it hopper:rejected on GitHub',
 };
 
 /**
@@ -98,6 +101,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
   const ref = intakeRef(x);
   const { row, state } = useFocusOnApproved(x.key);
   const declinedAs = useApprovals((s) => { const a = s[x.key]; return a?.state === 'declined' ? a.choice : undefined; });
+  const rerunning = useGivingBack((s) => (x.jobId ? s[x.jobId] : undefined)) !== undefined;
   const asked = x.action !== 'approve'; // the sync took the approved or declined issue: its request card is gone, the decision shows here
   return (
     <li ref={row} tabIndex={state === 'approved' || state === 'declined' ? -1 : undefined} data-intake-item={x.key} data-backburner={backburner || undefined}
@@ -122,6 +126,12 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
       )}
       {offers('unbackburner') && (
         <Button size="xs" variant="outline" title="Removes hopper:backburner from the issue: the next sync takes it" onClick={() => void send('unbackburner', 'Taking off the backburner')}><Flame />Take off the backburner</Button>
+      )}
+      {offers('wont_do') && (
+        <Button size="xs" variant="outline" title="Drops the item: the hopper takes its blocked label off and puts hopper:rejected on, so no hopper takes it again" onClick={() => void send('wont_do', 'Won\'t do: dropping it')}><Ban />Won't do</Button>
+      )}
+      {canOperate && x.action === 'wont_do' && x.jobId && running !== 'wont_do' && (
+        <Button size="xs" variant="outline" disabled={rerunning} title="Runs its job again: the hopper gives the issue back on GitHub first" onClick={() => void giveBack(x.jobId!, 'rerun')}><RotateCcw />Run again</Button>
       )}
       {x.action === 'approve' && x.request && <RequestCard request={x.request} source={source} itemKey={x.key} canOperate={canOperate} />}
     </li>

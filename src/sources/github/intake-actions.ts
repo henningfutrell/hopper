@@ -1,7 +1,8 @@
 // The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve and Decline
 // (issue #1035) on a request card — on a reopened card (issue #1126) Approve also takes `hopper:done` off —, and Take off the backburner — each only on an item the source's last discover offered
 // it for. Decline (issue #1710) closes the issue as not planned or leaves it open, as the person picked, each without the
-// source's label, and comments what it did (`declineWrites`). Take into Intake (issue #1176): only on an issue an untracked pull request the
+// source's label, and comments what it did (`declineWrites`). Won't do (issue #1891): only on an item the ledger holds
+// blocked; it drops the item at once, and swaps its end labels for `hopper:rejected` (`wontDo`). Take into Intake (issue #1176): only on an issue an untracked pull request the
 // last census listed closes, and that is no work item. Each GitHub write is a row in the GitHub outbox (`outbox.ts`,
 // issue #1238), sent after the answer, and its event is recorded once GitHub took it. Apart from source.ts for its size.
 import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
@@ -10,7 +11,7 @@ import type { UntrackedPullRequest } from '../../domain/untracked-pull-requests.
 import type { GitHubOutbox } from './outbox.ts';
 import type { OutboxChange, OutboxEvent, OutboxInput } from '../../domain/github-outbox.ts';
 import { DEFAULT_INTAKE_DECLINE, declineChoiceFor, declineNote, type DeclineChoice } from '../../domain/intake-decline.ts';
-import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE } from './labels.ts';
+import { END_LABELS, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_REJECTED } from './labels.ts';
 
 export const NOT_IN_SCOPE = 'not in this source\'s scope';
 export const TEXT_CHANGED_SINCE_SHOWN = 'its title or body changed since it was shown: read it again';
@@ -26,6 +27,8 @@ export const HAS_JOB = 'already taken: it has a job here';
 export const DECLINED = 'declined: a person declined this text';
 const NO_ACCOUNT = 'no GitHub account connected';
 const NOTHING_FAILED = 'no GitHub write of this item failed';
+/** Won't do on an item the ledger does not hold blocked (issue #1891). */
+export const NOT_BLOCKED = 'not blocked: the work-item ledger has it';
 
 export interface IntakeActionContext {
   source: string;
@@ -89,6 +92,25 @@ function declineWrites(c: IntakeActionContext, key: string, request: IntakeReque
     choice === 'close' ? { change: note } : { change: note, event: written },
     ...(choice === 'close' ? [{ change: { op: 'close_not_planned' } as OutboxChange, event: written }] : []),
   ];
+}
+
+/**
+ * Won't do on a blocked item (issue #1891): the ledger is the truth, so only an item it holds blocked. `work_item.dropped`
+ * is recorded at once, with the rows; the end labels and the claim the last listing showed go, and `hopper:rejected`
+ * comes on, so no hopper takes the issue again until a person runs it again. Undefined: kept; a string: refused now.
+ */
+function wontDo(c: IntakeActionContext, key: string, repo: string, a: IntakeAction): string | undefined {
+  if (c.outbox.sent('wont_do', key)) return undefined;
+  const item = c.intake?.workItem?.(key);
+  if (item?.state !== 'blocked') return `${NOT_BLOCKED} ${item?.state ?? 'not at all'}`;
+  const intake = c.intake!;
+  const off = (c.listedLabels.get(key) ?? []).filter((l) => (END_LABELS.includes(l) && l !== LABEL_REJECTED) || l === LABEL_CLAIMED || l.startsWith(HOLDER_PREFIX));
+  const data = { source: c.source, key, ...(item.jobId ? { jobId: item.jobId } : {}), ...(item.blockedCause ? { cause: item.blockedCause } : {}), ...(a.acting ? { by: a.acting } : {}) };
+  c.outbox.queue('wont_do', key, repo, [
+    ...(off.length ? [{ change: { op: 'remove_labels', labels: off } as OutboxChange }] : []),
+    { change: { op: 'add_labels', labels: [LABEL_REJECTED] } },
+  ], { local: () => intake.record('work_item.dropped', data) });
+  return undefined;
 }
 
 /** Decline is offered where Approve is: on a request card. */
@@ -165,6 +187,9 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
         if (!r || r.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
         const choice = a.choice ?? declineChoiceFor(c.trust.declineDefaults?.() ?? DEFAULT_INTAKE_DECLINE, r.reopened !== undefined);
         c.outbox.queue('decline', key, x.repo, declineWrites(c, key, r, choice), { tag: r.hash, local: () => c.trust.decline(c.source, key, r, a.acting, choice) });
+      } else if (a.kind === 'wont_do') {
+        const why = wontDo(c, key, x.repo, a);
+        if (why !== undefined) { failed[key] = why; continue; }
       } else if (!c.outbox.sent(a.kind, key)) {
         const write = gitHubWrite(c, a.kind, key);
         if (typeof write === 'string') { failed[key] = write; continue; }

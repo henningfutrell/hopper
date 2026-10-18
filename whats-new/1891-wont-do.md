@@ -1,0 +1,1 @@
+- An issue the hopper is blocked on now has Won't do and Run again in Intake. Won't do drops it and marks it on GitHub for you, so you do not need to change a label there.

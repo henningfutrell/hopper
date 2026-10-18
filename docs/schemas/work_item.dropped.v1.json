@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "cause": {
+      "type": "string",
+      "enum": [
+        "stale",
+        "no_pr",
+        "pr_closed"
+      ]
+    },
+    "by": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "via": {
+          "type": "string",
+          "enum": [
+            "ui",
+            "cli",
+            "api"
+          ]
+        }
+      },
+      "required": [
+        "person",
+        "via"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "source",
+    "key"
+  ],
+  "additionalProperties": false
+}

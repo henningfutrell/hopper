@@ -74,15 +74,16 @@ export type NotTakenGroup = typeof NOT_TAKEN_GROUPS[number];
  * GitHub. `take_in` (issue #1176, Take into Intake): give an issue no work item, that an untracked pull request the last
  * census listed closes, the source's label and assign it to the user's connected account, so the next sync lists it in
  * Intake. `retry_outbox` (issue #1238, a Retry on Sources): send the item's failed rows of the GitHub outbox again.
+ * `wont_do` (issue #1891): drop an item the ledger holds blocked; its blocked label goes and `hopper:rejected` comes on.
  */
-export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss' | 'take_in' | 'retry_outbox';
+export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss' | 'take_in' | 'retry_outbox' | 'wont_do';
 
 export interface IntakeAction {
   kind: IntakeActionKind;
   keys: string[];
   /** `approve`, `decline`: the request's hash as the person read it. */
   hash?: string;
-  /** `approve`, `decline`: the person who did it, as the event names them. */
+  /** `approve`, `decline`, `wont_do`: the person who did it, as the event names them. */
   acting?: ActingPerson;
   /** `decline` (issue #1710): close the issue or leave it open; absent: the user's default for the card. */
   choice?: DeclineChoice;
@@ -113,10 +114,13 @@ export interface OutsideRepo {
   items: string[];
 }
 
-/** The events intake records (issue #440); `work_item.issue_closed`: the close of a promoted item's issue (issue #1232). */
+/**
+ * The events intake records (issue #440); `work_item.issue_closed`: the close of a promoted item's issue (issue #1232);
+ * `work_item.dropped`: a person's Won't do on a blocked item (issue #1891).
+ */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
   | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_decline_written' | 'source.request_withdrawn' | 'source.review_requested'
-  | 'source.issue_taken_in' | 'work_item.issue_closed';
+  | 'source.issue_taken_in' | 'work_item.issue_closed' | 'work_item.dropped';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
 export interface IntakeContext {
