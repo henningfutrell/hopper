@@ -22013,7 +22013,7 @@ and the API for those are follow-ups.
   token with its scope in State and usage, the API door). No token or id: the accounts carry what `parseAuthStatus`
   keeps (email, plan, organization, sign-in method).
 - **CLI.** `hopper accounts` prints that answer (viewer).
-- **UI.** Accounts is a nav group of its own (not Settings, not Machines): `ui/src/views/accounts.tsx`, model
+- **UI.** Accounts is a view of its own (not under Settings), in the nav group Sources & machines since issue #1943: `ui/src/views/accounts.tsx`, model
   `ui/src/model/tool-accounts.ts`, read through the shared polled reads (`useToolAccounts`, every 30 s; a usage source
   emits no event). A card per account: its plan and organization, each machine with its sign-in, read and last-used
   times and why, and its week gauges. The nav badge counts the machines signed out.
@@ -27350,7 +27350,7 @@ cluster.
   links, least role operator; meant for an API token whose grant has the scope `topology:report` (area `topology`, in
   the Infra changes section of the scope registry). The reporter is the API token's label, else who signed in. Each report
   is `infra.topology_reported`: each source's key, `ok`, its counts or its error; never a node; on no job's timeline.
-- **Infra → Topology** (`ui/src/views/topology.tsx`, pure model `ui/src/model/topology.ts`; the Globe view beside it, issue
+- **Topology** (`ui/src/views/topology.tsx`, its own page since issue #1943, "Topology: its own page"; pure model `ui/src/model/topology.ts`; the Globe view beside it, issue
   #1893, "The Topology globe"). The graph, drawn with d3's
   force layout (run to its end, so the same graph is drawn the same way), at most 400 nodes; filters by account, cluster,
   region and kind; a click on a node shows its id, where it is, its attrs, the sources that found it, its neighbours with
@@ -27370,8 +27370,8 @@ cluster.
   `aws-role` (`<account>/<role>`) its IAM role node and its account node, where the apply writes; a `cluster` the cluster
   node of that name; a `namespace` (`<cluster>/<namespace>`) that namespace node of that cluster; a target each node whose id,
   name, alias or attr it is, as before. An `argocd-app` or a `terraform-workspace` names no node. Each entry
-  (`ui/src/views/infra-timeline.tsx`) lists up to three of its nodes; a click picks the node on the Topology panel and scrolls
-  to it, so the node picked is the page's (`infra.tsx`). A node's details list every entry that touched it, newest first, at
+  (`ui/src/views/infra-timeline.tsx`) lists up to three of its nodes; a click opens the node on the Topology page
+  (`#topology/<node id>`, issue #1943). A node's details list every entry that touched it, newest first, at
   most 10: plans, approvals, applies, drift and out-of-band writes, not only the out-of-band changes. In the browser, from
   what the page reads already: no new route, nothing kept.
 
@@ -27487,6 +27487,39 @@ Tests: `test/ui/topology-globe.test.ts` (region to coordinate, a node's region, 
 with no known place and why, a filter, the WebGL check), `test/ui/topology-globe-view.test.ts` (the panel in happy-dom
 with the scene replaced at its module: the regions and arcs drawn, a click on a region and on a node, the filters shared
 with the graph, the graph and why with no WebGL and when the scene cannot start).
+
+## Topology: its own page (issue #1943, 2026-10-18)
+
+Before: the topology and its globe were a panel at the bottom of Infra, and with no source the panel only said where to
+set a credential. A primary view had no top-level home (issue #896), and the sidebar had three groups of one entry each.
+
+- **A top-level view, `#topology`** (`ui/src/views/topology-page.tsx`), in the Infra nav group beside Infra. The panel
+  (`topology.tsx`) is its content: graph and globe, filters, a node's details. It reads `GET /api/topology`, and
+  `GET /api/infra-plans` and `GET /api/out-of-band` for the Infra changes a node's details list (`useLoad`, `NotYet`,
+  `infra-load.tsx`, shared with Infra). `#topology/<node id>` (the id URI-encoded) picks that node.
+- **Infra holds no copy.** One line links to Topology. Infra still reads the graph, only to name the nodes each Applies
+  and drift entry touched; a click on one opens `#topology/<node id>`.
+- **With no source, why and what to do** (`NoSources`, `topology-sources.tsx`). From the vault's view (`useVault`): it
+  mints for no AWS account and no cluster, so there is nothing to read; or it mints for some (each named) and no read
+  reported yet. Either way no read-only check reported a source. In place: **Add an AWS account** and **Add a cluster**
+  open the vault's own form (`SetForm`, `vault.tsx`) with Mints for set to `aws-account/` or `cluster/` (an admin's; any
+  other person reads where an admin adds one); **Discover now** once the vault mints for one (or when the vault's view
+  cannot be read, so nothing hides). The report route for a read-only check is named too.
+- **A failed read shows its error** (`ReadErrors`): each source whose last read failed, its name, when, and the error, in
+  a box of its own above the graph. A graph with sources but no node says no source was read without an error.
+- **Nav groups.** Infra (Infra, Topology); Sources & machines takes Accounts; Set up holds Skills and Settings. No group
+  holds one entry only. Group ids stay (`infra`, `sources-machines`, `settings`), so a collapsed group stays collapsed.
+
+**Decisions:**
+- **Topology in the Infra group**, not a group of its own: the two pages are about the same accounts and clusters, and a
+  group of one entry is what the issue asks to remove.
+- **Accounts beside Machines, Skills beside Settings**: Accounts says who each machine's agent tool is signed in as;
+  Skills is configuration of what jobs get. The heading Settings over one entry Settings became Set up.
+- **The vault's own form, opened in place**: no second form, so what is checked (the name, Mints for, an AWS account's
+  JSON keys) is the vault's.
+
+Tests: `test/ui/topology-page.test.ts` (the page in the whole app: the sidebar entry and no copy on Infra, the empty state
+with and without a minting credential and the add form, a failed read's error, the graph and a linked node).
 
 ## Telemetry: what runs now (issue #1486, part 6, 2026-10-17)
 
@@ -27940,8 +27973,8 @@ session).
 Before: the skill library (part 1) was only in the API. A person could not see which skill each kind of work gets, or
 write one, without a token.
 
-- **A top-level view, `#skills`** (`ui/src/views/skills.tsx`), in a nav group of its own between Infra and Accounts: the
-  skill library's one home. It reads `GET /api/skill-library` once; each change answers the new view, which the page shows.
+- **A top-level view, `#skills`** (`ui/src/views/skills.tsx`), in the nav group Set up with Settings (issue #1943; it was a
+  group of its own): the skill library's one home. It reads `GET /api/skill-library` once; each change answers the new view, which the page shows.
   Loading, an error that says why with **Try again**, or the panels.
 - **Work skills.** One choice per kind of work (Code work, Research, Proposals) for every repository; its empty choice
   names the built-in default. Below it, **Per repository**: a row per repository with a choice of its own, a choice per kind
@@ -27963,7 +27996,7 @@ write one, without a token.
 
 **Decisions.**
 - **A group of its own in the navigation**, not a section of Settings: the issue names the Skills page its own canonical
-  home (issue #896), as the Infra page is.
+  home (issue #896), as the Infra page is. Since issue #1943 it is an entry of the nav group Set up, beside Settings, still its own view.
 - **Each choice saves at once**, one kind per request, as yolo mode's per-repository switches do: there is no draft to lose
   and no version to conflict on, and the event names the one change.
 - **Admins only**, as in part 1: the buttons and choices show only to a session that may change them; any person reads.

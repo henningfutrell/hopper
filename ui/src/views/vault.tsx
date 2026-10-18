@@ -61,10 +61,11 @@ function KeptIn({ backends, kept, local, onChange }: { backends: VaultBackendVie
   );
 }
 
-function SetForm({ secret, backends, local, busy, send, onDone }: { secret?: VaultSecret; backends: VaultBackendView[]; local: boolean; busy: boolean; send: Send; onDone: () => void }) {
+/** The form that sets a secret, or replaces `secret`. `mintsFor`: what Mints for starts with, for a new secret (`aws-account/`). */
+export function SetForm({ secret, mintsFor, backends, local, busy, send, onDone }: { secret?: VaultSecret; mintsFor?: string; backends: VaultBackendView[]; local: boolean; busy: boolean; send: Send; onDone: () => void }) {
   const [name, setName] = useState(secret?.name ?? '');
   const [scope, setScope] = useState(secret?.scope ?? '');
-  const [mintsSaid, setMintsSaid] = useState(secret?.mints ? `${secret.mints.kind}/${secret.mints.name}` : '');
+  const [mintsSaid, setMintsSaid] = useState(secret?.mints ? `${secret.mints.kind}/${secret.mints.name}` : mintsFor ?? '');
   const [value, setValue] = useState('');
   const [kept, setKept] = useState(secret?.backend?.name ?? (local ? '' : backends[0]?.name ?? ''));
   const [reference, setReference] = useState(secret?.backend?.reference ?? '');

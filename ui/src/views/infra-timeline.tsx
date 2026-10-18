@@ -1,6 +1,6 @@
 // Infra → Applies and drift (issue #896, design.md "The Infra page"): one timeline of plans recorded and approved, applies,
 // drift and out-of-band writes, newest first. Each entry links to the topology nodes it touched (issue #1781, design.md
-// "The infrastructure topology"): a click picks the node on the Topology panel.
+// "The infrastructure topology"): a click opens the node on the Topology page (issue #1943).
 import { Empty } from '@/components/panel';
 import type { TimelineEntry } from '@/model/infra-plans';
 import { entryNodes } from '@/model/topology';
