@@ -28,3 +28,14 @@ describe('a pull request edit or close (issue #1734)', () => {
     }
   });
 });
+
+describe('a job writes no comment command (issue #655, part 21)', () => {
+  it('refuses a comment whose first line is /hopper run, research or propose', () => {
+    const asker = { jobId: 'j', repo: 'octo/tools' };
+    for (const body of ['/hopper run', '  /hopper research\nwhy', '/Hopper PROPOSE']) {
+      expect(checkRequest({ op: 'issue.comment', repo: 'octo/tools', number: 8, body }, asker, ['octo/tools']))
+        .toEqual({ ok: false, reason: 'a job writes no comment command (/hopper run, research or propose): only a person nominates an issue' });
+    }
+    expect(checkRequest({ op: 'issue.comment', repo: 'octo/tools', number: 8, body: 'Ran `/hopper run` here.' }, asker, ['octo/tools'])).toEqual({ ok: true });
+  });
+});
