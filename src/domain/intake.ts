@@ -155,6 +155,8 @@ export interface IntakeContext {
   promotedOpen?(key: string): boolean;
   /** The work item of an issue, by its URL (issue #1891): its end labels mirror its state (the label mirror). Absent: none is compared. */
   workItem?(key: string): WorkItem | undefined;
+  /** Whether the open pull request of an item in PR open is a part (issue #1933): its waiting label is then `hopper:partly-done`. */
+  partOpen?(key: string): boolean;
 }
 
 /**

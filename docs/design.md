@@ -20912,7 +20912,7 @@ and the writes held while a sign-in has ended are the next parts.
   `work-items.ts`), an owner, a next check and a deadline per row, one host at a time (the sweep lease), and a replay
   (`hopper ledger rebuild`).
 - **Not in milestone 1:** a correction of the other states' label drift. It is logged and counted (part 4); the issue
-  names its correction as the follow-up.
+  names its correction as the follow-up, done in issue #1933 ("The label mirror corrects every judged state").
 
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
@@ -20937,6 +20937,28 @@ stale, asked once, a new job takes it over; a live queued job never; partly done
 Part 8: `test/sources/github-item-labels.test.ts` (`blockLabels` of each state), `test/work-items/reconcile-labels.test.ts`
 (a block's rows kept with it, coalesced into one remove and one add, once; no block when its rows cannot be kept; no rows
 with no GitHub job).
+
+### The label mirror corrects every judged state (issue #1933, 2026-10-18)
+
+Follow-up of milestone 1. Before it, the label mirror corrected only a blocked item's drift. Each other judged state's drift
+was only logged and counted.
+
+- **Every judged state's drift is corrected.** An item a job works (queued, working, waiting outside) loses each end label
+  on its issue. An item in PR open loses each end label but its waiting label. The correction is the one path of part 4:
+  GitHub outbox rows (act `mirror`, tag `<state>:<cause>`), coalesced into one remove call and one add call, once. An item
+  that moved in the last two minutes, or that has outbox rows not sent, is not judged. The reconciler of #1892 builds on
+  this path; it adds no second one.
+- **PR open with no waiting label gets one.** `labelsFor` names the label to add: `hopper:partly-done` when the item's
+  pull request is a part, else `hopper:pr-ready`. Either one on the issue is no drift. The ledger does not hold that a pull
+  request is a part; the item's job does (`partlyDone`, or `part` in its source state), so the intake gives the mirror
+  `partOpen(key)`. `labelDrift` has no `missing` flag now: a drift always names the label to add.
+- **Corrections are counted apart.** `hopper.work_items.label_corrections` counts each correction queued, by source and
+  state. `hopper.work_items.label_drift` still counts each drift once, and its `corrected` attribute says whether the
+  mirror queued its correction (false: the same act went through and the next discover still lists the drift).
+
+**Verification:** `test/sources/github-item-labels.test.ts` (PR open's label to add, of a part or not),
+`test/sources/github-label-mirror.test.ts` (a drift of each judged state one coalesced change, once; PR open with no
+waiting label; an item with outbox rows not sent not judged).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

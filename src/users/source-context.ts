@@ -43,6 +43,12 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       // Promoted with its batch, its issue still open (issue #1232): the sync closes it, once.
       // Its end labels mirror its state (issue #1891, the label mirror).
       workItem: (key) => store.workItems.get(key),
+      // Its job follows a part (issue #1933): PR open's waiting label is `hopper:partly-done`.
+      partOpen: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const job = id === undefined ? undefined : store.jobs.get(id);
+        return job?.partlyDone !== undefined || job?.sourceState?.source?.part === true;
+      },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
