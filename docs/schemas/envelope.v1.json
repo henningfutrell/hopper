@@ -265,6 +265,7 @@
         "work_item.issue_reopened",
         "work_item.reconciled",
         "work_item.dropped",
+        "work_item.person_asked",
         "job.pull_request_classified",
         "skill.listed",
         "skill.loaded",

@@ -90,6 +90,8 @@ export interface WorkItem {
   failedJobId?: string;
   /** Why it is blocked, while `blocked` (issue #1891). */
   blockedCause?: BlockedCause;
+  /** A person was asked about it, once, while it stays blocked for the same cause (`work_item.person_asked`, issue #1891). */
+  personAsked?: true;
   /** How many of its pull requests in a row were closed without a merge on GitHub (issue #1891); a merge ends the row. */
   closedWithoutMerge?: number;
   /** The jobs of it whose work was kept, not pushed (`job.work_kept`), until removed. */
@@ -115,11 +117,9 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'source.request_opened', 'source.request_approved', 'source.request_auto_approved', 'source.request_declined', 'source.request_withdrawn',
   'job.queued', 'job.claimed', 'job.started', 'job.continued', 'job.wait_ended', 'job.reattached', 'job.requeued',
   'job.parked', 'job.unparked', 'job.waiting', 'job.wait_polled', 'question.escalated_to_human', 'proposal.escalated_to_human', 'research.escalated_to_human',
-  'handoff.opened', 'handoff.closed',
-  'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
+  'handoff.opened', 'handoff.closed', 'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_classified',
-  'job.work_kept', 'job.work_removed',
-  'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened', 'work_item.reconciled', 'work_item.dropped',
+  'job.work_kept', 'job.work_removed', 'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened', 'work_item.reconciled', 'work_item.dropped', 'work_item.person_asked',
   ...LANDING_LEDGER_EVENTS,
 ]);
 
@@ -177,7 +177,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const next: Base = { ...base, ...change, eventState, eventAt: event.at };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
     if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
-    if (next.eventState !== 'blocked') delete next.blockedCause;
+    if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
     return settled(item, next, event.at);
   };
   const mark = (change: Partial<Base>): WorkItem => {
@@ -211,6 +211,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   }
   // A person's Won't do on a blocked item (issue #1891): dropped. Only a blocked item.
   if (event.type === 'work_item.dropped') return item?.eventState === 'blocked' ? move('dropped', { waitingOn: undefined }) : undefined;
+  // The one notice of a blocked item (issue #1891): its state stays; once. A move out of blocked, or to another cause, forgets it.
+  if (event.type === 'work_item.person_asked') return item?.state === 'blocked' && item.personAsked !== true ? mark({ personAsked: true }) : undefined;
   if (!job) return undefined;
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.

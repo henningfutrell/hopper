@@ -3022,7 +3022,9 @@ and the test event are sent at once, in memory only.
   #868, "Machine resources over time" → "WSL and the memory alert": body adds `machineId`, `of`, `freeBytes`,
   `totalBytes`, `thresholdBytes`, and `since` for a low); `machine.offline` and `machine.back_online` (issue #1497: body
   adds `machineId`, `label`, `since`); `machine.disk_over_budget` and `machine.disk_within_budget` (issue #1203, "Hopper's own
-  disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are).
+  disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are);
+  `work_item.person_asked` (issue #1891, "The item lifecycle": a blocked work item waits on a person; body adds `issueUrl`,
+  `cause`, `waitingOn` in plain words and `pullRequest`; once per block, as the event is).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -20848,6 +20850,19 @@ and the writes held while a sign-in has ended are the next parts.
   correction of the other states' label drift, deadlines for the states other than PR open, and one notice when an item
   is blocked.
 
+**Part 6: one notice when an item is blocked.**
+- **The item reconciler asks a person once** (correction `ask`). A blocked item that is stuck work for a person
+  (`blockedStuck`: Failures lists it under `pr_open_stale`) and that no one was asked about yet gets one
+  `work_item.person_asked` event, with its cause, its newest job and the pull request it names. So a `no_pr` item is asked
+  about only after ten minutes, and an item the reconciler runs again by itself is not asked about.
+- **Once per block.** The event marks the item (`personAsked`), and its state stays. A second pass, or a second host,
+  asks nothing more. The mark goes when the item leaves `blocked` or is blocked for another cause, so the next block asks
+  again.
+- **A notifier sends it on.** The Grok Bot routine posts `work_item.person_asked` with the cause in plain words
+  ("Grok Bot routine webhook").
+- **Not in this part:** the item saga in the `sagas` table, rows written in the transaction of each state change, a
+  correction of the other states' label drift, and deadlines for the states other than PR open.
+
 **Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
 (PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
 finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
@@ -20862,6 +20877,9 @@ corrected; an item that moved a moment ago not judged).
 Part 5: `test/domain/work-items-wont-do.test.ts` (a blocked item dropped, a person's move; once), `test/sources/github-wont-do.test.ts`
 (offered on a blocked issue, dropped at once and its labels in one coalesced change; a second press adds nothing; refused
 when the ledger does not hold the item blocked), `test/sources/intake-live.test.ts`, `test/ui/intake-wont-do.test.ts`.
+Part 6: `test/domain/work-items-person-asked.test.ts` (asked once; forgotten on a move out of blocked or a new cause),
+`test/domain/item-lifecycle.test.ts` (asked only about stuck work, once), `test/work-items/reconcile.test.ts` (a stale item
+and a second close asked about once), `test/plugins/grokbot-intake.test.ts` (the post).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

@@ -20,6 +20,10 @@
 //     When the reconciler runs
 //     Then it runs the item again once, with a brief that names the closed pull request, and its new job queues the item
 //     And when the new job's pull request is closed too, the item stays blocked for a person, and nothing runs again
+//   Scenario: one notice when an item is blocked
+//     Given an item blocked as stale, or blocked after a second close
+//     When the reconciler runs after it is stuck work
+//     Then one work_item.person_asked asks a person, and the next pass asks nothing more
 //   Scenario: two hosts
 //     Given hosts A and B on one database, each with its reconciler and sweep leases
 //     Then only A acts while it holds the lease, and B acts once A stopped
@@ -113,8 +117,12 @@ describe('the item reconciler', () => {
     expect(reconciler(store, () => at(30)).reconcileOnce()).toBe(0);
     expect(reconciler(store, () => at(61)).reconcileOnce()).toBe(1);
     expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale', pullRequest: PR });
-    expect(reconciler(store, () => at(120)).reconcileOnce()).toBe(0);
+    // One notice: the next pass asks a person once, and a pass after it asks nothing more.
+    expect(reconciler(store, () => at(120)).reconcileOnce()).toBe(1);
+    expect(reconciler(store, () => at(180)).reconcileOnce()).toBe(0);
     expect(reconciled(store)).toHaveLength(1);
+    expect(store.events.recent(10, ['work_item.person_asked']).map((e) => e.data)).toEqual([{ key: KEY, cause: 'stale', jobId: job.id, pullRequest: PR }]);
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale', personAsked: true });
   });
 
   it('runs an item whose pull request was closed without a merge again once; a second close waits on a person', async () => {
@@ -159,9 +167,14 @@ describe('the item reconciler', () => {
     store.events.append({ type: 'job.finished', jobId: second.id, data: { result: 'pull request ready for review' }, at: at(20) });
     store.events.append({ type: 'job.pull_request_closed', jobId: second.id, data: { pullRequest: `${PR}1`, part: false }, at: at(20) });
     expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'pr_closed', closedWithoutMerge: 2 });
-    expect(r(at(40)).reconcileOnce()).toBe(0);
-    expect(asked).toHaveLength(1);
     expect(blockedStuck(store.workItems.get(KEY)!, at(40))).toBe(true);
+    // Nothing runs again: a person is asked once, as the item is stuck work.
+    expect(r(at(40)).reconcileOnce()).toBe(1);
+    expect(r(at(50)).reconcileOnce()).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(store.events.recent(10, ['work_item.person_asked']).map((e) => ({ jobId: e.jobId, data: e.data }))).toEqual([
+      { jobId: second.id, data: { key: KEY, cause: 'pr_closed', jobId: second.id, pullRequest: `${PR}1` } },
+    ]);
   });
 
   it('of two hosts on one database, only the lease holder acts; the other takes over once it stopped', async () => {
