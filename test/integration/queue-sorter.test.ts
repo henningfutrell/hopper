@@ -51,6 +51,10 @@ async function firstClaimed(a: TestApp, blocker: Job, ids: string[]): Promise<st
   return claims[0]!;
 }
 
+// A test that runs jobs through the lane waits up to 20 s for each of its two jobs: more than the default
+// test timeout of 15 s.
+const LANE_TEST_TIMEOUT_MS = 60_000;
+
 describe('the queue sorter in the engine', () => {
   it('default (no queueSorter section): priority — the higher priority starts first', async () => {
     const a = await boot();
@@ -58,7 +62,7 @@ describe('the queue sorter in the engine', () => {
     const { blocker, older, newer } = await queueBehindBlocker(a);
     expect((await a.api('GET', '/api/queue')).body.waiting.map((j: Job) => j.id)).toEqual([newer.id, older.id]);
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(newer.id);
-  });
+  }, LANE_TEST_TIMEOUT_MS);
 
   it('a plugins config change swaps the sorter within 5 s: oldest-first starts the older job first', async () => {
     const a = await boot();
@@ -69,7 +73,7 @@ describe('the queue sorter in the engine', () => {
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(older.id);
     const decisions = (await a.api('GET', '/api/decisions?limit=50')).body.decisions;
     expect(decisions.some((d: { inputs: { queueOrder?: { sorter: string } } }) => d.inputs.queueOrder?.sorter === 'fifo')).toBe(true);
-  });
+  }, LANE_TEST_TIMEOUT_MS);
 
   it('the UI selects a queue sorter (POST /ui/api/plugins select)', async () => {
     const a = await boot();
@@ -94,5 +98,5 @@ describe('the queue sorter in the engine', () => {
     await waitFor(async () => (await a.api('GET', '/api/plugins')).body.queueSorter.fallback === true, { what: 'the fallback to show' });
     expect((await a.api('GET', '/api/plugins')).body.queueSorter).toMatchObject({ active: 'throwing-sorter', fallback: true, reason: expect.stringContaining('sorter broke') });
     expect(await firstClaimed(a, blocker, [older.id, newer.id])).toBe(newer.id);
-  });
+  }, LANE_TEST_TIMEOUT_MS);
 });

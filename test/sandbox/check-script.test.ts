@@ -237,8 +237,7 @@ esac`, [read('aws-account', '123456789012')]);
   it('an EC2 refusal with a long encoded authorization failure message is a refusal: it passes (issue #1904)', async () => {
     const blob = 'Ab3_-x9'.repeat(400);
     const { results } = await runWith('aws', `case "$*" in
-  *describe-vpcs*) echo vpc-0a1b2c3d4e5f60718 ;;
-  *"create-tags --dry-run"*) echo 'An error occurred (UnauthorizedOperation) when calling the CreateTags operation: You are not authorized to perform this operation. User: arn:aws:sts::123456789012:assumed-role/hopper-read/hopper-read-only-check is not authorized to perform: ec2:CreateTags on resource: arn:aws:ec2:eu-west-1:123456789012:vpc/vpc-0a1b2c3d4e5f60718 because no identity-based policy allows the ec2:CreateTags action. Encoded authorization failure message: ${blob}' >&2; exit 254 ;;
+  *"create-vpc --dry-run"*) echo 'An error occurred (UnauthorizedOperation) when calling the CreateVpc operation: You are not authorized to perform this operation. User: arn:aws:sts::123456789012:assumed-role/hopper-read/hopper-read-only-check is not authorized to perform: ec2:CreateVpc on resource: arn:aws:ec2:eu-west-1:123456789012:vpc/* because no identity-based policy allows the ec2:CreateVpc action. Encoded authorization failure message: ${blob}' >&2; exit 254 ;;
   *) exit 1 ;;
 esac`, [read('aws-role', '123456789012/hopper-read')]);
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true, exit: 254 });
@@ -251,11 +250,10 @@ esac`, [read('aws-role', '123456789012/hopper-read')]);
 
   it('a long output with no refusal in it is still an error (issue #1904)', async () => {
     const { results } = await runWith('aws', `case "$*" in
-  *describe-vpcs*) echo vpc-0a1b2c3d4e5f60718 ;;
-  *"create-tags --dry-run"*) echo "An error occurred (InvalidID) when calling the CreateTags operation: $(printf 'x%.0s' $(seq 1 3000))" >&2; exit 254 ;;
+  *"create-vpc --dry-run"*) echo "An error occurred (InvalidParameterValue) when calling the CreateVpc operation: $(printf 'x%.0s' $(seq 1 3000))" >&2; exit 254 ;;
   *) exit 1 ;;
 esac`, [read('aws-role', '123456789012/hopper-read')]);
-    expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'error', passed: false });
+    expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'error', passed: false, exit: 254 });
   });
 
   // Issue #1736: a view role that is right refuses helm list on secrets. That refusal passes the probe, with no mark.
