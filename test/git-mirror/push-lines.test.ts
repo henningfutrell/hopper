@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
-import { createPushLines } from '../../src/git-mirror/push-lines.ts';
+import { createFastForward, createPushLines } from '../../src/git-mirror/push-lines.ts';
 import { git } from './support.ts';
 
 const lines = (n: number, word: string) => Array.from({ length: n }, (_, i) => `${word} ${i}`).join('\n') + '\n';
@@ -102,5 +102,31 @@ describe('the lines of a push that brings in its base branch (issue #1096)', () 
     expect(await count('acme/app', async () => ({ url: o.url }), { base: 'nope', old: o.head, new: o.dev, pack: Buffer.alloc(0) })).toBeUndefined();
     expect(said.join('\n')).toContain('acme/app');
     expect(existsSync(join(o.root, 'mirrors'))).toBe(true);
+  });
+});
+
+// Issue #1806: a direct push to the target branch is taken only as a fast-forward, read in the same mirror and quarantine.
+describe('whether a push is a fast-forward (issue #1806)', () => {
+  const check = (root: string) => { const said: string[] = []; return { ff: createFastForward({ dir: join(root, 'mirrors'), traffic: createGitHubTraffic({ log: (l) => said.push(l) }), log: (l) => said.push(l) }), said }; };
+
+  it('a commit on top of the branch is a fast-forward; one that rewrites it is not; the mirror keeps neither', async () => {
+    const o = origin();
+    const { ff } = check(o.root);
+    git(o.tree, 'checkout', '--quiet', 'dev');
+    const onTop = o.commit({ 'x.ts': lines(11, 'x') }, 'on top');
+    expect(await ff('acme/app', async () => ({ url: o.url }), { old: o.dev, new: onTop, pack: packOf(o.tree, onTop, [o.dev]) })).toBe(true);
+    git(o.tree, 'checkout', '--quiet', '-b', 'rewritten', o.start);
+    const rewritten = o.commit({ 'x.ts': lines(3, 'x') }, 'rewrites dev');
+    expect(await ff('acme/app', async () => ({ url: o.url }), { old: o.dev, new: rewritten, pack: packOf(o.tree, rewritten, [o.start]) })).toBe(false);
+    const mirror = join(o.root, 'mirrors', 'acme/app.git');
+    expect(() => execFileSync('git', ['--git-dir', mirror, 'cat-file', '-e', `${onTop}^{commit}`], { stdio: 'pipe' })).toThrow();
+    expect(readdirSync(mirror).filter((f) => f.startsWith('hopper-quarantine'))).toEqual([]);
+  });
+
+  it('an old commit git cannot fetch: git cannot say', async () => {
+    const o = origin();
+    const { ff, said } = check(o.root);
+    expect(await ff('acme/app', async () => ({ url: o.url }), { old: 'c'.repeat(40), new: o.dev, pack: Buffer.alloc(0) })).toBeUndefined();
+    expect(said.join('\n')).toContain('acme/app');
   });
 });

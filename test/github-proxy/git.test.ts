@@ -47,6 +47,16 @@ describe('what a job may push', () => {
     expect(checkPush([{ old: A, new: B, ref: 'refs/heads/ok' }, { old: A, new: B, ref: 'refs/heads/main' }], at)).toMatchObject({ ok: false });
   });
 
+  it('with direct push on (issue #1806): the target branch is taken; every other kept branch, a tag and a delete are still refused', () => {
+    const direct = { defaultBranch: 'main', direct: 'main' };
+    expect(checkPush([{ old: A, new: B, ref: 'refs/heads/main' }], direct)).toEqual({ ok: true });
+    expect(checkPush([{ old: A, new: B, ref: 'refs/heads/MAIN' }], direct)).toEqual({ ok: true });
+    for (const branch of ['dev', 'beta', 'stable']) expect(checkPush([{ old: A, new: B, ref: `refs/heads/${branch}` }], direct)).toMatchObject({ ok: false });
+    expect(checkPush([{ old: A, new: ZERO, ref: 'refs/heads/main' }], direct)).toEqual({ ok: false, reason: 'a job deletes no branch (refs/heads/main)' });
+    expect(checkPush([{ old: ZERO, new: B, ref: 'refs/tags/v1' }], direct)).toMatchObject({ ok: false });
+    expect(checkPush([{ old: A, new: B, ref: 'refs/heads/hopper-batch/0123456789ab' }], { ...direct, direct: 'hopper-batch/0123456789ab' })).toMatchObject({ ok: false });
+  });
+
   it('never a batch run\'s branch (issue #1073): what its checks test is what the hopper merges', () => {
     expect(checkPush([{ old: A, new: B, ref: 'refs/heads/hopper-batch/0123456789ab' }], at))
       .toEqual({ ok: false, reason: 'a job pushes only to a branch of its own work, never to a batch run\'s branch (hopper-batch/0123456789ab)' });
