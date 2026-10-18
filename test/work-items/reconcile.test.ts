@@ -237,7 +237,7 @@ describe('the item reconciler', () => {
     const hosts = ['a', 'b'].map((name) => {
       const instance = openInstanceStore({ url, clock: fixedClock(T0) });
       const store = instance.userStore(instance.users.get(ADMIN_ID)!);
-      const leases = createHostLeases({ repo: instance.sweepLeases, owner: `test/${name}`, clock: { now: () => new Date() }, logger: quiet });
+      const leases = createHostLeases({ repo: instance.sweepLeases, owner: `test/${name}`, logger: quiet });
       cleanups.push(() => { leases.stop(); store.close(); instance.close(); });
       return { store, leases, r: reconciler(store, () => at(10), leases.lease('item-reconcile')) };
     });
