@@ -132,7 +132,7 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(lines.at(-1)).toMatch(/^A credential for any other service: sh "\$HOPPER_SKILL" SERVICE --credential/);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(160);
     // Issue #1007 added need-step, issue #1905 topology, issue #1909 orchestrate: still a few short lines.
-    expect(catalog.stdout.length).toBeLessThan(1000);
+    expect(catalog.stdout.length).toBeLessThan(1100);
     expect(eventsOf(a, 'skill.listed')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ machine: 'desk' }) })]);
 
     const github = await skill(a, job, ['github']);

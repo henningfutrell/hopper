@@ -15164,7 +15164,7 @@ JSON. The broker (`src/skills/broker.ts`), in order:
 **The skills** (`src/skills/catalog.ts`, baked in): `help` (the help pages, "Help"), `github` (the text is `hopper-gh`'s help), `kube-diagnostics` (read
 on a cluster or namespace), `aws-diagnostics` (read on an AWS account or role). No skill is special to one outside service: a credential for any
 other service is asked in the job's own words (issue #583, "The dynamic vault"), and the catalog's last line says how.
-The catalog stays under 1000 characters (issue #1909 added `orchestrate`).
+The catalog stays under 1100 characters (issues #1905 and #1909 added `topology` and `orchestrate`).
 
 **Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
 (`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
