@@ -27019,7 +27019,8 @@ cluster.
   links, least role operator; meant for an API token whose grant has the scope `topology:report` (area `topology`, in
   the Infra changes section of the scope registry). The reporter is the API token's label, else who signed in. Each report
   is `infra.topology_reported`: each source's key, `ok`, its counts or its error; never a node; on no job's timeline.
-- **Infra → Topology** (`ui/src/views/topology.tsx`, pure model `ui/src/model/topology.ts`). The graph, drawn with d3's
+- **Infra → Topology** (`ui/src/views/topology.tsx`, pure model `ui/src/model/topology.ts`; the Globe view beside it, issue
+  #1893, "The Topology globe"). The graph, drawn with d3's
   force layout (run to its end, so the same graph is drawn the same way), at most 400 nodes; filters by account, cluster,
   region and kind; a click on a node shows its id, where it is, its attrs, the sources that found it, its neighbours with
   the link in words, and the out-of-band changes whose target names it (its id, name, an alias or an attr, as `vpc-1`).
@@ -27110,6 +27111,44 @@ keeps its snapshot, the event, the scope and the refusals), `test/ui/topology.te
 entry touched and the entries of a node, source words, the layout), `test/ui/infra-plans.test.ts` (each entry's subject),
 `test/ui/topology-view.test.ts` (the panel draws, a click shows a node and the changes that touched it, a stale source, an
 empty topology; the feed links an entry to its nodes and a click picks one).
+
+## The Topology globe (issue #1893, 2026-10-18)
+
+Follow-up to "The infrastructure topology": discovery reads every region (issue #1864), but nothing showed where the
+nodes live. The Topology panel now has two views of the same graph, **Graph** (as before) and **Globe**. The globe is a
+view, not a replacement, and reads only what the graph reads: no new route, no discovery, no cloud call.
+
+- **The model** (`ui/src/model/topology-globe.ts`, pure). `REGION_PLACES`: each AWS region at the city or the area AWS
+  names for it, in degrees. A node's region (`nodeRegion`): its own; else, for a Kubernetes object, its cluster's (an EKS
+  cluster's region, from the whole graph, so a filter that leaves out the cluster leaves its objects where they live); else
+  the region its ARN names. `globeOf` groups the nodes the filters leave per region, most first, with their counts by kind;
+  makes one **arc** per pair of regions a topology link joins, with how many links; and lists each node with **no known
+  place** apart, with why: no region (an account, an IAM role, a bucket S3 names no region for, a cluster of its own
+  Kubernetes API) or a region the table does not know.
+- **The view** (`ui/src/views/topology-globe.tsx`). The globe, then each region with its counts, the region picked with its
+  nodes, and the nodes with no known place. A click on a region, on the globe or in the list, lists its nodes; a click on a
+  node picks it, so the details are the graph's (`Details`, the page's selected node). The filters (account, cluster,
+  region, kind) are the panel's, so both views show the same nodes. The globe draws any number of nodes: they are grouped,
+  so the graph's limit of 400 does not apply.
+- **The scene** (`ui/src/views/globe-scene.ts`, three.js, a chunk of its own loaded only when Globe is picked). A sphere,
+  the land's outline (Natural Earth 1:110m, the `world-atlas` package, built into the UI: no map tile, no outside call, so it
+  works offline), a marker per region (larger with more nodes; the region picked in the theme's warn colour) and an arc
+  per pair of regions, lifted above the sphere. A person turns it by dragging and zooms with the wheel (three.js's
+  `OrbitControls`); it draws only when the camera moves. The colours are the theme's CSS variables, read through a 1×1
+  canvas so `oklch` colours work.
+- **No WebGL.** Before Globe shows, `webglAvailable` asks a canvas for a `webgl2` or a `webgl` context. With none, or when
+  the scene throws as it starts, the panel shows the graph and says why.
+
+**Decisions:**
+- **three.js, `world-atlas` and `topojson-client`**: established, maintained libraries for the scene, the land data and its
+  decoding. The region table is our own: no maintained package maps AWS regions to places, and the table is short.
+- **Regions, not nodes, on the globe.** All of a region's nodes are in one place, so one marker per region with its count
+  reads better than a pile of points; its nodes are one click away.
+
+Tests: `test/ui/topology-globe.test.ts` (region to coordinate, a node's region, the groups and counts, the arcs, the nodes
+with no known place and why, a filter, the WebGL check), `test/ui/topology-globe-view.test.ts` (the panel in happy-dom
+with the scene replaced at its module: the regions and arcs drawn, a click on a region and on a node, the filters shared
+with the graph, the graph and why with no WebGL and when the scene cannot start).
 
 ## Telemetry: what runs now (issue #1486, part 6, 2026-10-17)
 
