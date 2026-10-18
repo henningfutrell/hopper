@@ -56,6 +56,14 @@ The hopper gives the key pair just in time, through the vault's helper ($HOPPER_
 3. Read only: describe, list, get. Do not change anything in the account.
 If AWS refuses, the keys or their policy are wrong. Say so; do not look for another credential.`;
 
+// Issue #1905: what a job reads with its own token, from wherever it runs: never 127.0.0.1, which is the job's own machine.
+const TOPOLOGY_TEXT = `topology: the infrastructure topology, read-only: the services in the user's AWS accounts and Kubernetes clusters, and what is linked to what.
+
+Read it: printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS --fail -H @- "$HOPPER_URL/job/topology"
+It is JSON: nodes (id, kind, name, account, region, cluster, namespace, aliases, attrs, seen), links (from, to, kind) and
+sources (each source's key, when it was read last, and why it is stale). Filter it with jq. It is what the hopper found at
+its last read: to read an account or a cluster now, ask for aws-diagnostics or kube-diagnostics.`;
+
 export const SKILLS: readonly Skill[] = [
   {
     name: 'github',
@@ -120,6 +128,12 @@ export const SKILLS: readonly Skill[] = [
     name: 'need-step',
     line: 'run one AWS or Kubernetes command from here, with minted credentials',
     text: NEED_STEP_HELP,
+  },
+  {
+    // Issue #1905: the user's topology, read with the job's own token (src/http/job-topology.ts).
+    name: 'topology',
+    line: 'a read-only map of the AWS accounts and clusters',
+    text: TOPOLOGY_TEXT,
   },
   {
     // Issue #782: the hopper's help pages, for this version (src/help/book.ts answers it, the page its asset).

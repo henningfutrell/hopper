@@ -27140,6 +27140,13 @@ cluster.
   the link in words, and the out-of-band changes whose target names it (its id, name, an alias or an attr, as `vpc-1`).
   Each source says what its snapshot holds and when it was read; a stale one says why. Every node is also listed by kind.
   `GET /api/topology` reads the graph; the page reads it once, with Try again on an error.
+- **A job reads the topology** (issue #1905, `src/http/job-topology.ts`). A running job starts from the map, so it reads
+  the graph `GET /api/topology` answers, at `GET /job/topology` with its proxy token (`Authorization: Bearer`), only
+  while it is at work (running, waiting on an answer, waiting on something), else 401. `/api/` stays a person's read: a
+  job's token is no UI session. A job learns the route from the `topology` skill (`src/skills/catalog.ts`), which reads
+  it at `$HOPPER_URL`, never at `127.0.0.1` (on a seat, that is the seat's own loopback). The whole graph, as the person
+  reads it: no slice, a job filters it. It changes nothing and records nothing; to read an account or a cluster now, a
+  job asks for `aws-diagnostics` or `kube-diagnostics`.
 - **Infra changes linked to nodes** (part 2, `entryNodes` and `nodeEntries`, `ui/src/model/topology.ts`, pure). Each entry of
   Applies and drift names what it **touched** (`subject`, `infraTimeline`): a plan, its approval and an apply their asset;
   drift and an out-of-band write (and its mark) their target. The nodes it touched: an `aws-account` its account node; an

@@ -48,6 +48,7 @@ The topology is a map of the services in your AWS accounts and Kubernetes cluste
 - The hopper reads the map itself every 6 hours. It reads each AWS account that a minting credential in Settings → Vault mints for, as the account's read role `hopper-read`. Then it reads each cluster that EKS lists in those accounts, and each cluster that has a minting credential of its own. It uses only short-lived read credentials that the vault mints, and only read calls.
 - Click **Discover now** to read the map at once. The map shows what the hopper found when the read ends.
 - A read-only check can also read one AWS account in one region, or one Kubernetes cluster, and report what it found with an API token to `POST /ui/api/topology/report`. Give its grant the scope `topology:report`.
+- A job reads the same map with its own token, read-only. It loads the `topology` skill (`sh "$HOPPER_SKILL" topology`), which reads `$HOPPER_URL/job/topology`. A job does not read `/api/topology`, and it does not read the hopper at `127.0.0.1`: that is the job's own machine.
 - Filter the map by account, cluster, region or kind. Click a node to see its details, its neighbours, and the changes that touched it: plans, approvals, applies, drift and out-of-band writes.
 - In Applies and drift, each entry names the nodes it touched. Click one to see it on the map.
 - Each source says when it was read, and who read it. When the hopper or a check cannot read a source, the map keeps what it found the last time, and the source says why it is stale. The other sources are read as usual.
