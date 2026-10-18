@@ -12,7 +12,8 @@
 // `vault.check_mint_refused` record each, never a credential.
 //
 // Issue #1779: a check that failed as the vault minted nothing for a read need runs again when a minting credential for
-// that need's account or cluster is set (`recheckUnminted`): its fix needs no person to ask for the check too.
+// that need's account or cluster is set (`recheckUnminted`): its fix needs no person to ask for the check too. Issue
+// #1845: an AWS account's runs a cluster need's again too, as the vault finds a cluster in the accounts.
 import type { UserStore } from '../domain/ports.ts';
 import type { Asset, OperationProfile, VaultAccess } from '../domain/access.ts';
 import { CHECK_MINT_ID, expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
@@ -21,7 +22,7 @@ import { readClusters } from './clusters.ts';
 import { currentCheck, failedProbes, probeMarksProblem, unmintedNeeds, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
 import type { Template } from '../domain/vault.ts';
 import { PROBES } from '../sandbox/probes.ts';
-import { fromOf, usedOf, type MintFrom } from './mint.ts';
+import { mintPassingOver, sourceWithout, usedOf, type MintFrom } from './mint.ts';
 import type { MintBindings } from './bindings.ts';
 
 /**
@@ -94,12 +95,13 @@ function mintsForOf(asset: Asset): Asset | undefined {
 
 /**
  * A minting credential for `mints` was set (issue #1779): each template whose check failed as the vault minted nothing for
- * a read need minted from it loses that check, so the next check pass runs one. Run in the set's transaction.
+ * a read need minted from it loses that check, so the next check pass runs one. One for an AWS account (issue #1845) is
+ * where the vault may now find any cluster too. Run in the set's transaction.
  */
 export function recheckUnminted(store: Pick<UserStore, 'vault' | 'events'>, mints: Asset, credential: string): void {
+  const from = (m: Asset | undefined): boolean => (m?.kind === mints.kind && m.name === mints.name) || (mints.kind === 'aws-account' && m?.kind === 'cluster');
   for (const t of store.vault.templates()) {
-    const from = unmintedNeeds(t).map((u) => mintsForOf(u.asset));
-    if (from.some((m) => m?.kind === mints.kind && m.name === mints.name)) askCheck(store, t, `minting credential ${credential}`);
+    if (unmintedNeeds(t).some((u) => from(mintsForOf(u.asset)))) askCheck(store, t, `minting credential ${credential}`);
   }
 }
 
@@ -122,11 +124,12 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events' | 'co
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
     const decision = await o.access.decideCheckMint({ template, check, operation: profile.operation, asset: profile.asset });
     if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
-    const source = mintSourceFor(vault.list(), target, profile.operation, readClusters(o.store.config));
-    if (typeof source === 'string') return refuse(source, decision.id);
+    const clusters = readClusters(o.store.config);
+    const found = mintSourceFor(vault.list(), target, profile.operation, clusters);
+    if (typeof found === 'string') return refuse(found, decision.id);
     // Held and recorded before the minter makes the Secret (issue #1628), as a need step's. A discovered cluster's EKS token binds to nothing.
-    if (target.kind === 'kube' && target.bindTo && 'credential' in source) o.bindings?.named(check, { credential: source.credential.name, namespace: target.namespace, secret: target.bindTo });
-    const made = await from(fromOf(source), target, CHECK_MINT_ID);
+    if (target.kind === 'kube' && target.bindTo && 'credential' in found) o.bindings?.named(check, { credential: found.credential.name, namespace: target.namespace, secret: target.bindTo });
+    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, profile.operation, clusters), target, CHECK_MINT_ID);
     if ('refused' in made) return refuse(made.refused, decision.id);
     events.append({
       type: 'vault.check_minted',

@@ -10,7 +10,7 @@ import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '
 import { mintSourceFor } from '../domain/cluster-discovery.ts';
 import { DISCOVERY_MINT_ID } from '../domain/topology-discovery.ts';
 import { readClusters } from './clusters.ts';
-import { fromOf, usedOf, type MintFrom } from './mint.ts';
+import { mintPassingOver, sourceWithout, usedOf, type MintFrom } from './mint.ts';
 
 /** The minted read credential, where it is used and the minting credential it came from; or why there is none. */
 export type DiscoveryMintAnswer = { minted: Minted; reach: MintReach; credential: string } | { refused: string };
@@ -26,10 +26,12 @@ export function createDiscoveryMinting(store: Pick<UserStore, 'vault' | 'events'
     if (!kind) return refuse(`topology discovery mints for an aws-role or a cluster, not ${asset.kind}/${asset.name}`);
     const target = mintTarget(kind, { operation: 'read', asset });
     if (typeof target === 'string') return refuse(target);
-    const source = mintSourceFor(vault.list(), target, 'read', readClusters(store.config));
-    if (typeof source === 'string') return refuse(source);
+    const clusters = readClusters(store.config);
+    const found = mintSourceFor(vault.list(), target, 'read', clusters);
+    if (typeof found === 'string') return refuse(found);
+    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, 'read', clusters), target, DISCOVERY_MINT_ID)
+      .catch((e: unknown) => ({ source: found, made: { refused: (e as Error).message } }));
     const own = 'credential' in source ? source.credential.name : undefined;
-    const made = await from(fromOf(source), target, DISCOVERY_MINT_ID).catch((e: unknown) => ({ refused: (e as Error).message }));
     if ('refused' in made) return refuse(made.refused, own);
     const credential = usedOf(source, made);
     events.append({ type: 'vault.discovery_minted', data: { asset, credential, expiresAt: expiryOf(made.minted) } });

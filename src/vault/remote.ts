@@ -9,7 +9,7 @@
 // is unavailable, an ask refused — nothing else in the hopper waits on it.
 import type { UserStore } from '../domain/ports.ts';
 import type { NewEvent } from '../domain/types.ts';
-import type { MintedFrom, MintFrom } from './mint.ts';
+import type { MintedFrom, MintFrom, MintRefused } from './mint.ts';
 import type { UnbindFrom } from './bindings.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
@@ -64,7 +64,7 @@ export function remoteVault(o: {
     const names = typeof from === 'string' ? [from] : from.credentials.map((c) => c.name);
     if (o.local.view().secrets.some((s) => names.includes(s.name) && s.backend)) return o.local.mintFrom(from, target, jobId, identify);
     const source = typeof from === 'string' ? { credential: from } : { discover: from };
-    const r = await call<MintedFrom | { refused: string }>('mint', { ...source, target, jobId, ...(identify ? { identify } : {}) });
+    const r = await call<MintedFrom | MintRefused>('mint', { ...source, target, jobId, ...(identify ? { identify } : {}) });
     return 'problem' in r ? { refused: r.problem } : r.result;
   };
 
