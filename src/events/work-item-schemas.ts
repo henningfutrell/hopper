@@ -26,4 +26,6 @@ export const WORK_ITEM_EVENT_SCHEMAS = {
     source: z.string(), key: z.string(), jobId: z.string().optional(), cause: z.enum(BLOCKED_CAUSES).optional(),
     by: strict({ person: z.string(), via: z.enum(ACTION_VIAS) }).optional(),
   }),
+  // The one notice of a blocked item (issue #1891): a person is asked.
+  'work_item.person_asked': strict({ key: z.string(), cause: z.enum(BLOCKED_CAUSES), jobId: z.string().optional(), pullRequest: z.string().optional() }),
 };

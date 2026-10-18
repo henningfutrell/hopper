@@ -7,6 +7,7 @@
 // A direct job's notice (issue #901) names the direct job and its submitter, the person who submitted it, so the receiver
 // tells that person.
 import { DIRECT_SOURCE } from '../../../domain/direct-jobs.ts';
+import { BLOCKED_WORDS, type BlockedCause } from '../../../domain/item-lifecycle.ts';
 import type { DomainEvent, InfraPlanNotice, Job, Question } from '../../sdk.ts';
 
 /** A direct job's id and submitter; nothing for a job of any other source. */
@@ -56,7 +57,7 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
 }
 
 /**
- * A stop of intake (issue #358), a request card waiting for approval (issue #798), an out-of-band change (issue #871), a machine low on free memory (issue #868), or a machine over its disk budget (issue #1203). `source` is the sender (the hopper):
+ * A stop of intake (issue #358), a request card waiting for approval (issue #798), a blocked work item (issue #1891), an out-of-band change (issue #871), a machine low on free memory (issue #868), or a machine over its disk budget (issue #1203). `source` is the sender (the hopper):
  * the job source's name goes as `sourceName`.
  */
 export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: string): Record<string, unknown> {
@@ -64,6 +65,11 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
   if (e.type === 'source.stalled') return { ...b, sourceName: e.data.source, error: e.data.error, since: e.data.since };
   if (e.type === 'connected_account.expired') return { ...b, provider: e.data.provider, account: e.data.account, reason: e.data.reason };
   if (e.type === 'source.request_opened') return { ...b, sourceName: e.data.source, issueUrl: e.data.key, author: e.data.author, why: e.data.why };
+  // A blocked work item that waits on a person (issue #1891): why, in plain words, and the pull request it names.
+  if (e.type === 'work_item.person_asked') {
+    const d = e.data as { key: string; cause: BlockedCause; pullRequest?: string };
+    return { ...b, issueUrl: d.key, cause: d.cause, waitingOn: BLOCKED_WORDS[d.cause], pullRequest: d.pullRequest ?? null };
+  }
   // An out-of-band infrastructure change (issue #871): never silent. `signal` is where it was found; `source` stays the sender;
   // `infraUrl` is the Infra page, where a person marks it.
   if (e.type === 'infra.out_of_band_recorded') {

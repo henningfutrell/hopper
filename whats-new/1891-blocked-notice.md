@@ -1,0 +1,1 @@
+- When an issue the hopper works on is blocked and waits on you, the hopper now tells you once through your notifier, and says why it waits.

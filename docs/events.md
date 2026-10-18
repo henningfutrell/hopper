@@ -5281,6 +5281,26 @@ Version 1 (`docs/schemas/work_item.dropped.v1.json`). A person pressed Won't do 
 }
 ```
 
+## `work_item.person_asked`
+
+Version 1 (`docs/schemas/work_item.person_asked.v1.json`). The one notice of a blocked work item (issue #1891, design.md "The item lifecycle"): the item reconciler found it stuck work for a person (Failures' `pr_open_stale`) and asked a person once. `key` is the item's source key, `cause` why it is blocked (`no_pr`, `stale`, `pr_closed`), `jobId` its newest job, `pullRequest` the pull request it names. A notifier sends it on. The item's state stays; it is asked again only once it is blocked again, or for another cause.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `cause` | `stale` \| `no_pr` \| `pr_closed` | yes |
+| `jobId` | string | no |
+| `pullRequest` | string | no |
+
+```json
+{
+  "key": "https://github.com/owner/repo/issues/9",
+  "cause": "pr_closed",
+  "jobId": "job-1",
+  "pullRequest": "https://github.com/owner/repo/pull/14"
+}
+```
+
 ## `job.pull_request_classified`
 
 Version 1 (`docs/schemas/job.pull_request_classified.v1.json`). A followed pull request's change kind (issue #1076), new or changed: `kind` — `docs` (docs or comments only), `tests`, `low_risk`, `code` or `sensitive` (auth, secrets, migrations, the sandbox, CI, infra, dependencies, agent instructions, or a line a content rule matches) —, read from the files and lines it changes by the repository's change rule, and `why`: a few files and the rule each matched. The kind names its merge gate: merged when ready with no person, merged when ready only with yolo mode on, or merged only by a person. The work-item ledger keeps it on the item.

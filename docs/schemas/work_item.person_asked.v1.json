@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "cause": {
+      "type": "string",
+      "enum": [
+        "stale",
+        "no_pr",
+        "pr_closed"
+      ]
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "pullRequest": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "cause"
+  ],
+  "additionalProperties": false
+}

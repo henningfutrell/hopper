@@ -49,7 +49,7 @@ describe('the item lifecycle', () => {
     const blocked = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'no_pr' });
     expect(correctionOf(blocked, ended, false, at(3))).toBeUndefined();
     expect(correctionOf(blocked, { ...ended, pullRequest: 'https://github.com/o/r/pull/2' }, false, at(3))).toEqual({ kind: 'replay', key: KEY, jobId: 'j1', from: 'blocked' });
-    expect(correctionOf({ ...blocked, blockedCause: 'stale' }, { ...ended, pullRequest: 'https://github.com/o/r/pull/2' }, false, at(3))).toBeUndefined();
+    expect(correctionOf({ ...blocked, blockedCause: 'stale' }, { ...ended, pullRequest: 'https://github.com/o/r/pull/2' }, false, at(3))).toMatchObject({ kind: 'ask', cause: 'stale' });
   });
 
   it('runs an item again by itself only on the first close of its pull request in a row, within the window; Failures lists the others', () => {
@@ -59,10 +59,10 @@ describe('the item lifecycle', () => {
     expect(correctionOf(closed, ended, false, at(3))).toEqual({ kind: 'run_again', key: KEY, jobId: 'j1', pullRequest: PR });
     expect(blockedStuck(closed, at(3))).toBe(false);
     // A second close in a row, or one older than the window (a rebuild found it): a person decides.
-    expect(correctionOf({ ...closed, closedWithoutMerge: 2 }, ended, false, at(3))).toBeUndefined();
+    expect(correctionOf({ ...closed, closedWithoutMerge: 2 }, ended, false, at(3))).toMatchObject({ kind: 'ask', cause: 'pr_closed' });
     expect(blockedStuck({ ...closed, closedWithoutMerge: 2 }, at(3))).toBe(true);
     const late = new Date(Date.parse(T0) + RUN_AGAIN_WINDOW_MS).toISOString();
-    expect(correctionOf(closed, ended, false, late)).toBeUndefined();
+    expect(correctionOf(closed, ended, false, late)).toMatchObject({ kind: 'ask', cause: 'pr_closed' });
     expect(blockedStuck(closed, late)).toBe(true);
     // Not the item's newest job, or a job still at work: nothing.
     expect(correctionOf(closed, { ...ended, id: 'j0' }, false, at(3))).toBeUndefined();
