@@ -32,7 +32,7 @@ import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
-import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
+import { openTldrs, type Tldrs } from '../tldr/haiku.ts'; import { createItemReconciler } from '../work-items/reconcile.ts';
 import { openUserSystemSecrets } from './system-secrets.ts';
 import { withSystemScope } from '../vault/system-view.ts';
 import type { SystemSecrets } from '../vault/system.ts';
@@ -324,7 +324,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.
-  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, lease: lease('tldr'), cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) });
+  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, lease: lease('tldr'), cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) }), itemReconciler = createItemReconciler({ ledger: store.workItems, jobs: store.jobs, events: store.events, lease: lease('item-reconcile'), now: () => clock.now().toISOString(), log: (line) => logger.warn(line) }); // the item reconciler (issue #1891)
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
@@ -424,12 +424,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       sync.start();
       history.start(); minorDecisions.start(); tldrs.start(); failures.start(); recovering = proxy.githubProxy.promotions.recover().catch((e: unknown) => { logger.warn(`hopper: Promote to GitHub: the sends a stop left could not be looked for: ${(e as Error).message}`); }); // the promotions' sends a stop left (issue #1591): each linked to what GitHub made, or gone
       connectedAccounts.start(); mintReconcile.start(); // the renewer (issue #441); the sandboxes' tokens a hopper that stopped left bound, unbound at start, then every 5 minutes (issue #1371): a token that expired while the hopper was down renews at once
-      sandboxHolds.start(); jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); proxy.githubProxy.componentWatchers.start(); proxy.githubProxy.landingBatches.start(); proxy.githubProxy.ledgerFallbackRead.start(); proxy.githubProxy.repoChecks.start(); proxy.githubProxy.subIssueLinks.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427), the component watchers (issue #1077), the landing batches (issue #1073), the ledger's fallback read (issue #1067), the repositories' checks' schedule (issue #1250), the kept sub-issue links (issue #1607)
+      sandboxHolds.start(); jobStream.start(); itemReconciler.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); proxy.githubProxy.componentWatchers.start(); proxy.githubProxy.landingBatches.start(); proxy.githubProxy.ledgerFallbackRead.start(); proxy.githubProxy.repoChecks.start(); proxy.githubProxy.subIssueLinks.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427), the component watchers (issue #1077), the landing batches (issue #1073), the ledger's fallback read (issue #1067), the repositories' checks' schedule (issue #1250), the kept sub-issue links (issue #1607)
 
     },
     stop() {
       stopped ??= (async () => {
-        await search.stop(); jobStream.stop(); await recovering; await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop(); await proxy.githubProxy.ledgerFallbackRead.stop(); await proxy.githubProxy.repoChecks.stop(); await proxy.githubProxy.subIssueLinks.stop();
+        await search.stop(); jobStream.stop(); itemReconciler.stop(); await recovering; await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop(); await proxy.githubProxy.ledgerFallbackRead.stop(); await proxy.githubProxy.repoChecks.stop(); await proxy.githubProxy.subIssueLinks.stop();
         await failures.stop(); signIns.stop(); await mintReconcile.stop(); sandboxHolds.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();

@@ -66,7 +66,7 @@ export function rollUp(jobs: readonly Job[], graphNodes: readonly GraphNode[]): 
 /** An issue's stage: its work item's state, in the graph's words (issue #1067). */
 export const ITEM_STAGE: Readonly<Record<WorkItemState, JobStage>> = {
   waiting_for_approval: 'waiting', queued: 'queued', working: 'running', needs_you: 'waiting', waiting_outside: 'waiting',
-  pr_open: 'pr_open', partly_done: 'partly_done', done: 'done', failed: 'failed', dropped: 'cancelled',
+  pr_open: 'pr_open', partly_done: 'partly_done', done: 'done', failed: 'failed', blocked: 'waiting', dropped: 'cancelled',
 };
 
 /**

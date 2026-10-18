@@ -2,7 +2,8 @@
 // labels; it posts no comment at all (owner decision, 2026-10-04: a finished issue needs no
 // comment): claimed → `hopper:claimed`, with `hopper:held-by:<id>` naming its holder (issue #440); finished — only a job
 // whose work is done or partly done is finished (completion.ts, issues #171, #187, #579) — → `hopper:pr-ready` while its
-// pull request waits for review, `hopper:partly-done` for a part, `hopper:done` once the issue is closed as complete; the
+// pull request waits for review, `hopper:partly-done` for a part, `hopper:done` once the issue is closed as complete,
+// `hopper:blocked` when no open pull request is found for it (issue #1891: never `hopper:pr-ready` with none); the
 // merge of its pull request closes the issue, never report(), and `follow.ts` follows it after (and closes it only after the
 // hopper's own merge of a pull request with no closing keyword, issue #677); failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
 // else (issue #387: a rejection is the user's own record, kept on the job; a shared label would turn the issue
@@ -21,7 +22,7 @@ import type { SourceReport } from '../../domain/ports.ts';
 import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job, type ResolutionWrite } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
-import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
+import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import { isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
@@ -79,7 +80,9 @@ async function settle(ctx: ReportContext, repo: string, number: number, add: str
 /**
  * A done job's end on its issue (issue #579). A part: `hopper:partly-done`, its pull request kept to follow. The issue
  * closed as complete already: `hopper:done`. Else its pull request waits for review: `hopper:pr-ready`, the job's own
- * open pull request kept to follow (`follow.ts`). `hopper:failed` goes too: a failed job found done later ends here.
+ * ready pull request kept to follow (`follow.ts`), else its newest open one in any state of review — a part's
+ * `hopper:partly-done`. None open (issue #1891): `hopper:blocked`, never `hopper:pr-ready` with no pull request, and the
+ * follow looks for one again. `hopper:failed` goes too: a failed job found done later ends here.
  * A proposal's job whose follow-ons go on with its work (issue #859) leaves the issue as it is, claimed, and follows
  * nothing: its follow-ons report the issue's end, and only a pull request one of them opens can make it done.
  */
@@ -97,25 +100,34 @@ async function finished(ctx: ReportContext, job: Job, repo: string, number: numb
   }
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
   // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.
-  const own = await readyPullRequest(ctx.api, repo, number);
-  await settle(ctx, repo, number, [LABEL_PR_READY], also, issue.labels);
-  return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };
+  const open = await pullRequestOf(ctx.api, repo, number);
+  await settle(ctx, repo, number, [open ? (open.part ? LABEL_PARTLY_DONE : LABEL_PR_READY) : LABEL_BLOCKED], also, issue.labels);
+  return { ...state, ...(open ? { pullRequest: open.url } : {}), ...(open?.part ? { part: true } : {}), follow: 'open' };
 }
 
 /**
- * The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it.
- * Never a part (issue #721): it ships part of the issue, on whatever branch.
+ * The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it —
+ * never a part (issue #721): it ships part of the issue, on whatever branch. None ready (issue #1891): the newest open one
+ * of those in any state of review, else the newest open part (`part`); undefined when none is open.
  */
-async function readyPullRequest(api: GitHubApi, repo: string, number: number): Promise<{ url: string } | undefined> {
-  const ready = <P extends { isDraft: boolean; conflicting: boolean; createdAt: string }>(prs: P[]): P | undefined =>
-    prs.filter((pr) => !pr.isDraft && !pr.conflicting).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  const closing = ready(await api.openClosingPullRequests(repo, number));
-  if (closing) return closing;
+async function pullRequestOf(api: GitHubApi, repo: string, number: number): Promise<{ url: string; part: boolean } | undefined> {
+  const newest = <P extends { createdAt: string }>(prs: P[]): P | undefined => [...prs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const ready = <P extends { isDraft: boolean; conflicting: boolean; createdAt: string }>(prs: P[]): P | undefined => newest(prs.filter((pr) => !pr.isDraft && !pr.conflicting));
+  const whole = (url: string) => ({ url, part: false });
+  const closing = await api.openClosingPullRequests(repo, number);
+  const closes = ready(closing);
+  if (closes) return whole(closes.url);
   const mentions = (await api.referencingPullRequests(repo, number))
     .filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr, repo, number));
   const parts = new Set(mentions.filter((pr) => isPartOf(pr, repo, number)).map((pr) => pr.url));
-  return ready(mentions.filter((pr) => pr.state === 'open' && !parts.has(pr.url)))
-    ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url)));
+  const others = mentions.filter((pr) => pr.state === 'open' && !parts.has(pr.url));
+  const mentioned = ready(others);
+  if (mentioned) return whole(mentioned.url);
+  const branch = (await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url));
+  const any = ready(branch) ?? newest(closing) ?? newest(others) ?? newest(branch);
+  if (any) return whole(any.url);
+  const part = newest(mentions.filter((pr) => pr.state === 'open' && parts.has(pr.url)));
+  return part && { url: part.url, part: true };
 }
 
 /** A tend job (issue #967) cancelled by no person and no source (issue #1010): `tendRetryAt` tends its pull request again. */

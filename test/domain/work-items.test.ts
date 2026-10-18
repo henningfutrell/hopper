@@ -3,7 +3,7 @@
 // dismissed and nothing replaced; a finished job waits on its pull request until it merges.
 import { describe, expect, it } from 'vitest';
 import {
-  applyEvent, applyRead, countStates, inFlightOf, inFlightPartOf, isFailureOf, isInFlight, issueClosedAsComplete, keptWorkShown, keyOfEvent, prOpenStuck, PR_OPEN_STUCK_MS, pullRequestWaitOf, requestsWaitingOf,
+  applyEvent, applyRead, countStates, inFlightOf, inFlightPartOf, isFailureOf, isInFlight, issueClosedAsComplete, keptWorkShown, keyOfEvent, pullRequestWaitOf, requestsWaitingOf,
   type LedgerJob, type WorkItem,
 } from '../../src/domain/work-items.ts';
 import type { EventType } from '../../src/domain/types.ts';
@@ -290,7 +290,7 @@ describe('what GitHub says moves the item (issue #1067, part 3)', () => {
     const own = fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'the test run', ownCommand: true }]])!;
     const outside = fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'a review' }]])!;
     const running = fold([['job.queued'], ['job.started']])!;
-    const unseen = fold([['job.queued'], ['job.started'], ['job.finished', { result: 'opened a pull request' }]])!;
+    const unseen = fold([['job.queued'], ['job.started'], ['job.finished', { result: 'opened a pull request' }], ['job.pull_request_followed', { pullRequest: PR, part: false }]])!;
     expect([running.state, own.state, outside.state, unseen.state]).toEqual(['working', 'working', 'waiting_outside', 'pr_open']);
     expect(inFlightPartOf(running)).toBe('running');
     // A job on its own command holds its lane: in flight, not running.
@@ -307,22 +307,45 @@ describe('what GitHub says moves the item (issue #1067, part 3)', () => {
   });
 });
 
-describe('an item left in PR open (issue #1231)', () => {
-  const unseen = fold([['job.queued'], ['job.started'], ['job.finished', { result: 'opened a pull request' }]])!;
-  const since = Date.parse(unseen.stateSince);
-  const named = { ...unseen, pullRequest: PR, pullRequestState: 'open' as const };
-
-  it('naming no pull request an hour on is stuck: no follow will move it', () => {
-    expect(prOpenStuck(unseen, true, since + PR_OPEN_STUCK_MS - 1)).toBe(false);
-    expect(prOpenStuck(unseen, true, since + PR_OPEN_STUCK_MS)).toBe(true);
+describe('a state that needs a pull request (issue #1891)', () => {
+  it('a job that ended done naming no pull request is blocked for want of one, never in PR open', () => {
+    const unseen = fold([['job.queued'], ['job.started'], ['job.finished', { result: 'opened a pull request' }]])!;
+    expect(unseen).toMatchObject({ state: 'blocked', blockedCause: 'no_pr', waitingOn: 'a pull request: none was found for it' });
+    expect(unseen.pullRequest).toBeUndefined();
   });
 
-  it('naming an open pull request its job follows is not; one no job follows is', () => {
-    expect(prOpenStuck(named, true, since + PR_OPEN_STUCK_MS)).toBe(false);
-    expect(prOpenStuck(named, false, since + PR_OPEN_STUCK_MS)).toBe(true);
+  it('the first look at its pull request, or its follow, names it: in PR open again, no longer blocked', () => {
+    const seen = fold([['job.queued'], ['job.finished', {}], ['job.pull_request_seen', { pullRequest: PR, wait: 'checks_running' }]])!;
+    expect(seen).toMatchObject({ state: 'pr_open', pullRequest: PR, pullRequestState: 'open', waitingOn: 'its checks to pass' });
+    expect(seen.blockedCause).toBeUndefined();
+    const followed = fold([['job.queued'], ['job.finished', {}], ['job.pull_request_followed', { pullRequest: PR, part: false }]])!;
+    expect(followed).toMatchObject({ state: 'pr_open', pullRequest: PR });
+    expect(followed.blockedCause).toBeUndefined();
   });
 
-  it('any other state is not', () => {
-    expect(prOpenStuck({ ...named, state: 'partly_done' }, false, since + PR_OPEN_STUCK_MS)).toBe(false);
+  it('a new job of the item, or its issue closed, ends the block', () => {
+    expect(fold([['job.queued'], ['job.finished', {}], ['job.queued', {}, j2]])?.state).toBe('queued');
+    const closed = applyRead(fold([['job.queued'], ['job.finished', {}]])!, { kind: 'issue', at: '2026-10-14T00:00:00.000Z', state: 'closed', reason: 'completed' });
+    expect(closed?.state).toBe('done');
+  });
+});
+
+describe('the item reconciler\'s correction (issue #1891)', () => {
+  it('folds an item queued after its job ended again from that end, once', () => {
+    const finished = { result: 'opened a pull request', pullRequest: PR };
+    const stale = fold([['job.queued'], ['job.started'], ['job.finished', finished], ['job.requeued']])!;
+    expect(stale.state).toBe('queued');
+    const withPr: LedgerJob = { ...j1, pullRequest: PR };
+    const fixed = applyEvent(stale, ev('work_item.reconciled', { key: KEY, from: 'queued', jobId: 'j1', replay: { type: 'job.finished', data: finished } }), KEY, withPr)!;
+    expect(fixed).toMatchObject({ state: 'pr_open', pullRequest: PR });
+    // A second one finds it no longer queued: nothing moves.
+    expect(applyEvent(fixed, ev('work_item.reconciled', { key: KEY, from: 'queued', jobId: 'j1', replay: { type: 'job.finished', data: finished } }), KEY, withPr)).toBeUndefined();
+  });
+
+  it('blocks an item as it says, only from the state it saw', () => {
+    const open = fold([['job.queued'], ['job.finished', {}], ['job.pull_request_followed', { pullRequest: PR, part: false }]])!;
+    const blocked = applyEvent(open, ev('work_item.reconciled', { key: KEY, from: 'pr_open', cause: 'stale' }), KEY)!;
+    expect(blocked).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
+    expect(applyEvent(blocked, ev('work_item.reconciled', { key: KEY, from: 'pr_open', cause: 'stale' }), KEY)).toBeUndefined();
   });
 });

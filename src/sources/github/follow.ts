@@ -52,7 +52,7 @@ import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type PullRequestState } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
 import { isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
-import { LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
+import { LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
 import { closeAfterMerge, closedByMerge, mergedByMarker } from './own-merge.ts';
@@ -365,7 +365,7 @@ async function recheckMerge(api: GitHubApi, repo: string, number: number, s: Fol
 
 /** The item closed as not planned upstream (issue #428): the follow ends abandoned; the waiting labels come off. */
 async function abandon(ctx: FollowContext, repo: string, issue: GitHubIssue, s: Followed & Record<string, unknown>, url: string | undefined): Promise<FollowUp> {
-  await relabel(ctx, repo, issue.number, { remove: [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED], carried: issue.labels });
+  await relabel(ctx, repo, issue.number, { remove: [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED, LABEL_BLOCKED], carried: issue.labels });
   const pullRequest = url ?? s.pullRequest ?? '';
   return { outcome: 'abandoned', pullRequest, part: s.part === true, state: { ...s, ...(pullRequest ? { pullRequest } : {}), follow: 'abandoned' } };
 }
@@ -385,8 +385,12 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     if (rechecksMerge(job)) return await recheckMerge(ctx.api, repo, number, s);
     if (s.follow !== 'open') return undefined;
     if (!s.pullRequest) {
-      const found = await openPullRequestOf(ctx.api, repo, number) ?? await mergedPartOf(ctx.api, repo, number, job);
+      const open = await openPullRequestOf(ctx.api, repo, number);
+      const found = open ?? await mergedPartOf(ctx.api, repo, number, job);
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}) };
+      // Blocked for want of a pull request (issue #1891), one found open: its issue waits on it, as a report says.
+      const carried = open ? (await ctx.api.getIssue(repo, number)).labels : [];
+      if (open && carried.includes(LABEL_BLOCKED)) await relabel(ctx, repo, number, { remove: [LABEL_BLOCKED], add: [open.part ? LABEL_PARTLY_DONE : LABEL_PR_READY], carried });
     }
     const batched = !act && s.pullRequest ? seenFromBatch(ctx, job, s, s.pullRequest) : undefined;
     if (batched) {
@@ -442,7 +446,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     // (issue #1154): the issue as read in this follow, else read now.
     const add = doneElsewhere ? LABEL_DONE : now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart && !allPartsDone(parts) ? undefined : LABEL_DONE;
     const carried = (issue ?? await ctx.api.getIssue(repo, number)).labels;
-    await relabel(ctx, repo, number, { remove: [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED], ...(add ? { add: [add] } : {}), carried });
+    await relabel(ctx, repo, number, { remove: [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED, LABEL_BLOCKED], ...(add ? { add: [add] } : {}), carried });
     const after = { ...s, pullRequest: now.url, follow: now.state, ...(shipsPart ? { part: true } : {}), ...(whole ? { mergeChecked: true } : {}), ...(parts ? { parts } : {}) };
     return {
       outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper && !superseded ? { byHopper } : {}), ...(acting ? { acting } : {}),

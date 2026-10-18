@@ -17,7 +17,7 @@ const job = (id: string, status: JobStatus, o: Partial<Job> = {}): Job => ({
 /** What /api/queue answers: the daemon's partition of the jobs it holds, and the work-item ledger's counts (issue #1067). */
 function queueOf(jobs: Job[], failedItems: number, inFlight = { total: 0, running: 0, ownCommand: 0, pullRequests: 0 }) {
   const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
-  const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: failedItems, dropped: 0 };
+  const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: failedItems, blocked: 0, dropped: 0 };
   return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), operatorLed: of('operator_led'), parked: of('parked'), ended: of('finished', 'failed', 'cancelled'), locked: [], items, inFlight };
 }
 

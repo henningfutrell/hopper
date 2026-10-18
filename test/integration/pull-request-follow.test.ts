@@ -132,13 +132,15 @@ describe('the pull request after done', () => {
     };
     const { issue, job } = await doneWithPullRequest(gh, app, ships);
     expect(job.partlyDone).toBeUndefined();
-    await labelled(gh, issue.number, 'hopper:pr-ready');
+    // No open pull request (issue #1891): never hopper:pr-ready with none; blocked, and the follow looks again.
+    await labelled(gh, issue.number, 'hopper:blocked');
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');
     await app.sync();
     const item = () => app.user().store.workItems.get(issue.url);
     await waitFor(() => item()?.state === 'partly_done', { what: 'the item partly done' });
     expect(item()).toMatchObject({ pullRequest: part, pullRequestState: 'merged' });
     expect((await app.events('types=job.pull_request_merged')).map((e) => e.data)).toEqual([{ pullRequest: part, part: true }]);
-    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:blocked');
     await app.sync();
     await waitFor(async () => (await jobsFor(app, issue.url)).length === 2, { what: 'the next part queued' });
   });

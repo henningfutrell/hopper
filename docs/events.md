@@ -5236,6 +5236,26 @@ Version 1 (`docs/schemas/work_item.issue_reopened.v1.json`). GitHub reopened the
 }
 ```
 
+## `work_item.reconciled`
+
+Version 1 (`docs/schemas/work_item.reconciled.v1.json`). The item reconciler corrected a work item that broke its state's promise (issue #1891, design.md "The item lifecycle"): `key` is the item's source key, `from` the state it found the item in. With `replay` (`type` and `data` of its job `jobId`'s end event, `job.finished`, `job.failed`, `job.cancelled` or `job.rejected`): the ledger had the item `queued` or `working` though that job, its newest, had ended, so the item is folded again from that end. With `cause`: the item is `blocked` — `no_pr` (in PR open past its deadline with no pull request named) or `stale` (in PR open past its deadline with no open pull request a job follows) —, and waits on a person in Failures. Moves the item only while it is still in `from`, so a second one changes nothing.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `from` | `waiting_for_approval` \| `queued` \| `working` \| `needs_you` \| `waiting_outside` \| `pr_open` \| `partly_done` \| `done` \| `failed` \| `blocked` \| `dropped` | yes |
+| `jobId` | string | no |
+| `cause` | `stale` \| `no_pr` | no |
+| `replay` | object | no |
+
+```json
+{
+  "key": "https://github.com/owner/repo/issues/9",
+  "from": "pr_open",
+  "cause": "no_pr"
+}
+```
+
 ## `job.pull_request_classified`
 
 Version 1 (`docs/schemas/job.pull_request_classified.v1.json`). A followed pull request's change kind (issue #1076), new or changed: `kind` — `docs` (docs or comments only), `tests`, `low_risk`, `code` or `sensitive` (auth, secrets, migrations, the sandbox, CI, infra, dependencies, agent instructions, or a line a content rule matches) —, read from the files and lines it changes by the repository's change rule, and `why`: a few files and the rule each matched. The kind names its merge gate: merged when ready with no person, merged when ready only with yolo mode on, or merged only by a person. The work-item ledger keeps it on the item.
