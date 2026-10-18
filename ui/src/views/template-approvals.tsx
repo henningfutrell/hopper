@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
-import { approvalText, explicitApprovals, highRadius, profileAskOf, profileText, templateWaits } from '@/model/vault';
+import { approvalText, egressText, explicitApprovals, highRadius, profileAskOf, profileText, templateWaits } from '@/model/vault';
 import type { ProfileAsk, TemplateView, VaultSecret } from '@/model/wire';
 import { approveItems, templateItem, templateKey, toggleSelected, useAccessApprovals } from '@/store/access-approvals';
 import { SandboxAsk } from './sandbox-ask';
@@ -49,17 +49,18 @@ function Waiting({ t, asks, secrets, can }: { t: TemplateView; asks?: ProfileAsk
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}</dd>
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
+        <dt className="text-muted-foreground">Egress</dt><dd className="font-mono break-words">{egressText(t)}</dd>
       </dl>
       {can ? (
         <div className="flex flex-wrap items-center gap-2">
           {explicit.length > 0 ? (
             <Confirm title={`Approve all listed for ${t.name}?`} action="Approve all listed" onConfirm={approve}
-              description={<>Boxes from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null} may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>{reads.length ? <>, read <span className="font-mono">{reads.map(profileText).join(', ')}</span></> : null}, and <span className="font-mono">{explicit.map(profileText).join(', ')}</span>: high radius, it changes those assets. Every job in a box of <span className="font-mono">{t.name}</span> may then do so. A job that asked for this template gets its sandbox run with this approval.</>}>
+              description={<>Boxes from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null}{t.egress?.length ? <>, reaching <span className="font-mono">{t.egress.join(', ')}</span> through the egress proxy,</> : null} may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>{reads.length ? <>, read <span className="font-mono">{reads.map(profileText).join(', ')}</span></> : null}, and <span className="font-mono">{explicit.map(profileText).join(', ')}</span>: high radius, it changes those assets. Every job in a box of <span className="font-mono">{t.name}</span> may then do so. A job that asked for this template gets its sandbox run with this approval.</>}>
               <Button size="sm" disabled={pending}><ShieldAlert />Approve all listed</Button>
             </Confirm>
           ) : (
             <Confirm title={`Approve ${t.name}?`} action="Approve" onConfirm={approve}
-              description={<>Boxes from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null} may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>, whatever job runs in them{reads.length ? <>, and read <span className="font-mono">{reads.map(profileText).join(', ')}</span></> : null}. A job that asked for this template gets its sandbox run with this approval.</>}>
+              description={<>Boxes from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null}{t.egress?.length ? <>, reaching <span className="font-mono">{t.egress.join(', ')}</span> through the egress proxy,</> : null} may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>, whatever job runs in them{reads.length ? <>, and read <span className="font-mono">{reads.map(profileText).join(', ')}</span></> : null}. A job that asked for this template gets its sandbox run with this approval.</>}>
               <Button size="sm" disabled={pending}><Check />Approve</Button>
             </Confirm>
           )}

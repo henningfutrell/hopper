@@ -203,7 +203,7 @@ describe('a need step kept in the database (issue #1568)', () => {
 describe('a box step (issue #1349)', () => {
   const READ: OperationProfile = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } };
   const ACCOUNT: OperationProfile = { operation: 'read', asset: { kind: 'aws-account', name: '123456789012' } };
-  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE, ACCOUNT], approval: { by: 'Ada' }, pending: { image: false, profiles: [] } } as unknown as TemplateView;
+  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE, ACCOUNT], approval: { by: 'Ada' }, pending: { image: false, egress: [], profiles: [] } } as unknown as TemplateView;
 
   function boxSteps(templates: TemplateView[]) {
     const minted: OperationProfile[] = [];
@@ -233,7 +233,7 @@ describe('a box step (issue #1349)', () => {
   });
 
   it('a template the job has no approved sandbox of, a --secret, or a template not ready now is refused', () => {
-    const { s, runs, events, begun } = boxSteps([READY, { ...READY, name: 'asked-2', pending: { image: false, profiles: [WRITE] } } as unknown as TemplateView]);
+    const { s, runs, events, begun } = boxSteps([READY, { ...READY, name: 'asked-2', pending: { image: false, egress: [], profiles: [WRITE] } } as unknown as TemplateView]);
     expect(s.box(JOB, { box: 'asked-1', approved: [], command: 'true', outputs: [], secrets: [] }, ask()))
       .toEqual({ status: 404, no: expect.stringContaining('this job has no approved sandbox of template asked-1. It has none') });
     expect(s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'true', outputs: [], secrets: ['AWS_KEY'] }, ask()))
@@ -297,7 +297,7 @@ describe('a step\'s credentials end with its sandbox (issue #1371)', () => {
 // A step that only reads runs as before.
 describe('need and box steps with infra applies off (issue #1722)', () => {
   const READ: OperationProfile = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } };
-  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE], approval: { by: 'Ada' }, pending: { image: false, profiles: [] } } as unknown as TemplateView;
+  const READY = { name: 'asked-1', image: 'img', profiles: [READ, WRITE], approval: { by: 'Ada' }, pending: { image: false, egress: [], profiles: [] } } as unknown as TemplateView;
   const OFF = /^infra applies are off on this hopper: .* goes through CI/;
 
   it('refuses a step with a plan, or one that needs a change, and records why; no box starts', () => {

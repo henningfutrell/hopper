@@ -186,7 +186,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     const id = newId();
     const step = o.steps.add({
       id, userId: o.userId, jobId: job.id, key: ask.key, box: `hopper-need-${t.name}-${id.slice(0, 8)}`,
-      template: { name: t.name, image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
+      template: { name: t.name, image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.egress?.length ? { egress: t.egress } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
       needs, command: request.command, timeoutSeconds: request.timeoutSeconds, outputs: request.outputs,
       ...(fields.plan ? { plan: fields.plan } : {}), inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
     }, ask.inputs);

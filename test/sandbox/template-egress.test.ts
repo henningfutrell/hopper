@@ -57,7 +57,8 @@ describe('a box of a template with egress hosts (issue #1875)', () => {
       expect(open).toMatchObject({ network: 'hopper_default' });
       const filter = readFileSync(join(proxyDir, 'filter'), 'utf8').split('\n');
       expect(filter).toEqual(expect.arrayContaining(['^auth\\.example\\.test$', '^idp\\.example\\.test$']));
-      expect(readFileSync(join(proxyDir, 'ports'), 'utf8')).toBe('443\n8443\n');
+      // The step's cluster (6443) and the template's hosts' ports.
+      expect(readFileSync(join(proxyDir, 'ports'), 'utf8')).toBe('443\n6443\n8443\n');
     } finally {
       stop();
     }

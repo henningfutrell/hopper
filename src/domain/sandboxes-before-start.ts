@@ -11,7 +11,7 @@ import type { TemplateView } from './vault.ts';
 export const SANDBOXES_HOLD = 'awaiting its sandboxes';
 
 /** Whether a step may run in a box of the template now: approved, its image approved, every profile approved, its check passed. */
-export const templateReady = (t: TemplateView): boolean => t.approval !== undefined && !t.pending.image && t.pending.profiles.length === 0 && checkWait(t) === undefined;
+export const templateReady = (t: TemplateView): boolean => t.approval !== undefined && !t.pending.image && t.pending.egress.length === 0 && t.pending.profiles.length === 0 && checkWait(t) === undefined;
 
 const escaped = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

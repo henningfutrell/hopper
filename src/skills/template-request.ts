@@ -140,6 +140,7 @@ const STATUS: Record<string, 400 | 409 | 503> = { invalid: 400, conflict: 409 };
 function waitsOf(t: TemplateView): string[] {
   return [
     ...(!t.approval ? ['the template is not approved'] : t.pending.image ? ['its image changed since it was approved'] : []),
+    ...(t.approval && t.pending.egress.length ? [`its egress host ${t.pending.egress.join(', ')} is not approved`] : []),
     ...t.pending.profiles.map((p) => `${inWords(p)} is not approved`),
   ];
 }
