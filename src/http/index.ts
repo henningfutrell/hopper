@@ -29,6 +29,7 @@ import { installTunnelEdge } from './tunnel.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
+import type { GitPushes } from '../github-proxy/index.ts';
 import { jobAddressRoutes } from './job-address.ts';
 import { jobSkillRoutes } from './job-skill.ts';
 import { jobStepRoutes } from './job-step.ts';
@@ -104,6 +105,8 @@ export interface ServerOptions {
   instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'lanePoolKeys' | 'users' | 'identities' | 'localAccounts' | 'localAccountPasskeys' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
+  /** Where each job's push is kept as a saga before it reaches GitHub (issue #1806). Absent: kept nowhere. */
+  gitPushes?: GitPushes;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
   pluginStore: PluginStoreView;
   /** Self-update (the instance's): GET /api/update, POST /ui/api/update. */
@@ -259,7 +262,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan, heldSince: loop.heldSince });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   const { proxy: github, prWaits } = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
-  jobGitRoutes(app, { tenants: o.tenants });
+  jobGitRoutes(app, { tenants: o.tenants, ...(o.gitPushes ? { pushes: o.gitPushes } : {}) });
   jobCheckpointRoutes(app, { tenants: o.tenants });
   // A running job says what came of a login it asked for (issue #1110), with the same token.
   jobLoginRoutes(app, { tenants: o.tenants });

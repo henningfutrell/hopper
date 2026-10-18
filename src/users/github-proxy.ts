@@ -37,7 +37,7 @@ import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from 
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
   createProxyApi, type ProxyApi, holdsProxyToken, isPullRequest, itemOf, knownPullRequest, type KnownPullRequest, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
-  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser, createSubIssueLinker, createSubIssueLinks, replayOf, type SubIssueLinks,
+  PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser, createSubIssueLinker, createSubIssueLinks, replayOf, type SubIssueLinks, PUSH_EVENTS,
 } from '../github-proxy/index.ts';
 
 /** No AI connection (issue #471): File an issue says so, and drafts nothing. */
@@ -353,6 +353,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         ...(o.pushLines ? { shrinkGuard: shrinkGuard(o.pushLines) } : {}),
         // Direct push (issue #1806): the user's setting, read at each push; the check fetches with the account of the repository.
         directPush: (repo) => directPushFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+        // A push kept as a saga (issue #1806): whether the broker recorded the push's event before a stop.
+        recorded: (jobId, requestId) => o.store.events.recent(500, [...PUSH_EVENTS], jobId).some((e) => (e.data as { requestId?: unknown }).requestId === requestId),
         ...(o.fastForward ? { fastForward: ({ repo, ...push }: Parameters<CheckFastForward>[2] & { repo: string }) => o.fastForward!(repo, mirrorRemote(repo), push) } : {}),
       },
     },

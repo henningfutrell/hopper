@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
-| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
@@ -25609,7 +25609,7 @@ closes):
 **The kinds.** The composition root gives the coordinator its kinds (`createSagas`, `definitions`): each module that moves its
 work onto a saga defines its own kind. The first is the sandbox module's `need-step` ("Need steps kept as sagas"
 below, part 2); the Windows steps' `windows-step` is another ("Windows sandbox steps", "Windows steps kept as sagas",
-issue #1611).
+issue #1611); a job's push is a `git-push` ("A push kept as a saga", issue #1806).
 
 **What is not done yet** (part 1 ships the saga, its store and its coordinator). The sandbox work — create the sandbox, mint and grant its credentials, set up the worktree, run the executor, push, open the
 pull request, tear down, revoke — moves onto a saga kind in a later part, with the executor's session state (#1465) in its
@@ -27111,10 +27111,48 @@ merged there with yolo mode off. Nobody turned that on for those repositories.
 - **No migration.** The settings' shape does not change. A hopper that merged such a pull request by `on` alone now waits
   for a person, which is the safe side; the build before it still runs on the store.
 
-**Left for a later part of issue #1806.** A push as a durable work item (issue #1524 sagas).
+**Left for a later part of issue #1806.** A push as a durable work item (issue #1524 sagas): part 4, "A push kept as a
+saga" below.
 
 **Residual risk.** On a repository a person named on, a job's pull request is merged with no review once it is ready, and
 whatever that merge triggers runs. GitHub's branch protection and the user's own rights still apply.
 
 **Verification:** `test/domain/outside-merge.test.ts`, `test/sources/pull-request-list.test.ts` ("a repository the hopper
 does not work on"), `test/ui/yolo-mode.test.ts`.
+
+## A push kept as a saga (issue #1806, part 4, 2026-10-17)
+
+The owner's decision on issue #1806: every push is recorded on the job, and pushes are durable work items (issue #1524:
+every call across a system boundary is a persisted record with an idempotency key, resumable on any host after a stop).
+Before, the git broker recorded a push only after GitHub answered it (`github_proxy.done` or `.failed`). A hopper that
+stopped while GitHub had the push recorded nothing: the push could be on GitHub with no event on the job's timeline.
+
+**The change.**
+- **The saga.** The git broker (`createGitProxy`, `pushes`) keeps each push it sends to GitHub as a `git-push` saga
+  (`src/github-proxy/push-saga.ts`, `createGitPushes`), keyed `<job>/<request>`, after every check passed and before
+  GitHub has the push. Its data: the repository, each ref update (`ref`, `old`, `new`), the `direct` refs, the job's
+  machine, the acting login (`as`) and the repository whose account acts (`via`). A push the hopper refuses is no saga:
+  it never reaches GitHub, and its refusal is recorded at once, as before.
+- **Its one step, `settle`.** On the hopper that sends the push, the step waits until the broker recorded the push's
+  event, then ends: one event, as before. The saga's lease is renewed meanwhile.
+- **After a stop.** The next hopper (this one after its start, or another on the database) takes the saga when its lease
+  ends. When the job's log holds an event of the request already (`GitUser.recorded`), it records nothing. Else it reads
+  the refs on GitHub with the user's connection (git's ref advertisement, `info/refs?service=git-upload-pack`): the refs
+  at their `new` commit are recorded as `github_proxy.done`, the others as `github_proxy.failed` (`the hopper stopped
+  before GitHub answered the push, and GitHub does not have it: push again`). A read that fails is tried again with the
+  saga's backoff.
+- **Nothing is pushed again.** The pack lives only in the request. git's push is a compare-and-swap of each ref, and the
+  job's git sends it again when its request failed; the saga only records what GitHub has.
+
+**Decisions:**
+- **The saga records, it does not push.** Keeping the pack to send it again would put up to 512 MB a push into the
+  database, and push a change after the job's git was told that the push failed. The job's own retry is already
+  idempotent: git compares each ref's old commit.
+- **The broker still records in the request.** The event lands before the job's git reads the answer, as before, so a
+  job, a test or a person sees it at once. The saga dedupes by the request id.
+- **No new event field.** The resumed record has the same shape as the broker's; the event schemas do not change, and
+  the build before this one runs on the store.
+
+**Verification:** `test/github-proxy/push-saga.test.ts`, on the real database with two coordinators: a push GitHub
+answers (the saga ends, one event); a hopper stopped while GitHub had the push, and GitHub took it (the next hopper
+records it done) or did not (recorded failed); an event recorded before the stop is not recorded again.
