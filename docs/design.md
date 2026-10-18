@@ -634,7 +634,12 @@ HOPPER_CLAUDE_CWD), model?: string, timeoutMs?: number }`.
 stdout, errors JSON on stderr with exit 1. Never the default session — herdr's own doctrine
 forbids driving a user's session from outside it. Spawned processes get an environment with
 `CLAUDECODE` and every `CLAUDE_CODE_*` variable removed but the claude CLI's credential
-`CLAUDE_CODE_OAUTH_TOKEN` (issue #533, "Startup screens").
+`CLAUDE_CODE_OAUTH_TOKEN` (issue #533, "Startup screens"). Each call is cut off at 15 s. A busy herdr server
+answers late (issue #1857, seen live: `agent get` and `agent prompt` cut off and jobs failed): a call that only reads
+(`agent get`, `pane read`, `pane list`, `tab list`, `workspace list`) is asked again on a `timeout`, 3 tries in all. A call
+that changes something is never sent again. A `timeout` of `agent prompt` does not fail the job: the prompt may have
+reached Claude, so the turn is watched as if it was sent, and a prompt that did not reach Claude is a **lost send**
+(sent again, at most 3 sends).
 
 **Lanes → panes.** One herdr workspace labelled `hopper` (found by label, else created
 `--no-focus`). One **tab per job run**, created with `--cwd <job cwd>` and labelled
