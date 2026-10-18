@@ -46,7 +46,7 @@ export interface NeedsYouRow {
 
 /** Each row's page and words: what it counts, said also when nothing waits, so a person knows the kind is there. */
 const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> = {
-  intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval, and labelled issues not assigned to you: no job starts until you assign them' },
+  intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval, labelled issues not assigned to you: no job starts until you assign them, and jobs held by their trust stamp' },
   access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants and box templates that jobs on boxes wait for' },
   plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for a person to approve them' },
   questions: { label: 'Questions', href: '#questions', what: 'questions jobs asked you' },
