@@ -178,7 +178,7 @@ export interface NeedBox {
    * The template's image, its tools, whether it is read-only (its terraform runs through the read-only wrapper), and its
    * limits: the box runs with their defaults (issue #1349).
    */
-  template: { image: string; tools?: readonly BoxTool[]; readOnly?: boolean; limits?: TemplateLimits };
+  template: { image: string; tools?: readonly BoxTool[]; egress?: readonly string[]; readOnly?: boolean; limits?: TemplateLimits };
   env: Record<string, string>;
   /** Where its credentials reach (issue #849): a read-only box's egress proxy allows their hosts. */
   reaches?: readonly MintReach[];

@@ -1,0 +1,1 @@
+- A job can now ask for a sandbox template for browser tests, with the secrets and the test server it names, and only a person can approve it.

@@ -84,6 +84,16 @@ export function toolsText(t: { tools?: readonly string[]; approval?: { tools?: r
   return now.map((x) => (t.approval && !was.includes(x) ? `${x} (waits)` : x)).join(', ');
 }
 
+/** An egress host (issue #1875): `host:port`, a DNS name or an address (src/domain/vault.ts egressHostProblem). */
+export const EGRESS_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*:[1-9][0-9]{0,4}$/;
+
+/** The egress hosts typed in a field, split by spaces, commas or lines, in lowercase. */
+export const egressOf = (text: string): string[] => [...new Set(text.toLowerCase().split(/[\s,]+/).filter((h) => h !== ''))];
+
+/** A template's egress hosts, with `(waits)` when one is not approved; `none` without. */
+export const egressText = (t: { egress?: readonly string[]; pending?: { egress: readonly string[] } }): string =>
+  t.egress?.length ? t.egress.map((h) => (t.pending?.egress.includes(h) ? `${h} (waits)` : h)).join(', ') : 'none';
+
 /** `write on cluster x`. */
 export const profileText = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
 
@@ -105,7 +115,7 @@ export const explicitApprovals = (t: TemplateView): OperationProfile[] => t.pend
  */
 export function allListed(t: TemplateView): ({ action: 'approve-template'; name: string } | ({ action: 'approve-profile'; name: string } & OperationProfile))[] {
   const reads = t.pending.profiles.filter((p) => !highRadius(p));
-  const whole = !t.approval || t.pending.image || t.pending.secrets.length > 0 || reads.length > 0;
+  const whole = !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || reads.length > 0;
   return [
     ...(whole ? [{ action: 'approve-template' as const, name: t.name }] : []),
     ...explicitApprovals(t).map((p) => ({ action: 'approve-profile' as const, name: t.name, ...p })),
@@ -118,9 +128,9 @@ export function profileAskOf(asks: readonly ProfileAsk[] | undefined, template: 
   return a ? `${a.asker} asked to approve this through the API at ${a.at}: approve it here to confirm it.` : undefined;
 }
 
-/** A template waits for a person (issue #897, Access requests): never approved, or a new image, secret or profile waits. */
+/** A template waits for a person (issue #897, Access requests): never approved, or a new image, egress host, secret or profile waits. */
 export const templateWaits = (t: TemplateView): boolean =>
-  !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
+  !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
 
 /** The sandbox runs jobs asked for that wait for a person (issue #991). */
 export const sandboxRunsWaiting = (v: VaultView | null): SandboxRequestView[] => (v?.sandboxRequests ?? []).filter((r) => r.state === 'waiting');
@@ -147,7 +157,7 @@ export function sandboxApprovalsText(a: SandboxApprovals | undefined): string {
 export function approvalText(t: TemplateView): string {
   if (!t.approval) return 'not approved yet: its boxes take no job and get nothing from the vault';
   const waits = [
-    ...(t.pending.image ? ['a new image'] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : []),
+    ...(t.pending.image ? ['a new image'] : []), ...(t.pending.egress.length ? [`egress to ${t.pending.egress.join(', ')}`] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : []),
     ...t.pending.profiles.map((p) => `${profileText(p)}${highRadius(p) ? ' (explicit)' : ''}`),
   ];
   return waits.length ? `waits for approval: ${waits.join('; ')}` : 'approved';

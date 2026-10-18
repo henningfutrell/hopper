@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const READ = { operation: 'read', asset: { kind: 'cluster', name: 'lab' } };
 const KUBE = {
   name: 'kube', image: 'img', secrets: ['KUBE', 'AWS'], profiles: [READ], savedBy: 'Ada', savedAt: '2026-10-11T10:00:00Z',
-  approval: { image: 'img', secrets: ['KUBE', 'AWS'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [] },
+  approval: { image: 'img', secrets: ['KUBE', 'AWS'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, egress: [], profiles: [] },
   gives: ['KUBE', 'AWS'], radius: { level: 'low', reasons: [], profiles: [] },
   limits: { cpus: { default: 2, max: 4 }, memoryMb: { default: 2048, max: 4096 } },
   tools: ['helm', 'kubectl'],

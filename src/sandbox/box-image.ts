@@ -15,6 +15,13 @@ export const BOX_IMAGE = 'ghcr.io/henningfutrell/hopper';
 export const BOX_AGENTS = ['claude', 'codex', 'cursor', 'omp', 'opencode'] as const;
 
 /**
+ * The test image (issue #1875, scripts/box/test.Dockerfile): the claude box image with Python and Playwright's Chromium
+ * headless shell, its system libraries and fonts, so a box step runs an end-to-end test with no package downloads. CI
+ * publishes it beside the box images (.github/workflows/image.yml `box-test`). A template request names it `--image test`.
+ */
+export const TEST_IMAGE = `${BOX_IMAGE}:box-test`;
+
+/**
  * The tools image CI publishes for a box image (issue #1286, .github/workflows/image.yml `box-tools`): the box image with
  * every box tool added as tools.ts adds them, its tag the box image's with `-tools`, or `-tools-read-only` for a
  * read-only template's boxes. A runtime that builds nothing (Kubernetes) runs it. Throws for an image the hopper does

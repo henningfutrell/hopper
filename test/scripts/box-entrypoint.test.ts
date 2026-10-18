@@ -84,4 +84,15 @@ describe('a box\'s entrypoint told to stop (issue #1284)', () => {
     for (let i = 0; i < 40 && !existsSync(join(dir, 'herdr.stop')); i++) await new Promise((r) => setTimeout(r, 50));
     expect(read('herdr.stop').trim()).toBe('after');
   });
+
+  it('told to stop the moment herdr starts, ends with 0, and stops a client it started before herdr', async () => {
+    // Issue #1884: a stop that came before the entrypoint knew its children (its trap not set yet, or the client's pid not
+    // kept yet) ended it at once, or stopped herdr first. herdr asks for the stop itself here, as it starts.
+    writeFileSync(join(bin, 'herdr'), `#!/bin/sh\ntrap 'if [ -f "${dir}/client.done" ] || [ ! -f "${dir}/client.up" ]; then echo after > "${dir}/herdr.stop"; else echo before > "${dir}/herdr.stop"; fi; exit 0' TERM\nkill -TERM $PPID\nwhile :; do sleep 0.05; done\n`);
+    writeFileSync(join(bin, 'node'), `#!/bin/sh\ntrap 'sleep 0.3; touch "${dir}/client.done"; exit 0' TERM\ntouch "${dir}/client.up"\nwhile :; do sleep 0.05; done\n`);
+    const child = spawn('sh', [SCRIPT], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, TMPDIR: tmp } });
+    expect(await new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)))).toBe(0);
+    for (let i = 0; i < 40 && !existsSync(join(dir, 'herdr.stop')); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(read('herdr.stop').trim()).toBe('after');
+  });
 });

@@ -28,6 +28,10 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --needs TEXT       for sandbox and sandbox-template: what the work needs, as <operation>/<kind>/<asset> ...
 #                        (issues #716, #991)
 #     --template NAME    for sandbox, in place of --needs: a template the user has, as a brief names it (issue #1471)
+#     --secrets TEXT     for sandbox and sandbox-template: vault secrets its sandboxes get, by name (issue #1875)
+#     --egress TEXT      for sandbox and sandbox-template: the hosts its sandboxes may reach, as host:port (issue #1875)
+#     --image NAME       for sandbox and sandbox-template: one of the hopper's box images, box or test (issue #1875)
+#                        A request with --secrets or --egress needs no --needs, and a person always approves it.
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
 #                        the hopper pushes it on the job stream (issue #613)
 #     --timeout SECONDS  how long --wait waits (the hopper's default: an hour)
@@ -35,7 +39,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #      4: --wait reached its deadline with no answer.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
 ${TRACE_HEADER_SH}
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
@@ -51,6 +55,9 @@ for a in "$@"; do
     --credential) opt=credential ;;
     --needs) opt=needs ;;
     --template) opt=template ;;
+    --secrets) opt=secrets ;;
+    --egress) opt=egress ;;
+    --image) opt=image ;;
     --timeout) opt=timeout ;;
     -*) usage ;;
     *) case $pos in

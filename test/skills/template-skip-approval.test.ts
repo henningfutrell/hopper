@@ -18,7 +18,7 @@ function user(o: { policy?: string[]; skips?: SandboxApprovals } = {}) {
     template: (name) => templates.get(name),
     templates: () => [...templates.values()],
     async save(t) {
-      templates.set(t.name, { ...t, profiles: t.profiles, pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
+      templates.set(t.name, { ...t, profiles: t.profiles, pending: { secrets: [], image: true, egress: [], profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
     },
     async approve(name, by) {
@@ -45,7 +45,7 @@ const SKIP = { skipTemplateApproval: true, skipSandboxApproval: false };
 describe('skip template approval (issue #991)', () => {
   it('approves a new template at once, its write profile with it, by the toggle', async () => {
     const { u, calls } = user({ skips: SKIP });
-    const r = await requestTemplate(u, 'read/cluster/lab write/cluster/lab', 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'read/cluster/lab write/cluster/lab' }, 'job j1', 'j1');
     expect(r.status).toBe(200);
     expect(r).toMatchObject({ template: expect.stringMatching(/^asked-/) });
     expect('text' in r && r.text).toContain('approved by skip template approval');
@@ -54,31 +54,31 @@ describe('skip template approval (issue #991)', () => {
 
   it('off, the same needs wait for a person', async () => {
     const { u, calls } = user();
-    const r = await requestTemplate(u, 'read/cluster/lab write/cluster/lab', 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'read/cluster/lab write/cluster/lab' }, 'job j1', 'j1');
     expect(r.status).toBe(202);
     expect(calls).toEqual([]);
   });
 
   it('the read policy approves what it holds first', async () => {
     const { u, calls } = user({ policy: ['cluster/lab'], skips: SKIP });
-    await requestTemplate(u, 'read/cluster/lab', 'job j1', 'j1');
+    await requestTemplate(u, { needs: 'read/cluster/lab' }, 'job j1', 'j1');
     expect(calls).toEqual([expect.stringMatching(/by the read policy$/)]);
   });
 
   it('never approves again a template that is there already', async () => {
     const { u, calls, templates } = user({ skips: SKIP });
-    await requestTemplate(u, 'write/cluster/lab', 'job j1', 'j1');
+    await requestTemplate(u, { needs: 'write/cluster/lab' }, 'job j1', 'j1');
     const [name] = [...templates.keys()];
     // A person revoked it.
-    templates.set(name!, { ...templates.get(name!)!, approval: undefined, pending: { secrets: [], image: true, profiles: [] } } as TemplateView);
+    templates.set(name!, { ...templates.get(name!)!, approval: undefined, pending: { secrets: [], image: true, egress: [], profiles: [] } } as TemplateView);
     calls.length = 0;
-    const r = await requestTemplate(u, 'write/cluster/lab', 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'write/cluster/lab' }, 'job j1', 'j1');
     expect(r.status).toBe(202);
     expect(calls).toEqual([]);
   });
 
   it('the preview says the toggle approves it', () => {
     const { u } = user({ skips: SKIP });
-    expect(previewTemplate(u, 'write/cluster/lab')).toMatchObject({ approvedBy: 'skip template approval', waits: [] });
+    expect(previewTemplate(u, { needs: 'write/cluster/lab' })).toMatchObject({ approvedBy: 'skip template approval', waits: [] });
   });
 });

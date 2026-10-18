@@ -274,9 +274,10 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     stepping.add(box.name); steppingAt.set(box.name, at.machine === LOCAL ? 'local' : 'machine');
     let r: NeedBoxResult = { exit: 125, problem: 'the step did not end' };
     try {
-      // Issue #849: a read-only template's box behind the egress proxy, which holds its hosts before the box starts.
-      const egress = box.template.readOnly && !offline ? at.egress : undefined;
-      const held = egress ? await egress.allow(box.reaches ?? []).then(() => undefined, (e: unknown) => (e instanceof Error ? e.message : String(e))) : undefined;
+      // Issue #849: a read-only template's box behind the egress proxy, which holds its hosts before the box starts; and
+      // (issue #1875) a box of a template that names egress hosts, which the proxy allows too.
+      const egress = (box.template.readOnly || box.template.egress?.length) && !offline ? at.egress : undefined;
+      const held = egress ? await egress.allow(box.reaches ?? [], box.template.egress).then(() => undefined, (e: unknown) => (e instanceof Error ? e.message : String(e))) : undefined;
       if (held) {
         r = { exit: 125, problem: held };
         return r;

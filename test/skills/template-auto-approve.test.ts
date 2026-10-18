@@ -17,7 +17,7 @@ function user(o: { policy?: string[]; approvals?: SandboxApprovals } = {}) {
     template: (name) => templates.get(name),
     templates: () => [...templates.values()],
     async save(t) {
-      templates.set(t.name, { ...t, pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
+      templates.set(t.name, { ...t, pending: { secrets: [], image: true, egress: [], profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
     },
     async approve(name, by) {
@@ -44,40 +44,40 @@ const OFF = { skipTemplateApproval: false, skipSandboxApproval: false };
 describe('the auto-approve policy (issue #1001)', () => {
   it('by default approves a read-only template with no person, by the policy, outside the read policy too', async () => {
     const { u, calls } = user();
-    const r = await requestTemplate(u, 'read/aws-role/123456789012/ReadOnly read/cluster/lab', 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'read/aws-role/123456789012/ReadOnly read/cluster/lab' }, 'job j1', 'j1');
     expect(r.status).not.toBe(400);
     expect(calls).toEqual([expect.stringMatching(new RegExp(`^approve asked-\\w+ by ${AUTO_APPROVER}$`))]);
   });
 
   it('by default a write waits for a person', async () => {
     const { u, calls } = user();
-    const r = await requestTemplate(u, 'read/cluster/lab write/cluster/lab', 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'read/cluster/lab write/cluster/lab' }, 'job j1', 'j1');
     expect(r.status).toBe(202);
     expect(calls).toEqual([]);
   });
 
   it('with high on, a write template is approved by the policy, its write profile with it', async () => {
     const { u, calls } = user({ approvals: { ...OFF, autoApprove: { low: true, medium: false, high: true } } });
-    const r = await requestTemplate(u, 'write/cluster/lab', 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'write/cluster/lab' }, 'job j1', 'j1');
     expect(r.status).toBe(200);
     expect(calls).toEqual([expect.stringMatching(new RegExp(`by ${AUTO_APPROVER}$`)), `approve write/cluster/lab by ${AUTO_APPROVER}`]);
   });
 
   it('with low off, a read outside the read policy waits', async () => {
     const { u, calls } = user({ approvals: { ...OFF, autoApprove: { low: false, medium: false, high: false } } });
-    expect((await requestTemplate(u, 'read/cluster/lab', 'job j1', 'j1')).status).toBe(202);
+    expect((await requestTemplate(u, { needs: 'read/cluster/lab' }, 'job j1', 'j1')).status).toBe(202);
     expect(calls).toEqual([]);
   });
 
   it('the read policy approves what it holds first', async () => {
     const { u, calls } = user({ policy: ['cluster/lab'] });
-    await requestTemplate(u, 'read/cluster/lab', 'job j1', 'j1');
+    await requestTemplate(u, { needs: 'read/cluster/lab' }, 'job j1', 'j1');
     expect(calls).toEqual([expect.stringMatching(/by the read policy$/)]);
   });
 
   it('the preview says the policy approves it, and that a write waits', () => {
     const { u } = user();
-    expect(previewTemplate(u, 'read/cluster/lab')).toMatchObject({ approvedBy: AUTO_APPROVER, waits: [] });
-    expect(previewTemplate(u, 'write/cluster/lab')).toMatchObject({ approvedBy: 'a person', waits: ['write on cluster lab changes the asset'] });
+    expect(previewTemplate(u, { needs: 'read/cluster/lab' })).toMatchObject({ approvedBy: AUTO_APPROVER, waits: [] });
+    expect(previewTemplate(u, { needs: 'write/cluster/lab' })).toMatchObject({ approvedBy: 'a person', waits: ['write on cluster lab changes the asset'] });
   });
 });

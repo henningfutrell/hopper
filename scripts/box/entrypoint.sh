@@ -19,18 +19,27 @@ if [ ! -f "$lib/main.ts" ]; then
   mkdir -p "$HOME/.local/lib"
   cp -r /usr/local/lib/hopper-client "$lib"
 fi
-herdr --session hopper-client server &
-herdr=$!
-client=
+# The trap is set before anything starts, and a stop that comes before the client's pid is kept (between its start and
+# `client=$!`) is only noted: the loop stops once it knows the pid, so the client still ends before herdr (issue #1884).
+herdr= client= starting= stopping=
 stop() {
+  if [ -n "$starting" ]; then stopping=1; return; fi
   if [ -n "$client" ]; then kill "$client" 2>/dev/null; wait "$client" 2>/dev/null || :; fi
-  kill "$herdr" 2>/dev/null
+  [ -z "$herdr" ] || kill "$herdr" 2>/dev/null
   exit 0
 }
 trap stop TERM INT
+starting=1
+herdr --session hopper-client server &
+herdr=$!
+starting=
+[ -z "$stopping" ] || stop
 while :; do
+  starting=1
   if [ -f "$join_file" ]; then HOPPER_JOIN_FILE="$join_file" node "$lib/main.ts" & else node "$lib/main.ts" & fi
   client=$!
+  starting=
+  [ -z "$stopping" ] || stop
   code=0
   wait "$client" || code=$?
   [ "$code" = 75 ] || { kill "$herdr" 2>/dev/null; exit "$code"; }

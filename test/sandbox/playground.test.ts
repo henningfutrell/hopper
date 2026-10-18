@@ -53,7 +53,7 @@ const sandboxPods = (api: FakeKubeApi) => [...api.pods.values()].filter((x) => x
 const sandboxClaims = (api: FakeKubeApi) => [...api.claims.values()].filter((c) => (c.metadata as { labels?: Record<string, string> }).labels?.[POD_LABEL] === 'claim');
 
 const template = (over: Partial<TemplateView> = {}): TemplateView => ({
-  name: 'kube', image: 'ghcr.io/henningfutrell/hopper:box-claude', approval: { by: 'admin', at: '2026-10-01T00:00:00Z' }, pending: { secrets: [], image: false, profiles: [] },
+  name: 'kube', image: 'ghcr.io/henningfutrell/hopper:box-claude', approval: { by: 'admin', at: '2026-10-01T00:00:00Z' }, pending: { secrets: [], image: false, egress: [], profiles: [] },
   gives: [], profiles: [], ...over,
 } as unknown as TemplateView);
 

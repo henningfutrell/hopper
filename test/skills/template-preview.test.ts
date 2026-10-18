@@ -16,7 +16,7 @@ const user = (o: { policy?: string[]; templates?: TemplateView[] } = {}) => ({
 
 describe('the template a request makes, shown before it is made (issue #708)', () => {
   it('shows the name, the image, the tools the needs use and no secret; read needs inside the policy are approved by it', () => {
-    const p = previewTemplate(user({ policy: ['cluster/lab', 'aws-role/*'] }), 'read/cluster/lab read/aws-role/123456789012/ReadOnly');
+    const p = previewTemplate(user({ policy: ['cluster/lab', 'aws-role/*'] }), { needs: 'read/cluster/lab read/aws-role/123456789012/ReadOnly' });
     expect(p).toEqual({
       template: requestedName(needsOf('read/cluster/lab read/aws-role/123456789012/ReadOnly') as never),
       image: IMAGE,
@@ -29,7 +29,7 @@ describe('the template a request makes, shown before it is made (issue #708)', (
   });
 
   it('a write, or a read the policy does not hold, makes the whole template wait for a person, and says why', () => {
-    const p = previewTemplate(user({ policy: ['cluster/lab'] }), 'read/cluster/lab read/cluster/prod write/namespace/lab/web');
+    const p = previewTemplate(user({ policy: ['cluster/lab'] }), { needs: 'read/cluster/lab read/cluster/prod write/namespace/lab/web' });
     expect(p).toMatchObject({
       readOnly: false,
       approvedBy: 'a person',
@@ -39,21 +39,21 @@ describe('the template a request makes, shown before it is made (issue #708)', (
 
   it('with no read policy and low auto-approve off, every template waits for a person', () => {
     const off = { ...user(), approvals: () => ({ skipTemplateApproval: false, skipSandboxApproval: false, autoApprove: { low: false, medium: false, high: false } }) };
-    expect(previewTemplate(off, 'read/cluster/lab')).toMatchObject({ approvedBy: 'a person', waits: ['the read policy does not hold read on cluster lab'] });
+    expect(previewTemplate(off, { needs: 'read/cluster/lab' })).toMatchObject({ approvedBy: 'a person', waits: ['the read policy does not hold read on cluster lab'] });
   });
 
   it('says when the template is there already, and when a person changed it since', () => {
     const name = requestedName(needsOf('read/cluster/lab') as never);
-    const waiting = { secrets: [], pending: { secrets: [], image: true, profiles: [] } };
+    const waiting = { secrets: [], pending: { secrets: [], image: true, egress: [], profiles: [] } };
     const same = { name, ...waiting, profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
     const changed = { name, ...waiting, profiles: [{ operation: 'write', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
-    expect(previewTemplate(user({ templates: [same] }), 'read/cluster/lab')).toMatchObject({ exists: 'same' });
-    expect(previewTemplate(user({ templates: [changed] }), 'read/cluster/lab')).toMatchObject({ exists: 'changed' });
-    expect(previewTemplate(user(), 'read/cluster/lab')).not.toHaveProperty('exists');
+    expect(previewTemplate(user({ templates: [same] }), { needs: 'read/cluster/lab' })).toMatchObject({ exists: 'same' });
+    expect(previewTemplate(user({ templates: [changed] }), { needs: 'read/cluster/lab' })).toMatchObject({ exists: 'changed' });
+    expect(previewTemplate(user(), { needs: 'read/cluster/lab' })).not.toHaveProperty('exists');
   });
 
   it('refuses needs it cannot read, with how to write it', () => {
-    expect(previewTemplate(user(), '')).toMatch(/^name what the work needs/);
-    expect(previewTemplate(user(), 'delete/cluster/lab')).toContain('the operation is one of');
+    expect(previewTemplate(user(), { needs: '' })).toMatch(/^name what the work needs/);
+    expect(previewTemplate(user(), { needs: 'delete/cluster/lab' })).toContain('the operation is one of');
   });
 });
