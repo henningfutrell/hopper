@@ -6,6 +6,7 @@ import { createBugReportRepository } from './bug-reports.ts';
 import { createInfraPlanRepository } from './infra-plans.ts';
 import { createOutOfBandRepository } from './out-of-band.ts';
 import { createTopologyRepository } from './topology.ts';
+import { createSkillLibraryRepository } from './skill-library.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
@@ -91,6 +92,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     infraPlans: createInfraPlanRepository(ctx),
     outOfBand: createOutOfBandRepository(ctx),
     topology: createTopologyRepository(ctx),
+    skillLibrary: createSkillLibraryRepository(ctx),
     questions: createQuestionRepository(ctx),
     reviews: { proposal: createReviewItemRepository(ctx, 'proposal'), research: createReviewItemRepository(ctx, 'research') },
     logins: createLoginRepository(ctx),

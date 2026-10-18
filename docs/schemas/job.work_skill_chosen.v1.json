@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "code",
+        "research",
+        "proposal"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "from": {
+      "type": "string",
+      "enum": [
+        "repo",
+        "user",
+        "default"
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "name",
+    "version",
+    "seq",
+    "from"
+  ],
+  "additionalProperties": false
+}

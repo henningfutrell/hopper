@@ -3,7 +3,7 @@
 import type { z } from 'zod';
 import type { UiRole } from '../domain/types.ts';
 
-export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Infra' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'API tokens' | 'Bug reports' | 'Remote access' | 'Cloud link';
+export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Infra' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'API tokens' | 'Bug reports' | 'Remote access' | 'Cloud link' | 'Skills';
 
 export interface Operation {
   method: 'get' | 'post';
@@ -49,5 +49,6 @@ export const TAGS: Record<Tag, string> = {
   Access: 'OpenFGA decides each credential a job is given: the approvals, the access model, and every decision.',
   'Remote access': 'The tunnel that reaches the hopper\'s API from anywhere (issues #880, #968): off by default; the provider (Cloudflare Tunnel or ngrok) and its one credential, kept in the hopper\'s vault; the hopper mints and removes the tunnel itself; the URLs an agent calls, and whether it is up.',
   'Cloud link': 'The link of this install to an account at hopper.io (issue #467): one record in the instance\'s settings, made and removed by the instance admin while the hopper runs; no data moves.',
+  Skills: 'The skill library (issue #1911): the built-in library skills and the user\'s own, each version kept, and which one each kind of work gets.',
   'Bug reports': 'Report a bug: a report on the hopper, with its redacted context, filed on the hopper\'s own repository as the person who sends it.',
 };

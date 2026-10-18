@@ -78,6 +78,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
+| `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill, chosen at its first start and kept (`index.ts`). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
@@ -27675,3 +27676,65 @@ admin wants to keep below the user's limits.
 primary loses a lane; a Decision starts on the primary only; without the option the user's limits apply);
 `test/plugins/machine-targets.test.ts` and `test/plugins/host-sources.test.ts` (the option reaches the machine;
 soft at or above hard refused); `test/ui/usage-limits-view.test.ts` (the cap does not follow the user's limits).
+
+## The skill library (issue #1911, part 1, 2026-10-18)
+
+**Problem.** A job of each kind of work — the work itself, research, a proposal — follows a skill. The skills lived in
+the user's workflow repositories, and not every machine or box has those. The hopper must keep the skills itself, so a
+job gets its skill on any machine, and a person must be able to choose the skill of each kind of work, or write one.
+
+**As built (part 1).**
+- **The skill library** (`src/skill-library/`, `src/domain/skill-library.ts`, pure). A **library skill** is a `SKILL.md`
+  and the text files beside it. The **built-in library skills** — `work`, `research`, `proposal` — are the files of
+  `src/skill-library/built-in/<name>/`, named by a content id over their files (`releaseOf`, as a run skill's): they ship
+  with the hopper and are never edited or removed. The user's own are rows of `library_skill_versions` (tenant migration
+  84), one per **library skill version**, never changed once kept. Limits: a name of lowercase letters, digits and dashes;
+  at most 32 files, 4 path parts and 160 characters a path, 64 KiB a file (a credential file's limit on the machine),
+  256 KiB in all; no `..`, no absolute path.
+- **Routes** (`src/http/ui/skill-library.ts`, the OpenAPI tag `Skills`). `GET /api/skill-library`: every skill, the
+  built-in ones first, with its newest version (no files), the **work skill settings**, the defaults and the kinds.
+  `GET /api/skill-library/:name?version=`: one version with its files, and the skill's versions. `POST
+  /ui/api/skill-library` with `action` `create` (refused when the name exists), `edit` (a new version; the same files keep
+  none), `duplicate` (any skill's version, built-in or not, as a new skill) or `remove` (refused for a built-in one and while
+  a setting names it). `POST /ui/api/work-skills`: `kinds` for every repository, `repos` per repository, `null` for the next
+  setting down; each skill named must be in the library. Every change is an admin's, as the job rules are.
+- **Permissions.** Each action is a scope of its own (`skill-library:edit.create`, `.edit`, `.duplicate`, `.remove`;
+  `work-skills:edit`; `skill-library:read`), in the scope registry's new section **Skills**, so a grant's checkboxes list
+  each one (issue #909). Access (OpenFGA) decides each API token's use as for every route.
+- **Events.** `library_skill.saved` (name, version, seq, source, by — never the files), `library_skill.removed`,
+  `work_skills.changed` (from, to, by), and `job.work_skill_chosen` on the job's timeline.
+- **A job's work skill.** At a job's first start, `workSkillOf` reads its **kind of work** (`research`, `proposal`, else
+  `code`, as its job cost kind) and the settings — its repository's, else the user's, else the built-in default — and
+  records the choice as `job.work_skill_chosen` (kind, name, version, seq, `from`: `repo`, `user`, `default`). Each later
+  start of the job reads that event and gets the same version, on whichever machine and hopper: an edit or a new setting
+  reaches the next job, never a running one. A job whose kind of work changed chooses again. A version that is gone — a
+  built-in one this build no longer has — gives the current choice, recorded again.
+- **Delivery, for any agent CLI.** The work skill's files go into the job's **credentials dir** with the hopper's scripts
+  (`jobProxy`, `src/users/github-proxy.ts`): `<scratch>/credentials/work-skill/<name>/<path>`, through the machine's own
+  connection, mode 600, removed by the reap. `HOPPER_WORK_SKILL` names its `SKILL.md`. The job rules end with one line:
+  `[hopper work skill] This job's skill for its kind of work (<kind>) is <name>, version <version>. When the variable
+  HOPPER_WORK_SKILL is set, read the file it names before you start, …`. The line and the files reach every executor —
+  herdr's pane and each print-mode agent — as the job rules and the credentials do. Nothing is written into the job's
+  work tree, and nothing is read from a workflow repository.
+
+**Decisions.**
+- **The kinds are the job cost kinds** (`code`, `research`, `proposal`): one reading of a job's spec, not a second one.
+- **The setting names a skill, not a version.** A job pins the version at its first start; pinning in the setting would
+  make every edit a second step.
+- **Per user and per repository, in the user's settings** (`workSkills`), as yolo mode's per-repository setting is; the more
+  specific wins.
+- **An admin's**, as the job rules and the repository job rules are: a skill is text every job of the user follows.
+- **Text files only.** A binary asset is out of this part.
+
+**Left for later parts.** The **Skills** page in the UI (a top-level view: list, source and version, create, edit,
+duplicate, remove, and the choice per kind of work); import of a skill from a git repository (a workflow repository) and
+its refresh, recorded; a skill that depends on another, delivered with it; the `orchestrate` skill, which issue #1909 bakes
+into the hopper.
+
+**Verification:** `test/domain/skill-library.test.ts` (the choice — repository, user, default —, a change of the settings,
+a version's limits, the description, the delivery's paths); `test/integration/skill-library.test.ts` (on the real
+database and HTTP edge: list, create, edit, duplicate, remove and their refusals and events; the settings and their
+refusals; a job on a fresh machine with no workflow repository gets its skill's files, its variable and its line, by the
+repository's setting, the user's and the default; an edit reaches the next job and leaves the earlier job's version; the
+pinned version across starts after an edit and a new setting; each action's scope and role, and nothing changes with no
+session).
