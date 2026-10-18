@@ -7,14 +7,18 @@
 //   Then  GitHub holds one child issue, a sub-issue of octo/tools#7, and the second answer is the first (replayed)
 //   When  the job moves to another machine (its proxy token is the new run's) and files the sub-task again
 //   Then  the hopper answers the issue it filed, and files nothing twice; the old machine's token is refused
-import { execFile } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+//   When  a second job of the same issue (Run again) files the sub-task with the same key
+//   Then  the hopper answers the issue the first job filed; a job of another issue with that key files its own
+//   When  the job works in a repository that has its own copy of the skill, and says so with --repo-copy
+//   Then  `skill.loaded` names the copy's folder, its git tree and commit, and whether it has changes
+import { execFile, execFileSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID, type DomainEvent } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
-import { bundledSkill } from '../../src/skills/bundled.ts';
+import { builtInSkills } from '../../src/skill-library/index.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -54,8 +58,18 @@ async function start() {
   github.issues.push({ repo: 'octo/tools', number: 7, title: 'Ship it in parts', body: 'Please.', author: 'owner', labels: ['hopper'] });
   const job = await app.pull({}, { executor: 'holder', repo: 'octo/tools', number: 7 }, ADMIN_ID);
   const env = await waitFor(async () => h.held.get(job.id)?.env, { what: `job ${job.id} to run` });
-  return { app, github, root, env, jobId: job.id };
+  return { app, github, root, env, jobId: job.id, h };
 }
+
+/** Another job of `number`, on its own machine: its variables. */
+async function another(t: Awaited<ReturnType<typeof start>>, number: number) {
+  const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools', number }, ADMIN_ID);
+  const env = await waitFor(async () => t.h.held.get(job.id)?.env, { what: `job ${job.id} to run` });
+  return { env, jobId: job.id };
+}
+
+/** git in `dir`, with no config of the machine's (issue #1909 tests a repository's own copy of a skill). */
+const git = (dir: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], { cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } }).trim();
 
 /** `hopper-skill`, run as the job runs it: its variables, its files under `root`. */
 function hopperSkill(root: string, env: Record<string, string>, args: string[]): Promise<Run> {
@@ -70,10 +84,13 @@ const json = (r: Run): Record<string, unknown> => JSON.parse(r.stdout) as Record
 const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
 const SUB_TASK = ['issue', 'create', '--repo', 'octo/tools', '--title', 'Part one', '--body', 'The schema change.', '--required', '--key', 'fanout-t1'];
 
-describe('the bundled orchestrate skill (issue #1909)', () => {
-  it('is delivered to a job with nothing installed, and its version is on the job\'s timeline', async () => {
+describe('the orchestrate skill the hopper ships (issue #1909)', () => {
+  it('is delivered to a job with nothing installed, the same text both ways, and its version is on the job\'s timeline', async () => {
     const t = await start();
-    const { version, files } = bundledSkill('orchestrate');
+    const { version, files } = builtInSkills().find((s) => s.name === 'orchestrate')!;
+    // The work skill's files beside the scripts (issue #1911) carry the same text, at the version the job's record names.
+    expect(readFileSync(join(t.root, t.env.HOPPER_WORK_SKILL!, '../../orchestrate/SKILL.md'), 'utf8')).toBe(files['SKILL.md']);
+    expect(eventsOf(t.app, 'job.work_skill_chosen')[0]!.data.requires).toEqual([{ name: 'orchestrate', version, seq: 0 }]);
 
     const catalog = await hopperSkill(t.root, t.env, []);
     expect(catalog.stdout).toMatch(/^orchestrate: /m);
@@ -112,6 +129,53 @@ describe('the bundled orchestrate skill (issue #1909)', () => {
     expect(t.github.issues.filter((i) => i.repo === 'octo/tools' && i.number !== 7).map((i) => i.number)).toEqual([8]);
     expect(t.github.issues.find((i) => i.number === 7)!.subIssues).toEqual(['octo/tools#8']);
     expect(eventsOf(t.app, 'job.child_issue_filed')).toHaveLength(1);
+  });
+
+  it('a sub-task filed by an earlier job of the same issue is not filed again by the next job (Run again)', async () => {
+    const t = await start();
+    expect(json(await hopperGh(t.root, t.env, SUB_TASK))).toMatchObject({ number: 8 });
+    t.h.held.get(t.jobId)!.end();
+    await t.app.waitForStatus(t.jobId, 'finished');
+
+    const next = await another(t, 7);
+    const again = await hopperGh(t.root, next.env, SUB_TASK);
+    expect(json(again)).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', replayed: true });
+
+    // A job of another issue with the same key files its own sub-task: the key is the issue's.
+    t.github.issues.push({ repo: 'octo/tools', number: 20, title: 'Another', body: 'Please.', author: 'owner', labels: ['hopper'] });
+    const other = await another(t, 20);
+    const own = await hopperGh(t.root, other.env, SUB_TASK);
+    expect(json(own)).toMatchObject({ ok: true, number: 21, parent: 'octo/tools#20' });
+    expect(json(own)).not.toHaveProperty('replayed');
+    expect(t.github.issues.filter((i) => i.title === 'Part one').map((i) => i.number)).toEqual([8, 21]);
+  });
+
+  it('a repository\'s own copy of the skill: the job says it follows it, and the record names its tree and commit', async () => {
+    const t = await start();
+    const repo = temp('hopper-orchestrate-repo-');
+    const copy = join(repo, '.agents/skills/workflow-orchestrate');
+    mkdirSync(copy, { recursive: true });
+    writeFileSync(join(copy, 'SKILL.md'), '# The repository\'s own way\n');
+    git(repo, 'init', '-q'); git(repo, 'add', '.'); git(repo, 'commit', '-qm', 'skill');
+    const commit = git(repo, 'rev-parse', 'HEAD');
+    const tree = git(repo, 'rev-parse', 'HEAD:.agents/skills/workflow-orchestrate');
+
+    const r = await hopperSkill(t.root, t.env, ['orchestrate', '--repo-copy', copy]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('the repository\'s own copy at .agents/skills/workflow-orchestrate');
+    const { version } = builtInSkills().find((s) => s.name === 'orchestrate')!;
+    expect(eventsOf(t.app, 'skill.loaded').map((e) => e.data)).toEqual([expect.objectContaining({
+      skill: 'orchestrate', version, repoCopy: { path: '.agents/skills/workflow-orchestrate', tree, commit, changed: false },
+    })]);
+
+    writeFileSync(join(copy, 'SKILL.md'), '# Changed here\n');
+    expect((await hopperSkill(t.root, t.env, ['orchestrate', '--repo-copy', copy])).code).toBe(0);
+    expect(eventsOf(t.app, 'skill.loaded')[0]!.data.repoCopy).toEqual({ path: '.agents/skills/workflow-orchestrate', tree, commit, changed: true });
+
+    const nowhere = await hopperSkill(t.root, t.env, ['orchestrate', '--repo-copy', temp('hopper-orchestrate-no-git-')]);
+    expect(nowhere.code).toBe(2);
+    expect(nowhere.stderr).toContain('is not in a git repository');
+    expect(eventsOf(t.app, 'skill.loaded')).toHaveLength(2);
   });
 
   it('a key that is no resend key is refused before anything is filed', async () => {
