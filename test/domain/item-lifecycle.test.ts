@@ -1,7 +1,7 @@
 // The item lifecycle (issue #1891): each state not ended has an owner and a next check, PR open a deadline, a state that
 // waits on a pull request needs one, and the reconciler's correction is what the item broke, else nothing.
 import { describe, expect, it } from 'vitest';
-import { checkOf, correctionOf, hasReference, transitionOwner } from '../../src/domain/item-lifecycle.ts';
+import { blockedStuck, checkOf, correctionOf, hasReference, RUN_AGAIN_WINDOW_MS, transitionOwner } from '../../src/domain/item-lifecycle.ts';
 import { WORK_ITEM_STATES, type WorkItem } from '../../src/domain/work-items.ts';
 
 const KEY = 'https://github.com/o/r/issues/1';
@@ -50,6 +50,23 @@ describe('the item lifecycle', () => {
     expect(correctionOf(blocked, ended, false, at(3))).toBeUndefined();
     expect(correctionOf(blocked, { ...ended, pullRequest: 'https://github.com/o/r/pull/2' }, false, at(3))).toEqual({ kind: 'replay', key: KEY, jobId: 'j1', from: 'blocked' });
     expect(correctionOf({ ...blocked, blockedCause: 'stale' }, { ...ended, pullRequest: 'https://github.com/o/r/pull/2' }, false, at(3))).toBeUndefined();
+  });
+
+  it('runs an item again by itself only on the first close of its pull request in a row, within the window; Failures lists the others', () => {
+    const PR = 'https://github.com/o/r/pull/2';
+    const closed = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'pr_closed', closedWithoutMerge: 1, pullRequest: PR, pullRequestState: 'closed' });
+    expect(correctionOf(closed, ended, false, at(1))).toBeUndefined();
+    expect(correctionOf(closed, ended, false, at(3))).toEqual({ kind: 'run_again', key: KEY, jobId: 'j1', pullRequest: PR });
+    expect(blockedStuck(closed, at(3))).toBe(false);
+    // A second close in a row, or one older than the window (a rebuild found it): a person decides.
+    expect(correctionOf({ ...closed, closedWithoutMerge: 2 }, ended, false, at(3))).toBeUndefined();
+    expect(blockedStuck({ ...closed, closedWithoutMerge: 2 }, at(3))).toBe(true);
+    const late = new Date(Date.parse(T0) + RUN_AGAIN_WINDOW_MS).toISOString();
+    expect(correctionOf(closed, ended, false, late)).toBeUndefined();
+    expect(blockedStuck(closed, late)).toBe(true);
+    // Not the item's newest job, or a job still at work: nothing.
+    expect(correctionOf(closed, { ...ended, id: 'j0' }, false, at(3))).toBeUndefined();
+    expect(correctionOf(closed, { ...ended, status: 'running', ended: false }, false, at(3))).toBeUndefined();
   });
 
   it('blocks an item in PR open past its deadline: no_pr with none named, stale with one no job follows', () => {
