@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
-| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
+| `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it, and for a job's done criteria a pipeline's jobs, a job's log, a merge request's notes and changed files and a commit's time (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), a GitLab job's done criteria on its merge request (`done-criteria.ts`, issue #1924 part 4), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
@@ -76,7 +76,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the **bundled skills** — each the plain files of a directory in `bundled/` (`orchestrate/`), its skill version a content hash (`bundled.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`orchestrate`), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
@@ -15180,7 +15180,7 @@ their approvals. Access checks the job (issue #581): its box's template comes fr
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker, the bundled skills (`bundled/`, issue #1909) | engine, http, store, plugins, executors, decider |
+| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker, the library skills it serves by name (`library.ts`, issue #1909) | engine, http, store, plugins, executors, decider |
 
 Tests: `test/integration/skills.test.ts` (the real daemon, a real joined box and client, OpenFGA as a double; the job runs
 the real `hopper-skill`: the catalog in short lines; `github` loaded; a skill the hopper does not have refused with the
@@ -25007,6 +25007,8 @@ draft run stopped on this machine and on an ssh target: the CLI no longer alive,
 
 ## Bundled skills (issue #1909, part 1, 2026-10-18)
 
+Part 2 (below) drops this part's own copy of the skill: `hopper-skill` serves the skill library's built-in `orchestrate`.
+
 **The problem.** A job that planned its work as a task list, fanned out sub-tasks and finished them read how to do it
 from a skill of the user's workflow repositories (`workflow-orchestrate`). A hopper with no such repository gave its jobs
 no way to orchestrate. That skill also used its own tooling (`orchestrate.sh`, a journal in the repository), which a job
@@ -25048,6 +25050,56 @@ with only the hopper's files: the skill loaded with its version on `skill.loaded
 filed once, again with the same key, and again after the job moved to another machine with the new run's token, the old
 token refused; a bad key refused), `test/integration/skills.test.ts` (the catalog and the names a no lists),
 `test/herdr/screen.test.ts` (the task line).
+
+## Library skills through hopper-skill, and the repository's own copy (issue #1909, part 2, 2026-10-18)
+
+**The problem.** After part 1 and issue #1911 part 4 the hopper had two `orchestrate` texts: the one `hopper-skill` served
+(`src/skills/bundled/`) and the skill library's built-in one, which the work skill requires and every code job gets in its
+credentials dir. Two texts drift, and two versions of one name on one job make the record unclear. A job in a repository
+with its own copy of the skill (a workflow repository's `workflow-orchestrate`) followed that copy, but nothing recorded
+which one it used. And a fan-out key was the job's: a Run again, a new job of the same issue, filed its sub-tasks again.
+
+**The change.**
+- **One text.** `src/skills/bundled/` is gone. `hopper-skill` serves the skill library's built-in skill of the name
+  (`src/skills/library.ts`, `SERVED_LINES` in `catalog.ts`): the same files and the same **library skill version** as
+  the work skill's files carry, so `skill.loaded`'s `version` and `job.work_skill_chosen`'s `requires` name one version.
+  The built-in `orchestrate` text took part 1's fan-out key and resume steps.
+- **The repository's own copy.** The skill tells a job that works in a repository with its own copy to follow it (the
+  repository's rules win) and to say so: `sh "$HOPPER_SKILL" orchestrate --repo-copy DIR`. `hopper-skill` reads, with
+  the machine's git, the folder's path in its repository, the git tree and the commit that hold it, and whether it has
+  changes, and sends them; the hopper checks them (`repoCopyOf`: a relative path with no `..`, at most 160 characters, an
+  object id of 40 or 64 hex) and records `skill.loaded` with `repoCopy` beside the hopper's own `version`. A folder in no
+  git repository, or in no commit, is refused by the script (exit 2) before anything is sent. The job's timeline reads
+  `follows the repository's own orchestrate at <path> (tree …, commit …[, with changes]), not the hopper's <version>`
+  (`skillLoadedLine`, `ui/src/model/skills.ts`). A job in a repository with no copy is unchanged, and so is a job in a
+  workflow repository that never says `--repo-copy`: the hopper adds nothing to the repository and reads nothing from it.
+- **A fan-out key is the issue's.** The resend-key replay (`replayOfIssue`, `src/github-proxy/sub-issue-links.ts`) looks
+  first at the job's own requests, then at those of earlier jobs of the same work item (the same `source.key`). So a Run
+  again files a sub-task with the same key, learns the issue an earlier job filed (`replayed`), and files nothing twice. A
+  job of another issue with the same key files its own. A random resend key is unique, so the wider scope changes nothing
+  for it.
+
+**Decisions.**
+- **The job reports the copy; the hopper does not look for it.** Copies have no fixed name or place (`workflow-orchestrate`
+  under `.agents/skills/`, a `.claude/skills/` stub), and only the job knows which one it follows. The hopper reads
+  nothing from the work tree, so every harness and machine works the same way.
+- **The git tree is the copy's version.** It is a content hash git already keeps; the hopper does not hash the files
+  again, and a copy with changes not yet committed says so (`changed`).
+- **The hopper's version stays on the record** beside the copy, so a reader sees both.
+- **The scope of a fan-out key is the work item**, not a new store: the events already hold every key and its answer.
+- **Out of scope.** The issue's scope correction keeps the workflow repositories as they are, so the hopper's other
+  assumptions about them (part 1's "left" list) stay. No other workflow skill is served by name: `work`, `research` and
+  `proposal` reach every job through the skill library already (#1911), and no job needs another one now.
+
+**Verification:** `test/skills/served-skills.test.ts` (the served skill is the library's built-in one, and part 1's copy
+is gone; the catalog; the load and a missing file; the text names the hopper's protocol and `--repo-copy`; `repoCopyOf`
+and its refusals); `test/integration/orchestrate-skill.test.ts` (the real daemon, `hopper-skill` and `hopper-gh`: the
+file in the credentials dir and the load are one text at one version; a Run again's sub-task replayed and another issue's
+filed; a repository's own copy recorded with its tree, commit and changes; a folder in no git repository refused);
+`test/integration/orchestrate-fan-out.test.ts` (end to end: a job loads the skill, files a sub-task with a fan-out key and
+waits on it; the child is a request card, a person approves it, its job opens its pull request, the merge closes the
+child; the parent is woken, files the sub-task again — replayed, one child on GitHub — and finishes);
+`test/ui/skills.test.ts` (the timeline line).
 
 ## The cloud link (issue #467, part 1, 2026-10-17)
 
@@ -28238,7 +28290,7 @@ orchestrate skill" — could not be sure the job had it, and the `orchestrate` s
   another name.
 - **`orchestrate` is a library skill, not a second delivery path.** Issue #1909 (open) adds an `orchestrate` skill to the
   broker's catalog (`hopper-skill`). This part ships the library's own; #1909 can deliver the library's files and drop its
-  copy, so one text exists.
+  copy, so one text exists (done in #1909 part 2: "Library skills through hopper-skill").
 
 **Verification:** `test/domain/skill-library.test.ts` (`requires:` in its three forms, the refusals, the credentials of
 several skills, the job's line); `test/integration/skill-library.test.ts` (the built-in list with `orchestrate`, and `work`
@@ -28247,7 +28299,7 @@ requires `orchestrate`, and one not in the library: the files, the event's `requ
 required skill reaches the next job and not a later start of this one); `test/ui/skills.test.ts` and
 `test/ui/skills-view.test.ts` (the requires line, the timeline line).
 
-## Conditional skills (issue #1924, parts 1 to 3, 2026-10-18)
+## Conditional skills (issue #1924, parts 1 to 4, 2026-10-18)
 
 **Problem.** A job that changed infrastructure code opened its pull request and ended done while most of its `terraform
 plan` checks were red and one plan replaced a resource. The plan summary showed the delete, but nothing made the job read
@@ -28355,8 +28407,36 @@ skill's machine-checkable criteria itself before it takes the job as done.
 - **The name is `gitops-deploy`, not `gitops`.** A built-in skill wins over a user's own skill of the same name, and
   `gitops` is a likely name for one a user made already.
 
-**Left for later parts.** The Skills page's editor for the skill rules (they are set through the API now). Done criteria
-on GitLab merge requests and on pull requests that ship a part.
+**As built (part 4).**
+- **A part is checked too** (`partCriteriaMiss`, `src/sources/github/done-criteria.ts`). When the job's own open pull request
+  that ships a part ("Part of #N", `partPullRequest`) is ready, the done check reads its done criteria as for one that closes
+  the issue. One not met, or not known: the job is no part done; the miss is said in the same words (`PR #N: done criteria of
+  skill …`), so the cause is **Done criteria unmet** and the job reworks. A merged part is not read again: yolo mode read the
+  criteria before its own merge, or a person merged it.
+- **GitLab merge requests** (`src/gitlab/done-criteria.ts`). The GitLab source takes the job's done criteria and allowed
+  deletes as the GitHub source does. On the job's newest ready merge request that closes its issue: the checks are the jobs of
+  its head pipeline (`GET …/pipelines/:id/jobs`; `success` passing, `failed` and `canceled` failing, `skipped` unknown, any
+  other pending; no head pipeline, no check); a job's text is its log (`GET …/jobs/:id/trace`, its last 1,000,000
+  characters), read only for a finished job a `plan-destroy` criterion names; the comments are its notes but GitLab's own
+  lines, written or edited since its head commit (`GET …/repository/commits/:sha`); the changed files are its diffs' old and
+  new paths (`GET …/merge_requests/:iid/diffs`; more than 2,000 diffs: not all named). A miss says `MR !N: done criteria of
+  skill …`, which the cause **Done criteria unmet** reads as it reads `PR #N`. Yolo mode's merge (`followMergeRequest`) asks
+  the same just before it merges: a criterion not met, or a `person-merges` that applies, is kept as `mergeError` and asked
+  again at the next follow. An issue closed by a merged merge request, or a merge request merged since the job began, is
+  judged as before.
+- **A rule names a GitLab project in a subgroup.** A rule's `repos` take a path of two or more parts (`group/subgroup/name`),
+  as a GitLab job's repository is its project's whole path.
+
+**Decisions (part 4).**
+- **A part meets the criteria before it ends partly done.** A part merges on its own, in yolo mode once its checks pass, and
+  its plan applies like any other: a part that replaces a resource is the same hazard as a whole change that does.
+- **Pipeline jobs are the checks, and their logs are the check output.** GitLab has no check run with a summary; the plan
+  summary is in the job's log or in a note. Only the logs a plan criterion names are read, from their end, so a long log costs
+  one bounded read.
+- **The words are shared.** The GitLab miss and hold use the GitHub source's texts (`missText`, `holdText`), so the
+  assessor, the brief and the Pull requests card read them the same way.
+
+**Left for later parts.** The Skills page's editor for the skill rules (they are set through the API now).
 
 **Verification:** `test/domain/conditional-skills.test.ts` (a rule's match and why, its problems, the settings' change,
 done.json and its refusal, the plan's destroy counts, each miss, the prompt line, the delivery paths);
@@ -28373,4 +28453,8 @@ checked only when a changed file matches or the files are not known; an allowed 
 snapshot); part 3: `test/sources/github-yolo-done-criteria.test.ts` (a plan that replaces a resource holds yolo mode's
 merge, met later it merges, a person-merges change held and one outside its paths merged, Merge now still merges, no
 done-check miss), `test/domain/conditional-skills.test.ts` (`person-merges` in done.json, `mergeHolds`, the built-in
-`gitops-deploy` skill), `test/ui/skills.test.ts` (its timeline line).
+`gitops-deploy` skill), `test/ui/skills.test.ts` (its timeline line); part 4: `test/sources/github-done-criteria.test.ts` (a
+part whose plan replaces a resource is not partly done, met it is, a merged part not read again), `test/gitlab/done-criteria.test.ts`
+(over a fake GitLab: a plan job's log that replaces a resource with the pipeline green is not done and reworks, a plan job not
+passed or none, a plan in a note since the head commit, a paths skill, a closed issue as before, yolo mode held and then
+merged, a person-merges path held), `test/domain/conditional-skills.test.ts` (a rule naming a GitLab project in a subgroup).

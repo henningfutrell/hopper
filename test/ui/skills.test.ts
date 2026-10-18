@@ -3,7 +3,7 @@
 // draft and what is wrong with them, and the line a job's timeline shows for the work skill it got.
 import { describe, expect, it } from 'vitest';
 import {
-  draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, ruleLine, settingsNaming, sourceLine, workSkillChosenLine,
+  draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, ruleLine, settingsNaming, skillLoadedLine, sourceLine, workSkillChosenLine,
   conditionalSkillsChosenLine,
 } from '../../ui/src/model/skills.ts';
 import type { SkillLibraryView } from '../../src/domain/skill-library.ts';
@@ -74,6 +74,16 @@ describe('a draft of a skill', () => {
     expect(draftProblem('triage', [...ok, { path: ' ', text: '' }])).toMatch(/every file needs a path/);
     expect(draftProblem('triage', [...ok, { path: 'SKILL.md', text: '' }])).toMatch(/SKILL\.md is there twice/);
     expect(draftProblem('triage', [...ok, { path: '../x', text: '' }])).toMatch(/no file path in a skill/);
+  });
+});
+
+describe('a skill the job loaded, on its timeline (issue #1909)', () => {
+  it('names the skill, its version, and the repository\'s own copy the job follows', () => {
+    expect(skillLoadedLine({ skill: 'kube', asset: 'cluster/prod' })).toBe('loaded kube for cluster/prod');
+    expect(skillLoadedLine({ skill: 'orchestrate', version: 'a'.repeat(16) })).toBe(`loaded orchestrate ${'a'.repeat(8)}`);
+    expect(skillLoadedLine({ skill: 'orchestrate', version: 'a'.repeat(16), asset: 'notes.md' })).toBe(`loaded orchestrate ${'a'.repeat(8)}, file notes.md`);
+    expect(skillLoadedLine({ skill: 'orchestrate', version: 'a'.repeat(16), repoCopy: { path: '.agents/skills/workflow-orchestrate', tree: 'b'.repeat(40), commit: 'c'.repeat(40), changed: true } }))
+      .toBe(`follows the repository's own orchestrate at .agents/skills/workflow-orchestrate (tree ${'b'.repeat(8)}, commit ${'c'.repeat(8)}, with changes), not the hopper's ${'a'.repeat(8)}`);
   });
 });
 

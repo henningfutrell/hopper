@@ -310,12 +310,17 @@ export function worksOnAnotherIssue(pr: { body: string; headRef?: string }, repo
  * first; undefined: none.
  */
 export async function partlyDone(api: GitHubApi, job: Job): Promise<string | undefined> {
+  return (await partPullRequest(api, job))?.url;
+}
+
+/** The pull request `partlyDone` names, with its state (issue #1924 part 4: an open one's done criteria are read); undefined: none. */
+export async function partPullRequest(api: GitHubApi, job: Job): Promise<{ url: string; state: string } | undefined> {
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
   const parts = (await api.referencingPullRequests(repo, number))
     .filter((pr) => isPartOf(pr, repo, number) && (isOwnOrReworked(pr, job) || isUpdatedBy(pr, job)) && !reworkUnpushed(pr, job)
       && (pr.state === 'merged' || (pr.state === 'open' && isReady(pr))));
-  return parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.url;
+  return parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 }
 
 /**

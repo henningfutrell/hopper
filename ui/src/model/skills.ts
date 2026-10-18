@@ -89,6 +89,16 @@ export function workSkillChosenLine(c: WorkSkillChosen): string {
   return `${c.kind}: ${c.name} ${shortVersion(c.version)} (${c.seq === 0 ? 'built-in' : `version ${c.seq}`}), by ${FROM[c.from]}${requires}${missing}`;
 }
 
+/** `skill.loaded` (issue #582) as its timeline line: for a built-in library skill (issue #1909) its version, the file, or the repository's own copy the job follows. */
+export function skillLoadedLine(d: { skill: string; asset?: string; version?: string; repoCopy?: { path: string; tree: string; commit: string; changed: boolean } }): string {
+  if (d.repoCopy) {
+    const c = d.repoCopy;
+    return `follows the repository's own ${d.skill} at ${c.path} (tree ${shortVersion(c.tree)}, commit ${shortVersion(c.commit)}${c.changed ? ', with changes' : ''})${d.version ? `, not the hopper's ${shortVersion(d.version)}` : ''}`;
+  }
+  if (d.version) return `loaded ${d.skill} ${shortVersion(d.version)}${d.asset ? `, file ${d.asset}` : ''}`;
+  return `loaded ${d.skill}${d.asset ? ` for ${d.asset}` : ''}`;
+}
+
 /** The skills a library skill requires, the ones the library does not have said so; undefined when it requires none. */
 export function requiresLine(view: SkillLibraryView, skill: Pick<LibrarySkillSummary, 'requires'>): string | undefined {
   if (!skill.requires?.length) return undefined;

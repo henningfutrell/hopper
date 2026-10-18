@@ -1,0 +1,1 @@
+- A job that follows its own repository's copy of the planning skill now shows which copy it used, and running a job again no longer files its sub-tasks a second time.

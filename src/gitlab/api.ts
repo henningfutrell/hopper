@@ -3,7 +3,8 @@
 // label. For a job (part 3, "Jobs through GitLab"): a project's default branch, an issue's label events and notes (its
 // origin), and the hopper's labels on an issue. For a job's merge request (issue #1642, "A GitLab job's merge request"): one
 // issue, and the merge requests that close it, an open one with its head pipeline; one merge request, and the hopper's merge
-// of it at the head it read (part 2, yolo mode). Plain fetch; a list is paged by GitLab's `x-next-page` header. The token goes
+// of it at the head it read (part 2, yolo mode). For a job's done criteria (issue #1924 part 4, "Conditional skills"): a
+// pipeline's jobs, a job's log, a merge request's notes and changed files, and a commit's time. Plain fetch; a list is paged by GitLab's `x-next-page` header. The token goes
 // in the `PRIVATE-TOKEN` header only, never in a URL or a log line.
 import type { GitLabIssue } from '../domain/gitlab-account.ts';
 
@@ -35,6 +36,16 @@ export interface GitLabApi {
   mergeRequest(project: string, iid: number): Promise<GitLabMergeRequest>;
   /** Merges a merge request at head `sha`: GitLab refuses it when the head moved, or it may not be merged (a refusal throws). */
   merge(project: string, iid: number, sha: string): Promise<void>;
+  /** The jobs of pipeline `pipelineId` of `project` (the newest try of each), with their status as GitLab says it. */
+  pipelineJobs(project: string, pipelineId: number): Promise<{ id: number; name: string; status: string }[]>;
+  /** The log of job `jobId` of `project`: its last `MAX_LOG` characters, where a plan summary ends. */
+  jobLog(project: string, jobId: number): Promise<string>;
+  /** A merge request's notes written by people or bots, not GitLab's own lines, each with its last change. */
+  mergeRequestNotes(project: string, iid: number): Promise<{ body: string; at: string }[]>;
+  /** The files a merge request changes (each path, old and new); `cut`: GitLab gave more than the hopper reads. */
+  mergeRequestFiles(project: string, iid: number): Promise<{ files: string[]; cut: boolean }>;
+  /** When commit `sha` of `project` was committed; undefined: GitLab did not say. */
+  commitTime(project: string, sha: string): Promise<string | undefined>;
 }
 
 /**
@@ -46,6 +57,8 @@ export interface GitLabMergeRequest {
   iid: number; url: string; state: 'opened' | 'closed' | 'merged' | 'locked';
   draft: boolean; conflicting: boolean; createdAt: string; mergedAt?: string; pipeline?: string;
   sha?: string; updatedAt?: string; target?: string; source?: string;
+  /** Its head pipeline's id, read with `pipeline` (issue #1924 part 4: its jobs, for the done criteria). */
+  pipelineId?: number;
 }
 
 /** Who added or removed a label of an issue. `userId` absent: GitLab did not say. */
@@ -59,6 +72,8 @@ export class GitLabNotFound extends Error {}
 
 /** Pages read at most per list: 100 items each. */
 const MAX_PAGES = 20;
+/** The characters of a job's log the hopper reads, from its end (issue #1924 part 4). */
+export const MAX_LOG = 1_000_000;
 const TIMEOUT_MS = 15_000;
 
 type Json = Record<string, unknown>;
@@ -83,13 +98,14 @@ const mergeRequestOf = (m: Json): GitLabMergeRequest => ({
 });
 /** A merge request with its head pipeline's status, from GitLab's answer for one. */
 const withPipeline = (one: Json): GitLabMergeRequest => {
-  const status = str((one.head_pipeline as Json | null | undefined)?.status);
-  return { ...mergeRequestOf(one), ...(status ? { pipeline: status } : {}) };
+  const pipeline = one.head_pipeline as Json | null | undefined;
+  const status = str(pipeline?.status);
+  return { ...mergeRequestOf(one), ...(status ? { pipeline: status } : {}), ...(typeof pipeline?.id === 'number' ? { pipelineId: pipeline.id } : {}) };
 };
 
 export function createGitLabApi(o: { baseUrl: string; token: string; fetch?: typeof fetch }): GitLabApi {
   const get = o.fetch ?? fetch;
-  const call = async (path: string, write?: { method: 'PUT'; body: Json }): Promise<{ status: number; body: unknown; next?: string }> => {
+  const call = async (path: string, write?: { method: 'PUT'; body: Json }): Promise<{ status: number; body: unknown; text: string; next?: string }> => {
     const res = await get(`${o.baseUrl}/api/v4${path}`, {
       ...(write ? { method: write.method, body: JSON.stringify(write.body) } : {}),
       headers: { 'PRIVATE-TOKEN': o.token, accept: 'application/json', ...(write ? { 'content-type': 'application/json' } : {}) },
@@ -100,7 +116,7 @@ export function createGitLabApi(o: { baseUrl: string; token: string; fetch?: typ
     let body: unknown;
     try { body = text ? JSON.parse(text) : undefined; } catch { body = undefined; }
     const next = res.headers.get('x-next-page') ?? '';
-    return { status: res.status, body, ...(next ? { next } : {}) };
+    return { status: res.status, body, text, ...(next ? { next } : {}) };
   };
   const ok = async (path: string, write?: { method: 'PUT'; body: Json }): Promise<unknown> => {
     const r = await call(path, write);
@@ -188,6 +204,30 @@ export function createGitLabApi(o: { baseUrl: string; token: string; fetch?: typ
     },
     async merge(project, iid, sha) {
       await ok(`/projects/${encodeURIComponent(project)}/merge_requests/${iid}/merge`, { method: 'PUT', body: { sha } });
+    },
+    async pipelineJobs(project, pipelineId) {
+      const list = await pages(`/projects/${encodeURIComponent(project)}/pipelines/${pipelineId}/jobs`);
+      return list.map((j) => ({ id: Number(j.id), name: str(j.name), status: str(j.status) }));
+    },
+    async jobLog(project, jobId) {
+      const path = `/projects/${encodeURIComponent(project)}/jobs/${jobId}/trace`;
+      const r = await call(path);
+      if (r.status === 404 || r.status === 410) throw new GitLabNotFound(`GitLab answered ${r.status} to GET ${path}`);
+      if (r.status >= 300) throw new Error(`GitLab answered ${r.status} to GET ${path}`);
+      return r.text.slice(-MAX_LOG);
+    },
+    async mergeRequestNotes(project, iid) {
+      const list = await pages(`/projects/${encodeURIComponent(project)}/merge_requests/${iid}/notes?sort=asc&order_by=created_at`);
+      return list.filter((n) => n.system !== true).map((n) => ({ body: str(n.body), at: str(n.updated_at) || str(n.created_at) }));
+    },
+    async mergeRequestFiles(project, iid) {
+      const list = await pages(`/projects/${encodeURIComponent(project)}/merge_requests/${iid}/diffs`);
+      const files = [...new Set(list.flatMap((d) => [str(d.old_path), str(d.new_path)]).filter(Boolean))];
+      return { files, cut: list.length >= MAX_PAGES * 100 };
+    },
+    async commitTime(project, sha) {
+      const c = await ok(`/projects/${encodeURIComponent(project)}/repository/commits/${encodeURIComponent(sha)}`) as Json | undefined;
+      return str(c?.committed_date) || undefined;
     },
   };
 }
