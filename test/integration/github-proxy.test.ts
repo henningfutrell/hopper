@@ -33,10 +33,11 @@
 //     And a required child is routed (issue #1510, test/integration/routed-children.test.ts)
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
-//   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
+//   Scenario: a job whose machine cannot reach the hopper is queued again, and the machine takes no new job (issues #695, #1920)
 //     Given a machine where the reach check finds no hopper at the URL the job would be given
 //     When a job starts there
-//     Then it fails at once: "this machine cannot reach the hopper at <url>", with the action, and no file is kept there
+//     Then it is queued again, never failed, and no file is kept there
+//     And the machine takes no new job for a while: the job waits, saying why and what to do
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -317,15 +318,15 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect((await hopperGh(t.root, env, ['auth', 'login'])).code).toBe(2);
   });
 
-  it('fails a job whose machine cannot reach the hopper at its start, saying why and what to do; no file is kept there (issue #695)', async () => {
+  it('queues a job whose machine cannot reach the hopper again, never fails it, and holds the machine, saying why and what to do (issues #695, #1920)', async () => {
     const t = await start();
     t.reach.unreached = `this machine cannot reach the hopper at ${t.app.url}: Could not resolve host: hopper`;
     const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools' });
-    const failed = await t.app.waitForStatus(job.id, 'failed', 10000);
-    expect(failed.error).toContain(`this machine cannot reach the hopper at ${t.app.url}: Could not resolve host: hopper`);
-    expect(failed.error).toContain('Settings → Artifacts');
-    expect(t.reach.asked).toEqual([t.app.url]);
-    expect(t.held.has(job.id)).toBe(false);
+    const requeued = await waitFor(async () => (await t.app.events()).find((e) => e.type === 'job.requeued' && e.jobId === job.id), { what: 'the job queued again' });
+    expect(requeued.data).toMatchObject({ from: 'running', reason: expect.stringContaining(`this machine cannot reach the hopper at ${t.app.url}: Could not resolve host: hopper`) });
+    const held = await waitFor(async () => { const j = await t.app.job(job.id); return j.holdReason ? j : undefined; }, { what: 'the job held' });
+    expect(held).toMatchObject({ status: 'held', holdReason: expect.stringMatching(/reaches the hopper.*Settings → Artifacts/) });
+    expect([t.reach.asked, t.held.has(job.id), (await t.app.events()).some((e) => e.type === 'job.failed')]).toEqual([[t.app.url], false, false]);
   });
 
   it('checks that the machine reaches the hopper at the URL the job is given, before the job runs (issue #695)', async () => {

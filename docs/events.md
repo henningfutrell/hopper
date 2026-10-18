@@ -209,7 +209,7 @@ Version 1 (`docs/schemas/job.cancelled.v1.json`). A job was cancelled. `reason`:
 
 ## `job.requeued`
 
-Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (restart recovery, or a question answered or closed). `reason` is a free string.
+Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (restart recovery, a question answered or closed, or its machine out of reach of the hopper at its start). `reason` is a free string.
 
 | field | type | required |
 |---|---|---|

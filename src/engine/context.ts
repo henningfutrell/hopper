@@ -7,6 +7,7 @@ import type { Checkpoints } from './checkpoints.ts';
 import type { JobMoveData } from './lost-move.ts';
 import type { JobRunData } from './job-run.ts';
 import type { JobLeases } from './leases.ts';
+import type { ReachHolds } from './reach-holds.ts';
 import type { WaitReads } from './wait-checks.ts';
 
 export interface EngineOptions {
@@ -122,6 +123,8 @@ export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' 
   checkpoints?: Checkpoints;
   /** This hopper's job leases (issue #1662). */
   leases: JobLeases;
+  /** The machines a job's start found out of reach of the hopper (issue #1920): they take no new job for a while. Absent: none is held. */
+  reachHolds?: ReachHolds;
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();
