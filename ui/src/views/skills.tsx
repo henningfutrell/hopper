@@ -1,6 +1,6 @@
 // Skills (issue #1911, design.md "The Skills page"): the skill library's own top-level view. Work skills: which library
 // skill each kind of work gets, for every repository and per repository (POST /ui/api/work-skills; the next job gets a
-// change, never a running one). Library: each skill with its source and version; a person creates one, edits one of their
+// change, never a running one). Skill rules: the conditional skills a job gets beside it (skill-rules.tsx, issue #1924). Library: each skill with its source and version; a person creates one, edits one of their
 // own (a new version), duplicates any one to change it, removes one no setting names, imports one from a folder of a GitHub
 // repository, or refreshes an imported one (skill-library.tsx). The page reads
 // GET /api/skill-library once, and each change answers the new view. Loading, an error with Try again, or the list.
@@ -15,6 +15,7 @@ import { KIND_LABEL, kindRows, repoRows } from '@/model/skills';
 import { useCanAdmin } from '@/store/selectors';
 import type { SkillLibraryView, WorkKind } from '../../../src/domain/skill-library.ts';
 import { changeLibrary, LibrarySkill, SkillEditor, SkillImport } from './skill-library';
+import { SkillRules } from './skill-rules';
 
 type Load = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; view: SkillLibraryView };
 
@@ -115,6 +116,7 @@ export function Skills() {
   return (
     <div data-slot="skills" className="space-y-4">
       <WorkSkills view={view} onChange={set} />
+      <SkillRules view={view} onChange={set} />
       <Panel title="Library" icon={BookOpen} count={view.skills.length} bodyClassName="space-y-3"
         action={authed && (
           <div className="flex gap-1">

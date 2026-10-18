@@ -50,7 +50,50 @@ export const ruleLine = (r: SkillRule): string => [
   ...(r.repos?.length ? [`repository ${r.repos.join(' or ')}`] : []),
   ...(r.labels?.length ? [`label ${r.labels.join(' or ')}`] : []),
   ...(r.kinds?.length ? [`kind of work ${r.kinds.map((k) => KIND_LABEL[k]).join(' or ')}`] : []),
+  ...(r.paths?.length ? [`the change touches ${r.paths.join(' or ')}`] : []),
 ].join(' and ');
+
+/** Each skill rule in its order, with its line; `index` is its place in the list the save sends. */
+export const ruleRows = (view: SkillLibraryView): { index: number; skill: string; line: string }[] =>
+  (view.workSkills.rules ?? []).map((r, index) => ({ index, skill: r.skill, line: ruleLine(r) }));
+
+/** A skill rule as its editor holds it (issue #1924 part 5): each list of words as one text, the kinds as boxes. */
+export interface RuleDraft { skill: string; repos: string; labels: string; kinds: WorkKind[]; paths: string }
+
+/** A new rule's draft: the first library skill, no condition yet. */
+export const emptyRuleDraft = (view: SkillLibraryView): RuleDraft => ({ skill: view.skills[0]?.name ?? '', repos: '', labels: '', kinds: [], paths: '' });
+
+export const ruleDraftOf = (r: SkillRule): RuleDraft => ({
+  skill: r.skill, repos: (r.repos ?? []).join(', '), labels: (r.labels ?? []).join(', '), kinds: [...(r.kinds ?? [])], paths: (r.paths ?? []).join(', '),
+});
+
+const words = (text: string): string[] => text.split(/[\s,]+/).filter((w) => w !== '');
+
+/** The draft as the rule a save sends, as the daemon keeps it (keptRule): repositories lowercased, empty conditions dropped. */
+export function ruleOfDraft(d: RuleDraft): SkillRule {
+  const repos = words(d.repos).map((r) => r.toLowerCase());
+  const labels = words(d.labels);
+  const paths = words(d.paths);
+  return {
+    skill: d.skill,
+    ...(repos.length ? { repos } : {}), ...(labels.length ? { labels } : {}), ...(d.kinds.length ? { kinds: [...d.kinds] } : {}), ...(paths.length ? { paths } : {}),
+  };
+}
+
+// The daemon's checks (src/domain/conditional-skills.ts skillRuleProblem), copied: the UI imports types only.
+const RULE_REPO = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/;
+
+/** What stops a save of this rule, in words, or undefined. */
+export function ruleDraftProblem(view: SkillLibraryView, d: RuleDraft): string | undefined {
+  if (!view.skills.some((s) => s.name === d.skill)) return `${d.skill || 'The skill'} is not in the library.`;
+  const r = ruleOfDraft(d);
+  if (!r.repos && !r.labels && !r.kinds && !r.paths) return 'Name at least one condition: a repository, a label, a kind of work or a path.';
+  const repo = r.repos?.find((x) => !RULE_REPO.test(x));
+  if (repo !== undefined) return `${repo} is no repository: write owner/name, or a GitLab project's group/name.`;
+  const path = r.paths?.find((p) => p.startsWith('/') || p.split('/').includes('..'));
+  if (path !== undefined) return `${path} is no relative path glob.`;
+  return undefined;
+}
 
 /** The first files of a new skill: a SKILL.md with its name and a description to fill in. */
 export const newSkillFiles = (name: string): Record<string, string> => ({
