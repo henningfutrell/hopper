@@ -49,7 +49,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a pass over many of them finds stale, with a fixed number of reads of the jobs (`pass-reads.ts`, issue #1411); what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), a poison failure, whose assessment throws, handed to a person with the reason (`poison.ts`, issue #1961), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a pass over many of them finds stale, with a fixed number of reads of the jobs (`pass-reads.ts`, issue #1411); what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
@@ -11693,6 +11693,57 @@ under its error in the Queue and the Dashboard.
 Open decisions taken conservatively, each one entry to change: no model judges a failure (rules only; an unclear
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
 only through a problem's redirect; the profile is its own view; the assessor never opens or drafts a GitHub issue.
+
+## The failure assessor under crashes, poison failures and retry storms (issue #1961, 2026-10-18)
+
+**Why.** The assessor (#509) and Needs a person (#516) had tests for the usual path and a clean restart only. Not tested:
+a hopper killed during an assessment, a failure whose own data makes the assessment throw, many jobs that fail at once,
+and two hosts on one database.
+
+**Kill points** (`src/sagas/kill-points.ts`, "The crash harness"). The assessment passes two:
+`failures:assess:before-commit`, in its transaction after the record, the assessment, the events, the problem and the
+hand-off are written and before it commits, and `failures:assess:after-commit`, just after the commit. A kill at the first
+leaves nothing of that assessment (Postgres rolls the transaction back); at the second, all of it.
+
+**A poison failure** (`src/failures/poison.ts`). A failure whose assessment throws — for example a job spec with no
+payload, as an older build or a broken plugin can leave — is handed to a person in one transaction: a record with the
+decision "a person", the class "job", the reason `the hopper could not assess this failure: <the error>` and that summary,
+the assessment on the job, `job.assessed`, and its hand-off. It is never assessed again. If that throws too, the hopper says
+so once and leaves the job; it never blocks the assessment of the other failures.
+
+**What it found.**
+- **A poison failure stopped every assessment after it.** The throw ended the sweep's backlog pass at that job, on each
+  sweep. Now the poison failure is handed to a person, and the pass goes on.
+- **A host that did not hold the failure sweep's lease never swept again.** The sweep under way was cleared in the pass's
+  `finally`. A pass that ended before its first `await` — the lease held by another host, or a throw — ran that `finally`
+  before the pass was assigned as the sweep under way. The resolved pass then stood as the sweep under way for good: the
+  host never asked the lease again, so when the host that held it was killed, no host assessed the failures it left. The
+  sweep under way is now cleared after the pass ends (`.finally` on the pass).
+
+**What the tests show.**
+- `test/crash/assess-kill.test.ts`: hosts A (armed) and B on one database, A holding the failure sweep's lease. Failed jobs
+  are written into the database, failed two minutes ago, as a restart leaves them. A is killed at its third assessment, at
+  each kill point. B takes the sweep and assesses each failure once: one record, one decision, one `job.assessed`, one open
+  hand-off for each job-specific failure, and a pending retry for the transient one. B is killed too and a host C starts:
+  each hand-off is still open, and nothing is assessed again.
+- `test/integration/failures-poison.test.ts`: a poison failure between four other failures. Each is assessed; the poison
+  one is handed to a person with the reason, once.
+- `test/integration/failures-storm.test.ts`: 110 jobs fail in one sync, 60 with a reset connection and 50 with a full disk,
+  with a retry limit of 2 and a backoff of 1 s. Each failed job is assessed once. Each signature is one problem, opened
+  once, that its jobs join ("Disk full on local", and "Recurring: read ECONNRESET" once three failed). Each run again by the
+  assessor comes at or after its retry time, and no item runs more than the retry limit allows. Each failure writes at
+  most one grouping and one hand-off, and each job's end is reported to its source at most once (the manual source stands
+  for GitHub's labels). Each failure for a person has one open hand-off.
+
+**Decisions.**
+- **The failed jobs of the crash test are written into the database, not run.** A host's manual source is in its own
+  process, so a host that is killed takes the items it offered with it. A failed job written two minutes back is what a
+  restart leaves, and the sweep's backlog assesses it the same way.
+- **The poison test's poison is a spec with no payload.** It is data a store can hold that the assessment cannot read. The
+  fix catches any throw of the assessment, so the test does not need a seam to throw.
+
+**Not covered here.** A kill between a run again the assessor makes and its record (the host that goes on needs the item
+from a source of its own); a kill while a person resolves a hand-off; a retry storm through the GitHub source.
 
 ## A failure the job reported as a hopper bug (issue #1147, 2026-10-14)
 
