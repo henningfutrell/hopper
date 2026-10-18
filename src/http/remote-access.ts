@@ -331,6 +331,8 @@ export function createRemoteAccess(o: {
           if (!kept.ok) throw new Error(kept.error);
         },
         minted(p, provisioned, d) {
+          // Kept already: a try again after a crash between this write and the saga's record of it (issue #1954).
+          if (saved.enabled && saved.provider === p && saved.domain === d.domain && JSON.stringify(saved.provisioned) === JSON.stringify(provisioned)) return;
           if (!saved.enabled || saved.provider !== p || saved.provisioned || saved.domain !== d.domain) throw new Error('the remote access settings no longer ask for this tunnel');
           save({ ...saved, provisioned }, d.by);
           o.logger.info(`hopper: remote access: minted a tunnel at ${PROVIDER_NAME[p]}: ${tunnelUrlOf(provisioned.domain)}`);
