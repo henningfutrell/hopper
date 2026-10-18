@@ -21,11 +21,19 @@ if [ ! -f "$lib/main.ts" ]; then
 fi
 # The trap is set before anything starts, and a stop that comes before the client's pid is kept (between its start and
 # `client=$!`) is only noted: the loop stops once it knows the pid, so the client still ends before herdr (issue #1884).
+# A child is told to stop only once it runs its own program: between its fork and its exec it still has this shell's
+# trap, and dash drops a TERM that comes there, so the wait for the client never ended (issue #1950). Until the exec
+# its command line is this shell's.
 herdr= client= starting= stopping=
+self=$(tr '\0' ' ' < "/proc/$$/cmdline")
+halt() {
+  while [ "$(tr '\0' ' ' 2>/dev/null < "/proc/$1/cmdline")" = "$self" ]; do sleep 0.05; done
+  kill "$1" 2>/dev/null || :
+}
 stop() {
   if [ -n "$starting" ]; then stopping=1; return; fi
-  if [ -n "$client" ]; then kill "$client" 2>/dev/null; wait "$client" 2>/dev/null || :; fi
-  [ -z "$herdr" ] || kill "$herdr" 2>/dev/null
+  if [ -n "$client" ]; then halt "$client"; wait "$client" 2>/dev/null || :; fi
+  [ -z "$herdr" ] || halt "$herdr"
   exit 0
 }
 trap stop TERM INT
@@ -42,5 +50,5 @@ while :; do
   [ -z "$stopping" ] || stop
   code=0
   wait "$client" || code=$?
-  [ "$code" = 75 ] || { kill "$herdr" 2>/dev/null; exit "$code"; }
+  [ "$code" = 75 ] || { halt "$herdr"; exit "$code"; }
 done
