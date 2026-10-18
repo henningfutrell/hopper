@@ -3,7 +3,8 @@
 // skills ship with the hopper; a user creates one, edits it (a new version), or duplicates a built-in one to change it.
 // Which skill each kind of work gets is the user's setting, per repository over the user's own, over the built-in default.
 // A job's work skill is chosen once, at its first start, and kept: an edit or a new setting reaches the next job, never a
-// running one. Not a skill of the broker (src/skills/, what the hopper sets up for a box), and not a run skill. Pure.
+// running one. A skill may require others (its SKILL.md's `requires:`): they go to the job beside it, each version kept for
+// the job too. Not a skill of the broker (src/skills/, what the hopper sets up for a box), and not a run skill. Pure.
 
 /** What a job was asked to do, for its work skill: the work itself (`code`), research, or a proposal; as its job cost kind. */
 export const WORK_KINDS = ['code', 'research', 'proposal'] as const;
@@ -13,7 +14,7 @@ export type WorkKind = typeof WORK_KINDS[number];
 export const workKindOf = (spec: { research?: true; proposal?: true }): WorkKind => (spec.research ? 'research' : spec.proposal ? 'proposal' : 'code');
 
 /** The built-in library skills, by name, and the one each kind of work gets while no setting names another. */
-export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal'] as const;
+export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal', 'orchestrate'] as const;
 export const DEFAULT_WORK_SKILLS: Readonly<Record<WorkKind, string>> = { code: 'work', research: 'research', proposal: 'proposal' };
 
 /** The file every library skill has: what the job reads first. */
@@ -22,6 +23,8 @@ export const SKILL_FILE = 'SKILL.md';
 export const SKILL_MAX_FILES = 32;
 export const SKILL_MAX_FILE = 64 * 1024;
 export const SKILL_MAX_BYTES = 256 * 1024;
+/** The skills a job gets beside its work skill, at most: those it requires, and theirs. */
+export const SKILL_MAX_REQUIRED = 8;
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/;
 
@@ -92,6 +95,8 @@ export interface LibrarySkillSummary {
   description: string;
   latest: Omit<LibrarySkillVersion, 'files'>;
   versions: number;
+  /** The skills its newest version requires, by name. */
+  requires: string[];
 }
 
 /** As GET /api/skill-library answers it: every skill, the built-in ones first, and the choice of work skills. */
@@ -191,35 +196,72 @@ export function skillFilesProblem(files: Record<string, string>): string | undef
     if (files[path].length > SKILL_MAX_FILE) return `${path}: a file of a skill holds at most ${SKILL_MAX_FILE / 1024} KiB`;
     bytes += Buffer.byteLength(files[path], 'utf8');
   }
-  return bytes > SKILL_MAX_BYTES ? `a skill holds at most ${SKILL_MAX_BYTES / 1024} KiB; this is ${bytes} bytes` : undefined;
+  if (bytes > SKILL_MAX_BYTES) return `a skill holds at most ${SKILL_MAX_BYTES / 1024} KiB; this is ${bytes} bytes`;
+  const requires = skillRequires(files[SKILL_FILE]!);
+  const bad = requires.find((n) => skillNameProblem(n));
+  if (bad !== undefined) return `${SKILL_FILE} requires ${JSON.stringify(bad)}: no skill name`;
+  return requires.length > SKILL_MAX_REQUIRED ? `${SKILL_FILE} requires at most ${SKILL_MAX_REQUIRED} skills; this names ${requires.length}` : undefined;
+}
+
+const frontMatterOf = (text: string): string | undefined => /^---\n([\s\S]*?)\n---/.exec(text)?.[1];
+
+/**
+ * The skills a SKILL.md requires, by name, each once: its front matter's `requires:` — names on its line, apart by commas,
+ * in brackets or not, or one `- name` a line below it. None without one.
+ */
+export function skillRequires(text: string): string[] {
+  const lines = frontMatterOf(text)?.split('\n') ?? [];
+  const at = lines.findIndex((l) => /^requires:/.test(l));
+  if (at < 0) return [];
+  const inline = lines[at]!.slice('requires:'.length).trim().replace(/^\[|\]$/g, '');
+  const listed = inline !== '' ? inline.split(',') : [];
+  for (const line of inline !== '' ? [] : lines.slice(at + 1)) {
+    const item = /^\s+-\s*(.*)$/.exec(line);
+    if (!item) break;
+    listed.push(item[1]!);
+  }
+  return [...new Set(listed.map((n) => n.trim().replace(/^["']|["']$/g, '')).filter((n) => n !== ''))];
 }
 
 /** A SKILL.md's description: its front matter's `description:`, else its first heading or line. */
 export function skillDescription(text: string): string {
-  const front = /^---\n([\s\S]*?)\n---/.exec(text)?.[1];
+  const front = frontMatterOf(text);
   const described = front?.split('\n').find((l) => l.startsWith('description:'))?.slice('description:'.length).trim();
   if (described) return described.replace(/^["']|["']$/g, '').slice(0, 300);
   const body = front === undefined ? text : text.slice(front.length + 8);
   return (body.split('\n').map((l) => l.replace(/^#+\s*/, '').trim()).find((l) => l !== '') ?? '').slice(0, 300);
 }
 
-/** The work skill a job got (issue #1911): kept on its timeline as `job.work_skill_chosen`, and what each later start delivers. */
-export interface WorkSkillChosen { kind: WorkKind; name: string; version: string; seq: number; from: WorkSkillFrom }
+/** A skill a job got beside its work skill, because the work skill (or one it requires) requires it: the version kept for the job. */
+export interface RequiredSkill { name: string; version: string; seq: number }
+
+/**
+ * The work skill a job got (issue #1911): kept on its timeline as `job.work_skill_chosen`, and what each later start delivers.
+ * `requires`: the skills it got beside it; `missing`: the ones required that it did not get (not in the library, or past
+ * the limit). Both absent on a choice made before skills required others.
+ */
+export interface WorkSkillChosen { kind: WorkKind; name: string; version: string; seq: number; from: WorkSkillFrom; requires?: RequiredSkill[]; missing?: string[] }
 
 /** The variable that names the work skill's SKILL.md on the job's machine. */
 export const WORK_SKILL_VARIABLE = 'HOPPER_WORK_SKILL';
 /** Where the work skill's files go under the job's credentials dir. */
 export const workSkillDir = (name: string): string => `work-skill/${name}`;
 
-/** The line the job's prompt carries for its work skill, after the job rules. */
-export const workSkillRule = (c: WorkSkillChosen): string =>
-  `[hopper work skill] This job's skill for its kind of work (${c.kind}) is ${c.name}, version ${c.version}. When the variable ${WORK_SKILL_VARIABLE} is set, read the file it names before you start, and follow it where the job rules and the repository's rules do not say otherwise. Its other files are in the same directory.`;
+/** The line the job's prompt carries for its work skill, after the job rules: the skills it requires too, and those it did not get. */
+export function workSkillRule(c: WorkSkillChosen): string {
+  const requires = (c.requires ?? []).map((r) => `${r.name} (version ${r.version}): read its ${SKILL_FILE} in ../${r.name}/ beside the work skill's directory when the work skill says to.`);
+  const missing = (c.missing ?? []).map((n) => `The library has no skill ${n} that it requires: go on without it.`);
+  return [
+    `[hopper work skill] This job's skill for its kind of work (${c.kind}) is ${c.name}, version ${c.version}. When the variable ${WORK_SKILL_VARIABLE} is set, read the file it names before you start, and follow it where the job rules and the repository's rules do not say otherwise. Its other files are in the same directory.`,
+    ...requires.map((r) => `It requires ${r}`), ...missing,
+  ].join(' ');
+}
 
 /** The job rules followed by the work skill's line. */
 export const withWorkSkill = (jobRules: string, c: WorkSkillChosen): string => (jobRules === '' ? workSkillRule(c) : `${jobRules}\n${workSkillRule(c)}`);
 
-/** The work skill's files as the job's credentials files, and the variable that names its SKILL.md. */
-export const workSkillCredentials = (c: WorkSkillChosen, files: Record<string, string>): { files: Record<string, string>; paths: Record<string, string> } => ({
-  files: Object.fromEntries(Object.entries(files).map(([path, text]) => [`${workSkillDir(c.name)}/${path}`, text])),
-  paths: { [WORK_SKILL_VARIABLE]: `${workSkillDir(c.name)}/${SKILL_FILE}` },
+/** The files of the work skill (first) and of the skills it requires as the job's credentials files, each skill in a directory of its own, and the variable that names the work skill's SKILL.md. */
+export const workSkillCredentials = (skills: readonly { name: string; files: Record<string, string> }[]): { files: Record<string, string>; paths: Record<string, string> } => ({
+  files: Object.fromEntries(skills.flatMap((s) => Object.entries(s.files).map(([path, text]) => [`${workSkillDir(s.name)}/${path}`, text]))),
+  paths: { [WORK_SKILL_VARIABLE]: `${workSkillDir(skills[0]!.name)}/${SKILL_FILE}` },
 });

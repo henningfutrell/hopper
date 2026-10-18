@@ -1,5 +1,5 @@
 // The Library panel of the Skills page (issue #1911, design.md "The Skills page"): one library skill — its name, source,
-// version and description, its files on demand — and what a person does to it: Edit one of their own (a new version, the
+// version and description, the skills it requires, its files on demand — and what a person does to it: Edit one of their own (a new version, the
 // name stays), Duplicate any one under a new name (a built-in one is changed this way), Remove one of their own after a
 // confirm, which no setting may name; Refresh an imported one from its repository. The editor writes a skill's files: a
 // SKILL.md and the text files beside it. The import form names a folder of a GitHub repository to import a skill from.
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, SessionRejected } from '@/lib/api';
-import { draftFiles, draftProblem, draftRows, newSkillFiles, settingsNaming, shortVersion, SKILL_FILE, sourceLine, type DraftFile } from '@/model/skills';
+import { draftFiles, draftProblem, draftRows, newSkillFiles, requiresLine, settingsNaming, shortVersion, SKILL_FILE, sourceLine, type DraftFile } from '@/model/skills';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 import type { LibrarySkillSummary, LibrarySkillVersion, SkillLibraryView } from '../../../src/domain/skill-library.ts';
@@ -83,6 +83,7 @@ export function LibrarySkill({ view, skill, onChange }: { view: SkillLibraryView
   const [open, setOpen] = useState<Open>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
   const named = settingsNaming(view, skill.name);
+  const requires = requiresLine(view, skill);
   const read = (kind: 'files' | 'edit') => {
     setOpen({ kind });
     readSkill(skill.name).then((s) => setOpen({ kind, files: s.files }), (e: Error) => setOpen({ kind, error: e.message }));
@@ -120,6 +121,7 @@ export function LibrarySkill({ view, skill, onChange }: { view: SkillLibraryView
         </div>
       </div>
       {skill.description && <p className="text-xs text-muted-foreground">{skill.description}</p>}
+      {requires && <p className="text-xs text-muted-foreground">This skill {requires}. A job gets them beside it.</p>}
       {named.length > 0 && <p className="text-xs text-muted-foreground">Chosen for {named.join('; ')}.</p>}
       {open.kind === 'duplicate' && (
         <div className="flex flex-wrap items-center gap-2">

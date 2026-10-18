@@ -216,8 +216,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     jobProxy(job, machine) {
       const url = o.url(machine);
       if (!url) return undefined;
-      // The job's work skill (issue #1911): the version chosen at its first start, its files beside the scripts.
-      const chosen = workSkillOf(o.store, job); const skill = workSkillCredentials(chosen.chosen, chosen.files);
+      // The job's work skill (issue #1911): the version chosen at its first start, its files and the skills it requires beside the scripts.
+      const chosen = workSkillOf(o.store, job); const skill = workSkillCredentials(chosen.skills);
       return {
         url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
