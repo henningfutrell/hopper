@@ -9,15 +9,19 @@
 import { randomUUID } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, type Asset, type AssetKind, type MintDecision, type MintRequest } from '../domain/access.ts';
 import { machineOfLane } from '../domain/raised-by.ts';
-import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
+import type { Job, JobStatus, NewEvent, OperationProfile } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
 import { HOLD_TIMEOUT, JEV_APPROVER, type SandboxRequestView } from '../domain/sandbox-approvals.ts';
 import { nameWithoutEmail } from '../domain/users.ts';
+import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
 import { needsOf, SANDBOX_SKILL, TEMPLATE_SKILL, type AskAbout, type TemplateAnswer } from './template-request.ts';
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
 import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
+
+/** What a job refused for its trust can do (issue #655 part 16): nothing it asks raises its trust. */
+const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the minimum trust in Settings → Access. Find another way.';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
@@ -42,6 +46,8 @@ export interface SkillUser {
   sandbox(template: string, job: Job, about?: AskAbout): SandboxRequestView;
   /** The job's sandbox ask waits on the template for a person (issue #1001): their approval then covers the job's run. */
   sandboxWaits?(template: string, job: Job): void;
+  /** Why needs are outside the job's trust stamp (issue #655 part 16): asked before a template is made for them. Absent: inside. */
+  outsideStamp?(profiles: readonly OperationProfile[], job: Job): string | undefined;
 }
 
 /** A vault secret a box may be given, as its metadata says (issue #583: the skill a person gave it for, the kind, their words). */
@@ -141,6 +147,10 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     const told = name === TEMPLATE_SKILL || name === SANDBOX_SKILL ? aboutOf(name, why, field(body, 'plan'), field(body, 'needs')) : undefined;
     if (typeof told === 'string') return no(400, told);
     const about: AskAbout | undefined = told;
+    // Issue #655 part 16: needs above the job's trust are refused by policy, before a template is made for them.
+    const needs = name === TEMPLATE_SKILL || name === SANDBOX_SKILL ? needsOf(field(body, 'needs')) : undefined;
+    const outside = needs === undefined || typeof needs === 'string' ? undefined : user.outsideStamp?.(needs, job);
+    if (outside) return no(403, `${MIN_TRUST_DECLINER} refuses these needs: ${outside}. ${MIN_TRUST_ADVICE}`);
     if (name === TEMPLATE_SKILL) {
       const t = await user.requestTemplate(field(body, 'needs'), job, about);
       if ('reason' in t) return no(t.status, t.reason);
@@ -214,6 +224,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     /** Why the job's sandbox runs of `template` are declined: a person or Jev said no (issue #655 part 13), or none answered in time (part 9). */
     function declinedText(template: string, r: SandboxRequestView): string {
       if (r.declinedBy === HOLD_TIMEOUT) return `the hopper declined the sandbox runs of template ${template}: ${r.reason ?? 'no person answered in time'}. Find another way.`;
+      if (r.declinedBy === MIN_TRUST_DECLINER) return `${MIN_TRUST_DECLINER} declined the sandbox runs of template ${template}: ${r.reason ?? 'the job\'s trust is below it'}. ${MIN_TRUST_ADVICE}`;
       if (r.declinedBy === JEV_APPROVER) return `Jev declined the sandbox runs of template ${template}: ${r.reason ?? 'no reason given'}. Find another way.`;
       return `a person declined the sandbox runs of template ${template}: ${r.reason ?? 'no reason given'}. Find another way.`;
     }

@@ -287,6 +287,7 @@ export function createAccess(o: AccessOptions): Access {
       o.repo.addTuple(approval, by, at);
       await changed();
     },
+    minTrusts: () => minTrusts(o.repo.liveTuples()),
     async setMinTrust(profile, level, by) {
       if (setMinTrust(o.repo, profile, level, { by, at: now(), gaps: trustGapsOf(model().dsl) })) await changed();
     },

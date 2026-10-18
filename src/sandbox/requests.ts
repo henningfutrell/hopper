@@ -17,6 +17,8 @@
 // part 13: where the approvals would approve a run with no person and sandbox strictness is `standard` for a template not
 // of low blast radius, Jev's `sandbox-request` check reads it first. Active, the request waits for Jev: allow approves it
 // (`JEV_APPROVER`), hold leaves it for a person, deny declines it and lowers the job's trust; no sure pick holds it.
+// Issue #655 part 16: before all of that, a run of a template with a profile whose minimum trust the job's stamp does not
+// meet is declined at once by the minimum trust (`MIN_TRUST_DECLINER`), and lowers no trust; set later, it stops the run.
 import { randomUUID } from 'node:crypto';
 import type { MinorDecisionMode, MinorDecisionOutcome } from '../domain/minor-decisions.ts';
 import { checkedVerdict, jevChecks, sandboxCheckText, type SandboxHistoryItem } from '../domain/sandbox-check.ts';
@@ -25,8 +27,9 @@ import {
 } from '../domain/sandbox-approvals.ts';
 import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
 import type { ReadPolicy } from '../domain/read-policy.ts';
+import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake, type SandboxStrictness } from '../domain/sandbox-strictness.ts';
-import type { NewEvent } from '../domain/types.ts';
+import type { NewEvent, OperationProfile } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 
 export interface SandboxRequestsOptions {
@@ -37,6 +40,11 @@ export interface SandboxRequestsOptions {
   live(jobId: string): boolean;
   /** Whether a run of the job may be approved with no person (issue #655 part 7: its trust stamp is `approved` or above). Absent: yes. */
   autoApprovable?(jobId: string): boolean;
+  /**
+   * Why `profiles` are outside the job's trust stamp (issue #655 part 16): one has a minimum trust its level does not meet.
+   * Read at each ask and each `runnable`. Absent: none is.
+   */
+  outsideStamp?(jobId: string, profiles: readonly OperationProfile[]): string | undefined;
   /** Sandbox strictness, brake 2 (issue #655 part 8), read at each ask. Absent: standard, so the toggles decide. */
   strictness?(): SandboxStrictness;
   jobTitle?(jobId: string): string | undefined;
@@ -83,6 +91,8 @@ export interface SandboxRequests {
    * approved with no person counts only while the job and the brake still let it (issue #655 parts 7 and 8).
    */
   runnable(jobId: string): string[];
+  /** Why `profiles` are outside the job's trust stamp (issue #655 part 16), asked before a template is made for them; undefined: inside. */
+  outside(jobId: string, profiles: readonly OperationProfile[]): string | undefined;
   /** Declines each request that waited `SANDBOX_HOLD_MS` for a person, by `HOLD_TIMEOUT` (issue #655 part 9); how many. */
   expire(): number;
 }
@@ -123,6 +133,9 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
    * the template's radius; a person's remembered write approvals that cover the template (issue #1001); a person's
    * approval of the template the job asked for or waited on.
    */
+  /** Why a run of the job's `template` is outside its trust stamp (issue #655 part 16); undefined: inside, or no such template. */
+  const outside = (jobId: string, template: string): string | undefined => o.outsideStamp?.(jobId, o.template(template)?.profiles ?? []);
+
   /** Whether a run of the job's `template` may be approved with no person: its trust stamp and the brake let it. */
   const withNoPerson = (jobId: string, template: string): boolean =>
     o.autoApprovable?.(jobId) !== false && !(o.strictness && personBrake(o.strictness(), o.template(template)));
@@ -188,6 +201,11 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       };
       requests.set(r.id, r);
       event(r, 'vault.sandbox_requested');
+      const out = outside(jobId, template);
+      if (out) {
+        decline(r, out, MIN_TRUST_DECLINER);
+        return { ...r };
+      }
       const approver = approverOf(jobId, template);
       const m = approver ? jevMode(template) : 'off';
       if (approver && m === 'active') {
@@ -221,9 +239,10 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     runnable(jobId) {
       const person = (by: string | undefined): boolean => by !== undefined && !NO_PERSON.includes(by);
       return [...requests.values()]
-        .filter((r) => r.jobId === jobId && r.state === 'approved' && (person(r.approvedBy) || withNoPerson(jobId, r.template)))
+        .filter((r) => r.jobId === jobId && r.state === 'approved' && (person(r.approvedBy) || withNoPerson(jobId, r.template)) && !outside(jobId, r.template))
         .map((r) => r.template);
     },
+    outside: (jobId, profiles) => o.outsideStamp?.(jobId, profiles),
     expire: forget,
   };
 }

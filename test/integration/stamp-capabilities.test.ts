@@ -6,7 +6,7 @@
 // Feature: gate 2 checks a request against the stamp
 //   Scenario: a need above the job's trust is refused before a template is made
 //     Given sandbox YOLO on, and the minimum trust owner to write on the AWS account
-//     When a running job below owner asks `sandbox --needs "write/aws-account/…"`, or a need step of it
+//     When a running job below owner asks `sandbox --needs "write/aws-account/…"`, `sandbox-template`, or a need step of it
 //     Then each is refused (403) with why, no template is asked, and the job's trust stamp is as it was
 //     When the admin clears the minimum
 //     Then the same ask is approved by skip sandbox approval
@@ -73,6 +73,9 @@ describe('gate 2 checks a request against the stamp (issue #655 part 16)', () =>
     const refused = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(refused.code).not.toBe(0);
     expect(refused.stdout + refused.stderr).toContain(`the job's trust stamp is ${level}, below the minimum trust owner to write on aws-account 123456789012`);
+    const template = await skill(a, creds, ['sandbox-template', '--needs', NEEDS, ...ASK]);
+    expect(template.code).not.toBe(0);
+    expect(template.stdout).toContain('the minimum trust refuses these needs');
     const step = await rawRequest(a.url, { method: 'POST', path: `/job/step?needs=${encodeURIComponent(NEEDS)}&key=step-0001&command=true`, headers: { authorization: `Bearer ${proxy}` } });
     expect(step.status).toBe(403);
     expect(step.text).toContain('below the minimum trust owner');

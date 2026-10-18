@@ -220,6 +220,8 @@ export interface VaultAccess extends TemplateApprovals {
   decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
   /** Whether a user may read or change a shared secret (issue #718): OpenFGA's answer, the readers told at each ask; a deny when it cannot be had. */
   decideSharedSecret(ask: SharedSecretAsk): Promise<AccessAnswer>;
+  /** Each operation profile's minimum trust (issue #655 part 15): what a job's stamp may ask for at gate 2 (part 16). Absent: none. */
+  minTrusts?(): MinTrust[];
 }
 
 /** What intake asks of access (issue #652): whether a GitHub login may start a user's jobs, the user's trusted actors told. */

@@ -4,7 +4,7 @@ import type {
   AccessAnswer, AccessDecisionRecord, ApiTokenAsk, ApiTokenBoxAsk, CheckMintRequest, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
 } from '../domain/types.ts';
 import type { TrustLevel } from '../domain/trust-stamp.ts';
-import type { GitLabActorRef } from '../domain/access.ts';
+import type { GitLabActorRef, MinTrust } from '../domain/access.ts';
 
 /** Who asks to see an artifact (issue #624): a user of the hopper, or the holder of a public link. */
 export type ArtifactViewer = { kind: 'user'; userId: string } | { kind: 'link'; userId: string; shareId: string };
@@ -69,6 +69,8 @@ export interface Access extends TemplateApprovals {
   tryCheck(request: Omit<MintRequest, 'requester'> & { template: string; level?: TrustLevel }, by: string): Promise<AccessDecisionRecord>;
   /** A profile's minimum trust (issue #655, part 15), or none (`null`): no job below it is its requester. 400: the model lacks the trust relations. */
   setMinTrust(profile: OperationProfile, level: TrustLevel | null, by: string): Promise<void>;
+  /** Each profile's minimum trust (part 15), as kept: what a job's stamp may ask for at gate 2 (part 16). */
+  minTrusts(): MinTrust[];
   /** The template approved for the operation profile (the vault's gate writes this, issue #558); pushed at once. */
   approve(template: string, profile: OperationProfile, by: string): Promise<void>;
   revoke(approval: number, by: string): Promise<void>;
