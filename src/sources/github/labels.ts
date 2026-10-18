@@ -2,7 +2,7 @@
 // and the one a person sets: `hopper:backburner` keeps an issue out (never picked up). After a job ends done (issue
 // #579): `hopper:pr-ready` while its pull request waits for review, `hopper:partly-done` while the part it shipped waits,
 // `hopper:pr-closed` once its pull request was closed without a merge, `hopper:blocked` when no pull request was found for
-// it (issue #1891); each keeps the issue out until it changes.
+// it or its item is blocked (issue #1891; the label mirror, label-mirror.ts); each keeps the issue out until it changes.
 // An issue labelled `hopper@<name>` is addressed to the hopper of that name (issue #159). An issue labelled `hopper:win`
 // (or `hopper:windows`) needs Windows: its job goes only to a Windows machine (issues #918, #1350, src/domain/windows-jobs.ts).
 
@@ -36,5 +36,5 @@ export const HOPPER_LABELS: readonly { name: string; color: string; description:
   { name: LABEL_PR_READY, color: '0e8a16', description: 'hopper opened a pull request for this; it waits for review' },
   { name: LABEL_PARTLY_DONE, color: 'c2e0c6', description: 'hopper shipped part of this; the rest runs once that pull request merges' },
   { name: LABEL_PR_CLOSED, color: 'd93f0b', description: 'hopper\'s pull request was closed without a merge; remove to run it again' },
-  { name: LABEL_BLOCKED, color: 'd93f0b', description: 'hopper finished this but found no pull request for it; remove to run it again' },
+  { name: LABEL_BLOCKED, color: 'd93f0b', description: 'hopper is blocked on this and waits on a person; remove to run it again' },
 ];
