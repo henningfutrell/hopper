@@ -20,7 +20,7 @@ import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { burnLaunched, type Problems } from './burn-launched.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
-import { phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
+import { NO_SECRET_COPY, phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
 import { BOX_LABEL, sweepHomes, USER_LABEL } from './owned.ts';
 import { trace } from '@opentelemetry/api';
 import { liveReader, type LivePoint } from '../telemetry/live.ts';
@@ -269,6 +269,8 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     const at = await places.forCheck(userId);
     if (!at) return { exit: 125, problem: noPlace() };
     if (offline && at.runtime.kind === 'kubernetes') return { exit: 125, problem: NO_OFFLINE_POD };
+    // A box step's vault secrets (issue #1875) never go to a machine of the user's: it may be the job's own.
+    if (box.files?.secrets && Object.keys(box.files.secrets).length > 0 && at.machine !== LOCAL) return { exit: 125, problem: NO_SECRET_COPY };
     const ledger: SandboxRun = { id: run.step, userId, jobId: run.jobId, template: run.template, box: box.name, machine: at.machine, startedAt: o.clock.now().toISOString() };
     o.runs.start(ledger);
     stepping.add(box.name); steppingAt.set(box.name, at.machine === LOCAL ? 'local' : 'machine');

@@ -29,7 +29,7 @@ describe('GitHub source report', () => {
     expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(1);
   });
 
-  it('finished with the issue open: claimed → pr-ready, no comment, the issue left to the merge that closes it (issues #187, #579); the pull request to follow kept', async () => {
+  it('finished with the issue open and no pull request open: claimed → blocked, no comment, the follow looks again (issues #187, #579, #1891)', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, {
       id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
@@ -38,12 +38,22 @@ describe('GitHub source report', () => {
     const claimed = await source.report({ kind: 'claimed', job });
     gh.calls.length = 0;
     const state = await source.report({ kind: 'finished', job });
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
+    // No open pull request: never hopper:pr-ready with none (issue #1891).
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:blocked']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
     // No ready pull request closes it: one that references it, or one named for it on its branch, is looked for (issue #637).
     expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'ensureLabel', 'addLabels']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(state).toEqual({ ...claimed, follow: 'open' });
+  });
+
+  it('finished with a draft pull request open: claimed → pr-ready, the pull request named to follow (issue #1891)', async () => {
+    const { gh, source } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: '2026-10-02T10:01:00.000Z', isDraft: true });
+    const job = jobForIssue(1, { status: 'finished', result: 'ok' });
+    const state = await source.report({ kind: 'finished', job });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
+    expect(state).toEqual({ pullRequest: pr.url, follow: 'open' });
   });
 
   it('finished, a proposal\'s job whose follow-ons go on with its work: the issue stays claimed, nothing to follow (issue #859)', async () => {
@@ -148,7 +158,7 @@ describe('GitHub source report', () => {
     const state = await source.report({ kind: 'finished', job });
     await source.report({ kind: 'finished', job: { ...job, sourceState: { source: state } } });
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:blocked']);
   });
 
   it('a huge result never reaches the issue', async () => {

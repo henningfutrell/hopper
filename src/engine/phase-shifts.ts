@@ -145,7 +145,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
       if (s.defaultMode === 'switch') switchJob(q, job, suggest.to, suggest.note, level, level);
       else {
         const f = forkJob(q, job, suggest.to, suggest.note, level);
-        if (f.parked) setImmediate(() => void releaseParked(c, store.jobs.get(job.id)!));
+        if (f.parked) setImmediate(() => { if (!c.stopping()) void releaseParked(c, store.jobs.get(job.id)!); }); // a stop and the store's close can come first (issue #828)
       }
       return s.defaultMode;
     },
@@ -165,7 +165,7 @@ export function resolveFork(c: EngineContext, fork: Job, p: ReviewItem): void {
   // `question`: its status at the decision (issue #570) — an answered one is why an acceptance delivered nothing.
   c.store.events.append({ type: 'job.fork_resolved', jobId: f.jobId, questionId: f.questionId, data: { forkId: fork.id, kind: p.kind, questionId: f.questionId, decision: accepted ? 'accept' : 'reject', delivered, question: was } });
   // Not answered by it: the question waits on a person again, its timeout from now.
-  if (!delivered && q?.status === 'open') setImmediate(() => c.questions.unparked(q.id));
+  if (!delivered && q?.status === 'open') setImmediate(() => { if (!c.stopping()) c.questions.unparked(q.id); }); // a stop and the store's close can come first (issue #828)
 }
 
 /**

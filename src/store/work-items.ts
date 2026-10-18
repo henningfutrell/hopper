@@ -1,7 +1,8 @@
 // The work-item ledger in the database (issue #1067, tenant migration 55): one row per work item, written only here, by
 // the pure reducer (src/domain/work-items.ts), in the same transaction as the event or the issue graph read that moves it
 // — so two daemons on one database cannot fork it. `rebuild` replays every event and the issue graph's nodes through the
-// same reducer: the migration's backfill and `hopper ledger rebuild`.
+// same reducer: the migration's backfill and `hopper ledger rebuild`. Each row keeps its owner, next check and deadline
+// (issue #1891, `checkOf`): what the item reconciler reads.
 import type { EventType } from '../domain/types.ts';
 import type { GraphNode } from '../domain/issue-graph.ts';
 import {
@@ -9,6 +10,7 @@ import {
   type LedgerJob, type WorkItem, type WorkItemLedger, type WorkItemState,
 } from '../domain/work-items.ts';
 import { LANDING_LEDGER_EVENTS, landingTargets } from '../domain/work-item-landing.ts';
+import { checkOf, ENDED_STATES } from '../domain/item-lifecycle.ts';
 import type { Db } from './db.ts';
 import { parse } from './context.ts';
 
@@ -26,6 +28,12 @@ export const WORK_ITEM_TABLE = `
   CREATE INDEX work_items_pull_request ON work_items (pull_request);
   CREATE TABLE work_items_applied (one INTEGER PRIMARY KEY CHECK (one = 1), seq BIGINT NOT NULL);
   INSERT INTO work_items_applied (one, seq) VALUES (1, 0)`;
+
+/**
+ * The owner, next check and deadline of each row (issue #1891, tenant migration 82): added by every rebuild when the table
+ * has none, so a rebuild of an older migration on a store from before them writes them too.
+ */
+const CHECK_COLUMNS = 'ALTER TABLE work_items ADD COLUMN IF NOT EXISTS owner TEXT, ADD COLUMN IF NOT EXISTS next_check_at TEXT, ADD COLUMN IF NOT EXISTS deadline TEXT';
 
 /** Tenant migration 55: the ledger's tables, filled from every event and the issue graph. */
 export const workItemLedger = (db: Db): void => {
@@ -56,10 +64,12 @@ function readsOf(node: GraphNode, readAt: string): { key: string; read: Paramete
 }
 
 const put = (db: Db, i: WorkItem): void => {
-  db.run(`INSERT INTO work_items (key, state, state_since, job_id, pull_request, version, body) VALUES (?, ?, ?, ?, ?, ?, ?)
+  const check = checkOf(i.state, i.stateSince);
+  db.run(`INSERT INTO work_items (key, state, state_since, job_id, pull_request, version, body, owner, next_check_at, deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state, state_since = EXCLUDED.state_since, job_id = EXCLUDED.job_id,
-      pull_request = EXCLUDED.pull_request, version = EXCLUDED.version, body = EXCLUDED.body`,
-  i.key, i.state, i.stateSince, i.jobId ?? null, i.pullRequest ?? null, i.version, JSON.stringify(i));
+      pull_request = EXCLUDED.pull_request, version = EXCLUDED.version, body = EXCLUDED.body, owner = EXCLUDED.owner,
+      next_check_at = EXCLUDED.next_check_at, deadline = EXCLUDED.deadline`,
+  i.key, i.state, i.stateSince, i.jobId ?? null, i.pullRequest ?? null, i.version, JSON.stringify(i), check?.owner ?? null, check?.nextCheckAt ?? null, check?.deadline ?? null);
 };
 
 /** How many events a rebuild reads at a time. */
@@ -67,6 +77,7 @@ const REBUILD_PAGE = 5000;
 
 /** Replay every event and the issue graph's nodes through the reducer, in place of the rows there are. Over `db` alone: the migration's backfill too. */
 export function rebuildWorkItems(db: Db): number {
+  db.exec(CHECK_COLUMNS);
   const jobs = new Map<string, LedgerJob>();
   for (const r of db.all(`SELECT ${JOB_COLUMNS} FROM jobs`)) {
     const j = jobOfRow(r);
@@ -184,6 +195,14 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
     inFlight() {
       const states = [...IN_FLIGHT_STATES];
       return inFlightOf(db.all(`SELECT body FROM work_items WHERE state IN (${states.map(() => '?').join(',')})`, ...states).map((r) => parse<WorkItem>(r.body)));
+    },
+    due(now, limit) {
+      const ended = ENDED_STATES.map(() => '?').join(',');
+      return db.all(`SELECT body FROM work_items WHERE state NOT IN (${ended}) AND (next_check_at IS NULL OR next_check_at <= ?) ORDER BY next_check_at NULLS FIRST, key LIMIT ?`, ...ENDED_STATES, now, limit)
+        .map((r) => parse<WorkItem>(r.body));
+    },
+    checked(key, version, nextCheckAt) {
+      db.run('UPDATE work_items SET next_check_at = ? WHERE key = ? AND version = ?', nextCheckAt, key, version);
     },
     rebuild: () => tx(() => rebuildWorkItems(db)),
     catchUp() {

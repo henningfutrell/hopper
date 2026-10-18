@@ -4892,7 +4892,7 @@ Version 1 (`docs/schemas/vault.write_forgotten.v1.json`). An admin forgot a reme
 
 ## `vault.grant_asked`
 
-Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, or a job's Windows sandbox step asked for a vault secret (issue #731), and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine and the template (a box), or the `windowsHost` (a step), and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
+Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, or a job's Windows sandbox step asked for a vault secret (issue #731), or its box step (issue #1875), and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine and the template (a box), the `windowsHost` (a Windows step), or the need `box` and the template (a box step), and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
 
 | field | type | required |
 |---|---|---|
@@ -4901,6 +4901,7 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 | `machine` | string | no |
 | `template` | string | no |
 | `windowsHost` | string | no |
+| `box` | string | no |
 | `name` | string | yes |
 
 ```json
@@ -5232,6 +5233,26 @@ Version 1 (`docs/schemas/work_item.issue_reopened.v1.json`). GitHub reopened the
 {
   "key": "https://github.com/owner/repo/issues/9",
   "via": "read"
+}
+```
+
+## `work_item.reconciled`
+
+Version 1 (`docs/schemas/work_item.reconciled.v1.json`). The item reconciler corrected a work item that broke its state's promise (issue #1891, design.md "The item lifecycle"): `key` is the item's source key, `from` the state it found the item in. With `replay` (`type` and `data` of its job `jobId`'s end event, `job.finished`, `job.failed`, `job.cancelled` or `job.rejected`): the ledger had the item `queued` or `working` though that job, its newest, had ended, so the item is folded again from that end. With `cause`: the item is `blocked` — `no_pr` (in PR open past its deadline with no pull request named) or `stale` (in PR open past its deadline with no open pull request a job follows) —, and waits on a person in Failures. Moves the item only while it is still in `from`, so a second one changes nothing.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `from` | `waiting_for_approval` \| `queued` \| `working` \| `needs_you` \| `waiting_outside` \| `pr_open` \| `partly_done` \| `done` \| `failed` \| `blocked` \| `dropped` | yes |
+| `jobId` | string | no |
+| `cause` | `stale` \| `no_pr` | no |
+| `replay` | object | no |
+
+```json
+{
+  "key": "https://github.com/owner/repo/issues/9",
+  "from": "pr_open",
+  "cause": "no_pr"
 }
 ```
 
@@ -6731,7 +6752,7 @@ Version 1 (`docs/schemas/api_tokens.settings_changed.v1.json`). The hopper's adm
 
 ## `step.started`
 
-Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step started on its Windows host (issue #731), or in a box its own sandbox request started (issue #1004), or in a one-shot need box of a `template`, with the `needs` the vault minted its credentials for (issue #1007): `step` its id, the `host` or the `box`, its `command` (at most 300 characters), its timeout, the size of the inputs it sent and the `outputs` it asked back. Never its output.
+Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step started on its Windows host (issue #731), or in a box its own sandbox request started (issue #1004), or in a one-shot need box of a `template`, with the `needs` the vault minted its credentials for (issue #1007): `step` its id, the `host` or the `box`, its `command` (at most 300 characters), its timeout, the size of the inputs it sent and the `outputs` it asked back; `secrets`: the names of the vault secrets it was given (a Windows step; a box step, issue #1875). Never its output.
 
 | field | type | required |
 |---|---|---|
@@ -6761,7 +6782,7 @@ Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step st
 
 ## `step.finished`
 
-Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004; a need box, issue #1007): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back.
+Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004; a need box, issue #1007): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back, or its outputs held a vault secret's value and were not given (a box step, issue #1875).
 
 | field | type | required |
 |---|---|---|
@@ -6802,7 +6823,7 @@ Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a sandb
 
 ## `vault.step_delivered`
 
-Version 1 (`docs/schemas/vault.step_delivered.v1.json`). A vault secret was given to a running job's Windows sandbox step (issue #731): on the step's ssh connection to the Windows `host`, into the step's environment only, never to the job, a file or an argument. The secret's name, the host and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
+Version 1 (`docs/schemas/vault.step_delivered.v1.json`). A vault secret was given to a running job's Windows sandbox step (issue #731): on the step's ssh connection to the Windows `host`, into the step's environment only, never to the job, a file or an argument. Or to its box step (issue #1875): `host` the need box, the secret copied into it as a file, never into its environment or to the job. The secret's name, the host and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
 
 | field | type | required |
 |---|---|---|
@@ -6821,7 +6842,7 @@ Version 1 (`docs/schemas/vault.step_delivered.v1.json`). A vault secret was give
 
 ## `vault.step_refused`
 
-Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows sandbox step asked for a vault secret and the vault refused (issue #731): the job has no vault grant (a grant ask is opened), it is not at work, the vault holds no such secret, it is a minting credential, or it cannot be opened or read. `reason` says which; never a value.
+Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows sandbox step, or its box step (`host` the need box, issue #1875), asked for a vault secret and the vault refused (issue #731): the job has no vault grant (a grant ask is opened), it is not at work, the vault holds no such secret, it is a minting credential, or it cannot be opened or read. `reason` says which; never a value.
 
 | field | type | required |
 |---|---|---|

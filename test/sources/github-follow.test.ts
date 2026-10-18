@@ -217,11 +217,12 @@ describe('yolo mode and a pull request with no checks (issue #677)', () => {
 describe('a pull request the report could not name (issue #677)', () => {
   it('is found on the next sync and named, with what is seen of it: the card never stays "not checked yet"', async () => {
     const { gh, source } = withIssue();
-    // At the report, the only pull request is a draft: none is named.
-    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true });
+    // The report names no pull request: none was open then.
     const base = jobForIssue(1, { status: 'finished' });
     const state = await source.report({ kind: 'finished', job: base });
     expect(state).toEqual({ follow: 'open' });
+    expect(gh.issue(REPO, 1).labels).toContain('hopper:blocked');
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true });
     const up = await source.follow!({ ...base, sourceState: { source: state } });
     expect(up).toMatchObject({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: true } } });
   });

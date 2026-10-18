@@ -24,11 +24,13 @@ describe('a part on a branch named for the issue', () => {
     expect(await source.partlyDone!(job)).toBe(pr.url);
   });
 
-  it('is never the pull request a whole issue\'s report follows', async () => {
+  it('is never the pull request a whole issue\'s report follows: with none else open, it is followed as a part (issue #1891)', async () => {
     const { gh, source } = withIssue();
-    gh.openPartPullRequest(REPO, 1, { createdAt: AFTER, headRef: 'issue-1-first-part' });
+    const pr = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER, headRef: 'issue-1-first-part' });
     const state = await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished' }) });
-    expect(state).toEqual({ follow: 'open' });
+    expect(state).toEqual({ follow: 'open', pullRequest: pr.url, part: true });
+    expect(gh.issue(REPO, 1).labels).toContain('hopper:partly-done');
+    expect(gh.issue(REPO, 1).labels).not.toContain('hopper:pr-ready');
   });
 });
 

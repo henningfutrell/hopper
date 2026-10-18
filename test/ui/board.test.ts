@@ -41,7 +41,7 @@ describe('kpis', () => {
   it('every count is the length of the list it names, for any mix of statuses; failed is the ledger\'s (issue #1067)', () => {
     const jobs = STATUSES.flatMap((status, i) => Array.from({ length: i + 1 }, (_, n) => job(`${status}-${n}`, { status })));
     const b = jobBoard(jobs, []);
-    const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: 2, dropped: 0 };
+    const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: 2, blocked: 0, dropped: 0 };
     const k = kpis(b, [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)], items);
     expect(k).toEqual({
       waiting: b.waiting.length, held: b.waiting.filter((j) => j.status === 'held').length,

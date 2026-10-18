@@ -1,7 +1,8 @@
 // The labels the hopper owns on an issue, with the colour/description it creates them with,
 // and the one a person sets: `hopper:backburner` keeps an issue out (never picked up). After a job ends done (issue
 // #579): `hopper:pr-ready` while its pull request waits for review, `hopper:partly-done` while the part it shipped waits,
-// `hopper:pr-closed` once its pull request was closed without a merge; each keeps the issue out until it changes.
+// `hopper:pr-closed` once its pull request was closed without a merge, `hopper:blocked` when no pull request was found for
+// it (issue #1891); each keeps the issue out until it changes.
 // An issue labelled `hopper@<name>` is addressed to the hopper of that name (issue #159). An issue labelled `hopper:win`
 // (or `hopper:windows`) needs Windows: its job goes only to a Windows machine (issues #918, #1350, src/domain/windows-jobs.ts).
 
@@ -13,8 +14,9 @@ export const LABEL_REJECTED = 'hopper:rejected';
 export const LABEL_PR_READY = 'hopper:pr-ready';
 export const LABEL_PARTLY_DONE = 'hopper:partly-done';
 export const LABEL_PR_CLOSED = 'hopper:pr-closed';
+export const LABEL_BLOCKED = 'hopper:blocked';
 /** The labels a job's end leaves, any of which keeps the issue out; Run again takes them all off. */
-export const END_LABELS: readonly string[] = [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_PR_CLOSED];
+export const END_LABELS: readonly string[] = [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_BLOCKED];
 /** `hopper@<name>`: the issue is for the hopper whose source has `hopperName: <name>`. */
 export const ADDRESS_PREFIX = 'hopper@';
 /**
@@ -34,4 +36,5 @@ export const HOPPER_LABELS: readonly { name: string; color: string; description:
   { name: LABEL_PR_READY, color: '0e8a16', description: 'hopper opened a pull request for this; it waits for review' },
   { name: LABEL_PARTLY_DONE, color: 'c2e0c6', description: 'hopper shipped part of this; the rest runs once that pull request merges' },
   { name: LABEL_PR_CLOSED, color: 'd93f0b', description: 'hopper\'s pull request was closed without a merge; remove to run it again' },
+  { name: LABEL_BLOCKED, color: 'd93f0b', description: 'hopper finished this but found no pull request for it; remove to run it again' },
 ];

@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), what a quarantine takes back — the job's steps and its item's vault grant (`quarantine.ts`, issue #655 part 6), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
@@ -66,7 +66,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
-| `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
+| `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
@@ -2337,6 +2337,7 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
 | merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
 | closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
+| none named, one found open (issue #1891) | named from now on (`pullRequest`, `part` for a part); an issue the report left `hopper:blocked` gets `hopper:pr-ready`, or `hopper:partly-done` for a part, in its place |
 | still open, or none found yet, and the issue closed as not planned (issue #428) | abandoned: `job.pull_request_abandoned`; `follow: abandoned`, followed no more and never merged, yolo mode or not; the pull request is left as it is; `hopper:pr-ready`, `hopper:partly-done` and `hopper:failed` come off and no end label goes on. A person's Merge now or Close PR still goes through. Reopened with the pull request still open, reconciling (issue #763) follows it again |
 
 **Pull-based completion** (issue #428). The item is resolved upstream; the hopper only follows. Closed as completed — by
@@ -12312,6 +12313,13 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   the fifth attempt, leaves them `failed`. While the outbox tries again by itself the item's `writeBehind` is `running`, with
   its next `attempt` and the `error` of the try before (as issue #1194 part 8 had it); a failed row shows `failed` with why.
   The same act sent again sends failed rows again, from their first attempt.
+- **A reconnect needed holds the writes** (issue #1891). While the connected account is **expired** (`connected`, from
+  the account source), the outbox sends nothing. A call that fails once the account is expired — the token read refused,
+  or GitHub refused the token and the renewer ended the connection — leaves its rows `pending`, with the error and no
+  attempt counted: they are never `failed` for it, and no act is told it gave up. Later issues of the same batch make no
+  call. The action's own local change stays committed: the database is the source of truth. The owner gets the one notice
+  of the expired account (`connected_account.expired`), and every screen asks to connect again; once a connection is
+  there, the rows go through at the next send.
 - **Syncs never wait for it.** A discover lists what GitHub says. An issue with rows not sent is not taken (`held`): the
   sync neither overtakes the action (a job before its approved comments are read, before `hopper:done` is gone) nor undoes
   it. The listing is not overlaid with the rows' labels: a job taken on a label not yet removed would get its claim label
@@ -12405,7 +12413,7 @@ one press per cause where the hopper can move each item.
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
   tend its source refused (`tend_refused`); a parked job (`parked`); a job on a wait that names nothing it waits on (`wait_unnamed`,
   "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
-  item left in PR open with no pull request to wait on (`pr_open_stale`, issue #1231).
+  item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
   `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed`, `stranded` (else 400;
@@ -20727,6 +20735,56 @@ you's other rows keep their own sources. The Failures row already reads the ledg
 to 4); the rebuild runs on deploy (migrations 55, 57); no "Ready for review" (part 2): an open pull request says what it
 waits on (part 3). #1036, #994, #1057, #1064 and #1065 are closed already.
 
+## The item lifecycle (issue #1891, 2026-10-18)
+
+The problem: what happens to an issue after its job ends was not durable. A job's end with no ready pull request still
+put `hopper:pr-ready` on its issue and left its item in PR open with no pull request, so the item waited on nothing and
+Intake said its pull request waited for review (seen live: an issue whose every pull request was a part). An event after
+a job's end could move its item back to queued, and nothing moved it again (seen live: nine items queued in the ledger
+whose jobs had all finished). Nothing owned an item in that phase and nothing gave it a deadline.
+
+This is milestone 1, part 1: the promise of each state, a state that needs a reference, and a timed reconciler that
+corrects the ledger. The item saga in the `sagas` table, the label mirror through the GitHub outbox, the second look for a
+merged pull request that only mentions the issue, Run again and Won't do on a pull request closed without a merge twice,
+and the writes held while a sign-in has ended are the next parts.
+
+- **Each state's promise** (`src/domain/item-lifecycle.ts`, pure). Every **work item state** not ended has an **owner**
+  — `scheduler`, `lane_worker`, `github_observer`, `assessor`, `reconciler` or `person` —, how often it is checked, and
+  for PR open a **deadline**, an hour from `state_since` (issue #1231's rule). `done` and `dropped` have none. Each kind
+  of move names its owner too (`transitionOwner`). The ledger keeps the owner, the next check and the deadline of each
+  row as columns (`owner`, `next_check_at`, `deadline`; tenant migration 82, which also rebuilds the ledger; a rebuild
+  adds the columns when the table has none, so `hopper ledger rebuild` writes them too).
+- **`blocked`, a new work item state.** The item broke its state's promise and waits on a person; `blockedCause` says
+  why: `no_pr` (its job ended done naming no pull request) or `stale` (in PR open past its deadline with no open pull
+  request a job follows). Not active: a read of its issue's close settles it as done or dropped, and a new job of the item
+  takes it over. The job graph shows its issue as `waiting`.
+- **PR open needs a pull request** (`hasReference`). The reducer never writes `pr_open` with no pull request named: such
+  a move blocks the item as `no_pr`. The first look at its pull request (`job.pull_request_seen`) or its follow
+  (`job.pull_request_followed`) puts it in PR open again. So the migration's rebuild blocks every item left in PR open
+  with no pull request.
+- **No `hopper:pr-ready` with no pull request** (`src/sources/github/report.ts` `finished`). The report names the newest
+  ready pull request that closes the issue, references it or is on a branch named for it; else the newest open one of
+  those in any state of review; else the newest open part, with `hopper:partly-done`. None open: `hopper:blocked` (a new
+  end label, which keeps the issue out of Intake as the others do and comes off with Run again), and the follow looks
+  again at each sync. One it finds open swaps `hopper:blocked` for `hopper:pr-ready` (or `hopper:partly-done`); the follow's
+  end takes `hopper:blocked` off with the other waiting labels.
+- **The item reconciler** (`src/work-items/reconcile.ts`). Every 5 minutes, under the sweep lease `item-reconcile` (one host
+  of those on one database), it takes the items whose next check is due (`WorkItemLedger.due`, at most 200) and asks
+  `correctionOf`. An item queued or working whose job — the item's newest — ended, or one blocked as `no_pr` whose finished
+  job's report has named a pull request since, is folded again from that job's end event; an item in PR open past its
+  deadline is blocked (`no_pr` or `stale`). Each correction is one `work_item.reconciled` event, which the reducer applies
+  only while the item is still in the state it names (`from`): a second pass, or a second host, changes nothing. A
+  change newer than two minutes is left for the events in flight. An item that keeps its promise is checked again later
+  (`WorkItemLedger.checked`). It reads only the database: no GitHub call.
+- **Failures.** The stuck cause `pr_open_stale` lists the blocked items (`blockedStuck`): a `no_pr` item only after ten
+  minutes, as its report names its pull request a moment after the job's end.
+
+**Verification:** `test/domain/item-lifecycle.test.ts` (owners, deadlines, the corrections), `test/domain/work-items.test.ts`
+(PR open never with no pull request; the reconciled event, once), `test/work-items/reconcile.test.ts` (queued after its job
+finished folded again once, a rebuild replays it; a job's end with no pull request blocked, then in PR open when its report
+names one; PR open past its deadline blocked as stale; two hosts on one database, only the lease holder acts),
+`test/store/tenant-migration-82.test.ts`, `test/sources/github-report.test.ts` (blocked with none open; a draft named).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
@@ -22614,7 +22672,7 @@ on at a signed-in machine, with no person.
   - the machine that raised the question has a **signed-out tool** that keeps the job's executor off it;
   - the job names no machine of its own (`spec.machineId`: a person's or a routing rule's pin stays);
   - another machine is online, runs the job's executor, has no signed-out tool for it, and a usage source reads its tool
-    signed in as an identity (`signedInOf`): a machine with no usage source, or a read that failed, is not a target.
+    signed in as an identity (`connectedOf`): a machine with no usage source, or a read that failed, is not a target.
   It is not required that a lane is free there now: the job waits in the queue for one, as any job does.
 - **How.** The hopper takes a checkpoint of the job ("Checkpoints and resume elsewhere"), then, in one transaction, parks it
   (`recordPark`) and answers its question as `signed-out-move` (`SIGNED_OUT_MOVE_BY`, a trail attempt of role `fixed`, its
@@ -22646,7 +22704,7 @@ one, its usage source sets `Account.expiresAt` (ISO); the tool accounts carry it
 within a day (`EXPIRY_WARNING_MS`), or has ended, with "sign it in again from Accounts" (`signedOutLines`,
 `ui/src/model/tool-accounts.ts`, read against the server's minute).
 
-Tests: `test/decider/signed-out.test.ts` (`signedOutMove`, `signedInOf`, a job resuming elsewhere kept off),
+Tests: `test/decider/signed-out.test.ts` (`signedOutMove`, `connectedOf`, a job resuming elsewhere kept off),
 `test/integration/signed-out-move.test.ts` (a job held on a signed-out machine starts again on the signed-in one, its
 question answered by the move; it stays with no machine signed in; it stays with a checkpoint that holds work and no session),
 `test/herdr/startup-screens.test.ts` (the unsent text after the answer elsewhere), `test/http/tool-accounts.test.ts`,
@@ -22668,11 +22726,11 @@ in PR open ("waiting on its pull request: checks and the merge") with no job, an
   round after the update: the follow is the reconcile pass, and nothing is migrated.
 - **The next part reads the earlier part.** The done line says: a merged pull request with `Part of #N` is an earlier
   part; read its body first, and do the work it lists as left.
-- **What the follow cannot move is stuck work** (`src/domain/work-items.ts` `prOpenStuck`, `PR_OPEN_STUCK_MS`, an hour).
-  An item in PR open for an hour that names no open pull request, or whose job follows none (`following`), is in Stuck
-  work as `pr_open_stale`, by its job's id: "Items in PR open with no pull request to wait on". It has no bulk action: a
-  person looks at the issue, presses Run again when work is left, or closes the issue. The Failures view reads the
-  ledger's PR open items for it (`viewOf`).
+- **What the follow cannot move is stuck work.** An item in PR open for an hour that names no open pull request, or
+  whose job follows none (`following`), is blocked by the item reconciler (issue #1891, "The item lifecycle"), and a
+  blocked item is in Stuck work as `pr_open_stale`, by its job's id: "Items blocked with no pull request to wait on". It
+  has no bulk action: a person looks at the issue, presses Run again when work is left, or closes the issue. The Failures
+  view reads the ledger's blocked items for it (`viewOf`, `blockedStuck`).
 - Not changed: the done check still counts a merged pull request that refers to the issue as done. A part whose job ends
   done is caught by the follow above, so the item never waits on nothing.
 
@@ -24161,7 +24219,7 @@ the person (`identityName`: name, username, email or subject, the first the real
 - **An act is recorded by the verified email of the session's user** (`src/http/ui/sessions.ts` `personOf`). Every `by`
   a UI session or an API token writes — settings changes, approvals, grants, artifacts, promotions, vault changes, the
   instance's own settings — and every acting person (`ActingPerson.person`: notes, hand-offs, failures, pull request acts,
-  direct jobs, terminals) names it. `signedInOf` (`src/http/tenants.ts`) carries the user's email, read from the users
+  direct jobs, terminals) names it. `connectedOf` (`src/http/tenants.ts`) carries the user's email, read from the users
   when an act asks for it.
 - **A user with no email yet keeps the name the realm gave.** A GitHub-signed-in user from before part 7 has none until
   their next GitHub sign-in; a realm that vouches for no email gives none.
@@ -26152,10 +26210,8 @@ Python, no browser and no fonts, and behind the egress proxy a box cannot downlo
   template of the request's name that a person changed is a 409, as before. The ready answer names the sandbox ask by
   the template (`--template <name>`).
 
-**Not built here (left for later parts of issue #1875).** A box step gets the credentials the hopper mints for its
-template's operation profiles, never its vault secrets (`src/sandbox/need-steps.ts`): a step of a template with vault
-secrets must also get them in the box, after the job's vault grant, masked in the log, and never on the job's machine.
-Then the end-to-end test runs as one box step.
+Built in part 3 ("A box step's vault secrets"): a box step of a template with vault secrets gets them in its box, after
+the job's vault grant, masked in the log, and never on the job's machine.
 
 **Decisions:**
 - **An image by its short name only.** "A job never names an image" (AGENTS.md) protects what a box runs. A short name
@@ -26173,6 +26229,52 @@ one; a changed one refused; an image reference, a host that is not `host:port`, 
 rootless Podman: the image built on the published `box-claude`; run as a need box runs (every capability dropped, no new
 privileges, a read-only root, `/tmp` a tmpfs, a fresh home volume) and with no network, Chromium's headless shell
 rendered a page as `agent`.
+
+## A box step's vault secrets (issue #1875, part 3, 2026-10-18)
+
+**The problem.** After part 2 a job could ask for a template with vault secrets, the test image and an egress host, and
+a person could approve it. But a box step got only the credentials the hopper mints for the template's operation
+profiles ("Box steps"): the end-to-end test could not read the secrets it needs.
+
+- **Which secrets.** A box step of a template gets each vault secret the template gives now (`gives`: its approved
+  scope, while its image and egress hosts are approved ones), but a shared secret and the template's agent credential
+  (a box's own sign-in). The step keeps their names (`NeedStep.secrets`), never a value. The job still names none: a box
+  step takes no `--secret`.
+- **Read when the step runs, after the grant.** For each name the hopper checks that the template still gives it, then
+  asks the vault's step delivery (`forStep`, `src/vault/step-delivery.ts`), as a Windows step does: the job at work, the
+  user's own secret, not a minting credential, and the job's **vault grant** (`src/vault/grants.ts`). With no grant the
+  step does not run (exit 125, the reason) and a person is asked: a grant ask that names the need box (`box`) and the
+  template, `vault.grant_asked` with them. Each delivery is `vault.step_delivered`, `host` the need box; a refusal
+  `vault.step_refused` and `step.refused`. No value is kept in the database or between tries.
+- **Into the box by a copy only.** The secrets go with the step's files (`NeedFiles.secrets`, `src/sandbox/need-box.ts`):
+  a file each under `$HOME/.hopper-need/secrets` (mode 600) and the helper `$HOME/.hopper-need/hopper-secret`, copied in
+  as the box's user once it runs, never in its environment or its script. The command reads one as a box's job does:
+  `"$("$HOPPER_SECRET" get NAME)"`; `HOPPER_SECRETS_DIR` names the directory. A runtime with no copy, or a place on a
+  machine of the user's (which may be the job's own), takes no secret: the step does not run (`NO_SECRET_COPY`).
+- **Never to the job.** Each value is masked in the log the job reads, as a minted credential is. Outputs that hold a
+  value are not given to the job: the step ends with its exit code and `OUTPUTS_HOLD_SECRET`.
+
+**Residual risk, stated.** The command in the box holds the values: it can send one to an egress host the template
+names, which is why a person approves those hosts and the secrets together. The outputs check finds a value only as it
+is: an output that encodes a value (base64, compressed) still comes back. A person reads the step's command before a
+grant when it matters.
+
+**Decisions:**
+- **The template's secrets, not the job's choice.** A box job gets what its template gives; a box step now does too. The
+  approval of the template, and the job's vault grant, are the two acts of a person that decide it.
+- **A copy, not the environment.** A need box's minted credentials come in its environment (a runtime's inspect shows
+  them while the box lives). A vault secret lives longer than a minted session, so it takes the copy, which every runtime
+  beside the hopper has.
+- **A shared secret and the agent credential are not given to a step.** The vault's step delivery gives only the
+  user's own secrets; an agent credential signs in a box's agent, which a step does not run.
+
+Tests: `test/sandbox/box-step-secrets.test.ts` (the need box's real script: each secret a file of mode 600, read with
+the helper, none in the environment; no copy, no step; a box step reads what the template gives, through the vault,
+with the need box and template; the log masked; outputs that hold a value dropped; a refusal ends the step; a secret the
+template no longer gives refused), `test/integration/box-step-secrets.test.ts` (the real daemon, `hopper-skill` and
+`hopper-step`: the template asked for and approved by a person, the step refused until the job's vault grant and a
+grant ask for the box step, then the secret read in the box and masked for the job, `vault.step_delivered`, and an
+output that holds it not brought back).
 
 ## Remote access: the mint as a saga (issue #1609, 2026-10-17)
 
@@ -26975,7 +27077,8 @@ cluster.
   links, least role operator; meant for an API token whose grant has the scope `topology:report` (area `topology`, in
   the Infra changes section of the scope registry). The reporter is the API token's label, else who signed in. Each report
   is `infra.topology_reported`: each source's key, `ok`, its counts or its error; never a node; on no job's timeline.
-- **Infra → Topology** (`ui/src/views/topology.tsx`, pure model `ui/src/model/topology.ts`). The graph, drawn with d3's
+- **Infra → Topology** (`ui/src/views/topology.tsx`, pure model `ui/src/model/topology.ts`; the Globe view beside it, issue
+  #1893, "The Topology globe"). The graph, drawn with d3's
   force layout (run to its end, so the same graph is drawn the same way), at most 400 nodes; filters by account, cluster,
   region and kind; a click on a node shows its id, where it is, its attrs, the sources that found it, its neighbours with
   the link in words, and the out-of-band changes whose target names it (its id, name, an alias or an attr, as `vpc-1`).
@@ -27066,6 +27169,44 @@ keeps its snapshot, the event, the scope and the refusals), `test/ui/topology.te
 entry touched and the entries of a node, source words, the layout), `test/ui/infra-plans.test.ts` (each entry's subject),
 `test/ui/topology-view.test.ts` (the panel draws, a click shows a node and the changes that touched it, a stale source, an
 empty topology; the feed links an entry to its nodes and a click picks one).
+
+## The Topology globe (issue #1893, 2026-10-18)
+
+Follow-up to "The infrastructure topology": discovery reads every region (issue #1864), but nothing showed where the
+nodes live. The Topology panel now has two views of the same graph, **Graph** (as before) and **Globe**. The globe is a
+view, not a replacement, and reads only what the graph reads: no new route, no discovery, no cloud call.
+
+- **The model** (`ui/src/model/topology-globe.ts`, pure). `REGION_PLACES`: each AWS region at the city or the area AWS
+  names for it, in degrees. A node's region (`nodeRegion`): its own; else, for a Kubernetes object, its cluster's (an EKS
+  cluster's region, from the whole graph, so a filter that leaves out the cluster leaves its objects where they live); else
+  the region its ARN names. `globeOf` groups the nodes the filters leave per region, most first, with their counts by kind;
+  makes one **arc** per pair of regions a topology link joins, with how many links; and lists each node with **no known
+  place** apart, with why: no region (an account, an IAM role, a bucket S3 names no region for, a cluster of its own
+  Kubernetes API) or a region the table does not know.
+- **The view** (`ui/src/views/topology-globe.tsx`). The globe, then each region with its counts, the region picked with its
+  nodes, and the nodes with no known place. A click on a region, on the globe or in the list, lists its nodes; a click on a
+  node picks it, so the details are the graph's (`Details`, the page's selected node). The filters (account, cluster,
+  region, kind) are the panel's, so both views show the same nodes. The globe draws any number of nodes: they are grouped,
+  so the graph's limit of 400 does not apply.
+- **The scene** (`ui/src/views/globe-scene.ts`, three.js, a chunk of its own loaded only when Globe is picked). A sphere,
+  the land's outline (Natural Earth 1:110m, the `world-atlas` package, built into the UI: no map tile, no outside call, so it
+  works offline), a marker per region (larger with more nodes; the region picked in the theme's warn colour) and an arc
+  per pair of regions, lifted above the sphere. A person turns it by dragging and zooms with the wheel (three.js's
+  `OrbitControls`); it draws only when the camera moves. The colours are the theme's CSS variables, read through a 1×1
+  canvas so `oklch` colours work.
+- **No WebGL.** Before Globe shows, `webglAvailable` asks a canvas for a `webgl2` or a `webgl` context. With none, or when
+  the scene throws as it starts, the panel shows the graph and says why.
+
+**Decisions:**
+- **three.js, `world-atlas` and `topojson-client`**: established, maintained libraries for the scene, the land data and its
+  decoding. The region table is our own: no maintained package maps AWS regions to places, and the table is short.
+- **Regions, not nodes, on the globe.** All of a region's nodes are in one place, so one marker per region with its count
+  reads better than a pile of points; its nodes are one click away.
+
+Tests: `test/ui/topology-globe.test.ts` (region to coordinate, a node's region, the groups and counts, the arcs, the nodes
+with no known place and why, a filter, the WebGL check), `test/ui/topology-globe-view.test.ts` (the panel in happy-dom
+with the scene replaced at its module: the regions and arcs drawn, a click on a region and on a node, the filters shared
+with the graph, the graph and why with no WebGL and when the scene cannot start).
 
 ## Telemetry: what runs now (issue #1486, part 6, 2026-10-17)
 

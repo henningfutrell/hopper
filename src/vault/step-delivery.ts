@@ -6,8 +6,11 @@ import type { Clock, UserStore } from '../domain/ports.ts';
 import { isSharedSecret, isSystemSecret, type VaultSecret } from '../domain/vault.ts';
 import { AT_WORK } from './box.ts';
 
-/** What a Windows sandbox step asks the vault for: a secret, for a job's step on a Windows host. */
-export interface StepSecretAsk { name: string; job: string; host: string }
+/**
+ * What a Windows sandbox step asks the vault for: a secret, for a job's step on a Windows host. A box step (issue #1875)
+ * asks the same, `host` its need box and `template` the box's template.
+ */
+export interface StepSecretAsk { name: string; job: string; host: string; template?: string }
 
 export interface StepDelivery {
   /**

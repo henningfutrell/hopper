@@ -15,6 +15,9 @@
 // The outputs (paths relative to the step's work directory) come back as a tar in base64 after a mark at the end of the
 // box's output, which the job's log never shows. The box ends with the command's exit code; the box and its home volume
 // are removed after it. It starts only on a home volume it made itself (issue #1371): never one of an earlier box.
+// A box step's vault secrets (issue #1875) are copied in with the files, each one a file under `$HOME/.hopper-need/secrets`
+// (mode 600), never in the box's environment, and read as in a box: `"$HOPPER_SECRET" get NAME`. A runtime with no copy
+// takes no secret: the step does not run.
 import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
@@ -53,7 +56,15 @@ export const credentialName = (p: OperationProfile): string => p.asset.name.repl
  * The step's files: the inputs, a tar on this machine, extracted into the work directory; and the saved plan file of the
  * plan the step applies, as the hopper keeps it.
  */
-export interface NeedFiles { inputs?: string; plan?: Buffer }
+export interface NeedFiles { inputs?: string; plan?: Buffer; secrets?: Record<string, string> }
+
+/** The helper a box step's command reads its vault secrets with (issue #1875), as a box's job does: `"$HOPPER_SECRET" get NAME`. */
+const SECRET_HELPER = `#!/bin/sh
+d="$HOME/${FILES_DIR}/secrets"
+if [ "\${1:-}" = get ] && [ -n "\${2:-}" ] && [ -f "$d/$2" ]; then exec cat -- "$d/$2"; fi
+echo "hopper-secret: \\$HOPPER_SECRET get NAME, NAME one of: $(ls "$d" | tr '\\n' ' ')" >&2
+exit 2
+`;
 
 /** The box's environment: the command, the outputs, the plan the step applies, and the credentials' files and variables. */
 export function needEnv(s: { command: string; outputs: readonly string[]; plan?: string; credentials: readonly NeedCredential[] }): Record<string, string> {
@@ -123,6 +134,7 @@ if [ -f "$files/inputs.tar" ]; then
   rm -f "$files/inputs.tar"
 fi
 [ ! -f "$files/plan" ] || export HOPPER_PLAN_FILE="$files/plan"
+[ ! -d "$files/secrets" ] || export HOPPER_SECRET="$files/hopper-secret" HOPPER_SECRETS_DIR="$files/secrets"
 umask 022
 command=$HOPPER_STEP_COMMAND; outputs=$HOPPER_STEP_OUTPUTS
 unset HOPPER_STEP_COMMAND HOPPER_STEP_OUTPUTS
@@ -188,11 +200,15 @@ export interface NeedBox {
   files?: NeedFiles;
 }
 
-/** The tar of the step's files as the box's home takes it: the files' directory, the work directory, the plan file. */
-const homeTar = (o: { plan?: Buffer; inputs?: Buffer }): Buffer => filesTar([
+/** The tar of the step's files as the box's home takes it: the files' directory, the work directory, the plan file, the vault secrets and their helper. */
+const homeTar = (o: { plan?: Buffer; inputs?: Buffer; secrets?: Record<string, string> }): Buffer => filesTar([
   { name: `${FILES_DIR}/`, mode: 0o700 }, { name: 'work/', mode: 0o700 },
   ...(o.plan ? [{ name: `${FILES_DIR}/plan`, data: o.plan, mode: 0o600 }] : []),
   ...(o.inputs ? [{ name: `${FILES_DIR}/inputs.tar`, data: o.inputs, mode: 0o600 }] : []),
+  ...(o.secrets ? [
+    { name: `${FILES_DIR}/secrets/`, mode: 0o700 }, { name: `${FILES_DIR}/hopper-secret`, data: SECRET_HELPER, mode: 0o700 },
+    ...Object.entries(o.secrets).map(([name, data]) => ({ name: `${FILES_DIR}/secrets/${name}`, data, mode: 0o600 })),
+  ] : []),
 ]);
 
 /**
@@ -209,6 +225,9 @@ export const phaseTimes = (p: NeedBoxPhases): string => {
   const parts = (['image', 'start', 'run'] as const).filter((k) => p[k] !== undefined).map((k) => `${k} ${(p[k]! / 1000).toFixed(1)} s`);
   return parts.length ? ` (${parts.join(', ')})` : '';
 };
+
+/** Why a step with vault secrets does not run where its runtime takes no copy (issue #1875). */
+export const NO_SECRET_COPY = 'a step with vault secrets runs only in a need box beside the hopper: the secrets are copied in, never put in its environment, and never go to a machine of the user\'s';
 
 /** How long past the step's time limit the runtime's own wait may take: the hopper's timer ends the step first. */
 const WAIT_GRACE_MS = 5000;
@@ -233,7 +252,10 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
   const files = box.files ?? {};
   const inputsBytes = files.inputs ? statSync(files.inputs).size : 0;
   const planBytes = files.plan?.length ?? 0;
-  const copyIn = inputsBytes + planBytes > 0 ? runtime.copyIn?.bind(runtime) : undefined;
+  const secrets = files.secrets && Object.keys(files.secrets).length > 0 ? files.secrets : undefined;
+  // A vault secret goes into the box only by a copy (issue #1875): never in its environment.
+  if (secrets && !runtime.copyIn) return { exit: 125, problem: NO_SECRET_COPY };
+  const copyIn = inputsBytes + planBytes > 0 || secrets ? runtime.copyIn?.bind(runtime) : undefined;
   let env = box.env;
   if (copyIn) env = { ...env, HOPPER_STEP_FILES: 'copy' };
   else if (inputsBytes + planBytes > 0) {
@@ -256,7 +278,7 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
     await runtime.start(id);
     if (copyIn) {
       // Copied as the box's user, once it runs; the mark last, so the script never reads a file half there.
-      writeFileSync(home, homeTar(files.plan ? { plan: files.plan } : {}), { mode: 0o600 });
+      writeFileSync(home, homeTar({ ...(files.plan ? { plan: files.plan } : {}), ...(secrets ? { secrets } : {}) }), { mode: 0o600 });
       await copyIn(id, HOME, home);
       if (files.inputs && inputsBytes > 0) await copyIn(id, `${HOME}/work`, files.inputs);
       writeFileSync(ready, filesTar([{ name: `${FILES_DIR}/.ready`, data: '', mode: 0o600 }]), { mode: 0o600 });

@@ -1,0 +1,1 @@
+- A step that a job runs in a sandbox now gets the secrets of its template after you grant the job the vault. The job never sees them.

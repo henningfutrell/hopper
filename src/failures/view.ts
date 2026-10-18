@@ -5,8 +5,9 @@
 // refuse with the same reasons, so the view offers only what is taken.
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import type { UserStore } from '../domain/ports.ts';
-import { DEFAULT_YOLO_MODE, following, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
-import { HANDOFF_WAIT, prOpenStuck } from '../domain/work-items.ts';
+import { DEFAULT_YOLO_MODE, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
+import { HANDOFF_WAIT } from '../domain/work-items.ts';
+import { blockedStuck } from '../domain/item-lifecycle.ts';
 import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews, type Sessions } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
@@ -163,10 +164,9 @@ function pullRequestCards(store: Pick<UserStore, 'jobs' | 'settings' | 'connecte
   return view.repos.flatMap((g) => g.pullRequests);
 }
 
-/** The jobs of the items left in PR open with no pull request to wait on (issue #1231): stuck work. */
+/** The jobs of the items blocked with no pull request to wait on (issues #1231, #1891: the item reconciler blocks them): stuck work. */
 function prOpenStale(store: Reads, now: Date): string[] {
-  const follows = (jobId: string | undefined): boolean => { const j = jobId ? store.jobs.get(jobId) : undefined; return j !== undefined && following(j); };
-  return store.workItems.list({ state: ['pr_open'] }).filter((i) => prOpenStuck(i, follows(i.jobId), now.getTime())).map((i) => i.jobId ?? i.key);
+  return store.workItems.list({ state: ['blocked'] }).filter((i) => blockedStuck(i, now.toISOString())).map((i) => i.jobId ?? i.key);
 }
 
 export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts'>, settings: FailureSettings, now: Date, sessions: Sessions, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {

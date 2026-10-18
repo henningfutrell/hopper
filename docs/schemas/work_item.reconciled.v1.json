@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string",
+      "enum": [
+        "waiting_for_approval",
+        "queued",
+        "working",
+        "needs_you",
+        "waiting_outside",
+        "pr_open",
+        "partly_done",
+        "done",
+        "failed",
+        "blocked",
+        "dropped"
+      ]
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "cause": {
+      "type": "string",
+      "enum": [
+        "stale",
+        "no_pr"
+      ]
+    },
+    "replay": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "job.finished",
+            "job.failed",
+            "job.cancelled",
+            "job.rejected"
+          ]
+        },
+        "data": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "key",
+    "from"
+  ],
+  "additionalProperties": false
+}
