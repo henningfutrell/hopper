@@ -13,9 +13,11 @@
 //   GET  /api/account           the signed-in account as JSON, else 401
 //   GET  /api/account/records   its hopper.io records as JSON, newest first, else 401
 //   GET  /api/account/instances its registrations as JSON (issue #465), each with the last state its instance reported
-//                               (cloud/states.ts), else 401
+//                               (cloud/states.ts) and the names its owner gave machines, else 401
 //   POST /account/instances/:id/name    names its own instance (`name`, empty clears it)
 //   POST /account/instances/:id/remove  removes its own instance; its next hello is answered `unregister`
+//   POST /account/instances/:id/machines/:key/name  names a machine of its own instance (`name`, empty clears it), by
+//                               its key in the instance's last state
 //   POST /account/instances/register    the owner's code for an instance (`installId`, `code`): a registration request,
 //                               in memory only, that the instance gets as `register` (cloud/requests.ts)
 //   GET  /api/account/registration-requests  its open requests as JSON, never the code, else 401
@@ -32,7 +34,7 @@ import { INSTALL_ID } from './link.ts';
 import { NEVER_KEPT, PRIVACY_NOTE } from './privacy.ts';
 import { REQUESTS_PER_ACCOUNT, type RegistrationRequests, type RequestRefusal, type RequestView } from './requests.ts';
 import type { InstanceStates, KeptState } from './states.ts';
-import { INSTANCE_NAME_MAX, SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudInstance, type CloudStore, type RecordKind } from './store.ts';
+import { INSTANCE_NAME_MAX, MACHINE_NAMES_MAX, SESSION_MS, SIGN_IN_MS, type CloudAccount, type CloudInstance, type CloudStore, type RecordKind } from './store.ts';
 
 export const SESSION_COOKIE = 'hopper_io_session';
 export const SIGN_IN_COOKIE = 'hopper_io_sign_in';
@@ -43,6 +45,7 @@ const RECORD_LABELS: Record<RecordKind, string> = {
   signed_in: 'Signed in', signed_out: 'Signed out', deletion_refused: 'Deletion refused: confirmed as another GitHub account',
   instance_registered: 'Instance registered', instance_renamed: 'Instance named', instance_removed: 'Instance removed',
   instance_unlinked: 'Instance unlinked on the instance', instance_moved: 'Instance registered under another account',
+  machine_renamed: 'Machine named',
 };
 const REFUSAL_LABELS: Record<RequestRefusal, string> = {
   'not-linked': 'it is not linked to hopper.io', 'other-account': 'it is linked to another hopper.io account',
@@ -52,18 +55,24 @@ const REFUSAL_LABELS: Record<RequestRefusal, string> = {
 const REGISTRATION_CODE = /^[0-9a-f]{64}$/;
 const PRIVACY_LINK = '<p><a href="/privacy">What hopper.io keeps</a></p>';
 
-/** An instance's name as its owner typed it: trimmed; '' clears it; undefined: refused (too long, a control character). */
+/** A machine's key in a state snapshot (cloud/states.ts). */
+const MACHINE_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** An instance's name, or a machine's, as its owner typed it: trimmed; '' clears it; undefined: refused (too long, a control character). */
 export function instanceName(raw: string): string | undefined {
   const name = raw.trim();
   return [...name].length > INSTANCE_NAME_MAX || /\p{Cc}/u.test(name) ? undefined : name;
 }
 
 /** An instance's last reported state, in plain words: what the instance said, and when hopper.io got it (T1). */
-const stateHtml = (k: KeptState | undefined): string => {
+const stateHtml = (i: CloudInstance, k: KeptState | undefined): string => {
   if (!k) return '<p>No state reported yet.</p>';
   const { instance, queue, attention, machines } = k.state;
-  const rows = machines.map((m) => `<li>${html(m.key)}: ${m.online ? 'online' : 'offline'}, ${m.lanesInUse} of ${m.lanes} lanes in use,`
-    + ` executors: ${m.executors.length ? html(m.executors.join(', ')) : 'none'}, ${m.takesJobs ? 'takes jobs' : `takes no job: ${html(m.notTaking ?? 'unknown')}`}</li>`).join('');
+  const named = (key: string) => i.machineNames?.[key];
+  const nameForm = (key: string) => `<form method="post" action="/account/instances/${i.installId}/machines/${key}/name"><input name="name"`
+    + ` maxlength="${INSTANCE_NAME_MAX}" value="${html(named(key) ?? '')}" aria-label="Machine name"> <button type="submit">Name</button></form>`;
+  const rows = machines.map((m) => `<li>${named(m.key) ? `<strong>${html(named(m.key)!)}</strong> (${m.key})` : m.key}: ${m.online ? 'online' : 'offline'}, ${m.lanesInUse} of ${m.lanes} lanes in use,`
+    + ` executors: ${m.executors.length ? html(m.executors.join(', ')) : 'none'}, ${m.takesJobs ? 'takes jobs' : `takes no job: ${html(m.notTaking ?? 'unknown')}`}${nameForm(m.key)}</li>`).join('');
   return `<p>As the instance reported it at ${k.receivedAt.toISOString()}: version ${html(instance.version)}, channel ${html(instance.channel)};`
     + ` jobs: ${queue.waiting} waiting, ${queue.running} running, ${queue.locked} locked, gate ${html(queue.gate)};`
     + ` needs attention: ${attention.questionsAwaitingOwner} questions, ${attention.jobsLocked} locked jobs, ${attention.machinesOffline} machines offline.</p>`
@@ -71,7 +80,7 @@ const stateHtml = (k: KeptState | undefined): string => {
 };
 
 const instanceRow = (i: CloudInstance, k: KeptState | undefined): string => `<li><strong>${i.name ? html(i.name) : 'No name'}</strong> (${i.installId}),`
-  + ` registered ${i.registeredAt.toISOString()}, last seen ${i.seenAt ? i.seenAt.toISOString() : 'never'}${stateHtml(k)}`
+  + ` registered ${i.registeredAt.toISOString()}, last seen ${i.seenAt ? i.seenAt.toISOString() : 'never'}${stateHtml(i, k)}`
   + `<form method="post" action="/account/instances/${i.installId}/name"><input name="name" maxlength="${INSTANCE_NAME_MAX}"`
   + ` value="${i.name ? html(i.name) : ''}" aria-label="Name"> <button type="submit">Name</button></form>`
   + `<form method="post" action="/account/instances/${i.installId}/remove"><button type="submit">Remove</button></form></li>`;
@@ -231,7 +240,7 @@ export async function cloudServer(o: {
       const k = states.of(a.githubUserId, i.installId);
       return {
         installId: i.installId, ...(i.name ? { name: i.name } : {}), registeredAt: i.registeredAt.toISOString(),
-        ...(i.seenAt ? { seenAt: i.seenAt.toISOString() } : {}),
+        ...(i.seenAt ? { seenAt: i.seenAt.toISOString() } : {}), ...(i.machineNames ? { machineNames: i.machineNames } : {}),
         ...(k ? { state: { ...k.state, receivedAt: k.receivedAt.toISOString() } } : {}),
       };
     }) };
@@ -275,6 +284,23 @@ export async function cloudServer(o: {
     if (name === undefined) return reply.code(400).send({ error: `a name of at most ${INSTANCE_NAME_MAX} characters, with no control character` });
     if (!await store.rename(own.account, own.installId, name || undefined)) return reply.code(404).send({ error: 'no such instance' });
     await store.record(own.account, 'instance_renamed', now());
+    return reply.redirect('/', 303);
+  });
+
+  // A machine the owner sees under the instance now, or one they named before (so a name can always be cleared).
+  server.post<{ Params: { installId: string; machineKey: string } }>('/account/instances/:installId/machines/:machineKey/name', async (req, reply) => {
+    const own = await ownInstance(req, reply);
+    if (!own) return reply;
+    const key = req.params.machineKey;
+    const named = (await store.instances(own.account)).find((i) => i.installId === own.installId)?.machineNames?.[key] !== undefined;
+    const seen = states.of(own.account, own.installId)?.state.machines.some((m) => m.key === key) ?? false;
+    if (!MACHINE_KEY.test(key) || (!named && !seen)) return reply.code(404).send({ error: 'no such machine' });
+    const name = instanceName(new URLSearchParams(typeof req.body === 'string' ? req.body : '').get('name') ?? '');
+    if (name === undefined) return reply.code(400).send({ error: `a name of at most ${INSTANCE_NAME_MAX} characters, with no control character` });
+    const done = await store.nameMachine(own.account, own.installId, key, name || undefined);
+    if (done === 'no-instance') return reply.code(404).send({ error: 'no such instance' });
+    if (done === 'full') return reply.code(409).send({ error: `at most ${MACHINE_NAMES_MAX} machines of one instance are named` });
+    await store.record(own.account, 'machine_renamed', now());
     return reply.redirect('/', 303);
   });
 

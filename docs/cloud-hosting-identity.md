@@ -330,6 +330,10 @@ tombstones, in `cloud/` (decision 2).
   memory only (`cloud/states.ts`), while the instance is registered to the account its link names. `GET /api/account/instances`
   and `GET /` show each instance's machines under it, with when hopper.io got the state. A removal, an unlink, a move and
   an account deletion drop it. Tests: `test/cloud/instance-states.test.ts`.
+- **Machine names** (issue #465 part 9, `docs/design.md` "Machine names at hopper.io"). The owner names a machine of the
+  instance's state on `GET /` (`POST /account/instances/:id/machines/:key/name`); `machine_name` keeps it by the instance id
+  and the machine's opaque key, at most 500 per instance. `GET /api/account/instances` gives each instance its
+  `machineNames`. A removal, an unlink, a move and an account deletion drop them. Tests: `test/cloud/machine-names.test.ts`.
 - Personal accounts only (decision 3). No route accepts a hopper.io session on an instance, and no
   instance realm changes (decision 4).
 - Tests: `test/cloud/sign-in.test.ts`, `test/cloud/delete-account.test.ts`, `test/cloud/records.test.ts`,

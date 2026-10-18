@@ -280,6 +280,11 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     account only. R7: it checks each snapshot against its own closed copy of the schema (held to the instance's by a test)
     and a cap of 192 KiB, and keeps at most 10,000 states. R5, T1: in memory only, never in the store; the page says when
     hopper.io got it and escapes every value (T3).
+  - R3, R5, R7: **machine names** (issue #465 part 9, `docs/design.md` "Machine names at hopper.io"): the owner names a
+    machine of their own instance at hopper.io, by its opaque key; the instance sends no name (R5). R3: only the account
+    the instance is registered to names it or reads the name, and a move to another account drops the names. R7: only a
+    key in the instance's last state, at most 500 names per instance, 64 characters each; the page escapes them (T3). R6:
+    each is a record.
   - Not yet: the R6 records of the cloud link and remote actions at hopper.io (with #464),
     and the connection that carries the registration messages and the hello (#464).
 - Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
