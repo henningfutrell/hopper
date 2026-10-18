@@ -1,9 +1,10 @@
-// The label mirror (issue #1891): at each discover, the end labels of each issue listed are compared with its work item's
-// state. A blocked item's labels are corrected through the GitHub outbox, in one coalesced change, once: the #465 case,
-// where the item reconciler blocked an item whose issue still carried `hopper:pr-ready`. Any other drift is only logged
-// and counted. An item that moved a moment ago, or that has outbox rows not sent, is not judged.
+// The label mirror (issues #1891, #1933): at each discover, the end labels of each issue listed are compared with its work
+// item's state. The drift of each judged state is corrected through the GitHub outbox, in one coalesced change, once: the
+// #465 case, where the item reconciler blocked an item whose issue still carried `hopper:pr-ready`, and the states a job
+// works or a pull request is open in. An item that moved a moment ago, or that has outbox rows not sent, is not judged.
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
+import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 import { REPO, githubConfig, testTrust } from './fixtures/github-support.ts';
 
@@ -15,16 +16,17 @@ const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-function setup(items: Record<string, Partial<WorkItem>>) {
+function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox> } = {}) {
   const gh = createFakeGitHub();
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const source = createGitHubSource({
     name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig({}), api: gh,
-    trust: testTrust(), clock: { now: () => new Date(NOW) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k])),
+    trust: testTrust(), ...(o.outbox ? { outbox: o.outbox } : {}), clock: { now: () => new Date(NOW) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k])),
     intake: {
       holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: LONG_AGO, changes: [] }), migrated: () => {},
       record: () => {}, requestOpened: () => false, requestsWaiting: () => [],
       workItem: (key) => (items[key] ? itemOf(key, items[key]) : undefined),
+      partOpen: (key) => o.parts?.includes(key) ?? false,
     },
   });
   const writes = () => gh.calls.filter((c) => c.method === 'addLabels' || c.method === 'removeLabels').map((c) => [c.method, c.args[2]]);
@@ -64,14 +66,43 @@ describe('labels mirror the database (issue #1891)', () => {
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-closed']);
   });
 
-  it('a drift of another state is logged and counted once, and not corrected', async () => {
-    const { gh, source, writes, drifts } = setup({ [url(1)]: { state: 'queued', jobId: 'job-1' } });
-    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:done'] });
+  it.each([
+    ['queued', { state: 'queued', jobId: 'job-1' }, ['hopper', 'hopper:done'], ['removeLabels', ['hopper:done']]],
+    ['working', { state: 'working', jobId: 'job-1' }, ['hopper', 'hopper:pr-ready', 'hopper:high'], ['removeLabels', ['hopper:pr-ready']]],
+    ['waiting_outside', { state: 'waiting_outside', jobId: 'job-1' }, ['hopper', 'hopper:failed'], ['removeLabels', ['hopper:failed']]],
+    ['pr_open', { state: 'pr_open', jobId: 'job-1' }, ['hopper', 'hopper:blocked', 'hopper:pr-ready'], ['removeLabels', ['hopper:blocked']]],
+  ] as const)('%s: the drift is one coalesced change, once', async (state, item, labels, write) => {
+    const { gh, source, writes, drifts } = setup({ [url(1)]: item });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: [...labels] });
     await source.discover();
+    await source.discover();
+    expect(await source.flushOutbox!()).toEqual({ due: 1, wrote: [REPO] });
     await source.discover();
     expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
-    expect(writes()).toEqual([]);
-    expect(drifts()).toEqual([expect.stringContaining('queued: hopper:done on the issue')]);
+    expect(writes()).toEqual([write]);
+    expect(gh.issue(REPO, 1).labels).toEqual(labels.filter((l) => !write[1].includes(l as never)));
+    expect(drifts()).toEqual([expect.stringMatching(new RegExp(`^hopper: github: .* ${state}: .*: corrected through the outbox$`))]);
+  });
+
+  it('PR open with no waiting label: hopper:pr-ready goes on, or hopper:partly-done for a part', async () => {
+    const { gh, source, writes } = setup({ [url(1)]: { state: 'pr_open', jobId: 'job-1' }, [url(2)]: { state: 'pr_open', jobId: 'job-2' } }, { parts: [url(2)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    await source.discover();
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
+    expect(gh.issue(REPO, 2).labels).toEqual(['hopper', 'hopper:partly-done']);
+    expect(writes()).toHaveLength(2);
+  });
+
+  it('an item with outbox rows not sent is not judged', async () => {
+    const outbox = memoryGitHubOutbox();
+    outbox.add([{ source: 'github', act: 'take_in', key: url(1), repo: REPO, tag: '', change: { op: 'add_labels', labels: ['hopper'] } }], LONG_AGO);
+    const { gh, source, drifts } = setup({ [url(1)]: { state: 'queued', jobId: 'job-1' } }, { outbox });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:done'] });
+    await source.discover();
+    expect(outbox.open('github').filter((r) => r.act === 'mirror')).toEqual([]);
+    expect(drifts()).toEqual([]);
   });
 
   it('an item that moved a moment ago is not judged: its own writes are on their way', async () => {
