@@ -1,0 +1,1 @@
+- An issue that someone outside your trusted actors edited, or that a bot edited, now waits in Intake for your approval, so nobody else can change the text of your own issue before it runs.

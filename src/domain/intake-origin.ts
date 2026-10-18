@@ -7,8 +7,8 @@
 import { createHash } from 'node:crypto';
 
 /**
- * What an actor did to the issue: wrote it, added the label, or assigned it to the user; on GitLab (issue #1642) also edited
- * its title or description.
+ * What an actor did to the issue: wrote it, added the label, assigned it to the user, or edited its title or description
+ * (GitLab, issue #1642; GitHub, issue #655 part 17).
  */
 export const ORIGIN_ROLES = ['author', 'labelled', 'assigned', 'edited'] as const;
 export type OriginRole = typeof ORIGIN_ROLES[number];

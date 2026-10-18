@@ -172,7 +172,7 @@ GitHub realm's role rules grant (Settings → Sign-in: usernames, or numeric ids
 [docs/sign-in.md](docs/sign-in.md#github)).
 
 Signing in connects your GitHub: issues labelled `hopper` and assigned to you become your jobs
-when you or a trusted actor (Settings → Intake) wrote, labelled and assigned them — others show in Intake as
+when you or a trusted actor (Settings → Intake) wrote, labelled and assigned them, and nobody else edited them — others show in Intake as
 requests to approve —, in the repositories you choose under **Sources → GitHub account** — and your jobs
 act as you on GitHub, with the app marked on what they do. Until you choose at least one repository, no job comes in.
 
@@ -217,7 +217,7 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 ## Give it jobs
 
 1. Choose the job repositories in **Sources → GitHub account**. In them, an issue labelled `hopper` and assigned to you
-   becomes a job when a trusted actor wrote, labelled and assigned it. Any other issue is a request card in Intake.
+   becomes a job when a trusted actor wrote, labelled and assigned it, and nobody else edited it. Any other issue is a request card in Intake.
 2. Label an issue `hopper` and assign it to yourself. A job runs in the work tree of the machine that runs it
    ([Where jobs work](#where-jobs-work)).
 3. Watch it in the UI, answer its questions, and review its pull request. The merge closes the issue.
