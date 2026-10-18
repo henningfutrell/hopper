@@ -34,8 +34,8 @@ describe('a template request\'s needs (issue #716)', () => {
 
   it('the catalog names the request and stays short', () => {
     expect(catalogText()).toContain('sandbox-template:');
-    // Issue #1007 added need-step, issue #1905 topology: the catalog stays short, one line per skill.
-    expect(catalogText().length).toBeLessThan(1000);
+    // Issue #1007 added need-step, issue #1905 topology, issue #1909 orchestrate: the catalog stays short, one line per skill.
+    expect(catalogText().length).toBeLessThan(1100);
   });
 });
 
