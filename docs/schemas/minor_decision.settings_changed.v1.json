@@ -12,6 +12,7 @@
         "intake-order",
         "merge-order",
         "intake-trust",
+        "sandbox-request",
         "question-answer"
       ]
     },

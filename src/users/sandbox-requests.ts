@@ -10,7 +10,9 @@ import type { UserStore } from '../domain/ports.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import type { Job } from '../domain/types.ts';
 import { namedTemplates, sandboxesHold } from '../domain/sandboxes-before-start.ts';
-import { createSandboxRequests, type SandboxRequests } from '../sandbox/requests.ts';
+import { createSandboxRequests, type SandboxRequests, type SandboxRequestsOptions } from '../sandbox/requests.ts';
+import { DEFAULT_MINOR_DECISION_SETTINGS, type JevFirst } from '../domain/minor-decisions.ts';
+import { ALLOW, SANDBOX_CHECK_INSTRUCTIONS, sandboxCheckOptions, sandboxCheckState } from '../domain/sandbox-check.ts';
 import type { Sandboxes } from '../sandbox/service.ts';
 import type { NeedStepRepository } from '../domain/need-steps.ts';
 
@@ -52,11 +54,36 @@ export function sandboxesHeld(requests: SandboxRequests, templates: () => readon
   });
 }
 
+/**
+ * Jev's `sandbox-request` check (issue #655 part 13) over one user's store: the point's mode read at each ask, and Jev
+ * asked with the request, its template, the job's facts and trust, and the job's other requests. In shadow the pick is
+ * compared with `allow`, what the approvals did.
+ */
+function sandboxJev(o: { store: Pick<UserStore, 'settings' | 'jobs'>; templates: () => TemplateView[]; jevFirst: JevFirst }): NonNullable<SandboxRequestsOptions['jev']> {
+  const { store } = o;
+  return {
+    mode: () => ({ ...DEFAULT_MINOR_DECISION_SETTINGS['sandbox-request'], ...store.settings.getMinorDecisionSettings()['sandbox-request'] }).mode,
+    ask: ({ request, approver, history, shadow }) => {
+      const j = store.jobs.get(request.jobId), level = j ? store.jobs.trustLevel(j) : undefined;
+      const template = o.templates().find((t) => t.name === request.template);
+      return o.jevFirst.decide({
+        point: 'sandbox-request', jobId: request.jobId, instructions: SANDBOX_CHECK_INSTRUCTIONS, options: sandboxCheckOptions(), consequential: [],
+        state: sandboxCheckState({ request, ...(template ? { template } : {}), approver, ...(j ? { job: { ...j, ...(level ? { level } : {}), ...(j.stamp ? { reasons: j.stamp.reasons } : {}) } } : {}), history }),
+        ...(shadow ? { rules: ALLOW } : {}),
+      });
+    },
+  };
+}
+
 export function userSandboxRequests(o: {
   userId: string; store: Pick<UserStore, 'events' | 'settings' | 'jobs'>; templates: () => TemplateView[]; clock: { now(): Date };
+  /** Jev, for the `sandbox-request` check (issue #655 part 13); and what lowers a job's trust when Jev denies its run. Absent: no check. */
+  jevFirst?: JevFirst; jevDenied?: (jobId: string) => void;
 }): SandboxRequests {
   const { store } = o;
   return createSandboxRequests({
+    ...(o.jevFirst ? { jev: sandboxJev({ store, templates: o.templates, jevFirst: o.jevFirst }) } : {}),
+    ...(o.jevDenied ? { jevDenied: o.jevDenied } : {}),
     record: (e) => { store.events.append(e); },
     approvals: () => store.settings.getSandboxApprovals() ?? NO_SKIPS,
     template: (name) => o.templates().find((t) => t.name === name),

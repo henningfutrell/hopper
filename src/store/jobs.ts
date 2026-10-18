@@ -213,11 +213,11 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
       if (!key || !cur || !trustApprovable(key, cur)) return undefined;
       return write(id, (j) => ({ ...j, stamp: trustApprovedStamp(key, j, c.clock.now().toISOString()) }));
     },
-    deny(id) {
+    deny(id, by) {
       const key = stampKey;
       const cur = get(id);
       if (!key || !cur || TERMINAL_STATUSES.includes(cur.status)) return undefined;
-      const stamp = deniedStamp(key, cur, c.clock.now().toISOString());
+      const stamp = deniedStamp(key, cur, c.clock.now().toISOString(), by);
       return stamp ? write(id, (j) => ({ ...j, stamp })) : undefined;
     },
     edited(id) {

@@ -4,7 +4,7 @@
 // pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
 /** Where the hopper makes a decider call. */
-export const DECISION_POINTS = ['question-risk', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order', 'intake-trust'] as const;
+export const DECISION_POINTS = ['question-risk', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order', 'intake-trust', 'sandbox-request'] as const;
 export type DecisionPoint = typeof DECISION_POINTS[number];
 /**
  * A point the hopper no longer asks at, which events from before still name: `question-answer`, Jev picking a question's
@@ -33,6 +33,7 @@ export const DEFAULT_MINOR_DECISION_SETTINGS: MinorDecisionSettings = {
   'intake-order': { mode: 'shadow', threshold: 0.85 },
   'merge-order': { mode: 'shadow', threshold: 0.85 },
   'intake-trust': { mode: 'shadow', threshold: 0.85 },
+  'sandbox-request': { mode: 'shadow', threshold: 0.85 },
 };
 
 /** What each point is, in plain words (issue #217): the UI's labels. */
@@ -64,6 +65,10 @@ export const DECISION_POINT_TEXT: Readonly<Record<DecisionPoint, { label: string
   'intake-trust': {
     label: 'The trust of a job before it starts',
     describe: 'A job would start on the trust rules alone. Jev reads its text and where it came from, and keeps its trust level or lowers it, with a reason. Jev can never raise it. Active, the job waits for the check, and a check with no sure answer lowers it: a person then approves its trust on the job.',
+  },
+  'sandbox-request': {
+    label: 'A sandbox request no person would read',
+    describe: 'The sandbox approvals would approve a job\'s sandbox runs of a medium or high blast radius template with no person (sandbox strictness standard). Jev reads the request and the job, and allows it, holds it for a person, or denies it, with a reason. Jev can never approve what the approvals would not. Active, the request waits for Jev; a check with no sure answer holds it for a person, and a deny lowers the job\'s trust as a person\'s deny does.',
   },
 };
 

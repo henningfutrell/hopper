@@ -55,11 +55,13 @@ export const REMEMBERED_APPROVER = 'a remembered write approval';
 export const SANDBOX_HOLD_MS = 24 * 60 * 60 * 1000;
 /** Who declined a request no person answered in time: not a person, so it lowers no trust (issue #655 part 9). */
 export const HOLD_TIMEOUT = 'the hold timeout';
+/** Who approves or declines a run Jev's `sandbox-request` check decided (issue #655 part 13): no person. */
+export const JEV_APPROVER = 'Jev';
 /**
  * The approvers that are no person: a template one of them approved does not approve a run for its job, and a profile one
  * of them approved is not remembered.
  */
-export const NO_PERSON: readonly string[] = ['the read policy', SKIP_TEMPLATE_APPROVER, SKIP_SANDBOX_APPROVER, AUTO_APPROVER, REMEMBERED_APPROVER];
+export const NO_PERSON: readonly string[] = ['the read policy', SKIP_TEMPLATE_APPROVER, SKIP_SANDBOX_APPROVER, AUTO_APPROVER, REMEMBERED_APPROVER, JEV_APPROVER];
 
 /**
  * Who approves a run that a person's approval of its template covers (issue #1001): the job asked for that template, and
@@ -112,6 +114,11 @@ export interface SandboxRequestView {
   approvedBy?: string;
   /** Why it was declined. */
   reason?: string;
-  /** Who declined it: a person, or the hold timeout when no person answered in time (issue #655 part 9). */
+  /** Who declined it: a person, the hold timeout when no person answered in time (issue #655 part 9), or Jev (part 13). */
   declinedBy?: string;
+  /**
+   * Jev's `sandbox-request` check while the request waits (issue #655 part 13): `checking`, Jev reads it now; `held`, Jev
+   * held it for a person, with why. Absent: Jev did not check it, or it no longer waits.
+   */
+  jev?: { state: 'checking' | 'held'; reason?: string };
 }

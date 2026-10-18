@@ -56,6 +56,10 @@ export const DENY_REASON = 'deny:sandbox';
 /** The deny that quarantines a job: the second in the job. */
 const DENIES_TO_QUARANTINE = 2;
 const DENY_TEXT = 'a person declined its sandbox request';
+/** The reason id Jev's deny at gate 2 adds (part 13: Jev's `sandbox-request` check denied a request). It stays, and counts as a deny. */
+export const JEV_DENY_REASON = 'deny:jev';
+const JEV_DENY_TEXT = 'Jev denied its sandbox request';
+const isDeny = (r: string): boolean => r === DENY_REASON || r === JEV_DENY_REASON;
 /** The reason id an edit of a started job's item adds to the stamp's reasons (part 7). It stays. */
 export const EDIT_REASON = 'edit:text';
 const EDIT_TEXT = 'its item was edited after it started';
@@ -136,12 +140,13 @@ export function verifiedLevel(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp
 }
 
 /** The last reason id that lowered a level: a deny's, an edit's or a check's; undefined: none. */
-const lastLowered = (reasons: readonly string[]): string | undefined => reasons.filter((r) => r === DENY_REASON || r === EDIT_REASON || r.startsWith('jev:')).at(-1);
+const lastLowered = (reasons: readonly string[]): string | undefined => reasons.filter((r) => isDeny(r) || r === EDIT_REASON || r.startsWith('jev:')).at(-1);
 
 /** Why a reason id lowered a level, in words; undefined: it is none that lowers. */
 function loweredText(reasons: readonly string[]): string | undefined {
   const last = lastLowered(reasons);
   if (last === DENY_REASON) return DENY_TEXT;
+  if (last === JEV_DENY_REASON) return JEV_DENY_TEXT;
   if (last === EDIT_REASON) return EDIT_TEXT;
   const checked = checkReasonOf(reasons);
   return checked ? `Jev's trust check: ${checkReasonText(checked)}` : undefined;
@@ -253,20 +258,21 @@ export function trustApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'sta
 }
 
 /**
- * The stamp after a person's deny at gate 2 (part 5), at `at`: one level lower, with the deny's reason; the second deny
- * in the job, or a deny of a job at `untrusted`, quarantines it, its level before kept as `was`. Undefined: the job is
- * quarantined already, or its stamp does not verify. Denies stay on the stamp: a lift or a person's approval keeps them.
+ * The stamp after a deny at gate 2, at `at`: a person's (part 5) or Jev's (part 13, `by: jev`). One level lower, with the
+ * deny's reason; the second deny in the job, a person's or Jev's, or a deny of a job at `untrusted`, quarantines it, its
+ * level before kept as `was`. Undefined: the job is quarantined already, or its stamp does not verify. Denies stay on the
+ * stamp: a lift or a person's approval keeps them.
  */
-export function deniedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, at: string): TrustStamp | undefined {
+export function deniedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, at: string, by: 'person' | 'jev' = 'person'): TrustStamp | undefined {
   const level = verifiedLevel(key, job);
   if (level === undefined || level === 'quarantined' || !job.stamp) return undefined;
-  const reasons = [...job.stamp.reasons, DENY_REASON];
+  const reasons = [...job.stamp.reasons, by === 'jev' ? JEV_DENY_REASON : DENY_REASON];
   const check = job.stamp.check ? { check: job.stamp.check } : {};
   const lower = TRUST_LEVELS[rank(level) - 1]!;
-  if (lower === 'quarantined' || reasons.filter((r) => r === DENY_REASON).length >= DENIES_TO_QUARANTINE) {
-    return signStamp(key, job, { level: 'quarantined', reasons: [...reasons, QUARANTINED], by: 'person', at, was: level, ...check });
+  if (lower === 'quarantined' || reasons.filter(isDeny).length >= DENIES_TO_QUARANTINE) {
+    return signStamp(key, job, { level: 'quarantined', reasons: [...reasons, QUARANTINED], by, at, was: level, ...check });
   }
-  return signStamp(key, job, { level: lower, reasons, by: 'person', at, ...check });
+  return signStamp(key, job, { level: lower, reasons, by, at, ...check });
 }
 
 /** The job's trust approved by a person, at `at`: `approved`, never more; Jev's check stays on the stamp, so it is not asked again. */

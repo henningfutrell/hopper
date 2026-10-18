@@ -26,11 +26,13 @@
         "cli",
         "api"
       ]
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "jev"
+      ]
     }
   },
-  "required": [
-    "person",
-    "via"
-  ],
   "additionalProperties": false
 }

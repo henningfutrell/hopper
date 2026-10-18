@@ -4,7 +4,7 @@
 // job had before. Each is one event, with who acted. A person approves the trust of a job Jev's trust check lowered (part 4).
 // A person's deny at gate 2 lowers a job's trust one level, and the second quarantines it (part 5).
 // The stamp intake signed at a job's making is `intake.stamped`, after its `job.queued` (part 11).
-import { DENY_REASON, stampedEvent } from '../domain/trust-stamp.ts';
+import { DENY_REASON, JEV_DENY_REASON, stampedEvent } from '../domain/trust-stamp.ts';
 import { TERMINAL_STATUSES, type ActingPerson, type Job } from '../domain/types.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { EngineContext } from './context.ts';
@@ -48,17 +48,20 @@ export function recordApproveTrust(c: EngineContext, id: string, acting: ActingP
 }
 
 /**
- * In the tx: a person's deny at gate 2 (part 5: a declined sandbox request) lowers the job's trust one level, and the
- * second in the job quarantines it. Nothing for a job that ended, is quarantined already, or has no stamp that verifies:
- * the deny itself stands. job.trust_lowered, or job.quarantined with the deny as its reason.
+ * In the tx: a deny at gate 2 lowers the job's trust one level, and the second in the job quarantines it — a person's
+ * (part 5: a declined sandbox request) or Jev's (`jev`, part 13: its `sandbox-request` check denied one). Nothing for a
+ * job that ended, is quarantined already, or has no stamp that verifies: the deny itself stands. job.trust_lowered, or
+ * job.quarantined with the deny as its reason.
  */
-export function recordDeny(c: EngineContext, id: string, acting: ActingPerson): Job | undefined {
+export function recordDeny(c: EngineContext, id: string, acting: ActingPerson | 'jev'): Job | undefined {
   const job = c.store.jobs.get(id);
   const from = job ? c.store.jobs.trustLevel(job) : undefined;
-  const next = from === undefined ? undefined : c.store.jobs.deny(id);
+  const byJev = acting === 'jev';
+  const next = from === undefined ? undefined : c.store.jobs.deny(id, byJev ? 'jev' : 'person');
   if (!next?.stamp || from === undefined) return undefined;
-  if (next.stamp.level === 'quarantined') c.store.events.append({ type: 'job.quarantined', jobId: id, data: { was: from, reason: DENY_REASON, ...acting } });
-  else c.store.events.append({ type: 'job.trust_lowered', jobId: id, data: { from, to: next.stamp.level, reason: DENY_REASON, by: 'person', ...acting } });
+  const reason = byJev ? JEV_DENY_REASON : DENY_REASON, who = byJev ? { by: 'jev' as const } : { by: 'person' as const, ...acting };
+  if (next.stamp.level === 'quarantined') c.store.events.append({ type: 'job.quarantined', jobId: id, data: { was: from, reason, ...(byJev ? { by: 'jev' } : acting) } });
+  else c.store.events.append({ type: 'job.trust_lowered', jobId: id, data: { from, to: next.stamp.level, reason, ...who } });
   return next;
 }
 

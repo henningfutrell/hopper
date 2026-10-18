@@ -13,14 +13,19 @@
 // trust stamp is below `approved` gets no run with no person: its request waits, whatever the toggles and policies say.
 // Issue #655 part 8: sandbox strictness (brake 2) asks a person for each run of a template it holds, the same way; tightened,
 // a run approved before with no person no longer counts (`runnable`). Issue #655 part 9: a request no person answered
-// within 24 hours is declined by the hopper (`HOLD_TIMEOUT`), for this request only: the job's trust stays.
+// within 24 hours is declined by the hopper (`HOLD_TIMEOUT`), for this request only: the job's trust stays. Issue #655
+// part 13: where the approvals would approve a run with no person and sandbox strictness is `standard` for a template not
+// of low blast radius, Jev's `sandbox-request` check reads it first. Active, the request waits for Jev: allow approves it
+// (`JEV_APPROVER`), hold leaves it for a person, deny declines it and lowers the job's trust; no sure pick holds it.
 import { randomUUID } from 'node:crypto';
+import type { MinorDecisionMode, MinorDecisionOutcome } from '../domain/minor-decisions.ts';
+import { checkedVerdict, jevChecks, sandboxCheckText, type SandboxHistoryItem } from '../domain/sandbox-check.ts';
 import {
-  AUTO_APPROVER, autoApproves, HOLD_TIMEOUT, NO_PERSON, SANDBOX_HOLD_MS, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
+  AUTO_APPROVER, autoApproves, HOLD_TIMEOUT, JEV_APPROVER, NO_PERSON, SANDBOX_HOLD_MS, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
 } from '../domain/sandbox-approvals.ts';
 import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
 import type { ReadPolicy } from '../domain/read-policy.ts';
-import { personBrake, type SandboxStrictness } from '../domain/sandbox-strictness.ts';
+import { DEFAULT_SANDBOX_STRICTNESS, personBrake, type SandboxStrictness } from '../domain/sandbox-strictness.ts';
 import type { NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 
@@ -41,6 +46,16 @@ export interface SandboxRequestsOptions {
   remembered?(): RememberedWrite[];
   /** The read policy: with the auto-approve policy, whether a read in a template remembered approvals cover needs a person. */
   policy?(): ReadPolicy | undefined;
+  /**
+   * Jev's `sandbox-request` check (issue #655 part 13): the point's mode now, and Jev asked about a request the approvals
+   * would approve with no person (`approver`), with the job's other requests. `shadow`: only recorded. Absent: off.
+   */
+  jev?: {
+    mode(): MinorDecisionMode;
+    ask(a: { request: SandboxRequestView; approver: string; history: SandboxHistoryItem[]; shadow: boolean }): Promise<MinorDecisionOutcome>;
+  };
+  /** Jev denied a run of the job (part 13): its trust is lowered, as at a person's deny. */
+  jevDenied?(jobId: string): void;
   clock: { now(): Date };
   newId?: () => string;
 }
@@ -82,6 +97,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   };
 
   const decline = (r: SandboxRequestView, reason: string, by: string): void => {
+    delete r.jev;
     r.state = 'declined';
     r.reason = reason;
     r.declinedBy = by;
@@ -126,7 +142,31 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   const approve = (r: SandboxRequestView, by: string, data: Record<string, unknown> = {}): void => {
     r.state = 'approved';
     r.approvedBy = by;
+    delete r.jev;
     event(r, 'vault.sandbox_approved', { by, ...data });
+  };
+
+  /** Jev's mode for a run of `template` the approvals would approve: off unless the brake is `standard` and its radius not low. */
+  const jevMode = (template: string): MinorDecisionMode =>
+    o.jev && jevChecks(o.strictness?.() ?? DEFAULT_SANDBOX_STRICTNESS, o.template(template)) ? o.jev.mode() : 'off';
+
+  /**
+   * Jev asked about `r`, which `approver` would approve. In shadow only recorded. Active, applied while it still waits on
+   * Jev (a person's answer first wins): allow approves it, if the approvals still would; hold leaves it for a person; deny
+   * declines it and lowers the job's trust. No sure pick holds it (fail closed).
+   */
+  const check = async (r: SandboxRequestView, approver: { by: string; radius?: string }, shadow: boolean): Promise<void> => {
+    const history = [...requests.values()].filter((x) => x.jobId === r.jobId && x.id !== r.id)
+      .map((x) => ({ template: x.template, state: x.state, askedAt: x.askedAt, ...(x.approvedBy ?? x.declinedBy ? { by: x.approvedBy ?? x.declinedBy } : {}) }));
+    const out = await o.jev!.ask({ request: { ...r }, approver: approver.by, history, shadow })
+      .catch((): MinorDecisionOutcome => ({ asked: true, pickId: '', applied: false, notApplied: 'no_pick' }));
+    if (shadow || requests.get(r.id) !== r || r.state !== 'waiting' || r.jev?.state !== 'checking') return;
+    const v = checkedVerdict(out);
+    if (v.verdict === 'deny') {
+      decline(r, sandboxCheckText(v.reason), JEV_APPROVER);
+      o.jevDenied?.(r.jobId);
+    } else if (v.verdict === 'allow' && approverOf(r.jobId, r.template)) approve(r, JEV_APPROVER, approver.radius ? { radius: approver.radius } : {});
+    else r.jev = { state: 'held', ...(v.verdict === 'hold' ? { reason: sandboxCheckText(v.reason) } : {}) };
   };
 
   const waiting = (id: string): SandboxRequestView | SandboxRequestResult => {
@@ -149,7 +189,14 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       requests.set(r.id, r);
       event(r, 'vault.sandbox_requested');
       const approver = approverOf(jobId, template);
-      if (approver) approve(r, approver.by, approver.radius ? { radius: approver.radius } : {});
+      const m = approver ? jevMode(template) : 'off';
+      if (approver && m === 'active') {
+        r.jev = { state: 'checking' };
+        void check(r, approver, false);
+      } else if (approver) {
+        approve(r, approver.by, approver.radius ? { radius: approver.radius } : {});
+        if (m === 'shadow') void check(r, approver, true);
+      }
       return { ...r };
     },
     waited(jobId, template) {
