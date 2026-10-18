@@ -8,6 +8,7 @@
 // no conditional request, so the pull requests' checks are read only when they decide: no required check and no
 // workflow on pull requests was found (else `pullRequests` is `{ read: 0, withChecks: 0 }`).
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
+import { fileAssignedIssue } from '../sources/github/http/file-issue.ts';
 import { makeRequest, retryAtOf, splitRepo, statusOf } from '../sources/github/http/http.ts';
 import { explained, permissionsOfError, permissionsOfPath } from '../sources/github/http/refusal.ts';
 import { runsOnPullRequests, type RepoChecksFound } from '../domain/types.ts';
@@ -111,8 +112,8 @@ export function createRepoChecksGitHub(o: { apiUrl: string; installUrl?: string 
       return i ? { number: i.number, url: i.html_url } : undefined;
     }, failed(`the open issues of ${repo}`)),
     file: (repo, issue) => withToken(async (token) => {
-      const d = (await req('POST /repos/{owner}/{repo}/issues', { ...splitRepo(repo), ...issue, headers: headers(token) })).data as { number: number; html_url: string };
-      return { number: d.number, url: d.html_url };
+      const d = await fileAssignedIssue(req, headers(token), repo, issue);
+      return { number: d.number, url: d.url };
     }, failed(`a new issue on ${repo}`)),
   };
 }

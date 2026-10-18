@@ -289,10 +289,11 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         if ('number' in req) cache.forget(req.repo, req.number);
         record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}), ...(resendKey ? { key: resendKey } : {}) });
         if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...acting, ...result } };
-        const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
+        const { subIssue, subIssueError, unassigned } = result as { subIssue?: boolean; subIssueError?: string; unassigned?: string[] };
         user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
           requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,
           ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}), ...(routeTo ? { routed: true } : {}),
+          ...(unassigned ? { unassigned } : {}),
         } });
         // A routed child: the job is told the `on:` line that wakes it when the child closes.
         const routed = routeTo ? { routed: true, waitOn: `issue ${req.repo}#${String(result.number)}` } : {};

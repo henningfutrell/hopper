@@ -57,6 +57,12 @@
     "routed": {
       "type": "boolean",
       "const": true
+    },
+    "unassigned": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

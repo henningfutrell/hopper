@@ -57,11 +57,13 @@ Prints the answer as JSON, with the url and as (the GitHub account that acted). 
 Read GitHub only this way: never curl api.github.com, never gh api, never a browser. A read is answered from what the
 hopper read last when that is at most 30 seconds old, or when the pull request is merged: source cache, else source
 github, and readAt says when it was read. ledger, when the hopper follows the item, says where its work stands.
-An issue filed this way gets no labels or assignees and says the hopper filed it; a person triages it.
+An issue filed this way says the hopper filed it. A follow-up gets no labels or assignees: a person triages it.
 When no answer comes back to issue create or comment, hopper-gh sends it again by itself: the hopper answers the first
 one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
-required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open. Use
+required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open, and gives
+it the job sources' label and your user as assignee, so Intake lists it. When GitHub did not set the assignee, the
+answer says unassigned: say so in your final message, so a person assigns it. Use
 --required only when this job's issue cannot be complete without it; a nice-to-have is a follow-up.
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work, never to a default or a release branch: on this job's own repository, or
