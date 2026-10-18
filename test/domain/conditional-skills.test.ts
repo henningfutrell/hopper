@@ -25,6 +25,9 @@ describe('a skill rule', () => {
     expect(skillRuleProblem({ skill: 'iac' })).toMatch(/at least one condition/);
     expect(skillRuleProblem({ skill: 'Bad Name', labels: ['iac'] })).toMatch(/no skill name/);
     expect(skillRuleProblem({ skill: 'iac', repos: ['infra'] })).toMatch(/owner\/name/);
+    // A GitLab project in a subgroup (issue #1924 part 4): its whole path.
+    expect(skillRuleProblem({ skill: 'iac', repos: ['ops/platform/infra'] })).toBeUndefined();
+    expect(ruleMatch({ skill: 'iac', repos: ['ops/platform/infra'] }, { ...job, repo: 'Ops/Platform/Infra' })).toEqual(['repository ops/platform/infra']);
     expect(skillRuleProblem({ skill: 'iac', kinds: ['deploy'] } as never)).toMatch(/kind of work/);
     expect(skillRuleProblem({ skill: 'iac', labels: [] })).toMatch(/at least one condition/);
   });
