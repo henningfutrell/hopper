@@ -634,7 +634,12 @@ HOPPER_CLAUDE_CWD), model?: string, timeoutMs?: number }`.
 stdout, errors JSON on stderr with exit 1. Never the default session — herdr's own doctrine
 forbids driving a user's session from outside it. Spawned processes get an environment with
 `CLAUDECODE` and every `CLAUDE_CODE_*` variable removed but the claude CLI's credential
-`CLAUDE_CODE_OAUTH_TOKEN` (issue #533, "Startup screens").
+`CLAUDE_CODE_OAUTH_TOKEN` (issue #533, "Startup screens"). Each call is cut off at 15 s. A busy herdr server
+answers late (issue #1857, seen live: `agent get` and `agent prompt` cut off and jobs failed): a call that only reads
+(`agent get`, `pane read`, `pane list`, `tab list`, `workspace list`) is asked again on a `timeout`, 3 tries in all. A call
+that changes something is never sent again. A `timeout` of `agent prompt` does not fail the job: the prompt may have
+reached Claude, so the turn is watched as if it was sent, and a prompt that did not reach Claude is a **lost send**
+(sent again, at most 3 sends).
 
 **Lanes → panes.** One herdr workspace labelled `hopper` (found by label, else created
 `--no-focus`). One **tab per job run**, created with `--cwd <job cwd>` and labelled
@@ -12941,6 +12946,12 @@ GitHub; and once its job ran and the issue closed, the parent went on waiting on
   and assigns it to the job's user's connected account (`FiledWith`, `src/github-proxy/api.ts`; the broker,
   `src/github-proxy/broker.ts`). The proxy files issues only on the user's job repositories, so a routed child is always
   in a repository the hopper works on. A follow-up is not routed: it waits for a person to triage it, as before.
+- **The assignee is checked** (issue #1856). GitHub drops an assignee it cannot set from a new issue with no error, and
+  keeps the label: such an issue sat in Intake as not assigned to the user, and never became a job. Each issue the hopper
+  files with its label (a routed child, the Add PR checks issue, a landing batch's fix, back-merge or canary issue) goes
+  through `fileAssignedIssue` (`src/sources/github/http/file-issue.ts`): it reads the answer's assignees, sets each
+  dropped one again in a second call, and returns those GitHub still dropped as `unassigned`. The proxy answers them to
+  the job and records them on `job.child_issue_filed`; it never files the issue again.
 - **Trusted origin is unchanged.** The child's text keeps the note `Filed through hopper for job …` (`FILED_BY_JOB`), so it
   is a request card (`a job filed it`) and auto-approval never takes it (issue #1268). Routing saves the trip to GitHub; the
   approval stays a person's act in Intake. The note says so: `Routed by the hopper: Intake lists it as a request card, and
@@ -16974,7 +16985,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 17, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 20, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17453,8 +17464,55 @@ heading or a person), no fork, follow-on or tend job, on an executor that writes
 Persisted state: `kindCheck` is one more optional field in the job's body; the build before keeps it as it is and does not
 read it. No migration.
 
-**Not in these parts** (left on the issue): the rest of the provenance (the nomination by a comment command, the linked
-pull requests and their forks, the repository's visibility), and the Intake view of the stamp. Brake 1's `open` lets a
+**Linked pull requests and the repository's visibility** (part 19, `src/domain/linked-pulls.ts`, `linksOf` in
+`src/sources/github/origin.ts`). The issue's provenance fields `linked` ("the PRs and issues referenced, with their authors,
+and whether a PR head is a fork") and `repo_visibility`. Fork code is the case to see: an issue of the user's own that says
+"merge the change of #12" runs at `owner`, and #12 can be a stranger's pull request from a fork. So, for each GitHub issue
+whose origin is trusted or approved (only its job keeps them):
+
+- **The names in its text** (`linkedRefs`): `#N`, `owner/name#N`, and the pull request and issue URLs of the issue's own
+  GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself, never a `#` joined to a word.
+- **One read per name** (`GitHubApi.linkedItem`, GraphQL `repository { visibility issueOrPullRequest(number) }`, in the
+  batched reads of issue #822): its repository's visibility, and the pull request when the name is one — its URL, its
+  author, `isCrossRepository` as `fork`. The issue's own read gives its repository's visibility.
+- **Kept on the job** (`JobSourceRef.visibility`, `JobSourceRef.linkedPulls`): each pull request with `trusted` (its author
+  is a trusted actor, asked of Access with the origin's logins; a bot never is). A name that is an issue, or that GitHub
+  does not show (`NOT_FOUND`), is not kept. A read that fails is kept as `unread` (its URL from the name), so a person sees
+  that something was not read. Run again, Rework and `job.origin_judged` keep them as they keep the origin acts.
+- **Shown**: the stamp view (`visibility`, `linkedPulls`, null when none is kept), the job view (a line `links`, a pull
+  request no trusted actor wrote marked), and `job.queued`'s `source`.
+- **Jev reads them**: Jev's trust check gets them in `source`, and has one more reason, `fork_code` ("it brings in a pull
+  request of a fork that no trusted actor wrote"), to lower the job.
+- **No rule reads them**, as the origin acts: the stamp's level still comes from the origin. A rule would decide for every
+  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in.
+
+Also in this part: the GraphQL read of an issue's edits (issue #662, part 17) read the answer one level too high, so it
+found no edits against GitHub; the fake GitHub hid it. It reads them under `data` now, and an answer with errors throws, so
+the edits count as not known (a request card), as part 17 says.
+
+Cost: one more GraphQL read per name and one for the issue, batched, only for an issue the source judges that may be taken.
+Persisted state: two optional fields on the job's source; the build before reads a job with them as before. No migration.
+
+**The Intake view of the stamp** (part 20, `ui/src/views/intake-trust.tsx`, `heldByTrust` in `ui/src/model/trust.ts`). The
+issue's Intake section: "held candidates, history, provenance, grants and brake 1". A hold text sent a person "to Intake",
+but Intake listed only a source's items, not the jobs a stamp holds. Now Intake shows **Held by trust** above the sources:
+
+- **Which jobs**: each waiting job in status `held` whose hold reason is one `stampHold` or the trust check gives — no stamp,
+  a stamp that does not verify, a quarantine, a level below the dispatch minimum or below the intake strictness, Jev's trust
+  check due. The UI imports nothing of `src/` at run time, so it keeps the start of each text (`trustHold`);
+  `test/ui/trust-held.test.ts` checks them against the daemon's. A job held for its origin (`ORIGIN_PENDING`) is not listed:
+  its request card is.
+- **Each row**: the job (a link to its view), the hold reason, and its trust as on the job view (`JobTrust`): the level, why
+  it was lowered, its origin acts and links — the provenance —, with Approve trust and Lift quarantine for an operator. The
+  history is the job's timeline (`intake.stamped`, `job.trust_lowered`), one click away.
+- **Counted**: the jobs that wait on a person come first, and Intake's nav badge and Needs you count them; a job Jev still
+  checks waits on Jev, and is listed last and not counted.
+- **Grants and brake 1** stay where they are kept: the trusted actors (who may start jobs, the standing grant the hopper has)
+  and the intake strictness, on Settings → Intake, which the panel links.
+
+No route, no event, no persisted state: the daemon already sends each held job with its hold reason and stamp.
+
+**Not in these parts** (left on the issue): the nomination by a comment command. Brake 1's `open` lets a
 `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a
@@ -27225,3 +27283,36 @@ stopped while GitHub had the push recorded nothing: the push could be on GitHub 
 **Verification:** `test/github-proxy/push-saga.test.ts`, on the real database with two coordinators: a push GitHub
 answers (the saga ends, one event); a hopper stopped while GitHub had the push, and GitHub took it (the next hopper
 records it done) or did not (recorded failed); an event recorded before the stop is not recorded again.
+
+## A machine's own usage limits (issue #1860, 2026-10-17)
+
+**Problem.** Two machines can sign in to one Claude account: a Windows machine that takes only `hopper:windows`
+work, and a Linux machine added to use the account's spare capacity. Each reads the same account, so their usage
+readings say the same. Both scale their lane cap by the same usage limits. So in the soft band each drains only its
+own lowest-priority lanes, and the secondary machine can spend the last of the budget that the primary's work needs.
+
+Two shapes were offered: an `account` (or `usageGroup`) option that makes machines share one reading, with a
+`usagePriority` per machine; or lower usage limits for the secondary machine. Built the second: the machines already
+read the same numbers (each its own usage source of one account), so a shared reading adds nothing, and a
+per-machine pair of limits is one option and no new grouping concept. It also serves a machine alone, which an
+admin wants to keep below the user's limits.
+
+**As built:**
+- **`usageLimits`**, an optional option of every machine-source plugin (`local`, `ssh`, `container`, `client`,
+  `kubernetes-cluster`): `{ "soft": <0..1>, "hard": <0..1> }`, soft below hard, else the config is refused. Not
+  command-bearing. It reaches the decider on `MachineSnapshot.usageLimits`.
+- **The decider (step 2).** `machinePolicy(m, policy)` (`src/decider/usage.ts`) puts the machine's own limits in
+  place of the user's for that machine: its lane cap, its band, and its placement pressure. Other machines keep the
+  user's limits. The machine's usage reason names them: `seat: 69% used, lane cap 0 of 4 (soft), its own usage
+  limits 50% / 70%`.
+- **Two machines on one account.** Give the secondary limits whose hard limit is at or below the primary's soft
+  limit (e.g. 50% / 70% under the user's 70% / 95%): its lane cap reaches 0 before the primary loses a lane.
+- **Lane tuning** reads the machine's own limits too.
+- **`GET /api/usage`** answers `usageLimits` on that machine's lane effect. The Usage view's lane caps at the
+  limits being edited keep such a machine's cap, and say `own limits`; its Lane effect bar marks its own limits.
+- No stored state changes: the option is in the plugins config, absent on every config before it.
+
+**Verification:** `test/decider/machine-usage-limits.test.ts` (the secondary's cap falls first and is 0 before the
+primary loses a lane; a Decision starts on the primary only; without the option the user's limits apply);
+`test/plugins/machine-targets.test.ts` and `test/plugins/host-sources.test.ts` (the option reaches the machine;
+soft at or above hard refused); `test/ui/usage-limits-view.test.ts` (the cap does not follow the user's limits).

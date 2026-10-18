@@ -1,7 +1,8 @@
 // An issue's origin at intake (issue #652, domain/intake-origin.ts): who wrote it, and who added the label and the
 // assignment the hopper takes it by — the newest of each, from its events —, and who edited its title or body (issue
 // #655 part 17, as on GitLab). Each act counts only when a trusted actor did it, not through an app or as a bot; this
-// hopper's own Assign to me is the user's act. An issue a job filed is never of
+// hopper's own Assign to me is the user's act. An issue that may be taken also gets its links (part 19): its repository's
+// visibility and the pull requests its text names, which its job keeps and no rule reads. An issue a job filed is never of
 // a trusted origin. Not trusted: the text a person approved, when its title and body hash the same, makes it approved;
 // else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies;
 // a card that leaves Intake with no approval or decline records `source.request_withdrawn` (issue #1067, part 4).
@@ -15,11 +16,18 @@ import {
 } from '../../domain/intake-origin.ts';
 import type { IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
+import { linkedRefs, type LinkedItem, type LinkedPullRequest, type RepoVisibility } from '../../domain/linked-pulls.ts';
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
 import { DONE_OPEN } from './discover.ts';
 
-/** An issue's origin: trusted or approved (it may be taken), with its acts (issue #655 part 14), else the request card a person approves. */
-export type OriginVerdict = { origin: JobOrigin; acts: OriginActor[] } | { request: IntakeRequest };
+/**
+ * An issue's origin: trusted or approved (it may be taken), with its acts (issue #655 part 14) and its links (part 19),
+ * else the request card a person approves.
+ */
+export type OriginVerdict = ({ origin: JobOrigin; acts: OriginActor[] } & ItemLinks) | { request: IntakeRequest };
+
+/** Its repository's visibility and the pull requests its text names (issue #655 part 19); both absent: the API reads no items. */
+export interface ItemLinks { visibility?: RepoVisibility; linkedPulls?: LinkedPullRequest[] }
 
 export const REQUEST_REASON = 'a request: approve it to take it';
 /** A reopened card (issue #1126). */
@@ -95,6 +103,50 @@ async function editsOf(api: GitHubApi, issue: GitHubIssue): Promise<Act[]> {
   }
 }
 
+/** Read item `number` of `repo`; undefined: the read failed. */
+async function readItem(api: Required<Pick<GitHubApi, 'linkedItem'>>, repo: string, number: number): Promise<LinkedItem | undefined> {
+  try {
+    return await api.linkedItem(repo, number);
+  } catch (err) {
+    console.warn(`hopper: ${repo}#${number}, which an issue names, could not be read: ${(err as Error).message}`);
+    return undefined;
+  }
+}
+
+/**
+ * The links of each issue (issue #655 part 19), by its URL: its repository's visibility, and the pull requests its text
+ * names, each with whether a trusted actor wrote it (the trusted actors asked once for the authors `answers` lacks). A name
+ * that cannot be read is kept as not read; an issue, or a name GitHub does not show, is not kept. None: no item read.
+ */
+export async function linksOf(api: GitHubApi, trust: IntakeTrust, issues: GitHubIssue[], connected: string,
+  answers: ReadonlyMap<string, { allowed: boolean }>): Promise<Map<string, ItemLinks>> {
+  const links = new Map<string, ItemLinks>();
+  if (!api.linkedItem || issues.length === 0) return links;
+  const reader = { linkedItem: api.linkedItem.bind(api) };
+  const read = await Promise.all(issues.map(async (i) => {
+    const refs = linkedRefs(i, i.body);
+    const [own, ...items] = await Promise.all([readItem(reader, i.repo, i.number), ...refs.map((r) => readItem(reader, r.repo, r.number))]);
+    return { i, own, items: refs.map((r, k) => ({ ref: r, item: items[k] })) };
+  }));
+  const authors = new Map<string, ActorRef>();
+  for (const { items } of read) for (const { item } of items) {
+    const a = item?.pullRequest?.author;
+    if (a && !isBotLogin(a) && !answers.has(a.toLowerCase())) authors.set(a.toLowerCase(), { login: a.toLowerCase() });
+  }
+  const more = authors.size > 0 ? await trust.trusted([...authors.values()], connected) : new Map<string, { allowed: boolean }>();
+  const trusted = (login: string | undefined) => login !== undefined && !isBotLogin(login) && (answers.get(login.toLowerCase()) ?? more.get(login.toLowerCase()))?.allowed === true;
+  const origin = (i: GitHubIssue) => new URL(i.url).origin;
+  for (const { i, own, items } of read) {
+    const linkedPulls = items.flatMap(({ ref, item }): LinkedPullRequest[] => {
+      if (!item) return [{ url: `${origin(i)}/${ref.repo}/issues/${ref.number}`, trusted: false, unread: true }];
+      const pr = item.pullRequest;
+      return pr ? [{ url: pr.url, ...(pr.author ? { author: pr.author } : {}), fork: pr.fork, trusted: trusted(pr.author) }] : [];
+    });
+    links.set(i.url, { ...(own?.visibility ? { visibility: own.visibility } : {}), linkedPulls });
+  }
+  return links;
+}
+
 /** The origin of each issue, by its URL: the trusted actors asked once for every login the issues name. */
 export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitHubIssue[], label: string, connected: string): Promise<Map<string, OriginVerdict>> {
   const acts = new Map<string, Act[]>();
@@ -117,6 +169,9 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
     else if (approved && requestHash(approved) === hash) verdicts.set(i.url, { origin: 'approved', acts: actors });
     else verdicts.set(i.url, { request: { hash, title: i.title, body: i.body, author: i.author, actors, why, ...(approved ? { approved } : {}) } });
   }
+  // The links only of an issue that may be taken: only its job keeps them.
+  const links = await linksOf(api, trust, issues.filter((i) => 'origin' in verdicts.get(i.url)!), connected, answers);
+  for (const [url, l] of links) verdicts.set(url, { ...verdicts.get(url)!, ...l });
   return verdicts;
 }
 

@@ -9,6 +9,7 @@
 import { REPORT_LABEL } from '../bug-reports/context.ts';
 import type { BatchCheckRun } from '../domain/landing-batches.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
+import { fileAssignedIssue } from '../sources/github/http/file-issue.ts';
 import { makeRequest, paginate, splitRepo, statusOf } from '../sources/github/http/http.ts';
 import { jobLog } from '../sources/github/http/rest.ts';
 import type { LandingBatchGitHub } from './runner.ts';
@@ -104,8 +105,8 @@ export function createLandingBatchGitHub(o: { apiUrl: string } & TokenSource): L
     }, failed(`the revert of ${repo}#${number}`)),
     checkLog: (repo, id) => withToken((token) => jobLog(req, token, repo, id), failed(`the log of the check ${id} on ${repo}`)),
     fileIssue: (repo, issue) => withToken(async (token) => {
-      const d = (await req('POST /repos/{owner}/{repo}/issues', { ...splitRepo(repo), ...issue, headers: headers(token) })).data as { number: number; html_url: string };
-      return { number: d.number, url: d.html_url };
+      const d = await fileAssignedIssue(req, headers(token), repo, issue);
+      return { number: d.number, url: d.url };
     }, failed(`a new issue on ${repo}`)),
     findIssue: (repo, f) => withToken(async (token) => {
       // The issues list, not the search: it shows an issue at once.

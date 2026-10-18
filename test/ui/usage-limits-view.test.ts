@@ -13,7 +13,11 @@ const limits = { soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set
 const usage = {
   readings: [{ source: 'plan', window: 'session', used: 60, limit: 100, unit: '%', at: '2026-10-08T12:00:00.000Z' }],
   sources: [{ name: 'plan' }], limits,
-  machines: [{ machineId: 'desk', label: 'desk', online: true, maxLanes: 4, usedFrac: 0.6, cap: 4, band: 'free', executors: [] }],
+  machines: [
+    { machineId: 'desk', label: 'desk', online: true, maxLanes: 4, usedFrac: 0.6, cap: 4, band: 'free', executors: [] },
+    // Issue #1860: a machine with its own usage limits; the user's limits do not move its lane cap.
+    { machineId: 'seat', label: 'seat', online: true, maxLanes: 4, usedFrac: 0.6, cap: 2, band: 'soft', executors: [], usageLimits: { soft: 0.5, hard: 0.7 } },
+  ],
 };
 const history = {
   view: { range: { preset: '24h' } }, from: '2026-10-07T12:00:00.000Z', to: '2026-10-08T12:00:00.000Z', stepMs: 3_600_000, retentionDays: 90,
@@ -82,7 +86,7 @@ const input = (id: string) => document.getElementById(id) as HTMLInputElement;
 const slider = (name: string) => document.querySelector<SVGGElement>(`[role="slider"][aria-label="${name} limit"]`)!;
 const saveButton = () => [...document.querySelectorAll('button')].find((b) => b.textContent === 'Save') as HTMLButtonElement | undefined;
 const text = (slot: string) => document.querySelector(`[data-slot="${slot}"]`)?.textContent;
-const cap = () => document.querySelector('[data-machine-cap="desk"]')?.textContent;
+const cap = (id = 'desk') => document.querySelector(`[data-machine-cap="${id}"]`)?.textContent;
 function type(el: HTMLInputElement, value: string) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value);
   el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -116,6 +120,15 @@ describe('the usage limits on the Usage view', () => {
     expect(input('usage-hard-limit').value).toBe('90');
     await act(async () => { saveButton()!.click(); });
     expect(daemon.posts).toEqual([{ path: '/ui/api/usage/limits', body: { soft: 0.5, hard: 0.9 } }]);
+  });
+
+  it('a machine with its own usage limits keeps its lane cap when the user\'s limits move, and says so (issue #1860)', async () => {
+    await boot('admin');
+    expect(cap('seat')).toMatch(/^seat 2\/4 lanes/);
+    expect(cap('seat')).toContain('own limits 50% / 70%');
+    await act(async () => { type(input('usage-soft-limit'), '50'); });
+    expect(cap('seat')).toMatch(/^seat 2\/4 lanes/);
+    expect(document.querySelector('[data-own-limits="seat"]')?.textContent).toBe('its own usage limits: 50% / 70%');
   });
 
   it('a soft limit at or above the hard one is refused in place: Save stays off, nothing is posted', async () => {

@@ -77,9 +77,14 @@ export interface LaneCap {
   band: CapBand;
 }
 
-/** Step 2: the most lanes the machine may run. */
-export function laneCap(m: MachineSnapshot, usedFrac: number, p: DeciderPolicy): LaneCap {
+/** The policy on machine `m`: its own usage limits, when it has them, in place of the user's (issue #1860). */
+export const machinePolicy = (m: Pick<MachineSnapshot, 'usageLimits'>, p: DeciderPolicy): DeciderPolicy =>
+  (m.usageLimits ? { ...p, softLimit: m.usageLimits.soft, hardLimit: m.usageLimits.hard } : p);
+
+/** Step 2: the most lanes the machine may run, by its own usage limits when it has them (`machinePolicy`). */
+export function laneCap(m: MachineSnapshot, usedFrac: number, policy: DeciderPolicy): LaneCap {
   if (!m.online) return { cap: 0, band: 'offline' };
+  const p = machinePolicy(m, policy);
   if (usedFrac < p.softLimit) return { cap: m.maxLanes, band: 'free' };
   if (usedFrac >= p.hardLimit) return { cap: 0, band: 'hard' };
   const scaled = (m.maxLanes * (p.hardLimit - usedFrac)) / (p.hardLimit - p.softLimit);

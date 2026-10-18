@@ -10,6 +10,10 @@
 //     When the job runs `sh "$HOPPER_GH" issue create --repo octo/site … --required`
 //     Then the child carries the hopper label and the user's login as assignee, and its text says it was routed
 //     And the answer says routed, and the wait line `issue octo/site#N`; the timeline's `job.child_issue_filed` says routed
+//   Scenario: GitHub drops the assignee of the new child (issue #1856)
+//     When GitHub files the child with its label but without the assignee
+//     Then the hopper assigns it in a second call, so Intake does not list it as not assigned
+//     And when GitHub drops it again, the answer and the timeline say unassigned
 //   Scenario: a job files a follow-up
 //     Then it carries no label and no assignee
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -71,6 +75,24 @@ describe('a required child is routed (issue #1510)', () => {
     expect(eventsOf(t.app, 'job.child_issue_filed')).toEqual([expect.objectContaining({
       jobId: t.job.id, data: expect.objectContaining({ child: expect.objectContaining({ repo: 'octo/site', number: answer.number }), required: true, routed: true }),
     })]);
+  });
+
+  it('an assignee GitHub dropped from the new child is set again in a second call (issue #1856)', async () => {
+    const t = await parented();
+    t.github.dropsAssignees = ['owner'];
+    const answer = json(await hopperGh(t.root, t.env, ['issue', 'create', '--repo', 'octo/site', '--title', 'Fix there', '--body', 'Needed.', '--required']));
+    expect(answer).toMatchObject({ ok: true, routed: true });
+    expect(answer).not.toHaveProperty('unassigned');
+    expect(t.github.issues.find((i) => i.repo === 'octo/site' && i.number === answer.number)).toMatchObject({ labels: ['hopper'], assignees: ['owner'] });
+  });
+
+  it('an assignee GitHub drops twice is told to the job and kept on the timeline, never hidden (issue #1856)', async () => {
+    const t = await parented();
+    t.github.dropsAssignees = ['owner'];
+    t.github.unassignable = ['owner'];
+    const answer = json(await hopperGh(t.root, t.env, ['issue', 'create', '--repo', 'octo/site', '--title', 'Fix there', '--body', 'Needed.', '--required']));
+    expect(answer).toMatchObject({ ok: true, routed: true, unassigned: ['owner'] });
+    expect(eventsOf(t.app, 'job.child_issue_filed')).toEqual([expect.objectContaining({ data: expect.objectContaining({ routed: true, unassigned: ['owner'] }) })]);
   });
 
   it('a follow-up is not routed: no label and no assignee, a person triages it', async () => {

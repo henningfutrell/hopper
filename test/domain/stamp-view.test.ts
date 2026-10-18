@@ -25,7 +25,7 @@ describe('stampView', () => {
       stamp: { level: 'owner', reasons: ['origin:trusted', 'author:assignee'], by: 'intake', at: AT },
       verifies: 'yes', level: 'owner',
       brake: { strictness: 'standard', needs: 'approved', at: 'default' },
-      startHold: null, gate2: 'auto', doorsOpen: true, checkDue: false, originActs: null,
+      startHold: null, gate2: 'auto', doorsOpen: true, checkDue: false, originActs: null, visibility: null, linkedPulls: null,
     });
   });
 

@@ -18,6 +18,15 @@ describe('herdr-claude executor: lost sends', () => {
     expect(saved.at(-1)).toMatchObject({ turn: { text: sent } });
   });
 
+  it('a prompt herdr answered too late is watched, not failed (issue #1857): one that never reached Claude is sent again', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] }, { idleNudgeMs: 20000 });
+    herdr.failNext('prompt', 'timeout');
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'Write hello.txt' }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.calls.filter((c) => c.method === 'prompt')).toHaveLength(2);
+    expect(progress.map((p) => p.message)).toContain('the prompt never reached claude: sent it again');
+  });
+
   it('a nudge that never reaches Claude is sent again too', async () => {
     const note = { output: ['● Tests are running in the background.'] };
     const { herdr, executor } = setup({ turns: [note, DONE] }, { idleNudgeMs: 20000 });

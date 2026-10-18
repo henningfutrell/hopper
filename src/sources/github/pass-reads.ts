@@ -10,7 +10,7 @@ import { githubTraffic, type GitHubTraffic } from '../../github-limiter/traffic.
 import type { GitHubApi } from './api.ts';
 
 const READS = [
-  'getIssue', 'subIssues', 'listComments', 'issueEdits', 'issuePlace', 'projectItems', 'assignedAt', 'issueEvents',
+  'getIssue', 'subIssues', 'listComments', 'issueEdits', 'linkedItem', 'issuePlace', 'projectItems', 'assignedAt', 'issueEvents',
   'closingPullRequest', 'openClosingPullRequests', 'referencingPullRequests', 'crossReferences', 'pullRequest', 'openPullRequests', 'mergedPullRequestsInto',
   'listAssignedIssues', 'listRepos', 'issuesChangedSince', 'openPullRequestsIn', 'pullRequestStates', 'jobLog', 'taggedItems', 'headChecks', 'workflowRun', 'pullRequestReviews',
 ] as const;

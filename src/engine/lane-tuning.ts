@@ -6,7 +6,7 @@
 // (`lanes.undone`). Each machine's settings — auto-tune and the bounds — are the user's, in the database. When the rules'
 // recommendation changes, Jev is asked first (`lane-count`, issue #550): its applied pick is the machine's recommendation
 // until the rules' recommendation or the configured lanes move.
-import { laneEffect } from '../decider/usage.ts';
+import { laneEffect, machinePolicy } from '../decider/usage.ts';
 import { jobCostGroups, jobCostKind, jobCostProfiles } from '../decider/job-costs.ts';
 import { laneActions, laneProgress, recommendLanes } from '../decider/lane-tuning.ts';
 import { withJevLanes } from '../decider/lane-calls.ts';
@@ -89,7 +89,7 @@ export function createLaneTuning(c: EngineContext, calls: LaneCallDeps): LaneTun
     const progress = laneProgress(c.store.machineHistory.jobRuns({ from, to: now }));
     const machinesOut: LaneRecommendation[] = machines.map((m) => {
       const rules = recommendLanes({
-        machine: m, loads, progress, usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: policy.softLimit, hard: policy.hardLimit, tuning: tuningOf(c.store, m.id),
+        machine: m, loads, progress, usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: machinePolicy(m, policy).softLimit, hard: machinePolicy(m, policy).hardLimit, tuning: tuningOf(c.store, m.id),
       });
       const r = withJevLanes(rules, jev.get(m.id));
       return { ...r, ...laneActions(r, dismissals[m.id], changes.find((x) => x.machineId === m.id)) };

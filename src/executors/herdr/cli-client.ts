@@ -16,6 +16,8 @@ import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient, HerdrPane } from './client.ts';
 
 const DEFAULT_TIMEOUT_MS = 15000;
+/** Tries of a read herdr answers too late (issue #1857): a busy server answers the next one. A change is never sent again. */
+const READ_TRIES = 3;
 
 function errorFrom(stderr: string, fallback: string): HerdrError {
   try {
@@ -112,12 +114,24 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     }
   };
 
+  /** A call that only reads, asked again while herdr times out on it. */
+  const again = async <T>(call: () => Promise<T>): Promise<T> => {
+    for (let tries = 1; ; tries++) {
+      try {
+        return await call();
+      } catch (err) {
+        if (tries >= READ_TRIES || !(err instanceof HerdrError) || err.code !== 'timeout') throw err;
+      }
+    }
+  };
+  const read = (args: string[]): Promise<Record<string, unknown>> => again(() => run(args));
+
   return {
     session,
     exec,
     run,
     async ensureWorkspace(label, cwd) {
-      const list = await run(['workspace', 'list']);
+      const list = await read(['workspace', 'list']);
       const found = (list.workspaces as { workspace_id: string; label?: string }[] | undefined)?.find((w) => w.label === label);
       if (found) return found.workspace_id;
       const created = await run(['workspace', 'create', '--label', label, '--cwd', cwd, '--no-focus']);
@@ -130,10 +144,10 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
       return { tabId: (r.tab as { tab_id: string }).tab_id, paneId: pane.pane_id, ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}) };
     },
     async findTab({ workspaceId, label }) {
-      const list = await run(['tab', 'list', '--workspace', workspaceId]);
+      const list = await read(['tab', 'list', '--workspace', workspaceId]);
       const tab = (list.tabs as { tab_id: string; label?: string }[] | undefined)?.find((t) => t.label === label);
       if (!tab) return null;
-      const panes = (await run(['pane', 'list'])).panes as HerdrListedPane[] | undefined;
+      const panes = (await read(['pane', 'list'])).panes as HerdrListedPane[] | undefined;
       const pane = panes?.find((x) => x.tab_id === tab.tab_id);
       return pane ? { tabId: tab.tab_id, paneId: pane.pane_id, ...(pane.terminal_id ? { terminalId: pane.terminal_id } : {}), ...(pane.agent ? { agent: pane.agent } : {}) } : null;
     },
@@ -149,7 +163,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     },
     async getAgent(name): Promise<AgentInfo | null> {
       try {
-        const r = await run(['agent', 'get', name]);
+        const r = await read(['agent', 'get', name]);
         const a = r.agent as { agent_status: AgentStatus; state_change_seq: number; pane_id: string; terminal_id?: string };
         return { status: a.agent_status, stateChangeSeq: a.state_change_seq, paneId: a.pane_id, ...(a.terminal_id ? { terminalId: a.terminal_id } : {}) };
       } catch (err) {
@@ -157,7 +171,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
         throw err;
       }
     },
-    read: (paneId, { source, lines }) => exec(['pane', 'read', paneId, '--source', source, '--lines', String(lines)]),
+    read: (paneId, { source, lines }) => again(() => exec(['pane', 'read', paneId, '--source', source, '--lines', String(lines)])),
     async prompt(name, text) { await run(['agent', 'prompt', name, text]); },
     async sendKeys(paneId, keys) { await exec(['pane', 'send-keys', paneId, ...keys]); },
     async sendText(paneId, text) { await exec(['pane', 'send-text', paneId, text]); },
@@ -172,7 +186,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
       }
     },
     async listPanes() {
-      const r = await run(['pane', 'list']);
+      const r = await read(['pane', 'list']);
       return ((r.panes ?? []) as HerdrListedPane[]).map(paneOf);
     },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },

@@ -122,4 +122,12 @@ describe('what Jev reads', () => {
     expect(trustCheckState(j, 'approved', ['origin:approved'])).toMatchObject({ source: { originActs } });
     expect(trustCheckState(job('b', { source: github() }), 'owner', [])).not.toHaveProperty('source.originActs');
   });
+
+  it('the links kept with the job (part 19): the repository\'s visibility and the pull requests its text names', () => {
+    const linkedPulls = [{ url: 'https://github.com/o/r/pull/3', author: 'stranger', fork: true, trusted: false }];
+    const j = job('a', { source: github({ origin: 'trusted', visibility: 'public', linkedPulls }) });
+    expect(trustCheckState(j, 'trusted', ['origin:trusted'])).toMatchObject({ source: { visibility: 'public', linkedPulls } });
+    expect(trustOptions('trusted').map((o) => o.id)).toContain('lower:untrusted:fork_code');
+    expect(trustCheckState(job('b', { source: github() }), 'owner', [])).not.toHaveProperty('source.linkedPulls');
+  });
 });

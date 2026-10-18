@@ -3,6 +3,7 @@
 import type { ItemComment, ItemEdit, ItemText } from './item-snapshots.ts';
 import type { Parts } from './types.ts';
 import type { JobOrigin, OriginActor } from './intake-origin.ts';
+import type { LinkedPullRequest, RepoVisibility } from './linked-pulls.ts';
 
 /** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
 export interface SourceItem {
@@ -55,6 +56,10 @@ export interface SourceItem {
   origin?: JobOrigin;
   /** Its origin acts (issue #655 part 14), as read with its origin: the job keeps them (`JobSourceRef.originActs`). */
   originActs?: OriginActor[];
+  /** Its repository's visibility (issue #655 part 19), read with its origin: the job keeps it (`JobSourceRef.visibility`). */
+  visibility?: RepoVisibility;
+  /** The pull requests its text names (issue #655 part 19), read with its origin: the job keeps them (`JobSourceRef.linkedPulls`). */
+  linkedPulls?: LinkedPullRequest[];
 }
 
 /** A source as the host takes it: its name and kind, and how it renders an item from a text (`JobSource.withText`). */

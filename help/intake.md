@@ -105,6 +105,20 @@ Approve works only when the text has not changed since the hopper showed it to y
 
 If the issue changes after you approved it, but before its job is made, the card shows again. It shows the approved text and the change line by line, with **Approve the new text**.
 
+### Jobs held by trust
+
+Each job has a trust level, which comes from where its work came. A job does not start when its trust stamp holds it. **Intake** lists these jobs in **Held by trust**, above the issues. Each row shows the job, why it is held, its trust level, who wrote, labelled and assigned its item, and the pull requests its text names.
+
+| Why it is held | What you can do |
+|---|---|
+| Jev's trust check, a declined sandbox request or an edit lowered its trust | Read the job, then select **Approve trust**. |
+| A person quarantined it | Select **Lift quarantine**. |
+| Its trust is below the intake strictness | An admin changes the intake strictness in **Settings → Intake**. |
+| It has no trust stamp, or its stamp does not match the job | Open the job, then cancel it or run its item again. |
+| Jev checks its trust | Nothing: it starts when the check keeps its level. |
+
+The nav badge of **Intake** counts the jobs that wait on a person. A job that Jev still checks is not counted.
+
 ### Issues on GitLab
 
 Connect a GitLab account in Sources → GitLab with a personal access token, and pick its projects. Intake then lists the open
@@ -169,6 +183,7 @@ After intake, a new job also passes the queue gate. Set it in the **Queue** view
 
 - It lists every open labelled issue in your job repositories in **Intake**, with `taken` or the one reason it was not taken. It drops nothing silently.
 - It reads the issue's events and edits to find who wrote, labelled, assigned and edited it.
+- For an issue it takes, it also reads the pull requests that the issue's text names (`#12`, `owner/name#12`, or a pull request link): who wrote each, whether it comes from a fork, and whether a trusted actor wrote it. It reads whether the repository is public too. The job keeps these facts. The job view shows them on the **links** line, and marks a pull request that no trusted actor wrote. Jev's trust check reads them, and can hold a job that brings in a fork's pull request from someone you do not trust. They do not change the job's trust level by themselves.
 - It puts the issue's text into the job's prompt inside an untrusted block. The job reads it as data, not as instructions.
 - Only the assignee's comments reach the job.
 - It releases its own stale claims: a claim of yours with no job here.

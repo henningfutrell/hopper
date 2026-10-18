@@ -116,7 +116,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       // lost send and is sent again, never as a lost job.
       ctx.saveState({ ...s, turn, parkedSeq: undefined, lapsesAt: undefined });
       const err = await herdrOn(s).prompt(s.agentName, text).then(() => undefined, (e: unknown) => e);
-      if (err === undefined) return watch(ctx, s, p, turn, notes);
+      // A prompt herdr answered too late may have reached Claude (issue #1857): the watch sees the turn, or a lost send.
+      if (err === undefined || (err instanceof HerdrError && err.code === 'timeout')) return watch(ctx, s, p, turn, notes);
       if (refused || !(err instanceof HerdrError) || err.code !== 'agent_blocked') throw err;
     }
   }

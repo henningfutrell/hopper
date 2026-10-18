@@ -1,0 +1,1 @@
+- Intake now lists the jobs that do not start because of their trust, with why, and lets you approve their trust or lift a quarantine there.

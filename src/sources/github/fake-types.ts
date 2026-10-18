@@ -1,4 +1,5 @@
 // The in-memory GitHub's types (fake.ts): the helpers a test plays the other side with, apart for the fake's size.
+import type { RepoVisibility } from '../../domain/linked-pulls.ts';
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
 import type { FakeBaseMerge } from './fake-conflicts.ts';
 import type { FakeMentionInput } from './fake-cross-references.ts';
@@ -78,6 +79,12 @@ export interface FakeGitHub extends GitHubApi {
   addLabel(repo: string, number: number, label: string, by?: FakeActor): void;
   removeLabel(repo: string, number: number, label: string): void;
   setProjectItems(owner: string, number: number, items: { url: string; fields?: Record<string, string | number> }[] | Error): void;
+  /** Repository `repo`'s visibility (issue #655 part 19); never set: private. */
+  setVisibility(repo: string, visibility: RepoVisibility): void;
+  /** A pull request of `repo` by `author`, of a fork or not, that an issue's text can name (issue #655 part 19). */
+  addPullRequestBy(repo: string, author: string, o?: { fork?: boolean }): { number: number; url: string };
+  /** The next read of item `number` of `repo` as an issue names it rejects with `error`. */
+  failLinkedRead(repo: string, number: number, error: Error): void;
   /** The next call of `method` rejects with `error`. */
   failNext(method: Method, error: Error): void;
   issue(repo: string, number: number): GitHubIssue;

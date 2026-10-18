@@ -5,7 +5,7 @@ import type { EventType } from './event-types.ts';
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
-import type { SignedOutTool, UsageReading } from './usage.ts';
+import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
 import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
@@ -13,7 +13,7 @@ import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBloc
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
-import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, JobOrigin, OriginActor } from './intake-origin.ts';
+import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, JobOrigin, OriginActor } from './intake-origin.ts'; import type { LinkedPullRequest, RepoVisibility } from './linked-pulls.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
 import type { JobRework } from './pull-requests.ts';
@@ -263,8 +263,7 @@ export interface JobSourceRef {
   kind: string;
   /** Stable unique key — for GitHub, the issue URL. */
   key: string;
-  url?: string;
-  title?: string;
+  url?: string; title?: string;
   /** owner/repo for GitHub. */
   repo?: string;
   number?: number; author?: string;
@@ -284,6 +283,12 @@ export interface JobSourceRef {
    * with no origin, or on a job taken before part 14. A record for people and for Jev's trust check: no rule reads it.
    */
   originActs?: OriginActor[];
+  /**
+   * Its repository's **visibility** and its **linked pull requests** (issue #655 part 19): the pull requests its text names,
+   * who wrote each, whether its head is a fork and whether a trusted actor wrote it, as read when its origin was judged.
+   * Absent as `originActs` is. A record for people and for Jev's trust check: no rule reads them.
+   */
+  visibility?: RepoVisibility; linkedPulls?: LinkedPullRequest[];
 }
 
 /** An item's declared parts (issue #729): how many there are, and how many are done. */
@@ -328,8 +333,8 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
   configuredLanes?: number;
   /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
   reservedLanes?: number;
-  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. `windows`: a Windows machine (issue #1350), the only kind that takes a job with a Windows label. */
-  elbowIns?: number; windows?: true;
+  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. `windows`: a Windows machine (issue #1350), the only kind that takes a job with a Windows label. `usageLimits`: its own usage limits (issue #1860), its lane cap goes by these, not by the user's; absent: the user's. */
+  elbowIns?: number; windows?: true; usageLimits?: UsageLimitPair;
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];

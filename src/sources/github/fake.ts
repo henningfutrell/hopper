@@ -8,7 +8,8 @@
 // `assignees` says otherwise (issue #387: intake is by label and assignee).
 // Its identity: a connected account (writes appear as `login`, through the hopper's app).
 // A repository listing (issue #985) lists the open issues of each repository with one of the labels; a repository
-// `failRepo` names is one GitHub does not answer for. Each change to an issue moves its `updatedAt`, as on GitHub.
+// `failRepo` names is one GitHub does not answer for. A repository's visibility and a pull request by anyone, of a fork or
+// not, are what an issue's text can name (issue #655 part 19, fake-links.ts). Each change to an issue moves its `updatedAt`, as on GitHub.
 
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { GitHubApiError } from './api.ts';
@@ -23,7 +24,7 @@ import { fakeConflicts } from './fake-conflicts.ts'; import { fakeChangedLines }
 import { fakeIssuePlace } from './fake-issue-place.ts';
 import { fakePulls } from './fake-pulls.ts';
 import { fakePullActs } from './fake-pull-acts.ts';
-import { fakeListing } from './fake-listing.ts';
+import { fakeListing } from './fake-listing.ts'; import { fakeLinks } from './fake-links.ts';
 
 export type { FakeActor, FakeGitHub, PullRequestInput } from './fake-types.ts';
 
@@ -108,7 +109,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
   const open = (label: string) => [...issues.values()].filter((i) => i.state === 'open' && i.labels.includes(label));
   /** A change to the issue: its `updatedAt` moves. */
   const touch = (i: GitHubIssue) => { i.updatedAt = stamp(); };
-  const listing = fakeListing(issues, (m, a) => enter(m, a));
+  const listing = fakeListing(issues, (m, a) => enter(m, a)); const links = fakeLinks((m, a) => enter(m, a));
   const acts = fakePullActs(pulls, (m, a) => enter(m, a), notFound);
   const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
   const heads = fakeHeadChecks((m, a) => enter(m, a), (repo, ref) => pulls.find((p) => p.repo === repo && p.headRef === ref)?.url);
@@ -232,7 +233,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     ...acts.api,
     jobLog: jobLogs.jobLog,
     rerunJob: jobLogs.rerunJob, workflowRun: jobLogs.workflowRun, pullRequestReviews: reviews.pullRequestReviews,
-    headChecks: heads.headChecks,
+    headChecks: heads.headChecks, ...links.api,
   };
 
   // A connected account's listing across repos.
@@ -319,7 +320,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     failNext(method, error) { failures.set(method, [...(failures.get(method) ?? []), error]); },
     issue(repo, n) { return copy(find(repo, n)); },
     commentsOn(repo, n) { return (comments.get(key(repo, n)) ?? []).map((c) => ({ ...c })); },
-    ...acts.helpers,
+    ...acts.helpers, ...links.helpers,
     labelsIn(repo) { return [...repoLabels(repo)]; },
   };
   return fake;

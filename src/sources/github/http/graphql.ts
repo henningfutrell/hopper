@@ -4,11 +4,13 @@
 // request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
 // pull requests of a repository, and an issue's cross-references (issue #430) (closer.ts).
 // And an issue's place for the issue graph (issue-place.ts, issue #437). The reads of one issue or pull request go through
-// `ask` (graphql-batch.ts, issue #822): the ones asked at the same time are one request.
+// `ask` (graphql-batch.ts, issue #822): the ones asked at the same time are one request. And an item an issue's text names
+// (issue #655 part 19).
 
 import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
 import type { ItemEdit } from '../../../domain/item-snapshots.ts';
+import { REPO_VISIBILITIES, type LinkedItem, type RepoVisibility } from '../../../domain/linked-pulls.ts';
 import {
   CLOSING_PULL_REQUEST_QUERY, CROSS_REFERENCES_QUERY, OPEN_PULL_REQUESTS_QUERY, OPEN_REPO_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom,
   crossReferencesFrom, referencingPullRequestsFrom, repoPullRequestsFrom,
@@ -138,9 +140,18 @@ interface EditsData {
   } | null } | null;
 }
 
-/** The edits of an issue's title and body, oldest first; an editor GitHub no longer names is `ghost`. */
-export function issueEditsFrom(data: unknown): ItemEdit[] {
-  const issue = (data as EditsData | undefined)?.repository?.issue;
+interface GqlErrors { errors?: { type?: string; message?: string }[] }
+
+/** Throw on the answer's errors but those `ignore` takes: the read did not work. */
+function throwErrors(body: GqlErrors | undefined, what: string, ignore: (type: string | undefined) => boolean = () => false): void {
+  const errors = (body?.errors ?? []).filter((e) => !ignore(e.type));
+  if (errors.length) throw new GitHubApiError(`${what}: ${errors.map((e) => e.message ?? e.type ?? 'error').join('; ')}`, false);
+}
+
+/** The edits of an issue's title and body, oldest first; an editor GitHub no longer names is `ghost`. An error throws (the edits are not known). */
+export function issueEditsFrom(body: unknown): ItemEdit[] {
+  throwErrors(body as GqlErrors | undefined, 'edits');
+  const issue = (body as { data?: EditsData } | undefined)?.data?.repository?.issue;
   const edits: ItemEdit[] = [
     ...(issue?.userContentEdits?.nodes ?? []).filter((n) => n?.editedAt).map((n) => ({ what: 'body' as const, editor: n!.editor?.login ?? 'ghost', at: n!.editedAt! })),
     ...(issue?.timelineItems?.nodes ?? []).filter((n) => n?.createdAt).map((n) => ({ what: 'title' as const, editor: n!.actor?.login ?? 'ghost', at: n!.createdAt! })),
@@ -150,6 +161,33 @@ export function issueEditsFrom(data: unknown): ItemEdit[] {
 
 export async function issueEdits(ask: AskGraphQL, token: string, repo: string, number: number): Promise<ItemEdit[]> {
   return issueEditsFrom(await ask(token, ISSUE_EDITS_QUERY, repo, number));
+}
+
+/** A repository's visibility, and item `number` of it when it is a pull request (issue #655 part 19). */
+const LINKED_ITEM_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { visibility issueOrPullRequest(number: $number) {
+    ... on PullRequest { url isCrossRepository author { login } }
+  } }
+}`;
+
+interface LinkedData {
+  repository?: { visibility?: string; issueOrPullRequest?: { url?: string; isCrossRepository?: boolean; author?: { login?: string } | null } | null } | null;
+}
+
+/** The read's answer: a visibility GitHub does not name, and an issue (no `url`), are left out. Nothing: a repository GitHub does not show. */
+export function linkedItemFrom(body: unknown): LinkedItem {
+  throwErrors(body as GqlErrors | undefined, 'item', (type) => type === 'NOT_FOUND');
+  const repo = (body as { data?: LinkedData } | undefined)?.data?.repository;
+  const visibility = repo?.visibility?.toLowerCase();
+  const pr = repo?.issueOrPullRequest;
+  return {
+    ...((REPO_VISIBILITIES as readonly string[]).includes(visibility ?? '') ? { visibility: visibility as RepoVisibility } : {}),
+    ...(pr?.url ? { pullRequest: { url: pr.url, ...(pr.author?.login ? { author: pr.author.login } : {}), fork: pr.isCrossRepository === true } } : {}),
+  };
+}
+
+export async function linkedItem(ask: AskGraphQL, token: string, repo: string, number: number): Promise<LinkedItem> {
+  return linkedItemFrom(await ask(token, LINKED_ITEM_QUERY, repo, number));
 }
 
 /** An issue's place; a GitHub with no issue dependencies is asked again without them (issue #900). */

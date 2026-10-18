@@ -5904,7 +5904,7 @@ Version 1 (`docs/schemas/repo_checks.dismissed.v1.json`). A person dismissed (`d
 
 ## `job.child_issue_filed`
 
-Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an issue through the hopper (issue #729, issue lineage): `child`, a child of the job's own issue `parent` (each `repo` and `number`; the child's `url`). `required`: the job marked it a required child (`--required`), and the hopper linked it as a GitHub sub-issue of the parent, so the parent is not done while it is open (`subIssue`; `false` with `subIssueError` when GitHub refused the link: the issue is filed all the same). Else a follow-up: the issue's text names its parent, and nothing waits on it. `routed` (issue #1510): the hopper labelled the required child with the job sources' label and assigned it to the job's user, so Intake lists it as a request card. `requestId` names the request, as in `github_proxy.done`.
+Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an issue through the hopper (issue #729, issue lineage): `child`, a child of the job's own issue `parent` (each `repo` and `number`; the child's `url`). `required`: the job marked it a required child (`--required`), and the hopper linked it as a GitHub sub-issue of the parent, so the parent is not done while it is open (`subIssue`; `false` with `subIssueError` when GitHub refused the link: the issue is filed all the same). Else a follow-up: the issue's text names its parent, and nothing waits on it. `routed` (issue #1510): the hopper labelled the required child with the job sources' label and assigned it to the job's user, so Intake lists it as a request card. `unassigned` (issue #1856): the assignees GitHub did not set on it, though the hopper asked twice (GitHub drops an assignee it cannot set with no error): the issue keeps its label and waits as not assigned until a person assigns it. `requestId` names the request, as in `github_proxy.done`.
 
 | field | type | required |
 |---|---|---|
@@ -5915,6 +5915,7 @@ Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an
 | `subIssue` | boolean | no |
 | `subIssueError` | string | no |
 | `routed` | boolean | no |
+| `unassigned` | string[] | no |
 
 ```json
 {

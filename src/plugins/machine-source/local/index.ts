@@ -7,15 +7,17 @@
 // `reservedLanes`: lanes kept for jobs pinned to it (issue #372).
 // `elbowIns`: lanes specialty jobs may start past its lane cap at once (issue #762).
 // `windows`: it is a Windows machine, which alone takes a job with a Windows label (issue #1350).
+// `usageLimits`: its own usage limits, in place of the user's (issue #1860).
 // `diskLowBelowGiB` / `diskLowBelowPercent`: when its disk is low and it takes no new job (issue #410).
 // `reapEveryMinutes` / `scratchMaxAgeHours`: how the sweep treats it (issue #410).
 import { createLocalMachineSource } from '../../../machines/index.ts';
 import { ensureHerdrSession, sessionProblem } from '../../../executors/herdr/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
-import { diskLowOf, diskLowShape, elbowInsOption, reservedLanesOption, sweepOf, sweepShape, windowsOf, windowsOption, workTreeOption, workTreesOption } from '../attached.ts';
+import { diskLowOf, diskLowShape, elbowInsOption, reservedLanesOption, sweepOf, sweepShape, usageLimitsOf, usageLimitsOption, windowsOf, windowsOption, workTreeOption, workTreesOption } from '../attached.ts';
+import type { UsageLimitPair } from '../../../domain/usage.ts';
 
 export interface LocalOptions {
-  lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; executors?: string[]; session?: string; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors?: string[]; session?: string; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number;
 }
 
@@ -35,6 +37,7 @@ export function localPlugin(start: StartSession = startHerdrSession): PluginDefi
       reservedLanes: reservedLanesOption(z),
       elbowIns: elbowInsOption(z),
       windows: windowsOption(z),
+      usageLimits: usageLimitsOption(z),
       executors: z.array(z.string().min(1)).optional().meta({ description: 'executor instances that run on this machine; absent: every registered one' }),
       session: z.string().min(1).superRefine((s, c) => { const p = sessionProblem(s); if (p) c.addIssue({ code: 'custom', message: p }); }).optional()
         .meta({ description: 'the herdr session jobs here run in, started by the hopper; absent: the herdr-claude instance\'s own' }),
@@ -46,7 +49,7 @@ export function localPlugin(start: StartSession = startHerdrSession): PluginDefi
     async detect() { return { status: 'available' }; },
     create: (ctx, o) => createLocalMachineSource({
       id: ctx.instanceName, maxLanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
-      ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
+      ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), ...usageLimitsOf(o), ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
       ...(o.workTrees !== undefined ? { workTrees: o.workTrees } : {}),
       diskLow: () => diskLowOf(o), sweep: () => sweepOf(o), logger: ctx.logger,
       executors: o.executors ? () => ctx.executors().filter((x) => o.executors!.includes(x)) : ctx.executors,

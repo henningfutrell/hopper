@@ -148,6 +148,24 @@ describe('herdr CLI client', () => {
     expect(err).toMatchObject({ code: 'timeout' });
   });
 
+  it('asks a read again when herdr answers it too late (issue #1857): a busy server answers the next one', async () => {
+    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: 300 });
+    expect(await h.getAgent('jh-slow-once')).toMatchObject({ status: 'idle', stateChangeSeq: 4 });
+    expect(calls().map((c) => c.argv.slice(2))).toEqual([['agent', 'get', 'jh-slow-once'], ['agent', 'get', 'jh-slow-once']]);
+  });
+
+  it('a read that times out 3 times in a row is a timeout (issue #1857)', async () => {
+    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: 200 });
+    await expect(h.getAgent('jh-slow')).rejects.toMatchObject({ code: 'timeout' });
+    expect(calls()).toHaveLength(3);
+  });
+
+  it('never sends a prompt again on a timeout: it may have reached Claude (issue #1857)', async () => {
+    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: 200 });
+    await expect(h.prompt('jh-slow', 'go')).rejects.toMatchObject({ code: 'timeout' });
+    expect(calls()).toHaveLength(1);
+  });
+
   it('a usage error (exit 2) becomes code usage', async () => {
     await expect(herdr().run(['usage'])).rejects.toMatchObject({ code: 'usage' });
   });
