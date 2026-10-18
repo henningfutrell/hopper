@@ -17,7 +17,7 @@ function user(o: { policy?: string[]; approvals?: SandboxApprovals } = {}) {
     template: (name) => templates.get(name),
     templates: () => [...templates.values()],
     async save(t) {
-      templates.set(t.name, { ...t, pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
+      templates.set(t.name, { ...t, pending: { secrets: [], image: true, egress: [], profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
     },
     async approve(name, by) {

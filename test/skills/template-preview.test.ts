@@ -44,7 +44,7 @@ describe('the template a request makes, shown before it is made (issue #708)', (
 
   it('says when the template is there already, and when a person changed it since', () => {
     const name = requestedName(needsOf('read/cluster/lab') as never);
-    const waiting = { secrets: [], pending: { secrets: [], image: true, profiles: [] } };
+    const waiting = { secrets: [], pending: { secrets: [], image: true, egress: [], profiles: [] } };
     const same = { name, ...waiting, profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
     const changed = { name, ...waiting, profiles: [{ operation: 'write', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
     expect(previewTemplate(user({ templates: [same] }), 'read/cluster/lab')).toMatchObject({ exists: 'same' });

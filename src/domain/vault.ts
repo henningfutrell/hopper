@@ -258,6 +258,12 @@ export interface Template {
    */
   tools?: BoxTool[];
   /**
+   * The egress hosts its boxes may reach (issue #1875, design.md "A template's egress hosts"): each `host:port`, past the
+   * egress proxy, beside AWS's endpoints and the clusters the vault mints for. A box of a template that names any runs
+   * behind the proxy. Approved with its image: a host added waits for a person. Absent: none.
+   */
+  egress?: string[];
+  /**
    * A template a job asked for with read needs only (issue #716, item 4): it takes no box and no job until the read-only
    * check of its current version passed. Kept through every save. Absent: no check.
    */
@@ -288,8 +294,23 @@ export interface Template {
   savedBy: string;
   savedAt: string;
   /** The last approval: the image (and its tools) and scope a person approved, who and when. Absent: never approved. */
-  approval?: { image: string; tools?: BoxTool[]; secrets: string[]; by: string; at: string };
+  approval?: { image: string; tools?: BoxTool[]; egress?: string[]; secrets: string[]; by: string; at: string };
 }
+
+/** An egress host (issue #1875): a lowercase DNS name or IPv4 address, `:`, and a port from 1 to 65535. */
+const EGRESS_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*:([1-9][0-9]{0,4})$/;
+
+/** Why `host` is not an egress host, or undefined. */
+export function egressHostProblem(host: string): string | undefined {
+  const port = EGRESS_HOST.exec(host)?.[1];
+  if (port === undefined || Number(port) > 65535 || host.length > 260) {
+    return `egress host ${JSON.stringify(host)} is not host:port: a DNS name or an address, no scheme, no wildcard, and a port from 1 to 65535`;
+  }
+  return undefined;
+}
+
+/** The template's egress hosts that wait for a person (issue #1875): each not in its last approval; all of them when never approved. */
+export const egressPending = (t: Template): string[] => (t.egress ?? []).filter((h) => !(t.approval?.egress ?? []).includes(h));
 
 /** Whether the template runs what was approved: the image, with the same tools (issue #716). False when never approved. */
 export function imageApproved(t: Template): boolean {
@@ -302,8 +323,8 @@ export function imageApproved(t: Template): boolean {
 /** A template as the vault shows it: what waits for a person, what its boxes may be given now, and its blast radius. */
 export interface TemplateView extends Template {
   profiles: OperationProfile[];
-  /** What waits for approval: secrets added since, whether the image is not the one approved, and the profiles access does not approve. */
-  pending: { secrets: string[]; image: boolean; profiles: OperationProfile[] };
+  /** What waits for approval: secrets added since, whether the image is not the one approved, egress hosts added since (issue #1875), and the profiles access does not approve. */
+  pending: { secrets: string[]; image: boolean; egress: string[]; profiles: OperationProfile[] };
   /** The secrets its boxes may be given now: its scope, as far as it was approved, while its image is the approved one. */
   gives: string[];
   /** Rated from its profiles and its secrets (issue #584). */
@@ -342,10 +363,10 @@ export interface TemplatePreview {
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;
 
-/** The secrets a template's boxes may be given now: its scope, as far as it was approved, while its image is the approved one. */
+/** The secrets a template's boxes may be given now: its scope, as far as it was approved, while its image and egress hosts are approved ones. */
 export function givesOf(t: Template): string[] {
   const approved = t.approval?.secrets ?? [];
-  return !imageApproved(t) ? [] : t.secrets.filter((s) => approved.includes(s));
+  return !imageApproved(t) || egressPending(t).length ? [] : t.secrets.filter((s) => approved.includes(s));
 }
 
 /**
@@ -358,6 +379,7 @@ export function approvalWait(name: string, t: Template | undefined): string | un
   if (!t) return `${wait}: no template ${name} is saved`;
   if (!t.approval) return `${wait}: ${name} is not approved`;
   if (!imageApproved(t)) return `${wait}: the image of ${name} changed since it was approved`;
+  if (egressPending(t).length) return `${wait}: ${name} names an egress host not approved: ${egressPending(t).join(', ')}`;
   return checkWait(t);
 }
 
@@ -369,7 +391,7 @@ export function templateView(t: Template, approvedProfiles: readonly OperationPr
   const label = t.purpose ? purposeLabel(t.purpose) : undefined;
   return {
     ...t, profiles, ...(label ? { label } : {}),
-    pending: { secrets: t.secrets.filter((s) => !approved.includes(s)), image, profiles: profiles.filter((p) => !approvedProfiles.some((a) => sameProfile(a, p))) },
+    pending: { secrets: t.secrets.filter((s) => !approved.includes(s)), image, egress: egressPending(t), profiles: profiles.filter((p) => !approvedProfiles.some((a) => sameProfile(a, p))) },
     gives: givesOf(t),
     radius,
   };

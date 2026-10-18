@@ -2,7 +2,7 @@
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS as SERVER_TOOLS } from '../../src/domain/sandboxes.ts';
-import { approvalText, BOX_TOOLS, checkText, markableProbes, probeMarksText, toolsText, explicitApprovals, giveProblem, profileAskOf, kindChoices, mintsOf, mintsValueOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, BOX_TOOLS, EGRESS_HOST, egressOf, egressText, checkText, markableProbes, probeMarksText, toolsText, explicitApprovals, giveProblem, profileAskOf, kindChoices, mintsOf, mintsValueOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -50,19 +50,29 @@ describe('a template on the page', () => {
   const radius = { level: 'low' as const, reasons: [], profiles: [] };
   const base = { name: 'kube', image: 'img', secrets: ['A', 'B'], profiles: [], savedBy: 'Ada', savedAt: '2026-10-09T10:00:00Z', radius };
   it('never approved: its boxes take no job and get nothing', () => {
-    expect(approvalText({ ...base, pending: { secrets: ['A', 'B'], image: true, profiles: [] }, gives: [] })).toBe('not approved yet: its boxes take no job and get nothing from the vault');
+    expect(approvalText({ ...base, pending: { secrets: ['A', 'B'], image: true, egress: [], profiles: [] }, gives: [] })).toBe('not approved yet: its boxes take no job and get nothing from the vault');
   });
   it('approved as it is', () => {
-    expect(approvalText({ ...base, approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [] }, gives: ['A', 'B'] })).toBe('approved');
+    expect(approvalText({ ...base, approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, egress: [], profiles: [] }, gives: ['A', 'B'] })).toBe('approved');
   });
   it('widened or a new image: says what waits', () => {
-    expect(approvalText({ ...base, approval: { image: 'old', secrets: ['A'], by: 'Ada', at: '' }, pending: { secrets: ['B'], image: true, profiles: [] }, gives: [] })).toBe('waits for approval: a new image; B added');
+    expect(approvalText({ ...base, approval: { image: 'old', secrets: ['A'], by: 'Ada', at: '' }, pending: { secrets: ['B'], image: true, egress: [], profiles: [] }, gives: [] })).toBe('waits for approval: a new image; B added');
+  });
+  // Issue #1875: an egress host added waits for a person, and the card says which.
+  it('an egress host added: says what waits, and marks it', () => {
+    const t = { ...base, egress: ['a.test:443', 'b.test:8443'], approval: { image: 'img', secrets: ['A', 'B'], egress: ['a.test:443'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, egress: ['b.test:8443'], profiles: [] }, gives: [] };
+    expect(approvalText(t)).toBe('waits for approval: egress to b.test:8443');
+    expect(egressText(t)).toBe('a.test:443, b.test:8443 (waits)');
+    expect(egressText({})).toBe('none');
+    expect(egressOf(' A.test:443,b.test:8443\nA.test:443 ')).toEqual(['a.test:443', 'b.test:8443']);
+    expect(['a.test:443', '10.0.0.5:6443'].every((h) => EGRESS_HOST.test(h))).toBe(true);
+    expect(['a.test', 'https://a.test:443', '*.a.test:443', 'a.test:0'].some((h) => EGRESS_HOST.test(h))).toBe(false);
   });
   // Issue #584: a profile added waits too; a write, sync or apply profile waits for its own explicit approval.
   const READ = { operation: 'read' as const, asset: { kind: 'cluster' as const, name: 'x' } };
   const WRITE = { operation: 'write' as const, asset: { kind: 'cluster' as const, name: 'x' } };
   it('a profile added: says which, and which needs an explicit approval', () => {
-    const t = { ...base, profiles: [READ, WRITE], approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [READ, WRITE] }, gives: ['A', 'B'] };
+    const t = { ...base, profiles: [READ, WRITE], approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, egress: [], profiles: [READ, WRITE] }, gives: ['A', 'B'] };
     expect(approvalText(t)).toBe('waits for approval: read on cluster x; write on cluster x (explicit)');
     expect(explicitApprovals(t)).toEqual([WRITE]);
     expect(profileText(WRITE)).toBe('write on cluster x');

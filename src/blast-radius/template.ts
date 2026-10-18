@@ -2,7 +2,8 @@
 // could do (`rate.ts`); its template decides what it may do. Rated from the template's operation profiles — the ones it
 // declares and the ones access holds an approval for — and its credential scope, the vault secrets its boxes may ask
 // for. A read profile is low; a write, sync or apply profile is high, approved or not. A vault secret is a credential
-// whose reach the hopper cannot see: it counts as an unconfirmed reach, by the rules.
+// whose reach the hopper cannot see: it counts as an unconfirmed reach, by the rules. An egress host (issue #1875) is
+// medium: a place off AWS and the minted clusters where a box can send what it reads.
 import {
   DEFAULT_BLAST_RADIUS_SETTINGS, RADIUS_LEVELS, type OperationProfile, type RadiusLevel, type RadiusRules, type TemplateProfileRadius, type TemplateRadius,
 } from '../domain/types.ts';
@@ -17,10 +18,11 @@ export const highRadius = (p: OperationProfile): boolean => HIGH_OPERATIONS.incl
 const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 const profileText = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
 
-/** The template's scope as the rating reads it: its vault secrets (name and scope line, never a value) and its declared profiles. */
+/** The template's scope as the rating reads it: its vault secrets (name and scope line, never a value), its declared profiles and its egress hosts (issue #1875). */
 export interface TemplateScope {
   secrets: { name: string; scope?: string }[];
   profiles: OperationProfile[];
+  egress?: string[];
 }
 
 export function rateTemplate(scope: TemplateScope, approved: readonly OperationProfile[], rules: RadiusRules): TemplateRadius {
@@ -45,6 +47,8 @@ export function rateTemplate(scope: TemplateScope, approved: readonly OperationP
         reason: `vault secret ${s.name}${s.scope ? ` (${s.scope})` : ''}${prod ? ', prod' : ''}: what it reaches is not discovered; counted as ${counted}`,
       };
     }),
+    // Issue #1875: a host off AWS and the minted clusters, where a box can send what it reads.
+    ...(scope.egress ?? []).map((h) => ({ level: 'medium' as const, reason: `egress host ${h}: its boxes may send what they read there` })),
   ];
   if (lines.length === 0) return { level: 'low', reasons: ['no operation profiles or vault secrets in scope'], profiles };
   const level = RADIUS_LEVELS[Math.max(...lines.map((l) => RADIUS_LEVELS.indexOf(l.level)))]!;
