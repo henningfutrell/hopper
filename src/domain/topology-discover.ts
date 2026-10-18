@@ -21,6 +21,8 @@ export interface AwsAnswers {
   queues?: string[];
   /** `iam list-roles`'s `Roles`: global, so each region's report names the same roles; they are one node. */
   roles?: { Arn: string; RoleName: string; AssumeRolePolicyDocument?: unknown }[];
+  /** `s3api list-buckets`'s `Buckets`: global, each in the region S3 names (`BucketRegion`). */
+  buckets?: { Name: string; BucketRegion?: string }[];
 }
 
 /** What one Kubernetes cluster answered: each list `kubectl get <kind> -A -o json`'s `items`. */
@@ -121,6 +123,11 @@ export function awsTopology(a: AwsAnswers): { nodes: TopologyNode[]; links: Topo
     nodes.push({ id: r.Arn, kind: 'iam-role', name: r.RoleName, account: a.account });
     link(r.Arn, accountId(a.account), 'in');
     for (const p of trustedPrincipals(r.AssumeRolePolicyDocument)) if (p !== r.Arn) link(p, r.Arn, 'can-assume');
+  }
+  for (const b of a.buckets ?? []) {
+    const id = `arn:${partition}:s3:::${b.Name}`;
+    nodes.push({ id, kind: 'bucket', name: b.Name, account: a.account, ...(b.BucketRegion ? { region: b.BucketRegion } : {}) });
+    link(id, accountId(a.account), 'in');
   }
   return { nodes, links };
 }

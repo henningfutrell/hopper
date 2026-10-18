@@ -16,5 +16,6 @@ export function createTopologyRepository(c: StoreContext): TopologyRepository {
       c.db.run('INSERT INTO infra_topology_sources (key, body) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET body = excluded.body', s.key, JSON.stringify(s));
     },
     list: () => c.db.all('SELECT body FROM infra_topology_sources ORDER BY key').map((r) => parse<TopologySource>(r.body)),
+    remove(key) { c.db.run('DELETE FROM infra_topology_sources WHERE key = ?', key); },
   };
 }

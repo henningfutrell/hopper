@@ -1148,8 +1148,9 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   4. Check it: `hopper vault mint-test aws-role/<id>/hopper-read`.
 
   The hopper's topology discovery (issue #1781, docs/design.md "The infrastructure topology") reads each account set up so
-  every 6 hours, as `hopper-read`, with list and describe calls only: EKS, EC2 VPCs, load balancers, RDS, SQS and IAM roles.
-  `ViewOnlyAccess` is enough for it. The clusters EKS lists there are read as `hopper-read` too (cluster discovery).
+  every 6 hours, as `hopper-read`, with list and describe calls only: EKS, EC2 VPCs, load balancers, RDS and SQS in every
+  region the account has enabled (EC2 `DescribeRegions`), and IAM roles and S3 buckets (`ListBuckets`) once (issue #1864).
+  `ViewOnlyAccess` is enough for it. A region an organization policy denies is no topology source. The clusters EKS lists there are read as `hopper-read` too (cluster discovery).
   Cluster discovery looks for a cluster in every region the account has enabled (EC2 `DescribeRegions`, in both
   `ReadOnlyAccess` and `ViewOnlyAccess`). An organization policy that denies a region makes only that region's
   `DescribeCluster` fail: the hopper passes it over and says so in `hopper vault mint-test cluster/<name>`.

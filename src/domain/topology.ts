@@ -8,7 +8,7 @@
 
 /** What a node is. A `cluster` is one node whether AWS (EKS) or its own Kubernetes API reported it: both name its ARN. */
 export const NODE_KINDS = [
-  'aws-account', 'vpc', 'cluster', 'load-balancer', 'database', 'queue', 'iam-role',
+  'aws-account', 'vpc', 'cluster', 'load-balancer', 'database', 'queue', 'iam-role', 'bucket',
   'namespace', 'deployment', 'service', 'ingress', 'service-account',
 ] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];
@@ -232,4 +232,6 @@ export interface TopologyRepository {
   get(key: string): TopologySource | undefined;
   put(source: TopologySource): void;
   list(): TopologySource[];
+  /** Forgets a source (issue #1864: one discovery reported that never held a snapshot). */
+  remove(key: string): void;
 }

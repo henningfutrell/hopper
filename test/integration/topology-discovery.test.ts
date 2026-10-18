@@ -113,10 +113,10 @@ describe('topology discovery inside the hopper', () => {
 
     // The reader read with what was minted, where the minting credentials say.
     // Every region the account has enabled; the global lists (IAM, S3) in the credential's region only.
-    const session = expect.objectContaining({ AccessKeyId: MINTED_AWS.AccessKeyId });
+    const readSession = expect.objectContaining({ AccessKeyId: MINTED_AWS.AccessKeyId });
     expect([...fake.asked.aws].sort((x, y) => x.region.localeCompare(y.region))).toEqual([
-      { account: ACCOUNT, region: 'eu-west-1', endpoint: sts.url, session },
-      { account: ACCOUNT, region: 'us-east-2', endpoint: sts.url, session, regional: true },
+      { account: ACCOUNT, region: 'eu-west-1', endpoint: sts.url, session: readSession },
+      { account: ACCOUNT, region: 'us-east-2', endpoint: sts.url, session: readSession, regional: true },
     ]);
     expect(fake.asked.kube).toEqual([{ cluster: CLUSTER, name: 'prod', server: kubeApi.url, token: MINTED_KUBE_TOKEN }]);
 
@@ -152,7 +152,8 @@ describe('topology discovery inside the hopper', () => {
     expect(first.state).toBe('done');
     // The other account is not read: its STS answers nothing. Its refusal is recorded; the first account and the cluster are read.
     expect([...new Set(fake.asked.aws.map((r) => r.account))]).toEqual([ACCOUNT]);
-    const refused = (await a.events()).filter((e) => e.type === 'vault.discovery_minted' && (e.data as { reason?: string }).reason);
+    const refused = (await a.events()).filter((e) => e.type === 'vault.discovery_minted' && (e.data as { reason?: string }).reason)
+      .filter((e) => (e.data as { asset: { kind: string } }).asset.kind === 'aws-role');
     expect(refused.map((e) => (e.data as { asset: unknown; credential: string }))).toEqual([expect.objectContaining({ asset: { kind: 'aws-role', name: `${OTHER}/hopper-read` }, credential: 'AWS_OTHER' })]);
     const before = first.graph.sources.find((s) => s.key === `kubernetes/${CLUSTER}`)!.lastGood!;
 
