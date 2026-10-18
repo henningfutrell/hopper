@@ -30,10 +30,9 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>]
                     [--tool aws|helm|kubectl|terraform]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]...
-                    [--agent-credential <secret>|none] [--egress <host>:<port>|none]...
+                    [--agent-credential <secret>|none]
                                                      save a template; what is left out keeps what it has. A new scope, image,
-                                                     tool, egress host or profile waits for approve. --egress: a host its
-                                                     boxes may reach through the egress proxy (none: no host). --backend: the S3 state backend
+                                                     tool or profile waits for approve. --backend: the S3 state backend
                                                      of a terraform-workspace profile, which the read-only check probes.
                                                      --agent-credential: one of its secrets, a token from claude setup-token,
                                                      that its boxes start with, signed in
@@ -63,7 +62,7 @@ const VAULT_SET = 'vault set <name> [--scope <text>] [--mints <kind>/<name>|none
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
 const VAULT_GRANT = 'vault grant|revoke <job>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_GRANT} | hopper ${VAULT_MINT_TEST}`;
-const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none] [--egress <host>:<port>|none]... [--mark <probe>=expect-denied|skip|none]...';
+const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none] [--mark <probe>=expect-denied|skip|none]...';
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const GRANT_VERBS = 'grant [list] | approve <job> | deny <job>';
@@ -186,7 +185,7 @@ export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true }, backend: { type: 'string', multiple: true },
     cpus: { type: 'string' }, 'memory-mb': { type: 'string' },
-    tool: { type: 'string', multiple: true }, egress: { type: 'string', multiple: true }, needs: { type: 'string' }, 'agent-credential': { type: 'string' },
+    tool: { type: 'string', multiple: true }, needs: { type: 'string' }, 'agent-credential': { type: 'string' },
     mark: { type: 'string', multiple: true },
   } });
   const [verb, name, ...rest] = positionals;
@@ -208,7 +207,7 @@ export function templateCall(args: string[]): Call {
     if (!name || rest.length > 0 || !values.image || values.needs !== undefined) throw usage(TEMPLATE_SAVE);
     const profiles = values.profile?.map(profileOf);
     const limits = limitsOf(values);
-    const { image, secret, tool, egress, backend, 'agent-credential': credential, mark } = values;
+    const { image, secret, tool, backend, 'agent-credential': credential, mark } = values;
     backend?.forEach(backendOf);
     const marks = mark?.map(markOf);
     return {
@@ -220,7 +219,6 @@ export function templateCall(args: string[]): Call {
         return {
           action: 'save-template', name, image, secrets: secret ?? was?.secrets ?? [],
           ...(declared ? { profiles: withBackends(declared, was?.profiles ?? [], backend ?? []) } : {}), ...(limits ? { limits } : {}), ...(tool ? { tools: tool } : {}),
-          ...(egress ? { egress: egress.filter((h) => h !== 'none') } : {}),
           ...(credential !== undefined ? { agentCredential: credential === 'none' ? null : credential } : {}),
           ...(marks ? { probeMarks: withMarks(was?.probeMarks ?? {}, marks) } : {}),
         };

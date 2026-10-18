@@ -15,7 +15,7 @@ function template(needs: string, check: Omit<ReadOnlyCheck, 'version' | 'at' | '
   const profiles = needsOf(needs) as OperationProfile[];
   return {
     name: requestedName(profiles), image: IMAGE, secrets: [], profiles, readOnly: true, savedBy: 'job j0', savedAt: SAVED,
-    approval: { image: IMAGE, secrets: [], by: 'the read policy', at: SAVED }, pending: { secrets: [], image: false, egress: [], profiles: [] },
+    approval: { image: IMAGE, secrets: [], by: 'the read policy', at: SAVED }, pending: { secrets: [], image: false, profiles: [] },
     gives: [], radius: { level: 'low', reasons: [] }, check: { version: SAVED, at: SAVED, probes: [], ...check },
   } as unknown as TemplateView;
 }

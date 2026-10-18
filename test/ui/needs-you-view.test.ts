@@ -23,7 +23,7 @@ const SOURCES = [{
 }];
 const TEMPLATE = {
   name: 'web', image: 'ghcr.io/x/box:1', secrets: ['KUBE_TOKEN'], profiles: [], tools: [], gives: [], limits: {},
-  pending: { image: false, secrets: [], egress: [], profiles: [] }, radius: { level: 'low', reasons: ['reads only'], profiles: [] },
+  pending: { image: false, secrets: [], profiles: [] }, radius: { level: 'low', reasons: ['reads only'], profiles: [] },
 };
 const VAULT = {
   secrets: [], backends: [], shared: [], readPolicy: [],

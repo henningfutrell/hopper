@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Confirm } from '@/components/confirm';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
-import { approvalText, keptText, mintsOf, mintsValueOf, nameProblem, profileText, referenceHint, secretFacts, templateWaits, toolsText, egressText } from '@/model/vault';
+import { approvalText, keptText, mintsOf, mintsValueOf, nameProblem, profileText, referenceHint, secretFacts, templateWaits, toolsText } from '@/model/vault';
 import type { Asset, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { sendVault, setVaultView, useVault, useVaultStore } from '@/store/vault';
@@ -40,7 +40,7 @@ import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null } | { action: 'system-in-backend'; name: string; backend: string; reference: string }
-  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; egress: string[]; limits: TemplateLimits; agentCredential: string | null; probeMarks?: Record<string, string> } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; limits: TemplateLimits; agentCredential: string | null; probeMarks?: Record<string, string> } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 export type VaultEdit = Edit;
@@ -155,7 +155,6 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}</dd>
         <dt className="text-muted-foreground">Tools</dt><dd className="font-mono break-words">{toolsText(t)}</dd>
-        <dt className="text-muted-foreground">Egress</dt><dd className="font-mono break-words">{egressText(t)}</dd>
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Profiles</dt><dd className="font-mono break-words">{t.profiles.map((p) => `${profileText(p)}${t.pending.profiles.some((x) => sameProfile(x, p)) ? ' (waits)' : ''}`).join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Limits</dt><dd className="break-words">{limitsText(t.limits)}</dd>

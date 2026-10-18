@@ -17,7 +17,7 @@ const WAITING_2 = { ...WAITING, id: 'q3', jobId: 'c1b2c3d4-0000-4000-8000-000000
 const WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } };
 const HIGH = {
   name: 'asked-0a1b2c3d4e5f', image: 'ghcr.io/henningfutrell/hopper:box-claude', secrets: [], profiles: [WRITE], gives: [], savedBy: 'job j', savedAt: '2026-10-13T09:00:00.000Z',
-  pending: { secrets: [], image: true, egress: [], profiles: [WRITE] }, radius: { level: 'high', reasons: ['write on aws-account 123456789012: it changes the asset'], profiles: [] },
+  pending: { secrets: [], image: true, profiles: [WRITE] }, radius: { level: 'high', reasons: ['write on aws-account 123456789012: it changes the asset'], profiles: [] },
   askedBy: 'f3b1c2d4-0000-4000-8000-000000000001', purpose: 'Create the cluster role for X in identity namespace', plan: 'kubectl apply -f role.yaml: ClusterRole x-reader. Undo: kubectl delete clusterrole x-reader.',
   label: 'create-the-cluster-role-for-x', askedByJob: { id: 'f3b1c2d4-0000-4000-8000-000000000001', title: 'Give X a role', url: 'https://github.com/acme/infra/issues/7' },
 };

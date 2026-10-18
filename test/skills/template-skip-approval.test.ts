@@ -18,7 +18,7 @@ function user(o: { policy?: string[]; skips?: SandboxApprovals } = {}) {
     template: (name) => templates.get(name),
     templates: () => [...templates.values()],
     async save(t) {
-      templates.set(t.name, { ...t, profiles: t.profiles, pending: { secrets: [], image: true, egress: [], profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
+      templates.set(t.name, { ...t, profiles: t.profiles, pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
     },
     async approve(name, by) {
@@ -70,7 +70,7 @@ describe('skip template approval (issue #991)', () => {
     await requestTemplate(u, 'write/cluster/lab', 'job j1', 'j1');
     const [name] = [...templates.keys()];
     // A person revoked it.
-    templates.set(name!, { ...templates.get(name!)!, approval: undefined, pending: { secrets: [], image: true, egress: [], profiles: [] } } as TemplateView);
+    templates.set(name!, { ...templates.get(name!)!, approval: undefined, pending: { secrets: [], image: true, profiles: [] } } as TemplateView);
     calls.length = 0;
     const r = await requestTemplate(u, 'write/cluster/lab', 'job j1', 'j1');
     expect(r.status).toBe(202);

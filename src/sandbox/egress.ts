@@ -40,12 +40,6 @@ function hostOf(url: string): EgressHost | undefined {
   }
 }
 
-/** A template's egress host (issue #1875), `host:port` as the vault checked it when it was saved. */
-function namedHost(h: string): EgressHost {
-  const at = h.lastIndexOf(':');
-  return { host: h.slice(0, at).toLowerCase(), port: Number(h.slice(at + 1)) };
-}
-
 /** Whether `host` is AWS's: `amazonaws.com` or a name under it. */
 const underAws = (host: string): boolean => host === AWS_DOMAIN || host.endsWith(`.${AWS_DOMAIN}`);
 
@@ -77,11 +71,8 @@ export interface Egress {
   readonly network: string;
   /** The variables that send a box's tools through the proxy, and to the hopper past it. */
   readonly env: Record<string, string>;
-  /**
-   * Adds the hosts of these credentials, and a template's egress hosts (`host:port`, issue #1875), to the allowlist;
-   * resolves once the proxy holds them. Rejects when it does not in time.
-   */
-  allow(reaches: readonly MintReach[], named?: readonly string[]): Promise<void>;
+  /** Adds the hosts of these credentials to the allowlist; resolves once the proxy holds them. Rejects when it does not in time. */
+  allow(reaches: readonly MintReach[]): Promise<void>;
 }
 
 /** The variables a box's tools read: aws, kubectl, helm and terraform obey HTTPS_PROXY and NO_PROXY. */
@@ -120,8 +111,8 @@ export function createEgress(s: EgressSettings, o: { waitMs?: number; pollMs?: n
   return {
     network: s.network,
     env: proxyEnv(s.proxy),
-    allow(reaches, named = []) {
-      for (const h of [...egressHosts(reaches), ...named.map(namedHost)]) hosts.set(`${h.host}:${h.port}`, h);
+    allow(reaches) {
+      for (const h of egressHosts(reaches)) hosts.set(`${h.host}:${h.port}`, h);
       const run = queue.then(take);
       queue = run.catch(() => {});
       return run;
