@@ -71,3 +71,18 @@ export function userSandboxRequests(o: {
   });
 }
 
+
+/** How often the hopper looks for a request no person answered in time (issue #655 part 9). */
+export const HOLD_SWEEP_MS = 60_000;
+
+/**
+ * Issue #655 part 9: declines each request that waited too long for a person, once a minute, so a job that waits on it
+ * is woken with the decline (`vault.sandbox_declined`) even when nobody opens the Vault page.
+ */
+export function holdSweep(requests: Pick<SandboxRequests, 'expire'>): { start(): void; stop(): void } {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  return {
+    start() { if (timer) return; timer = setInterval(() => { requests.expire(); }, HOLD_SWEEP_MS); timer.unref(); },
+    stop() { if (timer) clearInterval(timer); timer = undefined; },
+  };
+}

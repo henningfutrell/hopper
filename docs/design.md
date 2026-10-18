@@ -16942,7 +16942,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 8, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 9, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17192,10 +17192,23 @@ high, which does not exist yet; with Jev absent, the issue's fail-closed table s
 is what the toggles and policies give. When that point is built, `standard` asks it, and `relaxed` keeps the toggles alone.
 Persisted state: one more key in the user's settings, `sandboxStrictness`; the build before does not read it.
 
+**A held request that times out** (part 9, `expire` in `src/sandbox/requests.ts`; `holdSweep` in
+`src/users/sandbox-requests.ts`). The issue: "`hold` timed out with no answer: treated as deny for this request only". A
+sandbox request that waits 24 hours (`SANDBOX_HOLD_MS`) with no person's answer is declined by the hopper: its state
+`declined`, `declinedBy` the **hold timeout** (`HOLD_TIMEOUT`), the reason `no person answered it within 24 hours`, and
+`vault.sandbox_declined { by: the hold timeout }` on the job's timeline, which wakes a job that waits on it (`--wait`). The
+job is told `the hopper declined the sandbox runs of template <name>: no person answered it within 24 hours. Find another
+way.` — not that a person declined. It is a deny **for this request only**: no person said no, so it is no deny of part 5,
+and the job's trust stamp stays. A person's approve or decline after it is 409, as for any request that no longer waits.
+The hopper looks for overdue requests at each ask and list, and once a minute (`HOLD_SWEEP_MS`), so a job is told even when
+nobody opens the Vault page. A request held before the start (issue #1471) times out the same way: declined, it holds the
+job no more, and the job is told no when it asks. Requests are kept in memory, as before: a restart forgets them, and
+the job asks again. 24 hours is fixed, not a setting: the issue names no default, and a person's working day with a night
+between fits in it.
+
 **Not in these parts** (left on the issue): the provenance read from the GitHub timeline and kept with the snapshot, Jev's
 `intake-kind` decision, the stamp as an event (`intake.stamped`) and as OpenFGA tuples (`trust:<level>#holder@job`), the
-rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies, and a
-held request that times out as a deny), a tightened intake strictness that re-checks running jobs, and the Intake and API
+rest of gate 2 at the skill broker (the request's policy and capabilities, Jev's `sandbox-request` and its denies), a tightened intake strictness that re-checks running jobs, and the Intake and API
 views of the stamp. Brake 1's `open` lets a `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a

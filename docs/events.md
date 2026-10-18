@@ -4788,7 +4788,7 @@ Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was
 
 ## `vault.sandbox_declined`
 
-Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline. Issue #655 part 9: `by` is `the hold timeout` when no person answered it within 24 hours; that deny is of this request only, and lowers no trust.
 
 | field | type | required |
 |---|---|---|

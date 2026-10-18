@@ -2,7 +2,7 @@
 // person unless skip sandbox approval is on; every step an event on the job's timeline. Issue #1349: an approval starts
 // nothing — the job's box steps then run, each in a sandbox of its own.
 import { describe, expect, it } from 'vitest';
-import { AUTO_APPROVER, editedApprovals, NO_SKIPS, sandboxYolo, templateApprovalBy, type SandboxApprovals } from '../../src/domain/sandbox-approvals.ts';
+import { AUTO_APPROVER, editedApprovals, HOLD_TIMEOUT, SANDBOX_HOLD_MS, NO_SKIPS, sandboxYolo, templateApprovalBy, type SandboxApprovals } from '../../src/domain/sandbox-approvals.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { createSandboxRequests } from '../../src/sandbox/requests.ts';
@@ -246,5 +246,45 @@ describe('sandbox strictness (issue #655 part 8, brake 2)', () => {
     expect(requests.runnable('job-1')).toEqual([LOW.name]);
     auto = false;
     expect(requests.runnable('job-1')).toEqual([]);
+  });
+});
+
+describe('a held request that times out (issue #655 part 9)', () => {
+  function timed() {
+    const events: NewEvent[] = [];
+    let now = new Date('2026-10-17T10:00:00Z');
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e),
+      approvals: () => NO_SKIPS,
+      template: (name) => (name === T.name ? T : undefined),
+      live: () => true,
+      clock: { now: () => now },
+      newId: () => `r${events.length}`,
+    });
+    return { requests, events, later: (ms: number) => { now = new Date(now.getTime() + ms); } };
+  }
+
+  it('waits 24 hours for a person; then the hopper declines it, for this request only', () => {
+    const s = timed();
+    const r = s.requests.ask('job-1', T.name);
+    s.later(SANDBOX_HOLD_MS - 1);
+    expect(s.requests.expire()).toBe(0);
+    expect(s.requests.ask('job-1', T.name).state).toBe('waiting');
+    s.later(1);
+    expect(s.requests.expire()).toBe(1);
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: r.id, state: 'declined', declinedBy: HOLD_TIMEOUT, reason: 'no person answered it within 24 hours' });
+    expect(s.events.at(-1)).toMatchObject({ type: 'vault.sandbox_declined', jobId: 'job-1', data: { request: r.id, template: T.name, by: HOLD_TIMEOUT, reason: 'no person answered it within 24 hours' } });
+    expect(s.requests.expire()).toBe(0);
+    expect(s.requests.approve(r.id, 'Ada')).toMatchObject({ ok: false, code: 'conflict' });
+  });
+
+  it('an approved or declined request does not time out; a list declines one overdue too', () => {
+    const s = timed();
+    const a = s.requests.ask('job-1', T.name), b = s.requests.ask('job-2', T.name);
+    s.requests.approve(a.id, 'Ada');
+    s.requests.ask('job-3', T.name);
+    s.requests.decline(b.id, 'no', 'Ada');
+    s.later(SANDBOX_HOLD_MS);
+    expect(s.requests.list().map((r) => [r.jobId, r.state, r.declinedBy])).toEqual([['job-1', 'approved', undefined], ['job-2', 'declined', 'Ada'], ['job-3', 'declined', HOLD_TIMEOUT]]);
   });
 });
