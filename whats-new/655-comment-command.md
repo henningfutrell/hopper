@@ -1,0 +1,1 @@
+- You can now give the hopper a labelled GitHub issue with a short comment on it, in place of assigning it to you. The comment can also ask for research or a proposal first. Intake's help says what to write.
