@@ -12301,8 +12301,11 @@ started a full sync of its source. The **GitHub outbox** is the durable form of 
   approved text and its rows commit together, or neither does). Sent rows are kept 7 days.
 - **Sending** (`src/sources/github/outbox.ts`, `JobSource.flushOutbox`; when, `src/sources/outbox-flush.ts`). The rows due
   are sent in one batch: half a second after an intake action (`OUTBOX_BATCH_MS`), so the clicks of a burst go together,
-  and every 5 s (`OUTBOX_EVERY_MS`) from the start on, so a restart sends what a stopped hopper left — a row it left
-  `sending` is `pending` again; labels and assignees are idempotent, so a second send of the same change does no harm.
+  and every 5 s (`OUTBOX_EVERY_MS`) from the start on, so a restart sends what a stopped hopper left. A send **claims**
+  its rows (issue #1959): one `UPDATE` makes the rows due `sending` until the claim ends (`OUTBOX_CLAIM_MS`, 2 minutes,
+  renewed before each call), so of two hoppers on one database one sends each row; a row a stopped or killed hopper left
+  `sending` is due again once its claim ends. Labels and assignees are idempotent, so a second send of the same change
+  does no harm.
   A comment is not (issue #1590): its first line is a hidden key (`<!-- job-hopper v1 kind=outbox id=… -->`, a hash of
   its first row's source, id and time), and its send lists the issue's comments first: one that carries the key is the
   post a stop left unrecorded, and the row is `sent` with no second comment. The key is in the form the context filter
@@ -28509,7 +28512,7 @@ goes on.
 
 **Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); two
 hosts racing one lease under a skewed clock; landing batches killed between each GitHub write and its event (#1589); kill
-points between a GitHub call and its record and between an outbox send and its `sent` mark; the nightly run of N seeds and
+points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
 
@@ -28517,3 +28520,57 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
 record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks).
+
+## The GitHub outbox under crashes and faults (issue #1959, part 1, 2026-10-18)
+
+**Why.** Issue #1590 posted a comment once after a stop between its post and its row, in a unit test. Nothing proved the
+outbox ("GitHub outbox") end to end: a process killed between a send and `sent` for each write kind, two hoppers on one
+database, and GitHub's faults while the outbox drains.
+
+**What it found.** Each hopper sent the same rows. A hopper at its start set every row left `sending` back to `pending`,
+also a row another live hopper was sending, and sent it again: a comment held at GitHub was posted twice. Nothing else
+kept two hoppers apart either: each read the rows due and marked them `sending` in two statements.
+
+**The claim** (`claim`, `src/store/github-outbox.ts`; `OUTBOX_CLAIM_MS`, `src/domain/github-outbox.ts`). One `UPDATE`
+takes the source's rows due — `pending` ones and `sending` ones whose claim ended — and makes them `sending` with the
+claim's end as `next_at`. Postgres checks a row another send claimed meanwhile again and skips it, so of two hoppers one
+gets each row. The send renews the claim of its rows before each call. The claim is 2 minutes: longer than a call's longest
+wait at the rate limiter (60 s). A row a killed or stopped hopper left is sent again once its claim ends, by any hopper.
+The start no longer resets rows (`recover` is gone).
+
+**Kill points** (`outboxKillPoint`, `src/sources/github/outbox.ts`): `outbox:<op>:before-send` before each coalesced call,
+and `outbox:<op>:after-send` once GitHub answered it, before its rows are `sent` and their events recorded.
+
+**The crash tests** (`test/crash/outbox-kill.test.ts`, `test/crash/outbox-world.ts`). A host runs the connected account's
+job source over the node:http fake GitHub in the test process (`CRASH_GITHUB_URL`). A person declines a request card with
+Close (`remove_labels`, `comment`, `close_not_planned`) and assigns another issue (`add_assignees`); a label mirror row
+adds an end label (`add_labels`). The first host is killed at each kill point of each kind; once the claims end, a second
+host sends what is left. GitHub then holds each effect once: the label off, one comment (posted once, found by its key
+when GitHub took it before the kill), the close, the assignee, the label; each act's event is recorded once. Two live
+hosts: a comment held at GitHub while the second host starts is posted once.
+
+**The fault tests** (`test/integration/github-outbox-faults.test.ts`; the fake's `fail` with headers, `dropAfter` and
+`hold`). A 5xx is tried again after its backoff, the item showing the next attempt and why. A 403 secondary rate limit
+with `Retry-After` holds every call of the account until then (the fake hears nothing), and the rows drain with each write
+once. A write GitHub applied whose answer never came (the connection cut) is sent again: the close and the assignment are
+idempotent, the comment is found by its key. A row GitHub refused for good fails its item's later rows with it — nothing
+after it is sent —, is listed with Retry, and the other item goes on; Retry sends the item's calls in order. While GitHub
+holds the outbox's calls, a person's action answers at once (issue #1194).
+
+**Decisions.**
+- **A claim with an end, not an owner.** A host's identity is not in the user's schema, and a killed host never releases
+  anything. The end time alone frees what a dead host held, as the saga lease does. The price: a restart after a crash
+  sends what was in flight up to 2 minutes later.
+- **The outbox's own write kinds only.** An issue edit, a pull request's edit, close or draft, an issue a job files and a
+  sub-issue link are not outbox rows: a job asks for them through the GitHub proxy, or the source's report makes them.
+  They are the next part.
+- **The fake GitHub's faults sit in the fake** (`src/sources/github/http/fake-server.ts`), not in a proxy: the routes are
+  matched there already, and a drop after the write needs the fake's own state.
+
+**Left for later parts.** The GitHub proxy's writes under a kill (an issue a job files found by its key before it is
+made again, a sub-issue link, an issue edit, a pull request's edit, close and draft); a person's Merge now, Close PR and
+give-back rows under a kill (the sync loop's acts); a randomised run over the outbox's kill points.
+
+**Verification:** `test/store/github-outbox.test.ts` (a claim takes each row once, a claim that ended is taken again, a
+failed row never); `test/sources/github-outbox-comment-once.test.ts` (a comment left `sending` is sent once its claim
+ends; two outboxes on one store); `test/crash/outbox-kill.test.ts`; `test/integration/github-outbox-faults.test.ts`.
