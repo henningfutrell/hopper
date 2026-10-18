@@ -16985,7 +16985,7 @@ trusted actor's, and an edit by anyone else keeps it waiting. Listing an app tru
 hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
 access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
 
-## Trust stamps (issue #655, parts 1 to 19, 2026-10-17)
+## Trust stamps (issue #655, parts 1 to 20, 2026-10-17)
 
 Owner decision on the issue: build trust stamps. A stamp is not only an author rule: when something warrants it, the stamp
 can lead to a deeper trust analysis, up to a fuller review before the job runs. The author-based passes stay as the simple
@@ -17493,7 +17493,26 @@ the edits count as not known (a request card), as part 17 says.
 Cost: one more GraphQL read per name and one for the issue, batched, only for an issue the source judges that may be taken.
 Persisted state: two optional fields on the job's source; the build before reads a job with them as before. No migration.
 
-**Not in these parts** (left on the issue): the nomination by a comment command, and the Intake view of the stamp. Brake 1's `open` lets a
+**The Intake view of the stamp** (part 20, `ui/src/views/intake-trust.tsx`, `heldByTrust` in `ui/src/model/trust.ts`). The
+issue's Intake section: "held candidates, history, provenance, grants and brake 1". A hold text sent a person "to Intake",
+but Intake listed only a source's items, not the jobs a stamp holds. Now Intake shows **Held by trust** above the sources:
+
+- **Which jobs**: each waiting job in status `held` whose hold reason is one `stampHold` or the trust check gives — no stamp,
+  a stamp that does not verify, a quarantine, a level below the dispatch minimum or below the intake strictness, Jev's trust
+  check due. The UI imports nothing of `src/` at run time, so it keeps the start of each text (`trustHold`);
+  `test/ui/trust-held.test.ts` checks them against the daemon's. A job held for its origin (`ORIGIN_PENDING`) is not listed:
+  its request card is.
+- **Each row**: the job (a link to its view), the hold reason, and its trust as on the job view (`JobTrust`): the level, why
+  it was lowered, its origin acts and links — the provenance —, with Approve trust and Lift quarantine for an operator. The
+  history is the job's timeline (`intake.stamped`, `job.trust_lowered`), one click away.
+- **Counted**: the jobs that wait on a person come first, and Intake's nav badge and Needs you count them; a job Jev still
+  checks waits on Jev, and is listed last and not counted.
+- **Grants and brake 1** stay where they are kept: the trusted actors (who may start jobs, the standing grant the hopper has)
+  and the intake strictness, on Settings → Intake, which the panel links.
+
+No route, no event, no persisted state: the daemon already sends each held job with its hold reason and stamp.
+
+**Not in these parts** (left on the issue): the nomination by a comment command. Brake 1's `open` lets a
 `screened` job start; only Jev's check gives that level now.
 
 **Residual risk.** The backfill trusts the row as it finds it at a start: a writer with database access who removes a

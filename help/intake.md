@@ -105,6 +105,20 @@ Approve works only when the text has not changed since the hopper showed it to y
 
 If the issue changes after you approved it, but before its job is made, the card shows again. It shows the approved text and the change line by line, with **Approve the new text**.
 
+### Jobs held by trust
+
+Each job has a trust level, which comes from where its work came. A job does not start when its trust stamp holds it. **Intake** lists these jobs in **Held by trust**, above the issues. Each row shows the job, why it is held, its trust level, who wrote, labelled and assigned its item, and the pull requests its text names.
+
+| Why it is held | What you can do |
+|---|---|
+| Jev's trust check, a declined sandbox request or an edit lowered its trust | Read the job, then select **Approve trust**. |
+| A person quarantined it | Select **Lift quarantine**. |
+| Its trust is below the intake strictness | An admin changes the intake strictness in **Settings → Intake**. |
+| It has no trust stamp, or its stamp does not match the job | Open the job, then cancel it or run its item again. |
+| Jev checks its trust | Nothing: it starts when the check keeps its level. |
+
+The nav badge of **Intake** counts the jobs that wait on a person. A job that Jev still checks is not counted.
+
 ### Issues on GitLab
 
 Connect a GitLab account in Sources → GitLab with a personal access token, and pick its projects. Intake then lists the open

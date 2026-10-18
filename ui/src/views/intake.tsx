@@ -9,10 +9,12 @@
 // says why (issue #1125): paused (and still shown), its last sync failed, or a job repository GitHub did not answer for. The
 // GitHub connection's source that cannot run is shown with its error (issue #1377), never left out. A source whose waiting
 // issues are of more than one repository filters them by repository (issue #1463); Assign all assigns the issues shown.
+// Above the sources, the waiting jobs a trust stamp holds (issue #655, IntakeTrust), when there are any.
 import { Hand, Inbox } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { IntakeGroups } from '@/components/intake-groups';
+import { IntakeTrust } from './intake-trust';
 import { Empty, Panel } from '@/components/panel';
 import { declined, inIntake, inProgress, intakeOf, intakeTrouble, repoOf, reposOf, waiting } from '@/model/intake';
 import type { SourceStatus } from '@/model/wire';
@@ -80,6 +82,7 @@ export function Intake() {
         The open labelled issues the job sources list that wait on an intake decision. An issue from someone outside your trusted
         actors waits here as a request until you approve or decline it. An issue the hopper took leaves Intake: its progress is on <a href="#jobs" className="underline">Jobs</a>. <a href="#settings/intake" className="underline">Trusted actors</a> · <a href="/help/needs-you#intake" className="underline">Help</a>
       </p>
+      <IntakeTrust />
       {listing.length === 0
         ? <Panel title="Intake" icon={Inbox}><Empty>No job source lists issues yet. When one syncs, each open labelled issue it did not take shows here, with why.</Empty></Panel>
         : listing.map((s) => <SourceIntake key={s.name} s={s} />)}
