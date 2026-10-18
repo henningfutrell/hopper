@@ -1,6 +1,7 @@
 // The in-memory GitHub's types (fake.ts): the helpers a test plays the other side with, apart for the fake's size.
 import type { RepoVisibility } from '../../domain/linked-pulls.ts';
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
+import type { CheckFact } from '../../domain/conditional-skills.ts';
 import type { FakeBaseMerge } from './fake-conflicts.ts';
 import type { FakeMentionInput } from './fake-cross-references.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, HeadChecks, OpenPullRequest, ClosingPullRequest, PullRequestReview, WorkflowRun } from './api.ts';
@@ -46,6 +47,8 @@ export interface FakeGitHub extends GitHubApi {
   setChecks(url: string, checks: ChecksState | undefined, failedChecks?: FailedCheck[]): void;
   /** What the REST read of pull request `url`'s head commit checks answers (issue #1244); never set: refused. */
   setHeadChecks(url: string, answer: HeadChecks): void;
+  /** Each check of pull request `url`'s head commit, with its output text, as the done criteria read them (issue #1924). */
+  setCheckRuns(url: string, runs: CheckFact[]): void;
   /** The log of GitHub Actions job `jobId` of `repo` (issue #993): its text, or the error GitHub answers for it. */
   setJobLog(repo: string, jobId: number, log: string | Error): void;
   /** GitHub Actions workflow run `runId` of `repo` as GitHub has it (issue #1508); never set: GitHub has none (404). */

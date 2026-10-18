@@ -30,11 +30,18 @@ export const skillLibraryBody = z.discriminatedUnion('action', [
 ]);
 
 const choice = z.partialRecord(z.enum(WORK_KINDS), name.nullable());
-/** Either part: `kinds` for every repository, `repos` per repository (`owner/name`); `null` sets a kind to the next setting down. */
+const words = z.array(z.string().min(1).max(200)).max(50).optional();
+// A skill rule (issue #1924), checked by the library too (skillRuleProblem): the skill and at least one condition.
+const rule = z.strictObject({ skill: name, repos: words, labels: words, kinds: z.array(z.enum(WORK_KINDS)).optional() });
+/**
+ * Any part: `kinds` for every repository, `repos` per repository (`owner/name`); `null` sets a kind to the next setting down;
+ * `rules`, every skill rule (issue #1924), in place of the ones before.
+ */
 export const workSkillsBody = z.strictObject({
   kinds: choice.optional(),
   repos: z.record(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/name').max(200), choice).optional(),
-}).refine((b) => b.kinds !== undefined || b.repos !== undefined, { message: 'name kinds or repos' });
+  rules: z.array(rule).max(100).optional(),
+}).refine((b) => b.kinds !== undefined || b.repos !== undefined || b.rules !== undefined, { message: 'name kinds, repos or rules' });
 
 const versionQuery = z.strictObject({ version: z.string().min(1).max(64).optional() });
 
@@ -42,7 +49,7 @@ export const SKILL_LIBRARY_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/skill-library', tag: 'Skills', summary: 'The skill library', description: 'Issue #1911: every library skill — the built-in ones first, then the user\'s own — with its newest version, without files; the choice of work skills (`workSkills`: `kinds` for every repository, `repos` per repository), the built-in default of each kind of work, and the kinds.', returns: '`SkillLibraryView`' },
   { method: 'get', path: '/api/skill-library/:name', tag: 'Skills', summary: 'A library skill', description: 'One version of a skill with its files — its newest, or the one `version` names, a removed skill\'s too —, and its versions without files.', query: versionQuery, returns: '`{ skill, versions }`', errors: [404] },
   { method: 'post', path: '/ui/api/skill-library', tag: 'Skills', summary: 'Change the skill library', description: '`create` a skill of the user\'s own (`files`: path → text, a `SKILL.md` among them), `edit` it (a new version; the same files keep none), `duplicate` a version of any skill (`from`, `version`) as a new one, `remove` one of the user\'s own that no work skill setting names, `import` the folder `path` (empty: the root) of a GitHub repository `repo` at `ref` (default `HEAD`, the default branch) as a new skill (`name`, default the folder\'s name), read with the user\'s own GitHub connection — the account of the repository —, or `refresh` an imported skill: its folder read again at the ref it follows, a new version only when its files changed (refused once a person edited it since). A built-in skill is never edited, removed or refreshed. Recorded as `library_skill.saved`, `library_skill.removed` or `library_skill.refreshed`; 502 when GitHub fails.', role: 'admin', body: skillLibraryBody, returns: 'the new `SkillLibraryView`', errors: [400, 404, 409, 502] },
-  { method: 'post', path: '/ui/api/work-skills', tag: 'Skills', summary: 'Choose the work skills', description: 'Which library skill each kind of work (`code`, `research`, `proposal`) gets: `kinds` for every repository, `repos` per repository, which wins; `null` for the next setting down (the built-in default at last). Each skill named must be in the library. Recorded as `work_skills.changed`; the next job gets it.', role: 'admin', body: workSkillsBody, returns: 'the new `SkillLibraryView`', errors: [400, 404] },
+  { method: 'post', path: '/ui/api/work-skills', tag: 'Skills', summary: 'Choose the work skills', description: 'Which library skill each kind of work (`code`, `research`, `proposal`) gets: `kinds` for every repository, `repos` per repository, which wins; `null` for the next setting down (the built-in default at last); `rules`, every skill rule (issue #1924: `skill` and at least one of `repos`, `labels`, `kinds`), which give a job that matches a conditional skill beside its work skill. Each skill named must be in the library. Recorded as `work_skills.changed`; the next job gets it.', role: 'admin', body: workSkillsBody, returns: 'the new `SkillLibraryView`', errors: [400, 404] },
 ];
 
 const STATUS = { invalid: 400, missing: 404, conflict: 409 } as const;

@@ -3,6 +3,7 @@
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
+import type { CheckFact } from '../../domain/conditional-skills.ts';
 import type { LinkedItem } from '../../domain/linked-pulls.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import type { IssueCrossReferences } from '../../domain/cross-references.ts';
@@ -327,6 +328,12 @@ export interface GitHubApi {
    * read (403, 404) is in `unreadable`; any other error throws. Absent: not read.
    */
   headChecks?(repo: string, ref: string): Promise<HeadChecks>;
+  /**
+   * Each check of commit `ref` of `repo` (issue #1924, the done criteria of a conditional skill): each check run by its name,
+   * its state and its output's text (title, summary and text), and each commit status by its context, with no text. Over
+   * REST; an error throws. Absent: not read.
+   */
+  checkRuns?(repo: string, ref: string): Promise<CheckFact[]>;
   /** Make open pull request `number` of `repo` a draft (issue #724: a person sent it back for rework). A draft stays one. GitHub's refusal throws. */
   toDraft(repo: string, number: number): Promise<void>;
 

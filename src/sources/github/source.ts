@@ -25,6 +25,7 @@ import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, t
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
+import { doneCriteriaMiss, type JobDoneCriteria } from './done-criteria.ts';
 import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type WaitsOnBatch } from './completion.ts';
 import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
@@ -89,6 +90,8 @@ export interface GitHubSourceOptions {
   yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined; changeRule?: (repo: string) => ChangeRule;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
+  /** The done criteria of the conditional skills a job got (issue #1924): checked on its own pull request before it is done. Absent: none. */
+  doneCriteria?: JobDoneCriteria;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
   issueGraph?: IssueGraphRecorder;
   /** The listing cache (issue #985) and the GitHub outbox (issue #1238): the user's store. Absent: kept in memory. */
@@ -305,8 +308,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return (await api.issueEdits(item.repo, item.number)).filter((e) => e.at > since);
     },
     resolved: (job, resolution) => keepResolution(outbox, job, resolution, o.intake?.holder),
-    notComplete(job) {
-      return notComplete(api, job, o.jobArtifacts, waitsOn);
+    async notComplete(job) {
+      return (await notComplete(api, job, o.jobArtifacts, waitsOn)) ?? doneCriteriaMiss(api, job, o.doneCriteria);
     },
     partlyDone(job) {
       return partlyDone(api, job);

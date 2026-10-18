@@ -1,0 +1,6 @@
+{
+  "criteria": [
+    { "kind": "checks-passed", "checks": "*plan*" },
+    { "kind": "plan-destroy", "checks": "*plan*" }
+  ]
+}

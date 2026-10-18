@@ -5,11 +5,12 @@
 
 import type { HeadChecks } from '../api.ts';
 import type { ChecksState } from '../../../domain/pull-requests.ts';
+import type { CheckFact } from '../../../domain/conditional-skills.ts';
 import { splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 
-interface CheckRun { status?: string; conclusion?: string | null }
-interface CommitStatus { state?: string }
+interface CheckRun { name?: string; status?: string; conclusion?: string | null; output?: { title?: string | null; summary?: string | null; text?: string | null } }
+interface CommitStatus { context?: string; state?: string }
 
 /** A check run's conclusion that passes: the rest of a completed run's conclusions fail. */
 const PASSED = new Set(['success', 'neutral', 'skipped']);
@@ -55,4 +56,19 @@ export async function headChecks(req: Request, token: string, repo: string, ref:
   ];
   const checks = combinedChecks(states);
   return checks ? { checks } : {};
+}
+
+/**
+ * Each check of commit `ref` (issue #1924): each check run by its name, state and output text, and each commit status by its
+ * context. What the done criteria of a conditional skill read. Any error throws: not known is not done.
+ */
+export async function checkRuns(req: Request, token: string, repo: string, ref: string): Promise<CheckFact[]> {
+  const at = { ...splitRepo(repo), ref, headers: { authorization: `token ${token}` }, per_page: 100 };
+  const [runs, status] = await Promise.all([req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', at), req('GET /repos/{owner}/{repo}/commits/{ref}/status', at)]);
+  return [
+    ...((runs.data as { check_runs?: CheckRun[] }).check_runs ?? []).map((r) => ({
+      name: r.name ?? '', state: runState(r), text: [r.output?.title, r.output?.summary, r.output?.text].filter((t): t is string => typeof t === 'string' && t !== '').join('\n'),
+    })),
+    ...((status.data as { statuses?: CommitStatus[] }).statuses ?? []).map((s) => ({ name: s.context ?? '', state: statusState(s) })),
+  ];
 }

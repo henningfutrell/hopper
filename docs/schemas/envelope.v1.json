@@ -187,6 +187,7 @@
         "library_skill.refreshed",
         "work_skills.changed",
         "job.work_skill_chosen",
+        "job.conditional_skills_chosen",
         "job.preempted",
         "github_rate_limiter.settings_changed",
         "remote_access.changed",

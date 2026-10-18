@@ -5,7 +5,7 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import type { LivenessFacts, TimeoutKind } from './timed-out.ts';
 import type { AssessInput, RecentFailure } from './assess.ts';
-import { OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED } from './causes.ts';
+import { DONE_CRITERIA_UNMET, OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED } from './causes.ts';
 
 type Reads = Pick<UserStore, 'jobs' | 'failures'>;
 
@@ -73,9 +73,10 @@ export function checksFixesOf(store: Reads, job: Job, causeId = OWN_PR_CHECKS_RE
  * What the rules read of a failure's chain for its cause: a timed-out job's (issue #630), a red-checks one's (issue #1230),
  * an unfinished pull request's (issue #1265): how many times its chain was sent back for that cause.
  */
-export function causeInputOf(store: Reads, job: Job, causeId: string | undefined): Partial<Pick<AssessInput, 'earlierTimeouts' | 'liveness' | 'checksFixes' | 'unfinishedFixes'>> {
+export function causeInputOf(store: Reads, job: Job, causeId: string | undefined): Partial<Pick<AssessInput, 'earlierTimeouts' | 'liveness' | 'checksFixes' | 'unfinishedFixes' | 'criteriaFixes'>> {
   if (causeId === 'timed-out') return timeoutInputOf(store, job);
   if (causeId === OWN_PR_UNFINISHED) return { unfinishedFixes: checksFixesOf(store, job, OWN_PR_UNFINISHED) };
+  if (causeId === DONE_CRITERIA_UNMET) return { criteriaFixes: checksFixesOf(store, job, DONE_CRITERIA_UNMET) };
   return causeId === OWN_PR_CHECKS_RED ? { checksFixes: checksFixesOf(store, job) } : {};
 }
 

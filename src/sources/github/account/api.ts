@@ -14,7 +14,7 @@ import { mergedPullRequestsInto } from '../http/graphql-merged.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../http/http.ts';
 import { explained, permissionsOfError } from '../http/refusal.ts';
 import * as rest from '../http/rest.ts';
-import { headChecks } from '../http/rest-checks.ts';
+import { checkRuns, headChecks } from '../http/rest-checks.ts';
 
 /**
  * What GitHub said, as the port's error: a 401 is the token refused (revoked, or the app's access removed). `installUrl`:
@@ -93,6 +93,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; installUrl?: string 
     retarget: (repo, number, base) => call(`base of ${repo}#${number}`, (t) => rest.retargetPullRequest(req, t, repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),
     headChecks: (repo, ref) => call(`checks of ${repo}@${ref}`, (t) => headChecks(req, t, repo, ref)),
+    checkRuns: (repo, ref) => call(`check runs of ${repo}@${ref}`, (t) => checkRuns(req, t, repo, ref)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, (t) => rest.jobLog(req, t, repo, jobId)),
     workflowRun: (repo, runId) => call(`Actions run ${runId} of ${repo}`, (t) => rest.workflowRun(req, t, repo, runId)),
     pullRequestReviews: (repo, number) => call(`reviews of ${repo}#${number}`, (t) => rest.pullRequestReviews(req, t, repo, number)),

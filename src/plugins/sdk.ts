@@ -1,6 +1,7 @@
 // The plugin SDK: every type a plugin is written against (design.md "Plugin contract").
 // Out-of-tree plugins import it type-only as `hopper/plugin` (package.json `exports`), which
 // type stripping erases, so a plugin needs nothing of hopper at runtime. Types only here.
+import type { DoneCriterion } from '../domain/conditional-skills.ts';
 import type { z } from 'zod';
 import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import type {
@@ -208,6 +209,8 @@ export interface JobSourceContext {
   changeRule(repo: string): ChangeRule;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
+  /** The done criteria of the conditional skills a job got (issue #1924), by skill: what the done check verifies itself. Absent: none. */
+  jobDoneCriteria?(jobId: string): { skill: string; done: DoneCriterion[] }[];
   /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
   issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
   /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */

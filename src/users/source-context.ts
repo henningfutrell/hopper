@@ -2,6 +2,7 @@
 // local job, may be re-run or were rejected (issue #387), and, per source, the claim holder, the intake
 // migration and intake events (issue #440), the user's intake trust (issue #652), the user's yolo mode (issue #579), a job's artifacts (issue #673), the issue graph (issue #437), each read named to search (issue #945), and the listing cache (issue #985).
 // With the user's work dir, the user's mirrors of the job repositories too (issue #858, `<work dir>/git-mirrors`). The connected accounts are added by the runtime.
+import { doneCriteriaOfJob } from '../skill-library/index.ts';
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
@@ -54,6 +55,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     githubListings: store.githubListings,
     githubOutbox: store.githubOutbox,
     jobArtifacts: (jobId) => store.artifacts.list({ jobId }).map((a) => ({ id: a.id, ...(a.issue ? { issue: a.issue.url } : {}) })),
+    jobDoneCriteria: (jobId) => doneCriteriaOfJob(store, jobId),
   };
 }
 

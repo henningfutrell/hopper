@@ -38,6 +38,44 @@
               "type": "string"
             }
           }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              },
+              "repos": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "code",
+                    "research",
+                    "proposal"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "skill"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -81,6 +119,44 @@
             "additionalProperties": {
               "type": "string"
             }
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string"
+              },
+              "repos": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "code",
+                    "research",
+                    "proposal"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "skill"
+            ],
+            "additionalProperties": false
           }
         }
       },
