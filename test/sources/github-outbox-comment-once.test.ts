@@ -80,6 +80,25 @@ describe('the outbox posts a comment once (issue #1590)', () => {
     expect(await gh.listComments(REPO, 1)).toHaveLength(1);
   });
 
+  it('a stop releases what its send claimed and did not send: the next start sends it at once, and the stopped send makes no more calls', async () => {
+    const gh = createFakeGitHub();
+    gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
+    const rows = memoryGitHubOutbox();
+    const held = holdsPosts(gh);
+    const a = createGitHubOutbox({ source: 'github', rows, clock });
+    a.queue('resolve', url(1), REPO, [{ change: { op: 'comment', body: 'Resolved.' } }, { change: { op: 'close_not_planned' } }], { tag: 'j1@1' });
+    void a.flush(outboxSend(held.api, noRead));
+    await new Promise((res) => setTimeout(res, 10));
+    a.release();
+    expect(rows.open('github').map((r) => r.state)).toEqual(['pending', 'pending']);
+    const b = createGitHubOutbox({ source: 'github', rows, clock });
+    expect(await b.flush(outboxSend(gh, noRead))).toEqual({ due: 2, wrote: [REPO] });
+    held.release();
+    await new Promise((res) => setTimeout(res, 10));
+    // The stopped send's held post went through (GitHub took it before the stop); it made no call after it.
+    expect(gh.calls.filter((c) => c.method === 'closeAsNotPlanned')).toHaveLength(1);
+  });
+
   it('two rows of the same text sent at different times are two comments', async () => {
     const gh = createFakeGitHub();
     gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
