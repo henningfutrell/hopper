@@ -1,0 +1,1 @@
+- On the Skills page you can now import a skill from a folder of a GitHub repository, such as a workflow repository, and refresh it later to get its changes.

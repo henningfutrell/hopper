@@ -3554,14 +3554,14 @@ Version 1 (`docs/schemas/preemption.settings_changed.v1.json`). An admin changed
 
 ## `library_skill.saved`
 
-Version 1 (`docs/schemas/library_skill.saved.v1.json`). A person kept a new version of a library skill (issue #1911): `name`, its content id `version` and its place `seq` (1, 2, …); `source` says whether a person wrote it (`created`) or copied it from another skill's version (`duplicated`, with that `name` and `version`). Never its files: GET /api/skill-library/{name} answers them.
+Version 1 (`docs/schemas/library_skill.saved.v1.json`). A person kept a new version of a library skill (issue #1911): `name`, its content id `version` and its place `seq` (1, 2, …); `source` says whether a person wrote it (`created`) copied it from another skill's version (`duplicated`, with that `name` and `version`), or imported it from a folder of a GitHub repository (`imported`: `repo`, the folder `path` — empty: the root —, the `ref` it follows, the `commit` read). Never its files: GET /api/skill-library/{name} answers them.
 
 | field | type | required |
 |---|---|---|
 | `name` | string | yes |
 | `version` | string | yes |
 | `seq` | integer | yes |
-| `source` | object \| object \| object | yes |
+| `source` | object \| object \| object \| object | yes |
 | `by` | string | yes |
 
 ```json
@@ -3588,6 +3588,34 @@ Version 1 (`docs/schemas/library_skill.removed.v1.json`). A person removed a lib
 ```json
 {
   "name": "careful-work",
+  "by": "owner"
+}
+```
+
+## `library_skill.refreshed`
+
+Version 1 (`docs/schemas/library_skill.refreshed.v1.json`). A person refreshed an imported library skill (issue #1911): its folder `path` of `repo` read again at the `ref` it follows, at `commit`. `changed`: the files differ from its newest version, so `version` is a new version (and a `library_skill.saved` beside it); else `version` is the one it had.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `repo` | string | yes |
+| `path` | string | yes |
+| `ref` | string | yes |
+| `commit` | string | yes |
+| `version` | string | yes |
+| `changed` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "name": "orchestrate",
+  "repo": "owner/workflows",
+  "path": "skills/orchestrate",
+  "ref": "HEAD",
+  "commit": "9b2e4c7d1a3f5e6b8c0d2f4a6b8c0e2d4f6a8b0c",
+  "version": "7c1e3a5b9d2f4e60",
+  "changed": true,
   "by": "owner"
 }
 ```

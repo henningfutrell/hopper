@@ -1,9 +1,10 @@
 // Skills (issue #1911, design.md "The Skills page"): the skill library's own top-level view. Work skills: which library
 // skill each kind of work gets, for every repository and per repository (POST /ui/api/work-skills; the next job gets a
 // change, never a running one). Library: each skill with its source and version; a person creates one, edits one of their
-// own (a new version), duplicates any one to change it, or removes one no setting names (skill-library.tsx). The page reads
+// own (a new version), duplicates any one to change it, removes one no setting names, imports one from a folder of a GitHub
+// repository, or refreshes an imported one (skill-library.tsx). The page reads
 // GET /api/skill-library once, and each change answers the new view. Loading, an error with Try again, or the list.
-import { BookOpen, Plus, RefreshCw, Workflow } from 'lucide-react';
+import { BookOpen, Download, Plus, RefreshCw, Workflow } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
 import { FIELD } from '@/components/plugin-form';
@@ -13,7 +14,7 @@ import { get } from '@/lib/api';
 import { KIND_LABEL, kindRows, repoRows } from '@/model/skills';
 import { useCanAdmin } from '@/store/selectors';
 import type { SkillLibraryView, WorkKind } from '../../../src/domain/skill-library.ts';
-import { changeLibrary, LibrarySkill, SkillEditor } from './skill-library';
+import { changeLibrary, LibrarySkill, SkillEditor, SkillImport } from './skill-library';
 
 type Load = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; view: SkillLibraryView };
 
@@ -88,6 +89,7 @@ export function Skills() {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [round, setRound] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const authed = useCanAdmin();
   useEffect(() => {
     let live = true;
@@ -114,7 +116,13 @@ export function Skills() {
     <div data-slot="skills" className="space-y-4">
       <WorkSkills view={view} onChange={set} />
       <Panel title="Library" icon={BookOpen} count={view.skills.length} bodyClassName="space-y-3"
-        action={authed && !creating && <Button size="sm" variant="outline" onClick={() => setCreating(true)}><Plus /> New skill</Button>}>
+        action={authed && (
+          <div className="flex gap-1">
+            {!importing && <Button size="sm" variant="outline" onClick={() => setImporting(true)}><Download /> Import</Button>}
+            {!creating && <Button size="sm" variant="outline" onClick={() => setCreating(true)}><Plus /> New skill</Button>}
+          </div>
+        )}>
+        {importing && <SkillImport onSaved={set} onCancel={() => setImporting(false)} />}
         {creating && <SkillEditor mode="create" onSaved={(v) => { set(v); setCreating(false); }} onCancel={() => setCreating(false)} />}
         {view.skills.map((s) => <LibrarySkill key={s.name} view={view} skill={s} onChange={set} />)}
       </Panel>

@@ -25,11 +25,49 @@ export const SKILL_MAX_BYTES = 256 * 1024;
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/;
 
-/** Where a version came from: shipped with the hopper, written by a person, or a copy of another skill's version. */
+/**
+ * Where a version came from: shipped with the hopper, written by a person, a copy of another skill's version, or imported
+ * from a folder (`path`, '' the root) of a GitHub repository at a `ref` it follows, read at `commit`.
+ */
 export type LibrarySkillSource =
   | { kind: 'built-in' }
   | { kind: 'created' }
-  | { kind: 'duplicated'; name: string; version: string };
+  | { kind: 'duplicated'; name: string; version: string }
+  | ImportedSkillSource;
+export interface ImportedSkillSource { kind: 'imported'; repo: string; path: string; ref: string; commit: string }
+
+/** The ref an import follows when none is named: the repository's default branch, read again at each refresh. */
+export const IMPORT_DEFAULT_REF = 'HEAD';
+
+/** The folder of a repository that holds a skill, its slashes at the ends dropped ('' or '.': the root); or why it is none. */
+export function importPathOf(raw: string): { path: string } | { problem: string } {
+  const path = raw.trim().replace(/^\/+|\/+$/g, '');
+  if (path === '' || path === '.') return { path: '' };
+  const segments = path.split('/');
+  if (path.length > 200 || segments.length > 8 || !segments.every((x) => SEGMENT.test(x) && x !== '..' && x !== '.')) {
+    return { problem: `${JSON.stringify(raw)} is no folder of a repository: at most 8 parts of letters, digits, _ . - and 200 characters` };
+  }
+  return { path };
+}
+
+/** One entry of GitHub's tree of the skill's folder (`?recursive=1`): its path in the folder. */
+export interface SkillTreeEntry { path: string; type: string; sha: string; size?: number }
+
+/** The files of the skill's folder to read, each by its blob; or why the folder is no skill — before any file is read. */
+export function skillTreeFiles(entries: readonly SkillTreeEntry[]): { files: { path: string; sha: string }[] } | { problem: string } {
+  const blobs = entries.filter((e) => e.type === 'blob');
+  if (!blobs.some((e) => e.path === SKILL_FILE)) return { problem: `the folder has no ${SKILL_FILE}` };
+  if (blobs.length > SKILL_MAX_FILES) return { problem: `a skill holds at most ${SKILL_MAX_FILES} files; the folder has ${blobs.length}` };
+  const big = blobs.find((e) => (e.size ?? 0) > SKILL_MAX_FILE);
+  if (big) return { problem: `${big.path}: a file of a skill holds at most ${SKILL_MAX_FILE / 1024} KiB` };
+  return { files: blobs.map((e) => ({ path: e.path, sha: e.sha })) };
+}
+
+/** The name an imported skill takes when none is given: the folder's last part, else the repository's name, as a skill name. */
+export function importedName(repo: string, path: string): string {
+  const named = (x: string) => x.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 63);
+  return named(path.split('/').at(-1) ?? '') || named(repo.split('/').at(-1) ?? '');
+}
 
 /** One version of a library skill: its files and their content id (16 hex, as a run skill's), never changed once kept. */
 export interface LibrarySkillVersion {

@@ -23,7 +23,7 @@ import { readBody, send } from './fake-http.ts';
 import { jobLogBlobRoute, tagged, jobLogsRoute, repoChecksRoute, type JobLogsForge, type RepoChecksForge } from './fake-repo-checks.ts';
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
-import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
+import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts'; import { skillTreeRoute } from './fake-skill-tree.ts';
 import { peopleRoute, type PeopleForge } from './fake-people.ts'; import { GRANTED, orgAppsRoute, type OrgAppsForge } from './fake-org-apps.ts';
 import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
@@ -300,7 +300,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
-      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? pullEditRoute(pulls, restPull, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
+      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? pullEditRoute(pulls, restPull, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest) ?? skillTreeRoute(forge ?? {}, r.method, repo, rest, r.query); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       // A repository's issues by label, or by `creator` (issue #1591: a post key looked for), `state=all` too; `since` is not read.
       if (r.method === 'GET' && rest === 'issues') { const { state = 'open', labels, creator } = r.query; return { status: 200, body: issues.filter((i) => i.repo === repo && (state === 'all' || (i.state ?? 'open') === state) && (labels ?? '').split(',').every((l) => i.labels.includes(l) || (!labels && !!creator)) && (creator === undefined || i.author === creator)).map(restIssue) }; }
