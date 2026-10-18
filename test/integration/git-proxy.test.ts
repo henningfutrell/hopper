@@ -23,6 +23,11 @@
 //     When the job pushes a new branch there and opens a pull request there
 //     Then both are on GitHub and on the job's timeline; an issue there, or a push to its default branch, is refused
 //     But when the user cannot push there, the push is refused with the reason
+//   Scenario: with direct push on for a repository, a job pushes straight to its target branch (issue #1806)
+//     Given a person named the repository for direct push
+//     When the job pushes a commit on top of the default branch
+//     Then it is on GitHub, and on the job's timeline as direct
+//     But a push that rewrites the branch, or one to another release branch, is refused
 //   Scenario: a job of a repository outside the job repositories pushes to its own repository (issue #1131)
 //     Given a job whose own repository is no job repository (a source other than the account's, or one chosen no more)
 //     When the job pushes a branch, then pushes it again with --force-with-lease, as a tend job's rebase does
@@ -209,6 +214,32 @@ describe('git through the hopper (issue #652)', () => {
     expect(eventsOf(t.app, 'github_proxy.refused')).toEqual(expect.arrayContaining([
       expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'elsewhere/lib', reason: expect.stringContaining('cannot push to elsewhere/lib') }) }),
     ]));
+  });
+
+  it('with direct push on, pushes straight to the target branch as a fast-forward; a rewrite of it is refused (issue #1806)', async () => {
+    const t = await start();
+    const { job, home, git } = await running(t, 'octo/tools');
+    expect((await git(['clone', '--quiet', `${t.github.url}/elsewhere/lib.git`, 'lib'])).code).toBe(0);
+    const work = join(home, 'lib');
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'Straight to dev'], work);
+    const off = await git(['push', 'origin', 'HEAD:refs/heads/dev'], work);
+    expect(off.stderr).toContain('a job pushes only to a branch of its own work, never to dev');
+
+    t.app.user().store.settings.setYoloMode({ on: false, repos: {}, push: ['elsewhere/lib'] });
+    expect(await git(['push', 'origin', 'HEAD:refs/heads/dev'], work)).toMatchObject({ code: 0 });
+    const head = (await git(['rev-parse', 'HEAD'], work)).stdout.trim();
+    expect((await branchesOf(t, 'elsewhere/lib')).stdout).toContain(`dev ${head}`);
+    expect(eventsOf(t.app, 'github_proxy.done')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'elsewhere/lib', refs: ['refs/heads/dev'], direct: ['refs/heads/dev'] }) }),
+    ]));
+
+    await git(['reset', '--quiet', '--hard', 'HEAD~1'], work);
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'Rewrites dev'], work);
+    const rewrite = await git(['push', '--force', 'origin', 'HEAD:refs/heads/dev'], work);
+    expect(rewrite.code).not.toBe(0);
+    expect(rewrite.stderr).toContain('a job pushes to dev only a fast-forward');
+    expect((await branchesOf(t, 'elsewhere/lib')).stdout).toContain(`dev ${head}`);
+    expect(await git(['push', 'origin', 'HEAD:refs/heads/stable'], work)).toMatchObject({ stderr: expect.stringContaining('never to stable') });
   });
 
   it('refuses a token that is no job\'s, and a job no longer at work', async () => {

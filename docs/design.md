@@ -2287,6 +2287,8 @@ builds a job's prompt (`JobSourceContext.yoloMode(repo)`), so a change applies t
 running job keeps what it was told. It never changes what done is. Off by default because a merge with nobody
 reviewing it is a merge nothing else stops where a repository has no branch protection, and a merge to the default
 branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
+**Direct push** (issue #1806, "Direct push" at the end) is set with it, and is no part of the merge: the repositories
+where a job may push straight to the target branch, off unless a person names one, whatever `on` says.
 Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above). Since issue #637
 yolo mode also has the **hopper** merge: following a PR waiting job's pull request (below), it merges one that is ready —
 not a draft, no merge conflicts, its checks passed, or it has none and none started within two minutes of its last push (issue #677, "No checks means ready" below; on this repository the check is `pr / test`, issue #672, `docs/deploy.md` "Local development and tests") — with a merge commit (`GitHubApi.merge`, `PUT
@@ -26903,3 +26905,57 @@ and branch protection on GitHub keeps the rest. Every push and pull request is a
 and opens a pull request there", "refuses a push to a repository its user cannot push to"),
 `test/github-proxy/proxy.test.ts`, `test/github-proxy/contribution.test.ts`,
 `test/integration/github-proxy.test.ts`, `test/integration/contribution.test.ts`, `test/domain/kept-work.test.ts`.
+
+## Direct push (issue #1806, part 2, 2026-10-17)
+
+The owner's decision on issue #1806 adds an opt-in yolo setting: when the user turns it on, the hopper may push straight
+to the target branch, within the user's own GitHub rights; off by default; the UI says plainly what it allows; every push
+is recorded. Part 1 ("A job pushes wherever its user can push") let a job push a branch to any repository its user can
+push to, and kept the ref check: never a default or a release branch.
+
+**The change.**
+- **The setting.** `push` in the user's yolo mode settings (`YoloModeSettings.push`, `owner/repo` lowercased, sorted):
+  the repositories where a job may push straight to the target branch. `directPushFor(settings, repo)`. Saved with yolo
+  mode (`POST /ui/api/yolo-mode`, `push` whole, empty for none; `yolo_mode.changed` carries it), an admin's act, and shown
+  in Settings → Yolo mode → Direct push, one repository a line, with a warning that says what it allows. Any repository,
+  a job repository or not. Absent: none, so a store from before reads as off and the build before it still runs on it.
+- **The target branch.** The repository's landing branch while it has landing batches (issue #1073), else its default
+  branch as GitHub says. On this repository that is `main`, never `dev`: a direct push lands where a pull request would,
+  and the batch runner still decides what reaches `dev`.
+- **The ref check** (`checkPush`, `direct`): with direct push on, the target branch leaves the kept list. Every other
+  release branch, a batch run's branch, a tag and a delete stay refused.
+- **Only a fast-forward** (`createFastForward`, `src/git-mirror/push-lines.ts`): the git broker asks, for each ref update
+  of the target branch that is there already, whether the push only adds commits on top of it. The user's mirror fetches
+  the branch's head when it lacks it, indexes the push's pack in a quarantine, and runs `git merge-base --is-ancestor`.
+  Not a fast-forward: refused (`a job pushes to <branch> only a fast-forward: …`). The hopper cannot check (no mirror, a
+  fetch that fails): refused, never taken (`the hopper could not check …`). The shrink guard runs as on any push.
+- **The record.** The push's `github_proxy.done` names the refs it moved on the target branch (`direct`), on the job's
+  timeline; a refusal is a `github_proxy.refused` with its reason.
+- `hopper-gh help` and the kept work's push brief say a push to the target branch is taken only with direct push on.
+
+**Decisions:**
+- **A setting of its own, not yolo mode's `on`.** Yolo mode is on for every job repository on many hoppers, this one
+  included. Reading it as direct push would widen what a job may do on each of them without anyone turning it on. The
+  decision asks for an opt-in, off by default: a repository is named, or nothing changes.
+- **Per repository only, no switch for every repository.** A switch for all would reach every repository the user can
+  write to, including ones nobody thought of. Naming each is one line more for a person.
+- **Fast-forward only, and fail closed.** A push that rewrites the target branch would erase other people's commits, and
+  GitHub allows it where the branch has no protection. Within the user's rights is a ceiling, not a reason to rewrite
+  history. A check the hopper cannot make refuses: the job pushes a branch and opens a pull request, as without the setting.
+- **The landing branch, not the default branch, on a repository with landing batches.** The default branch there is the
+  tested branch: a push to it would skip the batch run that decides what reaches people.
+- **No comment on the issue.** The decision says every push is recorded on the job and its issue. The job's timeline
+  records it. A comment on GitHub is text the publishing rule keeps neutral, and the hopper posts none outside the listed
+  exceptions; the work item links the job, and its timeline shows the push.
+
+**Left for later parts of issue #1806.** The hopper follows and merges in yolo mode only the pull requests on job
+repositories; a pull request a job opens on another repository is not merged by the hopper. A push as a durable work item
+(issue #1524 sagas).
+
+**Residual risk.** On a repository a person named, one bad issue or one injected agent can add commits straight to its
+target branch with no review, and whatever that branch triggers runs (a release, an image build, a deploy). It cannot
+rewrite the branch, delete it, push a tag or reach any other release branch; branch protection on GitHub still applies.
+
+**Verification:** `test/github-proxy/direct-push.test.ts` (off, a fast-forward, not one, not checked, the landing branch),
+`test/github-proxy/git.test.ts` (`checkPush` with `direct`), `test/git-mirror/push-lines.test.ts` (fast-forward in real git),
+`test/domain/direct-push.test.ts`, `test/ui/yolo-mode.test.ts`.

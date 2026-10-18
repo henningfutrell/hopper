@@ -4,7 +4,8 @@
 // mirror unless GitHub takes it. A push whose merge base with the base branch is the head's: it brings nothing of the base
 // branch in, and is not judged. Else each file the push or the branch changes is counted in lines at four commits: where
 // the branch's change starts, its head, the base branch as brought in, and the push. `git diff --numstat` against the
-// empty tree counts them, and fetches the blobs it needs in one batch.
+// empty tree counts them, and fetches the blobs it needs in one batch. A direct push (issue #1806) is checked here too: a
+// fast-forward or not, in the same mirror and quarantine.
 import { mkdirSync, rmSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
@@ -98,6 +99,50 @@ export function createPushLines(o: { dir: string; log(line: string): void; traff
         out.push({ path, ...line('start'), ...line('head'), ...line('base'), ...line('pushed') });
       }
       return { brings: true, files: out };
+    } finally {
+      rmSync(quarantine, { recursive: true, force: true });
+    }
+  };
+}
+
+/** Whether a push from `old` to `new` is a fast-forward (issue #1806); undefined: git cannot say. */
+export type CheckFastForward = (repo: string, remote: () => Promise<GitRemote>, push: Omit<PushToCount, 'base'>) => Promise<boolean | undefined>;
+
+/**
+ * A direct push's check (issue #1806), in the same mirrors: the branch's head before the push is fetched when the mirror
+ * lacks it, the push's pack is indexed in a quarantine, and `git merge-base --is-ancestor` says whether the push only adds
+ * commits on top of it. Nothing the job pushes enters the mirror.
+ */
+export function createFastForward(o: { dir: string; log(line: string): void; traffic?: GitHubTraffic; git?: GitRun }): CheckFastForward {
+  const traffic = o.traffic ?? githubTraffic;
+  const git = o.git ?? runGit;
+  return async (repo, remote, push) => {
+    if (!REPO.test(repo) || repo.split('/').some((p) => p.startsWith('.')) || !SHA.test(push.old) || !SHA.test(push.new)) return undefined;
+    const problem = (why: string): undefined => { o.log(`hopper: git mirror of ${repo}: whether a push is a fast-forward: ${why}`); return undefined; };
+    let r: GitRemote;
+    try { r = await remote(); } catch (e) { return problem(`no credential to fetch with: ${(e as Error).message}`); }
+    const env = gitEnv(r);
+    const path = mirrorPathOf(o.dir, repo);
+    const notReady = await readyMirror(git, path, r.url, env);
+    if (notReady) return problem(notReady);
+    const run = (args: string[], more: Record<string, string> = {}) => git(['--git-dir', path, ...args], { ...env, ...more });
+    if ((await run(['cat-file', '-e', `${push.old}^{commit}`])).code !== 0) {
+      traffic.gitFetch(repo);
+      const fetched = await run(['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--filter=blob:none', 'origin', push.old]);
+      if (fetched.code !== 0) return problem(said(fetched));
+    }
+    const quarantine = join(path, `hopper-quarantine-${process.pid}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(join(quarantine, 'pack'), { recursive: true, mode: 0o700 });
+    const q = { GIT_OBJECT_DIRECTORY: quarantine, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(path, 'objects') };
+    try {
+      if (push.pack.length > 0) {
+        const indexed = await runGitWithInput(['--git-dir', path, 'index-pack', '--stdin', '--fix-thin'], { ...env, ...q }, push.pack);
+        if (indexed.code !== 0) return problem(`index-pack: ${said(indexed)}`);
+      }
+      const is = await run(['merge-base', '--is-ancestor', push.old, push.new], q);
+      if (is.code === 0) return true;
+      if (is.code === 1) return false;
+      return problem(`merge-base: ${said(is)}`);
     } finally {
       rmSync(quarantine, { recursive: true, force: true });
     }

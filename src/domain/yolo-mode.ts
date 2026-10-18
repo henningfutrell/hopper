@@ -5,6 +5,9 @@
 // prompt is built, so a change applies to the next job without a restart. Pure.
 // Change kinds (issue #1076, change-kinds.ts) are set with it: the rules that classify a pull request, and the merge gate
 // of each kind — yolo mode is the `yolo` gate. Absent: the built-in rule.
+// Direct push (issue #1806) is set with it too: the repositories where a job may push straight to the target branch (its
+// landing branch, else its default branch), as a fast-forward, within the user's own write access. Off unless a person
+// names the repository, whatever `on` says: it is no part of the merge.
 
 import { DEFAULT_CHANGE_RULE, type ChangeKindSettings, type ChangeRule } from './change-kinds.ts';
 
@@ -15,6 +18,8 @@ export interface YoloModeSettings {
   repos: Record<string, boolean>;
   /** The change-kind rules over the built-in rule (issue #1076); absent: the built-in rule. */
   changeKinds?: ChangeKindSettings;
+  /** Direct push (issue #1806): the repositories, `owner/repo` lowercased, where a job may push straight to the target branch; absent: none. */
+  push?: string[];
 }
 
 /** As GET /api/yolo-mode answers it: the settings, the job repositories the UI offers per repository, and the built-in change rule. */
@@ -30,6 +35,8 @@ export interface YoloModePatch {
   repos?: Record<string, boolean | null>;
   /** The change-kind rules, whole (issue #1076); `null`: the built-in rule again. */
   changeKinds?: ChangeKindSettings | null;
+  /** Direct push's repositories, whole (issue #1806); empty: none. */
+  push?: string[];
 }
 
 const key = (repo: string): string => repo.toLowerCase();
@@ -37,6 +44,11 @@ const key = (repo: string): string => repo.toLowerCase();
 /** Whether a job on `repo` may merge its own pull request. */
 export function yoloModeFor(s: YoloModeSettings, repo: string): boolean {
   return s.repos[key(repo)] ?? s.on;
+}
+
+/** Whether a job on `repo` may push straight to its target branch (issue #1806): only when a person named the repository. */
+export function directPushFor(s: YoloModeSettings, repo: string): boolean {
+  return (s.push ?? []).includes(key(repo));
 }
 
 /** The settings after a change: a repository set to what `on` already says is kept, so it stays put when `on` changes. */
@@ -48,5 +60,9 @@ export function patchYoloMode(s: YoloModeSettings, p: YoloModePatch): YoloModeSe
   }
   const changeKinds = p.changeKinds === undefined ? s.changeKinds : p.changeKinds ?? undefined;
   const lowered = changeKinds && { ...changeKinds, ...(changeKinds.repos ? { repos: Object.fromEntries(Object.entries(changeKinds.repos).map(([r, v]) => [key(r), v])) } : {}) };
-  return { on: p.on ?? s.on, repos: Object.fromEntries(Object.entries(repos).sort(([a], [b]) => a.localeCompare(b))), ...(lowered ? { changeKinds: lowered } : {}) };
+  const push = p.push === undefined ? s.push : [...new Set(p.push.map(key))].sort();
+  return {
+    on: p.on ?? s.on, repos: Object.fromEntries(Object.entries(repos).sort(([a], [b]) => a.localeCompare(b))), ...(lowered ? { changeKinds: lowered } : {}),
+    ...(push && push.length > 0 ? { push } : {}),
+  };
 }

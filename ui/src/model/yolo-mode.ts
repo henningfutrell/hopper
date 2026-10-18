@@ -1,12 +1,13 @@
 // Yolo mode in the UI (issue #579), pure: the rows the panel lists, its summary, and the change a save sends. The
-// change-kind rules (issue #1076) are edited with it as JSON: the admin's own rules, over the built-in rule.
+// change-kind rules (issue #1076) are edited with it as JSON: the admin's own rules, over the built-in rule. Direct push
+// (issue #1806) too: the repositories where a job may push straight to the target branch, one a line.
 import type { ChangeKindSettings, MergeGate, YoloModeView } from './wire.ts';
 
 /** A repository's own setting: follow the default (`on`), or on or off for it alone. */
 export type YoloSetting = 'default' | 'on' | 'off';
 export interface YoloRow { repo: string; setting: YoloSetting; merges: boolean }
 export interface YoloDraft { on: boolean; repos: Record<string, YoloSetting> }
-export type YoloPatch = { on?: boolean; repos?: Record<string, boolean | null> };
+export type YoloPatch = { on?: boolean; repos?: Record<string, boolean | null>; push?: string[] };
 
 export const YOLO_WARNING = 'With yolo mode on, the hopper merges a job\'s pull request once the repo\'s checks pass, or two minutes after its last push when the repo has no checks: no person reviews the change first. '
   + 'If the repo has no branch protection, nothing else stops the merge, and a merge to the default branch runs whatever it triggers there — '
@@ -83,3 +84,21 @@ const GATE_TEXT: Record<MergeGate, string> = { ready: 'merged when ready, no per
 /** What a kind's merge gate does, in plain words. */
 export const gateText = (g: MergeGate): string => GATE_TEXT[g];
 
+
+export const DIRECT_PUSH_WARNING = 'With direct push on for a repository, a job may push its commits straight to the repository\'s target branch — its landing branch, else its default branch — with no pull request: no person reviews the change first. '
+  + 'The hopper takes only a push that adds commits on top of the branch, never one that rewrites it, and only where your GitHub connection can push. A push to the default branch runs whatever it triggers there. '
+  + 'It is off unless you name the repository here, any repository your connection can push to. Each push is on the job\'s timeline.';
+
+/** Direct push's repositories as the editor shows them (issue #1806): one a line. */
+export const directPushText = (v: YoloModeView): string => (v.push ?? []).join('\n');
+
+/** The editor's text as the change a save sends (issue #1806): the whole list, or undefined when it is the same; or why not. */
+export function directPushPatch(v: YoloModeView, text: string): { ok: true; value: YoloPatch | undefined } | { ok: false; error: string } {
+  const repos: string[] = [];
+  for (const line of text.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    if (!/^[^/\s]+\/[^/\s]+$/.test(line)) return { ok: false, error: `not owner/repo: ${line}` };
+    repos.push(line.toLowerCase());
+  }
+  const push = [...new Set(repos)].sort();
+  return { ok: true, value: push.join('\n') === (v.push ?? []).join('\n') ? undefined : { push } };
+}

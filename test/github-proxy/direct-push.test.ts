@@ -35,7 +35,7 @@ function proxy(s: Setup) {
     ...(s.landing ? { landingBranch: () => s.landing } : {}),
     ...(s.direct !== undefined ? { directPush: () => s.direct! } : {}),
     ...(s.fastForward === 'none' ? {} : {
-      fastForward: async (push: { repo: string; old: string; new: string }) => { asked.push({ repo: push.repo, old: push.old, new: push.new }); return s.fastForward === 'unknown' ? undefined : s.fastForward ?? true; },
+      fastForward: async (push: { repo: string; old: string; new: string }) => { asked.push({ repo: push.repo, old: push.old, new: push.new }); return s.fastForward === 'unknown' ? undefined : s.fastForward !== false; },
     }),
   };
   const fetch = (async (url: string) => {

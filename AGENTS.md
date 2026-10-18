@@ -44,7 +44,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   and pushes on GitHub with the job's own user's connection (the account of the repository, issue #1448) — a push only to a branch of a repository its user can push to, as GitHub says (issue #1806: its own, another job repository,
   the user's fork, or a repository the hopper does not work on; a fork's pull request only with the user's **Contribution** on, issue #429,
   `docs/design.md` "The contribution flow"), never its
-  default or a release branch, and never a push that brings in its base branch (its pull request's, else the landing branch) and empties or shrinks a file the branch's own change
+  default or a release branch — but, with the user's **direct push** on for the repository (issue #1806, `docs/design.md` "Direct push", off unless a person names it), its target branch (the landing branch, else the default branch), only as a fast-forward the hopper checked —, and never a push that brings in its base branch (its pull request's, else the landing branch) and empties or shrinks a file the branch's own change
   did not, or empties a file it only shrank (the shrink guard, issues #1096, #1218; the hopper's own base merge is judged so too, `docs/design.md` "The shrink guard") —; it changes no job, question, webhook or setting, only records a push. A running
   GitLab job's git (issue #1448, `docs/design.md` "Jobs through GitLab"): `GET`/`POST /job/gitlab-git/<project>.git/…`, the same
   with the job's proxy token, fetches and pushes on GitLab with the token of its own user's GitLab account — a push only to a
