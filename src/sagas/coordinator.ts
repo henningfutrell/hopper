@@ -87,13 +87,14 @@ export function createSagaCoordinator(o: SagaCoordinatorOptions): SagaCoordinato
   const defs = new Map(o.definitions.map((d) => [d.kind, d]));
   const leaseMs = o.leaseMs ?? LEASE_MS, renewMs = o.renewMs ?? Math.floor(leaseMs / 3);
   const now = (): string => o.clock.now().toISOString();
-  const lease = () => ({ owner: o.owner, until: new Date(o.clock.now().getTime() + leaseMs).toISOString() });
+  // Timed on the database's clock (issue #1954): a host whose clock is off takes no lease another host holds.
+  const lease = () => ({ owner: o.owner, ms: leaseMs });
   /** The sagas this process drives now, and the abort of the step in flight. */
   const driving = new Map<string, { step?: AbortController; done: Promise<Saga | undefined> }>();
   let stopping = false, timer: ReturnType<typeof setInterval> | undefined, passing: Promise<void> | undefined;
 
   const run = async (id: string, held: { step?: AbortController }): Promise<Saga | undefined> => {
-    let s = o.repo.claim(id, lease(), now());
+    let s = o.repo.claim(id, lease());
     if (!s) return o.repo.get(id);
     const def = defs.get(s.kind);
     if (!def) {
@@ -119,7 +120,7 @@ export function createSagaCoordinator(o: SagaCoordinatorOptions): SagaCoordinato
       // The lease is renewed while the step runs; lost, the step is told to end.
       const renew = setInterval(() => {
         try {
-          if (!o.repo.claim(id, lease(), now())) ac.abort(new Error('the saga\'s lease was lost'));
+          if (!o.repo.claim(id, lease())) ac.abort(new Error('the saga\'s lease was lost'));
         } catch (e) { o.logger.warn(`hopper: saga ${id}: cannot renew its lease: ${messageOf(e)}`); }
       }, renewMs);
       renew.unref();

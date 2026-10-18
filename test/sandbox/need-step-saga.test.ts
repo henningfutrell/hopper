@@ -15,6 +15,7 @@ import { createSagaCoordinator, type SagaCoordinator } from '../../src/sagas/coo
 import { createNeedSteps, STEP_INTERRUPTED, type NeedSteps } from '../../src/sandbox/need-steps.ts';
 import { NEED_STEP_SAGA, needStepSaga } from '../../src/sandbox/need-step-saga.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
+import { endLeases } from '../crash/harness.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
 
 const temp = useTempStore();
@@ -91,7 +92,6 @@ describe('a need step as a saga (issue #1568)', () => {
   };
   let appliedCount = 0;
   const applied = (): void => { appliedCount++; };
-  const later = (clock: ReturnType<typeof fixedClock>, ms: number): void => clock.set(new Date(clock.now().getTime() + ms).toISOString());
   let keys = 0;
   const ask = () => ({ key: `key-${String(++keys).padStart(4, '0')}`, inputs: Buffer.alloc(0) });
   const start = (steps: NeedSteps): string => {
@@ -127,7 +127,8 @@ describe('a need step as a saga (issue #1568)', () => {
       await b.c.pass();
       expect(b.steps.state(JOB, id)).toEqual(at === 'release' ? { result: { exit: 0, outputsBytes: 3 }, outputs: Buffer.from('out') } : { running: true });
 
-      later(clock, LEASE_MS + 1);
+      // A lease ends on the database's clock (issue #1954).
+      endLeases(url);
       await b.c.pass();
       expect(b.store.sagas.get(saga)?.state).toBe('done');
       if (at === 'mint') {

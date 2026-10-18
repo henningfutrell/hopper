@@ -19,7 +19,11 @@
 //   Scenario: one host per sweep
 //     Given hosts A and B asking the lease of one sweep
 //     Then only A holds it while A lives, and B takes it once A stops
-import { afterEach, describe, expect, it } from 'vitest';
+//   Scenario: one host per sweep when the clocks do not agree (issue #1954)
+//     Given host A holds the lease of one sweep, and host B's clock is ahead by more than a lease lasts
+//     Then B does not take it, and sees A live
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SWEEP_LEASE_MS } from '../../src/domain/leases.ts';
 import type { InstanceStore, UserStore } from '../../src/domain/ports.ts';
 import { ADMIN_ID, type ToolSignIn, type WebhookSubscription } from '../../src/domain/types.ts';
 import { createLogins } from '../../src/logins/service.ts';
@@ -41,7 +45,7 @@ afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c();
 function host(url: string, name: string): { instance: InstanceStore; store: UserStore; leases: HostLeases } {
   const instance = openInstanceStore({ url, clock });
   const store = instance.userStore(instance.users.get(ADMIN_ID)!);
-  const leases = createHostLeases({ repo: instance.sweepLeases, owner: `test/${name}/${Math.random().toString(36).slice(2, 8)}`, clock, logger: quiet });
+  const leases = createHostLeases({ repo: instance.sweepLeases, owner: `test/${name}/${Math.random().toString(36).slice(2, 8)}`, logger: quiet });
   cleanups.push(() => { leases.stop(); store.close(); instance.close(); });
   return { instance, store, leases };
 }
@@ -125,5 +129,16 @@ describe('two hosts on one database', () => {
     await new Promise((r) => setTimeout(r, LEASE_ASK_MS));
     expect(onB.hold()).toEqual({ held: true, taken: true });
     expect(onA.hold()).toEqual({ held: false, taken: false });
+  });
+
+  it('runs each sweep on one host when the hosts\' clocks do not agree', () => {
+    const { a, b } = twoHosts();
+    expect(a.leases.lease('admin/failures').hold()).toEqual({ held: true, taken: true });
+    // B's clock is ahead of A's by more than a lease lasts: by it, A's lease ended long ago.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 2 * SWEEP_LEASE_MS });
+    try {
+      expect(b.leases.lease('admin/failures').hold()).toEqual({ held: false, taken: false });
+      expect(b.leases.live(a.leases.owner)).toBe(true);
+    } finally { vi.useRealTimers(); }
   });
 });
