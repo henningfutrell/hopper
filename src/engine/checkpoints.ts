@@ -4,6 +4,7 @@
 // its own is lost. One more is taken when a job is parked, once its agent has ended. A checkpoint of a job that ended
 // goes after CHECKPOINT_KEEP_MS. One more at a missed heartbeat of its machine (issue #1569, `soon`): before its link
 // drops, while the machine may still answer, so a move elsewhere loses less than ten minutes of work. The scrub runs in a worker thread (checkpoint-scrub.ts, issue #1154), off the event loop.
+// A checkpoint the same as the last one kept (issue #1975: a job that waits changes nothing) is not kept again: no event.
 import type { JobCheckpoint } from '../domain/checkpoints.ts';
 import { CHECKPOINT_COMMITS } from '../domain/checkpoints.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
@@ -36,6 +37,11 @@ export interface Checkpoints {
 const machineOf = (c: Pick<EngineContext, 'store'>, job: Job): string =>
   (job.laneId ? c.store.lanes.list().find((l) => l.id === job.laneId)?.machineId : undefined) ?? job.resumeOn ?? job.spec.machineId ?? 'local';
 
+/** The checkpoint taken is the one kept: the same commits, patch and agent session (both gzip, which is deterministic). */
+const unchanged = (k: JobCheckpoint, kept: { patch: Buffer; session?: Buffer }, taken: Omit<JobCheckpoint, 'at' | 'machineId' | 'bytes' | 'session'>, patch: Buffer, session: Buffer | undefined): boolean =>
+  k.branch === taken.branch && k.base === taken.base && k.head === taken.head && k.commits.join('\n') === taken.commits.slice(0, CHECKPOINT_COMMITS).join('\n')
+  && kept.patch.equals(patch) && (kept.session && session ? kept.session.equals(session) : kept.session === session);
+
 export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' | 'clock' | 'stopping'>, everyMs = CHECKPOINT_EVERY_MS): Checkpoints {
   const { store } = c;
   const inFlight = new Set<string>();
@@ -60,6 +66,8 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
         const now = store.jobs.get(jobId);
         // Ended meanwhile: nothing to resume.
         if (!now || TERMINAL_STATUSES.includes(now.status)) return `job ${jobId} ended meanwhile`;
+        const last = store.checkpoints.get(jobId);
+        if (now.checkpoint && last && now.checkpoint.machineId === machineOf(c, now) && unchanged(now.checkpoint, last, got.taken, patch, session)) return now.checkpoint;
         const at = nowIso(c);
         const k: JobCheckpoint = {
           at, machineId: machineOf(c, now), ...(got.taken.branch ? { branch: got.taken.branch } : {}), base: got.taken.base, head: got.taken.head,
