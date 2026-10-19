@@ -30,10 +30,16 @@ export async function writeBoxImage(): Promise<{ image: string; user: string }> 
   return boxImage(runtime(), BOX_BASE, ['terraform', 'aws'], false);
 }
 
+/** The runtime's socket, as a hopper is given it: HOPPER_PODMAN_SOCKET or HOPPER_DOCKER_SOCKET, as HOPPER_TEST_CONTAINER_CLI names it. */
+export function runtimeSocket(): { podman: string } | { docker: string } {
+  const socket = (process.env.DOCKER_HOST ?? 'unix:///var/run/docker.sock').replace(/^unix:\/\//, '');
+  return CLI === 'podman' ? { podman: socket } : { docker: socket };
+}
+
 /** The container runtime the hopper would be given: Podman's or Docker's socket, as HOPPER_TEST_CONTAINER_CLI names it. */
 export function runtime() {
-  const socket = (process.env.DOCKER_HOST ?? 'unix:///var/run/docker.sock').replace(/^unix:\/\//, '');
-  return CLI === 'podman' ? createPodmanRuntime(socket) : createDockerRuntime(socket);
+  const s = runtimeSocket();
+  return 'podman' in s ? createPodmanRuntime(s.podman) : createDockerRuntime(s.docker);
 }
 
 export interface Box { exec(args: string[], o?: { env?: Record<string, string> }): Promise<Run>; end(): Promise<void> }

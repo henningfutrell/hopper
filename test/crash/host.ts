@@ -16,7 +16,8 @@
 // CRASH_TOPOLOGY: topology discovery reads with the crash reader (test/crash/topology-reader.ts), not AWS and Kubernetes.
 // CRASH_WINDOWS: a directory; Windows steps run on the crash Windows host (test/crash/windows-host.ts), which keeps what it did there.
 // CRASH_PODMAN_SOCKET: need boxes start through the real Podman adapter on this socket (HOPPER_PODMAN_SOCKET), the test
-// process's libpod double, so the boxes a killed host left outlive it.
+// process's libpod double, so the boxes a killed host left outlive it. CRASH_DOCKER_SOCKET: the same through the real
+// Docker adapter (HOPPER_DOCKER_SOCKET), a real Docker's (the cloud acceptance tests, issue #1956).
 // CRASH_LANDING_URL: the landing batches' GitHub (test/crash/landing-github.ts) as the connected account's GitHub, with
 // no job source: the batch runner's calls go there.
 // CRASH_RECONCILE_MS: how often the item reconciler checks (issue #1891), so a test does not wait 5 minutes for a pass.
@@ -35,7 +36,7 @@ const need = (name: string): string => {
   return v;
 };
 
-const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect, CRASH_JOB: issue, CRASH_PODMAN_SOCKET: podman, CRASH_LANDING_URL: landing } = process.env;
+const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect, CRASH_JOB: issue, CRASH_PODMAN_SOCKET: podman, CRASH_DOCKER_SOCKET: docker, CRASH_LANDING_URL: landing } = process.env;
 
 // A call the fake never answers (skewed-lease.test.ts) stays in flight for the whole scenario, not the 15 s a real
 // provider call waits: on a slow runner a second host's start and two of its passes take longer than that.
@@ -54,7 +55,7 @@ if (skew) {
 
 const app = await startTestApp({
   dbPath: need('CRASH_DB_PATH'),
-  env: { HOPPER_DATABASE_URL: need('HOPPER_DATABASE_URL'), HOPPER_WORK_DIR: need('HOPPER_WORK_DIR'), ...(github ?? landing ? fakeGitHubEnv({ url: (github ?? landing)! }) : {}), ...(podman ? { HOPPER_PODMAN_SOCKET: podman } : {}) },
+  env: { HOPPER_DATABASE_URL: need('HOPPER_DATABASE_URL'), HOPPER_WORK_DIR: need('HOPPER_WORK_DIR'), ...(github ?? landing ? fakeGitHubEnv({ url: (github ?? landing)! }) : {}), ...(podman ? { HOPPER_PODMAN_SOCKET: podman } : {}), ...(docker ? { HOPPER_DOCKER_SOCKET: docker } : {}) },
   secrets: { HOPPER_MASTER_KEY: need('CRASH_MASTER_KEY') },
   ...(github ? { plugins: { jobSources: [githubSource()], machines: lanes(2) } } : {}),
   seams: {
