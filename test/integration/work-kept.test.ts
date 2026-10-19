@@ -16,13 +16,15 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function cancelled(kept?: string[], removed?: Reaped['removed']) {
+async function cancelled(kept?: string[], removed?: Reaped['removed'], tips?: Reaped['tips'], heads?: string[]) {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(removed ? { removed } : {}) });
+  const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(tips ? { tips } : {}), ...(removed ? { removed } : {}) });
   app = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [sticky] } });
   const job = await app.pull({}, { executor: 'sticky' });
   await app.waitForStatus(job.id, 'running');
+  // Its push through the hopper (issue #2087): the commits it moved its branch to.
+  if (heads) app.user().store.events.append({ type: 'github_proxy.done', jobId: job.id, data: { requestId: 'r1', op: 'git.push', repo: 'o/r', refs: ['refs/heads/x'], heads } });
   expect((await app.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token: await app.login() })).status).toBe(200);
   await app.waitForStatus(job.id, 'cancelled');
   await waitFor(() => sticky.cleaned.includes(job.id));
@@ -35,6 +37,19 @@ describe('work the reap kept (issue #401)', () => {
     await waitFor(async () => (await a.events('types=job.work_kept')).length === 1);
     const [e] = await a.events('types=job.work_kept');
     expect(e).toMatchObject({ jobId: job.id, data: { paths: ['/w/.worktrees/@scratch/j/repo'] } });
+  });
+
+  it('records nothing when each tip of the kept work is a commit the hopper pushed for the job (issue #2087)', async () => {
+    const repo = '/w/.worktrees/@scratch/j/repo';
+    const { a } = await cancelled([repo], undefined, { [repo]: ['c0ffee'] }, ['c0ffee']);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await a.events('types=job.work_kept')).toEqual([]);
+  });
+
+  it('flags it when a tip is one the hopper did not push (issue #2087)', async () => {
+    const repo = '/w/.worktrees/@scratch/j/repo';
+    const { a } = await cancelled([repo], undefined, { [repo]: ['c0ffee', 'beef'] }, ['c0ffee']);
+    await waitFor(async () => (await a.events('types=job.work_kept')).length === 1);
   });
 
   it('records nothing when the reap kept nothing', async () => {

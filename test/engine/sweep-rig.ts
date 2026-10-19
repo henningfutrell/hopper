@@ -11,7 +11,7 @@ export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
 export const none: Survey = { scopes: [], processes: [], scratch: [] };
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left' } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[] } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -19,6 +19,8 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
   // Each job works the item `item:<id>`; the ledger holds the items of `itemDone` done. `others`: newer jobs; `spec`: added to each spec.
   const jobs = [...[job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, spec: { ...j.spec, ...o.spec }, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job), ...(o.others ?? [])];
   const events: { type: string; jobId?: string; machineId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
+  // `proxied`: the jobs whose commit `tip-<id>` the hopper pushed (issue #2087); `tips`: the jobs whose kept repository names that tip.
+  for (const id of o.proxied ?? []) events.push({ type: 'github_proxy.done', jobId: id, data: { requestId: 'r', op: 'git.push', repo: 'o/r', refs: ['refs/heads/x'], heads: [`tip-${id}`] } });
   const surveyed: string[][] = [];
   const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
   const logs: string[] = [];
@@ -44,7 +46,8 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       const kept = scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [];
       // `lefts`: the jobs whose scratch dir the reap could not remove (issue #1452).
       const left = scratch && kept.length === 0 && o.lefts?.includes(jobId) ? { left: [scratch] } : {};
-      return { kept, ...left, ...removed };
+      const tips = kept.length > 0 && o.tips?.includes(jobId) ? { tips: { [kept[0]!]: [`tip-${jobId}`] } } : {};
+      return { kept, ...tips, ...left, ...removed };
     },
     async keepCredential() { throw new Error('not asked'); },
     async reach() { throw new Error('not asked'); },
