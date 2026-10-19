@@ -6,7 +6,7 @@
 // with a kubeconfig that holds that token — else each fails as the real tool does with no credential.
 // Issue #715: the read-only terraform wrapper is first on PATH, as in a read-only template's image, with the fake
 // terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out. With the wrapper, the image's
-// provider mirror is there too: TF_CLI_CONFIG_FILE names it, and init finds only hashicorp/aws, as the real terraform does.
+// provider mirror is there too: TF_CLI_CONFIG_FILE names it, and init finds only the providers it holds (`MIRRORED_PROVIDERS`), as the real terraform does.
 // After an init with -backend-config (an S3 backend), a state push writes to the bucket: refused under a read-only credential.
 // Issue #849: aws and kubectl sent to a host off the allowlist (the egress probes) answer as the real tools do. `limited`
 // (the default): it cannot be reached, past the proxy or through it; `open`: it is reached either way; `proxy-open`: the
@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ContainerSpec } from '../../src/domain/ports.ts';
 import { TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
+import { MIRRORED_PROVIDERS } from '../../src/sandbox/tools.ts';
 
 export type CloudMode = 'read-only' | 'writable';
 /** What a box's egress lets out (issue #849). */
@@ -114,7 +115,7 @@ export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?
     writeFileSync(join(dir, 'read-only', 'terraform'), TERRAFORM_WRAPPER);
     chmodSync(join(dir, 'read-only', 'terraform'), 0o755);
     writeFileSync(join(dir, 'terraform.rc'), TERRAFORM_CLI_CONFIG);
-    mkdirSync(join(dir, 'providers', 'registry.terraform.io', 'hashicorp', 'aws'), { recursive: true });
+    for (const source of MIRRORED_PROVIDERS) mkdirSync(join(dir, 'providers', 'registry.terraform.io', source), { recursive: true });
   }
   const log = join(dir, 'calls.log');
   writeFileSync(log, '');
