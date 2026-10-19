@@ -1,6 +1,7 @@
 # The cloud acceptance tests (issue #1956, test/cloud-acceptance/README.md): a session the vault mints, used by the real
 # `aws` CLI, curl's SigV4 and the AWS SDK against a mock AWS (moto) behind the policy-assert proxy, through the hopper's
-# real composition root, and terraform in the read-only box image the hopper builds. Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
+# real composition root, and terraform in the read-only box image the hopper builds, and a read-only need box behind the egress proxy
+# (the compose service `egress`, in the hopper's dev image). Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
 # plans or the tests themselves: they start containers and take minutes, so `pr / test` leaves them out.
 # Read-only and with no secrets: `pull_request`, never `pull_request_target`. moto, Postgres, the AWS CLI and the box image are public
 # images; nothing reaches a real cloud.
@@ -20,6 +21,7 @@ on:
       - src/domain/topology*.ts
       - test/cloud-acceptance/**
       - test/support/policy-assert-proxy.ts
+      - compose.yaml
       - vitest.cloud.config.ts
       - .github/workflows/cloud-acceptance.yml
 
@@ -41,5 +43,5 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: docker pull -q docker.io/motoserver/moto:5.1.14 && docker pull -q docker.io/amazon/aws-cli:2.31.18
+      - run: docker pull -q docker.io/motoserver/moto:5.1.14 && docker pull -q docker.io/amazon/aws-cli:2.31.18 && docker pull -q ghcr.io/henningfutrell/hopper:dev
       - run: npm run test:cloud

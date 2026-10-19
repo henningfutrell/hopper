@@ -30,7 +30,8 @@ export async function writeBoxImage(): Promise<{ image: string; user: string }> 
   return boxImage(runtime(), BOX_BASE, ['terraform', 'aws'], false);
 }
 
-function runtime() {
+/** The container runtime the hopper would be given: Podman's or Docker's socket, as HOPPER_TEST_CONTAINER_CLI names it. */
+export function runtime() {
   const socket = (process.env.DOCKER_HOST ?? 'unix:///var/run/docker.sock').replace(/^unix:\/\//, '');
   return CLI === 'podman' ? createPodmanRuntime(socket) : createDockerRuntime(socket);
 }
@@ -55,7 +56,8 @@ export async function startBox(image: { image: string; user: string }, keys: Aws
   };
 }
 
-function cli(argv: string[], env: Record<string, string> = {}): Promise<Run> {
+/** The container command (HOPPER_TEST_CONTAINER_CLI), its exit code and output; never rejects. */
+export function cli(argv: string[], env: Record<string, string> = {}): Promise<Run> {
   return new Promise((resolve) => {
     execFile(CLI, argv, { env: { ...process.env, ...env }, encoding: 'utf8', timeout: 600_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr });
