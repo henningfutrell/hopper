@@ -28826,6 +28826,27 @@ second one from the same head, so the next hopper's answer to the same request i
 `outbox:pull_request:after-send` and Merge now at `follow:merge:after-issue-close` fail); `test/crash/random-github.test.ts`;
 `test/sources/github-own-merge.test.ts`; `test/integration/merge-marker.test.ts`.
 
+## The secret canary scan after a crash (issue #1957, part 3, 2026-10-18)
+
+A crash must not leave a secret where a clean run does not. `test/crash/secret-canary-kill.test.ts` runs the **canary
+scan** (`test/support/secret-canary.ts`) over the crash harness:
+
+- **The mint.** A host turns remote access on at Cloudflare and is killed at
+  `saga:remote-access-mint-cloudflare:token:after-do`: the tunnel's token came and was sealed, and the step is not
+  recorded. A second host ends the mint. Canaries: the master key, the provider's credential, the minted tunnel token
+  (the fake Cloudflare's `tunnelToken` option).
+- **The GitHub proxy.** A job's `issue.create` is killed at `proxy:issue.create:after-send`: GitHub took it with the
+  connected account's token, and the hopper did not record it. The job sends it again to a second host. Canaries: the
+  master key, the account's token (`CRASH_GITHUB_TOKEN`), the job's proxy token.
+- **The scan** reads the whole database, each host's work dir, each host's output (stdout and stderr: its logs and its
+  crash output; not the harness's ready line, which carries the proxy token for the test) and the fake GitHub's requests
+  (but the connection's own `authorization`). No canary is found.
+- **The control.** A host given `CRASH_PLANT` ends with an unhandled rejection that says it; the scan names that host's
+  output.
+
+**Left for later parts.** A kill mid-step of a box, Windows or need step with a vault secret; WAL, container layers and
+inspect output, process argv and environment of spawned tools; the e2e mode and its nightly run.
+
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
 **Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event
