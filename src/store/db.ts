@@ -4,6 +4,7 @@
 //
 // SQL is written with `?` placeholders, numbered ($1, $2, …) before it is sent.
 import { createSyncFn } from 'synckit';
+import { StoreError } from '../domain/store-error.ts';
 import { instrument } from '../telemetry/instruments.ts';
 import { liveReader } from '../telemetry/live.ts';
 import { slowStoreCalls, statementOf } from './slow-calls.ts';
@@ -64,7 +65,9 @@ export function openDb(url: string, o: { timeoutMs?: number } = {}): Db {
   // Each call blocks the event loop while it lasts: a slow one is kept, for the watchdog to name (issue #1154).
   const timed = <T>(sql: string, run: () => T): T => {
     const from = performance.now();
-    try { return run(); } finally {
+    try { return run(); } catch (e) {
+      throw e instanceof StoreError ? e : new StoreError(e instanceof Error ? e.message : String(e), { cause: e });
+    } finally {
       const to = performance.now(), statement = statementOf(sql);
       slowStoreCalls.record(from, to, statement);
       callDuration().record((to - from) / 1000, { 'db.query.summary': statement });
