@@ -121,7 +121,7 @@ describe('kubectl in a need box with a minted read token, against a kind cluster
       route('create-secret', `kubectl create secret generic planted-by-step -n ${APP_NAMESPACE} --from-literal=k=v`),
       route('read-secret', `kubectl get secret ${SEED_SECRET} -n ${APP_NAMESPACE} -o name`),
       route('bound', `kubectl get secrets -n ${KUBE_CLUSTER_NAMESPACE} -o name`),
-      route('environment', 'env | sort; cat "$KUBECONFIG"'),
+      route('environment', 'env | sort; cat "$KUBECONFIG"; echo'),
       'kubectl config view --raw -o jsonpath="{.users[0].user.token}" > token',
     ].join('\n');
     const ran = await step(h, { needs: READ, key: 'acceptance-kubectl-0001', command, output: ['token'] }, tarOf(dir, ['.']), STEP_MS);
