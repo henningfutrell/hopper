@@ -3,7 +3,7 @@
 // probes for its needs in a check box — the template's image with its tools, under the sandbox flags, its probe script
 // in place of the entrypoint — and keeps the result on the template. One check at a time. A check box carries its own
 // label, not the box label: the reconcile pass leaves it, and this pass removes one no run holds (a hopper stopped
-// mid-check). Issue #797: before the box starts, the vault mints the read credential each read need takes, under Access
+// mid-check). Issue #797: before the box starts, once its image is ready (issue #2112), the vault mints the read credential each read need takes, under Access
 // (`CheckTemplates.credential`); the box gets them in its environment, so its reads work and a write is refused by the
 // account or the cluster. A need it gets none for fails the check: issue #873, its probes are not run, each with the
 // reason, and the probes of the other needs still run.
@@ -195,6 +195,17 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}), ...(transient ? { transient: true as const } : {}),
       ...(state === 'failed' && unminted.length > 0 ? { unminted } : {}) });
   if (runs.length === 0) return ended('failed', [], 'no probe checks its needs: it cannot pass');
+  // Issue #2112: the image first, then the mints. An EKS token works for 15 minutes from its signing, and a pull or a build
+  // of the tools image can take longer: a token minted before it reached the cluster too late, and every probe failed.
+  let boxed: { image: string; user: string } | undefined;
+  if (runs.some((r) => r.notRun === undefined && r.mark !== 'skip')) {
+    try {
+      boxed = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      return ended('failed', [], `the check box did not run: ${why}`, onlyNetworkErrors([why]));
+    }
+  }
   const given = await credentialsFor(c, userId, t, name, needs);
   ({ unminted } = given);
   // Issue #873: a probe of a need with no credential is not run, and says why; the probes of the other needs still run.
@@ -206,7 +217,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   // Transient only when the probes that failed are those a network error left with no credential.
   const transientOf = (probes: ReadOnlyCheck['probes']): boolean =>
     given.missing.size > 0 && given.transient && probes.every((p, n) => p.passed || given.missing.get(runKey(checked[n]!)) === checked[n]!.notRun);
-  if (checked.every((r) => r.notRun !== undefined || r.mark === 'skip')) {
+  if (!boxed || checked.every((r) => r.notRun !== undefined || r.mark === 'skip')) {
     // No probe to run: no check box.
     const probes = readResults(checked, '');
     const passed = given.missing.size === 0 && probes.every((p) => p.passed);
@@ -217,7 +228,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   let id = '';
   let madeHome = false;
   try {
-    const { image, user } = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
+    const { image, user } = boxed;
     if (!(await c.runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
     // Issue #849: behind the egress proxy, which holds the hosts of its credentials before the box starts.
