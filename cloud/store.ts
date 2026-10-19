@@ -4,11 +4,13 @@
 // sign-in under way, only its state's hash and its PKCE verifier, for ten minutes, and the account it is to delete when
 // it confirms a deletion; a **hopper.io record** of each act on the account, its kind and time only, for RECORD_MS
 // (docs/hopper-io-security.md R6, R5); a **registration** of each instance the account registered, its instance id only;
-// with the name its owner gave it and when the instance last said hello, one per instance id (issue #465);
+// with the name its owner gave it and when the instance last said hello, one per instance id (issue #465), and the
+// public half of the cloud link key it connects with (issue #2039), bound at its registration;
 // a **machine name** its owner gave a machine of a registered instance, by the instance id and the machine's opaque key
 // from its state snapshot, gone with the registration or at a move to another account (issue #465 item 4);
-// and a **registration tombstone** per registration a deletion or its owner removed, the instance id and the time only, for
-// TOMBSTONE_MS, so the instance learns it at its next hello (cloud/link.ts). No GitHub token is kept. A deleted account
+// and a **registration tombstone** per registration a deletion or its owner removed, the instance id, the time and the
+// public key it revoked, for TOMBSTONE_MS, so the instance learns it at its next hello (cloud/link.ts) and that key
+// connects no more. No GitHub token is kept. A deleted account
 // takes its sessions, records and registrations with it.
 // What each column holds, why and for how long is the privacy note (cloud/privacy.ts), column for column.
 // Schema changes are migrations, appended to MIGRATIONS: the accounts are the users' saved data.
@@ -28,7 +30,8 @@ export const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000;
 
 /** What a hopper.io record says was done on the account. */
 export type RecordKind = 'signed_in' | 'signed_out' | 'deletion_refused'
-  | 'instance_registered' | 'instance_renamed' | 'instance_removed' | 'instance_unlinked' | 'instance_moved' | 'machine_renamed';
+  | 'instance_registered' | 'instance_renamed' | 'instance_removed' | 'instance_unlinked' | 'instance_moved' | 'machine_renamed'
+  | 'instance_connected' | 'instance_disconnected' | 'connection_replaced' | 'connection_refused' | 'key_rotated' | 'message_refused';
 export interface CloudRecord { kind: RecordKind; at: Date }
 /** One registration as its account's owner reads it: the name is theirs, the last-seen time the instance's last hello. */
 export interface CloudInstance {
@@ -79,11 +82,23 @@ const MIGRATIONS: string[] = [
    ALTER TABLE record DROP CONSTRAINT record_kind_check, ADD CONSTRAINT record_kind_check CHECK (kind IN ('signed_in',
      'signed_out', 'deletion_refused', 'instance_registered', 'instance_renamed', 'instance_removed', 'instance_unlinked',
      'instance_moved', 'machine_renamed'));`,
+  // The cloud link's connection (issue #2039): the public half of the key each registration connects with, the key a
+  // removal revokes, and the connection's records.
+  `ALTER TABLE registration ADD COLUMN public_key text CHECK (public_key ~ '^[A-Za-z0-9_-]{43}$');
+   ALTER TABLE registration_tombstone ADD COLUMN public_key text CHECK (public_key ~ '^[A-Za-z0-9_-]{43}$');
+   ALTER TABLE record DROP CONSTRAINT record_kind_check, ADD CONSTRAINT record_kind_check CHECK (kind IN ('signed_in',
+     'signed_out', 'deletion_refused', 'instance_registered', 'instance_renamed', 'instance_removed', 'instance_unlinked',
+     'instance_moved', 'machine_renamed', 'instance_connected', 'instance_disconnected', 'connection_replaced',
+     'connection_refused', 'key_rotated', 'message_refused'));`,
 ];
 
 export const hashOf = (token: string): string => createHash('sha256').update(token).digest('hex');
 
 export interface SignInUnderWay { verifier: string; deletes?: string }
+
+/** What hopper.io knows of an instance's cloud link key: the account it is registered to and the key bound to it, or the
+ * key a removal revoked (a tombstone younger than TOMBSTONE_MS; `revoked` null: it had none bound). */
+export interface LinkOf { githubUserId?: string; publicKey?: string; removed?: { revoked: string | null } }
 
 export interface CloudStore {
   /** Keeps the account GitHub named, by its numeric id: a new one, or the same one with its login and avatar now. */
@@ -104,8 +119,13 @@ export interface CloudStore {
   takeSignIn(state: string, now: Date): Promise<SignInUnderWay | undefined>;
   /** Keeps the instance as the registration of the account, one per instance id, and drops a tombstone of the
    * instance. A registration under another account is replaced, with its name and last-seen time. The account it was
-   * registered under before, if any. A move drops the instance's machine names. */
-  register(githubUserId: string, installId: string, now: Date): Promise<string | undefined>;
+   * registered under before, if any. A move drops the instance's machine names. `publicKey`: the cloud link key the
+   * instance connected with, bound to the registration. */
+  register(githubUserId: string, installId: string, now: Date, publicKey: string): Promise<string | undefined>;
+  /** The instance's registration and its key, or the key its removal revoked. */
+  linkOf(installId: string, now: Date): Promise<LinkOf>;
+  /** Binds `to` as the registration's key, when its key is `from` (null: none bound yet). False: it is not. */
+  rekey(installId: string, from: string | null, to: string): Promise<boolean>;
   /** The instance said hello now: its registration's last-seen time. */
   seen(installId: string, now: Date): Promise<void>;
   /** The account's registrations, the oldest first. */
@@ -120,8 +140,6 @@ export interface CloudStore {
   /** Removes the instance's registration when its account's login is `login`, with no tombstone: the instance unlinked.
    * The account it was registered under, if it was removed. */
   unlinked(installId: string, login: string): Promise<string | undefined>;
-  /** Whether the instance is a registration of any account, a tombstone younger than TOMBSTONE_MS, or neither. */
-  registrationOf(installId: string, now: Date): Promise<'registered' | 'removed' | 'unknown'>;
   /** The account the instance is registered to, when that account's login is `login` (any case); else undefined. */
   registrant(installId: string, login: string): Promise<string | undefined>;
   /** The account, its sessions, its records, its registrations and its deletion sign-ins under way, in one statement,
@@ -187,18 +205,30 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
       const row = r.rows[0];
       return row ? { verifier: String(row.verifier), ...(row.deletes ? { deletes: String(row.deletes) } : {}) } : undefined;
     },
-    async register(githubUserId, installId, now) {
+    async register(githubUserId, installId, now, publicKey) {
       const r = await q(`WITH t AS (DELETE FROM registration_tombstone WHERE install_id = $2),
                old AS (SELECT account_id FROM registration WHERE install_id = $2),
                m AS (DELETE FROM machine_name WHERE install_id = $2 AND (SELECT account_id FROM old) <> $1)
-               INSERT INTO registration (account_id, install_id, created_at) VALUES ($1, $2, $3)
-               ON CONFLICT (install_id) DO UPDATE SET account_id = EXCLUDED.account_id,
+               INSERT INTO registration (account_id, install_id, created_at, public_key) VALUES ($1, $2, $3, $4)
+               ON CONFLICT (install_id) DO UPDATE SET account_id = EXCLUDED.account_id, public_key = EXCLUDED.public_key,
                  created_at = CASE WHEN registration.account_id = EXCLUDED.account_id THEN registration.created_at ELSE EXCLUDED.created_at END,
                  name = CASE WHEN registration.account_id = EXCLUDED.account_id THEN registration.name END,
                  seen_at = CASE WHEN registration.account_id = EXCLUDED.account_id THEN registration.seen_at END
-               RETURNING (SELECT account_id FROM old) AS before`, [githubUserId, installId, now]);
+               RETURNING (SELECT account_id FROM old) AS before`, [githubUserId, installId, now, publicKey]);
       const before = r.rows[0]?.before;
       return before === null || before === undefined ? undefined : String(before);
+    },
+    async linkOf(installId, now) {
+      const r = await q(`SELECT (SELECT row_to_json(x) FROM (SELECT account_id, public_key FROM registration WHERE install_id = $1) x) AS reg,
+               (SELECT row_to_json(x) FROM (SELECT public_key FROM registration_tombstone WHERE install_id = $1 AND removed_at > $2) x) AS tomb`,
+      [installId, new Date(now.getTime() - TOMBSTONE_MS)]);
+      const { reg, tomb } = r.rows[0] as { reg: { account_id: string; public_key: string | null } | null; tomb: { public_key: string | null } | null };
+      if (reg) return { githubUserId: String(reg.account_id), ...(reg.public_key ? { publicKey: reg.public_key } : {}) };
+      return tomb ? { removed: { revoked: tomb.public_key } } : {};
+    },
+    async rekey(installId, from, to) {
+      const r = await q('UPDATE registration SET public_key = $3 WHERE install_id = $1 AND public_key IS NOT DISTINCT FROM $2', [installId, from, to]);
+      return (r.rowCount ?? 0) > 0;
     },
     async seen(installId, now) {
       await q('UPDATE registration SET seen_at = $2 WHERE install_id = $1', [installId, now]);
@@ -232,9 +262,9 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
       return (r.rowCount ?? 0) > 0 ? 'named' : 'full';
     },
     async remove(githubUserId, installId, now) {
-      const r = await q(`WITH r AS (DELETE FROM registration WHERE account_id = $1 AND install_id = $2 RETURNING install_id),
-               t AS (INSERT INTO registration_tombstone (install_id, removed_at) SELECT install_id, $3 FROM r
-                     ON CONFLICT (install_id) DO UPDATE SET removed_at = EXCLUDED.removed_at)
+      const r = await q(`WITH r AS (DELETE FROM registration WHERE account_id = $1 AND install_id = $2 RETURNING install_id, public_key),
+               t AS (INSERT INTO registration_tombstone (install_id, removed_at, public_key) SELECT install_id, $3, public_key FROM r
+                     ON CONFLICT (install_id) DO UPDATE SET removed_at = EXCLUDED.removed_at, public_key = EXCLUDED.public_key)
                SELECT count(*)::int AS n FROM r`, [githubUserId, installId, now]);
       return r.rows[0].n > 0;
     },
@@ -242,12 +272,6 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
       const r = await q(`DELETE FROM registration WHERE install_id = $1
                AND account_id = (SELECT github_user_id FROM account WHERE lower(login) = $2) RETURNING account_id`, [installId, login]);
       return r.rows[0] ? String(r.rows[0].account_id) : undefined;
-    },
-    async registrationOf(installId, now) {
-      const r = await q(`SELECT EXISTS (SELECT 1 FROM registration WHERE install_id = $1) AS registered,
-                                EXISTS (SELECT 1 FROM registration_tombstone WHERE install_id = $1 AND removed_at > $2) AS removed`,
-      [installId, new Date(now.getTime() - TOMBSTONE_MS)]);
-      return r.rows[0].registered ? 'registered' : r.rows[0].removed ? 'removed' : 'unknown';
     },
     async registrant(installId, login) {
       const r = await q(`SELECT r.account_id FROM registration r JOIN account a ON a.github_user_id = r.account_id
@@ -257,9 +281,9 @@ export async function openCloudStore(url: string): Promise<CloudStore> {
     async deleteAccount(githubUserId, now) {
       await q('DELETE FROM registration_tombstone WHERE removed_at <= $1', [new Date(now.getTime() - TOMBSTONE_MS)]);
       await q(`WITH s AS (DELETE FROM sign_in WHERE deletes = $1),
-               t AS (INSERT INTO registration_tombstone (install_id, removed_at)
-                     SELECT install_id, $2 FROM registration WHERE account_id = $1
-                     ON CONFLICT (install_id) DO UPDATE SET removed_at = EXCLUDED.removed_at)
+               t AS (INSERT INTO registration_tombstone (install_id, removed_at, public_key)
+                     SELECT install_id, $2, public_key FROM registration WHERE account_id = $1
+                     ON CONFLICT (install_id) DO UPDATE SET removed_at = EXCLUDED.removed_at, public_key = EXCLUDED.public_key)
                DELETE FROM account WHERE github_user_id = $1`, [githubUserId, now]);
     },
     close: () => pool.end(),

@@ -22,7 +22,7 @@ export const CLOUD_LINK_KEY = 'cloud-link.key' satisfies SystemSecretName;
 
 /**
  * The cloud link key as the link record keeps it: `secret`, the system secret its private half is in; `publicKey`,
- * its X25519 public half (32 bytes, base64url), the only half that goes to hopper.io; `createdAt`, when it was minted.
+ * its Ed25519 public half (32 bytes, base64url), the only half that goes to hopper.io; `createdAt`, when it was minted.
  */
 export interface CloudLinkKey { secret: typeof CLOUD_LINK_KEY; publicKey: string; createdAt: string }
 

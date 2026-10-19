@@ -16,7 +16,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCloudLinkAnswers } from '../../cloud/link.ts';
 import { TOMBSTONE_MS } from '../../cloud/store.ts';
-import { registerAs, rows, setUp, stopAll, type Set } from './harness.ts';
+import { LINK_KEY, registerAs, rows, setUp, stopAll, type Set } from './harness.ts';
 
 afterEach(stopAll);
 
@@ -65,18 +65,18 @@ describe("hopper.io's registrations", () => {
     const link = await withAccounts(s);
     await registerAs(s, link, ADA, INSTANCE, t0);
     await registerAs(s, link, GRACE, OTHER, t0);
-    expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(1000) })).toBeUndefined();
+    expect((await link.hello({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, now: later(1000) })).answer).toBeUndefined();
 
     await s.store.deleteAccount(ADA, later(2000));
 
-    expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(3000) })).toBe(JSON.stringify({ type: 'unregister', account: 'ada' }));
-    expect(await link.hello({ installId: OTHER, account: 'grace', now: later(3000) })).toBeUndefined();
-    expect(await link.hello({ installId: '1111222233334444', account: 'ada', now: later(3000) })).toBeUndefined();
+    expect((await link.hello({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, now: later(3000) })).answer).toBe(JSON.stringify({ type: 'unregister', account: 'ada' }));
+    expect((await link.hello({ installId: OTHER, account: 'grace', publicKey: LINK_KEY, now: later(3000) })).answer).toBeUndefined();
+    expect((await link.hello({ installId: '1111222233334444', account: 'ada', publicKey: LINK_KEY, now: later(3000) })).answer).toBeUndefined();
     expect((await table(s, 4)).map((r) => r.install_id)).toEqual([OTHER]);
     const tombstones = await table(s, 5);
     expect(tombstones).toHaveLength(1);
-    expect(Object.keys(tombstones[0]!).sort()).toEqual(['install_id', 'removed_at']);
-    expect(tombstones[0]!.install_id).toBe(INSTANCE);
+    expect(Object.keys(tombstones[0]!).sort()).toEqual(['install_id', 'public_key', 'removed_at']);
+    expect(tombstones[0]).toMatchObject({ install_id: INSTANCE, public_key: LINK_KEY });
     const all = await rows(s.databaseUrl);
     expect(all).not.toContain(`"account_id":${ADA}`);
     expect(all).not.toContain(`"github_user_id":${ADA}`);
@@ -88,7 +88,7 @@ describe("hopper.io's registrations", () => {
     const link = await withAccounts(s);
     await registerAs(s, link, ADA, INSTANCE, t0);
     await s.store.deleteAccount(ADA, t0);
-    expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(TOMBSTONE_MS + 1) })).toBeUndefined();
+    expect((await link.hello({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, now: later(TOMBSTONE_MS + 1) })).answer).toBeUndefined();
 
     await registerAs(s, link, GRACE, OTHER, later(TOMBSTONE_MS + 1));
     await s.store.deleteAccount(GRACE, later(TOMBSTONE_MS + 1));
@@ -101,7 +101,7 @@ describe("hopper.io's registrations", () => {
     await registerAs(s, link, ADA, INSTANCE, t0);
     await s.store.deleteAccount(ADA, later(1000));
     await registerAs(s, link, GRACE, INSTANCE, later(2000));
-    expect(await link.hello({ installId: INSTANCE, account: 'grace', now: later(3000) })).toBeUndefined();
+    expect((await link.hello({ installId: INSTANCE, account: 'grace', publicKey: LINK_KEY, now: later(3000) })).answer).toBeUndefined();
     expect(await table(s, 5)).toEqual([]);
   });
 });

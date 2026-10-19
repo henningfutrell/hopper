@@ -13,6 +13,7 @@ import { NEED_STEP_TABLE } from './need-steps.ts';
 import { WINDOWS_STEP_TABLE } from './windows-steps.ts';
 import { SWEEP_LEASE_TABLE } from './sweep-leases.ts';
 import { OUTBOUND_KEY_TABLE } from './outbound-keys.ts';
+import { cloudLinkEd25519 } from './migration-cloud-link-ed25519.ts';
 
 export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
@@ -67,4 +68,7 @@ export const RECENT_INSTANCE_MIGRATIONS: readonly Migration[] = [
   // 51: lane pool keys the hopper issues (issue #1454): one per user at most, only its SHA-256 kept, for lane pods of a
   // chart release outside this hopper's own. A table only: the build before never reads it, and joins no pod with one.
   'CREATE TABLE IF NOT EXISTS lane_pool_keys (key_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS lane_pool_keys_user ON lane_pool_keys (user_id);',
+  // 52: the cloud link key is Ed25519 (issue #2039), so it signs hopper.io's challenge. A link record drops its X25519 key,
+  // which no connection used; the next mint replaces it. The build before reads a record with no key as before.
+  cloudLinkEd25519,
 ];
