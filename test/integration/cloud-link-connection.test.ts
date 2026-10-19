@@ -1,15 +1,18 @@
 // The cloud link's connection, end to end (issue #2039, docs/design.md "The cloud link's connection"): the real instance
 // daemon and the real hopper.io server (cloud/) on loopback, hopper.io behind a TLS front whose key the instance pins.
 //   Scenario: an instance links, the owner enters its registration code at hopper.io, and it is registered on both sides;
-//     its machines show under it; a second registration keeps one entry; Settings shows the connection
+//     its machine shows under it; a second registration keeps one entry; Settings shows the connection
 //   Scenario: a removal at hopper.io and an unlink on the instance each remove it on the other side, and delete nothing on
 //     the instance
+//   Scenario: the operator CLI revokes the key, which closes the connection and keeps the link; a rotation connects again
 import { afterEach, describe, expect, it } from 'vitest';
+import { runCli, type CliIo } from '../../src/cli.ts';
 import type { CloudLinkView } from '../../src/domain/cloud-link.ts';
 import { PUBLIC, setUp, stopAll } from '../cloud/harness.ts';
 import { SESSION_COOKIE } from '../../cloud/server.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { tlsFront } from '../support/cloud-tls.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { waitFor } from '../support/wait.ts';
 
 const ADA = '1001';
@@ -35,6 +38,11 @@ async function world() {
   const token = await a.login();
   return {
     s, a, token,
+    hopper: async (argv: string[]) => {
+      const out: string[] = [];
+      const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(db.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => {} };
+      return { code: await runCli([...argv, '--url', a.url], io), out: out.join('') };
+    },
     view: async () => (await a.api('GET', '/api/cloud-link', undefined, { 'x-hopper-session': token })).body as CloudLinkView,
     instances: async () => (await s.server.inject({ method: 'GET', url: '/api/account/instances', headers: { cookie } })).json().instances as Record<string, unknown>[],
     enter: async (installId: string) => {
@@ -47,7 +55,6 @@ async function world() {
 describe('the cloud link\'s connection, end to end', () => {
   it('an instance links and registers on both sides; its machines show under it; a second registration keeps one entry', async () => {
     const w = await world();
-    await w.a.addThisMachine();
     const linked = await w.a.ui<CloudLinkView>('/ui/api/cloud-link', { account: 'ada' }, { token: w.token });
     const installId = linked.body.link!.installId;
     await waitFor(async () => (await w.view()).connection?.state === 'connected', { what: 'connected', timeoutMs: 10_000 });
@@ -99,5 +106,23 @@ describe('the cloud link\'s connection, end to end', () => {
     await waitFor(async () => (await w.instances()).length === 0, { what: 'removed at hopper.io' });
     expect((await w.a.job(job.id)).status).toBe('running');
     expect((await w.a.events('types=cloud_link.disconnected')).length).toBeGreaterThan(0);
+  });
+
+  it('the operator CLI revokes the key, which closes the connection and keeps the link; a rotation connects again', async () => {
+    const w = await world();
+    const installId = (await w.a.ui<CloudLinkView>('/ui/api/cloud-link', { account: 'ada' }, { token: w.token })).body.link!.installId;
+    await waitFor(async () => (await w.view()).connection?.state === 'connected', { what: 'connected', timeoutMs: 10_000 });
+
+    expect((await w.hopper(['cloud-link', 'revoke-key'])).code).toBe(0);
+    await waitFor(async () => (await w.view()).connection?.state === 'no-key', { what: 'no key' });
+    expect((await w.view()).link).toMatchObject({ installId, keyRevokedAt: expect.any(String) });
+    expect((await w.view()).link?.linkKey).toBeUndefined();
+    expect((await w.a.events('types=cloud_link.revoked')).map((e) => e.data)).toEqual([{ installId, account: 'ada', by: expect.any(String) }]);
+
+    expect((await w.hopper(['cloud-link', 'rotate-key'])).code).toBe(0);
+    await waitFor(async () => (await w.view()).connection?.state === 'connected', { what: 'connected again' });
+    const shown = await w.hopper(['cloud-link', 'show']);
+    expect(shown.code).toBe(0);
+    expect(shown.out).toContain('"connected"');
   });
 });

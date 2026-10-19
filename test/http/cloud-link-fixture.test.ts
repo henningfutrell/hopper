@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InstanceStore } from '../../src/domain/store.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
-import { CLOUD_LINK_KEY } from '../../src/domain/cloud-link.ts';
+import { CLOUD_LINK_KEY, CLOUD_LINK_PREVIOUS_KEY } from '../../src/domain/cloud-link.ts';
 import { createCloudLink } from '../../src/http/cloud-link.ts';
 import { openDb, type Db } from '../../src/store/db.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
@@ -69,13 +69,14 @@ describe('the cloud link on a fixture database', () => {
     const settings = `${schema}.settings`, vault = `${schema}.vault_secrets`;
     expect({ ...during, [settings]: undefined, [vault]: undefined }).toEqual({ ...before, [settings]: undefined, [vault]: undefined });
     expect(before[vault]).toEqual([]);
-    expect(during[vault]!.map((r) => (JSON.parse(r) as { name: string }).name)).toEqual([`system/${CLOUD_LINK_KEY}`]);
+    expect(during[vault]!.map((r) => (JSON.parse(r) as { name: string }).name)).toEqual([`system/${CLOUD_LINK_KEY}`, `system/${CLOUD_LINK_PREVIOUS_KEY}`]);
     const added = during[settings]!.filter((r) => !before[settings]!.includes(r));
     expect(added.map((r) => (JSON.parse(r) as { key: string }).key)).toEqual(['cloudLink', 'cloudRegistrationCode']);
     expect(before[settings]!.every((r) => during[settings]!.includes(r))).toBe(true);
 
     expect(link.unlink('admin')).toEqual({ link: null });
     expect(snapshot(raw, schema)).toEqual(before);
-    expect(events.map((e) => e.type)).toEqual(['vault.secret_set', 'cloud_link.linked', 'vault.secret_set', 'cloud_link.registration_code_minted', 'vault.secret_removed', 'cloud_link.unlinked']);
+    // A rotation keeps the key before until the new key connected (issue #2039); an unlink drops both.
+    expect(events.map((e) => e.type)).toEqual(['vault.secret_set', 'cloud_link.linked', 'vault.secret_read', 'vault.secret_set', 'vault.secret_set', 'cloud_link.registration_code_minted', 'vault.secret_removed', 'vault.secret_removed', 'cloud_link.unlinked']);
   });
 });

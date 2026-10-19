@@ -16,11 +16,11 @@ import WebSocket from 'ws';
 import { CLOUD_LINK_KEY, CLOUD_LINK_PREVIOUS_KEY, type CloudConnectionView, type CloudLinkSettings, type CloudOutgoing, type CloudRefusal } from '../domain/cloud-link.ts';
 import type { InstanceEvents, InstanceSettingsRepository } from '../domain/ports.ts';
 import type { SystemSecrets } from '../vault/system.ts';
-import type { CloudLink } from './cloud-link.ts';
+import { createCloudLink, type CloudLink } from './cloud-link.ts';
 import { challengeNonce, CLOUD_CONNECTED, heartbeatMessage, helloMessage } from './cloud-link-hello.ts';
-import { CLOUD_MESSAGE_MAX_BYTES, unlinkedMessage, type CloudLinkMessages } from './cloud-link-messages.ts';
+import { CLOUD_MESSAGE_MAX_BYTES, createCloudLinkMessages, unlinkedMessage, type CloudLinkMessages } from './cloud-link-messages.ts';
 import { outgoingSecret } from './cloud-link-scan.ts';
-import type { HopperIoStateSource } from './hopper-io-state.ts';
+import { createHopperIoStateSource, type HopperIoStateSource } from './hopper-io-state.ts';
 
 /**
  * Where hopper.io is, and the pins of its public key (base64 SHA-256 of the key's SPKI), shipped in the code: a key a person
@@ -291,4 +291,18 @@ export function createCloudLinkAgent(o: {
     },
     status: () => status,
   };
+}
+
+/** The cloud link and its agent, wired: the link tells the agent of each change, and its view shows the connection. */
+export function createCloudLinkParts(o: Omit<Parameters<typeof createCloudLink>[0], 'changed' | 'connection'> & {
+  state: Parameters<typeof createHopperIoStateSource>[0]; target?: CloudLinkTarget;
+}): { cloudLink: CloudLink; agent: CloudLinkAgent } {
+  const parts: { agent?: CloudLinkAgent } = {};
+  const cloudLink = createCloudLink({ ...o, changed: (before) => parts.agent?.changed(before), connection: () => parts.agent?.status() ?? { state: 'off' } });
+  const agent = createCloudLinkAgent({
+    settings: o.settings, cloudLink, secrets: o.secrets, messages: createCloudLinkMessages({ cloudLink, events: o.events }),
+    state: createHopperIoStateSource(o.state), events: o.events, now: o.now, ...(o.target ? { target: o.target } : {}),
+  });
+  parts.agent = agent;
+  return { cloudLink, agent };
 }

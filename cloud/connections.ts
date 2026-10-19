@@ -136,9 +136,10 @@ export function createCloudConnections(o: {
       send(socket, h.answer);
       send(socket, o.answers.registerMessage({ installId: proved.installId, account: proved.account, now: now() }));
     };
-    /** A message after the hello. */
+    /** A message after the hello. One that came before the close is still taken: the instance sends `unlinked`, then
+     * closes at once (issue #2039 part 2). */
     const message = async (text: string | undefined) => {
-      if (!link || socket.readyState !== socket.OPEN) return;
+      if (!link) return;
       if ((text === undefined || !await take(link, text)) && !link.refusedOnce) {
         link.refusedOnce = true;
         await record(link, 'message_refused');

@@ -60,9 +60,9 @@ function instance(target: CloudLinkTarget, times: Partial<typeof AGENT_TIMES> = 
   const secrets = systemOf({ vault: store.vault, events: { append }, tx: store.tx });
   const state = { waiting: 0 } as Instance['state'];
   const keys: string[] = [];
-  let agent: CloudLinkAgent | undefined;
-  const link = createCloudLink({ settings: store.settings, secrets, events: { append }, now: () => new Date(), changed: (before) => agent?.changed(before), connection: () => agent!.status() });
-  agent = createCloudLinkAgent({
+  const late: { agent?: CloudLinkAgent } = {};
+  const link = createCloudLink({ settings: store.settings, secrets, events: { append }, now: () => new Date(), changed: (before) => late.agent?.changed(before), connection: () => late.agent!.status() });
+  const agent = late.agent = createCloudLinkAgent({
     settings: store.settings, cloudLink: link, secrets, messages: createCloudLinkMessages({ cloudLink: link, events: { append } }), events: { append }, now: () => new Date(), target, times,
     state: {
       snapshot: async (machineKey) => {
@@ -73,7 +73,7 @@ function instance(target: CloudLinkTarget, times: Partial<typeof AGENT_TIMES> = 
       },
     },
   });
-  stops.push(async () => { await agent!.stop(); store.close(); });
+  stops.push(async () => { await agent.stop(); store.close(); });
   return { store, link, secrets, agent, events, state, keys };
 }
 

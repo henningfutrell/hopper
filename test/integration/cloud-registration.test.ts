@@ -44,7 +44,7 @@ describe('registering the instance at hopper.io', () => {
     expect(JSON.stringify(events)).not.toContain(minted.body.code);
 
     expect((await a.ui<CloudLinkView>('/ui/api/cloud-link/unlink', {}, { token })).body).toEqual({ link: null });
-    expect((await a.ui<CloudLinkView>('/ui/api/cloud-link', { account: 'octo-cat' }, { token })).body).toEqual({ link: expect.objectContaining({ installId: instanceId, state: 'pending' }) });
+    expect((await a.ui<CloudLinkView>('/ui/api/cloud-link', { account: 'octo-cat' }, { token })).body).toEqual({ link: expect.objectContaining({ installId: instanceId, state: 'pending' }), connection: { state: 'no-pin' } });
   });
 
   it('no link, no code (409); a body other than {} is 400; only the admin mints a code', async () => {

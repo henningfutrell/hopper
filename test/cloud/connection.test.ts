@@ -189,11 +189,12 @@ describe("the cloud link's connection at hopper.io", () => {
       machines: [{ key: 'm1', online: true, lanesInUse: 0, lanes: 2, executors: ['claude'], takesJobs: true }],
     }));
     await until(async () => (await instances(s))[0]!.state !== undefined);
+    // The instance sends `unlinked` and closes at once: the notice still counts.
     end.send(unlinkedMessage({ installId: INSTANCE, account: 'ada' }));
-    await until(async () => (await instances(s)).length === 0);
     end.ws.close();
     await end.closed;
-    expect(await kinds(s)).toEqual(['instance_registered', 'instance_unlinked']);
+    await until(async () => (await instances(s)).length === 0);
+    expect((await kinds(s)).sort()).toEqual(['instance_disconnected', 'instance_registered', 'instance_unlinked']);
   });
 
   it('a bad hello, a message over a cap or of another type is refused and recorded once', async () => {
