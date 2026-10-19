@@ -1,7 +1,8 @@
 // The backfill of trusted origin (issue #652, requirement 10), through the real daemon, the fake GitHub at its seam and
 // the OpenFGA double: a job queued before origins were judged (tenant migration 39 marks it `originPending`) does not
 // start; the next sync judges its issue. Of a trusted origin, it gets that origin and runs; any other issue is a request
-// card in Sources, and its job stays held until a person approves the card.
+// card in Sources, and its job stays held until a person approves the card. A job made from an item offered with no
+// origin (issue #2113: its issue's job had not ended when the sync judged origins) waits for it the same way.
 import { afterEach, describe, expect, it } from 'vitest';
 import { ORIGIN_PENDING } from '../../src/decider/index.ts';
 import type { IntakeOutcome } from '../../src/domain/intake.ts';
@@ -84,5 +85,28 @@ describe('the backfill of trusted origin (issue #652)', () => {
     expect(ran).toMatchObject({ source: { origin: 'approved' }, error: 'the queued text ran' });
     expect(ran.originPending).toBeUndefined();
     expect((await a.events('types=job.origin_judged')).map((e) => e.data)).toEqual([{ key: issue.url, origin: 'approved' }]);
+  });
+
+  it('a job made from an item offered with no origin waits for it (issue #2113); its card approved, it runs', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: BODY, labels: ['hopper'], labelledBy: 'owner', assignedBy: 'owner' });
+    const made = a.user().engine.sourceHost.ingest({
+      key: issue.url, url: issue.url, title: issue.title, body: BODY, prompt: BODY, env: {}, author: 'stranger', priority: 50,
+      priorityReason: 'default', labels: ['hopper'], repo: REPO, number: issue.number, executor: 'scripted',
+    }, { name: 'github', kind: 'github-account' })!;
+    expect(made).toMatchObject({ originPending: true, stamp: { level: 'untrusted', reasons: ['origin:none'] } });
+    await a.sync();
+    const held = await waitFor(async () => { const j = await job(a, made.id); return j.holdReason === ORIGIN_PENDING ? j : undefined; }, { what: 'held for its origin' });
+    expect(held).toMatchObject({ status: 'held', originPending: true });
+    const card = await cardOf(a, issue.url);
+    expect(card).toMatchObject({ action: 'approve', request: { author: 'stranger' } });
+
+    const approved = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash: card!.request!.hash }, { token });
+    expect(approved).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
+    const ran = await a.waitForStatus(made.id, 'failed');
+    expect(ran).toMatchObject({ source: { origin: 'approved' }, stamp: { reasons: ['origin:approved'] }, error: 'the queued text ran' });
+    expect(ran.originPending).toBeUndefined();
   });
 });
