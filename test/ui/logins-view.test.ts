@@ -121,10 +121,11 @@ afterEach(async () => {
 });
 
 describe('the Logins view', () => {
-  it('names what asks — the tool at its host, the account, the scopes — and the lane (issue #698)', async () => {
-    await boot('#logins', { logins: [pending({ host: 'github.com', account: 'dev-account-7', scopes: ['repo', 'read:org'] })] });
+  it('names what asks — the tool at its host, the account, the scopes — and the lane (issue #698); the code goes on the host (issue #2142)', async () => {
+    await boot('#logins', { logins: [pending({ tool: 'python3 .agents/skills/workflow-mcp-auth/mcp_auth.py login', host: 'auth.example.com', account: 'dev-account-7', scopes: ['repo', 'read:org'] })] });
     const d = card()!.querySelector('[data-slot="login-details"]')!;
-    expect(d.textContent).toContain('gh at github.com');
+    expect(d.textContent).toContain('mcp_auth.py login at auth.example.com');
+    expect([card()!.textContent!.includes('Enter this code on auth.example.comWDJB'), card()!.querySelector('a [data-open-provider-label].truncate')?.textContent]).toEqual([true, 'Open auth.example.com']);
     expect(d.textContent).toContain('dev-account-7');
     expect(d.textContent).toContain('repo, read:org');
     expect(d.textContent).toContain('desk/lane-1');
@@ -137,6 +138,7 @@ describe('the Logins view', () => {
     expect(c.getAttribute('data-phase')).toBe('pending');
     expect(c.querySelector('[data-device-code]')?.textContent).toBe(CODE);
     expect(c.querySelector('a[data-open-provider]')?.getAttribute('href')).toBe('https://github.com/login/device');
+    expect(c.textContent).toContain('Enter this code on github.comWDJB'); // no host: its page's (issue #2142)
     expect(c.textContent).toContain('gh');
     expect(c.textContent).toContain('Desk tower');
     expect(c.textContent).toContain('Push the branch');
