@@ -64,7 +64,9 @@ async function withGateway(roles: unknown = ROLES) {
   return { idp, app };
 }
 
-describe('the API door: a gateway realm\'s JWT', () => {
+// Each test starts a daemon, signs people in and makes many requests: under an affected shard's load that takes
+// more than the default 15 s, as in test/integration/instance-admin.test.ts.
+describe('the API door: a gateway realm\'s JWT', { timeout: 60_000 }, () => {
   it('reads /api/ as the user the same token signs in as at the UI door, and only that user\'s work', async () => {
     const { idp, app } = await withGateway();
     const ada = await jwtOf(idp, 'ada');
@@ -189,7 +191,9 @@ const grant = (github: FakeForge, login: string, token = `gho_${login}`): string
 
 const githubOf = (r: { body: { accounts: ConnectedAccountStatus[] } }) => r.body.accounts.find((a) => a.provider === 'github');
 
-describe('the API door: a GitHub token', () => {
+// Each test starts a daemon, signs people in and makes many requests: under an affected shard's load that takes
+// more than the default 15 s, as in test/integration/instance-admin.test.ts.
+describe('the API door: a GitHub token', { timeout: 60_000 }, () => {
   it('reads /api/ as the user whose connected GitHub account it is, as that user\'s session does', async () => {
     const { github, app } = await withGitHub();
     const octo = await signInWithGitHub(app, github, 'octo-user');
