@@ -45,15 +45,15 @@ export function DeviceCode({ provider, userCode, verificationUri, expiresAt, wai
   const copy = () => void copyText(userCode).then((ok) => { if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500); } });
   return (
     <div {...rest} className={cn('flex flex-col items-center gap-4 text-center', className)}>
-      <div className="text-sm font-medium text-foreground">Enter this code on {provider}</div>
+      <div className="max-w-full text-sm font-medium break-words text-foreground">Enter this code on {provider}</div>
       {machine && <RaisedOn raisedBy={{ machineId: machine.id, ...(machine.name ? { name: machine.name } : {}) }} className="-mt-2 text-xs text-muted-foreground" />}
       <div className="flex items-center gap-1.5 rounded-xl border bg-background/60 py-2 pr-2 pl-4 shadow-inner">
         <code data-device-code className="font-mono text-2xl font-semibold tracking-[0.2em] text-foreground select-all sm:text-3xl">{userCode}</code>
         <Button variant="ghost" size="icon-sm" aria-label="Copy code" title="Copy code" onClick={copy}>{copied ? <Check className="text-ok" /> : <Copy />}</Button>
       </div>
       <a data-open-provider href={verificationUri} target="_blank" rel="noreferrer" onClick={copy}
-        className={cn(buttonVariants({ size: 'lg' }), 'h-10 w-full max-w-xs gap-2')}>
-        Open {provider}<ExternalLink />
+        title={`Open ${provider}`} className={cn(buttonVariants({ size: 'lg' }), 'h-10 w-full max-w-xs min-w-0 gap-2')}>
+        <span data-open-provider-label className="min-w-0 truncate">Open {provider}</span><ExternalLink />
       </a>
       <div className="-mt-2 text-[0.7rem] text-muted-foreground/80">or go to <span className="font-mono break-all text-muted-foreground">{verificationUri.replace(/^https?:\/\//, '')}</span></div>
       {profile}

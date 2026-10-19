@@ -40,6 +40,12 @@ const BORDER: Record<LoginPhase, string> = {
 const TONE: Record<LoginPhase, 'warn' | 'bad' | 'ok' | 'muted'> = { pending: 'warn', expiring: 'warn', expired: 'bad', completed: 'ok', cancelled: 'muted', failed: 'bad', dismissed: 'muted' };
 const LABEL: Record<LoginPhase, string> = { pending: 'pending', expiring: 'expires soon', expired: 'expired', completed: 'signed in', cancelled: 'cancelled', failed: 'failed', dismissed: 'dismissed' };
 
+/** Where the code goes (issue #2142): the login's host, else its page's host; the tool, a command, only when neither is known. */
+function siteOf(l: { tool: string; host?: string; verificationUrl?: string }): string {
+  if (l.host) return l.host;
+  try { return new URL(l.verificationUrl ?? '').host || l.tool; } catch { return l.tool; }
+}
+
 /** A tool sign-in a person started from Accounts (issue #1128): no job waits on it. */
 const isSignIn = (l: LoginView): boolean => l.kind === 'paste_code' && !l.jobId;
 
@@ -141,7 +147,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
           </div>
         )}
         {open && canAct && l.userCode && l.verificationUrl && (
-          <DeviceCode provider={l.tool} userCode={l.userCode} verificationUri={l.verificationUrl} waiting="Waiting for the sign-in" actions={actions || undefined}
+          <DeviceCode provider={siteOf(l)} userCode={l.userCode} verificationUri={l.verificationUrl} waiting="Waiting for the sign-in" actions={actions || undefined}
             profile={<BrowserProfile profile={loginProfileName(l)} url={l.verificationUrl} />} />
         )}
         {open && canAct && isSignIn(l) && l.codeKept && <SignInCode l={l} />}
