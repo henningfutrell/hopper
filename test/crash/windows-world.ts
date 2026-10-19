@@ -21,7 +21,7 @@ import { endLeases, killedAt, startHost, type CrashHost } from './harness.ts';
 import { runsOn, scratchLeft } from './windows-host.ts';
 
 const REPO = 'octo/tools';
-const HOST: WindowsHost = { name: 'build-host', ssh: 'builder@winbox', hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl', workDir: 'C:\\work\\app' };
+export const HOST: WindowsHost = { name: 'build-host', ssh: 'builder@winbox', hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl', workDir: 'C:\\work\\app' };
 /** The job's key for its ask: the same each time the same step is asked. */
 const KEY = 'crash-step-0001';
 /** The most one scenario takes: two hoppers start, one is killed. */
@@ -61,14 +61,14 @@ export async function windowsWorld(): Promise<WindowsWorld> {
   };
 }
 
-/** A person adds the Windows host in Settings → Windows hosts. */
-async function addHost(h: CrashHost): Promise<void> {
+/** A person adds the Windows host in Settings → Windows hosts; `secrets`, the vault secrets it gives its steps. */
+export async function addHost(h: CrashHost, secrets?: string[]): Promise<void> {
   const view = await h.get<WindowsHostsView>('/api/windows-hosts');
-  expect((await h.ui('/ui/api/windows-hosts', { hosts: [HOST], version: view.version })).status).toBe(200);
+  expect((await h.ui('/ui/api/windows-hosts', { hosts: [{ ...HOST, ...(secrets ? { secrets } : {}) }], version: view.version })).status).toBe(200);
 }
 
 /** A job's request on `/job/step` as `hopper-step` sends it; a host killed meanwhile answers status 0. */
-async function asJob(h: CrashHost, proxyToken: string, method: string, path: string): Promise<{ status: number; headers: Record<string, unknown>; text: string }> {
+export async function asJob(h: CrashHost, proxyToken: string, method: string, path: string): Promise<{ status: number; headers: Record<string, unknown>; text: string }> {
   try {
     return await rawRequest(h.url, {
       method, path, ...(method === 'POST' ? { body: '' } : {}),

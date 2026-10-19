@@ -28982,6 +28982,29 @@ Two places a secret leaks to that no table or file shows:
 **Left for later parts.** A kill mid-step of a box, Windows or need step with a vault secret; container layers and
 inspect output; the e2e mode and its nightly run.
 
+## The secret canary scan: a Windows step's vault secret after a kill mid-step (issue #1957, part 6, 2026-10-19)
+
+A step's vault secret is read when the step runs, goes to the step only and is masked in the log the job reads
+("Windows sandbox steps"). A kill of the hopper mid-step must not change that. `test/crash/secret-canary-windows.test.ts`
+runs the **canary scan** over the crash harness and the crash Windows host (`test/crash/windows-host.ts`):
+
+- **The run.** A person sets a vault secret (a canary), adds the Windows host with that secret in its `secrets`, and
+  grants the job the vault. The job asks for a step with `secret=<name>`. The step prints the secret in its log, split
+  across two chunks, as a careless step would. The hopper is killed at `saga:windows-step:run:before-do`, at
+  `saga:windows-step:run:after-do`, or while the step runs on the host. A second hopper on the same database ends the
+  step's saga (it reads the secret again in the first case, and ends the step interrupted in the last).
+- **The scan** reads the whole database, the WAL written since the test began, both hosts' work dirs and output, the
+  crash Windows host's files, the fake GitHub's requests (but the connection's own `authorization`), and what the job
+  reads of its step from the second hopper: its result and its log. Canaries: the master key, the vault secret, the job's
+  proxy token. No canary is found.
+- **The controls.** The crash Windows host appends each secret it was given to `delivered.jsonl`, by name and the SHA-256
+  of its value (no form the scan looks for): the step got the secret once. The log the job reads holds `MASK` where the
+  step printed it. With the step's masking taken out, the scan finds the secret in the `windows_steps` row, the WAL and
+  the step log.
+
+**Left for later parts.** A kill mid-step of a box or need step with a vault secret (it needs a container runtime beside
+the hopper under the crash harness); container layers and inspect output; the e2e mode and its nightly run.
+
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
 **Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event
