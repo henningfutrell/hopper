@@ -10,6 +10,7 @@ import { mergeHolds, pathsApply, unmetCriteria, type DoneCriterion } from '../..
 import type { Job } from '../../domain/types.ts';
 import type { GitHubApi } from './api.ts';
 import { ownOpenPullRequests, partPullRequest } from './completion.ts';
+import { pullRequestRepo } from '../../domain/pull-requests.ts';
 
 /** The done criteria of the conditional skills job `jobId` got, by skill, with its paths (absent: always); none: no check. */
 export type JobDoneCriteria = (jobId: string) => { skill: string; done: DoneCriterion[]; paths?: string[] }[];
@@ -32,7 +33,7 @@ export async function doneCriteriaMiss(api: GitHubApi, job: Job, criteria: JobDo
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (!own) return undefined;
   const pr = numberOf(own.url);
-  return missText(url ?? `${repo}#${number}`, `PR #${pr}`, await unmetOn(api, repo, pr, all, allowedDeletes?.(job.id) ?? [], own));
+  return missText(url ?? `${repo}#${number}`, `PR #${pr}`, await unmetOn(api, pullRequestRepo(own.url, repo), pr, all, allowedDeletes?.(job.id) ?? [], own));
 }
 
 /**
@@ -46,7 +47,7 @@ export async function partCriteriaMiss(api: GitHubApi, job: Job, criteria: JobDo
   if (all.length === 0 || !repo || !number) return undefined;
   const part = await partPullRequest(api, job);
   if (part?.state !== 'open') return undefined;
-  return missText(url ?? `${repo}#${number}`, `PR #${numberOf(part.url)}`, await unmetOn(api, repo, numberOf(part.url), all, allowedDeletes?.(job.id) ?? []));
+  return missText(url ?? `${repo}#${number}`, `PR #${numberOf(part.url)}`, await unmetOn(api, pullRequestRepo(part.url, repo), numberOf(part.url), all, allowedDeletes?.(job.id) ?? []));
 }
 
 /** The done check's words for `unmet` on `change` (`PR #4`, a GitLab merge request `MR !4`) of issue `issue`; undefined: met. */

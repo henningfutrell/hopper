@@ -2070,6 +2070,10 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
    (`GitHubApi.openPullRequests`, the newest 100 open; asked only on a miss): no cross-reference shows it. A pull request
    on such a branch whose body says `Part of #N` is still a part, never the whole (issue #721: a part on `issue-N-…`
    ended the job as the whole issue, and its merge put `hopper:done` on an issue with work left).
+   The job's own pull request **in another repository** (issue #2004: the issue's change lands there, as infrastructure
+   code does) counts the same: opened at or after the job's `createdAt`, or with a push from the job since. There a bare
+   `#N` names that repository's issue, so it names the issue by its full name (`owner/name#N`) or its URL, and
+   `Part of owner/name#N` is a part. Another repository's pull request the job did not open or push to never counts.
 3. The issue **asks to update the pull requests it names** (`asksToUpdate`: its title, or a line of its body, starts with
    bring / rebase / update / refresh / fix the conflicts and names a pull request): each pull request it names in its own
    repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an issue counts for nothing) is
