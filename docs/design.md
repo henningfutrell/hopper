@@ -23307,6 +23307,10 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   the job's owner), `issue N` or `item N` (the job's own repository), a link to an issue or a pull request; a workflow run
   as `<repo> run N`, `workflow run N` (the job's own repository) or a link to `actions/runs/N`, its id five digits or more.
   The job's own issue is left out: its close ends the job (issue #1460).
+- **The owner a wait writes is kept** (issue #2066). A wait on `outside: octo/hopper#2042` whose `for:` said `hopper#2042`
+  watched `<the job's owner>/hopper#2042` too, which did not exist, and so ended at once. A `name#N` or `<repo> run N`
+  with no owner is the job's owner's only when the text does not name that same name and number with its owner: then
+  it is the one the text names.
 - **Read at each sync** (`src/sources/watched-ends.ts`, `JobSource.endedWatched`; GitHub: `src/sources/github/watched.ts`).
   Each item is read by its number, the pull request first and then the issue, and a run through Actions
   (`GitHubApi.workflowRun`, `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, Actions read). An issue closed, a pull
@@ -23317,8 +23321,9 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
   run does not exist (404, 410, GraphQL's "Could not resolve to …") is permanent, not a failed read: the item is
   `not_found`. A job one of whose items is `not_found` is woken at once, whatever its other items, with
-  `job.waited_items_ended { items }` of those items only; its note says each was not found, so the job rewrites its wait. A
-  refusal (403) or a rate limit is still a failed read.
+  `job.waited_items_ended { items }` of those items only; its note says each cannot be read — GitHub answers a repository
+  the hopper's connection has no access to as one that does not exist (issue #2066) —, so the job checks the owner and name
+  and rewrites its wait. A refusal (403) or a rate limit is still a failed read.
 - **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
   memory, the items each job was last woken for. After a restart such a job is woken once more.
 - **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the
