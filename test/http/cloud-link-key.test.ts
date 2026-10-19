@@ -2,13 +2,15 @@
 // key per instance (issue #2039: it signs hopper.io's challenge), minted at the link, its private half a system secret in the instance's vault that the link record
 // names, its public half in the record. The admin rotates it on request; an unlink drops it. Over the real instance store.
 //   Scenario: a link mints the key; the record names the secret and holds the public half; the view never the private half
-//   Scenario: a rotation replaces the key; the old one is gone; not linked, 409
+//   Scenario: a rotation replaces the key; the old one is kept until the new one connected (issue #2039); not linked, 409
+//   Scenario: a revoke drops both keys and keeps the link; no key is minted again until a rotation (issue #2039)
+//   Scenario: a link with no key gets one when the agent connects (issue #2039)
 //   Scenario: an unlink drops the key with the record
 //   Scenario: with no master key, a link is refused and writes nothing
 //   Scenario: an unregistration keeps the key; a link from before part 2 has none until a rotation mints one
 import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CLOUD_LINK_KEY, type CloudLinkView } from '../../src/domain/cloud-link.ts';
+import { CLOUD_LINK_KEY, CLOUD_LINK_PREVIOUS_KEY, type CloudLinkView } from '../../src/domain/cloud-link.ts';
 import type { InstanceStore } from '../../src/domain/store.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
 import { systemBackendRefusal } from '../../src/domain/vault.ts';
@@ -58,7 +60,7 @@ describe('the cloud link key', () => {
     expect(systemBackendRefusal(CLOUD_LINK_KEY)).toContain('stays in the hopper');
   });
 
-  it('a rotation replaces the key; the old one is gone; not linked, 409', () => {
+  it('a rotation replaces the key; the old one is kept until the new one connected; not linked, 409', () => {
     const { link, secrets, events } = setup();
     expect(() => link.rotateKey('admin')).toThrow(HttpError);
     const before = keyOf(link.link('octo-cat', 'admin'))!;
@@ -69,8 +71,52 @@ describe('the cloud link key', () => {
     const secret = secrets.open(CLOUD_LINK_KEY)!;
     expect(secret).not.toBe(old);
     expect(publicOf(secret)).toBe(after.publicKey);
-    expect(events[0]).toEqual({ type: 'vault.secret_set', data: { name: `system/${CLOUD_LINK_KEY}`, by: 'admin', replaced: true, rotated: true } });
-    expect(link.view().link).toMatchObject({ account: 'octo-cat', state: 'pending', linkKey: after });
+    expect(events[0]).toEqual({ type: 'vault.secret_set', data: { name: `system/${CLOUD_LINK_PREVIOUS_KEY}`, by: 'admin' } });
+    expect(events[1]).toEqual({ type: 'vault.secret_set', data: { name: `system/${CLOUD_LINK_KEY}`, by: 'admin', replaced: true, rotated: true } });
+    // The key before stays until hopper.io took the new one: its hello proves the bound key (R4).
+    expect(link.view().link).toMatchObject({ account: 'octo-cat', state: 'pending', linkKey: after, previousKey: { ...before, secret: CLOUD_LINK_PREVIOUS_KEY } });
+    expect(secrets.open(CLOUD_LINK_PREVIOUS_KEY)).toBe(old);
+
+    // A second rotation before a connection keeps the first key before: the one hopper.io may still have bound.
+    link.rotateKey('admin');
+    expect(link.view().link?.previousKey?.publicKey).toBe(before.publicKey);
+    expect(secrets.open(CLOUD_LINK_PREVIOUS_KEY)).toBe(old);
+
+    // Another key's connection drops nothing; the new key's drops the key before.
+    link.keyConnected(after.publicKey);
+    expect(link.view().link?.previousKey).toBeDefined();
+    link.keyConnected(link.view().link!.linkKey!.publicKey);
+    expect(link.view().link?.previousKey).toBeUndefined();
+    expect(secrets.meta(CLOUD_LINK_PREVIOUS_KEY)).toBeUndefined();
+  });
+
+  it('a revoke drops both keys and keeps the link; no key is minted again until a rotation', () => {
+    const { link, secrets, events } = setup();
+    expect(() => link.revokeKey('admin')).toThrow(HttpError);
+    const { installId } = link.link('octo-cat', 'admin').link!;
+    link.rotateKey('admin');
+    const view = link.revokeKey('admin');
+    expect(view.link).toMatchObject({ installId, account: 'octo-cat', keyRevokedAt: '2026-10-17T08:00:00.000Z' });
+    expect(view.link?.linkKey).toBeUndefined();
+    expect(view.link?.previousKey).toBeUndefined();
+    expect(secrets.meta(CLOUD_LINK_KEY)).toBeUndefined();
+    expect(secrets.meta(CLOUD_LINK_PREVIOUS_KEY)).toBeUndefined();
+    expect(events).toContainEqual({ type: 'cloud_link.revoked', data: { installId, account: 'octo-cat', by: 'admin' } });
+    expect(link.ensureKey()?.linkKey).toBeUndefined();
+
+    const rotated = link.rotateKey('admin').link!;
+    expect(rotated.linkKey?.publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(rotated.keyRevokedAt).toBeUndefined();
+    expect(rotated.previousKey).toBeUndefined();
+  });
+
+  it('a link with no key gets one when the agent connects', () => {
+    const { instance, link } = setup();
+    expect(link.ensureKey()).toBeUndefined();
+    instance.settings.setCloudLink({ installId: instance.settings.instanceId(), account: 'octo-cat', state: 'pending', linkedAt: '2026-10-17T07:00:00.000Z', by: 'admin' });
+    const key = link.ensureKey()?.linkKey;
+    expect(key?.publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(link.ensureKey()?.linkKey).toEqual(key);
   });
 
   it('an unlink drops the key with the record', () => {
