@@ -11513,7 +11513,7 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   or `ended` (it ended with nothing to tell: the run stops waiting on it).
 - **Login signals** (issue #567, `src/logins/signals.ts`). A herdr job's login ends only on a **login
   signal** the turn shows after its `HOPPER_AUTH_PENDING`: a token obtained, the CLI or Claude saying it is
-  logged in or the authentication went through (`completed`); the code expired (`expired`, at once, as at
+  logged in, authenticated or signed in as or to an account (issue #2144), or the authentication went through (`completed`); the code expired (`expired`, at once, as at
   `expiresAt`, `onExpiry` applies); the user denied it at the provider (`failed`). The protocol line asks the
   job to report a login once per code and, when it goes through, to say so in a line `Logged in.`. Polling output
   (`authorization_pending`, `slow_down`, "waiting for authorization", the same code printed again), Claude
@@ -11542,6 +11542,11 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   its reason cleared). A failed or cancelled login stays as it is. The protocol line asks for it beside `Logged in.`;
   the login signals stay, so a job that does not report still ends its login as before. The route changes no job,
   question, webhook or setting. No polling: the job reports once, when it knows.
+  The tool is named as the job likes (issue #2144): `hopper-login` takes a command of many words quoted or not (a
+  word that starts with `-` too, but `--reason`), and the route finds the login of that tool with its words spaced
+  any way, else the newest whose words hold every word named, a path by its last part (`mcp_auth.py` names
+  `python3 …/mcp_auth.py login`). Before, a helper's command named unquoted was a bad call (exit 2), so the sign-in a
+  person finished never reached the hopper and the card waited until its code expired.
 - **Dismiss** (issue #1110, `POST /ui/api/logins/:id/dismiss`, operator). The fallback when the requester never says:
   a person puts an open login away, whatever its job does. `dismissed` (`auth.dismissed`, `by: user`), its code
   dropped; the run that waited on it reads `ended` and stops waiting, and nothing is typed into a pane (Cancel does
@@ -11564,8 +11569,10 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
   read at each expiry, so a change applies without a restart): `renew` (the default since issue #1016: two codes of a
   job expired before a person saw them, and the job stalled) — at each expiry the hopper asks the job for a new code
-  by itself (`check` answers `new-code` with `expired`; the job is told its code expired, to start the login again and
-  report the new code, `loginExpiredNewCodeNote`), `auth.expired` carries `renewing: true`, and the new code is the
+  by itself (`check` answers `new-code` with `expired`; the job is told its code expired and, first, to say so with
+  `hopper-login` when the login went through after all — the code expires on the hopper's clock, and a sign-in done is
+  never followed by a new code (issue #2144) —, else to start the login again and report the new code,
+  `loginExpiredNewCodeNote`; a login completed before its run read the ask is not asked again), `auth.expired` carries `renewing: true`, and the new code is the
   same login (`auth.pending`, `renewed: true`, so the notifiers post it again), until the login is completed or
   cancelled, or the job's own timeout; a run that cannot ask its tool again (a print-mode run) holds; `hold` (the
   default from issue #698 to #1016) — the job keeps waiting until its own timeout, the card says Expired and offers

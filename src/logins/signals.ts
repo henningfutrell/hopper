@@ -17,7 +17,7 @@ const SIGNALS: readonly [LoginSignal, RegExp][] = [
   ['completed', new RegExp([
     /^[\s●⎿✓]*logged in[.!]?\s*$/, /\blogged in (?:as|to)\b/, /\bsuccessfully (?:logged|signed) in\b/, /\bauthentication (?:complete|completed|succeeded|successful)\b/,
     /\bauthori[sz]ation (?:complete|completed|succeeded|successful|granted)\b/, /\b(?:login|sign-in) (?:complete|completed|succeeded|successful|went through)\b/,
-    /\b(?:access )?token (?:obtained|received|acquired|saved|stored|issued)\b/, /\bis now (?:authenticated|logged in|signed in)\b/,
+    /\b(?:access )?token (?:obtained|received|acquired|saved|stored|issued)\b/, /\bis now (?:authenticated|logged in|signed in)\b/, /\b(?:authenticated|signed in) (?:as|to)\b/,
   ].map((r) => r.source).join('|'), 'i')],
 ];
 

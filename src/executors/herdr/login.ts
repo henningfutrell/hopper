@@ -24,8 +24,11 @@ export const loginCancelledNote = (tool: string): string => `[hopper] The user c
 /** Typed in when the job's screen shows a device code it did not report (issue #698): the user was told; report it. */
 export const loginSeenNote = (tool: string): string => `[hopper] Your screen shows a ${tool} login code. The user was shown the link and the code (Logins). Keep the command that waits for it running in the background. Report it: end your message with ${HOW}.`;
 
-/** Typed in when the code expired and the hopper asks for a new one by itself (`onExpiry: renew`, issue #1016). */
-export const loginExpiredNewCodeNote = (tool: string): string => `[hopper] The ${tool} code expired before the user completed the login. Stop the command that waits for it, start the login again in the background, and end your message with ${HOW}.`;
+/**
+ * Typed in when the code expired and the hopper asks for a new one by itself (`onExpiry: renew`, issue #1016). It asks
+ * first whether the login went through (issue #2144): a sign-in the job did not report is reported, never followed by a new code.
+ */
+export const loginExpiredNewCodeNote = (tool: string): string => `[hopper] The ${tool} code expired before the hopper heard that the login went through. If the login went through, tell the hopper: sh "$HOPPER_LOGIN" completed ${tool}, then go on with the job. If it did not, stop the command that waits for it, start the login again in the background, and end your message with ${HOW}.`;
 
 /** Typed in when the user asks for a new code. */
 export const loginNewCodeNote = (tool: string): string => `[hopper] The user asked for a new code for the ${tool} login. Stop the command that waits for it, start the login again in the background, and end your message with ${HOW}.`;
