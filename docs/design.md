@@ -29021,3 +29021,33 @@ the wait, a move from the checkpoint, a live pane ended first, a new start, a ch
 `test/sandbox/image-published.test.ts` (the registry double: published, 404, unreachable, local, kept answers, image
 references), `test/skills/template-request-image.test.ts` (refused with no template saved, no registry asked for an earlier template),
 `test/sandbox/tools.test.ts` and `test/sandbox/check-script.test.ts` (the mirror's providers, the probe's provider).
+
+## Acceptance tests, part 3: the CI run (issue #1958, 2026-10-18)
+
+**Why.** Parts 1 and 2 wrote the acceptance tests, but they skip where no CLI is installed, and `pr / test` installs
+none. So nothing ran them, and a real CLI or TUI that changed was still not seen.
+
+**The workflow** (`.github/workflows/agent-acceptance.yml`, checked by `test/scripts/agent-acceptance-workflow.test.ts`):
+
+| Job | When | What |
+|---|---|---|
+| `print-agents` | nightly on `dev`, by hand, and on a pull request that changes `src/executors/`, the acceptance tests or their fakes | installs claude, codex, opencode and omp (mise, the latest release of each; opencode by its aqua backend, `aqua:anomalyco/opencode`), then runs `test/acceptance/print-agents.test.ts`, `fake-drift.test.ts` and `hooks-mcp.test.ts` |
+| `tui` | nightly and by hand only | installs claude and herdr (herdr's installer, as the image does), runs `test/acceptance/tui-screens.test.ts` with `HOPPER_ACCEPTANCE_TUI=1`, and uploads `HOPPER_ACCEPTANCE_TUI_OUT` as the artifact `tui-screens`, also when the check fails |
+
+**Decisions.**
+- **A CLI that is not there fails the run.** Each CLI is named by `HOPPER_ACCEPTANCE_<AGENT>_BIN` (`mise which`), which
+  `realBin()` reads first. A failed install stops the step, so no test skips in CI.
+- **The latest release of each CLI**, not a pinned one: the nightly run must see a CLI that changed. The workflow is no
+  required check, so a CLI release that breaks it does not stop a merge; it shows as a red nightly run.
+- **mise installs the CLIs** (`jdx/mise-action`), the same installs these tests were written against. It has a binary
+  release of each, with no wrapper script on `PATH` that `realBin()` must skip.
+- **No database.** These tests use none, so `HOPPER_TEST_POSTGRES_URL` names a closed port and no Postgres starts.
+- **Read-only, no secret.** `pull_request`, never `pull_request_target`; the CLIs get a dummy key, and their proxy
+  variables name the fake server, which refuses every other host.
+
+**Not done: the drift check of `fake-cursor-agent.mjs`.** Cursor's agent has no setting for its model endpoint, so a run
+of it always calls a real model. The issue names cursor-agent only "where its endpoint can be overridden".
+
+**Verification:** `test/scripts/agent-acceptance-workflow.test.ts` (failed first, then passes); the three test files of
+`print-agents` pass locally with the CLIs named as the workflow names them (claude 2.1.292, codex 0.161.0, opencode
+1.19.3, omp 18.7.0).
