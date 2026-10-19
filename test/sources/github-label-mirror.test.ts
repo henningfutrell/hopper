@@ -1,7 +1,8 @@
 // The label mirror (issues #1891, #1933): at each discover, the end labels of each issue listed are compared with its work
 // item's state. The drift of each judged state is corrected through the GitHub outbox, in one coalesced change, once: the
 // #465 case, where the item reconciler blocked an item whose issue still carried `hopper:pr-ready`, and the states a job
-// works or a pull request is open in. An item that moved a moment ago, or that has outbox rows not sent, is not judged.
+// works or a pull request is open in. An item that moved a moment ago, or that has outbox rows not sent, is not judged;
+// nor is an issue the same discover takes as a new job (issue #1954): the new job moves the item.
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
 import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
@@ -16,12 +17,13 @@ const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox> } = {}) {
+function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[] } = {}) {
   const gh = createFakeGitHub();
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const source = createGitHubSource({
     name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig({}), api: gh,
     trust: testTrust(), ...(o.outbox ? { outbox: o.outbox } : {}), clock: { now: () => new Date(NOW) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k])),
+    ...(o.rerunnable ? { rerunnable: (keys: string[]) => new Set(keys.filter((k) => o.rerunnable!.includes(k))) } : {}),
     intake: {
       holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: LONG_AGO, changes: [] }), migrated: () => {},
       record: () => {}, requestOpened: () => false, requestsWaiting: () => [],
@@ -93,6 +95,16 @@ describe('labels mirror the database (issue #1891)', () => {
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
     expect(gh.issue(REPO, 2).labels).toEqual(['hopper', 'hopper:partly-done']);
     expect(writes()).toHaveLength(2);
+  });
+
+  it('an issue the discover takes as a new job is not judged: its end label is not put back (issue #1954)', async () => {
+    // Its end label came off (a give-back the hopper made, or a person): the discover runs it again.
+    const { gh, source, drifts } = setup({ [url(1)]: { blockedCause: 'pr_closed', closedWithoutMerge: 1, jobId: 'job-1' } }, { rerunnable: [url(1)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
+    expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+    expect(drifts()).toEqual([]);
   });
 
   it('an item with outbox rows not sent is not judged', async () => {

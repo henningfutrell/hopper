@@ -28,10 +28,12 @@ export const SCENARIO_MS = 120_000;
 /** How often a crash host's item reconciler checks. */
 const RECONCILE_MS = 300;
 
-/** Every kill point of the two corrections, in the order a first pass reaches them. */
+/** The kill point of a run again between the source's give-back and the new job (src/sources/rerun.ts). */
+const GIVEN = 'give-back:rerun-by-reconciler:after-give';
+/** Every kill point of the three corrections: the block of #1, the run again of #3, the notice of #5. */
 export const ITEM_KILL_POINTS = [
   itemKillPoint('block', 'inside-tx'), itemKillPoint('block', 'after-record'), itemKillPoint('ask', 'after-record'),
-  itemKillPoint('run_again', 'before-call'), 'give-back:rerun-by-reconciler:after-give', itemKillPoint('run_again', 'after-call'),
+  itemKillPoint('run_again', 'before-call'), GIVEN, itemKillPoint('run_again', 'after-call'),
 ];
 
 /** Which items a world seeds: `stale` (#1, blocked once), `closed` (#3, run again once) and `blocked` (#5, asked about once). */
@@ -166,7 +168,7 @@ export async function askedOnce(w: ItemWorld, h: CrashHost): Promise<void> {
 }
 
 /** #3 ran again once: one new job of its item, by the reconciler, and its end label off on GitHub. */
-export async function ranAgainOnce(w: ItemWorld, h: CrashHost): Promise<void> {
+export async function ranAgainOnce(w: ItemWorld, h: CrashHost, point: string): Promise<void> {
   const jobId = w.jobs.closed!;
   const reruns = async (): Promise<Job[]> => (await h.get<{ jobs: Job[] }>('/api/jobs?limit=1000')).jobs.filter((j) => j.rerunOf === jobId);
   await waitFor(async () => ((await reruns()).length > 0 ? true : undefined), { timeoutMs: 60_000, what: 'the new job of #3' })
@@ -174,8 +176,10 @@ export async function ranAgainOnce(w: ItemWorld, h: CrashHost): Promise<void> {
   // A second host's passes go on meanwhile: a second run again would show in them.
   await new Promise((r) => setTimeout(r, 3 * RECONCILE_MS));
   expect((await reruns()).map((j) => j.source?.key)).toEqual([issueUrl(3)]);
-  expect((await events(h, 'job.rerun')).filter((e) => e.jobId === jobId).map((e) => e.data.by)).toEqual(['reconciler']);
-  expect(labels(w, 3)).not.toContain('hopper:pr-closed');
+  // A kill between the give-back and the new job leaves the item labelled for the source again: the next sync takes it as
+  // a Run again from GitHub, which records no `job.rerun`. Else the reconciler's own Run again made it.
+  expect((await events(h, 'job.rerun')).filter((e) => e.jobId === jobId).map((e) => e.data.by)).toEqual(point === GIVEN ? [] : ['reconciler']);
+  expect(labels(w, 3), h.output()).not.toContain('hopper:pr-closed');
 }
 
 /** The scenario: a first hopper killed at `point` while it corrects the items; a second ends what is left, each effect once. */
@@ -191,6 +195,6 @@ export async function killedThenCorrected(w: ItemWorld, point: string): Promise<
     const b = await w.host();
     await blockedOnce(w, b);
     await askedOnce(w, b);
-    await ranAgainOnce(w, b);
+    await ranAgainOnce(w, b, point);
   } finally { stop(); }
 }
