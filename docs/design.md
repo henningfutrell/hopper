@@ -10785,6 +10785,14 @@ them, and they stay valid until they expire (15 and 10 minutes). They are read c
 needs, which Access allowed. A check that outlasts them (a slow terraform init) sees later probes refused for an expired
 credential: an `error`, and the check fails closed.
 
+**Minted once the image is ready (issue #2112, 2026-10-19).** Reported from a real run: the check of read on an EKS
+cluster failed on `kube.get`, and each write probe was an `error`, not a refusal, while the mint test of the same
+cluster passed. An EKS token works for 15 minutes from its signing, and the check minted it before it pulled the box's
+image and built its tools image, which can take longer: the box then signed in with a token EKS no longer takes
+(`Unauthorized`). `runCheck` (`src/sandbox/check.ts`) now has the image (`boxImage`) first, then mints, then makes the
+box. An image it cannot have fails the check with nothing minted. When each probe is marked `skip` or cannot run (no
+state backend), it has no image. When the vault mints for no need, it has the image but makes no box, as before.
+
 **What stays #715's.** The terraform wrapper, a read-only state backend, `terraform destroy` and `state rm` against the
 workspace's real state, a credential for an `aws-account`, an Argo CD app or a Terraform workspace, and the check on a
 schedule. (Built since, as "A read-only infra box" parts 1 to 6; egress moved to #849.) A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
