@@ -22,8 +22,9 @@ export interface ProxyWrite { name: string; op: string; pull?: boolean; fields(p
 /** A resend key as hopper-gh makes one: 24 hex characters, the same each time the request is sent again. */
 const resendKey = (): string => randomBytes(12).toString('hex');
 
-/** Every write kind a job asks the proxy for, with a key where hopper-gh sends one (an issue create or comment). */
+/** Every write kind a job asks the proxy for, with a key where hopper-gh sends one (an issue create or comment, a pull request). */
 export const PROXY_WRITES: ProxyWrite[] = [
+  { name: 'a pull request', op: 'pr.create', fields: () => ({ op: 'pr.create', repo: REPO, head: 'issue-7-first', base: 'main', title: 'Ship the first part', body: 'Part of #7.', key: resendKey() }) },
   { name: 'a follow-up issue', op: 'issue.create', fields: () => ({ op: 'issue.create', repo: REPO, title: 'Tidy the docs', body: 'Later.', key: resendKey() }) },
   { name: 'a required child', op: 'issue.create', fields: () => ({ op: 'issue.create', repo: REPO, title: 'Fix first', body: 'Needed.', required: 'true', key: resendKey() }) },
   { name: 'a comment', op: 'issue.comment', fields: () => ({ op: 'issue.comment', repo: REPO, number: '7', body: 'Found the cause.', key: resendKey() }) },
@@ -94,6 +95,11 @@ export async function writtenOnce(w: ProxyWorld, h: CrashHost, write: ProxyWrite
       expect(child.assignees).toEqual(['owner']);
       expect(child.labels).toContain('hopper');
     }
+  } else if (write.op === 'pr.create') {
+    // Not idempotent either: GitHub refuses a second pull request from the same head, so it must be found, not made again.
+    expect(w.pulls.map((p) => p.head)).toEqual([sent.head]);
+    expect(posts(w, `/repos/${REPO}/pulls`)).toBe(1);
+    expect(w.pulls[0]!.body).toMatch(/\n<!-- hopper post proxy-[0-9a-f]{24} -->$/);
   } else if (write.op === 'issue.comment') {
     expect(w.github.issues.find((i) => i.number === 7)!.comments).toHaveLength(1);
     expect(posts(w, `/repos/${REPO}/issues/7/comments`)).toBe(1);
