@@ -42,7 +42,7 @@ export function recordApproveTrust(c: EngineContext, id: string, acting: ActingP
   const job = live(c, id);
   const from = c.store.jobs.trustLevel(job);
   const next = c.store.jobs.approveTrust(id);
-  if (!next || from === undefined) throw new EngineError('conflict', `job ${id} has no trust that Jev's check or a deny lowered to approve`);
+  if (!next || from === undefined) throw new EngineError('conflict', `job ${id} has no trust that Jev's check or a deny lowered to approve: a job of an item of no trusted origin is approved by its request card in Intake`);
   c.store.events.append({ type: 'job.trust_approved', jobId: id, data: { from, ...acting } });
   return next;
 }
