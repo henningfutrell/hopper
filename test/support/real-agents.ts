@@ -66,8 +66,8 @@ export const REAL_AGENTS: readonly RealAgent[] = [
     agent: 'omp', model: 'fake/fake-1',
     args: () => ['--auto-approve'],
     env: (url) => ({ ...proxied(url), FAKE_MODEL_KEY: KEY }),
-    // omp 18.7 retries a 429 and a 5xx with no limit (still at it after 150 s).
-    retriesPastTimeout: ['rate-limited', 'overloaded', 'server-error'],
+    // omp 18.7 retries a 429 and a 5xx with no limit (still at it after 150 s); 18.12 retries a cut stream too.
+    retriesPastTimeout: ['rate-limited', 'overloaded', 'server-error', 'cut'],
     files: (url) => ({
       '.omp/agent/models.yml': `providers:\n  fake:\n    baseUrl: ${url}/v1\n    api: openai-completions\n    apiKey: FAKE_MODEL_KEY\n    models:\n      - id: fake-1\n        name: fake-1\n        reasoning: true\n`,
     }),
