@@ -2,7 +2,8 @@
 // scan of every place a test can read after a job ran — the whole database (every table of the instance's schema and
 // of each user's), files under a directory, and texts the test captured (logs, the event log, SSE replays, webhook
 // bodies, a fake's requests, a box's environment and argv). A canary is found in its plain form and in the forms a
-// leak takes on the way out: base64, base64url, hex and URL-encoded; a gzip value (a checkpoint) is opened first.
+// leak takes on the way out: base64, base64url, hex and URL-encoded; a gzip value (a checkpoint) is opened first, as
+// bytes, as a bytea Postgres prints (`\x1f8b…`) or as base64 text (`H4sI…`, a checkpoint's row).
 // Where a canary may stay — its sealed vault row — holds no form of it, so the check allows none anywhere.
 import { randomBytes } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -32,6 +33,8 @@ export function formsOf(value: string): Record<string, string> {
 }
 
 const GZIP_HEX = /\\x(1f8b[0-9a-f]+)/g;
+/** A gzip value as base64 text: its magic bytes and method (`1f 8b 08`) are `H4sI`. */
+const GZIP_BASE64 = /H4sI[A-Za-z0-9+/]+={0,2}/g;
 
 /** `bytes` opened when they are a whole gzip value, else ''. */
 function opened(bytes: Buffer): string {
@@ -43,9 +46,12 @@ function opened(bytes: Buffer): string {
   }
 }
 
-/** `text`, and each gzip value in it (a bytea as Postgres prints it, `\x1f8b…`) opened. */
+/** `text`, and each gzip value in it (a bytea as Postgres prints it, `\x1f8b…`, or base64 text, `H4sI…`) opened. */
 function withOpened(text: string): string {
-  const all = [...text.matchAll(GZIP_HEX)].map((m) => opened(Buffer.from(m[1]!, 'hex'))).filter((x) => x !== '');
+  const all = [
+    ...[...text.matchAll(GZIP_HEX)].map((m) => opened(Buffer.from(m[1]!, 'hex'))),
+    ...[...text.matchAll(GZIP_BASE64)].map((m) => opened(Buffer.from(m[0], 'base64'))),
+  ].filter((x) => x !== '');
   return all.length === 0 ? text : `${text}\n${all.join('\n')}`;
 }
 

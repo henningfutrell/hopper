@@ -25,6 +25,19 @@ describe('scrubbing a checkpoint off the event loop', () => {
     expect(gunzipSync(off.session!).toString('utf8')).not.toContain(GH);
   });
 
+  it('masks by value each vault secret delivered to the job (issue #1957), which no pattern knows', async () => {
+    const held = 'correct horse battery';
+    const parts = {
+      patch: gzipSync(['--- a/x', '+++ b/x', `-old ${held}`, `+pw=${held}`, ''].join('\n')),
+      session: gzipSync(`${JSON.stringify({ message: `it printed ${held}` })}\nplain ${held}\n`),
+      held: [held],
+    };
+    const off = await scrubCheckpoint(parts);
+    expect(gunzipSync(off.patch).toString('latin1')).toBe(['--- a/x', '+++ b/x', `-old ${held}`, '+pw=[vault secret, masked]', ''].join('\n'));
+    expect(gunzipSync(off.session!).toString('utf8')).toBe(`${JSON.stringify({ message: 'it printed [vault secret, masked]' })}\nplain [vault secret, masked]\n`);
+    expect(gunzipSync(scrubParts(parts).session!).toString('utf8')).not.toContain(held);
+  });
+
   it('a checkpoint with no session answers none', async () => {
     const off = await scrubCheckpoint({ patch: taken.patch });
     expect(off.session).toBeUndefined();
