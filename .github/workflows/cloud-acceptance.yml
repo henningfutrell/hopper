@@ -1,8 +1,8 @@
 # The cloud acceptance tests (issue #1956, test/cloud-acceptance/README.md): a session the vault mints, used by the real
 # `aws` CLI, curl's SigV4 and the AWS SDK against a mock AWS (moto) behind the policy-assert proxy, through the hopper's
-# real composition root. Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
+# real composition root, and terraform in the read-only box image the hopper builds. Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
 # plans or the tests themselves: they start containers and take minutes, so `pr / test` leaves them out.
-# Read-only and with no secrets: `pull_request`, never `pull_request_target`. moto, Postgres and the AWS CLI are public
+# Read-only and with no secrets: `pull_request`, never `pull_request_target`. moto, Postgres, the AWS CLI and the box image are public
 # images; nothing reaches a real cloud.
 name: cloud-acceptance
 
@@ -33,7 +33,7 @@ concurrency:
 jobs:
   cloud:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

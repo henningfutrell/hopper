@@ -18,6 +18,11 @@ against shell stubs (`test/support/fake-cloud-tools.ts`) or a loopback STS (`tes
   (`support/hopper.ts`). Topology discovery reads the account with the real AWS SDK reader.
 - **The real `aws` CLI and curl** (`docker.io/amazon/aws-cli`, `support/aws-cli.ts`), on the host's network, and the
   AWS SDK in the test.
+- **A read-only box image** (`support/box.ts`), made as the hopper makes it for a template that reads a terraform
+  workspace: `boxImage` (`src/sandbox/box-image.ts`) through the real container runtime, the published box image
+  (`ghcr.io/henningfutrell/hopper:box-claude`) with terraform and the aws CLI added, terraform behind the read-only
+  wrapper, its providers from the image's mirror. The build fetches the tools' own releases, so it needs the network.
+  The box runs on the host's network with the read session's keys in its environment.
 
 ## Run
 
@@ -28,7 +33,7 @@ HOPPER_TEST_MOTO_URL=http://127.0.0.1:<port> HOPPER_TEST_POSTGRES_URL=postgres:/
 ```
 
 `HOPPER_TEST_CONTAINER_CLI` names the container command (default `docker`; podman's `docker` works). Image overrides:
-`MOTO_IMAGE`, `AWS_CLI_IMAGE`. CI: `.github/workflows/cloud-acceptance.yml`, nightly and on a pull request that
+`MOTO_IMAGE`, `AWS_CLI_IMAGE`, `HOPPER_TEST_BOX_IMAGE` (the box's base image). CI: `.github/workflows/cloud-acceptance.yml`, nightly and on a pull request that
 changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` or these tests.
 
 ## Acceptance criteria covered
@@ -37,14 +42,15 @@ changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` o
 |---|-----------|-------|
 | 1 | Minted scope: ReadOnlyAccess and the deny policy, a lifetime within the template's, the configured session name, no key on the box | `read-session.test.ts` |
 | 2 | Read-only by every route: the aws CLI (delete, terminate, schedule deletion, send, attach, assume another role), curl's raw SigV4 PUT and the SDK are denied at the proxy; moto's state hash is the same before and after | `read-session.test.ts` |
+| 2 | The terraform route, in the read-only box: init and plan work; `apply` and `apply -auto-approve` are refused by the wrapper before any call; the real binary's `apply -auto-approve` by its absolute path is denied at the proxy; the box's aws CLI is denied too; moto is unchanged | `terraform.test.ts` |
 | 3 | Lifetime: after the job ends, or a person revokes the template's approval in Access, the helper's renewal is refused and STS is asked for no new session; the session the job held is denied once its lifetime (900 s at most) is over | `lifetime.test.ts` |
 | 5 | Drift: a bucket and a VPC made in moto out of band show in the next Discover now; every call of discovery's session is a Describe, List or Get, allowed, and moto's state is what the change left | `discovery.test.ts` |
 
 Criterion 3, stated: the hopper does not end an STS session early. A session it handed a job lives until its own
 expiry (900 s at most), after the job ends or a revoke too; the test moves the proxy's clock past it.
 
-Not yet: the calls from inside a real sandbox box image, terraform (`apply` without the wrapper, with auto-approve),
-the write path's saved plan, saga resume, egress, and kubectl on kind. The pull request of each part lists what is left.
+Not yet: the box under the hopper's own sandbox flags and egress proxy (a need box), an SDK script inside the box, the
+write path's saved plan, saga resume, egress, and kubectl on kind. The pull request of each part lists what is left.
 
 ## Notes
 
