@@ -2,15 +2,16 @@
 // (`step.started`, `step.finished`, one `step` id) are one step; a fork's spin-off and decision (`job.forked`,
 // `job.fork_resolved`, one `forkId`) are one fork. A tend job (`job.pull_request_tended`) and a rework job
 // (`job.rework_requested`) are one line each, by the job they made (`nextJobId`), which opens to that job's own events.
-// Every other event is a line of its own. Pure.
+// All the job's checkpoints (`job.checkpointed`, issue #1975) are one line, at the place of the newest: each replaced the
+// one before. Every other event is a line of its own. Pure.
 import type { DomainEvent, JobStatus } from './wire.ts';
 
-export type GroupKind = 'step' | 'fork' | 'tend' | 'rework';
+export type GroupKind = 'step' | 'fork' | 'tend' | 'rework' | 'checkpoint';
 
 export interface TimelineGroup {
   kind: 'group';
   group: GroupKind;
-  /** The step id, or the job the group stands for: the fork job, the tend job, the rework job. */
+  /** The step id, or the job the group stands for: the fork job, the tend job, the rework job, the job checkpointed. */
   id: string;
   /** Its events, newest first. */
   events: DomainEvent[];
@@ -43,14 +44,14 @@ export function timelineNodes(events: readonly DomainEvent[]): TimelineNode[] {
   for (const e of events) {
     const opens = OPENS[e.type];
     const closes = CLOSES[e.type];
-    const by = opens ?? closes;
-    const id = by ? (e.data as Record<string, unknown>)[by.field] : undefined;
+    const by = opens ?? closes ?? (e.type === 'job.checkpointed' ? { group: 'checkpoint' as const, field: '' } : undefined);
+    const id = by?.group === 'checkpoint' ? e.jobId : by ? (e.data as Record<string, unknown>)[by.field] : undefined;
     if (!by || typeof id !== 'string') { nodes.push({ kind: 'event', event: e }); continue; }
     const key = `${by.group}:${id}`;
     let g = groups.get(key);
     if (!g) { g = { kind: 'group', group: by.group, id, events: [] }; groups.set(key, g); nodes.push(g); }
     g.events.push(e);
-    if (opens) g.opened ??= e; else g.closed ??= e;
+    if (opens) g.opened ??= e; else if (closes) g.closed ??= e;
   }
   return nodes;
 }
@@ -68,7 +69,7 @@ export function groupStatus(g: TimelineGroup, jobStatus: JobStatus | string | un
     }
     return jobStatus && AT_WORK.has(jobStatus) ? 'running' : undefined;
   }
-  if (g.closed || !itsStatus) return undefined;
+  if (g.group === 'checkpoint' || g.closed || !itsStatus) return undefined;
   if (AT_WORK.has(itsStatus)) return 'running';
   if (itsStatus === 'failed') return 'error';
   return WAITS.has(itsStatus) ? 'pending' : undefined;

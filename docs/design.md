@@ -18589,7 +18589,7 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 | Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`); the help pages and What's new lines among the files its pull request changes (part 2) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
 | Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
-| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below) |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); its latest checkpoint only, one part however many were taken (`job.checkpoint`, with how many `job.checkpointed` say were taken, issue #1975), with its commits and whether it holds the session; each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below) |
 
 Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
 piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
@@ -18639,7 +18639,8 @@ job waits, an error when the fork job failed, with a link to the fork job; a **t
 a **rework** job's `job.rework_requested` (one `nextJobId` each) — one line that names the step and the pull request, or the
 pull request and the notes, and that job's status: running while it is at work, pending while it waits, an error when it
 failed. Opened, it links that job and reads that job's own events (`GET /api/jobs/:id/bom`, read again when that job's
-status changes), each a line nested under it. An event with no such id stays a line of its own. Data shown as JSON elsewhere (a
+status changes), each a line nested under it; all the job's `job.checkpointed` (issue #1975) — one line, the last
+checkpoint and its machine, and how many were taken, each a line nested under it. An event with no such id stays a line of its own. Data shown as JSON elsewhere (a
 decider decision's raw inputs, the built-in change rule) is the same `JsonBlock`; commands to copy, a direct job's result,
 a failure's error, an out-of-band change's detail and an infra plan's text are `LogBlock`s (title, wrap toggle, copy).
 
@@ -19525,7 +19526,9 @@ runs, and a parked job with such a copy can resume on any machine.
   in any encoding comes back as it was. The latest checkpoint is kept, compressed, in the user's schema
   (`job_checkpoints`, tenant migration 48: a table only, the build before runs on it); what it is — when, where, the
   branch, base, HEAD, the commits not pushed, its size, whether it holds the session — is `job.checkpoint`, and
-  `job.checkpointed` says one was taken. A checkpoint goes a week after its job ended (`CHECKPOINT_KEEP_MS`).
+  `job.checkpointed` says one was taken. A checkpoint the same as the last one kept — the same branch, base, HEAD, commits,
+  machine, patch and session (issue #1975: a job that waits changes nothing) — is not kept again and records no event; the
+  take answers the one kept. A checkpoint goes a week after its job ended (`CHECKPOINT_KEEP_MS`).
 - **Resume elsewhere.** `POST /ui/api/jobs/:id/requeue` `{elsewhere: true}` (least role `operator`, as Pick up), for a
   parked job whose checkpoint holds its agent session (`elsewhereRefusal`, else 409). Its question, proposal or research
   report must be answered first (409): the claim resumes the agent with the answer, never to wait on it again elsewhere.

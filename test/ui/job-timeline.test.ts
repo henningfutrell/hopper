@@ -9,6 +9,7 @@
 //   Scenario: a step opens to its data
 //   Scenario: a sandbox step's start and end nest under one line; a fork's events nest under one line that links its job
 //   Scenario: a tend job nests under one line that links it and, opened, reads that job's own events and shows them nested
+//   Scenario: all the job's checkpoints are one line: the last one's machine and how many were taken (issue #1975)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -103,6 +104,22 @@ describe('the job timeline', () => {
     expect(nested.map((n) => n.dataset.eventSeq)).toEqual(['3', '2']);
     const top = steps(el).filter((s) => !groups[0]!.contains(s));
     expect(top.map((s) => s.dataset.eventSeq)).toEqual(['1']);
+  });
+
+  it('makes one line of all the job\'s checkpoints, with the last one\'s machine and how many were taken (issue #1975)', () => {
+    const el = render(job('waiting_on'), [
+      event(4, 'job.checkpointed', { machineId: 'fleet-1', bytes: 9, session: true, commits: 0 }),
+      event(3, 'job.waiting'),
+      event(2, 'job.checkpointed', { machineId: 'fleet-1', bytes: 9, session: true, commits: 0 }),
+      event(1, 'job.started'),
+    ]);
+    const groups = [...el.querySelectorAll<HTMLElement>('[data-slot="job-timeline"] [data-step-key]')];
+    expect(groups.map((g) => g.dataset.stepKey)).toEqual(['checkpoint:j1']);
+    const line = groups[0]!.querySelector<HTMLElement>('[data-slot="trace-line"]')!;
+    expect(line.textContent).toContain('last checkpoint on fleet-1');
+    expect(line.textContent).toContain('2 checkpoints taken');
+    expect(line.dataset.status).toBeUndefined();
+    expect(steps(el).map((s) => s.dataset.eventSeq)).toEqual(['3', '1']);
   });
 
   it('runs a step that has not ended while its job is at work', () => {

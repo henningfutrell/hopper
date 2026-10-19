@@ -194,12 +194,15 @@ function work(job: Job, events: readonly DomainEvent[], related: readonly Job[],
   const machines = new Map<string, number>();
   for (const e of events) if (e.type === 'job.claimed' && e.machineId) machines.set(e.machineId, (machines.get(e.machineId) ?? 0) + 1);
   for (const [m, runs] of machines) out.push({ id: `machine:${m}`, group: 'machines', kind: 'machine', label: m, status: 'recorded', detail: `${runs} ${runs === 1 ? 'run' : 'runs'}`, href: '#machines' });
+  // Its latest checkpoint only, one part however many were taken (issue #1975): each one replaced the one before.
+  const k = job.checkpoint;
+  const taken = events.filter((e) => e.type === 'job.checkpointed').length;
+  if (k) {
+    const n = k.commits.length;
+    out.push({ id: 'checkpoint', group: 'machines', kind: 'checkpoint', label: `Last checkpoint on ${k.machineId}`, status: 'recorded', at: k.at, detail: `${n} ${n === 1 ? 'commit' : 'commits'}, ${k.session ? 'with its session' : 'no session'}; ${taken} ${taken === 1 ? 'checkpoint' : 'checkpoints'} taken` });
+  }
   for (const e of events) {
     const d = e.data as Data;
-    if (e.type === 'job.checkpointed') {
-      const n = typeof d.commits === 'number' ? d.commits : 0;
-      out.push({ id: `checkpoint:${e.seq}`, group: 'machines', kind: 'checkpoint', label: `Checkpoint on ${str(d.machineId) ?? 'its machine'}`, status: 'recorded', at: e.at, detail: `${n} ${n === 1 ? 'commit' : 'commits'}, ${d.session ? 'with its session' : 'no session'}` });
-    }
     if (e.type === 'step.started') out.push({ id: `step:${str(d.step) ?? e.seq}`, group: 'machines', kind: 'step', label: str(d.template) ? `Need step in template ${str(d.template)!}` : str(d.box) ? `Box step in ${str(d.box)!}` : `Windows step on ${str(d.host) ?? 'a host'}`, status: 'recorded', at: e.at, ...(str(d.command) ? { detail: str(d.command)! } : {}) });
   }
   return out;

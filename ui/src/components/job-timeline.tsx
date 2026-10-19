@@ -3,13 +3,14 @@
 // on top. Each step opens to its data in a small code block. What belongs together nests under one line
 // (`model/timeline-steps.ts`): a sandbox step's start and end, and a fork's spin-off and decision, with a link to the fork job.
 // A tend job and a rework job are one line each, with that job's status; opened, it links the job and reads its own events.
-import { Circle, CircleCheck, CircleDot, CircleX, GitFork, GitPullRequestArrow, MessageCircleQuestion, RotateCcw, SquareTerminal, TriangleAlert, UserRound, type LucideIcon } from 'lucide-react';
+// All its checkpoints are one line: the last one, where, and how many were taken (issue #1975).
+import { Circle, CircleCheck, CircleDot, CircleX, GitFork, HardDriveDownload, GitPullRequestArrow, MessageCircleQuestion, RotateCcw, SquareTerminal, TriangleAlert, UserRound, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty } from '@/components/panel';
 import { TEXT, type Tone } from '@/components/status';
 import { JsonBlock } from '@/components/json-block';
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
-import { subjectOf } from '@/model/board';
+import { machineName, subjectOf } from '@/model/board';
 import { clock } from '@/model/format';
 import { AT_WORK, groupStatus, timelineNodes, type StepStatus, type TimelineGroup } from '@/model/timeline-steps';
 import type { DomainEvent, Job, MachineView } from '@/model/wire';
@@ -65,7 +66,12 @@ const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const JOB_OF: Record<'fork' | 'tend' | 'rework', string> = { fork: 'fork job', tend: 'tend job', rework: 'rework job' };
 
 /** A group's title and how it stands, in words. `itsStatus`: the status of the job a tend or rework line stands for. */
-function groupWords(g: TimelineGroup, itsStatus: string | undefined): { title: string; said: string } {
+function groupWords(g: TimelineGroup, itsStatus: string | undefined, machines: Names['machines']): { title: string; said: string } {
+  if (g.group === 'checkpoint') {
+    const m = str((g.events[0]!.data as Record<string, unknown>).machineId);
+    const n = g.events.length;
+    return { title: `last checkpoint on ${m ? machineName(m, machines) : 'its machine'}`, said: `${n} ${n === 1 ? 'checkpoint' : 'checkpoints'} taken` };
+  }
   const opened = (g.opened?.data ?? {}) as Record<string, unknown>;
   const closed = g.closed?.data as Record<string, unknown> | undefined;
   if (g.group === 'step') {
@@ -105,17 +111,17 @@ function ItsEvents({ jobId, of, itsStatus, read, names }: { jobId: string; of: s
   );
 }
 
-const GROUP_ICON: Record<TimelineGroup['group'], LucideIcon> = { step: SquareTerminal, fork: GitFork, tend: GitPullRequestArrow, rework: RotateCcw };
+const GROUP_ICON: Record<TimelineGroup['group'], LucideIcon> = { step: SquareTerminal, fork: GitFork, tend: GitPullRequestArrow, rework: RotateCcw, checkpoint: HardDriveDownload };
 
 /** A sandbox step, a fork, a tend job or a rework job: one line, which opens to its events, each a line of its own. */
 function GroupStep({ g, jobStatus, statusOf, names, read }: {
   g: TimelineGroup; jobStatus: string | undefined; statusOf?: (jobId: string) => string | undefined; names: Names; read?: ReadEvents;
 }) {
-  const itsStatus = g.group === 'step' ? undefined : statusOf?.(g.id);
+  const itsStatus = g.group === 'step' || g.group === 'checkpoint' ? undefined : statusOf?.(g.id);
   const status = groupStatus(g, jobStatus, itsStatus);
-  const { title, said } = groupWords(g, itsStatus);
+  const { title, said } = groupWords(g, itsStatus, names.machines);
   const Icon = GROUP_ICON[g.group];
-  const of = g.group === 'step' ? undefined : JOB_OF[g.group];
+  const of = g.group === 'step' || g.group === 'checkpoint' ? undefined : JOB_OF[g.group];
   const newest = g.events[0]!;
   const label = `${title}, ${said}${status ? `, ${SAID[status]}` : ''}, ${g.events.length} ${g.events.length === 1 ? 'event' : 'events'}`;
   return (
