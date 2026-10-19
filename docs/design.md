@@ -11646,7 +11646,9 @@ another job would meet it — problem `ba0f00fc` held every queued job of one ma
 
 **A done-check miss** (issue #637, the `not-complete` cause) is looked at once more before it is assessed
 (`lookedAgain`, `done-at-source.ts`, at most `PR_LOOKUP_MS`): its job said it was done, and its source said not done twice,
-a minute apart; GitHub may still show the work late. Done now: its record is written `resolved` (the note says done at its
+a minute apart; GitHub may still show the work late. So is every other failed job (issue #2040): a job can end failed
+after it delivered, on a check its machine could not make (`HOPPER_FAILED` because `HOPPER_GH` was empty), and its
+source's answer, not its own words, says whether its work is done. Done now: its record is written `resolved` (the note says done at its
 source), no hand-off opens, and its job ends finished, its source told again. Not done, or not known: assessed as before
 (a `job` cause: a person), and then it is a decider call like a failure no known cause explains — Jev picks run it again
 or a person, in the words of a done-check miss. Whether it is done stays GitHub's to say, never Jev's, so Jev is not
@@ -16755,6 +16757,15 @@ reach; no answer, a name that does not resolve, a refused address (421) or a 5xx
 is not, and curl missing is said. Not reached: the reason is `this machine cannot reach the hopper at <url>: <why>` and
 the action (`REACH_ACTION`: set an address this machine reaches as the link base, or join the machine as a client
 target), never a mid-job question. A resuming job fails at once with it: it returns to the pane it holds there.
+
+**A job keeps its way to the hopper** (issue #2040). A reach check or a file write that cannot run (the machine's
+connection failed at that moment) is no answer that the machine is out of reach. A fresh job then runs without the
+proxy, and its progress says why. A job that ran there before (`job.agentSession` known: a resume or a turn) keeps the
+variables its start gave it — `HOPPER_GH`, `HOPPER_URL`, git's way to GitHub —, which point at the files its start
+placed, and its progress says that they were not placed again. Before, it ran on with none: a lane pod's job that had
+opened its pull requests found `HOPPER_GH` empty at its last step and ended failed. A failed job is also looked at once
+more at its source before it is assessed, whatever its failure says ("Failure assessment", `lookedAgain`): one that
+delivered ends finished.
 
 **A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
 machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
