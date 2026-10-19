@@ -294,7 +294,7 @@ export function createGitProxy(o: GitProxyOptions) {
         const answer = await forward(r, at, git);
         if (sends) {
           passProxyKillPoint('git.push', 'after-send');
-          if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
+          if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref), heads: refs.map((c) => c.new), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
           else {
             const error = await githubRefusal(answer);
             record('github_proxy.failed', { refs: refs.map((c) => c.ref), error });

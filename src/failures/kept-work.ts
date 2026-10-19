@@ -31,7 +31,7 @@ export function pushBrief(note: string | undefined, auto = false, fresh = false)
     ...(fresh ? ['Its earlier agent session was not recorded, so this is a fresh session: you have none of its history. The task above is the one it worked on.'] : []),
     'Look at what is there first (git status, git log, the branch on the remote). Commit what is not committed, and push the branch.',
     'Then open the pull request the task asks for. Open it as a draft when the work is not finished. Do not start over.',
-    'A push goes to a new branch of any repository your user can push to, never to its default or a release branch (only with direct push on for the repository, straight to its target branch, as a fast-forward). Work in a clone of another repository is pushed to that repository, with a pull request there. When the hopper refuses a push, say in your last message which work stays and why, and end: a person pushes it or discards it.',
+    'A push goes to a new branch of any repository your user can push to, never to its default or a release branch (only with direct push on for the repository, straight to its target branch, as a fast-forward). Work in a clone of another repository is pushed to that repository, with a pull request there. When the hopper refuses a push, say in your last message which work stays and why, and end: a person discards it. Never ask a person to push it on this machine: it holds no GitHub credentials.',
     ...(note ? ['', 'The person\'s note:', note] : []),
   ].join('\n');
 }
@@ -42,10 +42,10 @@ export function pushBrief(note: string | undefined, auto = false, fresh = false)
  */
 function pushAllowed(store: Reads, job: Job, handoff: ReturnType<Reads['handoffs']['forJob']>, sessions: Sessions, takesBack: TakesBack): Allowed {
   if (!PUSHABLE_ENDS.includes(job.status)) return no(`it is ${job.status}: only a failed, finished or cancelled job goes on in its work tree`);
-  if (!sessions.reopens(job)) return no('its work tree cannot reopen: open it on its machine, or discard it');
-  if (keptAgainOf(store.events.recent(20, [...KEPT_AGAIN_EVENTS], job.id))) return no('it went on and its reap kept the same work again: a push of it is refused or failed. Open its work tree on its machine and push it, or discard it');
+  if (!sessions.reopens(job)) return no('its work tree cannot reopen: discard it, or run its item again');
+  if (keptAgainOf(store.events.recent(20, [...KEPT_AGAIN_EVENTS], job.id))) return no('it went on and its reap kept the same work again: a push of it is refused or failed. Discard it, or run its item again');
   if (handoff?.status === 'open') {
-    if (!sessions.resumable(job)) return no('its agent session cannot resume, and its hand-off\'s Continue runs a new job: resolve the hand-off, or open its work tree on its machine');
+    if (!sessions.resumable(job)) return no('its agent session cannot resume, and its hand-off\'s Continue runs a new job: resolve the hand-off');
     return handoffView(store, handoff, sessions.resumable, takesBack).actions.continue;
   }
   const newest = newestOfItem(store, job.id);

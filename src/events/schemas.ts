@@ -369,10 +369,10 @@ export const EVENT_SCHEMAS = {
   // (issue #1072, `pr.status`): the hopper's records answered it. A `pr wait` (issue #1072 part 2): `wait`, the watch it opened on
   // the job's stream, or `settled` or `none`. A poll (issue #1210): `poll`, how many times the job asked the same read in the window.
   // An issue create or comment (issue #1607): `key`, the resend key hopper-gh sent with it; `found` (issue #1959 part 2): found
-  // on GitHub by its post key, made by a send before. A direct push (issue #1806): `direct`, the refs it moved straight on the target branch.
+  // on GitHub by its post key, made by a send before. A direct push (issue #1806): `direct`, the refs it moved straight on the target branch. `heads` (issue #2087): the commit each ref moved to.
   'github_proxy.done': z.union([
     strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string(), source: answerSource.optional(), wait: z.string().optional(), poll: z.number().int().optional(), key: z.string().optional(), replayed: z.literal(true).optional(), found: z.literal(true).optional() }),
-    strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()), direct: z.array(z.string()).optional() }),
+    strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()), heads: z.array(z.string()).optional(), direct: z.array(z.string()).optional() }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),
   // A push the shrink guard refused (issue #1096): the files it would empty or shrink.

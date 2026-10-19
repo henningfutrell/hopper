@@ -23,6 +23,12 @@
       "items": {
         "type": "string"
       }
+    },
+    "heads": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

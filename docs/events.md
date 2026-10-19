@@ -884,14 +884,14 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 
 ## `job.work_removed`
 
-Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `discarded` and `reason` (issue #1187), the sweep discarded it with no person, as nobody waits on it: `merged` (its item is done, issue #1105), `superseded` (a newer job of its item finished with nothing kept), `proposal` or `research` (it finished a proposal or a research report, never work to push). With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
+Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `discarded` and `reason` (issue #1187), the sweep discarded it with no person, as nobody waits on it: `merged` (its item is done, issue #1105), `superseded` (a newer job of its item finished with nothing kept), `proposal` or `research` (it finished a proposal or a research report, never work to push), `pushed` (issue #2087: the hopper pushed each commit of it for the job). With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
 | `discarded` | boolean | no |
 | `gone` | boolean | no |
-| `reason` | `merged` \| `superseded` \| `proposal` \| `research` | no |
+| `reason` | `merged` \| `superseded` \| `proposal` \| `research` \| `pushed` | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -4069,7 +4069,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`, `pr.edit`, `pr.close`; issue #1734: a pull request the job opened, or its work item's) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`; `direct` (issue #1806), the refs it moved straight on the repository's target branch with direct push on, each a fast-forward. `key` (issue #1607, `issue.create` and `issue.comment`; issue #1959 part 4, `pr.create`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `found` (issue #1959 part 2): the issue, comment or pull request (part 4) was found on GitHub by its **post key**, made by an earlier send of the same key that a hopper killed before it recorded it; nothing was made again. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`, `pr.edit`, `pr.close`; issue #1734: a pull request the job opened, or its work item's) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`; `heads` (issue #2087), the commit each ref moved to, so the reap and the sweep read that work as pushed; `direct` (issue #1806), the refs it moved straight on the repository's target branch with direct push on, each a fast-forward. `key` (issue #1607, `issue.create` and `issue.comment`; issue #1959 part 4, `pr.create`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `found` (issue #1959 part 2): the issue, comment or pull request (part 4) was found on GitHub by its **post key**, made by an earlier send of the same key that a hopper killed before it recorded it; nothing was made again. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -4173,7 +4173,7 @@ Version 1 (`docs/schemas/github_proxy.sending.v1.json`). A running job's issue c
 
 ## `gitlab_proxy.done`
 
-Version 1 (`docs/schemas/gitlab_proxy.done.v1.json`). A GitLab job's git push went through the hopper to GitLab (issue #1448 part 3, design.md "Jobs through GitLab"), with the token of the GitLab account of the job's own user: `project`, the job's own GitLab project; `refs`, the refs it changed (git's push options, such as `merge_request.create`, went with it); `as`, the GitLab username that acted; `requestId` names the request; `machine`, the job's machine.
+Version 1 (`docs/schemas/gitlab_proxy.done.v1.json`). A GitLab job's git push went through the hopper to GitLab (issue #1448 part 3, design.md "Jobs through GitLab"), with the token of the GitLab account of the job's own user: `project`, the job's own GitLab project; `refs`, the refs it changed (git's push options, such as `merge_request.create`, went with it); `heads` (issue #2087), the commit each ref moved to, so the reap reads that work as pushed; `as`, the GitLab username that acted; `requestId` names the request; `machine`, the job's machine.
 
 | field | type | required |
 |---|---|---|
@@ -4183,6 +4183,7 @@ Version 1 (`docs/schemas/gitlab_proxy.done.v1.json`). A GitLab job's git push we
 | `op` | string | yes |
 | `project` | string | yes |
 | `refs` | string[] | yes |
+| `heads` | string[] | no |
 
 ```json
 {
@@ -4193,6 +4194,9 @@ Version 1 (`docs/schemas/gitlab_proxy.done.v1.json`). A GitLab job's git push we
   "project": "ada/tools",
   "refs": [
     "refs/heads/fix-parser"
+  ],
+  "heads": [
+    "3f2a9c1d0e4b5a6c7d8e9f0a1b2c3d4e5f6a7b8c"
   ]
 }
 ```
