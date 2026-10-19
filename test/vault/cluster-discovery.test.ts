@@ -54,6 +54,17 @@ describe('where the vault mints a cluster from', () => {
     const t = mintTarget('aws', { operation: 'read', asset: { kind: 'aws-role', name: `${UAT}/diag` } }) as MintTarget;
     expect(mintSourceFor([aws('MINTER_UAT', UAT)], t, 'read')).toEqual({ credential: aws('MINTER_UAT', UAT) });
   });
+
+  // Issue #2168: a short name the topology lists one cluster for is found by that cluster's EKS name; one it lists
+  // several for is refused with them, never guessed; a cluster override names it as it says.
+  it('finds a short cluster name by the one cluster the topology lists for it, and refuses one with several', () => {
+    const minters = [aws('MINTER_UAT', UAT)];
+    expect(mintSourceFor(minters, clusterTarget('uat'), 'read', [], ['prod-eks', 'uat-eks'])).toMatchObject({ discover: { cluster: 'uat-eks' } });
+    expect(mintSourceFor(minters, target({ kind: 'namespace', name: 'uat/web' }), 'read', [], ['uat-eks'])).toMatchObject({ discover: { cluster: 'uat-eks' } });
+    expect(mintSourceFor(minters, clusterTarget('uat'), 'read', [], ['uat-eks', 'uat-gke'])).toMatch(/cluster uat is ambiguous: uat-eks, uat-gke/);
+    expect(mintSourceFor(minters, clusterTarget('uat'), 'read', [{ name: 'uat', eksName: 'uat-gke' }], ['uat-eks'])).toMatchObject({ discover: { cluster: 'uat-gke' } });
+    expect(mintSourceFor(minters, clusterTarget('uat'), 'read', [], ['uat', 'uat-eks'])).toMatchObject({ discover: { cluster: 'uat' } });
+  });
 });
 
 interface Fake { minter: CredentialMinter; assumed: string[]; described: string[] }

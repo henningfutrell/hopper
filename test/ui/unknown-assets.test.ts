@@ -1,6 +1,7 @@
 // Issue #2067: a template whose need names a cluster the vault cannot find is shown as an unknown asset, not as approved
-// or as a pending approval: its card says so with the known clusters, and Needs you counts it under Access requests, one
-// line each.
+// or as a pending approval: its card says so with the known clusters. Issue #2168: Needs you counts it in a row of its
+// own, one line each, never under Access requests: that row and the Access requests badge count only what waits for a
+// person's approval.
 import { describe, expect, it } from 'vitest';
 import { needsYouRows, type NeedsYouCounts } from '../../ui/src/model/needs-you.ts';
 import { approvalText, unknownAssetLines } from '../../ui/src/model/vault.ts';
@@ -24,12 +25,25 @@ describe('an unknown asset (issue #2067)', () => {
     expect(approvalText(template)).toBe('unknown asset: no cluster staging; known: staging-eks, control-plane-eks');
   });
 
-  it('Needs you counts it under Access requests, one line each', () => {
+  it('Needs you counts it in a row of its own, one line each, and Access requests counts only approvals', () => {
     const lines = unknownAssetLines({ templates: [template, { ...template, name: 'kube', unknownAssets: undefined }] } as unknown as VaultView);
     expect(lines).toEqual(['template asked-e7c588b627d7: unknown asset: no cluster staging; known: staging-eks, control-plane-eks']);
-    const access = needsYouRows(counts({ access: 1, unknownAssets: lines })).find((r) => r.kind === 'access')!;
-    expect(access.n).toBe(2);
-    expect(access.details).toEqual(lines);
+    const rows = needsYouRows(counts({ access: 1, unknownAssets: lines }));
+    const access = rows.find((r) => r.kind === 'access')!;
+    expect(access.n).toBe(1);
+    expect(access.details).toBeUndefined();
+    const unknown = rows.find((r) => r.kind === 'unknown-assets')!;
+    expect(unknown).toMatchObject({ n: 1, details: lines, href: '#access-requests' });
     expect(unknownAssetLines(null)).toEqual([]);
+  });
+
+  it('with no approval open, Access requests counts zero, however many templates do not resolve', () => {
+    const many = Array.from({ length: 29 }, (_, i) => `template t${i}: unknown asset: no cluster x`);
+    expect(needsYouRows(counts({ access: 0, unknownAssets: many })).find((r) => r.kind === 'access')!.n).toBe(0);
+  });
+
+  it('an ambiguous cluster says so, with its candidates', () => {
+    const ambiguous = { ...template, unknownAssets: [{ asset: { kind: 'cluster', name: 'uat' }, cluster: 'uat', known: ['uat-eks', 'uat-gke'], candidates: ['uat-eks', 'uat-gke'] }] } as unknown as TemplateView;
+    expect(approvalText(ambiguous)).toBe('unknown asset: cluster uat is ambiguous: uat-eks, uat-gke');
   });
 });
