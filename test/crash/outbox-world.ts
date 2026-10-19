@@ -68,7 +68,7 @@ export function keepRows(w: OutboxWorld, rows: Omit<OutboxInput, 'source' | 'rep
 }
 
 /** Ends every outbox claim at once, as its time would (`OUTBOX_CLAIM_MS`): the rows a killed host left are due again. */
-export function endClaims(w: OutboxWorld): void {
+export function endClaims(w: Pick<OutboxWorld, 'userUrl'>): void {
   const db = openDb(w.userUrl);
   const past = '1970-01-01T00:00:00.000Z';
   try {
@@ -77,7 +77,7 @@ export function endClaims(w: OutboxWorld): void {
 }
 
 /** The outbox's rows not sent, by state. */
-export function openRows(w: OutboxWorld): { state: string; op: string }[] {
+export function openRows(w: Pick<OutboxWorld, 'userUrl'>): { state: string; op: string }[] {
   const db = openDb(w.userUrl);
   try {
     return db.all("SELECT state, body FROM github_outbox WHERE state <> 'sent' ORDER BY id")
