@@ -84,7 +84,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
       const events: NewEvent[] = [];
       const deliver = op === 'deliver' ? vaultOps.deliver.parse(body) : undefined;
       const vault = createVaultService({
-        store: { vault: store.vault, jobs: store.jobs, settings: store.settings, config: store.config, tx: store.tx, events: { append: (e: NewEvent) => { events.push(e); return e as DomainEvent; } } as never },
+        store: { vault: store.vault, jobs: store.jobs, settings: store.settings, config: store.config, tx: store.tx, events: { append: (e: NewEvent) => { events.push(e); return e as DomainEvent; }, recent: store.events.recent.bind(store.events) } as never },
         keys: await keysOf(user.id, store, instance.settings.masterKeyFingerprint()), clock, idGen: randomUUID, logger, minter,
         targets: () => (deliver?.machine ? [deliver.machine] : []),
         holds: () => deliver?.holds === true,
@@ -128,5 +128,6 @@ function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unkn
     case 'unbind': return vault.unbindFrom((b as { binding: MintBinding }).binding);
     case 'agent-credential': return vault.agentCredential((b as { ask: AgentCredentialAsk }).ask);
     case 'pod-credential': return vault.podCredential((b as { ask: PodCredentialAsk }).ask);
+    case 'delivered-to': return vault.deliveredTo(body.jobId);
   }
 }

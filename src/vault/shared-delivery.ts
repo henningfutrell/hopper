@@ -7,6 +7,7 @@ import type { UserStore } from '../domain/ports.ts';
 import { isSharedSecret } from '../domain/vault.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { boxAsk, type ClientTarget } from './box.ts';
+import { deliveredNames } from './delivered.ts';
 import type { SharedSecrets } from './shared.ts';
 import type { Vault } from './vault.ts';
 
@@ -41,6 +42,11 @@ export function withSharedSecrets(v: Vault, o: {
     ...v,
     view: () => ({ ...v.view(), shared: o.shared.list() }),
     deliver: (ask, machineKey) => (isSharedSecret(ask.name) ? deliver(ask, machineKey) : v.deliver(ask, machineKey)),
+    // The shared secrets delivered to a job too (issue #1957): its checkpoint is scrubbed of them.
+    async deliveredTo(jobId) {
+      const shared = await Promise.all(deliveredNames(events, jobId).filter(isSharedSecret).map((name) => o.shared.read(name, o.userId).catch(() => ({ refused: '' }))));
+      return [...new Set([...await v.deliveredTo(jobId), ...shared.flatMap((r) => ('value' in r && r.value ? [r.value] : []))])];
+    },
     shared: { set: (s, who) => o.shared.set(s, who), remove: (name, who) => o.shared.remove(name, who) },
   };
 }

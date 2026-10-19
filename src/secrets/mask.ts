@@ -108,29 +108,39 @@ export function maskSecrets(text: string): string {
   return maskClaudeTokens(maskKeys(maskGitHubTokens(result)));
 }
 
+/**
+ * `text` with each value of `held` masked by value (issue #1957): a vault secret the vault delivered to the job, which no
+ * pattern knows, then every pattern `maskSecrets` knows. The longest value first, so a value inside another is not a stub.
+ */
+function maskHeld(text: string, held: readonly string[]): string {
+  const values = held.filter((v) => v.length > 0).sort((x, y) => y.length - x.length);
+  return maskSecrets(values.reduce((t, v) => maskSecret(t, v, 'vault secret'), text));
+}
+
 /** Every string inside a JSON value masked. */
-const maskJson = (v: unknown): unknown => {
-  if (typeof v === 'string') return maskSecrets(v);
-  if (Array.isArray(v)) return v.map(maskJson);
-  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskJson(x)]));
+const maskJson = (v: unknown, held: readonly string[]): unknown => {
+  if (typeof v === 'string') return maskHeld(v, held);
+  if (Array.isArray(v)) return v.map((x) => maskJson(x, held));
+  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskJson(x, held)]));
   return v;
 };
 
 /**
  * An agent session's log (JSON lines), scrubbed for a checkpoint (issue #921): the strings in each line masked, so
- * every line stays JSON its agent reads; a line that is not JSON masked as text.
+ * every line stays JSON its agent reads; a line that is not JSON masked as text. `held`: the values of the vault secrets
+ * delivered to the job, masked by value too (issue #1957).
  */
-export function scrubSessionLog(text: string): string {
+export function scrubSessionLog(text: string, held: readonly string[] = []): string {
   return text.split('\n').map((line) => {
     if (!line.trim()) return line;
-    try { return JSON.stringify(maskJson(JSON.parse(line))); } catch { return maskSecrets(line); }
+    try { return JSON.stringify(maskJson(JSON.parse(line), held)); } catch { return maskHeld(line, held); }
   }).join('\n');
 }
 
 /**
  * A patch scrubbed for a checkpoint (issue #921): only the lines it adds are masked. A context or removed line is the
- * base's, as it is on the remote; masking it would keep the patch from applying there.
+ * base's, as it is on the remote; masking it would keep the patch from applying there. `held` as for `scrubSessionLog`.
  */
-export function scrubPatch(text: string): string {
-  return text.split('\n').map((line) => (line.startsWith('+') && !line.startsWith('+++ ') ? maskSecrets(line) : line)).join('\n');
+export function scrubPatch(text: string, held: readonly string[] = []): string {
+  return text.split('\n').map((line) => (line.startsWith('+') && !line.startsWith('+++ ') ? maskHeld(line, held) : line)).join('\n');
 }

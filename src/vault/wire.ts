@@ -81,6 +81,8 @@ export const vaultOps = {
   'agent-credential': z.strictObject({ user, ask: z.strictObject({ template: name, secrets: z.array(name).max(256), box: z.string().max(200) }) }),
   /** A job pod's agent credential (issue #1287): the user's own secret, checked here, then the value crosses back. */
   'pod-credential': z.strictObject({ user, ask: z.strictObject({ name, pod: z.string().max(200), job: z.string().max(64) }) }),
+  /** The values of the vault secrets delivered to a job (issue #1957), read from its delivery events: its checkpoint is scrubbed of them. */
+  'delivered-to': z.strictObject({ user, jobId: z.string().max(64) }),
 } as const;
 
 export type VaultOp = keyof typeof vaultOps;

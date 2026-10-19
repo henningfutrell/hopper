@@ -133,6 +133,13 @@ export function remoteVault(o: {
       const r = await call<AgentCredentialAnswer>('agent-credential', { ask });
       return 'problem' in r ? { refused: r.problem } : r.result;
     },
+    // The values delivered to a job (issue #1957): those kept in a vault backend read here, the rest opened in the vault
+    // container. A vault container that cannot be reached answers none of its own: the checkpoint is scrubbed by pattern.
+    async deliveredTo(jobId) {
+      const here = await o.local.deliveredTo(jobId);
+      const r = await call<string[]>('delivered-to', { jobId });
+      return [...new Set([...here, ...('problem' in r ? [] : r.result)])];
+    },
     // A job pod's agent credential (issue #1287): the same split.
     async podCredential(ask) {
       if (o.local.view().secrets.find((s) => s.name === ask.name)?.backend) return o.local.podCredential(ask);
