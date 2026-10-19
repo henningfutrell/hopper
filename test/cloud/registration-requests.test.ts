@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createCloudLinkAnswers } from '../../cloud/link.ts';
 import { REQUEST_MS, REQUESTS_PER_ACCOUNT } from '../../cloud/requests.ts';
 import { SESSION_COOKIE } from '../../cloud/server.ts';
-import { PUBLIC, rows, setUp, stopAll, type Set } from './harness.ts';
+import { LINK_KEY, PUBLIC, rows, setUp, stopAll, type Set } from './harness.ts';
 
 afterEach(stopAll);
 
@@ -53,11 +53,11 @@ describe('a registration code entered at hopper.io', () => {
     expect(await requests(s, 'ada-session')).toEqual([{ installId: INSTANCE, expiresAt: expect.any(String) }]);
 
     expect(link.registerMessage({ installId: INSTANCE, account: 'ada', now: soon() })).toBe(JSON.stringify({ type: 'register', code: CODE, account: 'ada' }));
-    expect(await link.registration({ installId: INSTANCE, account: 'ada', answer: answer('registered'), now: soon() })).toBe(true);
+    expect(await link.registration({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, answer: answer('registered'), now: soon() })).toBe(true);
     expect((await instances(s, 'ada-session')).map((i) => i.installId)).toEqual([INSTANCE]);
     expect(await requests(s, 'ada-session')).toEqual([]);
     expect(link.registerMessage({ installId: INSTANCE, account: 'ada', now: soon() })).toBeUndefined();
-    expect(await link.registration({ installId: INSTANCE, account: 'ada', answer: answer('registered'), now: soon() })).toBe(false);
+    expect(await link.registration({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, answer: answer('registered'), now: soon() })).toBe(false);
     expect((await s.store.records(ADA, soon())).map((r) => r.kind)).toEqual(['instance_registered']);
   });
 
@@ -67,8 +67,8 @@ describe('a registration code entered at hopper.io', () => {
     await enter(s, 'ada-session', INSTANCE, CODE);
     expect(link.registerMessage({ installId: OTHER, account: 'ada', now: soon() })).toBeUndefined();
     expect(link.registerMessage({ installId: INSTANCE, account: 'grace', now: soon() })).toBeUndefined();
-    expect(await link.registration({ installId: OTHER, account: 'ada', answer: answer('registered'), now: soon() })).toBe(false);
-    expect(await link.registration({ installId: INSTANCE, account: 'grace', answer: answer('registered'), now: soon() })).toBe(false);
+    expect(await link.registration({ installId: OTHER, account: 'ada', publicKey: LINK_KEY, answer: answer('registered'), now: soon() })).toBe(false);
+    expect(await link.registration({ installId: INSTANCE, account: 'grace', publicKey: LINK_KEY, answer: answer('registered'), now: soon() })).toBe(false);
     expect(await instances(s, 'ada-session')).toEqual([]);
     expect(await instances(s, 'grace-session')).toEqual([]);
     expect(await requests(s, 'ada-session')).toHaveLength(1);
@@ -78,13 +78,13 @@ describe('a registration code entered at hopper.io', () => {
     const s = await setUp();
     const link = await withAccounts(s);
     await enter(s, 'ada-session', INSTANCE, CODE);
-    expect(await link.registration({ installId: INSTANCE, account: 'ada', answer: 'not json', now: soon() })).toBe(false);
+    expect(await link.registration({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, answer: 'not json', now: soon() })).toBe(false);
     expect(await requests(s, 'ada-session')).toEqual([{ installId: INSTANCE, expiresAt: expect.any(String) }]);
 
-    expect(await link.registration({ installId: INSTANCE, account: 'ada', answer: answer('no-code'), now: soon() })).toBe(false);
+    expect(await link.registration({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, answer: answer('no-code'), now: soon() })).toBe(false);
     expect(await requests(s, 'ada-session')).toEqual([{ installId: INSTANCE, expiresAt: expect.any(String), refused: 'no-code' }]);
     expect(link.registerMessage({ installId: INSTANCE, account: 'ada', now: soon() })).toBeUndefined();
-    expect(await link.registration({ installId: INSTANCE, account: 'ada', answer: answer('registered'), now: soon() })).toBe(false);
+    expect(await link.registration({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, answer: answer('registered'), now: soon() })).toBe(false);
     expect(await instances(s, 'ada-session')).toEqual([]);
     const home = await s.server.inject({ method: 'GET', url: '/', headers: cookie('ada-session') });
     expect(home.body).toContain('did not take the code');
@@ -96,7 +96,7 @@ describe('a registration code entered at hopper.io', () => {
     await enter(s, 'ada-session', INSTANCE, CODE);
     const after = soon(REQUEST_MS + 1000);
     expect(link.registerMessage({ installId: INSTANCE, account: 'ada', now: after })).toBeUndefined();
-    expect(await link.registration({ installId: INSTANCE, account: 'ada', answer: answer('registered'), now: after })).toBe(false);
+    expect(await link.registration({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, answer: answer('registered'), now: after })).toBe(false);
     expect(s.requests.of(ADA, after)).toEqual([]);
   });
 

@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCloudLinkAnswers } from '../../cloud/link.ts';
 import { SESSION_COOKIE } from '../../cloud/server.ts';
-import { PUBLIC, registerAs, rows, setUp, stopAll, type Set } from './harness.ts';
+import { LINK_KEY, PUBLIC, registerAs, rows, setUp, stopAll, type Set } from './harness.ts';
 
 afterEach(stopAll);
 
@@ -62,19 +62,19 @@ describe("a hopper.io account's instances", () => {
     const s = await setUp();
     const link = await withAccounts(s);
     await registerAs(s, link, ADA, INSTANCE, t0);
-    expect((await instances(s, 'ada-session'))[0]).toEqual({ installId: INSTANCE, registeredAt: t0.toISOString() });
+    expect((await instances(s, 'ada-session'))[0]).toEqual({ installId: INSTANCE, registeredAt: t0.toISOString(), connected: false });
 
-    await link.hello({ installId: INSTANCE, account: 'ada', now: later(5000) });
-    await link.hello({ installId: '1111222233334444', account: 'ada', now: later(5000) });
+    await link.hello({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, now: later(5000) });
+    await link.hello({ installId: '1111222233334444', account: 'ada', publicKey: LINK_KEY, now: later(5000) });
     expect(await post(s, `/account/instances/${INSTANCE}/name`, 'ada-session', 'name=Kitchen+box')).toMatchObject({ statusCode: 303 });
     await registerAs(s, link, ADA, INSTANCE, later(6000));
     expect((await instances(s, 'ada-session'))[0]).toEqual({
-      installId: INSTANCE, name: 'Kitchen box', registeredAt: t0.toISOString(), seenAt: later(5000).toISOString(),
+      installId: INSTANCE, name: 'Kitchen box', registeredAt: t0.toISOString(), connected: false, seenAt: later(5000).toISOString(),
     });
     expect(await kinds(s, ADA)).toEqual(['instance_renamed', 'instance_registered']);
 
     await registerAs(s, link, GRACE, INSTANCE, later(7000));
-    expect((await instances(s, 'grace-session'))[0]).toEqual({ installId: INSTANCE, registeredAt: later(7000).toISOString() });
+    expect((await instances(s, 'grace-session'))[0]).toEqual({ installId: INSTANCE, registeredAt: later(7000).toISOString(), connected: false });
   });
 
   it('lists only the signed-in account\'s instances, and nothing without a session', async () => {
@@ -119,8 +119,8 @@ describe("a hopper.io account's instances", () => {
     expect((await post(s, `/account/instances/${INSTANCE}/remove`, 'ada-session')).statusCode).toBe(303);
     expect(await instances(s, 'ada-session')).toEqual([]);
     expect(await kinds(s, ADA)).toEqual(['instance_removed', 'instance_registered']);
-    expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(1000) })).toBe(JSON.stringify({ type: 'unregister', account: 'ada' }));
-    expect(await link.hello({ installId: OTHER, account: 'grace', now: later(1000) })).toBeUndefined();
+    expect((await link.hello({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, now: later(1000) })).answer).toBe(JSON.stringify({ type: 'unregister', account: 'ada' }));
+    expect((await link.hello({ installId: OTHER, account: 'grace', publicKey: LINK_KEY, now: later(1000) })).answer).toBeUndefined();
   });
 
   it("removes the registration at the instance's unlink notice, and only the instance's own", async () => {
@@ -143,7 +143,7 @@ describe("a hopper.io account's instances", () => {
     expect(await instances(s, 'ada-session')).toEqual([]);
     expect(await instances(s, 'grace-session')).toHaveLength(1);
     expect(await kinds(s, ADA)).toEqual(['instance_unlinked', 'instance_registered']);
-    expect(await link.hello({ installId: INSTANCE, account: 'ada', now: later(2000) })).toBeUndefined();
+    expect((await link.hello({ installId: INSTANCE, account: 'ada', publicKey: LINK_KEY, now: later(2000) })).answer).toBeUndefined();
   });
 
   it('shows the instances on the page, the name escaped', async () => {

@@ -13,6 +13,8 @@ import { createFakeGitHub } from '../support/fake-forges.ts';
 import { rawRequest } from '../support/http.ts';
 
 export const SECRET = 'hosted-app-secret-for-tests';
+/** The public half of a cloud link key an instance connected with, as the store keeps it (a transport-free test proves none). */
+export const LINK_KEY = 'K'.repeat(43);
 export const PUBLIC = 'http://127.0.0.1:8099';
 const stops: (() => Promise<void>)[] = [];
 /** For afterEach: stops what each setUp started, the last first. */
@@ -81,5 +83,5 @@ export async function registerAs(s: Set, link: CloudLinkAnswers, githubUserId: s
   answer = JSON.stringify({ type: 'registration', outcome: 'registered' })): Promise<boolean> {
   const login = (await s.store.account(githubUserId))!.login;
   s.requests.enter({ githubUserId, login, installId, code: 'c0de'.repeat(16), now });
-  return link.registration({ installId, account: login, answer, now });
+  return link.registration({ installId, account: login, publicKey: LINK_KEY, answer, now });
 }
