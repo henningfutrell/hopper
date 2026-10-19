@@ -38,11 +38,11 @@ export function cloudHopper() {
     /**
      * moto reset and seeded, the proxy in front of it (its clock `now`, when given), and a hopper whose AWS_LAB mints
      * through the proxy, with the template infra-read approved: read on the seed's read role. `env`: more of the daemon's
-     * environment (a fake GitHub's, for the write path).
+     * environment (a fake GitHub's, for the write path). `proxyHost`: where the proxy listens (default loopback).
      */
-    async boot(motoUrl: string, o: { now?: () => Date; env?: Record<string, string> } = {}): Promise<Booted> {
+    async boot(motoUrl: string, o: { now?: () => Date; env?: Record<string, string>; proxyHost?: string } = {}): Promise<Booted> {
       await resetMoto(motoUrl);
-      proxy = await startPolicyAssertProxy({ upstream: motoUrl, admins: [SEED_KEYS.accessKeyId, MINTING.AccessKeyId], ...(o.now ? { now: o.now } : {}) });
+      proxy = await startPolicyAssertProxy({ upstream: motoUrl, admins: [SEED_KEYS.accessKeyId, MINTING.AccessKeyId], ...(o.now ? { now: o.now } : {}), ...(o.proxyHost ? { host: o.proxyHost } : {}) });
       const seeded = await seed(proxy.url);
       const db = tempDbPath();
       cleanups.push(db.cleanup);
