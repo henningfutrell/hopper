@@ -40,9 +40,9 @@ export async function resetMoto(url: string): Promise<void> {
 const clientConfig = (endpoint: string) => ({ endpoint, region: REGION, credentials: SEED_KEYS, maxAttempts: 1 });
 
 /**
- * The seed: a read role, a write role and topology discovery's read role `hopper-read`, each with full access of its own
- * (so whatever a read session cannot do, its session policy denies), an S3 bucket with a terraform state of the seeded
- * resources, an EC2 instance, a KMS key and an SQS queue. Through `endpoint`: the policy-assert proxy, which lets the seed's key through (and makes moto's two
+ * The seed: a read role and a write role, each with full access of its own (so whatever a read session cannot do, its
+ * session policy denies), an S3 bucket with a terraform state of the seeded resources, an EC2 instance, a KMS key and
+ * an SQS queue. Through `endpoint`: the policy-assert proxy, which lets the seed's key through (and makes moto's two
  * Date headers one, which the AWS SDK needs).
  */
 export async function seed(endpoint: string): Promise<Seeded> {
@@ -54,7 +54,7 @@ export async function seed(endpoint: string): Promise<Seeded> {
   try {
     const trust = JSON.stringify({ Version: '2012-10-17', Statement: [{ Effect: 'Allow', Principal: { AWS: `arn:aws:iam::${ACCOUNT}:root` }, Action: 'sts:AssumeRole' }] });
     const all = JSON.stringify({ Version: '2012-10-17', Statement: [{ Effect: 'Allow', Action: '*', Resource: '*' }] });
-    for (const name of ['read', 'write', 'hopper-read']) {
+    for (const name of ['read', 'write']) {
       await iam.send(new CreateRoleCommand({ RoleName: name, AssumeRolePolicyDocument: trust, MaxSessionDuration: 3600 }));
       await iam.send(new PutRolePolicyCommand({ RoleName: name, PolicyName: 'all', PolicyDocument: all }));
     }
