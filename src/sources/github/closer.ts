@@ -10,6 +10,7 @@
 
 import { GitHubApiError } from './api.ts';
 import { explained, permissionsOfPath } from './http/refusal.ts';
+import { newestRuns } from './newest-runs.ts';
 import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 import { MAX_CHECK_REPORTED, MAX_CHECK_REPORTED_CHARS, MAX_FAILED_CHECKS, type ChecksState, type FailedCheck } from '../../domain/pull-requests.ts';
 import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../domain/cross-references.ts';
@@ -23,7 +24,7 @@ const HEAD_COMMIT = 'headRefOid headRefName baseRefName commits(last: 1) { nodes
  * The head commit with each check's end (issue #927), for the one pull request a follow reads: a failed check counts while
  * others still run. Not in the lists, where 100 checks of 100 pull requests would cost too much of the rate limit.
  */
-const HEAD_COMMIT_CHECKS = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { name conclusion detailsUrl annotations(first: 20) { nodes { path title message annotationLevel location { start { line } } } } } ... on StatusContext { context state targetUrl } } } } } } }';
+const HEAD_COMMIT_CHECKS = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { totalCount nodes { __typename ... on CheckRun { databaseId name status conclusion detailsUrl annotations(first: 20) { nodes { path title message annotationLevel location { start { line } } } } } ... on StatusContext { context state targetUrl } } } } } } }';
 
 export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
@@ -61,10 +62,10 @@ export const OPEN_REPO_PULL_REQUESTS_QUERY = `query($owner: String!, $name: Stri
 
 interface Annotation { path?: string | null; title?: string | null; message?: string | null; annotationLevel?: string | null; location?: { start?: { line?: number | null } | null } | null }
 interface Context {
-  name?: string; conclusion?: string | null; detailsUrl?: string | null; context?: string; state?: string; targetUrl?: string | null;
+  __typename?: string; databaseId?: number | null; name?: string; status?: string | null; conclusion?: string | null; detailsUrl?: string | null; context?: string; state?: string; targetUrl?: string | null;
   annotations?: { nodes?: (Annotation | null)[] } | null;
 }
-interface Rollup { state?: string; contexts?: { nodes?: (Context | null)[] } }
+export interface Rollup { state?: string; contexts?: { totalCount?: number; nodes?: (Context | null)[] } }
 interface Closer { __typename?: string; url?: string; createdAt?: string; mergedAt?: string | null }
 interface Referenced {
   url?: string; createdAt?: string; isDraft?: boolean; state?: string; mergeable?: string;
@@ -118,14 +119,34 @@ const CHECKS: Record<string, ChecksState> = { SUCCESS: 'passing', PENDING: 'pend
 /** A check run's conclusion, or a commit status's state, that fails the checks (issue #927). */
 const FAILED = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ERROR']);
 
+const failed = (n: Context): boolean => FAILED.has(n.conclusion ?? n.state ?? '');
+const running = (n: Context): boolean =>
+  n.__typename === 'CheckRun' ? (n.status ? n.status !== 'COMPLETED' : !n.conclusion) : n.state === 'PENDING' || n.state === 'EXPECTED';
+
+/**
+ * The rollup's contexts, the newest run of each check only (issue #2129), and whether a newer run superseded one. Only when
+ * GitHub gave every context: of some only, a newer run may be among those it did not give, so all it gave are kept.
+ */
+function newestContexts(r: Rollup | null | undefined): { newest: Context[]; superseded: boolean } {
+  const nodes = (r?.contexts?.nodes ?? []).filter((n): n is Context => !!n);
+  const total = r?.contexts?.totalCount;
+  if (total !== undefined && nodes.length < total) return { newest: nodes, superseded: false };
+  const newest = newestRuns(nodes, (n) => (n.__typename === 'CheckRun' && n.name ? n.name : undefined), (n) => n.databaseId ?? undefined);
+  return { newest, superseded: newest.length < nodes.length };
+}
+
 /**
  * The rollup's state, but failing once one of its checks failed (issue #927): GitHub keeps the rollup pending while other
- * checks still run, and a failure must not wait for them.
+ * checks still run, and a failure must not wait for them. GitHub's rollup fails on a run a newer run of its check
+ * superseded (issue #2129): with no newest run failed, it is pending while one runs, else passing.
  */
 export const rollupChecks = (r: Rollup | null | undefined): ChecksState | undefined => {
   const state = CHECKS[r?.state ?? ''];
-  if (state !== 'pending') return state;
-  return r?.contexts?.nodes?.some((n) => FAILED.has(n?.conclusion ?? n?.state ?? '')) ? 'failing' : state;
+  if (state !== 'pending' && state !== 'failing') return state;
+  const { newest, superseded } = newestContexts(r);
+  if (newest.some(failed)) return 'failing';
+  if (state === 'pending' || !superseded) return state;
+  return newest.some(running) ? 'pending' : 'passing';
 };
 
 /** The runner's own line for a step that exited non-zero: it says nothing a fix can use. */
@@ -146,10 +167,10 @@ const reportedOf = (c: Context): string[] =>
 
 /** Each check that failed (issue #927), with its link and what it reported, at most `MAX_FAILED_CHECKS`: what a `fix_checks` tend is told. */
 const failedChecksOf = (r: Rollup | null | undefined): FailedCheck[] =>
-  (r?.contexts?.nodes ?? []).flatMap((n): FailedCheck[] => {
-    const name = n?.name ?? n?.context;
-    const url = n?.detailsUrl ?? n?.targetUrl;
-    if (!n || !name || !FAILED.has(n.conclusion ?? n.state ?? '')) return [];
+  newestContexts(r).newest.flatMap((n): FailedCheck[] => {
+    const name = n.name ?? n.context;
+    const url = n.detailsUrl ?? n.targetUrl;
+    if (!name || !failed(n)) return [];
     const reported = reportedOf(n);
     return [{ name, ...(url ? { url } : {}), ...(reported.length ? { reported } : {}) }];
   }).slice(0, MAX_FAILED_CHECKS);

@@ -6,10 +6,11 @@
 import type { HeadChecks } from '../api.ts';
 import type { ChecksState } from '../../../domain/pull-requests.ts';
 import type { CheckFact } from '../../../domain/conditional-skills.ts';
+import { newestRuns } from '../newest-runs.ts';
 import { splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 
-interface CheckRun { name?: string; status?: string; conclusion?: string | null; output?: { title?: string | null; summary?: string | null; text?: string | null } }
+interface CheckRun { id?: number; name?: string; status?: string; conclusion?: string | null; output?: { title?: string | null; summary?: string | null; text?: string | null } }
 interface CommitStatus { context?: string; state?: string }
 
 /** A check run's conclusion that passes: the rest of a completed run's conclusions fail. */
@@ -29,6 +30,9 @@ export function combinedChecks(states: ChecksState[]): ChecksState | undefined {
   if (states.includes('failing')) return 'failing';
   return states.includes('pending') ? 'pending' : 'passing';
 }
+
+/** The newest run of each check only (issue #2129): a newer run of a check supersedes its older runs on the same commit. */
+const newest = (runs: CheckRun[] | undefined): CheckRun[] => newestRuns(runs ?? [], (r) => r.name, (r) => r.id);
 
 /** GitHub refused the read to this credential (403, 404), not a rate limit: the permission is missing. */
 const refused = (err: unknown): boolean => {
@@ -51,7 +55,7 @@ export async function headChecks(req: Request, token: string, repo: string, ref:
   }
   if (unreadable.length || runs.status === 'rejected' || status.status === 'rejected') return { unreadable };
   const states = [
-    ...((runs.value.data as { check_runs?: CheckRun[] }).check_runs ?? []).map(runState),
+    ...newest((runs.value.data as { check_runs?: CheckRun[] }).check_runs).map(runState),
     ...((status.value.data as { statuses?: CommitStatus[] }).statuses ?? []).map(statusState),
   ];
   const checks = combinedChecks(states);
@@ -59,14 +63,14 @@ export async function headChecks(req: Request, token: string, repo: string, ref:
 }
 
 /**
- * Each check of commit `ref` (issue #1924): each check run by its name, state and output text, and each commit status by its
+ * Each check of commit `ref` (issue #1924): each check run by its name (its newest run, issue #2129), state and output text, and each commit status by its
  * context. What the done criteria of a conditional skill read. Any error throws: not known is not done.
  */
 export async function checkRuns(req: Request, token: string, repo: string, ref: string): Promise<CheckFact[]> {
   const at = { ...splitRepo(repo), ref, headers: { authorization: `token ${token}` }, per_page: 100 };
   const [runs, status] = await Promise.all([req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', at), req('GET /repos/{owner}/{repo}/commits/{ref}/status', at)]);
   return [
-    ...((runs.data as { check_runs?: CheckRun[] }).check_runs ?? []).map((r) => ({
+    ...newest((runs.data as { check_runs?: CheckRun[] }).check_runs).map((r) => ({
       name: r.name ?? '', state: runState(r), text: [r.output?.title, r.output?.summary, r.output?.text].filter((t): t is string => typeof t === 'string' && t !== '').join('\n'),
     })),
     ...((status.data as { statuses?: CommitStatus[] }).statuses ?? []).map((s) => ({ name: s.context ?? '', state: statusState(s) })),

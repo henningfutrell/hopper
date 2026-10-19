@@ -182,7 +182,8 @@ const rollupForbidden = (at: (string | number)[]) =>
 /** A pull request entry as the in-motion cycle reads it (issue #985). */
 function pullState(i: FakeIssue, repo?: FakeRepo) {
   const p = i.pull ?? {};
-  const rollup = p.checks && !(repo && rollupRefused(repo)) ? { state: p.checks } : null;
+  const rollup = p.checks && !(repo && rollupRefused(repo))
+    ? { state: p.checks, ...(p.contexts ? { contexts: { totalCount: p.contexts.length, nodes: p.contexts } } : {}) } : null;
   return {
     state: p.state ?? (i.state === 'open' ? 'OPEN' : 'CLOSED'), isDraft: p.isDraft ?? false, mergeable: p.mergeable ?? 'UNKNOWN', createdAt: p.createdAt ?? i.updatedAt,
     body: i.body, headRefName: p.headRef ?? `issue-${i.number}`, headRefOid: p.headOid ?? `h${i.number}`, baseRefName: p.base ?? 'main',

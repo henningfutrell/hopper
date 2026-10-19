@@ -39,7 +39,9 @@ export interface FakePullFields {
   headRef?: string; headOid?: string; base?: string; isDraft?: boolean; mergeable?: string; checks?: string;
   state?: 'OPEN' | 'CLOSED' | 'MERGED'; createdAt?: string; committedAt?: string;
   /** Its head commit's check runs and commit statuses as REST tells them (issue #1244); absent: none. */
-  checkRuns?: { status: string; conclusion?: string | null }[];
+  checkRuns?: { id?: number; name?: string; status: string; conclusion?: string | null }[];
+  /** Its head commit's rollup contexts as GraphQL tells them (issue #2129); absent: the rollup's state only. */
+  contexts?: unknown[];
   statuses?: { state: string }[];
 }
 
