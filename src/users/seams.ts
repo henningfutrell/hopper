@@ -43,8 +43,6 @@ export interface UserSeams {
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** How often a machine is probed again (default 30 s): a test that waits on a probe's change sets it short. */
   machineProbeEveryMs?: number;
-  /** How often the item reconciler checks (issue #1891; default 5 minutes): a crash test that waits on a correction sets it short. */
-  itemReconcileEveryMs?: number;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its pinned host key once herdr is found there, or a rejection with the reason. */
   resolveTarget?: (ssh: string, o: { herdr: boolean; hostKey?: string }) => Promise<ResolvedTarget>;
   /** Replaces reading the host key a new ssh target would be pinned to (issue #293): known_hosts, else what it presents. */
