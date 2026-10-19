@@ -19,6 +19,7 @@
 // process's libpod double, so the boxes a killed host left outlive it.
 // CRASH_LANDING_URL: the landing batches' GitHub (test/crash/landing-github.ts) as the connected account's GitHub, with
 // no job source: the batch runner's calls go there.
+// CRASH_RECONCILE_MS: how often the item reconciler checks (issue #1891), so a test does not wait 5 minutes for a pass.
 import '../support/isolate.ts';
 import { cloudflareProvider } from '../../src/remote-access/cloudflare.ts';
 import { ngrokProvider } from '../../src/remote-access/ngrok.ts';
@@ -60,6 +61,7 @@ const app = await startTestApp({
     ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare, timeoutMs: HUNG_CALL_MS }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
     ...(process.env.CRASH_TOPOLOGY ? { topologyReader: crashTopologyReader } : {}),
     ...(process.env.CRASH_WINDOWS ? { windowsStepHost: crashWindowsHost(process.env.CRASH_WINDOWS) } : {}),
+    ...(process.env.CRASH_RECONCILE_MS ? { itemReconcileEveryMs: Number(process.env.CRASH_RECONCILE_MS) } : {}),
   },
 });
 if (connect) connectGitHub(app, connect.split(','), { token: process.env.CRASH_GITHUB_TOKEN ?? TEST_ACCOUNT_TOKEN, key: need('CRASH_MASTER_KEY') });

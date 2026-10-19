@@ -50,13 +50,14 @@ describe('.github/workflows/secret-canary.yml, the nightly secret canary scan', 
     const run = scan();
     expect(run).toMatch(/podman system service --time=0 "unix:\/\/\$sock" &/);
     expect(run).toContain(`${API}/_ping`);
-    expect(run).toContain('HOPPER_TEST_PODMAN_SOCKET="unix://$sock" npx vitest run');
+    expect(run).toContain('export HOPPER_TEST_PODMAN_SOCKET="unix://$sock"\n');
   });
 
   it('runs every secret canary test file, the e2e mode with them', () => {
     const run = scan();
-    expect(run).toContain('test/crash/secret-canary-*.test.ts');
-    expect(run).toContain('test/integration/secret-canary*.test.ts');
+    // The crash files run with the crash config (`npm test` leaves test/crash/ out), the integration files with the main one.
+    expect(run).toContain('npx vitest run --config vitest.crash.config.ts test/crash/secret-canary-*.test.ts\n');
+    expect(run).toContain('npx vitest run test/integration/secret-canary*.test.ts\n');
     const files = [...canaryFiles('test/crash'), ...canaryFiles('test/integration')];
     expect(files).toContain('test/crash/secret-canary-real-runtime.test.ts');
     for (const f of files) expect(f, f).toMatch(/^test\/(crash\/secret-canary-|integration\/secret-canary)[^/]*\.test\.ts$/);
