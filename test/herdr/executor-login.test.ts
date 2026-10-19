@@ -6,7 +6,7 @@
 // when it reports the login again, the job fails (issue #695): a GitHub sign-in never goes to the user.
 import { describe, expect, it } from 'vitest';
 import type { LoginReport, RunLogins } from '../../src/domain/types.ts';
-import { githubLoginNote, isGitHubLogin } from '../../src/executors/herdr/login.ts';
+import { githubLoginNote, isGitHubLogin, loginExpiredNewCodeNote } from '../../src/executors/herdr/login.ts';
 import { contextFor, jobWith, setup, until } from './support.ts';
 
 const AUTH = {
@@ -153,5 +153,14 @@ describe('a GitHub login (issue #563)', () => {
     expect(isGitHubLogin({ tool: 'codex', verificationUrl: 'https://auth.openai.com/codex/device' })).toBe(false);
     expect(isGitHubLogin({ tool: 'ghost', verificationUrl: 'https://notgithub.com/login/device' })).toBe(false);
     expect(isGitHubLogin({ tool: 'x', verificationUrl: 'not a url' })).toBe(false);
+  });
+});
+
+describe('a code that expired, asked again (issue #2144)', () => {
+  it('asks the job first whether the login went through, so a sign-in done is reported, not started again', () => {
+    const note = loginExpiredNewCodeNote('python3 mcp_auth.py login');
+    expect(note).toContain('If the login went through');
+    expect(note).toContain('sh "$HOPPER_LOGIN" completed python3 mcp_auth.py login');
+    expect(note.indexOf('sh "$HOPPER_LOGIN" completed')).toBeLessThan(note.indexOf('start the login again'));
   });
 });
