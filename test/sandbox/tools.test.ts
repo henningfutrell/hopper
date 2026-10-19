@@ -14,9 +14,12 @@
 //   Scenario: any other image with terraform puts the apply wrapper first on PATH (issue #870)
 //   Scenario: each image of the fetch stage carries the stage label, so a leftover stage is known as the hopper's (issue #1120)
 //   Scenario: each download tries again after a network error, so one lost DNS answer does not fail the build (issue #1737)
+//   Scenario: the observability tools: jq, promtool and logcli, each from its own release (issue #2146)
+//   Scenario: an image with kubectl holds the port-forward helper on PATH (issue #2146)
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS, toolsProblem } from '../../src/domain/sandboxes.ts';
 import { TERRAFORM_CLI_CONFIG, TERRAFORM_APPLY_WRAPPER, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
+import { PORT_FORWARD_HELPER } from '../../src/sandbox/port-forward-helper.ts';
 import { MIRRORED_PROVIDERS, TOOLS_IMAGE, TOOLS_STAGE_LABEL, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
 
 const BASE = { image: 'ghcr.io/henningfutrell/hopper:box-claude', id: 'sha256:base1' };
@@ -54,7 +57,7 @@ describe('the tools image (issue #716)', () => {
 
   it('a tool the hopper does not add is refused, naming the ones it adds', () => {
     expect(toolsProblem(['kubectl', 'helm'])).toBeUndefined();
-    expect(toolsProblem(['kubectl', 'nmap'])).toBe('nmap is not a tool the hopper adds to a box: it adds aws, helm, kubectl, terraform');
+    expect(toolsProblem(['kubectl', 'nmap'])).toBe('nmap is not a tool the hopper adds to a box: it adds aws, helm, jq, kubectl, logcli, promtool, terraform');
   });
 
   it('the tools a need\'s asset kind uses', () => {
@@ -139,5 +142,29 @@ describe('the tools image (issue #716)', () => {
     // --retry-all-errors: curl tries again on a host it could not resolve (exit 6) too, not only on a timeout or a 5xx.
     for (const c of curls) expect(c).toMatch(/^curl -fsSL --retry \d+ --retry-delay \d+ --retry-all-errors --connect-timeout \d+ /);
     expect(containerfile).toContain('apt-get -o Acquire::Retries=');
+  });
+
+  it('the observability tools: jq, promtool and logcli, each from its own release (issue #2146)', () => {
+    const { containerfile } = toolsImage(BASE, ['promtool', 'logcli', 'jq']);
+    expect(containerfile).toMatch(/https:\/\/github\.com\/jqlang\/jq\/releases\/download\/jq-[\d.]+\/jq-linux-\$\{a\}/);
+    expect(containerfile).toMatch(/https:\/\/github\.com\/prometheus\/prometheus\/releases\/download\/v([\d.]+)\/prometheus-\1\.linux-\$\{a\}\.tar\.gz/);
+    expect(containerfile).toMatch(/https:\/\/github\.com\/grafana\/loki\/releases\/download\/v[\d.]+\/logcli-linux-\$\{a\}\.zip/);
+    // Only promtool of the Prometheus release is kept: the server is no tool of a box.
+    expect(containerfile).toContain('/opt/hopper-tools/bin/promtool');
+    expect(containerfile).not.toContain('/opt/hopper-tools/bin/prometheus ');
+    expect(containerfile).toContain('/opt/hopper-tools/bin/logcli');
+    expect(containerfile).toContain('/opt/hopper-tools/bin/jq');
+    expect(containerfile.match(/sha256sum -c/g)).toHaveLength(3);
+    for (const m of containerfile.matchAll(/(amd64|arm64)\) sum=([0-9a-f]+)/g)) expect(m[2]).toMatch(SHA);
+    expect(containerfile).toContain('io.hopper.tools="jq logcli promtool"');
+    // No kubectl, no helper.
+    expect(containerfile).not.toContain('hopper-port-forward');
+  });
+
+  it('an image with kubectl holds the port-forward helper on PATH (issue #2146)', () => {
+    const { containerfile } = toolsImage(BASE, ['kubectl']);
+    const b64 = Buffer.from(PORT_FORWARD_HELPER).toString('base64');
+    expect(containerfile).toContain(`echo ${b64} | base64 -d > /opt/hopper-tools/bin/hopper-port-forward && chmod 755 /opt/hopper-tools/bin/hopper-port-forward`);
+    expect(toolsImage(BASE, ['aws']).containerfile).not.toContain('hopper-port-forward');
   });
 });
