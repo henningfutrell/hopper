@@ -41,7 +41,11 @@ export function egressScript(): string {
   return compose.services.egress.command.join('\n').replaceAll('$$', '$');
 }
 
-export async function startEgressStack(): Promise<EgressStack> {
+/**
+ * `hostAlias`: a name the proxy resolves to this machine (the runtime's `host-gateway`), so it reaches a service the test
+ * runs here, such as the policy-assert proxy listening on every interface.
+ */
+export async function startEgressStack(o: { hostAlias?: string } = {}): Promise<EgressStack> {
   const id = randomBytes(4).toString('hex');
   const internal = `hopper-acceptance-egress-${id}`, routed = `hopper-acceptance-out-${id}`;
   const proxyName = `hopper-acceptance-proxy-${id}`, motoName = `hopper-acceptance-moto-${id}`;
@@ -67,7 +71,8 @@ export async function startEgressStack(): Promise<EgressStack> {
     networks.push(routed);
     await must(['run', '-d', '--name', motoName, '--network', routed, ...labels, MOTO_IMAGE]);
     containers.push(motoName);
-    await must(['create', '--name', proxyName, '--network', routed, ...labels, '-v', `${dir}:${SHARED}`, '--entrypoint', 'sh', EGRESS_IMAGE, '-eu', '-c', egressScript()]);
+    await must(['create', '--name', proxyName, '--network', routed, ...labels,
+      ...(o.hostAlias ? ['--add-host', `${o.hostAlias}:host-gateway`] : []), '-v', `${dir}:${SHARED}`, '--entrypoint', 'sh', EGRESS_IMAGE, '-eu', '-c', egressScript()]);
     containers.push(proxyName);
     await must(['network', 'connect', internal, proxyName]);
     await must(['start', proxyName]);

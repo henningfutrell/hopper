@@ -31,6 +31,12 @@ against shell stubs (`test/support/fake-cloud-tools.ts`) or a loopback STS (`tes
   hopper's image, which carries tinyproxy) on that network and on a routed one; and a second moto on the routed network
   only, the host the box's credential names. A need box of the read-only image runs through the hopper's sandbox module
   (`createSandboxes`, the real sandbox flags) and the real `createEgress`, which writes the allowlist the proxy loads.
+- **A read-only need box with a minted session** (`need-box-read-only.test.ts`): the need box of the egress tests, with
+  the read session the vault minted. Its credential names the policy-assert proxy as its endpoint, so the egress proxy
+  allows that host and the box reaches moto only through both proxies. The policy-assert proxy listens on every
+  interface for this test, and the egress proxy reaches it by a name the runtime resolves to this machine
+  (`--add-host <name>:host-gateway`). The box image has no AWS SDK, so the SDK script (`support/box-sdk.ts`) is bundled
+  with the SDK into one file (vite) and goes into the box as the step's input.
 - **Hoppers killed mid-step** (`saga-resume.test.ts`): the crash harness's hoppers (`test/crash/harness.ts`), the real
   composition root in processes of their own over one database, each ended with SIGKILL at a kill point of the
   `need-step` saga or while its need box runs. Their need boxes start on the same container runtime (Podman's or Docker's
@@ -57,6 +63,7 @@ changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` o
 | 1 | Minted scope: ReadOnlyAccess and the deny policy, a lifetime within the template's, the configured session name, no key on the box | `read-session.test.ts` |
 | 2 | Read-only by every route: the aws CLI (delete, terminate, schedule deletion, send, attach, assume another role), curl's raw SigV4 PUT and the SDK are denied at the proxy; moto's state hash is the same before and after | `read-session.test.ts` |
 | 2 | The terraform route, in the read-only box: init and plan work; `apply` and `apply -auto-approve` are refused by the wrapper before any call; the real binary's `apply -auto-approve` by its absolute path is denied at the proxy; the box's aws CLI is denied too; moto is unchanged | `terraform.test.ts` |
+| 2 | Every route inside a read-only need box, under the sandbox flags and behind the egress proxy, with the minted read session: the aws CLI reads through both proxies; its delete and terminate, terraform's real binary by its absolute path, curl's own SigV4 PUT and an SDK script's put and delete are denied at the proxy; the wrapper refuses `apply` and `apply -auto-approve` before any call; the proxy allows the session no write; moto is unchanged; the box is burned after the step | `need-box-read-only.test.ts` |
 | 3 | Lifetime: after the job ends, or a person revokes the template's approval in Access, the helper's renewal is refused and STS is asked for no new session; the session the job held is denied once its lifetime (900 s at most) is over | `lifetime.test.ts` |
 | 4 | Write path: a box of a write template plans with its read session, the job records the plan with its saved file, a person approves it; the apply session is minted only for that plan at its branch's commit (not before the approval, not after the branch moved); the apply wrapper refuses a tampered copy of the file and an apply that names no plan, before any call; the recorded plan applies, one CreateBucket; the same plan again is refused by terraform as stale, and moto is unchanged | `write-path.test.ts` |
 | 5 | Drift: a bucket and a VPC made in moto out of band show in the next Discover now; every call of discovery's session is a Describe, List or Get, allowed, and moto's state is what the change left | `discovery.test.ts` |
@@ -66,8 +73,7 @@ changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` o
 Criterion 3, stated: the hopper does not end an STS session early. A session it handed a job lives until its own
 expiry (900 s at most), after the job ends or a revoke too; the test moves the proxy's clock past it.
 
-Not yet: the terraform and write paths in a need box (under the sandbox flags and the egress proxy), an SDK script
-inside the box, and kubectl on kind. The pull request of each part lists what is left.
+Not yet: the write path in a need box (under the sandbox flags, with `HOPPER_PLAN_FILE`), and kubectl on kind. The pull request of each part lists what is left.
 
 ## Notes
 
