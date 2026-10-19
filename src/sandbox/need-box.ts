@@ -280,6 +280,8 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
       // Copied as the box's user, once it runs; the mark last, so the script never reads a file half there.
       writeFileSync(home, homeTar({ ...(files.plan ? { plan: files.plan } : {}), ...(secrets ? { secrets } : {}) }), { mode: 0o600 });
       await copyIn(id, HOME, home);
+      // Its vault secrets stay in the box only (issue #1957): a hopper killed while the box runs leaves no copy on disk.
+      rmSync(home, { force: true });
       if (files.inputs && inputsBytes > 0) await copyIn(id, `${HOME}/work`, files.inputs);
       writeFileSync(ready, filesTar([{ name: `${FILES_DIR}/.ready`, data: '', mode: 0o600 }]), { mode: 0o600 });
       await copyIn(id, HOME, ready);
