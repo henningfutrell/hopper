@@ -246,24 +246,18 @@ describe('the plugin store setting', () => {
   // Issue #2082: the default plugin store is published from stable only, so a newer build can name it before
   // it is served. A start then logs no git "fatal:" and no warning, and the card says the store is unavailable.
   it('a default plugin store that is not published yet: a quiet start, and the card shows it unavailable with the reason', async () => {
-    const w = world();
-    const site = tempDir('jh-plugin-store-site-');
-    cleanups.push(() => rmSync(site, { recursive: true, force: true }));
-    const served = await serveDir(site);
-    cleanups.push(() => void served.close());
-    const url = `${served.url}/plugin-store.git`;
-    const warned = vi.spyOn(console, 'warn');
-    const said = vi.spyOn(console, 'log');
+    const site = tempDir('jh-plugin-store-site-'), served = await serveDir(site), url = `${served.url}/plugin-store.git`;
+    cleanups.push(() => { rmSync(site, { recursive: true, force: true }); void served.close(); });
+    const warned = vi.spyOn(console, 'warn'), said = vi.spyOn(console, 'log');
     cleanups.push(() => { warned.mockRestore(); said.mockRestore(); });
-    const app = await start(w, {}, { pluginStoreDefault: url });
+    const app = await start(world(), {}, { pluginStoreDefault: url });
     await waitFor(async () => (await read(app)).checkedAt !== undefined);
     const r = await read(app);
-    expect(r).toMatchObject({ state: 'unavailable', source: 'default', repo: url, defaultRepo: url, plugins: [] });
-    expect(r.reason).toMatch(/plugin-store\.git/);
+    expect(r).toMatchObject({ state: 'unavailable', source: 'default', repo: url, defaultRepo: url, plugins: [], reason: expect.stringMatching(/plugin-store\.git/) });
     expect(r.error).toBeUndefined();
-    const lines = [...warned.mock.calls, ...said.mock.calls].map((c) => String(c[0])).filter((l) => l.includes('plugin store'));
-    expect(lines.filter((l) => /fatal/i.test(l))).toEqual([]);
-    expect(warned.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('plugin store'))).toEqual([]);
+    const lines = (calls: unknown[][]) => calls.map((c) => String(c[0])).filter((l) => l.includes('plugin store'));
+    expect(lines([...warned.mock.calls, ...said.mock.calls]).filter((l) => /fatal/i.test(l))).toEqual([]);
+    expect(lines(warned.mock.calls)).toEqual([]);
   });
 
   it('with no plugin store, says so without naming an environment variable', async () => {
@@ -309,10 +303,8 @@ describe('the plugin store setting', () => {
     const token = await app.login();
     const missing = join(w.store.dir, '..', 'no-such-store');
     const r = (await source(app, token, { kind: 'repo', repo: missing })).body;
-    expect(r).toMatchObject({ state: 'unavailable', source: 'repo', repo: missing, from: w.store.dir, commit: w.first });
-    expect(r.reason).toMatch(/no-such-store/);
-    expect(r.reason).not.toMatch(/fatal:/);
-    expect(r.error).toBeUndefined();
+    expect(r).toMatchObject({ state: 'unavailable', source: 'repo', repo: missing, from: w.store.dir, commit: w.first, reason: expect.stringMatching(/no-such-store/) });
+    expect([r.reason?.includes('fatal:'), r.error]).toEqual([false, undefined]);
     expect(r.plugins.map((p) => p.id)).toEqual(['echo-executor', 'word-first']);
     const refused = await app.ui<{ error: string }>('/ui/api/plugin-store', { action: 'install', id: 'echo-executor' }, { token });
     expect(refused.status).toBe(409);

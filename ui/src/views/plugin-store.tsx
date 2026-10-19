@@ -1,5 +1,6 @@
 // The Plugin store card (design.md "Plugin store"): the plugin store setting (issue #445: the default
-// plugin store, a git repository an admin names here, or none), its commit and last read, Refresh;
+// plugin store, a git repository an admin names here, or none), its commit and last read, Refresh; a
+// plugin store that cannot be read shows as unavailable with the reason, over the last good catalogue (issue #2082);
 // per plugin its role, description and Install, Update or Remove (confirmed). Installing does not
 // configure: the plugin then shows under its role. Reads GET /api/plugin-store; an admin acts.
 import { Download, RefreshCw, Store } from 'lucide-react';
@@ -57,7 +58,7 @@ function Source({ report, busy, act }: { report: PluginStoreReport; busy: boolea
         {report.repo && <code className="font-mono break-all">{report.repo}</code>}
         {report.commit && !report.from && <span className="font-mono text-muted-foreground">{report.commit.slice(0, 7)}</span>}
         {report.checkedAt && !report.from && <span className="text-muted-foreground">read {new Date(report.checkedAt).toLocaleTimeString()}</span>}
-        {report.state !== 'unavailable' && <span className="text-muted-foreground">{storeSourceLabel(report)}</span>}
+        {report.repo && <span className="text-muted-foreground">{storeSourceLabel(report)}</span>}
       </div>
       {authed
         ? (
