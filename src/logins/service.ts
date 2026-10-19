@@ -96,6 +96,8 @@ export function createLogins(o: LoginsOptions): Logins {
   /** End an open login: its status, the event, and its URL and code dropped. */
   const end = (l: Login, status: Exclude<LoginStatus, 'pending' | 'expired'>, data: Record<string, unknown>, patch: Partial<Login> = {}): Login => {
     secrets.delete(l.id);
+    // A new code asked at its expiry is not asked once it went through (issue #2144): its run reads `ended`.
+    if (status === 'completed' && asked.get(l.id)?.act === 'new-code') asked.delete(l.id);
     const type: EventType = status === 'completed' ? 'auth.completed' : status === 'cancelled' ? 'auth.cancelled' : status === 'dismissed' ? 'auth.dismissed' : 'auth.failed';
     return store.tx(() => {
       const next = store.logins.update(l.id, { status, endedAt: now(), newCodeAskedAt: undefined, ...patch });

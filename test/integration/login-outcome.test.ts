@@ -20,6 +20,8 @@ let cleanup: (() => void) | undefined;
 
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100, promptSteadyMs: 100 } }];
 const CODE = 'WDJB-MJHT';
+/** A tool named by its whole command (issue #2144), as a job reports a helper script. */
+const MCP_TOOL = 'python3 .agents/skills/mcp-auth/mcp_auth.py login --device';
 
 /** A turn that ends on a codex login while it waits in the background, and stays so. */
 const AUTH: FakeTurn = {
@@ -183,6 +185,49 @@ describe('hopper-login, the job\'s command (issue #1110)', () => {
     const none = await hopperLogin(a.url, proxy, ['completed', 'gcloud']);
     expect(none.code).toBe(1);
     expect(none.stdout).toMatch(/^no: /);
+  });
+});
+
+describe('a login whose tool is a command of many words (issue #2144)', () => {
+  /** The same login, its tool the helper's whole command. */
+  const MCP_AUTH: FakeTurn = { ...AUTH, output: AUTH.output.map((l) => (l === '  tool: codex' ? `  tool: ${MCP_TOOL}` : l)) };
+
+  it('hopper-login takes the command unquoted, as many words, and completes the login at once', async () => {
+    const a = await start(createFakeHerdrClient({ session: 'jh-test', turns: [MCP_AUTH] }));
+    const { login, proxy } = await waiting(a);
+    expect(login.tool).toBe(MCP_TOOL);
+    const done = await hopperLogin(a.url, proxy, ['completed', ...MCP_TOOL.split(' ')]);
+    expect(done).toEqual({ code: 0, stdout: `ok: the ${MCP_TOOL} login is completed\n` });
+    expect(loginOf(a, login.id).status).toBe('completed');
+    expect(await activeLogins(a)).toBe(0);
+  });
+
+  it('a failure names the command unquoted too, before its reason', async () => {
+    const a = await start(createFakeHerdrClient({ session: 'jh-test', turns: [MCP_AUTH] }));
+    const { login, proxy } = await waiting(a);
+    const r = await hopperLogin(a.url, proxy, ['failed', ...MCP_TOOL.split(' '), '--reason', 'mcp_auth.py exited 1']);
+    expect(r.code).toBe(0);
+    expect(loginOf(a, login.id)).toMatchObject({ status: 'failed', reason: 'mcp_auth.py exited 1' });
+  });
+
+  it('the login is found by a word of its command: the script, or the command with its words spaced otherwise', async () => {
+    const a = await start(createFakeHerdrClient({ session: 'jh-test', turns: [MCP_AUTH] }));
+    const { login, proxy } = await waiting(a);
+    expect((await report(a, proxy, { outcome: 'completed', tool: 'mcp_auth.py' })).status).toBe(200);
+    expect(loginOf(a, login.id).status).toBe('completed');
+    expect((await report(a, proxy, { outcome: 'completed', tool: `  ${MCP_TOOL.replaceAll(' ', '   ')} ` })).status).toBe(200);
+    // A word the command does not hold is no login of the job.
+    expect((await report(a, proxy, { outcome: 'completed', tool: 'gcloud' })).status).toBe(404);
+  });
+
+  it('a code that expired is completed by its requester: the sign-in went through after all, so no new code is asked', async () => {
+    const a = await start(createFakeHerdrClient({ session: 'jh-test', turns: [MCP_AUTH] }));
+    const { login, proxy } = await waiting(a);
+    a.user().logins.expired(login.id);
+    expect(loginOf(a, login.id).status).toBe('expired');
+    expect((await hopperLogin(a.url, proxy, ['completed', ...MCP_TOOL.split(' ')])).code).toBe(0);
+    expect(loginOf(a, login.id)).toMatchObject({ status: 'completed' });
+    expect(a.user().logins.check(login.id)).toEqual({ act: 'ended' });
   });
 });
 

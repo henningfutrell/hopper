@@ -17,6 +17,13 @@ import { LOGIN_PATH } from '../logins/script.ts';
 import type { Tenants } from './tenants.ts';
 
 const BEARER = /^Bearer\s+(\S+)$/i;
+const words = (s: string): string[] => s.toLowerCase().split(/\s+/).filter(Boolean);
+const sameTool = (a: string, b: string): boolean => words(a).join(' ') === words(b).join(' ');
+/** Every word of `named` is a word of `tool`, or ends one of its paths (`mcp_auth.py` of `.agents/…/mcp_auth.py`). */
+const holdsWords = (tool: string, named: string): boolean => {
+  const have = words(tool).flatMap((w) => [w, w.slice(w.lastIndexOf('/') + 1)]);
+  return words(named).every((w) => have.includes(w));
+};
 /** An empty field is a field left out: the script always sends all three. */
 const optional = z.string().trim().max(1000).optional().transform((v) => (v ? v : undefined));
 const body = z.object({ outcome: z.enum(LOGIN_OUTCOMES), tool: optional, reason: optional })
@@ -36,8 +43,10 @@ export function jobLoginRoutes(app: FastifyInstance, o: { tenants: Tenants }): v
       const b = body.safeParse(req.body ?? {});
       if (!b.success) return say(400, `no: ${b.error.issues.map((i) => i.message).join('; ')}`);
       const { outcome, tool, reason } = b.data;
-      // Newest first: the job's latest login of that tool.
-      const login = user.store.logins.list({ jobId: job.id }).find((l) => tool === undefined || l.tool.toLowerCase() === tool.toLowerCase());
+      // Newest first: the job's latest login of that tool; else of a tool whose words hold the words named (issue #2144:
+      // a job names a helper's command by its script, or with its words spaced otherwise).
+      const logins = user.store.logins.list({ jobId: job.id });
+      const login = tool === undefined ? logins[0] : logins.find((l) => sameTool(l.tool, tool)) ?? logins.find((l) => holdsWords(l.tool, tool));
       if (!login) return say(404, `no: job ${job.id} asked for no ${tool ? `${tool} ` : ''}login`);
       const r = user.logins.outcome(login.id, outcome === 'completed' ? { outcome } : { outcome, reason: reason! });
       if (!r.ok) return say(404, `no: ${r.message}`);

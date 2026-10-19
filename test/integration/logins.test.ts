@@ -109,7 +109,7 @@ describe('a job that waits on a device login', () => {
     const job = await a.pull({}, item());
     const login = await pendingLogin(a);
     await waitFor(() => herdr.prompts.length === 2, { timeoutMs: 8000 });
-    expect(herdr.prompts[1]!.text).toContain('The codex code expired before the user completed the login');
+    expect(herdr.prompts[1]!.text).toContain('The codex code expired before the hopper heard that the login went through');
     await waitFor(async () => (await loginsOf(a, token)).logins[0]!.userCode === 'QRST-2345', { timeoutMs: 8000 });
     const logins = (await loginsOf(a, token)).logins;
     expect(logins).toHaveLength(1);
