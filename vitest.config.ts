@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { containerRuntime, testExclude } from './test/support/host-services.ts';
+import { CrashFirstSequencer } from './test/support/sequencer.ts';
 
 export default defineConfig({
   // The UI's own alias, so happy-dom tests can render ui/src (test/ui/questions.test.ts).
@@ -13,6 +14,8 @@ export default defineConfig({
     exclude: [...testExclude(process.env, { runtime: containerRuntime(process.env), say: (line) => console.warn(line) }), 'test/cloud-acceptance/**'],
     testTimeout: 15000,
     pool: 'forks',
+    // The crash tests start first in each shard (test/support/sequencer.ts, issue #2046).
+    sequence: { sequencer: CrashFirstSequencer },
     // One run root as TMPDIR, and teardown of all the run left (test/support/run.ts, first: its
     // teardown runs last); one Postgres for the run (test/support/postgres.ts); isolated HOME and
     // loopback-only fetch in every worker (test/support/isolate.ts).
