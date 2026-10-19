@@ -72,19 +72,19 @@ describe('claude-plan through the composition root', () => {
       { name: 'claude', refreshedAt: expect.any(String), accountReadAt: expect.any(String), executors: ['scripted'], signIn: true, account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } } },
       { name: 'fake' },
     ]);
-    expect(report.limits).toEqual({ soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false });
-    // The machine's lanes stay open for its other executor; the scripted executor's jobs are capped at 2.
+    expect(report.limits).toEqual({ soft: 0.7, hard: 0.95, softLanes: 1, defaults: { soft: 0.7, hard: 0.95, softLanes: 1 }, set: false });
+    // The machine's lanes stay open for its other executor; the scripted executor's jobs are capped at the soft lanes, 1.
     expect(report.machines).toEqual([{
       machineId: 'local', label: expect.any(String), online: true, maxLanes: 4, usedFrac: 0, cap: 4, band: 'free',
-      executors: [{ executor: 'test', usedFrac: 0, cap: 4, band: 'free' }, { executor: 'scripted', usedFrac: 0.8, cap: 2, band: 'soft' }],
+      executors: [{ executor: 'test', usedFrac: 0, cap: 4, band: 'free' }, { executor: 'scripted', usedFrac: 0.8, cap: 1, band: 'soft' }],
     }]);
 
     const jobs: Job[] = [];
     for (let i = 0; i < 4; i++) jobs.push(await a.pull({ op: 'sleep', ms: 3000 }));
-    await waitFor(async () => (await a.api('GET', '/api/queue')).body.running.length === 2, { what: 'two running' });
+    await waitFor(async () => (await a.api('GET', '/api/queue')).body.running.length === 1, { what: 'one running' });
     const held = await waitFor(async () => { const j = await a.job(jobs[3]!.id); return j.waitReason ? j : undefined; });
-    expect(held).toMatchObject({ status: 'queued', waitReason: expect.stringContaining('executor scripted\'s lane cap on local is 2 (usage soft limit') });
-    expect((await a.api('GET', '/api/queue')).body.running).toHaveLength(2);
+    expect(held).toMatchObject({ status: 'queued', waitReason: expect.stringContaining('executor scripted\'s lane cap on local is 1 (usage soft limit') });
+    expect((await a.api('GET', '/api/queue')).body.running).toHaveLength(1);
 
     const plugins = (await a.api('GET', '/api/plugins')).body;
     expect(plugins.usageSources.instances).toEqual([expect.objectContaining({ instance: expect.objectContaining({ name: 'claude', plugin: 'claude-plan' }), active: 'claude-plan' })]);
