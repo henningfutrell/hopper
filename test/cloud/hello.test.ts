@@ -1,4 +1,4 @@
-// The cloud link's hello (issue #2039, docs/design.md "The cloud link's hello"): the instance answers hopper.io's challenge
+// The cloud link's hello (issue #2039, docs/design.md "The cloud link's connection"): the instance answers hopper.io's challenge
 // with its instance id, its link's account and the public half of its Ed25519 cloud link key, and proves the key over the
 // challenge (docs/hopper-io-security.md R4). hopper.io checks the proof and keeps only the public half. Both sides, no
 // transport: the instance's hello (src/http/cloud-link-hello.ts) checked by hopper.io's (cloud/hello.ts).

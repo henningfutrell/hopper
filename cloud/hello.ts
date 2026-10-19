@@ -1,4 +1,4 @@
-// hopper.io's side of the cloud link's hello (issue #2039, docs/design.md "The cloud link's hello"): the challenge
+// hopper.io's side of the cloud link's hello (issue #2039, docs/design.md "The cloud link's connection"): the challenge
 // hopper.io sends first on each connection, and the check of the instance's answer. The hello names the instance, the
 // account its link names and the public half of its cloud link key, and proves the key with an Ed25519 signature over
 // the challenge, the instance id, the account and the key, under a fixed context (R4). `previous` proves the key before a

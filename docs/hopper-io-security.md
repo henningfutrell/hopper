@@ -3,7 +3,8 @@
 Issue #468, child of the cloud-hosting tracking issue #469. **Status: a design, written before any code.** hopper.io
 itself does not exist. On the instance, only the cloud link's record (issue #467 part 1), its cloud link key (issue #467 part 2), its registration code (issue #465 part 2), its
 unregistration (issue #465 part 3), the messages about them (issue #465 part 4) and the state snapshot the dashboard shows
-(issue #466 parts 1 and 2) are built, and at hopper.io its GitHub sign-in, account deletion, records, registrations and their tombstones (issue #463 parts 2 to 5, `cloud/`)
+(issue #466 parts 1 and 2) are built, and at hopper.io its GitHub sign-in, account deletion, records, registrations and their tombstones (issue #463 parts 2 to 5, `cloud/`),
+and hopper.io's end of the cloud link's connection, with the hello that proves the cloud link key (issue #2039 part 1)
 ("What is built" below).
 This document states the threats and the rules that every hopper.io change must obey. The open owner
 decisions of #469 (scope, what the link carries, transport, sign-in on instances, sharing, who operates hopper.io) do
@@ -158,12 +159,16 @@ plugins, command-bearing options, the vault, remote access or the cloud link its
   proxy token, API token or session ever goes on the cloud link. The allow-list (R5) has no field for one.
 - The instance scans each outgoing message for secrets before it sends it, and drops a message that holds one. The drop
   is an event on the instance.
-- **The cloud link key** is one X25519 key per instance, minted on the instance, kept as a system secret in the
-  instance's vault. Only its public half goes to hopper.io. It is not a machine's link key.
+- **The cloud link key** is one Ed25519 key per instance, minted on the instance, kept as a system secret in the
+  instance's vault. Only its public half goes to hopper.io. It is not a machine's link key. The instance proves it in its
+  hello: a signature over a fresh challenge from hopper.io, the instance id, the account and the public half, under a fixed
+  context (issue #2039; X25519 before it, which cannot sign). hopper.io binds the public half to the registration, and a
+  registered instance connects only with it.
 - The instance's admin can rotate it (a new key, the old one revoked after the new one connects) and revoke it, through
-  the UI session or the operator CLI. Until the cloud link connects (issue #464), nothing connects with a key, so a
-  rotation replaces the key at once, and an unlink revokes it by dropping it. The hopper.io account owner can revoke it at hopper.io. A revoked key connects no
-  more, on either side.
+  the UI session or the operator CLI. hopper.io moves a registration to a new key only when the hello proves the bound key
+  too (issue #2039 part 1); the instance keeping the old key until then is its part 2. Until then the instance replaces the
+  key at once, and an unlink revokes it by dropping it. The hopper.io account owner revokes it at hopper.io by removing the
+  instance, and an account deletion revokes the keys of all its instances. A revoked key connects no more, on either side.
 - Registration takes a one-time code the instance's admin mints (10 minutes, kept hashed, taken once).
 
 **R5 — minimal data with stated retention.**
@@ -285,12 +290,23 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     the instance is registered to names it or reads the name, and a move to another account drops the names. R7: only a
     key in the instance's last state, at most 500 names per instance, 64 characters each; the page escapes them (T3). R6:
     each is a record.
-  - Not yet: the R6 records of the cloud link and remote actions at hopper.io (with #464),
-    and the connection that carries the registration messages and the hello (#464).
-- Nothing else. The connection (and so who carries these messages and sends the snapshot), the cloud link key and
-  everything at hopper.io wait for the issues in the table below. The connection's design — its data boundary, no inbound
-  actions, and its transport (one WebSocket over TLS that the instance opens, with hopper.io's key pinned) — is
-  `docs/design.md` "Cloud link" (issue #464), a design, not built.
+  - **hopper.io's end of the cloud link's connection** (issue #2039 part 1, `docs/design.md` "The cloud link's
+    connection"): one WebSocket per instance at `GET /link`, opened by the instance (R1: hopper.io sends only `register`
+    and `unregister`). R4, T2: the hello proves the Ed25519 cloud link key over a fresh challenge; the key is bound at
+    registration, a registered instance connects only with it or a rotation it proves, and a removal or account deletion
+    revokes it (a tombstone keeps the public half). R7: the snapshot's cap per frame, 1024 bytes for any other message,
+    connections per address and per instance, messages per connection, and open connections are capped; a message over a
+    cap is refused, not cut. R6: connect, disconnect, a second connection, a refused connection, a rotation and a refused
+    message are hopper.io records. R5: it keeps the public half only, and "connected now" in memory only.
+  - Not yet: the instance's agent, its events and outgoing secret scan, and the pin of hopper.io's key (issue #2039
+    part 2); the R6 records of remote actions.
+- **The hello on the instance** (issue #2039 part 1, `src/http/cloud-link-hello.ts`): the closed hello and heartbeat,
+  and the Ed25519 cloud link key (migration 52 drops an X25519 key, which no connection used). R4: the hello holds the
+  public half and a proof, never the private half.
+- Nothing else. The instance's agent (and so who carries these messages and sends the snapshot from the instance) waits
+  for issue #2039 part 2. The connection's design — its data boundary, no inbound actions, and its transport (one
+  WebSocket over TLS that the instance opens, with hopper.io's key pinned) — is `docs/design.md` "Cloud link" (issue
+  #464) and "The cloud link's connection".
 
 ## What each child issue must show
 

@@ -1,4 +1,4 @@
-// The cloud link's hello (issue #2039, design.md "The cloud link's hello"): the first message the instance sends on its
+// The cloud link's hello (issue #2039, design.md "The cloud link's connection"): the first message the instance sends on its
 // connection to hopper.io, the answer to hopper.io's challenge. It names the instance (`installId`), the hopper.io account
 // its link names, and the public half of its cloud link key, and proves the key: an Ed25519 signature over the challenge,
 // the instance id, the account and the public key, under a fixed context, so a proof is good for one challenge only and
