@@ -91,7 +91,7 @@ export function createFailures(o: FailuresOptions): Failures {
   const backfill = createBackfill({ store, now, doneAtSource: o.doneAtSource, workState: o.workState, finishShipped: o.finishShipped, live: () => !stopped, logger: o.logger });
   const checkWork = createWorkCheck({ store, clock, workState: o.workState, checked: (id, work) => handoffs.checked(id, work), logger: o.logger, live: () => !stopped });
 
-  /** The done-check misses whose source found the work done when looked at once more, before their assessment (issue #637). */
+  /** The failed jobs whose source found the work done when looked at once more, before their assessment (issues #637, #2040). */
   const doneWhenAssessed = new Set<string>(), work = createWorkLook({ store, workState: o.workState, skip: (id) => doneWhenAssessed.has(id), live: () => !stopped });
   const lookAgain = async (id: string): Promise<void> => { if (!stopped && await lookedAgain(store, o.doneAtSource, id) && !stopped) doneWhenAssessed.add(id); };
 

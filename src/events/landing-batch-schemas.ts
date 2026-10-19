@@ -24,14 +24,14 @@ export const LANDING_BATCH_EVENT_SCHEMAS = {
   }),
   'landing_batch.pending': strict({ repo: z.string(), landing: z.string(), tested: z.string(), tip: z.string(), merges: z.array(z.number().int()) }),
   'landing_batch.promoted': strict({ ...ended, merge: z.string().optional() }),
-  'landing_batch.failed': strict({ ...ended, reason: z.string(), checks: z.array(z.string()), checkRuns: z.array(check).optional(), conflicts: z.boolean().optional() }),
+  'landing_batch.failed': strict({ ...ended, reason: z.string(), checks: z.array(z.string()), checkRuns: z.array(check).optional(), conflicts: z.boolean().optional(), cutOff: z.literal(true).optional() }),
   'landing_batch.retargeted': strict({ repo: z.string(), pullRequest: z.number().int(), url: z.string(), from: z.string(), to: z.string() }),
   'landing_batches.changed': strict({ from: settings, to: settings, by: z.string() }),
   'landing_batch.bisect_started': strict({ ...ended, points: z.array(point), checks: z.array(check), reason: z.string() }),
   'landing_batch.bisect_run': strict({ repo: z.string(), tested: z.string(), tip: z.string(), index: z.number().int(), sha: z.string(), branch: z.string(), pullRequest: z.number().int(), url: z.string() }),
   'landing_batch.bisect_tested': strict({
     repo: z.string(), tested: z.string(), tip: z.string(), index: z.number().int(), sha: z.string(), pullRequest: z.number().int(), url: z.string(),
-    outcome: z.enum(['good', 'bad', 'unknown']), reason: z.string().optional(), checks: z.array(check).optional(),
+    outcome: z.enum(['good', 'bad', 'unknown']), reason: z.string().optional(), checks: z.array(check).optional(), cutOff: z.literal(true).optional(),
   }),
   'landing_batch.culprit': strict({
     repo: z.string(), tested: z.string(), tip: z.string(), index: z.number().int(), sha: z.string(), pullRequest: z.number().int().optional(),

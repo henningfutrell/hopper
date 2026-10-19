@@ -172,7 +172,7 @@ describe('a wait check (issue #1694)', () => {
     now = T0 + FIRST_CHECK_MS;
     await a.checks.run();
     expect(a.store.jobs.get(job.id)!.status).toBe('queued');
-    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ by: 'hopper', note: 'https://github.com/octo/tools/issues/404 was not found: no such repository or item, so the wait never ends on it' });
+    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ by: 'hopper', note: 'https://github.com/octo/tools/issues/404 cannot be read: no such repository or item, or the hopper has no access to it, so the wait never ends on it; check the owner and name you wrote' });
   });
 
   it('a wait on another job ends when that job ends, read from the store with no outside read', async () => {

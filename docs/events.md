@@ -1188,7 +1188,7 @@ Version 1 (`docs/schemas/job.waited_pull_request_ended.v1.json`). A pull request
 
 ## `job.waited_items_ended`
 
-Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. Also at once when one of them does not exist (issue #1691): then `items` holds only those, `state` `not_found`, so the job rewrites its wait. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, the run's conclusion, or `not_found`).
+Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's own wait names (issue #1508) ended, as a sync of the job's source read them: an issue closed, a pull request merged or closed, a workflow run completed. The wait is on an item, or on an outside event whose text names issues, pull requests (`owner/name#N`, `name#N` of the job's owner, `issue N`, a link) or workflow runs (`<repo> run N`, `workflow run N`, a link). They may have ended before the wait began. Also at once when one of them does not exist, or the hopper cannot read it (issues #1691, #2066): then `items` holds only those, `state` `not_found`, so the job rewrites its wait. The hopper wakes the job (`job.wait_ended { by: hopper }`). Once per wait; a job woken so that waits again on the same items is not woken for them again until the hopper restarts. `items`: each one's URL and `state` (`closed`, `merged`, the run's conclusion, or `not_found`).
 
 | field | type | required |
 |---|---|---|
@@ -7194,7 +7194,7 @@ Version 1 (`docs/schemas/landing_batch.promoted.v1.json`). A batch run passed ev
 
 ## `landing_batch.failed`
 
-Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). `conflicts` true: merge conflicts with the tested branch, and a back-merge is due. Recorded before the hopper closes the pull request (issue #1589): a pass closes it while it stays open. The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert.
+Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). `conflicts` true: merge conflicts with the tested branch, and a back-merge is due. Recorded before the hopper closes the pull request (issue #1589): a pass closes it while it stays open. The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert. `cutOff` true (issue #2086): a check was cancelled or timed out (`checks`, `checkRuns` those checks), so no bisect starts, and the same `tip` runs again, at most twice in a row.
 
 | field | type | required |
 |---|---|---|
@@ -7207,6 +7207,7 @@ Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pas
 | `checks` | string[] | yes |
 | `checkRuns` | object[] | no |
 | `conflicts` | boolean | no |
+| `cutOff` | boolean | no |
 
 ```json
 {
@@ -7349,7 +7350,7 @@ Version 1 (`docs/schemas/landing_batch.bisect_run.v1.json`). A bisect run starte
 
 ## `landing_batch.bisect_tested`
 
-Version 1 (`docs/schemas/landing_batch.bisect_tested.v1.json`). A bisect run ended (issue #1073): `outcome` `good` (every check passed), `bad` (`checks` failed), or `unknown` with its `reason` (no check in time, merge conflicts, its branch moved, closed by a person), which ends the bisect with no culprit. The hopper closed its pull request and removed its branch.
+Version 1 (`docs/schemas/landing_batch.bisect_tested.v1.json`). A bisect run ended (issue #1073): `outcome` `good` (every check passed), `bad` (`checks` failed), or `unknown` with its `reason` (no check in time, merge conflicts, its branch moved, closed by a person), which ends the bisect with no culprit. `cutOff` true (issue #2086): `unknown` because a check was cancelled or timed out (`checks`); the point runs again, at most twice, and only then the bisect ends. The hopper closed its pull request and removed its branch.
 
 | field | type | required |
 |---|---|---|
@@ -7363,6 +7364,7 @@ Version 1 (`docs/schemas/landing_batch.bisect_tested.v1.json`). A bisect run end
 | `outcome` | `good` \| `bad` \| `unknown` | yes |
 | `reason` | string | no |
 | `checks` | object[] | no |
+| `cutOff` | boolean | no |
 
 ```json
 {

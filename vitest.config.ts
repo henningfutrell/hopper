@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { containerRuntime, testExclude } from './test/support/host-services.ts';
-import { CrashFirstSequencer } from './test/support/sequencer.ts';
 
 export default defineConfig({
   // The UI's own alias, so happy-dom tests can render ui/src (test/ui/questions.test.ts).
@@ -10,12 +9,15 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     // HOPPER_TEST_HOST_SERVICES=0 leaves out the tests that need docker, sshd or LDAP (the pull request check, issue #672);
     // no container runtime leaves out every test that starts a container, and says so (issue #1038).
-    // The cloud acceptance tests (issue #1956) run on their own: `npm run test:cloud`, vitest.cloud.config.ts.
-    exclude: [...testExclude(process.env, { runtime: containerRuntime(process.env), say: (line) => console.warn(line) }), 'test/cloud-acceptance/**'],
+    // The cloud acceptance tests (issue #1956) run on their own: `npm run test:cloud`, vitest.cloud.config.ts. So do the
+    // crash tests (issue #1954): `npm run test:crash`, vitest.crash.config.ts.
+    exclude: [
+      ...testExclude(process.env, { runtime: containerRuntime(process.env), say: (line) => console.warn(line) }),
+      'test/cloud-acceptance/**',
+      'test/crash/**',
+    ],
     testTimeout: 15000,
     pool: 'forks',
-    // The crash tests start first in each shard (test/support/sequencer.ts, issue #2046).
-    sequence: { sequencer: CrashFirstSequencer },
     // One run root as TMPDIR, and teardown of all the run left (test/support/run.ts, first: its
     // teardown runs last); one Postgres for the run (test/support/postgres.ts); isolated HOME and
     // loopback-only fetch in every worker (test/support/isolate.ts).

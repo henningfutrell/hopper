@@ -273,7 +273,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (intake) { openRequests(o.name, intake, requests, opened); withdrawRequests(o.name, intake, requests, { repos, repoErrors: found.repoErrors }, opened); }
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
-      mirror?.check(found.seen);
+      // An issue taken as a new job is not judged (issue #1954): its job moves the item; an end label put back keeps it out.
+      const taking = new Set(items.map((i) => i.key).filter((k) => !known.has(k) || rerun.has(k)));
+      mirror?.check(found.seen.filter((i) => !taking.has(i.url)));
       repoErrors = found.repoErrors;
       outcomes = next; approvals.listed(next);
       outbox.listed(round);

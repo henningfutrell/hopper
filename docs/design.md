@@ -66,7 +66,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
-| `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8) | engine, http, store, plugins, decider |
+| `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8), and its kill points for the crash harness (issue #1954) | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); each write that makes something found before it is made again, and a **kill point** after each write (`once.ts`, issues #1589, #1954); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
@@ -8544,8 +8544,12 @@ check.
 **Reading.** A bare mirror at `<work dir>/plugin-store/repo.git`; each read fetches the store's
 `HEAD` (its default branch) with the update mirror's git environment (never prompts, ssh batch
 mode). Read at start in the background (a slow or unreachable store never delays the boot), and on
-`refresh`. A catalogue that cannot be fetched or parsed → state `error` with the reason; the last
-good catalogue stays listed. When that catalogue was read from another plugin store (the setting
+`refresh`. A plugin store that cannot be fetched (not published yet, offline, gone) → state
+`unavailable` with a `reason` (`<store> cannot be read: <what git said>`, without git's `fatal:`); the
+last good catalogue stays listed, nothing installs until a read succeeds, and the hopper logs each new
+reason once, as info, never as a warning (issue #2082: the default plugin store is published from
+`stable`, so a newer build can name it before it is served). A catalogue that cannot be parsed →
+state `error` with the reason; the last good catalogue stays listed. When that catalogue was read from another plugin store (the setting
 changed and the new one could not be read), the report names it (`from`), and nothing installs from
 it: Install is refused (409) and the card offers none. No plugin store (set to none, or no default in
 this build) → state `unavailable` with a `reason` that names the setting, never an environment
@@ -11669,7 +11673,9 @@ another job would meet it — problem `ba0f00fc` held every queued job of one ma
 
 **A done-check miss** (issue #637, the `not-complete` cause) is looked at once more before it is assessed
 (`lookedAgain`, `done-at-source.ts`, at most `PR_LOOKUP_MS`): its job said it was done, and its source said not done twice,
-a minute apart; GitHub may still show the work late. Done now: its record is written `resolved` (the note says done at its
+a minute apart; GitHub may still show the work late. So is every other failed job (issue #2040): a job can end failed
+after it delivered, on a check its machine could not make (`HOPPER_FAILED` because `HOPPER_GH` was empty), and its
+source's answer, not its own words, says whether its work is done. Done now: its record is written `resolved` (the note says done at its
 source), no hand-off opens, and its job ends finished, its source told again. Not done, or not known: assessed as before
 (a `job` cause: a person), and then it is a decider call like a failure no known cause explains — Jev picks run it again
 or a person, in the words of a done-check miss. Whether it is done stays GitHub's to say, never Jev's, so Jev is not
@@ -16779,6 +16785,15 @@ is not, and curl missing is said. Not reached: the reason is `this machine canno
 the action (`REACH_ACTION`: set an address this machine reaches as the link base, or join the machine as a client
 target), never a mid-job question. A resuming job fails at once with it: it returns to the pane it holds there.
 
+**A job keeps its way to the hopper** (issue #2040). A reach check or a file write that cannot run (the machine's
+connection failed at that moment) is no answer that the machine is out of reach. A fresh job then runs without the
+proxy, and its progress says why. A job that ran there before (`job.agentSession` known: a resume or a turn) keeps the
+variables its start gave it — `HOPPER_GH`, `HOPPER_URL`, git's way to GitHub —, which point at the files its start
+placed, and its progress says that they were not placed again. Before, it ran on with none: a lane pod's job that had
+opened its pull requests found `HOPPER_GH` empty at its last step and ended failed. A failed job is also looked at once
+more at its source before it is assessed, whatever its failure says ("Failure assessment", `lookedAgain`): one that
+delivered ends finished.
+
 **A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
 machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
 jobs, and its jobs were given a loopback URL it does not reach: each failed at once. Now a fresh start that the reach check
@@ -21589,7 +21604,16 @@ held canary with no issue). A merge needs nothing: the next pass reads the pull 
 
 **A red batch** (part 2, `src/landing-batches/red.ts`, the rules `src/domain/landing-bisect.ts`, pure). Only failing
 checks say that the batch itself fails; a red batch for no check in time waits for the next merge as before, and one with
-merge conflicts gets a back-merge (below). When checks failed:
+merge conflicts gets a back-merge (below). A **cut-off check** (issue #2086) is no failing check: GitHub cancelled it,
+or it passed its time limit (`cancelled`, `timed_out`; a test shard at the job's limit), so the run says nothing of the
+tests. The check to require fails with it, so one cut-off check makes the whole run cut off (`batchChecks` kind
+`cut-off`), whatever else failed. A cut-off batch run is recorded failed with `cutOff`, closed, and starts no bisect;
+the next pass runs the same tip again (`batchDue`, "batch run #N was cut off"), at most `BATCH_RERUNS` (2) times in a
+row. Then the tip waits for a new merge, as a tip tested already: a cut-off check never bisects, never makes a culprit,
+never reverts and never files a fix issue, because CI timing on a shared runner is no behaviour of the code. A cut-off
+bisect run is `unknown` with `cutOff`: its point runs again, at most `BATCH_RERUNS` times, and only then the bisect
+ends with no culprit. A run with a failed test and a cut-off check runs again too: the run after it, with no cut-off
+check, bisects as before. When checks failed:
 
 1. **The batch's points.** The hopper compares the tested branch with the failed tip and walks the landing branch's
    first-parent line back from the tip (`batchPoints`): each point is the merge of one pull request (its number from
@@ -23319,6 +23343,10 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   the job's owner), `issue N` or `item N` (the job's own repository), a link to an issue or a pull request; a workflow run
   as `<repo> run N`, `workflow run N` (the job's own repository) or a link to `actions/runs/N`, its id five digits or more.
   The job's own issue is left out: its close ends the job (issue #1460).
+- **The owner a wait writes is kept** (issue #2066). A wait on `outside: octo/hopper#2042` whose `for:` said `hopper#2042`
+  watched `<the job's owner>/hopper#2042` too, which did not exist, and so ended at once. A `name#N` or `<repo> run N`
+  with no owner is the job's owner's only when the text does not name that same name and number with its owner: then
+  it is the one the text names.
 - **Read at each sync** (`src/sources/watched-ends.ts`, `JobSource.endedWatched`; GitHub: `src/sources/github/watched.ts`).
   Each item is read by its number, the pull request first and then the issue, and a run through Actions
   (`GitHubApi.workflowRun`, `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, Actions read). An issue closed, a pull
@@ -23329,8 +23357,9 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
   run does not exist (404, 410, GraphQL's "Could not resolve to …") is permanent, not a failed read: the item is
   `not_found`. A job one of whose items is `not_found` is woken at once, whatever its other items, with
-  `job.waited_items_ended { items }` of those items only; its note says each was not found, so the job rewrites its wait. A
-  refusal (403) or a rate limit is still a failed read.
+  `job.waited_items_ended { items }` of those items only; its note says each cannot be read — GitHub answers a repository
+  the hopper's connection has no access to as one that does not exist (issue #2066) —, so the job checks the owner and name
+  and rewrites its wait. A refusal (403) or a rate limit is still a failed read.
 - **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
   memory, the items each job was last woken for. After a restart such a job is woken once more.
 - **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the
@@ -28647,6 +28676,14 @@ or not there.
 and a kill point (a compensation's when it refuses). `HOPPER_CRASH_SEEDS` seeds (default 2) from `HOPPER_CRASH_SEED`
 (default from the clock); a failure names the seed and the kill point, so the same run is made again with that seed.
 
+**Where it runs** (part 10, `.github/workflows/crash.yml`, `vitest.crash.config.ts`, `npm run test:crash`). Not in
+`npm test`: each crash file runs for minutes, and with them the full suite's shards passed their 10-minute limit (issues
+#2046, #2080). The crash workflow runs `test/crash/` in four shards nightly on the default branch, with ten seeds for each
+randomised run; by hand, with the seeds and the first seed as inputs; and on a pull request that changes the sagas and
+their kinds, the GitHub outbox and its writes, the item lifecycle, landing batches, the failure sweep, the database clock,
+the stalling proxy or the crash tests. The secret canary workflow runs the `test/crash/secret-canary-*` files with this
+config too.
+
 **What part 1 covers: the remote access mint saga** (#1609). A kill at each kill point of each provider's mint, a kill
 before and after its compensation, and a connection dropped before and after the record of a step commits: a second
 hopper ends the saga, with one tunnel and one DNS record at Cloudflare (one credential and one domain at ngrok) and remote
@@ -28798,7 +28835,44 @@ removed first, then the pull request closed ("A stop between a GitHub call and i
 - **The branch first, not a sweep of old branches.** A sweep would need the branch of each ended run in the state, and a
   read of the repository's branches; the order needs neither.
 
-**Left for later parts.** The other saga kind (the item saga); kill
+**Part 9: the item lifecycle, and a drop inside a transaction** (2026-10-19, "The item lifecycle"). The item has no
+`sagas` row (part 8 of #1891): its saga is its event stream, and the item reconciler is the owner that moves it with no act
+of its own. The reconciler passes kill points (`itemKillPoint`, `src/work-items/reconcile.ts`): `item:block:inside-tx`
+inside a block's transaction, with its `work_item.reconciled` event written and its label rows not; `item:<kind>:after-record`
+once a correction's event is kept (`block`, `ask`, `replay`); and `item:run_again:before-call` and `after-call` around a
+run again. The source's give-back passes `give-back:rerun-by-<by>:after-give` between the item given back and the new job
+(`src/sources/rerun.ts`), as a person's Run again passes `give-back:rerun:after-give`. The test
+(`test/crash/item-kill.test.ts`, `test/crash/item-world.ts`) seeds three items on the node:http fake GitHub: #1 in PR open
+two hours with no pull request a job follows (blocked as stale), #3 blocked because its pull request was closed without a
+merge the first time (run again once), #5 blocked as stale an hour ago with no one asked (asked once). A crash host's
+reconciler checks every 300 ms (`CRASH_RECONCILE_MS`, the seam `itemReconcileEveryMs`), and the test makes each item's next
+check due as its time would. A second host ends what is left: #1 blocked once, `hopper:pr-ready` off and `hopper:blocked` on
+GitHub, each by one call; #5 asked about once; #3 one new job of its item and `hopper:pr-closed` off. A drop inside a
+transaction of more than one statement (`test/crash/item-drop.test.ts`): the proxy ends the connection at the block's first
+outbox row, before Postgres reads it or once it ran with the transaction open. Postgres rolls the transaction back: no
+event, no move, no row; a second host blocks the item once. The randomised run on GitHub's writes picks the item reconciler
+as a sixth family.
+**What it found.**
+- **A block wrote no label rows for a real job.** The reconciler kept a block's label rows only for a job of source kind
+  `github`; a connected account's job is of kind `github-account`. So its issue kept `hopper:pr-ready` until the label
+  mirror's next discover (an hour in a deploy's poll). Now every GitHub kind (`github`, `github-account`, `github-app`).
+- **The label mirror put an end label back on an issue its discover ran again.** After a kill between the give-back and
+  the new job, the next hopper's discover took the issue (no end label, assigned) as a new job, and its label mirror, in
+  the same pass, judged the item still blocked and put `hopper:pr-closed` back. A person who takes the end label off on
+  GitHub to run the item again got the same. Now the source passes the mirror no issue its discover takes as a new job.
+**Decisions (part 9).**
+- **After the give-back's kill, the new job is the source's sync's or the reconciler's.** Whichever of the next hopper's
+  two comes first makes it; the other finds the item's newest job is no longer the ended one. When the discover takes the
+  issue as a Run again from GitHub, no `job.rerun` by the reconciler is recorded and the new job gets no brief that names
+  the closed pull request. The test asserts the one job; the brief is not carried over.
+- **A block's own notice is not killed after its block.** The notice waits `RECONCILE_GRACE_MS` (two minutes) after the
+  block, longer than a scenario, so #5 is blocked already when the test starts.
+- **A kill before a run again's call delays it by one check** (5 minutes): the reconciler wrote the item's next check
+  before the call. The test makes the check due, as its time would; the run again is not lost.
+- **No drop at the block's COMMIT.** Every transaction ends with the same text, so the proxy cannot tell the block's; the
+  kill point after the record is the commit's boundary.
+
+**Left for later parts.** Kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below; a job's push: part 4); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28806,7 +28880,7 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/need-kill.test.ts` (part 7: a need step at each step boundary, while its box runs, while it compensates, and a second host while the box runs); `test/crash/landing-kill-*.test.ts` (part 8: landing batches killed after each GitHub write of five scenarios, and each scenario's clean run); `test/store/sagas-held.test.ts` and `test/vault/mint-bindings.test.ts` (part 7: the sagas another host holds; the reconcile pass leaves their bindings); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/need-kill.test.ts` (part 7: a need step at each step boundary, while its box runs, while it compensates, and a second host while the box runs); `test/crash/landing-kill-*.test.ts` (part 8: landing batches killed after each GitHub write of five scenarios, and each scenario's clean run); `test/crash/item-kill.test.ts` (part 9: the item reconciler killed inside a block's transaction, after each correction and around a run again); `test/crash/item-drop.test.ts` (part 9: the block's connection dropped inside its transaction); `test/work-items/reconcile-labels.test.ts` and `test/sources/github-label-mirror.test.ts` (part 9: a connected account's job's block keeps its rows; an issue a discover takes as a new job is not judged); `test/store/sagas-held.test.ts` and `test/vault/mint-bindings.test.ts` (part 7: the sagas another host holds; the reconcile pass leaves their bindings); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).

@@ -1,0 +1,73 @@
+# The crash harness (issue #1954, docs/design.md "The crash harness"): hoppers as processes of their own over one test
+# Postgres, killed with SIGKILL at kill points or cut off from the database mid-statement, then another hopper goes on.
+# Each file runs for minutes, so `pr / test` leaves them out (vitest.config.ts) and they run here: nightly on the default
+# branch (dev) with more seeds for the randomised runs, by hand, and on a pull request that changes the sagas, the
+# GitHub outbox and its writes, the item lifecycle, landing batches, or the saga kinds the harness kills.
+# A failed randomised run names its seed and kill point: run it again with that seed (`seed` input, HOPPER_CRASH_SEED).
+# Read-only and with no secrets: `pull_request`, never `pull_request_target`. Every outside service is a loopback fake.
+name: crash
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: How many seeds each randomised run picks (HOPPER_CRASH_SEEDS)
+        default: '10'
+      seed:
+        description: The first seed (HOPPER_CRASH_SEED); empty for one from the clock
+        default: ''
+  pull_request:
+    branches: [main, dev, beta, stable]
+    paths:
+      - src/sagas/**
+      - src/sources/github/outbox*
+      - src/sources/github/follow.ts
+      - src/sources/github/own-merge.ts
+      - src/sources/github/label-mirror.ts
+      - src/sources/rerun.ts
+      - src/work-items/**
+      - src/landing-batches/**
+      - src/failures/**
+      - src/github-proxy/**
+      - src/engine/job-*-saga.ts
+      - src/http/remote-access*.ts
+      - src/infra-plans/topology-discovery.ts
+      - src/sandbox/need-step-saga.ts
+      - src/windows-steps/**
+      - src/store/db-clock.ts
+      - test/crash/**
+      - test/support/stalling-proxy.ts
+      - vitest.crash.config.ts
+      - .github/workflows/crash.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crash-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  crash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: sudo ln -sf "$(command -v node)" /usr/bin/node
+      - run: npm ci
+      - run: npm run test:crash -- --shard=${{ matrix.shard }}/4 --maxWorkers=100%
+        env:
+          HOPPER_TEST_HOST_SERVICES: '0'
+          # Nightly: ten seeds per randomised run; by hand: the inputs; on a pull request: the default (2).
+          HOPPER_CRASH_SEEDS: ${{ github.event_name == 'schedule' && '10' || inputs.seeds || '' }}
+          HOPPER_CRASH_SEED: ${{ inputs.seed || '' }}

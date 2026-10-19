@@ -116,11 +116,15 @@ export function createLandingBatches(o: {
   async function runningPass(gh: LandingBatchGitHub, repo: string, tested: string, landing: string, run: RunningBatch, red: RedPass): Promise<void> {
     const pr = await gh.pullRequest(repo, run.pullRequest);
     const ended = { repo, tested, tip: run.tip, pullRequest: run.pullRequest, url: run.url };
-    const fail = async (reason: string, checks: FailedCheck[], close: boolean, conflicts = false): Promise<void> => {
+    const fail = async (reason: string, checks: FailedCheck[], close: boolean, conflicts = false, cutOff = false): Promise<void> => {
       // Only failing checks say the batch itself fails: a bisect finds the first change that does. Its points are read
-      // first, so its start is recorded with the failure, and both before the close (issue #1589).
-      const bisect = checks.length > 0 ? await bisectStart(red, { tested, tip: run.tip, checks, reason, pullRequest: run.pullRequest, url: run.url }) : undefined;
-      o.record({ type: 'landing_batch.failed', data: { ...ended, reason, checks: checks.map((c) => c.name), ...(checks.length > 0 ? { checkRuns: checks } : {}), ...(conflicts ? { conflicts } : {}) } });
+      // first, so its start is recorded with the failure, and both before the close (issue #1589). A cut-off check (issue
+      // #2086) says nothing of the batch: no bisect; the batch runs again (batchDue).
+      const bisect = checks.length > 0 && !cutOff ? await bisectStart(red, { tested, tip: run.tip, checks, reason, pullRequest: run.pullRequest, url: run.url }) : undefined;
+      o.record({
+        type: 'landing_batch.failed',
+        data: { ...ended, reason, checks: checks.map((c) => c.name), ...(checks.length > 0 ? { checkRuns: checks } : {}), ...(conflicts ? { conflicts } : {}), ...(cutOff ? { cutOff } : {}) },
+      });
       if (bisect) o.record(bisect);
       note(repo, { why: reason });
       await closeRun(gh, repo, close ? run.pullRequest : undefined, run.branch);
@@ -139,6 +143,7 @@ export function createLandingBatches(o: {
     const checks = batchChecks(await gh.checkRuns(repo, run.tip), pr, run.startedAt, o.now());
     if (checks.kind === 'pending') { note(repo, { why: `batch run #${run.pullRequest} waits for its checks` }); return; }
     if (checks.kind === 'red') return fail(checks.reason, checks.checks, true, pr.mergeable === false);
+    if (checks.kind === 'cut-off') return fail(checks.reason, checks.checks, true, false, true);
     const merged = await gh.merge(repo, run.pullRequest, run.tip, batchTitle({ landing, tested, tip: run.tip }));
     await gh.deleteBranch(repo, run.branch).catch((e: unknown) => o.log(`hopper: landing batches: ${run.branch} of ${repo} not removed: ${(e as Error).message}`));
     o.record({ type: 'landing_batch.promoted', data: { ...ended, merge: merged.sha } });

@@ -41,7 +41,11 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     expect(test.steps[0]!.env).toEqual({
       BASE: '${{ github.base_ref }}', GATES: '${{ needs.gates.result }}', AFFECTED: '${{ needs.affected.result }}', SHARDS: '${{ needs.shard.result }}',
     });
-    for (const job of Object.values(workflow.jobs)) expect(job['timeout-minutes']).toBeLessThanOrEqual(10);
+    // A time limit on each job; the test shards' with real headroom over a passing shard, about 9 minutes (issue #2086).
+    expect(workflow.jobs.gates!['timeout-minutes']).toBeLessThanOrEqual(10);
+    expect(test['timeout-minutes']).toBeLessThanOrEqual(10);
+    expect(workflow.jobs.affected!['timeout-minutes']).toBe(20);
+    expect(workflow.jobs.shard!['timeout-minutes']).toBe(20);
   });
 
   // Issue #1073: a pull request into main, the landing branch, runs only the tests its change affects; every
