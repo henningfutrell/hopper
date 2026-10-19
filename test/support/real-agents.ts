@@ -19,6 +19,8 @@ export interface RealAgent {
   files?(url: string): Record<string, string>;
   /** The faults it retries with no end (seen at its version here): only the turn's timeout ends the job. */
   retriesPastTimeout?: readonly ModelFault[];
+  /** The faults it fails at once on some runs and retries past the timeout on others: either way is its own. */
+  eitherWay?: readonly ModelFault[];
   /** A tool call that writes `text` to `file` in the work tree. */
   write(file: string, text: string): ModelStep;
 }
@@ -66,8 +68,10 @@ export const REAL_AGENTS: readonly RealAgent[] = [
     agent: 'omp', model: 'fake/fake-1',
     args: () => ['--auto-approve'],
     env: (url) => ({ ...proxied(url), FAKE_MODEL_KEY: KEY }),
-    // omp 18.7 retries a 429 and a 5xx with no limit (still at it after 150 s); 18.12 retries a cut stream too.
-    retriesPastTimeout: ['rate-limited', 'overloaded', 'server-error', 'cut'],
+    // omp 18.7 retries a 429 and a 5xx with no limit (still at it after 150 s).
+    retriesPastTimeout: ['rate-limited', 'overloaded', 'server-error'],
+    // omp 18.12 on a cut stream: some runs end at once on ECONNRESET, others retry until the timeout.
+    eitherWay: ['cut'],
     files: (url) => ({
       '.omp/agent/models.yml': `providers:\n  fake:\n    baseUrl: ${url}/v1\n    api: openai-completions\n    apiKey: FAKE_MODEL_KEY\n    models:\n      - id: fake-1\n        name: fake-1\n        reasoning: true\n`,
     }),
