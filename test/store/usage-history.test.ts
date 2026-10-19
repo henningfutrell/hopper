@@ -88,6 +88,19 @@ describe('usage history in the user store', () => {
     expect(s!.gaps).toEqual([{ from: iso(at(9)), to: iso(at(20)) }]);
   });
 
+  it('two machines that read one account seconds apart: the usual spacing is each reader\'s, so their normal cadence is no gap', () => {
+    store = t.open(t.url());
+    const tenMin = 600_000;
+    const at = (i: number) => T0 + i * tenMin;
+    const reads = [...Array.from({ length: 12 }, (_, i) => i), 30, 31, 32];
+    store.usageHistory.record([
+      ...reads.map((i) => sample(at(i), 10, { source: 'plan-a', machineId: 'a', account: 'me@example.com' })),
+      ...reads.map((i) => sample(at(i) + 4_000, 10, { source: 'plan-b', machineId: 'b', account: 'me@example.com' })),
+    ]);
+    const [s] = store.usageHistory.series({ ...range, stepMs: H });
+    expect(s!.gaps).toEqual([{ from: iso(at(11) + 4_000), to: iso(at(30)) }]);
+  });
+
   it('a usage window rolled over where its resetsAt moves on: the reset is at the old resetsAt, once however many machines read it', () => {
     store = t.open(t.url());
     const reset1 = iso(T0 + 3 * H);
