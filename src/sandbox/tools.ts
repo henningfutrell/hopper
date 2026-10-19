@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto';
 import type { AssetKind, OperationProfile } from '../domain/access.ts';
 import { toolSet, type BoxTool } from '../domain/sandboxes.ts';
+import { PORT_FORWARD_HELPER } from './port-forward-helper.ts';
 import { PROVIDER_MIRROR, TERRAFORM_CLI_CONFIG, TERRAFORM_APPLY_WRAPPER, TERRAFORM_WRAPPER } from './terraform-wrapper.ts';
 
 /** The repository the hopper tags the images it builds in. Local: it is never pushed. */
@@ -52,6 +53,17 @@ const RECIPES: Record<BoxTool, Recipe> = {
     url: 'https://get.helm.sh/helm-v4.3.0-linux-${a}.tar.gz',
     install: `tar -xzf "$f" -C /tmp && install -m 755 "/tmp/linux-$a/helm" ${DIR}/bin/helm`,
   },
+  // Issue #2146: the observability tools. jq's static binary, logcli from Loki's release, and promtool alone of the
+  // Prometheus release (the server is no tool of a box). The sums are each release's published ones.
+  jq: {
+    version: '1.8.2',
+    arch: {
+      amd64: { a: 'amd64', sum: 'b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f' },
+      arm64: { a: 'arm64', sum: '8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309' },
+    },
+    url: 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-${a}',
+    install: `install -m 755 "$f" ${DIR}/bin/jq`,
+  },
   kubectl: {
     version: 'v1.37.1',
     arch: {
@@ -60,6 +72,24 @@ const RECIPES: Record<BoxTool, Recipe> = {
     },
     url: 'https://dl.k8s.io/release/v1.37.1/bin/linux/${a}/kubectl',
     install: `install -m 755 "$f" ${DIR}/bin/kubectl`,
+  },
+  logcli: {
+    version: 'v3.7.8',
+    arch: {
+      amd64: { a: 'amd64', sum: '44b790601963193df9cc496f0c8d6782e5d28c90754ca7a697e3f5683dad2588' },
+      arm64: { a: 'arm64', sum: '830b431e1b28ee0291a0f3827484cc481e06849dd6e6f3dc5e984e34d5a645a7' },
+    },
+    url: 'https://github.com/grafana/loki/releases/download/v3.7.8/logcli-linux-${a}.zip',
+    install: `unzip -q "$f" -d /tmp/logcli && install -m 755 "/tmp/logcli/logcli-linux-$a" ${DIR}/bin/logcli`,
+  },
+  promtool: {
+    version: 'v3.15.0',
+    arch: {
+      amd64: { a: 'amd64', sum: '2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0' },
+      arm64: { a: 'arm64', sum: 'f1f90ec08e849d494ca66c611470afc50192f0355f1a61c33f2cbde02d067823' },
+    },
+    url: 'https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-3.15.0.linux-${a}.tar.gz',
+    install: `tar -xzf "$f" -C /tmp "prometheus-3.15.0.linux-$a/promtool" && install -m 755 "/tmp/prometheus-3.15.0.linux-$a/promtool" ${DIR}/bin/promtool`,
   },
   terraform: {
     version: '1.16.5',
@@ -132,6 +162,10 @@ RUN mkdir -p ${READ_ONLY_DIR} && echo ${b64(TERRAFORM_WRAPPER)} | base64 -d > ${
 const applyWrapperStep = (): string => `# the apply wrapper: no apply without a plan (issue #870)
 RUN mkdir -p ${APPLY_WRAPPER_DIR} && echo ${b64(TERRAFORM_APPLY_WRAPPER)} | base64 -d > ${APPLY_WRAPPER_DIR}/terraform && chmod 755 ${APPLY_WRAPPER_DIR}/terraform`;
 
+/** The port-forward helper step of an image with kubectl (issue #2146): the helper, in base64, beside kubectl. */
+const portForwardStep = (): string => `# the port-forward helper: a forward lives only as long as its command (issue #2146)
+RUN echo ${b64(PORT_FORWARD_HELPER)} | base64 -d > ${DIR}/bin/hopper-port-forward && chmod 755 ${DIR}/bin/hopper-port-forward`;
+
 /**
  * The image of `base` with `tools` added: its tag and its Containerfile. `readOnly` (a read-only template's boxes, issue
  * #715): terraform runs through the read-only wrapper, and installs providers only from the image's mirror. Else
@@ -145,7 +179,7 @@ export function toolsImage(base: { image: string; id?: string | undefined }, too
 FROM ${FETCH_BASE} AS fetch
 LABEL ${TOOLS_STAGE_LABEL}="fetch"
 RUN apt-get -o Acquire::Retries=4 update && apt-get -o Acquire::Retries=4 install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/* && mkdir -p ${DIR}/bin
-${set.map((tool) => step(tool, RECIPES[tool])).join('\n')}${wrapped ? `\n${readOnlySteps()}` : ''}${gated ? `\n${applyWrapperStep()}` : ''}
+${set.map((tool) => step(tool, RECIPES[tool])).join('\n')}${set.includes('kubectl') ? `\n${portForwardStep()}` : ''}${wrapped ? `\n${readOnlySteps()}` : ''}${gated ? `\n${applyWrapperStep()}` : ''}
 
 FROM ${base.image}
 COPY --from=fetch ${DIR}/ ${DIR}/
