@@ -5,8 +5,8 @@
 // same row: a comment held at GitHub while the second starts is posted once.
 import { afterEach, describe, expect, it } from 'vitest';
 import { waitFor } from '../support/wait.ts';
-import { killedAt, stopHosts } from './harness.ts';
-import { act, endClaims, openRows, OUTBOX_KILL_POINTS, outboxWorld, REPO, SCENARIO_MS, writtenOnce, type OutboxWorld } from './outbox-world.ts';
+import { stopHosts } from './harness.ts';
+import { act, killedThenSent, openRows, OUTBOX_KILL_POINTS, outboxWorld, REPO, SCENARIO_MS, writtenOnce, type OutboxWorld } from './outbox-world.ts';
 
 const worlds: OutboxWorld[] = [];
 afterEach(async () => {
@@ -19,12 +19,7 @@ describe('the GitHub outbox killed at each call of each write kind (issue #1959)
     it(`killed at ${point}: the next hopper sends what is left, each effect once`, async () => {
       const w = await outboxWorld();
       worlds.push(w);
-      const a = await w.host({ killPoint: point, connect: true });
-      await act(w, a);
-      await killedAt(a, point);
-      endClaims(w);
-      const b = await w.host();
-      await writtenOnce(w, b);
+      await killedThenSent(w, point);
     }, SCENARIO_MS);
   }
 });

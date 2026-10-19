@@ -210,14 +210,15 @@ STATE
   })),
   {
     // Issue #715: a read-only image installs providers only from its own mirror, so a provider it does not hold is not
-    // downloaded. hashicorp/null is small and real: with a registry in reach, init would install it.
+    // downloaded. hashicorp/dns is small, real and not in the mirror (issue #1977 put hashicorp/null there): with a
+    // registry in reach, init would install it.
     id: 'terraform.provider-download', title: 'install a provider the image does not hold (terraform on PATH)', kinds: ['terraform-workspace'], tool: 'terraform', expect: 'denied',
     denial: /was not found in any of the search locations|refused by the read-only wrapper/,
     script: `mkdir -p "$HOME/tf-provider" && cd "$HOME/tf-provider" && rm -rf .terraform .terraform.lock.hcl
 cat > main.tf <<'TF'
 terraform {
   required_providers {
-    probe = { source = "hashicorp/null" }
+    probe = { source = "hashicorp/dns" }
   }
 }
 TF

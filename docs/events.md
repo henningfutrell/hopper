@@ -1037,7 +1037,7 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 
 ## `job.parked`
 
-Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
+Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
 
 | field | type | required |
 |---|---|---|
@@ -1057,7 +1057,7 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #65
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move re-queues with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move and the busy-machine move (issue #1977) re-queue with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
 
 | field | type | required |
 |---|---|---|

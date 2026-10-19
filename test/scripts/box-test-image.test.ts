@@ -3,7 +3,7 @@
 // under the tag TEST_IMAGE names, as the box images are published.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { BOX_IMAGE, boxImage, TEST_IMAGE, testImageOf } from '../../src/sandbox/box-image.ts';
+import { BOX_IMAGE, boxImage, pulledImage, TEST_IMAGE, testImageOf } from '../../src/sandbox/box-image.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
 
 const read = (p: string): string => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
@@ -45,6 +45,11 @@ describe('the test image of the hopper\'s own branch (issue #1976)', () => {
     expect(testImageOf('beta')).toBe(`${BOX_IMAGE}:box-test-beta`);
     expect(testImageOf('canary')).toBe(`${BOX_IMAGE}:box-test-canary`);
     for (const branch of ['stable', 'main', undefined]) expect(testImageOf(branch)).toBe(TEST_IMAGE);
+  });
+
+  it('the image a template\'s box pulls is the one a template request checks is published (issue #1977)', () => {
+    expect(pulledImage(TEST_IMAGE, 'dev')).toBe(`${BOX_IMAGE}:box-test-dev`);
+    expect(pulledImage(`${BOX_IMAGE}:box-claude`, 'dev')).toBe(`${BOX_IMAGE}:box-claude`);
   });
 
   it('the image workflow publishes the tag of each branch it runs on', () => {

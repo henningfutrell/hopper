@@ -238,10 +238,14 @@ function met(why: string): CheckOutcome {
   return { met: true, note: why, told: commandNote(why) };
 }
 
-/** The leases on wait checks (issue #1694): one hopper tests a job's wait check at a time; a lease ends by itself at `until`. */
+/**
+ * The leases on wait checks (issue #1694): one hopper tests a job's wait check at a time; a lease ends by itself, `ms`
+ * after its claim on the database's clock (issue #1954), never on a hopper's own.
+ */
 export interface WaitCheckLeases {
-  /** True when `owner` now holds the job's lease: it was free, ended before `now`, its own, or for an older wait. */
-  claim(jobId: string, since: string, owner: string, until: string, now: string): boolean;
-  holds(jobId: string, owner: string, now: string): boolean;
+  /** True when `owner` now holds the job's lease for `ms`: it was free, ended, its own, or for an older wait. */
+  claim(jobId: string, since: string, owner: string, ms: number): boolean;
+  /** True while `owner` holds the job's lease and it has not ended. */
+  holds(jobId: string, owner: string): boolean;
   release(jobId: string, owner: string): void;
 }
