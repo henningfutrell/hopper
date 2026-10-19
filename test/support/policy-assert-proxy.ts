@@ -96,16 +96,6 @@ function s3Call(r: Request): Call | undefined {
   return undefined;
 }
 
-/** An EKS REST call (the API topology discovery lists and describes clusters with) as its IAM action. */
-function eksCall(r: Request): Call | undefined {
-  const parts = new URL(r.url, 'http://x').pathname.split('/').filter(Boolean);
-  if (parts[0] !== 'clusters' || parts.length > 2) return undefined;
-  const method = r.method.toUpperCase();
-  const action = parts.length === 1 ? (method === 'GET' ? 'ListClusters' : method === 'POST' ? 'CreateCluster' : undefined)
-    : method === 'GET' ? 'DescribeCluster' : method === 'DELETE' ? 'DeleteCluster' : undefined;
-  return action ? { service: 'eks', action } : undefined;
-}
-
 /** The IAM action of a request (and its resource where the proxy names one), or undefined when it cannot be named. */
 export function callOf(r: Request): Call | undefined {
   const signed = signer(r);
@@ -114,7 +104,6 @@ export function callOf(r: Request): Call | undefined {
   const target = header(r.headers, 'x-amz-target');
   if (target) return { service, action: target.slice(target.lastIndexOf('.') + 1) };
   if (service === 's3') return s3Call(r);
-  if (service === 'eks') return eksCall(r);
   const params = queryParams(r);
   const action = params.get('Action');
   if (!action) return undefined;
