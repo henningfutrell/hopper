@@ -39,7 +39,8 @@ describe('the reach check (issue #695)', () => {
   it('from this machine: a name it cannot resolve is said plainly, with the URL', async () => {
     const problem = await localShell().reach('http://hopper.invalid:4790');
     expect(problem).toContain('this machine cannot reach the hopper at http://hopper.invalid:4790');
-    expect(problem).toMatch(/resolve/i);
+    // curl says "Could not resolve host", or "Resolving timed out" when a slow resolver passes its connect timeout.
+    expect(problem).toMatch(/resolv/i);
   });
 
   it('from this machine: a hopper that refuses the name (421), or a proxy whose hopper does not answer (502), is not reached', async () => {
