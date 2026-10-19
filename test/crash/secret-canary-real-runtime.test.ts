@@ -114,7 +114,10 @@ describe.skipIf(!SOCKET)('the secret canary check on a real container runtime, a
         // The control: the scan of the runtime reads the box's home, where the secret is while the box runs.
         const inBox = await waitFor(async () => {
           if (!(await boxRunning(socket))) return undefined;
-          const found = scan({ 'vault secret': secret }, await runtimePlaces(socket, { before, home: HOME }));
+          const places = await runtimePlaces(socket, { before, home: HOME });
+          // The mark of the files is copied last, after the hopper removed its home tar from the work dir.
+          if (!places.some((p) => p.name.endsWith(' home') && p.text.includes('.hopper-need/.ready'))) return undefined;
+          const found = scan({ 'vault secret': secret }, places);
           return found.some((f) => f.place.endsWith(' home')) ? found : undefined;
         }, { timeoutMs: 120_000, intervalMs: 1000, what: 'the vault secret in the running need box\'s home' });
         expect(inBox.every((f) => f.place.startsWith('container '))).toBe(true);

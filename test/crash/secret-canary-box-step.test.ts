@@ -71,7 +71,9 @@ describe('the secret canary check, a box step\'s vault secret after a kill mid-s
       if (s.point) await killedAt(a, s.point);
       else {
         expect(asked.status, asked.text).toBe(202);
-        await waitFor(() => (running(w) && w.libpod.copies.length > 0 ? true : undefined), { timeoutMs: 30_000, what: 'the need box to run with its files' });
+        // The mark of the files is copied last, after the hopper removed its home tar: a kill before it is the short window
+        // between the tar's write and the end of its copy, which this test does not cover.
+        await waitFor(() => (running(w) && w.libpod.copies.some((c) => c.tar.includes('.hopper-need/.ready')) ? true : undefined), { timeoutMs: 30_000, what: 'the need box to run with all its files' });
         await a.kill();
       }
       endLeases(w.url);
