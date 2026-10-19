@@ -3,20 +3,21 @@
 // surface: usage now, its band and each machine's lane cap; the graph with a handle per limit. An admin moves a limit
 // (a handle's arrow keys, or the number fields) and sees the band and the lane caps follow before saving; a soft limit
 // at or above the hard one is refused in place, and nothing is posted; Save posts the limits. A viewer reads only.
+// Issue #2091: the soft lanes field beside them; the band and the lane caps show the soft lanes.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Role = 'viewer' | 'admin';
-const limits = { soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false };
+const limits = { soft: 0.7, hard: 0.95, softLanes: 1, defaults: { soft: 0.7, hard: 0.95, softLanes: 1 }, set: false };
 const usage = {
   readings: [{ source: 'plan', window: 'session', used: 60, limit: 100, unit: '%', at: '2026-10-08T12:00:00.000Z' }],
   sources: [{ name: 'plan' }], limits,
   machines: [
     { machineId: 'desk', label: 'desk', online: true, maxLanes: 4, usedFrac: 0.6, cap: 4, band: 'free', executors: [] },
     // Issue #1860: a machine with its own usage limits; the user's limits do not move its lane cap.
-    { machineId: 'seat', label: 'seat', online: true, maxLanes: 4, usedFrac: 0.6, cap: 2, band: 'soft', executors: [], usageLimits: { soft: 0.5, hard: 0.7 } },
+    { machineId: 'seat', label: 'seat', online: true, maxLanes: 4, usedFrac: 0.6, cap: 1, band: 'soft', executors: [], usageLimits: { soft: 0.5, hard: 0.7 } },
   ],
 };
 const history = {
@@ -113,21 +114,41 @@ describe('the usage limits on the Usage view', () => {
   it('moving a limit moves the band and the lane cap before saving; Save posts the limits', async () => {
     await boot('admin');
     await act(async () => { type(input('usage-soft-limit'), '50'); });
-    expect(text('usage-band')).toBe('soft: lanes scale down');
-    expect(cap()).toMatch(/4\s*3\/4 lanes/);
+    expect(text('usage-band')).toBe('soft: 1 lane per machine');
+    expect(cap()).toMatch(/4\s*1\/4 lanes/);
     // A handle's arrow keys: the hard limit down by 5% at a time.
     await act(async () => { slider('Hard').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true })); });
     expect(input('usage-hard-limit').value).toBe('90');
     await act(async () => { saveButton()!.click(); });
-    expect(daemon.posts).toEqual([{ path: '/ui/api/usage/limits', body: { soft: 0.5, hard: 0.9 } }]);
+    expect(daemon.posts).toEqual([{ path: '/ui/api/usage/limits', body: { soft: 0.5, hard: 0.9, softLanes: 1 } }]);
+  });
+
+  it('the soft lanes: the band and the lane caps show them before saving; Save posts them (issue #2091)', async () => {
+    await boot('admin');
+    expect(input('usage-soft-lanes').value).toBe('1');
+    await act(async () => { type(input('usage-soft-limit'), '50'); });
+    await act(async () => { type(input('usage-soft-lanes'), '3'); });
+    expect(text('usage-band')).toBe('soft: 3 lanes per machine');
+    expect(cap()).toMatch(/4\s*3\/4 lanes/);
+    // seat has its own limits but no soft lanes of its own: the user's apply.
+    expect(cap('seat')).toMatch(/^seat 1\s*3\/4 lanes/);
+    await act(async () => { saveButton()!.click(); });
+    expect(daemon.posts).toEqual([{ path: '/ui/api/usage/limits', body: { soft: 0.5, hard: 0.95, softLanes: 3 } }]);
+  });
+
+  it('soft lanes that are not a whole number from 0 are refused in place', async () => {
+    await boot('admin');
+    await act(async () => { type(input('usage-soft-lanes'), '-1'); });
+    expect(text('usage-limits-problem')).toBe('The soft lanes are a whole number from 0.');
+    expect(saveButton()!.disabled).toBe(true);
   });
 
   it('a machine with its own usage limits keeps its lane cap when the user\'s limits move, and says so (issue #1860)', async () => {
     await boot('admin');
-    expect(cap('seat')).toMatch(/^seat 2\/4 lanes/);
+    expect(cap('seat')).toMatch(/^seat 1\/4 lanes/);
     expect(cap('seat')).toContain('own limits 50% / 70%');
     await act(async () => { type(input('usage-soft-limit'), '50'); });
-    expect(cap('seat')).toMatch(/^seat 2\/4 lanes/);
+    expect(cap('seat')).toMatch(/^seat 1\/4 lanes/);
     expect(document.querySelector('[data-own-limits="seat"]')?.textContent).toBe('its own usage limits: 50% / 70%');
   });
 

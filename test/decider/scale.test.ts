@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decide } from '../../src/decider/index.ts';
-import { busy, inputs, job, lane, machine, reading } from './support.ts';
+import { busy, inputs, job, lane, machine, policy, reading } from './support.ts';
 
 const plan = (d: ReturnType<typeof decide>, id = 'local') => d.lanes.find((l) => l.machineId === id)!;
 
@@ -61,9 +61,8 @@ describe('lane scaling', () => {
 });
 
 describe('usage limits', () => {
-  it('soft limit scales the cap linearly', () => {
-    // used 0.825: floor(4 * (0.95-0.825)/(0.95-0.7)) = floor(2) = 2
-    const d = decide(inputs({ usage: [reading(82.5)], waiting: ['a', 'b', 'c'].map((i) => job(i)) }), 'd1');
+  it('past the soft limit the cap is the soft lanes (issue #2091)', () => {
+    const d = decide(inputs({ policy: { ...policy, softLanes: 2 }, usage: [reading(82.5)], waiting: ['a', 'b', 'c'].map((i) => job(i)) }), 'd1');
     expect(d.start).toHaveLength(2);
     expect(plan(d).target).toBe(2);
     expect(d.wait[0]!.reason).toContain('lane cap is 2 (usage soft limit');
@@ -105,14 +104,13 @@ describe('usage limits', () => {
     expect(plan(d).target).toBe(3);
   });
 
-  it('a session reading at 80% scales lanes down while an informational one at 99% is ignored', () => {
-    // used 0.8: floor(4 * (0.95-0.8)/(0.95-0.7)) = floor(2.4) = 2
+  it('a session reading at 80% caps lanes at the soft lanes while an informational one at 99% is ignored', () => {
     const usage = [
       reading(80, 100, { window: 'session', unit: '%' }),
       reading(30, 100, { window: 'week', unit: '%' }),
       reading(99, 100, { window: 'week (Fable)', informational: true, unit: '%' }),
     ];
-    const d = decide(inputs({ usage, waiting: ['a', 'b', 'c', 'd'].map((i) => job(i)) }), 'd1');
+    const d = decide(inputs({ policy: { ...policy, softLanes: 2 }, usage, waiting: ['a', 'b', 'c', 'd'].map((i) => job(i)) }), 'd1');
     expect(d.start).toHaveLength(2);
     expect(plan(d).target).toBe(2);
     expect(d.wait[0]!.reason).toContain('lane cap is 2 (usage soft limit');

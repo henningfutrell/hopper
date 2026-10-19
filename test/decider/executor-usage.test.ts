@@ -22,9 +22,9 @@ describe('usage per executor', () => {
   });
 
   it('the soft limit caps one executor\'s jobs only', () => {
-    // claude used 0.825: floor(4 * (0.95-0.825)/(0.95-0.7)) = 2
+    // claude used 0.825: in the soft band, its cap is the soft lanes, 2 (issue #2091).
     const waiting = [job('c1', { executor: 'claude' }), job('c2', { executor: 'claude' }), job('c3', { executor: 'claude' }), job('x1', { executor: 'codex' }), job('x2', { executor: 'codex' })];
-    const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], waiting }), 'd1');
+    const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], waiting, policy: { ...policy, softLanes: 2 } }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['c1', 'c2', 'x1', 'x2']);
     expect(d.wait).toEqual([{ jobId: 'c3', reason: expect.stringContaining('executor claude\'s lane cap on local is 2 (usage soft limit') }]);
   });
@@ -49,7 +49,7 @@ describe('usage per executor', () => {
     const lanes = [busy(1, 'x1'), busy(2, 'x2')];
     const running = [job('x1', { executor: 'codex', status: 'running' }), job('x2', { executor: 'codex', status: 'running' })];
     const waiting = [job('c1', { executor: 'claude' }), job('c2', { executor: 'claude' }), job('c3', { executor: 'claude' })];
-    const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], lanes, running, waiting }), 'd1');
+    const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], lanes, running, waiting, policy: { ...policy, softLanes: 2 } }), 'd1');
     // 4 lanes, 2 busy: room for 2, and claude may run 2.
     expect(d.start.map((s) => s.jobId)).toEqual(['c1', 'c2']);
     expect(d.wait).toEqual([{ jobId: 'c3', reason: expect.stringContaining('executor claude\'s lane cap on local is 2 (usage soft limit') }]);
@@ -78,7 +78,7 @@ describe('usage per executor', () => {
     expect(effect).toEqual({
       usedFrac: 0.1, cap: 4, band: 'free', ignored: [], burning: [],
       executors: [
-        { executor: 'claude', usedFrac: 0.825, cap: 2, band: 'soft' },
+        { executor: 'claude', usedFrac: 0.825, cap: 1, band: 'soft' },
         { executor: 'codex', usedFrac: 0.1, cap: 4, band: 'free' },
       ],
     });

@@ -141,5 +141,6 @@ export const priorityTagOf = (c: { store: UserStore }, jobId: string): PriorityT
 /** The policy the decider uses now: the usage limits the user set in the UI (issue #522), else the environment's. */
 export function policyOf(c: Pick<EngineContext, 'policy' | 'store'>): DeciderPolicy {
   const set = c.store.settings.getUsageLimits();
-  return set ? { ...c.policy, softLimit: set.soft, hardLimit: set.hard } : c.policy;
+  if (!set) return c.policy;
+  return { ...c.policy, softLimit: set.soft, hardLimit: set.hard, ...(set.softLanes === undefined ? {} : { softLanes: set.softLanes }) };
 }

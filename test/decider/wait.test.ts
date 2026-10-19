@@ -3,7 +3,7 @@
 // executor's) with its real number. Holds stay for the router, the queue gate and native holds.
 import { describe, expect, it } from 'vitest';
 import { decide } from '../../src/decider/index.ts';
-import { busy, inputs, job, machine, reading } from './support.ts';
+import { busy, inputs, job, machine, policy, reading } from './support.ts';
 
 const mixed = machine({ executors: ['claude', 'codex'] });
 const claudeAt = (used: number) => reading(used, 100, { source: 'claude', executors: ['claude'] });
@@ -17,10 +17,10 @@ describe('waiting for a lane', () => {
   });
 
   it('when the executor\'s cap binds, the reason names the executor cap with its number, not the machine\'s', () => {
-    // claude used 0.825: its lane cap is 2; the machine's stays 4 (codex is free).
+    // claude used 0.825: its lane cap is the soft lanes, 2; the machine's stays 4 (codex is free).
     const lanes = [busy(1, 'c1'), busy(2, 'c2')];
     const running = [job('c1', { executor: 'claude', status: 'running' }), job('c2', { executor: 'claude', status: 'running' })];
-    const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], lanes, running, waiting: [job('c3', { executor: 'claude' })] }), 'd1');
+    const d = decide(inputs({ machines: [mixed], usage: [claudeAt(82.5)], lanes, running, waiting: [job('c3', { executor: 'claude' })], policy: { ...policy, softLanes: 2 } }), 'd1');
     expect(d.hold).toEqual([]);
     expect(d.wait).toEqual([{ jobId: 'c3', reason: 'waiting for a lane: executor claude\'s lane cap on local is 2 (usage soft limit, used 83%), all 2 in use' }]);
   });

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { decide } from '../../src/decider/index.ts';
 import { AWAITING_ACCEPTANCE } from '../../src/decider/index.ts';
-import { busy, inputs, job, lane, machine, reading } from './support.ts';
+import { busy, inputs, job, lane, machine, policy, reading } from './support.ts';
 
 const idleOf = (d: ReturnType<typeof decide>, id = 'local') => d.lanes.find((l) => l.machineId === id)?.idle;
 
@@ -24,7 +24,7 @@ describe('why a lane is idle (issue #440)', () => {
     const lanes = [busy(1, 'r1'), busy(2, 'r2')];
     const d = decide(inputs({
       machines: [m], lanes, running: [job('r1', { status: 'running' }), job('r2', { status: 'running' })],
-      waiting: [job('w')], usage: [reading(80)],
+      waiting: [job('w')], usage: [reading(80)], policy: { ...policy, softLanes: 2 },
     }), 'd1');
     expect(d.wait.map((w) => w.jobId)).toEqual(['w']);
     expect(idleOf(d)).toMatch(/^usage pacing: lane cap 2 of 4 \(soft/);

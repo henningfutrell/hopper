@@ -83,11 +83,12 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     getUsageLimits() {
       const text = read('usageLimits');
       if (text === undefined) return undefined;
-      const { soft, hard } = JSON.parse(text) as UsageLimitPair;
-      return { soft, hard };
+      // Stored before issue #2091 with no soft lanes: the default applies.
+      const { soft, hard, softLanes } = JSON.parse(text) as UsageLimitPair;
+      return { soft, hard, ...(softLanes === undefined ? {} : { softLanes }) };
     },
     setUsageLimits(limits) {
-      write('usageLimits', JSON.stringify({ soft: limits.soft, hard: limits.hard }));
+      write('usageLimits', JSON.stringify({ soft: limits.soft, hard: limits.hard, ...(limits.softLanes === undefined ? {} : { softLanes: limits.softLanes }) }));
     },
     getLaneTuning() {
       const text = read('laneTuning');
