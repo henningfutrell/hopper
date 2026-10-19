@@ -5,7 +5,7 @@
 // Feature: a refused push says why
 //   Scenario: GitHub refuses a push's pack with 403
 //     Then the job's git is answered git's refusal, naming GitHub, its status and its text, and the push failed on the timeline
-//   Scenario: the hopper refuses a push's pack (a push it cannot read)
+//   Scenario: the hopper refuses a push's pack (its user's GitHub connection has a problem)
 //     Then the job's git is answered git's refusal, naming the hopper's rule, and nothing reaches GitHub
 //   Scenario: GitHub refuses a push's ref advertisement
 //     Then the job's git is answered as plain text that names GitHub, which git shows as a remote: line
@@ -19,7 +19,7 @@ const job = { id: 'job-1', status: 'running', laneId: 'm/lane-1', source: { sour
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
 
-function proxy(github: Response) {
+function proxy(github: Response, problem?: string) {
   const events: NewEvent[] = [];
   const sent: string[] = [];
   const connection: GitConnection = {
@@ -28,7 +28,7 @@ function proxy(github: Response) {
   };
   const user: GitUser = {
     user: { id: 'u1', holds: (p) => holdsProxyToken(key, p), job: (id) => (id === job.id ? job : undefined), machineOf: () => 'm', record: (e) => { events.push(e); } },
-    jobRepositories: () => ['acme/api'], contribution: () => false, git: () => connection,
+    jobRepositories: () => ['acme/api'], contribution: () => false, git: () => (problem ? { problem } : connection),
   };
   const fetch = (async (url: string) => { sent.push(url); return github; }) as unknown as typeof globalThis.fetch;
   const git = createGitProxy({ user: (id) => (id === 'u1' ? user : undefined), log: () => undefined, fetch, traffic: { gitFetch: () => undefined } as never });
@@ -65,12 +65,13 @@ describe('a refused push says why (issue #2042)', () => {
     expect(await text((await p.git.handle(push())).body)).toContain('ng refs/heads/feature/x GitHub refused the push (HTTP 403)\n');
   });
 
-  it('the hopper refuses a pack it cannot read: git\'s refusal names the hopper\'s rule; nothing reaches GitHub', async () => {
-    const p = proxy(new Response('0000'));
-    const r = await p.git.handle(push({ contentEncoding: 'br' }));
+  it('the hopper refuses the pack: git\'s refusal names the hopper\'s rule; nothing reaches GitHub', async () => {
+    const p = proxy(new Response('0000'), 'the GitHub connection must be signed in again');
+    const r = await p.git.handle(push());
     expect(r.status).toBe(200);
-    expect(await text(r.body)).toContain('ng refs/heads/feature/x refused: a push sent as br is not taken');
+    expect(await text(r.body)).toContain('ng refs/heads/feature/x refused: the GitHub connection must be signed in again');
     expect(p.sent).toEqual([]);
+    expect(p.events).toEqual([expect.objectContaining({ type: 'github_proxy.refused', data: expect.objectContaining({ refs: ['refs/heads/feature/x'] }) })]);
   });
 
   it('GitHub refuses the ref advertisement of a push: plain text that names GitHub, which git shows as a remote: line', async () => {
