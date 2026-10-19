@@ -1,11 +1,12 @@
 // Library skills `hopper-skill` serves (issue #1909, design.md "Library skills through hopper-skill"): built-in skills of
 // the skill library (src/skill-library/built-in/) that a job may also load by name, so every job of every agent CLI gets
 // the same text, at the same version, as the work skill's files carry (issue #1911). One text: the library's. A load
-// answers its `SKILL.md`, headed by its version; another file of it is its asset (`sh "$HOPPER_SKILL" orchestrate FILE`).
+// answers its `SKILL.md`, headed by its version; another file of it is its asset (`sh "$HOPPER_SKILL" work FILE`). An alias
+// (`orchestrate`, issue #2145) loads the skill it names.
 // A job that follows its repository's own copy says so (`--repo-copy`): the copy's folder, git tree and commit go on
 // `skill.loaded`, so the job record says which one it used.
-import type { LibrarySkillVersion } from '../domain/skill-library.ts';
-import { builtInSkills } from '../skill-library/index.ts';
+import { skillNameOf, type LibrarySkillVersion } from '../domain/skill-library.ts';
+import { builtInOf } from '../skill-library/index.ts';
 import { SERVED_LINES } from './catalog.ts';
 
 export type ServedSkillName = keyof typeof SERVED_LINES;
@@ -14,10 +15,11 @@ export const SERVED_SKILL_NAMES = Object.keys(SERVED_LINES) as ServedSkillName[]
 /** The file a load of a served skill answers. */
 export const SERVED_ENTRY = 'SKILL.md';
 
-export const isServedSkill = (name: string): name is ServedSkillName => (SERVED_SKILL_NAMES as readonly string[]).includes(name);
+/** Whether a load of `name` answers a served skill: by its name, or an alias of it. */
+export const isServedSkill = (name: string): boolean => (SERVED_SKILL_NAMES as readonly string[]).includes(skillNameOf(name));
 
-/** The built-in library skill of that name, as this build has it. */
-export const servedSkill = (name: ServedSkillName): LibrarySkillVersion => builtInSkills().find((s) => s.name === name)!;
+/** The built-in library skill of that name or alias, as this build has it. */
+export const servedSkill = (name: string): LibrarySkillVersion => builtInOf(name)!;
 
 /** What a load answers: the entry, or the file `file` names, headed by its version; or what is wrong. */
 export function servedText(skill: LibrarySkillVersion, file?: string): { text: string } | { no: string } {

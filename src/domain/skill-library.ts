@@ -15,8 +15,17 @@ export type WorkKind = typeof WORK_KINDS[number];
 export const workKindOf = (spec: { research?: true; proposal?: true }): WorkKind => (spec.research ? 'research' : spec.proposal ? 'proposal' : 'code');
 
 /** The built-in library skills, by name, and the one each kind of work gets while no setting names another. */
-export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal', 'orchestrate', 'iac', 'gitops-deploy'] as const;
+export const BUILT_IN_SKILL_NAMES = ['work', 'research', 'proposal', 'iac', 'gitops-deploy'] as const;
 export const DEFAULT_WORK_SKILLS: Readonly<Record<WorkKind, string>> = { code: 'work', research: 'research', proposal: 'proposal' };
+
+/**
+ * Other names of a built-in skill (issue #2145): `orchestrate` was a built-in skill of its own, now one with `work`. A
+ * `requires:`, a work skill setting, a skill rule or a load that names it gets the skill it names; no skill takes it.
+ */
+export const SKILL_ALIASES: Readonly<Record<string, string>> = { orchestrate: 'work' };
+
+/** The skill `name` names: the built-in skill an alias names, else itself. */
+export const skillNameOf = (name: string): string => (Object.hasOwn(SKILL_ALIASES, name) ? SKILL_ALIASES[name]! : name);
 
 /** The file every library skill has: what the job reads first. */
 export const SKILL_FILE = 'SKILL.md';
@@ -106,6 +115,8 @@ export interface SkillLibraryView {
   workSkills: WorkSkillSettings;
   defaults: Readonly<Record<WorkKind, string>>;
   kinds: readonly WorkKind[];
+  /** Other names of the built-in skills: alias → the skill it names. */
+  aliases: Readonly<Record<string, string>>;
 }
 
 /** Each kind of work's skill by name; absent: the next setting down. */

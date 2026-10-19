@@ -62,7 +62,7 @@ An issue filed this way says the hopper filed it. A follow-up gets no labels or 
 When no answer comes back to issue create, issue comment or pr create, hopper-gh sends it again by itself: the hopper
 answers the first one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
 With --key KEY (8 to 64 letters, digits, _ or -) you choose the key: the same key from this job, also after it resumed on
-another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the orchestrate skill).
+another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the work skill).
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
 required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open, and gives
 it the job sources' label and your user as assignee, so Intake lists it. When GitHub did not set the assignee, the

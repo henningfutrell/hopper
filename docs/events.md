@@ -3611,9 +3611,9 @@ Version 1 (`docs/schemas/library_skill.refreshed.v1.json`). A person refreshed a
 
 ```json
 {
-  "name": "orchestrate",
+  "name": "workflow-orchestrate",
   "repo": "owner/workflows",
-  "path": "skills/orchestrate",
+  "path": "skills/workflow-orchestrate",
   "ref": "HEAD",
   "commit": "9b2e4c7d1a3f5e6b8c0d2f4a6b8c0e2d4f6a8b0c",
   "version": "7c1e3a5b9d2f4e60",
@@ -3675,7 +3675,7 @@ Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this jo
   "from": "user",
   "requires": [
     {
-      "name": "orchestrate",
+      "name": "work",
       "version": "8a1d3c5e7f9b2d40",
       "seq": 0
     }

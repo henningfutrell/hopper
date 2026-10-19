@@ -46,8 +46,8 @@ export const SKILL_LIBRARY_EVENT_DOCS = {
 export const SKILL_LIBRARY_EVENT_EXAMPLES = {
   'library_skill.saved': { name: 'careful-work', version: '3f9c2a7b1d4e6f80', seq: 2, source: { kind: 'created' }, by: 'owner' },
   'library_skill.removed': { name: 'careful-work', by: 'owner' },
-  'library_skill.refreshed': { name: 'orchestrate', repo: 'owner/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: '9b2e4c7d1a3f5e6b8c0d2f4a6b8c0e2d4f6a8b0c', version: '7c1e3a5b9d2f4e60', changed: true, by: 'owner' },
+  'library_skill.refreshed': { name: 'workflow-orchestrate', repo: 'owner/workflows', path: 'skills/workflow-orchestrate', ref: 'HEAD', commit: '9b2e4c7d1a3f5e6b8c0d2f4a6b8c0e2d4f6a8b0c', version: '7c1e3a5b9d2f4e60', changed: true, by: 'owner' },
   'work_skills.changed': { from: { kinds: {}, repos: {} }, to: { kinds: { code: 'careful-work' }, repos: { 'owner/repo': { research: 'research' } } }, by: 'owner' },
-  'job.work_skill_chosen': { kind: 'code', name: 'careful-work', version: '3f9c2a7b1d4e6f80', seq: 2, from: 'user', requires: [{ name: 'orchestrate', version: '8a1d3c5e7f9b2d40', seq: 0 }], missing: [] },
+  'job.work_skill_chosen': { kind: 'code', name: 'careful-work', version: '3f9c2a7b1d4e6f80', seq: 2, from: 'user', requires: [{ name: 'work', version: '8a1d3c5e7f9b2d40', seq: 0 }], missing: [] },
   'job.conditional_skills_chosen': { skills: [{ name: 'iac', version: '9a1c3e5f7b2d4068', seq: 0, why: ['repository owner/infra'], done: [{ kind: 'checks-passed', checks: 'terraform plan*' }, { kind: 'plan-destroy', checks: 'terraform plan*' }] }] },
 } as const;

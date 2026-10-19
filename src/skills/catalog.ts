@@ -148,7 +148,7 @@ export const SKILLS: readonly Skill[] = [
  * line: the skill library's files (issue #1911), so one text exists.
  */
 export const SERVED_LINES = {
-  orchestrate: 'plan many steps as tasks; fan out sub-tasks; wait; finish',
+  work: 'plan tasks; change; fan out sub-tasks; wait; finish (also: orchestrate)',
 } as const;
 
 /** Every skill's name: the catalog's, then the served library skills (issue #1909). */

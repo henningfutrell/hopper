@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, SessionRejected } from '@/lib/api';
-import { draftFiles, draftProblem, draftRows, newSkillFiles, requiresLine, settingsNaming, shortVersion, SKILL_FILE, sourceLine, type DraftFile } from '@/model/skills';
+import { aliasesOf, draftFiles, draftProblem, draftRows, newSkillFiles, requiresLine, settingsNaming, shortVersion, SKILL_FILE, sourceLine, type DraftFile } from '@/model/skills';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 import type { LibrarySkillSummary, LibrarySkillVersion, SkillLibraryView } from '../../../src/domain/skill-library.ts';
@@ -84,6 +84,7 @@ export function LibrarySkill({ view, skill, onChange }: { view: SkillLibraryView
   const [busy, setBusy] = useState(false);
   const named = settingsNaming(view, skill.name);
   const requires = requiresLine(view, skill);
+  const aliases = aliasesOf(view, skill.name);
   const read = (kind: 'files' | 'edit') => {
     setOpen({ kind });
     readSkill(skill.name).then((s) => setOpen({ kind, files: s.files }), (e: Error) => setOpen({ kind, error: e.message }));
@@ -121,6 +122,7 @@ export function LibrarySkill({ view, skill, onChange }: { view: SkillLibraryView
         </div>
       </div>
       {skill.description && <p className="text-xs text-muted-foreground">{skill.description}</p>}
+      {aliases.length > 0 && <p className="text-xs text-muted-foreground">Also named {aliases.join(', ')}: a skill, setting or rule that names {aliases.length === 1 ? 'it' : 'one'} gets this skill.</p>}
       {requires && <p className="text-xs text-muted-foreground">This skill {requires}. A job gets them beside it.</p>}
       {named.length > 0 && <p className="text-xs text-muted-foreground">Chosen for {named.join('; ')}.</p>}
       {open.kind === 'duplicate' && (
