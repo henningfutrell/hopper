@@ -176,9 +176,11 @@ export async function ranAgainOnce(w: ItemWorld, h: CrashHost, point: string): P
   // A second host's passes go on meanwhile: a second run again would show in them.
   await new Promise((r) => setTimeout(r, 3 * RECONCILE_MS));
   expect((await reruns()).map((j) => j.source?.key)).toEqual([issueUrl(3)]);
-  // A kill between the give-back and the new job leaves the item labelled for the source again: the next sync takes it as
-  // a Run again from GitHub, which records no `job.rerun`. Else the reconciler's own Run again made it.
-  expect((await events(h, 'job.rerun')).filter((e) => e.jobId === jobId).map((e) => e.data.by)).toEqual(point === GIVEN ? [] : ['reconciler']);
+  // A kill between the give-back and the new job leaves the item labelled for the source again: the next hopper's sync may
+  // take it as a Run again from GitHub, which records no `job.rerun`, or its reconciler runs it again first. One job either way.
+  const by = (await events(h, 'job.rerun')).filter((e) => e.jobId === jobId).map((e) => e.data.by);
+  if (point === GIVEN) expect(by.length <= 1 && by.every((b) => b === 'reconciler'), JSON.stringify(by)).toBe(true);
+  else expect(by).toEqual(['reconciler']);
   expect(labels(w, 3), h.output()).not.toContain('hopper:pr-closed');
 }
 

@@ -28795,9 +28795,10 @@ as a sixth family.
   the same pass, judged the item still blocked and put `hopper:pr-closed` back. A person who takes the end label off on
   GitHub to run the item again got the same. Now the source passes the mirror no issue its discover takes as a new job.
 **Decisions (part 9).**
-- **The give-back's kill leaves the new job to the source's sync.** The next hopper's discover takes the issue as a Run
-  again from GitHub: one new job, as asked, but no `job.rerun` by the reconciler and no brief that names the closed pull
-  request. The test asserts the one job; the brief is not carried over.
+- **After the give-back's kill, the new job is the source's sync's or the reconciler's.** Whichever of the next hopper's
+  two comes first makes it; the other finds the item's newest job is no longer the ended one. When the discover takes the
+  issue as a Run again from GitHub, no `job.rerun` by the reconciler is recorded and the new job gets no brief that names
+  the closed pull request. The test asserts the one job; the brief is not carried over.
 - **A block's own notice is not killed after its block.** The notice waits `RECONCILE_GRACE_MS` (two minutes) after the
   block, longer than a scenario, so #5 is blocked already when the test starts.
 - **A kill before a run again's call delays it by one check** (5 minutes): the reconciler wrote the item's next check
