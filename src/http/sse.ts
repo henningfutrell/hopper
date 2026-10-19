@@ -91,7 +91,8 @@ export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
         const page = store.events.since(lastSeq, REPLAY_PAGE);
         for (const e of page) send(e, true);
         if (page.length === REPLAY_PAGE) {
-          if (res.writableNeedDrain) res.once('drain', replay);
+          // A drain can come in the same turn as the write (the socket took it at once): the next page still waits a turn.
+          if (res.writableNeedDrain) res.once('drain', () => setImmediate(replay));
           else setImmediate(replay);
           return;
         }
