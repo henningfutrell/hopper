@@ -7,6 +7,8 @@
 //   Scenario: each held job shows its level, why it is held and a link to the job; another hold is not listed
 //   Scenario: an operator approves a lowered job's trust, after a confirm, and lifts a quarantine
 //   Scenario: the nav badge counts the held jobs that wait on a person, not one Jev still checks
+//   Scenario: an operator cancels a held job from its row, after a confirm (issue #1974)
+//   Scenario: an operator approves the trust of a held job with no item (issue #1974)
 //   Scenario: a viewer reads the list and gets no button
 //   Scenario: with no job held by trust, Intake shows no such panel
 import { act, createElement } from 'react';
@@ -24,6 +26,8 @@ const lowered = { ...base, id: 'l1', holdReason: BELOW, stamp: { ...stamp('untru
 const quarantined = { ...base, id: 'q1', spec: { ...base.spec, goal: 'Update the deps' }, holdReason: QUARANTINED_HOLD, stamp: { ...stamp('quarantined'), was: 'trusted', by: 'person' } } as unknown as Job;
 const missing = { ...base, id: 'm1', spec: { ...base.spec, goal: 'Old job' }, holdReason: STAMP_MISSING } as unknown as Job;
 const checking = { ...base, id: 'c1', spec: { ...base.spec, goal: 'Being checked' }, holdReason: CHECK_PENDING, stamp: stamp('approved') } as unknown as Job;
+const NO_ITEM = 'trust stamp untrusted is below approved: held — a person approves its trust on the job, or cancels it';
+const bare = { ...base, id: 'u1', spec: { ...base.spec, goal: 'Queued by hand' }, holdReason: NO_ITEM, stamp: stamp('untrusted', ['source:none']) } as unknown as Job;
 const pending = { ...base, id: 'o1', spec: { ...base.spec, goal: 'Origin pending' }, holdReason: ORIGIN_PENDING, originPending: true } as unknown as Job;
 
 let calls: { method: string; path: string; body?: unknown }[] = [];
@@ -37,6 +41,8 @@ function fakeDaemon(role: 'operator' | 'viewer', waiting: Job[]) {
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
     '/api/usage': () => ({ readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }), '/api/accounts': () => ({ accounts: [] }),
     '/ui/api/jobs/l1/approve-trust': () => ({ ...lowered, status: 'queued', holdReason: undefined, stamp: { ...stamp('approved'), by: 'person' } }),
+    '/ui/api/jobs/u1/approve-trust': () => ({ ...bare, status: 'queued', holdReason: undefined, stamp: { ...stamp('approved'), by: 'person' } }),
+    '/ui/api/jobs/m1/cancel': () => ({ ...missing, status: 'cancelled', holdReason: undefined }),
     '/ui/api/jobs/q1/unquarantine': () => ({ ...quarantined, status: 'queued', holdReason: undefined, stamp: stamp('trusted') }),
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -112,6 +118,26 @@ describe('Held by trust in Intake (issue #655)', () => {
     await vi.waitFor(() => expect(posts().at(-1)).toEqual({ method: 'POST', path: '/ui/api/jobs/q1/unquarantine', body: {} }));
   });
 
+  it('an operator cancels a held job from its row, after a confirm (issue #1974)', async () => {
+    await boot();
+    await vi.waitFor(() => expect(rowOf('m1')).not.toBeNull());
+    for (const id of ['l1', 'q1', 'm1', 'c1']) expect(button(rowOf(id)!, /^Cancel$/)).toBeDefined();
+    await act(async () => { button(rowOf('m1')!, /^Cancel$/)!.click(); });
+    const d = await dialog();
+    expect(posts()).toEqual([]);
+    await act(async () => { [...d.querySelectorAll('button')].find((b) => b.textContent === 'Cancel job')!.click(); });
+    await vi.waitFor(() => expect(posts()).toEqual([{ method: 'POST', path: '/ui/api/jobs/m1/cancel', body: {} }]));
+  });
+
+  it('an operator approves the trust of a held job with no item (issue #1974)', async () => {
+    await boot('operator', [bare]);
+    await vi.waitFor(() => expect(rowOf('u1')).not.toBeNull());
+    await act(async () => { button(rowOf('u1')!, /Approve trust/)!.click(); });
+    const d = await dialog();
+    await act(async () => { [...d.querySelectorAll('button')].find((b) => b.textContent === 'Approve trust')!.click(); });
+    await vi.waitFor(() => expect(posts()).toEqual([{ method: 'POST', path: '/ui/api/jobs/u1/approve-trust', body: {} }]));
+  });
+
   it('the nav badge counts the held jobs that wait on a person, not one Jev still checks', async () => {
     await boot();
     const badge = () => document.querySelector<HTMLElement>('nav a[href="#intake"]')!;
@@ -122,7 +148,7 @@ describe('Held by trust in Intake (issue #655)', () => {
   it('a viewer reads the list and gets no button', async () => {
     await boot('viewer');
     await vi.waitFor(() => expect(rowOf('l1')).not.toBeNull());
-    expect(button(panel()!, /Approve trust|Lift quarantine|Quarantine/)).toBeUndefined();
+    expect(button(panel()!, /Approve trust|Lift quarantine|Quarantine|Cancel/)).toBeUndefined();
   });
 
   it('with no job held by trust, Intake shows no such panel', async () => {
