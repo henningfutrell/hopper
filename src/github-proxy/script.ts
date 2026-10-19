@@ -3,8 +3,9 @@
 // else, so it works on any machine a job runs on. Its help is the whole manual, read only when a job needs it. A 503
 // with Retry-After (the client door while the hopper is out of reach, issue #752) is waited out: `hcurl`. `pr wait`
 // (issue #1072 part 2) reads the job stream (issue #613) when the hopper opens a watch: `stream_wait`, as `hopper-skill`.
-// An issue create or comment (issue #1607) carries a resend key of its own, and is sent again with it while no answer
-// comes back (the connection broke): the hopper answers the first one again, so nothing is filed twice.
+// An issue create or comment (issue #1607), and a pull request create (issue #1959 part 4), carries a resend key of its
+// own, and is sent again with it while no answer comes back (the connection broke): the hopper answers the first one
+// again, so nothing is filed twice.
 
 import { STREAM_WAIT_SH } from '../job-stream/script.ts';
 import { HCURL_SH, TRACE_HEADER_SH } from './retry-after.ts';
@@ -14,7 +15,7 @@ export const PROXY_SCRIPT_VARIABLE = 'HOPPER_GH';
 export const PROXY_TOKEN_VARIABLE = 'HOPPER_TOKEN_FILE';
 export const PROXY_URL_VARIABLE = 'HOPPER_URL';
 
-/** How often hopper-gh sends an issue create or comment in all while no answer comes back: the same resend key each time (issue #1607). */
+/** How often hopper-gh sends an issue create, comment or pull request create in all while no answer comes back: the same resend key each time (issue #1607). */
 export const PROXY_RESEND_TRIES = 5;
 
 /** The route on the hopper's URL a job's requests go to. */
@@ -58,8 +59,8 @@ Read GitHub only this way: never curl api.github.com, never gh api, never a brow
 hopper read last when that is at most 30 seconds old, or when the pull request is merged: source cache, else source
 github, and readAt says when it was read. ledger, when the hopper follows the item, says where its work stands.
 An issue filed this way says the hopper filed it. A follow-up gets no labels or assignees: a person triages it.
-When no answer comes back to issue create or comment, hopper-gh sends it again by itself: the hopper answers the first
-one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
+When no answer comes back to issue create, issue comment or pr create, hopper-gh sends it again by itself: the hopper
+answers the first one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
 With --key KEY (8 to 64 letters, digits, _ or -) you choose the key: the same key from this job, also after it resumed on
 another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the orchestrate skill).
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
@@ -147,7 +148,7 @@ token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; tr
 ${HCURL_SH}
 if [ "$op" != pr.wait ]; then
   case $op in
-    issue.create|issue.comment) [ -n "$ownkey" ] || set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
+    issue.create|issue.comment|pr.create) [ -n "$ownkey" ] || set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
     *) tries=1 ;;
   esac
   # Sent again with the same key only when no answer came (curl's own error, not GitHub's or the hopper's: 22).

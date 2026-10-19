@@ -45,8 +45,8 @@ export interface FakeCloudflare extends Fake {
   records: Map<string, { name: string; content: string; proxied: boolean }>;
 }
 
-/** Cloudflare: one account `acc1`, the zones named, the API token `token` alone. */
-export async function fakeCloudflare(o: { token: string; zones?: string[]; failDns?: boolean }): Promise<FakeCloudflare> {
+/** Cloudflare: one account `acc1`, the zones named, the API token `token` alone; a tunnel's token is `tunnelToken` and its id. */
+export async function fakeCloudflare(o: { token: string; zones?: string[]; failDns?: boolean; tunnelToken?: string }): Promise<FakeCloudflare> {
   const tunnels: FakeCloudflare['tunnels'] = new Map();
   const records: FakeCloudflare['records'] = new Map();
   let n = 0;
@@ -70,7 +70,7 @@ export async function fakeCloudflare(o: { token: string; zones?: string[]; failD
       t.ingress = (body as { config: { ingress: unknown } }).config.ingress;
       return ok({});
     }
-    if ((x = /^\/accounts\/acc1\/cfd_tunnel\/([^/]+)\/token$/.exec(p)) && m === 'GET') return tunnels.has(x[1]!) ? ok(`cf-tunnel-token-${x[1]}`) : undefined;
+    if ((x = /^\/accounts\/acc1\/cfd_tunnel\/([^/]+)\/token$/.exec(p)) && m === 'GET') return tunnels.has(x[1]!) ? ok(`${o.tunnelToken ?? 'cf-tunnel-token-'}${x[1]}`) : undefined;
     if ((x = /^\/accounts\/acc1\/cfd_tunnel\/([^/]+)\/connections$/.exec(p)) && m === 'DELETE') return tunnels.has(x[1]!) ? ok(null) : undefined;
     if ((x = /^\/accounts\/acc1\/cfd_tunnel\/([^/]+)$/.exec(p)) && m === 'DELETE') return tunnels.delete(x[1]!) ? ok({}) : undefined;
     if (/^\/zones\/[^/]+\/dns_records$/.test(p) && m === 'GET') return ok([...records].filter(([, r]) => r.name === q.get('name')).map(([id, r]) => ({ id, ...r })));

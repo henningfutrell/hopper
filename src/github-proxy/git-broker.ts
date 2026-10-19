@@ -32,6 +32,7 @@ import { parseProxyToken } from './token.ts';
 import type { ProxyUser } from './broker.ts';
 import type { ShrunkFile } from '../domain/shrink-guard.ts';
 import type { GitPushes } from './push-saga.ts';
+import { passProxyKillPoint } from './resend.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
 /** A push's body unpacked in zlib's thread pool, not on the event loop (issue #1154). */
@@ -268,8 +269,11 @@ export function createGitProxy(o: GitProxyOptions) {
       const sends = push && !at.advertise;
       const kept = sends ? o.pushes?.begin(parts.userId, { jobId: job.id, requestId, repo: at.repo, refs, ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}), ...(machine ? { machine } : {}), ...acting, via: usedHere ? at.repo : own }) : undefined;
       try {
+        // The crash harness's kill points (issue #1954): the saga kept and nothing sent; GitHub answered and nothing recorded.
+        if (sends) passProxyKillPoint('git.push', 'before-send');
         const answer = await forward(r, at, git);
         if (sends) {
+          passProxyKillPoint('git.push', 'after-send');
           if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
           else record('github_proxy.failed', { refs: refs.map((c) => c.ref), error: `GitHub answered ${answer.status}` });
         }

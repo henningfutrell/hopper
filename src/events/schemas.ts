@@ -378,7 +378,7 @@ export const EVENT_SCHEMAS = {
   // A push the shrink guard refused (issue #1096): the files it would empty or shrink.
   'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), refs: z.array(z.string()).optional(), reason: z.string(), shrunk: z.array(strict({ path: z.string(), from: z.number().int(), to: z.number().int(), against: z.enum(['base', 'head']) })).optional() }),
   // A write with a resend key on its way to GitHub (`sending`, issue #1959 part 2): what a send again after a crash looks for first.
-  'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }), 'github_proxy.sending': strict({ ...proxyAsked, op: z.enum(['issue.create', 'issue.comment']), repo: z.string(), number: z.number().int().optional(), key: z.string() }),
+  'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }), 'github_proxy.sending': strict({ ...proxyAsked, op: z.enum(['issue.create', 'issue.comment', 'pr.create']), repo: z.string(), number: z.number().int().optional(), key: z.string() }),
   // Skills (issue #582): what a running job asked the hopper to set up, and the answer. On the job's timeline;
   // `decision` names Access's decision (issue #559) when a link was checked.
   'skill.listed': strict(skillAsked),

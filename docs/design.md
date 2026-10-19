@@ -2070,6 +2070,10 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
    (`GitHubApi.openPullRequests`, the newest 100 open; asked only on a miss): no cross-reference shows it. A pull request
    on such a branch whose body says `Part of #N` is still a part, never the whole (issue #721: a part on `issue-N-…`
    ended the job as the whole issue, and its merge put `hopper:done` on an issue with work left).
+   The job's own pull request **in another repository** (issue #2004: the issue's change lands there, as infrastructure
+   code does) counts the same: opened at or after the job's `createdAt`, or with a push from the job since. There a bare
+   `#N` names that repository's issue, so it names the issue by its full name (`owner/name#N`) or its URL, and
+   `Part of owner/name#N` is a part. Another repository's pull request the job did not open or push to never counts.
 3. The issue **asks to update the pull requests it names** (`asksToUpdate`: its title, or a line of its body, starts with
    bring / rebase / update / refresh / fix the conflicts and names a pull request): each pull request it names in its own
    repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an issue counts for nothing) is
@@ -28651,15 +28655,30 @@ repositories take a lease's length, not its end: `take(jobId, { owner, ms }, for
   is there (`test/store/job-leases.test.ts`), with each host's clock a faked `Date`. The wait-check test runs two wait
   sweepers with their own clocks on one database (`test/engine/wait-checks.test.ts`).
 
-**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
-points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below); the nightly run of N seeds and
+**Part 4: a job's push** (2026-10-19, "A push kept as a saga"). The git broker passes two kill points around its call to
+GitHub: `proxy:git.push:before-send` (the `git-push` saga kept, nothing sent) and `proxy:git.push:after-send` (GitHub
+answered, the broker recorded nothing). The test (`test/crash/push-kill.test.ts`, `test/crash/push-world.ts`) runs a job on
+a first host whose real git pushes a new branch through it, to the fake GitHub's `git-http-backend` in the test process,
+and kills the host at each of those points and at each boundary of the saga's `settle` step. A second host settles the
+saga: it records the push once, `github_proxy.done` when GitHub holds the branch at the pushed commit, else
+`github_proxy.failed`; the job's git then sends the push again to the second host, and GitHub holds the branch. The
+randomised run on GitHub's writes (`test/crash/random-github.test.ts`) picks the push as a fourth family. **What it found:**
+nothing; the saga and its read of GitHub's refs held at every point.
+**Decisions (part 4).**
+- **The broker's points take the proxy's names** (`proxyKillPoint('git.push', …)`): the push is one of the job's writes
+  through the proxy, with the op its events already carry.
+- **The test checks the event against GitHub, not against the point.** Where the saga's `before-do` kills the host, the
+  push may or may not have reached GitHub yet; the test asserts the one event says what GitHub holds.
+
+**Left for later parts.** The other saga kinds (need step, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
+points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below; a job's push: part 4); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
 
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).
@@ -28825,6 +28844,61 @@ second one from the same head, so the next hopper's answer to the same request i
 **Verification:** `test/crash/act-kill.test.ts` (9 scenarios; on the code before this change, Close PR at
 `outbox:pull_request:after-send` and Merge now at `follow:merge:after-issue-close` fail); `test/crash/random-github.test.ts`;
 `test/sources/github-own-merge.test.ts`; `test/integration/merge-marker.test.ts`.
+
+## A job's pull request under crashes (issue #1959, part 4, 2026-10-18)
+
+**Why.** Part 2 gave a job's issue create and comment a resend key and a post key ("The GitHub proxy under crashes"). A
+pull request a job opens (`pr.create`) had neither. A hopper killed after GitHub opened it, and before it recorded
+`github_proxy.done`, left the job with no answer. The job asked again and got a refusal (GitHub opens one pull request
+from a head only), or, after a close, a second pull request. The new crash test shows it on the code before this change:
+the request with a key is refused.
+
+**The change.** `pr.create` is a write with a resend key, as an issue create is:
+- `hopper-gh pr create` sends a key (`key=`), the same each time it sends the request again after no answer came back
+  (`src/github-proxy/script.ts`); the proxy takes it (`policy.ts`).
+- The broker records `github_proxy.sending` with `op: pr.create`, and the pull request's body ends with the post key.
+- Sent again with a key that was sending before and has no answer recorded, the pull request is looked for first: the
+  pull requests from the request's head (`GET /pulls?head=<owner>:<branch>&state=all`), the one whose body carries the
+  post key (`src/github-proxy/resend.ts`, `findPull`). Found, it is answered (`found: true`) with its number, link and
+  branches. Not found, it is opened.
+- A key already done is answered from its `github_proxy.done` (`replayed`), as for an issue.
+
+**The crash tests.** `test/crash/proxy-kill.test.ts` has a write "a pull request" with the kill points
+`proxy:pr.create:before-send` and `proxy:pr.create:after-send`. GitHub then holds one pull request from the head, opened
+once, its body with the post key, and `github_proxy.done` is recorded once. The randomised run
+(`test/crash/random-github.test.ts`) picks it as it picks the other writes.
+
+**Decisions.**
+- **The post key, not the head alone.** GitHub keeps one open pull request per head, but a head can have a closed one, or
+  one a person opened. The post key finds only the one this request opened.
+- **The look-up reads every state.** A pull request a job closed after the first send is still the one it opened.
+
+**Residual risk, stated.** As in part 2: a create GitHub finishes only after the look-up found nothing is refused by GitHub
+(same head) or, after a close, makes a second one.
+
+**Verification:** `test/crash/proxy-kill.test.ts` (15 scenarios; the two of a pull request fail on the code before this
+change); `test/crash/random-github.test.ts`.
+
+## The secret canary scan after a crash (issue #1957, part 3, 2026-10-18)
+
+A crash must not leave a secret where a clean run does not. `test/crash/secret-canary-kill.test.ts` runs the **canary
+scan** (`test/support/secret-canary.ts`) over the crash harness:
+
+- **The mint.** A host turns remote access on at Cloudflare and is killed at
+  `saga:remote-access-mint-cloudflare:token:after-do`: the tunnel's token came and was sealed, and the step is not
+  recorded. A second host ends the mint. Canaries: the master key, the provider's credential, the minted tunnel token
+  (the fake Cloudflare's `tunnelToken` option).
+- **The GitHub proxy.** A job's `issue.create` is killed at `proxy:issue.create:after-send`: GitHub took it with the
+  connected account's token, and the hopper did not record it. The job sends it again to a second host. Canaries: the
+  master key, the account's token (`CRASH_GITHUB_TOKEN`), the job's proxy token.
+- **The scan** reads the whole database, each host's work dir, each host's output (stdout and stderr: its logs and its
+  crash output; not the harness's ready line, which carries the proxy token for the test) and the fake GitHub's requests
+  (but the connection's own `authorization`). No canary is found.
+- **The control.** A host given `CRASH_PLANT` ends with an unhandled rejection that says it; the scan names that host's
+  output.
+
+**Left for later parts.** A kill mid-step of a box, Windows or need step with a vault secret; WAL, container layers and
+inspect output, process argv and environment of spawned tools; the e2e mode and its nightly run.
 
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
@@ -29021,3 +29095,33 @@ the wait, a move from the checkpoint, a live pane ended first, a new start, a ch
 `test/sandbox/image-published.test.ts` (the registry double: published, 404, unreachable, local, kept answers, image
 references), `test/skills/template-request-image.test.ts` (refused with no template saved, no registry asked for an earlier template),
 `test/sandbox/tools.test.ts` and `test/sandbox/check-script.test.ts` (the mirror's providers, the probe's provider).
+
+## Acceptance tests, part 3: the CI run (issue #1958, 2026-10-18)
+
+**Why.** Parts 1 and 2 wrote the acceptance tests, but they skip where no CLI is installed, and `pr / test` installs
+none. So nothing ran them, and a real CLI or TUI that changed was still not seen.
+
+**The workflow** (`.github/workflows/agent-acceptance.yml`, checked by `test/scripts/agent-acceptance-workflow.test.ts`):
+
+| Job | When | What |
+|---|---|---|
+| `print-agents` | nightly on `dev`, by hand, and on a pull request that changes `src/executors/`, the acceptance tests or their fakes | installs claude, codex, opencode and omp (mise, the latest release of each; opencode by its aqua backend, `aqua:anomalyco/opencode`), then runs `test/acceptance/print-agents.test.ts`, `fake-drift.test.ts` and `hooks-mcp.test.ts` |
+| `tui` | nightly and by hand only | installs claude and herdr (herdr's installer, as the image does), runs `test/acceptance/tui-screens.test.ts` with `HOPPER_ACCEPTANCE_TUI=1`, and uploads `HOPPER_ACCEPTANCE_TUI_OUT` as the artifact `tui-screens`, also when the check fails |
+
+**Decisions.**
+- **A CLI that is not there fails the run.** Each CLI is named by `HOPPER_ACCEPTANCE_<AGENT>_BIN` (`mise which`), which
+  `realBin()` reads first. A failed install stops the step, so no test skips in CI.
+- **The latest release of each CLI**, not a pinned one: the nightly run must see a CLI that changed. The workflow is no
+  required check, so a CLI release that breaks it does not stop a merge; it shows as a red nightly run.
+- **mise installs the CLIs** (`jdx/mise-action`), the same installs these tests were written against. It has a binary
+  release of each, with no wrapper script on `PATH` that `realBin()` must skip.
+- **No database.** These tests use none, so `HOPPER_TEST_POSTGRES_URL` names a closed port and no Postgres starts.
+- **Read-only, no secret.** `pull_request`, never `pull_request_target`; the CLIs get a dummy key, and their proxy
+  variables name the fake server, which refuses every other host.
+
+**Not done: the drift check of `fake-cursor-agent.mjs`.** Cursor's agent has no setting for its model endpoint, so a run
+of it always calls a real model. The issue names cursor-agent only "where its endpoint can be overridden".
+
+**Verification:** `test/scripts/agent-acceptance-workflow.test.ts` (failed first, then passes); the three test files of
+`print-agents` pass locally with the CLIs named as the workflow names them (claude 2.1.292, codex 0.161.0, opencode
+1.19.3, omp 18.7.0).

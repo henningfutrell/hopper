@@ -117,7 +117,7 @@ const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCas
 /** A request that carries a resend key: its job's token and the key; undefined: none. */
 const resendOf = (authorization: string | undefined, body: unknown): string | undefined => {
   const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
-  return (raw.op === 'issue.create' || raw.op === 'issue.comment') && typeof raw.key === 'string' ? `${authorization ?? ''}\0${raw.key}` : undefined;
+  return (raw.op === 'issue.create' || raw.op === 'issue.comment' || raw.op === 'pr.create') && typeof raw.key === 'string' ? `${authorization ?? ''}\0${raw.key}` : undefined;
 };
 
 /**
@@ -269,7 +269,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const postKey = resendKey !== undefined ? proxyPostKey(job.source?.key ?? job.id, resendKey) : undefined;
       const keyed = (text: string): string => (postKey ? withPostKey(text, postKey) : text);
       const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: keyed(`${masked.body}${filedNote(job.id, requestId, parent)}`) }
-        : masked.op === 'issue.comment' ? { ...masked, body: keyed(masked.body) } : masked;
+        : masked.op === 'issue.comment' || masked.op === 'pr.create' ? { ...masked, body: keyed(masked.body) } : masked;
       // A repo query (issue #1074): what the cache kept, when it answers now; the ledger's word on the item beside it.
       const read = isRead(req.op);
       const key = queryKey(req);

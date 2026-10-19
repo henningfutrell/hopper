@@ -145,7 +145,7 @@ describe('GitHub through the hopper (issue #563)', () => {
     const pr = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/tools', '--head', 'issue-7-faster', '--title', 'Faster', '--body', 'Closes #7']);
     expect(json(pr)).toMatchObject({ ok: true, op: 'pr.create', number: 8, head: 'issue-7-faster', base: 'dev', url: `${t.github.url}/octo/tools/pull/8` });
     const prView = await hopperGh(t.root, env, ['pr', 'view', '8', '--repo', 'octo/tools']);
-    expect(json(prView)).toMatchObject({ number: 8, head: 'issue-7-faster', base: 'dev', merged: false, body: 'Closes #7' });
+    expect(json(prView)).toMatchObject({ number: 8, head: 'issue-7-faster', base: 'dev', merged: false, body: expect.stringMatching(/^Closes #7\n\n<!-- hopper post proxy-[0-9a-f]{24} -->$/) });
 
     const failed = await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/tools', '--head', 'dev', '--base', 'dev', '--title', 'Nothing', '--body', 'x']);
     expect(failed.code).toBe(1);

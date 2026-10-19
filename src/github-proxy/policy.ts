@@ -31,7 +31,7 @@ const text = (max: number) => z.string().min(1).max(max);
 const branch = z.string().regex(/^[A-Za-z0-9._/-]{1,200}$/, 'a branch name: letters, digits, . _ / -');
 /** A pull request's head: a branch, or `<owner>:<branch>` for a branch of a fork (issue #429). */
 const head = z.string().regex(/^(?:[A-Za-z0-9-]{1,39}:)?[A-Za-z0-9._/-]{1,200}$/, 'a branch name, or owner:branch for a fork\'s');
-/** A resend key (issue #1607): hopper-gh makes one for each issue create and comment, the same each time it sends it. */
+/** A resend key (issue #1607): hopper-gh makes one for each issue create, comment and pull request create (issue #1959), the same each time it sends it. */
 const key = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'a resend key: 8 to 64 letters, digits, _ or -');
 /** A flag: from a form it comes as the text `true`. */
 const flag = z.union([z.literal('true'), z.literal(true)]).transform(() => true as const);
@@ -43,7 +43,7 @@ export const proxyRequest = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('issue.view'), repo, number }),
   z.strictObject({ op: z.literal('issue.comments'), repo, number }),
   z.strictObject({ op: z.literal('issue.close'), repo, number }),
-  z.strictObject({ op: z.literal('pr.create'), repo, head, base: branch.optional(), title: text(256), body: text(60_000) }),
+  z.strictObject({ op: z.literal('pr.create'), repo, head, base: branch.optional(), title: text(256), body: text(60_000), key: key.optional() }),
   z.strictObject({ op: z.literal('pr.view'), repo, number }),
   // The repo queries of a pull request (issue #1074): its diff, its commits, the check runs of its head commit.
   z.strictObject({ op: z.literal('pr.diff'), repo, number }),

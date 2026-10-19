@@ -8,10 +8,11 @@
 // through a proxy), HOPPER_WORK_DIR (this host's own), CRASH_CLOUDFLARE_URL and CRASH_NGROK_URL (the providers' fakes), CRASH_MASTER_KEY (the same for every host of a test);
 // HOPPER_TEST_KILL_POINT arms a kill point (src/sagas/kill-points.ts). CRASH_GITHUB_URL (issue #1959): the node:http fake
 // GitHub, and the connected account's job source `github` over it; CRASH_GITHUB_CONNECT, its job repositories (comma
-// separated), connects the account first. With a GitHub, the host syncs once before it serves. CRASH_CLOCK_SKEW_MS puts
+// separated), connects the account first, with CRASH_GITHUB_TOKEN as its token when set. With a GitHub, the host syncs once before it serves. CRASH_CLOCK_SKEW_MS puts
 // this host's clock that far ahead of the real time (behind, when negative), as a machine whose clock is off: every
 // `new Date()` and `Date.now()`. CRASH_JOB (`owner/name#N`): the host pulls a job of that issue that sleeps on the local
 // machine, and the ready line names it and its proxy token, so the test asks the GitHub proxy as that job does.
+// CRASH_PLANT (issue #1957): once it serves, the host ends with an unhandled rejection that says that value.
 import '../support/isolate.ts';
 import { cloudflareProvider } from '../../src/remote-access/cloudflare.ts';
 import { ngrokProvider } from '../../src/remote-access/ngrok.ts';
@@ -47,7 +48,7 @@ const app = await startTestApp({
     ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
   },
 });
-if (connect) connectGitHub(app, connect.split(','), { token: TEST_ACCOUNT_TOKEN, key: need('CRASH_MASTER_KEY') });
+if (connect) connectGitHub(app, connect.split(','), { token: process.env.CRASH_GITHUB_TOKEN ?? TEST_ACCOUNT_TOKEN, key: need('CRASH_MASTER_KEY') });
 if (github) await app.sync();
 let job: { job: string; proxyToken: string } | undefined;
 if (issue) {
@@ -57,4 +58,8 @@ if (issue) {
   job = { job: pulled.id, proxyToken: proxyToken(app.user().store.settings.getLinkKey()!.privateKey, app.user().user.id, pulled.id) };
 }
 process.once('SIGTERM', () => { void app.app.stop().finally(() => process.exit(0)); });
-process.stdout.write(`crash-host-ready ${JSON.stringify({ url: app.url, token: await app.login(), ...job })}\n`);
+// A planted leak (issue #1957), once the ready line is out: the secret canary scan of a host's crash output must find it.
+const plant = process.env.CRASH_PLANT;
+process.stdout.write(`crash-host-ready ${JSON.stringify({ url: app.url, token: await app.login(), ...job })}\n`, () => {
+  if (plant) void Promise.reject(new Error(`planted ${plant}`));
+});

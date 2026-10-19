@@ -1,0 +1,105 @@
+# The acceptance tests of the agent CLIs (issue #1958, docs/design.md "Acceptance tests: the real agent CLIs against a
+# fake model server"): the real print-mode CLIs (claude, codex, opencode, omp) run through their executors against the
+# fake model server on loopback, with a dummy key; the schema-drift check compares their events with the stand-in's; the
+# real claude CLI calls an MCP server double's tool and fires a hook. Nightly on the default branch (dev), by hand, and on
+# a pull request that changes the executors or the tests themselves: `pr / test` has no CLI installed, so there these
+# tests skip. Nightly and by hand only, the real Claude Code TUI runs in a real herdr pane and its screens are checked
+# against the herdr fakes; its captures are kept as artifacts, also when the check fails.
+# Each CLI is the latest release (mise), so the nightly run sees a CLI that changed. A CLI that does not install fails
+# the run: the tests find it by HOPPER_ACCEPTANCE_<AGENT>_BIN, so none skips. Read-only and with no secrets:
+# `pull_request`, never `pull_request_target`; no CLI reaches a real model.
+name: agent-acceptance
+
+on:
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main, dev, beta, stable]
+    paths:
+      - src/executors/**
+      - test/acceptance/**
+      - test/adapters/fake-print-agent.mjs
+      - test/support/real-agents.ts
+      - test/support/fake-model-*.ts
+      - test/support/fake-mcp-server.ts
+      - test/support/screen-drift.ts
+      - .github/workflows/agent-acceptance.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  print-agents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: jdx/mise-action@v2
+        with:
+          mise_toml: |
+            [tools]
+            claude = "latest"
+            codex = "latest"
+            # By its backend: a newer mise maps the short name to another npm package.
+            "aqua:anomalyco/opencode" = "latest"
+            "github:can1357/oh-my-pi" = "latest"
+      - name: Name each CLI
+        run: |
+          for cli in claude codex opencode omp; do
+            bin=$(mise which "$cli")
+            "$bin" --version
+            echo "HOPPER_ACCEPTANCE_${cli^^}_BIN=$bin" >> "$GITHUB_ENV"
+          done
+      # These tests use no database.
+      - run: npx vitest run test/acceptance/print-agents.test.ts test/acceptance/fake-drift.test.ts test/acceptance/hooks-mcp.test.ts
+        env:
+          HOPPER_TEST_POSTGRES_URL: postgres://none:none@127.0.0.1:1/none
+
+  tui:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: jdx/mise-action@v2
+        with:
+          mise_toml: |
+            [tools]
+            claude = "latest"
+      # herdr's CLI as the image installs it (Dockerfile; the installer checks the release's SHA-256).
+      - name: Install herdr and name claude
+        run: |
+          curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR="$RUNNER_TEMP/bin" sh
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/herdr" --version
+          bin=$(mise which claude)
+          "$bin" --version
+          echo "HOPPER_ACCEPTANCE_CLAUDE_BIN=$bin" >> "$GITHUB_ENV"
+      # The runner context is not there in a job's env: the variables are the step's.
+      - run: npx vitest run test/acceptance/tui-screens.test.ts
+        env:
+          HOPPER_ACCEPTANCE_TUI: '1'
+          HOPPER_ACCEPTANCE_TUI_OUT: ${{ runner.temp }}/tui-screens
+          HOPPER_ACCEPTANCE_TUI_DIR: ${{ runner.temp }}
+          HOPPER_TEST_POSTGRES_URL: postgres://none:none@127.0.0.1:1/none
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tui-screens
+          path: ${{ runner.temp }}/tui-screens
+          if-no-files-found: warn
