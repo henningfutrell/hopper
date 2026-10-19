@@ -10996,7 +10996,9 @@ registry.
   rewrites the lock file too). `providers` and `providers schema` still run.
 - **Its probe** (`terraform.provider-download`, `src/sandbox/probes.ts`). `init` of a stack that needs `hashicorp/null`,
   terraform on PATH, must fail. `hashicorp/null` is small and real: with the registry in reach and no mirror, `init`
-  installs it, and the probe fails. A box with no mirror config fails it.
+  installs it, and the probe fails. A box with no mirror config fails it, unless the egress proxy filters the registry:
+  `init` then fails with `could not connect to registry.terraform.io: … Filtered`, and that is a refusal too (issue
+  #2107). A registry out of reach for another reason (no DNS, no route) is an error.
 
 Considered and not built: a read-only plugin cache (`TF_PLUGIN_CACHE_DIR` on a directory the box cannot write) — a cache
 does not stop a download, it only keeps one; more providers or more versions of the AWS provider — no case asks for one
