@@ -50,6 +50,10 @@
     },
     "conflicts": {
       "type": "boolean"
+    },
+    "cutOff": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

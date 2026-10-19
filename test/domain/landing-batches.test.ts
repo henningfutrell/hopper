@@ -10,7 +10,7 @@
 //   Scenario: N merges since the last batch run start a run; fewer wait for the timer
 //   Scenario: the timer starts a run of what is new; a first run starts at once
 //   Scenario: a batch run at work holds the next one
-//   Scenario: the batch run's checks: pending, green, red, no check in time, merge conflicts
+//   Scenario: the batch run's checks: pending, green, red, cut off, no check in time, merge conflicts
 //   Scenario: the state of each repository is reduced from its events
 //   Scenario: the pull requests a landing branch merged are read from its merge commits
 import { describe, expect, it } from 'vitest';
@@ -98,6 +98,17 @@ describe('what a batch run\'s checks say (issue #1073)', () => {
     expect(batchChecks([{ name: 'test', status: 'completed', conclusion: 'success' }, { name: 'lint', status: 'completed', conclusion: 'skipped' }], { mergeable: true }, started, NOW)).toEqual({ kind: 'green' });
     expect(batchChecks([{ name: 'test', status: 'completed', conclusion: 'failure', id: 7 }, { name: 'shard (3)', status: 'completed', conclusion: 'failure' }, { name: 'lint', status: 'in_progress' }], { mergeable: true }, started, NOW))
       .toEqual({ kind: 'red', reason: 'checks failed: test, shard (3)', checks: [{ name: 'test', id: 7 }, { name: 'shard (3)' }] });
+  });
+
+  it('a check GitHub cancelled or that timed out is cut off, not red, whatever fails with it (issue #2086)', () => {
+    const runs = [
+      { name: 'shard (3)', status: 'completed', conclusion: 'cancelled', id: 31 },
+      { name: 'shard (5)', status: 'completed', conclusion: 'timed_out', id: 51 },
+      { name: 'test', status: 'completed', conclusion: 'failure', id: 7 },
+    ];
+    expect(batchChecks(runs, { mergeable: true }, started, NOW)).toEqual({ kind: 'cut-off', reason: 'checks cut off: shard (3), shard (5)', checks: [{ name: 'shard (3)', id: 31 }, { name: 'shard (5)', id: 51 }] });
+    // Merge conflicts still come first.
+    expect(batchChecks(runs, { mergeable: false }, started, NOW).kind).toBe('red');
   });
 
   it('no check in time is red; so are merge conflicts with the tested branch', () => {

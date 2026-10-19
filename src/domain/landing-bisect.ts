@@ -34,6 +34,8 @@ export interface Bisect {
   startedAt: string;
   results: BisectResult[];
   running?: { index: number; sha: string; branch: string; pullRequest: number; url: string; startedAt: string };
+  /** Per point, its bisect runs cut off (issue #2086): the point runs again up to BATCH_RERUNS times. */
+  cutOff?: Record<number, number>;
 }
 
 /** The first point that fails, its revert and its fix issue. */
