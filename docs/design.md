@@ -28758,6 +28758,58 @@ the outbox's and the proxy's kill points.
 **Verification:** `test/crash/proxy-kill.test.ts` (13 scenarios; with the look-up turned off, the four after-send and
 before-link cases of an issue and a comment fail); `test/integration/proxy-resend.test.ts`.
 
+## A person's acts on a job under crashes (issue #1959, part 3, 2026-10-18)
+
+**Why.** Parts 1 and 2 proved the GitHub outbox's intake acts and a job's writes through the GitHub proxy under kills. A
+person's Merge now, Close PR and Run again are outbox rows too (issue #1238 parts 3 and 4), but the sync loop's own act
+sends them (`OutboxActs`, `src/sources/pull-request-acts.ts`, `src/sources/rerun.ts`), and each makes more than one call.
+Nothing proved them under a kill.
+
+**What it found.**
+- **Close PR killed after its close.** GitHub closed the pull request and the close was recorded, but the row was not
+  `sent`. The next hopper sent the row again, found the job no longer following an open pull request, and failed the row
+  (`job.pull_request_act_failed`, a Retry on Sources). Merge now had a guard for this since issue #1588; Close PR had none.
+  Now a close row whose close is recorded is done, as a merge row whose merge is recorded is.
+- **Merge now killed between the issue's close and its comment.** After the hopper's own merge of a pull request with no
+  closing keyword, it closes the issue and then posts one comment (issue #677). A kill between the two left the issue closed
+  as completed, so the merge found by its marker after the restart read the issue as closed by the merge and posted no
+  comment. Now a merge found by its marker runs the close after it again (`closeAfterMerge`, `again`): the close is made
+  again — it changes nothing on a closed issue —, and the comment only when the issue does not have it yet (read by its
+  text, which names the pull request). A pull request whose closing keyword closed the issue is left as it is.
+
+**Kill points.** The rows' own `outbox:pull_request|give_back:before-send|after-send`, and three inside the acts:
+`follow:merge:after-call` (GitHub merged, nothing recorded; `src/sources/github/follow.ts`), `follow:merge:after-issue-close`
+(the issue closed, its comment not posted; `src/sources/github/own-merge.ts`), and `give-back:rerun:after-give` (the source
+gave the item back, no new job yet; `src/sources/rerun.ts`).
+
+**The crash tests** (`test/crash/act-kill.test.ts`, `test/crash/act-world.ts`). A host runs the connected account's job source
+over the node:http fake GitHub. Three jobs are kept in the admin's store, each finished or failed with its end reported:
+one follows an open pull request that only mentions its issue (Merge now), one another open pull request (Close PR), one
+failed with `hopper:failed` on its issue (Run again). For each act and each kill point the first host is killed; once the
+claims end, a second host sends what is left. GitHub then holds each effect once: the pull request merged, the issue closed
+as completed with one comment; the other pull request closed and its issue open; the end label off and one new job of the
+item. Each act is recorded once (`job.pull_request_merged` with who pressed it, `job.pull_request_closed`, `job.rerun`), and
+no act failed. The node:http fake GitHub now closes a pull request (`PATCH /pulls/{n}`).
+
+**The randomised run** (`test/crash/random-github.test.ts`). Each seed picks a family — the outbox's intake acts, a job's
+write through the proxy, a person's act on a job —, one of its writes and one of its kill points, and runs that scenario. A
+failure names its seed: `HOPPER_CRASH_SEED=<seed>` runs it again; `HOPPER_CRASH_SEEDS` says how many (2 by default). Each
+family's scenario is one function of its world file (`killedThenSent`, `killedThenSentAgain`, `killedThenActed`), which the
+fixed tests run too.
+
+**Decisions.**
+- **The comment is found by its text, not by a post key.** Its text is fixed and names the pull request, so it is unique to
+  the merge. The look-up costs one read only on a merge found by its marker, never on the first close.
+- **The close is made again, not read first.** A second close of a closed issue changes nothing on GitHub; a read would cost
+  the same call.
+
+**Left for later parts.** A pull request a job opens (`pr.create`) under a kill: it has no resend key, and GitHub refuses a
+second one from the same head, so the next hopper's answer to the same request is a refusal, not the pull request.
+
+**Verification:** `test/crash/act-kill.test.ts` (9 scenarios; on the code before this change, Close PR at
+`outbox:pull_request:after-send` and Merge now at `follow:merge:after-issue-close` fail); `test/crash/random-github.test.ts`;
+`test/sources/github-own-merge.test.ts`; `test/integration/merge-marker.test.ts`.
+
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
 **Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event
