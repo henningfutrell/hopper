@@ -45,9 +45,27 @@ function aboutOf(text: string): PullRequestWait {
   return 'merge';
 }
 
+/** A repository the text names in a link or in words: `in owner/name`, `repository owner/name`. */
+const NAMED_REPO = /(?:github\.com\/|\b(?:in|repo|repository)\s+`?)([A-Za-z0-9][\w.-]*\/[\w.-]*[\w-])/gi;
+
+/**
+ * The repository of a number at `at` written with no owner (issue #2090): the one the text names after it, else the last
+ * before it; none when the text names none, and the number is in the job's own repository.
+ */
+function repoAt(text: string, at: number): string | undefined {
+  const named = [...text.matchAll(NAMED_REPO)];
+  return (named.find((m) => m.index > at) ?? named.filter((m) => m.index < at).at(-1))?.[1];
+}
+
+/** The repository and number a match of PR_AT or ITEM_AT names: its own `owner/name#`, else the one the text names. */
+function numberedIn(text: string, m: RegExpExecArray): { repo?: string; number: number } {
+  const repo = m[1] ?? repoAt(text, m.index);
+  return { ...(repo ? { repo } : {}), number: Number(m[2]) };
+}
+
 function pullRequestIn(text: string): WaitOn | undefined {
   const m = PR_AT.exec(text);
-  return m ? { kind: 'pull_request', ...(m[1] ? { repo: m[1] } : {}), number: Number(m[2]), about: aboutOf(text) } : undefined;
+  return m ? { kind: 'pull_request', ...numberedIn(text, m), about: aboutOf(text) } : undefined;
 }
 
 function approvalIn(text: string): WaitOn | undefined {
@@ -82,7 +100,7 @@ function onLine(on: string): WaitOn | undefined {
   if (approval) return approval;
   if (/^(?:issue|item)\b/i.test(s)) {
     const m = ITEM_AT.exec(s);
-    if (m) return { kind: 'item', ...(m[1] ? { repo: m[1] } : {}), number: Number(m[2]) };
+    if (m) return { kind: 'item', ...numberedIn(s, m) };
   }
   return pullRequestIn(s);
 }
