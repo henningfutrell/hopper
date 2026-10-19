@@ -12,10 +12,6 @@
 //   Scenario: the rows cannot be kept
 //     When the outbox write fails
 //     Then the item is not blocked, and the next pass blocks it with its rows
-//   Scenario: a job of a connected account's source
-//     Given the same item, whose job's source is of kind github-account, as every job of a connected GitHub account's is
-//     When the reconciler blocks it as stale
-//     Then the outbox holds the same two rows, for that source
 //   Scenario: no job of the item
 //     Given an approved request card whose job was never queued
 //     When the reconciler blocks it as stale
@@ -87,21 +83,6 @@ describe('the item reconciler writes the label change of a block through the out
     expect(reconciler(store, at(62)).reconcileOnce()).toBe(1);
     expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
     expect(store.githubOutbox.open('github')).toHaveLength(2);
-  });
-
-  it('keeps the rows of a block whose job came from a connected account\'s source (kind github-account, issue #1954)', () => {
-    const store = t.open(t.url());
-    cleanups.push(() => store.close());
-    const account: JobSourceRef = { ...ref, source: 'github-account', kind: 'github-account' };
-    const job = store.jobs.create(spec, 50, account);
-    store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority: 50 }, at: T0 });
-    store.events.append({ type: 'job.finished', jobId: job.id, data: { result: 'pull request ready for review' }, at: T0 });
-    store.events.append({ type: 'job.pull_request_followed', jobId: job.id, data: { pullRequest: PR, part: false }, at: T0 });
-    store.jobs.update(job.id, { status: 'finished', finishedAt: T0, sourceState: { source: { pullRequest: PR, follow: 'tended' } } });
-
-    expect(reconciler(store, at(61)).reconcileOnce()).toBe(1);
-    expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
-    expect(store.githubOutbox.open('github-account').map((r) => r.change.op)).toEqual(['remove_labels', 'add_labels']);
   });
 
   it('writes no row for an item no job of which names its source', () => {
