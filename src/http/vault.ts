@@ -6,6 +6,7 @@ import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
 import { BOX_IMAGE } from '../sandbox/box-image.ts';
+import { createImageCheck } from '../sandbox/image-published.ts';
 import type { TemplateRequestUser } from '../skills/template-request.ts';
 import type { TenantParts } from './tenants.ts';
 import { shownAsks } from './ui/confirmation-asks.ts';
@@ -48,6 +49,9 @@ const rememberedNow = (store: TenantParts['store']) => liveWrites(store.settings
  * The user's side of a template request (issue #716): their templates, through the vault's own save and approve, their
  * read policy deciding. A job's (`POST /job/skill`) and an API caller's (`request-template`, issue #718) are the same.
  */
+/** Whether a template's image is published (issue #1977): one check for every user, so its answers are kept once. */
+const publishedImage = createImageCheck();
+
 export function templateRequestUser(parts: Pick<TenantParts, 'vault' | 'store'>): TemplateRequestUser {
   return {
     template: (name) => parts.vault.view().templates.find((t) => t.name === name),
@@ -58,6 +62,7 @@ export function templateRequestUser(parts: Pick<TenantParts, 'vault' | 'store'>)
     policy: () => parts.store.settings.getReadPolicy(),
     approvals: () => parts.store.settings.getSandboxApprovals(),
     remembered: () => rememberedNow(parts.store),
+    imageProblem: publishedImage,
     image: `${BOX_IMAGE}:box-claude`,
   };
 }
