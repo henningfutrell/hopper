@@ -83,7 +83,7 @@ import { issueDraftReadRoutes } from './ui/issue-drafts.ts';
 import { pointedJobReadRoutes } from './ui/pointed-jobs.ts';
 import { directJobReadRoutes } from './ui/direct-jobs.ts';
 import { searchReadRoutes } from './search.ts';
-import { githubWatchReadRoutes } from './ui/github-watches.ts';
+import { githubWatchReadRoutes } from './ui/github-watches.ts'; import { pendingApprovalReadRoutes } from './ui/pending-approvals.ts';
 import { componentWatcherReadRoutes } from './ui/component-watchers.ts';
 import { landingBatchReadRoutes } from './ui/landing-batches.ts';
 import { infraPlanReadRoutes } from './ui/infra-plans.ts';
@@ -235,7 +235,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
   directJobReadRoutes(app, tenant); // Direct jobs (issue #901)
   searchReadRoutes(app, tenant); // Search (issue #945)
-  githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
+  githubWatchReadRoutes(app, tenant); pendingApprovalReadRoutes(app, tenant); // GitHub watches (issue #427), pending approvals (issue #2088)
   landingBatchReadRoutes(app, tenant); // Landing batches (issue #1073)
   infraPlanReadRoutes(app, tenant); // Infra (issue #870)
   sourceRoutes(app, tenant);

@@ -577,7 +577,7 @@ export * from './artifacts.ts';
 export * from './tldr.ts';
 export * from './pointed-jobs.ts';
 export * from './job-graph.ts';
-export * from './github-watch.ts';
+export * from './github-watch.ts'; export * from './pending-approvals.ts';
 export * from './drift.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
