@@ -48,8 +48,8 @@ export interface HostOptions {
   dbPath: string;
   /** The database's URL, maybe through a proxy (support/stalling-proxy.ts). */
   databaseUrl: string;
-  /** The providers' fakes; `github`, the node:http fake GitHub (issue #1959). */
-  fakes: { cloudflare?: string; ngrok?: string; github?: string };
+  /** The providers' fakes; `github`, the node:http fake GitHub (issue #1959); `landing`, the landing batches' GitHub (issue #1954 part 8). */
+  fakes: { cloudflare?: string; ngrok?: string; github?: string; landing?: string };
   /** The job repositories to connect the GitHub account with, at this host's start (the first host of a test). */
   connectGitHub?: string[];
   /** The connected account's access token, when not TEST_ACCOUNT_TOKEN (a secret canary, issue #1957). */
@@ -82,7 +82,7 @@ export function startHost(o: HostOptions): Promise<CrashHost> {
       HOPPER_WORK_DIR: workDir,
       CRASH_MASTER_KEY: MASTER_KEY,
       ...(o.fakes.cloudflare ? { CRASH_CLOUDFLARE_URL: o.fakes.cloudflare } : {}), ...(o.fakes.ngrok ? { CRASH_NGROK_URL: o.fakes.ngrok } : {}),
-      ...(o.fakes.github ? { CRASH_GITHUB_URL: o.fakes.github } : {}), ...(o.connectGitHub ? { CRASH_GITHUB_CONNECT: o.connectGitHub.join(',') } : {}),
+      ...(o.fakes.github ? { CRASH_GITHUB_URL: o.fakes.github } : {}), ...(o.fakes.landing ? { CRASH_LANDING_URL: o.fakes.landing } : {}), ...(o.connectGitHub ? { CRASH_GITHUB_CONNECT: o.connectGitHub.join(',') } : {}),
       ...(o.githubToken ? { CRASH_GITHUB_TOKEN: o.githubToken } : {}), ...(o.plant ? { CRASH_PLANT: o.plant } : {}),
       ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}), ...(o.job ? { CRASH_JOB: o.job } : {}),
       ...(o.clockSkewMs ? { CRASH_CLOCK_SKEW_MS: String(o.clockSkewMs) } : {}), ...(o.topology ? { CRASH_TOPOLOGY: '1' } : {}),
