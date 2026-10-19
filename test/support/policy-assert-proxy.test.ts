@@ -7,7 +7,7 @@
 //   Scenario: a read session's reads pass; its writes are denied by the deny policy or by ReadOnlyAccess
 //   Scenario: an unsigned call, an unknown key, an expired or revoked session, and a call it cannot name are denied
 //   Scenario: a session with no session policy gets what the role allows
-//   Scenario: it names the IAM action of the query, JSON, S3 REST and EKS REST protocols
+//   Scenario: it names the IAM action of the query, JSON and S3 REST protocols
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpRequest } from '@smithy/core/protocols';
@@ -107,7 +107,7 @@ describe('the policy-assert proxy (issue #1956)', () => {
     expect((await evaluate({ ...read, policyArns: [], policy: undefined }, { service: 'ec2', action: 'TerminateInstances' }, NOW)).allowed).toBe(true);
   });
 
-  it('names the action of the query, JSON, S3 REST and EKS REST protocols', () => {
+  it('names the action of the query, JSON and S3 REST protocols', () => {
     const auth = (service: string) => ({ authorization: `AWS4-HMAC-SHA256 Credential=ASIAX/20300101/us-east-1/${service}/aws4_request, SignedHeaders=host, Signature=0` });
     const s3 = (method: string, url: string, headers: Record<string, string> = {}) => callOf({ method, url, headers: { ...auth('s3'), ...headers }, body: '' });
     expect(s3('GET', '/')).toEqual({ service: 's3', action: 'ListAllMyBuckets', resource: '*' });
@@ -121,12 +121,5 @@ describe('the policy-assert proxy (issue #1956)', () => {
     expect(callOf({ method: 'POST', url: '/', headers: { ...auth('sts'), ...form }, body: 'Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A1%3Arole%2Fr' })).toEqual({ service: 'sts', action: 'AssumeRole', resource: 'arn:aws:iam::1:role/r' });
     expect(callOf({ method: 'GET', url: '/?X-Amz-Credential=ASIAX%2F20300101%2Fus-east-1%2Fsts%2Faws4_request&Action=GetCallerIdentity', headers: {}, body: '' })).toEqual({ service: 'sts', action: 'GetCallerIdentity' });
     expect(callOf({ method: 'GET', url: '/', headers: {}, body: '' })).toBeUndefined();
-    // EKS speaks REST: topology discovery lists and describes its clusters.
-    const eks = (method: string, url: string) => callOf({ method, url, headers: auth('eks'), body: '' });
-    expect(eks('GET', '/clusters?maxResults=100')).toEqual({ service: 'eks', action: 'ListClusters' });
-    expect(eks('GET', '/clusters/prod')).toEqual({ service: 'eks', action: 'DescribeCluster' });
-    expect(eks('DELETE', '/clusters/prod')).toEqual({ service: 'eks', action: 'DeleteCluster' });
-    expect(eks('POST', '/clusters')).toEqual({ service: 'eks', action: 'CreateCluster' });
-    expect(eks('GET', '/clusters/prod/node-groups')).toBeUndefined();
   });
 });

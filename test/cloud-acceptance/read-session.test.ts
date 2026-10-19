@@ -24,30 +24,78 @@ import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { EC2Client, TerminateInstancesCommand } from '@aws-sdk/client-ec2';
 import { DeleteQueueCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { AWS_SESSION_SECONDS, awsReadSession } from '../../src/domain/minting.ts';
-import { READ_ONLY_ACCESS } from '../support/policy-assert-proxy.ts';
-import { aws, curl } from './support/aws-cli.ts';
-import { cloudHopper, MINTING, SESSION_NAME } from './support/hopper.ts';
-import { ACCOUNT, BUCKET, READ_ROLE, REGION, startMoto, stateHash, STATE_KEY, type Moto } from './support/moto.ts';
+import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startPolicyAssertProxy, READ_ONLY_ACCESS, type PolicyAssertProxy } from '../support/policy-assert-proxy.ts';
+import { boxes, helper, runningJob } from '../support/vault-box.ts';
+import { KEY } from '../support/webhooks.ts';
+import { aws, curl, type AwsKeys } from './support/aws-cli.ts';
+import { ACCOUNT, BUCKET, READ_ROLE, REGION, resetMoto, seed, SEED_KEYS, startMoto, stateHash, STATE_KEY, type Moto, type Seeded } from './support/moto.ts';
+
+const MINTING = { AccessKeyId: 'AKIAMINTINGACCEPT', SecretAccessKey: 'minting-secret-never-on-the-box' };
+const SESSION_NAME = 'hopper-acceptance';
+const BOX = 'hopper-sandbox-infra-read';
 
 let moto: Moto;
-const h = cloudHopper();
+let t: TestApp | undefined;
+let proxy: PolicyAssertProxy | undefined;
+const box = boxes();
+const cleanups: (() => void)[] = [];
 
 beforeAll(async () => { moto = await startMoto(); }, 180_000);
 afterAll(async () => { await moto?.stop(); });
-afterEach(() => h.end());
+afterEach(async () => {
+  await box.end();
+  await t?.stop();
+  t = undefined;
+  await proxy?.close();
+  proxy = undefined;
+  for (const c of cleanups.splice(0)) c();
+});
+
+/** moto reset and seeded, the proxy in front of it, and a hopper whose AWS_LAB mints through the proxy. */
+async function boot(): Promise<{ a: TestApp; session: string; seeded: Seeded }> {
+  await resetMoto(moto.url);
+  proxy = await startPolicyAssertProxy({ upstream: moto.url, admins: [SEED_KEYS.accessKeyId, MINTING.AccessKeyId] });
+  const seeded = await seed(proxy.url);
+  const db = tempDbPath();
+  cleanups.push(db.cleanup);
+  process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
+  process.env.FAKE_HERDR_RUNNING = '1';
+  t = await startTestApp({
+    dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
+    plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
+  });
+  const session = await t.login();
+  const edit = async (body: Record<string, unknown>) => expect((await t!.ui('/ui/api/vault', body, { token: session })).status).toBe(200);
+  await edit({ action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ ...MINTING, Region: REGION, Endpoint: proxy.url, SessionName: SESSION_NAME }) });
+  await edit({ action: 'save-template', name: 'infra-read', image: 'localhost/box-aws:1', secrets: [], profiles: [{ operation: 'read', asset: { kind: 'aws-role', name: `${ACCOUNT}/read` } }] });
+  await edit({ action: 'approve-template', name: 'infra-read' });
+  return { a: t, session, seeded };
+}
+
+/** A box of infra-read with a job at work on it, and the read session its helper hands the job. */
+async function readSession(a: TestApp, session: string): Promise<{ dir: string; keys: AwsKeys & { Expiration: string }; mintedAt: number }> {
+  const dir = await box.join(a, session, BOX, 'infra-read');
+  const job = await runningJob(a, BOX);
+  const mintedAt = Date.now();
+  const out = await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/read`], box.tokenFileOf(a, job));
+  expect(out.stderr).toBe('');
+  expect(out.code).toBe(0);
+  return { dir, keys: JSON.parse(out.stdout) as AwsKeys & { Expiration: string }, mintedAt };
+}
 
 describe('a read template\'s session against a mock AWS behind the policy-assert proxy (issue #1956)', () => {
   it('minted scope: ReadOnlyAccess and the deny policy, the template\'s lifetime, the configured session name; no key on the box', async () => {
-    const { a, session, proxy } = await h.boot(moto.url);
-    const { dir, keys, mintedAt } = await h.readSession(a, session);
-    const minted = proxy.sessions.get(keys.AccessKeyId);
+    const { a, session } = await boot();
+    const { dir, keys, mintedAt } = await readSession(a, session);
+    const minted = proxy!.sessions.get(keys.AccessKeyId);
     expect(minted).toMatchObject({ roleArn: READ_ROLE, sessionName: SESSION_NAME, policyArns: [READ_ONLY_ACCESS], policy: awsReadSession(READ_ROLE).policy });
     expect(minted!.durationSeconds).toBeLessThanOrEqual(AWS_SESSION_SECONDS);
     // moto's own answer: the session ends within the template's lifetime of the mint.
     expect(Date.parse(keys.Expiration) - mintedAt).toBeLessThanOrEqual(AWS_SESSION_SECONDS * 1000 + 5000);
     expect(Math.floor(Date.parse(minted!.expiration) / 1000)).toBe(Math.floor(Date.parse(keys.Expiration) / 1000));
     // The session works, as the role it was minted for.
-    const who = await aws(proxy.url, keys, ['sts', 'get-caller-identity', '--output', 'json']);
+    const who = await aws(proxy!.url, keys, ['sts', 'get-caller-identity', '--output', 'json']);
     expect(who.code, who.stderr).toBe(0);
     expect(JSON.parse(who.stdout).Arn).toBe(`arn:aws:sts::${ACCOUNT}:assumed-role/read/${SESSION_NAME}`);
     // The box holds the helper and its link, never a key: the minting credential stays in the hopper, the session goes
@@ -60,9 +108,9 @@ describe('a read template\'s session against a mock AWS behind the policy-assert
   }, 120_000);
 
   it('read-only by every route: the aws CLI, curl\'s SigV4 and the SDK may read but not write; moto is unchanged', async () => {
-    const { a, session, seeded, proxy } = await h.boot(moto.url);
-    const { keys } = await h.readSession(a, session);
-    const url = proxy.url;
+    const { a, session, seeded } = await boot();
+    const { keys } = await readSession(a, session);
+    const url = proxy!.url;
     const reads = [
       ['s3', 'ls', `s3://${BUCKET}/terraform/`], ['s3api', 'get-object', '--bucket', BUCKET, '--key', STATE_KEY, '/tmp/state'],
       ['ec2', 'describe-instances', '--instance-ids', seeded.instanceId], ['kms', 'describe-key', '--key-id', seeded.keyId],
@@ -73,7 +121,7 @@ describe('a read template\'s session against a mock AWS behind the policy-assert
       expect(r.code, `${args.join(' ')}: ${r.stderr}`).toBe(0);
     }
     const before = await stateHash(url);
-    const reached = proxy.log.length;
+    const reached = proxy!.log.length;
 
     const writes = [
       ['s3api', 'delete-object', '--bucket', BUCKET, '--key', STATE_KEY], ['s3api', 'delete-bucket', '--bucket', BUCKET],
@@ -107,7 +155,7 @@ describe('a read template\'s session against a mock AWS behind the policy-assert
     }
 
     expect(await stateHash(url)).toBe(before);
-    const tried = proxy.log.slice(reached).filter((d) => d.accessKeyId === keys.AccessKeyId);
+    const tried = proxy!.log.slice(reached).filter((d) => d.accessKeyId === keys.AccessKeyId);
     expect(tried.length).toBeGreaterThanOrEqual(writes.length + 4);
     expect(tried.filter((d) => d.allowed), JSON.stringify(tried.filter((d) => d.allowed))).toEqual([]);
     expect(new Set(tried.map((d) => d.action))).toEqual(new Set([
