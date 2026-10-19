@@ -185,13 +185,13 @@ describe('the batch runner (issue #1073)', () => {
     expect(r.view().repos[0]!.state.pending).toEqual({ tip: tip2, merges: [16] });
   });
 
-  it('red: records the batch run failed and its bisect, then closes it (red.test.ts)', async () => {
+  it('red: records the batch run failed and its bisect, then removes its branch and closes it (red.test.ts)', async () => {
     const w = world();
     const { r, events } = runner(w);
     await r.pass();
     w.checks = [{ name: 'test', status: 'completed', conclusion: 'failure' }];
     await r.pass();
-    expect(w.calls.slice(-3)).toEqual(['compare dev...abcdef0123456789abcdef0123456789abcdef01', 'close #100', 'delete hopper-batch/abcdef012345']);
+    expect(w.calls.slice(-3)).toEqual(['compare dev...abcdef0123456789abcdef0123456789abcdef01', 'delete hopper-batch/abcdef012345', 'close #100']);
     expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.bisect_started']);
     expect(events[2]!.data).toMatchObject({ tip: TIP, reason: 'checks failed: test', checks: ['test'] });
   });
@@ -327,13 +327,13 @@ describe('the batch runner (issue #1073)', () => {
     expect(r.view().repos[0]!.stuck).toBeUndefined();
   });
 
-  it('a person restarts the batch: its pull request closed, its branch removed, a new batch run at the landing tip (issue #1333)', async () => {
+  it('a person restarts the batch: its branch removed, its pull request closed, a new batch run at the landing tip (issue #1333)', async () => {
     const w = world();
     const { r, events } = runner(w);
     await r.pass();
     w.calls.length = 0;
     await r.restart(REPO, 'admin').done;
-    expect(w.calls).toEqual(['close #100', 'delete hopper-batch/abcdef012345', 'compare dev...main', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
+    expect(w.calls).toEqual(['delete hopper-batch/abcdef012345', 'close #100', 'compare dev...main', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
     expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.restarted', 'landing_batch.due', 'landing_batch.started']);
     expect(events[2]!.data).toEqual({ repo: REPO, tip: TIP, by: 'admin', closed: [100] });
     expect(events[4]!.data).toMatchObject({ tip: TIP, pullRequest: 101, why: 'a person restarted the landing batch' });

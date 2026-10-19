@@ -23,12 +23,10 @@ const merge = (n: number): { sha: string; message: string } => ({ sha: shaOf(`p$
 
 /** The kill point after a write of the landing batches' GitHub, before its event: its nth in the process. */
 export const landingPoint = (write: string, nth: number): string => `landing:${write}:after-call#${nth}`;
-/** The writes a test kills after: each but a branch made or removed, which another pass makes or removes again. */
-const KILLED = new Set(['openPullRequest', 'close', 'merge', 'mergeInto', 'revert', 'fileIssue', 'fastForward', 'retarget', 'comment']);
 /** The kill points of a clean run's writes, in order. */
 export const pointsOf = (writes: readonly string[]): string[] => {
   const seen = new Map<string, number>();
-  return writes.filter((w) => KILLED.has(w)).map((w) => { seen.set(w, (seen.get(w) ?? 0) + 1); return landingPoint(w, seen.get(w)!); });
+  return writes.map((w) => { seen.set(w, (seen.get(w) ?? 0) + 1); return landingPoint(w, seen.get(w)!); });
 };
 
 export interface LandingScenario {
@@ -62,7 +60,10 @@ export const LANDING_SCENARIOS: LandingScenario[] = [
       for (const t of ['failed', 'bisect_started', 'culprit', 'revert_opened', 'reverted', 'fix_filed']) expect(count(`landing_batch.${t}`), t).toBe(1);
       expect(count('landing_batch.promoted')).toBe(1);
     },
-    points: pointsOf(['openPullRequest', 'close', 'openPullRequest', 'close', 'openPullRequest', 'close', 'revert', 'fileIssue', 'merge', 'openPullRequest', 'merge']),
+    points: pointsOf([
+      'createBranch', 'openPullRequest', 'deleteBranch', 'close', 'createBranch', 'openPullRequest', 'deleteBranch', 'close', 'createBranch', 'openPullRequest',
+      'deleteBranch', 'close', 'revert', 'fileIssue', 'merge', 'createBranch', 'openPullRequest', 'merge', 'deleteBranch',
+    ]),
   },
   {
     name: 'merge conflicts: one back-merge, and the batch promoted after it',
@@ -77,7 +78,10 @@ export const LANDING_SCENARIOS: LandingScenario[] = [
       expect(g.issues).toEqual([]);
       for (const t of ['back_merge_opened', 'back_merged', 'promoted']) expect(count(`landing_batch.${t}`), t).toBe(1);
     },
-    points: pointsOf(['openPullRequest', 'close', 'mergeInto', 'openPullRequest', 'merge', 'openPullRequest', 'merge']),
+    points: pointsOf([
+      'createBranch', 'openPullRequest', 'deleteBranch', 'close', 'createBranch', 'mergeInto', 'openPullRequest', 'merge', 'deleteBranch', 'createBranch',
+      'openPullRequest', 'merge', 'deleteBranch',
+    ]),
   },
   {
     name: 'a real conflict: one issue',
@@ -92,7 +96,7 @@ export const LANDING_SCENARIOS: LandingScenario[] = [
       expect(g.issues).toHaveLength(1);
       expect(count('landing_batch.back_merge_issue_filed')).toBe(1);
     },
-    points: pointsOf(['openPullRequest', 'close', 'fileIssue']),
+    points: pointsOf(['createBranch', 'openPullRequest', 'deleteBranch', 'close', 'createBranch', 'mergeInto', 'deleteBranch', 'fileIssue']),
   },
   {
     name: 'the canary held: one issue',

@@ -36,7 +36,7 @@ export interface LandingGitHub {
   mergeInto: 'merged' | 'conflict';
   /** The bug reports the search finds. */
   reports: number[];
-  /** Each write, in order: `<what>` as the landing batches' GitHub names it (`openPullRequest`, `merge`, …). */
+  /** Each write asked, in order, as the landing batches' GitHub names it (`openPullRequest`, `merge`, …), refused or not. */
   writes: string[];
   close(): Promise<void>;
 }
@@ -120,8 +120,10 @@ export async function createLandingGitHub(o: { commits: LandingCommit[]; merged:
       return send(res, 200, {});
     }
     if ((m = /^DELETE \/git\/refs\/heads\/(.+)$/.exec(rest))) {
-      if (!g.branches.delete(m[1]!)) return send(res, 422, { message: 'Reference does not exist' });
       write('deleteBranch');
+      if (!g.branches.delete(m[1]!)) return send(res, 422, { message: 'Reference does not exist' });
+      // GitHub closes the open pull requests from a branch it removes.
+      for (const p of g.pulls.values()) if (p.state === 'open' && p.head === m[1]) p.state = 'closed';
       return send(res, 204, undefined);
     }
     if ((m = /^GET \/compare\/(.+)\.\.\.(.+)$/.exec(rest))) {
@@ -161,8 +163,8 @@ export async function createLandingGitHub(o: { commits: LandingCommit[]; merged:
       return send(res, 200, [...g.pulls.values()].filter((p) => p.merged && p.mergeSha === m![1]).map((p) => ({ number: p.number, merge_commit_sha: p.mergeSha, merged_at: '2026-10-19T00:00:00Z' })));
     }
     if (rest === 'POST /merges') {
-      if (g.mergeInto === 'conflict') return send(res, 409, { message: 'Merge conflict' });
       write('mergeInto');
+      if (g.mergeInto === 'conflict') return send(res, 409, { message: 'Merge conflict' });
       const sha = shaOf(`back-merge-${String(body.base)}`);
       g.branches.set(String(body.base), sha);
       return send(res, 201, { sha });
