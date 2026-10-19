@@ -28744,7 +28744,8 @@ sweep burns the box and the next pass unbinds its token.
 runner's GitHub (`withKillPoints`, `src/landing-batches/once.ts`) passes a kill point once each write answered, before
 the pass records its event: `landing:<write>:after-call`, for each of `createBranch`, `deleteBranch`, `openPullRequest`,
 `merge`, `close`, `mergeInto`, `retarget`, `comment`, `revert`, `fileIssue` and `fastForward`. The test
-(`test/crash/landing-kill.test.ts`, `test/crash/landing-world.ts`) runs five scenarios of the in-process test of issue
+(`test/crash/landing-kill-*.test.ts`, `test/crash/landing-world.ts`; a scenario's tests are split over files, so the
+shards of the pull request check share them inside their 10 minutes) runs five scenarios of the in-process test of issue
 #1589 on crash hosts: a red batch (batch run, bisect runs, culprit, revert, fix issue, the rest promoted), merge
 conflicts (a back-merge, then the batch promoted), a real conflict (one issue), the canary held (one issue) and the
 canary's window passed (`stable` moved). The landing batches' GitHub is a node:http fake in the test process
@@ -28774,7 +28775,7 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/need-kill.test.ts` (part 7: a need step at each step boundary, while its box runs, while it compensates, and a second host while the box runs); `test/crash/landing-kill.test.ts` (part 8: landing batches killed after each GitHub write of five scenarios, and each scenario's clean run); `test/store/sagas-held.test.ts` and `test/vault/mint-bindings.test.ts` (part 7: the sagas another host holds; the reconcile pass leaves their bindings); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/need-kill.test.ts` (part 7: a need step at each step boundary, while its box runs, while it compensates, and a second host while the box runs); `test/crash/landing-kill-*.test.ts` (part 8: landing batches killed after each GitHub write of five scenarios, and each scenario's clean run); `test/store/sagas-held.test.ts` and `test/vault/mint-bindings.test.ts` (part 7: the sagas another host holds; the reconcile pass leaves their bindings); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).

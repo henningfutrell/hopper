@@ -5,14 +5,14 @@
 // no branch of the hopper's may stay, and the batch must reach the end a clean run reaches. A test drives passes by
 // saving the same settings again, which runs a pass.
 import { randomUUID } from 'node:crypto';
-import { expect } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent } from '../../src/domain/types.ts';
 import { batchBranch, type LandingBatchState } from '../../src/domain/landing-batches.ts';
 import { openUserStore } from '../../src/store/user-store.ts';
 import { tempDbPath } from '../support/app.ts';
 import { databaseUrlFor, ownerSchemaUrlFor } from '../support/database.ts';
 import { waitFor } from '../support/wait.ts';
-import { killedAt, startHost, type CrashHost } from './harness.ts';
+import { killedAt, startHost, stopHosts, type CrashHost } from './harness.ts';
 import { createLandingGitHub, LANDING, LANDING_REPO as REPO, shaOf, TESTED, type LandingGitHub } from './landing-github.ts';
 
 /** The most one scenario takes: two hoppers start, one is killed, and up to some 20 passes. */
@@ -30,6 +30,8 @@ export const pointsOf = (writes: readonly string[]): string[] => {
 };
 
 export interface LandingScenario {
+  /** Names the scenario to `describeLanding`. */
+  key: string;
   name: string;
   /** The fake GitHub: the landing branch's merges, and what fails. */
   github(): Promise<LandingGitHub>;
@@ -46,6 +48,7 @@ export interface LandingScenario {
 
 export const LANDING_SCENARIOS: LandingScenario[] = [
   {
+    key: 'red',
     name: 'a red batch: batch run, bisect runs, culprit, revert, fix issue, and the rest promoted',
     github: async () => {
       const g = await createLandingGitHub({ commits: [merge(11), merge(12), merge(13)], merged: [{ number: 11, sha: P1 }, { number: 12, sha: P2 }, { number: 13, sha: P3 }] });
@@ -66,6 +69,7 @@ export const LANDING_SCENARIOS: LandingScenario[] = [
     ]),
   },
   {
+    key: 'back-merge',
     name: 'merge conflicts: one back-merge, and the batch promoted after it',
     github: async () => {
       const g = await createLandingGitHub({ commits: [merge(11)], merged: [{ number: 11, sha: P1 }] });
@@ -84,6 +88,7 @@ export const LANDING_SCENARIOS: LandingScenario[] = [
     ]),
   },
   {
+    key: 'conflict',
     name: 'a real conflict: one issue',
     github: async () => {
       const g = await createLandingGitHub({ commits: [merge(11)], merged: [{ number: 11, sha: P1 }] });
@@ -99,6 +104,7 @@ export const LANDING_SCENARIOS: LandingScenario[] = [
     points: pointsOf(['createBranch', 'openPullRequest', 'deleteBranch', 'close', 'createBranch', 'mergeInto', 'deleteBranch', 'fileIssue']),
   },
   {
+    key: 'canary-held',
     name: 'the canary held: one issue',
     github: async () => {
       const g = await createLandingGitHub({ commits: [], merged: [] });
@@ -117,6 +123,7 @@ export const LANDING_SCENARIOS: LandingScenario[] = [
     points: pointsOf(['fileIssue']),
   },
   {
+    key: 'canary-passed',
     name: 'the canary\'s window passed: stable moved, and the promotion recorded once',
     github: async () => {
       const g = await createLandingGitHub({ commits: [], merged: [] });
@@ -209,4 +216,35 @@ export async function killedThenEnded(w: LandingWorld, s: LandingScenario, point
   await w.drive(a, async () => false, `the kill at ${point}`);
   await killedAt(a, point.split('#')[0]!);
   await endedOnce(w, await w.host(), s);
+}
+
+/**
+ * The tests of the scenario `key`: its clean run when `from` is 0, and a kill at each of its points from `from` up to
+ * `to`. A scenario's tests run one after the other in their file, so a long scenario is split over files: the shards of
+ * the pull request check then share it, inside their 10 minutes.
+ */
+export function describeLanding(key: string, from = 0, to?: number): void {
+  const s = LANDING_SCENARIOS.find((x) => x.key === key);
+  if (!s) throw new Error(`no landing scenario "${key}"`);
+  const worlds: LandingWorld[] = [];
+  describe(s.name, () => {
+    afterEach(async () => {
+      await stopHosts();
+      for (const w of worlds.splice(0)) await w.close();
+    });
+    if (from === 0) {
+      it('a clean run: its writes are the kill points, and it ends with each effect once', async () => {
+        const w = await landingWorld(s);
+        worlds.push(w);
+        expect(pointsOf(await cleanRun(w, s))).toEqual(s.points);
+      }, SCENARIO_MS);
+    }
+    for (const point of s.points.slice(from, to)) {
+      it(`killed at ${point}: the next hopper ends the batch, each effect once`, async () => {
+        const w = await landingWorld(s);
+        worlds.push(w);
+        await killedThenEnded(w, s, point);
+      }, SCENARIO_MS);
+    }
+  });
 }
