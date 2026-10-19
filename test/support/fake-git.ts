@@ -1,9 +1,10 @@
 // GitHub's git over HTTP for the fake GitHub (issue #652): the bare repositories `<root>/<owner>/<name>.git`, served by
 // git's own `git-http-backend` (CGI). A read without credentials is answered as for a public repository, unless the bare
 // repository holds a file `hopper-private`: then, as a push always does, it needs a token the forge accepts, as the
-// password of Basic auth. Each request is recorded with its auth.
+// password of Basic auth. Each request is recorded with its auth. A bare repository that holds a file `hopper-push-refused`
+// answers a push's pack (the POST) 403 with the file's text, as GitHub does when it refuses a token there (issue #2042).
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ForgeRequest } from './fake-forges.ts';
@@ -58,6 +59,13 @@ export function serveGit(root: string, tokens: Map<string, string>, req: Incomin
   if ((password !== undefined && !user) || ((pushing || hidden) && !user)) {
     res.writeHead(401, { 'www-authenticate': 'Basic realm="GitHub"', 'content-type': 'text/plain' });
     res.end('Invalid username or token.');
+    return true;
+  }
+  const refused = join(root, `${git[1]!.replace(/\.git$/, '')}.git`, 'hopper-push-refused');
+  if (req.method === 'POST' && git[2] === 'git-receive-pack' && existsSync(refused)) {
+    req.resume();
+    res.writeHead(403, { 'content-type': 'text/plain' });
+    res.end(readFileSync(refused, 'utf8'));
     return true;
   }
   gitBackend(root, req, res, u, git[1]!, git[2]!, user);

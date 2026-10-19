@@ -14641,7 +14641,9 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
 3. a push (`git-receive-pack`): to any repository the job's user can push to, as GitHub says (issue #1806, "A job pushes
    wherever its user can push"): the job's **own repository** (its source's, or for a fork its parent's), another of
    its user's **job repositories**, the **job's fork** ("The contribution flow"), or a repository the hopper does not
-   work on — else **403** with the reason, which git shows as `remote: …`;
+   work on — else **403** with the reason, which git shows as `remote: …` on the ref advertisement (the GET); on the
+   push's pack (the POST) git shows nothing of an error answer but "HTTP 403", so there the refusal is git's own report
+   (`ng <ref> refused: <reason>`, as in step 5; issue #2042);
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
    a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
@@ -14650,7 +14652,11 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
    git's own report (`ng <ref> <reason>`, in side band 1 when asked for), so git shows `! [remote rejected] … (<reason>)`;
 6. GitHub: the request as git sent it, to `<web origin>/<owner>/<name>.git/…`, with Basic `x-access-token:<token>` of the
    job's **own user's** connection (not the hopper's oldest user's: a push is the job's user's act), the response streamed
-   back. A 401 renews the token once. A fetch of any repository goes with that connection too (issue #1015, "Jobs read
+   back. A 401 renews the token once. GitHub's error answer to a push (issue #2042) names GitHub, its status and the
+   start of its text, `GitHub refused the push (HTTP <status>): <text>`: on the pack as git's own report (`ng`), recorded
+   as `github_proxy.failed` with that `error`; on the ref advertisement as plain text (`remote: …`). So a job tells a
+   hopper rule (`refused: …`) from GitHub's own refusal (a token GitHub does not take there, an organization's single
+   sign-on, a ruleset). A fetch of any repository goes with that connection too (issue #1015, "Jobs read
    beyond the job repositories"): a private repository the user sees clones; one the user does not see is refused by
    GitHub.
 

@@ -23,6 +23,7 @@
 //     When the job pushes a new branch there and opens a pull request there
 //     Then both are on GitHub and on the job's timeline; an issue there, or a push to its default branch, is refused
 //     But when the user cannot push there, the push is refused with the reason
+//     And when GitHub refuses the push itself, git shows GitHub's reason, not a bare HTTP 403 (issue #2042)
 //   Scenario: with direct push on for a repository, a job pushes straight to its target branch (issue #1806)
 //     Given a person named the repository for direct push
 //     When the job pushes a commit on top of the default branch
@@ -213,6 +214,23 @@ describe('git through the hopper (issue #652)', () => {
     expect(t.github.gitRequests.filter((x) => x.path.startsWith('/elsewhere/lib') && x.path.endsWith('/git-receive-pack'))).toEqual([]);
     expect(eventsOf(t.app, 'github_proxy.refused')).toEqual(expect.arrayContaining([
       expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'elsewhere/lib', reason: expect.stringContaining('cannot push to elsewhere/lib') }) }),
+    ]));
+  });
+
+  it('a push GitHub refuses says GitHub\'s reason, not a bare HTTP 403 (issue #2042)', async () => {
+    const t = await start();
+    writeFileSync(join(t.gitRoot, 'elsewhere/lib.git', 'hopper-push-refused'), 'Resource protected by organization SAML enforcement.\n');
+    const { job, home, git } = await running(t, 'octo/tools');
+    expect((await git(['clone', '--quiet', `${t.github.url}/elsewhere/lib.git`, 'lib'])).code).toBe(0);
+    const work = join(home, 'lib');
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'The change belongs here'], work);
+    const r = await git(['push', 'origin', 'HEAD:refs/heads/feature/x'], work);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('GitHub refused the push (HTTP 403): Resource protected by organization SAML enforcement.');
+    expect(r.stderr).not.toContain('RPC failed');
+    expect((await branchesOf(t, 'elsewhere/lib')).stdout).not.toContain('feature/x');
+    expect(eventsOf(t.app, 'github_proxy.failed')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'git.push', repo: 'elsewhere/lib', error: expect.stringContaining('GitHub refused the push (HTTP 403)') }) }),
     ]));
   });
 
