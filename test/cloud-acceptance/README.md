@@ -47,6 +47,14 @@ against shell stubs (`test/support/fake-cloud-tools.ts`) or a loopback STS (`tes
   `need-step` saga or while its need box runs. Their need boxes start on the same container runtime (Podman's or Docker's
   socket, as `HOPPER_TEST_CONTAINER_CLI` names it), from the image the hopper makes for the template (the write box
   image's tools), on the host's network, so the box's aws CLI reaches the proxy with the session the vault minted for the step.
+- **A Kubernetes cluster** (`support/kind.ts`, `kubectl.test.ts`): a kind cluster made for the run (`kind create cluster`,
+  on the container runtime `HOPPER_TEST_CONTAINER_CLI` names), or the cluster whose admin kubeconfig
+  `HOPPER_TEST_KUBECONFIG` names (it is not deleted). Seeded with `hopper-read` in the namespace `hopper`, bound to the
+  cluster's own `view` role, and `hopper-minter`, which may only make tokens and the Secrets they are bound to there:
+  the minting credential `KUBE_LAB` (type `token`) holds a token of it. The namespace `app` holds a pod, a ConfigMap and
+  a Secret. A crash harness hopper runs a need step of a template that reads the cluster: its need box (the box image
+  with kubectl) runs on the host's network, where kind's API server listens, with the token the vault minted for the
+  step in its kubeconfig. The real `kubectl` on this machine (`HOPPER_TEST_KUBECTL`) reads the cluster as its admin.
 
 ## Run
 
@@ -56,7 +64,8 @@ HOPPER_TEST_MOTO_URL=http://127.0.0.1:<port> HOPPER_TEST_POSTGRES_URL=postgres:/
                                    # a moto and a Postgres that are already up (a seat where testcontainers hangs)
 ```
 
-`HOPPER_TEST_CONTAINER_CLI` names the container command (default `docker`; podman's `docker` works). Image overrides:
+`kubectl.test.ts` needs `kind` and `kubectl` on the PATH (`HOPPER_TEST_KIND`, `HOPPER_TEST_KUBECTL` name others), or
+`HOPPER_TEST_KUBECONFIG` for a cluster that is already up. `HOPPER_TEST_CONTAINER_CLI` names the container command (default `docker`; podman's `docker` works). Image overrides:
 `MOTO_IMAGE`, `AWS_CLI_IMAGE`, `HOPPER_TEST_BOX_IMAGE` (the box's base image), `HOPPER_TEST_EGRESS_IMAGE` (the egress
 proxy's image; default the hopper's `dev` image, the first channel whose image carries tinyproxy). CI: `.github/workflows/cloud-acceptance.yml`, nightly and on a pull request that
 changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` or these tests.
@@ -75,11 +84,13 @@ changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` o
 | 5 | Drift: a bucket and a VPC made in moto out of band show in the next Discover now; every call of discovery's session is a Describe, List or Get, allowed, and moto's state is what the change left | `discovery.test.ts` |
 | 6 | Saga resume: the hopper is killed before the mint, after the mint while the step's command runs, after the box exited before the saga recorded it, and before and after the credentials' release; a second hopper on the same database ends the step's saga once; STS minted one session and the command's listing reached moto once (never run again: a step interrupted mid-command ends `STEP_INTERRUPTED`); the job reads one result; no need box or home volume is left; the step's session is denied once its lifetime is over | `saga-resume.test.ts` |
 | 7 | Egress: a read-only need box, started by the sandbox module behind the egress proxy, reaches the STS endpoint its credential names through the proxy (curl and the aws CLI); a public host, the metadata address, a raw IP and that endpoint by its IP are refused by the proxy (403), and past the proxy none has a route or resolves; the proxy refuses a name that carries data, and the box's resolver answers no public name; the box has no capability, no new privileges and a read-only root, and is burned after the step | `egress.test.ts` |
+| 8 | kubectl on kind: a need step's token is a TokenRequest token of `hopper-read`, bound to a Secret of its own, for 10 minutes at most, and the box holds no minting token; it lists pods, and the cluster forbids it to delete a pod, exec in it, create a Secret or read one; the workload is the same after; when the step's box ended, the Secret is gone and the cluster refuses the same token (Unauthorized); no need box is left | `kubectl.test.ts` |
 
 Criterion 3, stated: the hopper does not end an STS session early. A session it handed a job lives until its own
 expiry (900 s at most), after the job ends or a revoke too; the test moves the proxy's clock past it.
 
-Not yet: kubectl on kind. The pull request of each part lists what is left.
+Every criterion is covered. A Kubernetes token is bound to its sandbox and ends with it; an STS session cannot be
+ended early, so criterion 3 is met by its lifetime (above).
 
 ## Notes
 
