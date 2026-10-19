@@ -120,8 +120,9 @@ describe('fan-out and completion end to end (issue #1909)', () => {
     await app.sync();
     const parent = await waitFor(async () => store.jobs.list().find((j) => j.source?.key === parentIssue.url && j.status === 'waiting_on'), { what: 'the parent to wait on its sub-task' });
     expect(o.runs.map((r) => [r.step, r.out.code])).toEqual([['load', 0], ['file', 0]]);
-    const { version } = builtInSkills().find((s) => s.name === 'orchestrate')!;
-    expect(o.runs[0]!.out.stdout.startsWith(`skill orchestrate, version ${version}\n`)).toBe(true);
+    // Issue #2145: orchestrate is another name of the work skill.
+    const { version } = builtInSkills().find((s) => s.name === 'work')!;
+    expect(o.runs[0]!.out.stdout.startsWith(`skill work, version ${version}\n`)).toBe(true);
     expect(JSON.parse(o.runs[1]!.out.stdout)).toMatchObject({ number: 2, parent: `${REPO}#1`, required: true, routed: true, waitOn: `issue ${REPO}#2` });
     expect(parent.wait?.on).toMatchObject({ kind: 'item' });
 

@@ -2,7 +2,7 @@
 // the user's over the built-in default —, a change of the setting, and what a library skill's version may hold.
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_WORK_SKILL_SETTINGS, namedSkills, patchWorkSkills, skillDescription, skillFilesProblem, skillNameProblem, skillRequires, workKindOf,
+  BUILT_IN_SKILL_NAMES, DEFAULT_WORK_SKILL_SETTINGS, namedSkills, patchWorkSkills, SKILL_ALIASES, skillDescription, skillFilesProblem, skillNameOf, skillNameProblem, skillRequires, workKindOf,
   workSkillCredentials, workSkillFor, withWorkSkill, type WorkSkillSettings,
 } from '../../src/domain/skill-library.ts';
 
@@ -68,6 +68,15 @@ describe('a change of the setting', () => {
     expect(next).toEqual({ kinds: { research: 'deep' }, repos: { 'a/b': { proposal: 'p' } } });
     expect(namedSkills(next).sort()).toEqual(['deep', 'p']);
     expect(settings.kinds).toEqual({ code: 'careful' });
+  });
+});
+
+describe('a skill\'s other names (issue #2145)', () => {
+  it('orchestrate is another name of the built-in work skill, no skill of its own; every other name is itself', () => {
+    expect(SKILL_ALIASES).toEqual({ orchestrate: 'work' });
+    expect(BUILT_IN_SKILL_NAMES).not.toContain('orchestrate');
+    expect(skillNameOf('orchestrate')).toBe('work');
+    for (const name of ['work', 'research', 'careful', 'constructor', 'toString']) expect(skillNameOf(name)).toBe(name);
   });
 });
 

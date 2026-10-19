@@ -3,7 +3,7 @@
 // draft and what is wrong with them, and the line a job's timeline shows for the work skill it got.
 import { describe, expect, it } from 'vitest';
 import {
-  draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, ruleLine, settingsNaming, skillLoadedLine, sourceLine, workSkillChosenLine,
+  aliasesOf, draftFiles, draftProblem, draftRows, kindRows, KIND_LABEL, newSkillFiles, repoRows, requiresLine, ruleLine, settingsNaming, skillLoadedLine, sourceLine, workSkillChosenLine,
   conditionalSkillsChosenLine, emptyRuleDraft, ruleDraftOf, ruleDraftProblem, ruleOfDraft, ruleRows,
 } from '../../ui/src/model/skills.ts';
 import type { SkillLibraryView } from '../../src/domain/skill-library.ts';
@@ -17,6 +17,7 @@ const view: SkillLibraryView = {
   workSkills: { kinds: { research: 'deep-research' }, repos: { 'octo/site': { code: 'my-work' }, 'octo/api': { research: 'deep-research', proposal: 'my-work' } } },
   defaults: { code: 'work', research: 'research', proposal: 'proposal' },
   kinds: ['code', 'research', 'proposal'],
+  aliases: { orchestrate: 'work' },
 };
 
 describe('where a skill came from', () => {
@@ -105,6 +106,14 @@ describe('the skills a skill requires', () => {
   it('names each one, and says which the library does not have; none: no line', () => {
     expect(requiresLine(view, view.skills[0]!)).toBe('requires deep-research, gone (not in the library)');
     expect(requiresLine(view, view.skills[1]!)).toBeUndefined();
+  });
+
+  it('an alias names the skill it is another name of (issue #2145): required, chosen and in a rule', () => {
+    expect(aliasesOf(view, 'work')).toEqual(['orchestrate']);
+    expect(aliasesOf(view, 'deep-research')).toEqual([]);
+    expect(requiresLine(view, { requires: ['orchestrate'] })).toBe('requires orchestrate');
+    const named = { ...view, workSkills: { kinds: { code: 'orchestrate' }, repos: {}, rules: [{ skill: 'orchestrate', labels: ['iac'] }] } };
+    expect(settingsNaming(named, 'work')).toEqual(['every repository: Code work', 'a skill rule: label iac']);
   });
 });
 

@@ -35,7 +35,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
 #                        the hopper pushes it on the job stream (issue #613)
 #     --timeout SECONDS  how long --wait waits (the hopper's default: an hour)
-#     --repo-copy DIR    for orchestrate: the job follows its repository's own copy of the skill, in DIR (issue #1909);
+#     --repo-copy DIR    for work: the job follows its repository's own copy of the skill, in DIR (issue #1909);
 #                        the hopper records its folder, git tree and commit, and whether it has changes
 # Exit 0: the answer; 1: a no, with why; 2: a bad call; 3: the user is asked, and --wait was not given;
 #      4: --wait reached its deadline with no answer.

@@ -77,7 +77,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/pending-approvals/` | Pending approvals (issue #2088, "Pending approvals"): what GitHub shows of the waiting runs a connection can approve — the repositories it reaches, those of the intake orgs not archived, their waiting runs and pending deployments — with each connected account's own connection, conditional GETs (`github.ts`, `@octokit/request`, `src/repo-checks/conditional.ts`); one user's read on its schedule, kept in memory, the view (`service.ts`); the rows, the intake orgs and the stale mark are `src/domain/pending-approvals.ts`, the route `src/http/ui/pending-approvals.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`orchestrate`), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`work`, and `orchestrate`, its alias, issue #2145), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
@@ -29767,3 +29767,49 @@ filter, a second page of repositories, the 304 path, a refused repository (`test
 schedule, the accounts merged, a failed read that keeps the rows before (`test/pending-approvals/service.test.ts`); the
 route on the real daemon (`test/integration/pending-approvals.test.ts`); the page, its empty state and the nav count
 (`test/ui/pending-approvals-view.test.ts`).
+
+## One work skill: work and orchestrate merged (issue #2145, 2026-10-19)
+
+**Problem.** The skill library shipped two built-in skills for one way of working. `work` (intake, existing work, the
+change rules, the pull request) required `orchestrate` (the repository's own copy, the state, the loop, fan-out keys,
+waiting, resume, finish) and sent the job to it partway through. Both covered intake, the task list and the finish, and
+split them differently. A job read two texts and had to join them.
+
+- **One skill** (`src/skill-library/built-in/work/SKILL.md`). One loop from the first read to a ready pull request:
+  intake (the repository's rules and the issue), existing work, the task list, order, where each task runs (in this job
+  or as a sub-task with a fan-out key), the change, verify, wait, resume and finish (the review of the own diff, the pull
+  request body). It keeps all that `orchestrate` had — the repository copy (`sh "$HOPPER_SKILL" work --repo-copy DIR`),
+  where the state is, the fan-out keys, `HOPPER_WAITING`, resume — and `work`'s change rules: the smallest change, tests
+  first, the glossary, small commits, environment skips. It requires no skill. Every code job gets it as its work skill,
+  in full, as before (`DEFAULT_WORK_SKILLS`).
+- **`orchestrate` is a skill alias** (`SKILL_ALIASES`, `skillNameOf`, `src/domain/skill-library.ts`). The built-in
+  `orchestrate` directory is gone; `BUILT_IN_SKILL_NAMES` no longer lists it. Every place that resolves a skill by name
+  resolves an alias first (`builtInOf`, `latestSkill`, `src/skill-library/index.ts`): a `requires: orchestrate` gets
+  `work` beside the skill, under `work-skill/work/`, and `job.work_skill_chosen` names `work`; a work skill setting that
+  names `orchestrate` chooses `work`; a skill rule that names it gives `work` as a conditional skill, and nothing when the
+  work skill is `work` already; `GET /api/skill-library/orchestrate` answers `work`. No skill takes the alias as its name:
+  create, duplicate, import and remove refuse it as they refuse a built-in name.
+- **hopper-skill** (`src/skills/library.ts`, `src/skills/catalog.ts`). The served library skill is `work`; its catalog
+  line says its other name. `sh "$HOPPER_SKILL" orchestrate` still answers, with the work skill's text headed
+  `skill work, version <v>`, and `skill.loaded` records `skill: work`. The job rules' task-list line (`TASKS_LINE`) points
+  at `sh "$HOPPER_SKILL" work`.
+- **The Skills page** (`ui/src/model/skills.ts`, `ui/src/views/skill-library.tsx`). `GET /api/skill-library` answers
+  `aliases`. The work skill's card says "Also named orchestrate"; a skill that requires an alias shows it as in the
+  library; a setting or a rule that names an alias counts for the skill it names ("Chosen for …").
+
+**Decisions.**
+- **`work` keeps the name, `orchestrate` becomes the alias.** `work` is the default work skill of code jobs and the name
+  in every `job.work_skill_chosen` and setting; `orchestrate` is what other skills require and what jobs load by name.
+- **An alias, not a removal.** Settings, skill rules and user skills that name `orchestrate` are the user's persisted
+  state: the alias keeps each of them working with no migration. Settings keep the name as the user wrote it.
+- **Recorded under the skill's own name.** A requirement, a choice or a load records `work`, so the job record names the
+  files it got. A job chosen before this change keeps its kept versions while they exist; a built-in version this build no
+  longer has was chosen again before this change too.
+
+**Verification:** `test/domain/skill-library.test.ts` (the alias table and `skillNameOf`); `test/integration/skill-library.test.ts`
+(the built-in list with no `orchestrate` and the aliases; the work skill delivered in full with nothing beside it; a
+`requires:`, a setting and a skill rule that name `orchestrate` get `work`; the alias refused as a new skill's name);
+`test/integration/orchestrate-skill.test.ts` and `test/integration/orchestrate-fan-out.test.ts` (both names load the work
+skill through the real `hopper-skill`; the repository copy recorded); `test/skills/served-skills.test.ts` (one served
+skill, the merged text holds both skills' parts); `test/ui/skills.test.ts`, `test/ui/skills-view.test.ts` (the alias
+line, the requires line, the settings that name an alias).
