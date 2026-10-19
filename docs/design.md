@@ -25782,7 +25782,8 @@ the instance had no way to prove itself to hopper.io.
   "connected now" or "not connected".
 - **Limits** (R7): a frame over the snapshot's cap closes the connection (`1009`, the ws server's own check); any other
   message over 1024 bytes, of another type or shape, or binary, is dropped, not cut, and recorded once per connection
-  (`message_refused`). Per minute: 30 connections per address, 10 per instance (else `4008`), 120 messages per connection;
+  (`message_refused`). Per minute: 30 connections per address, 10 per instance and key (else `4008`; so a party without
+  the key cannot use up the instance's), 120 messages per connection, 5 records of refused connections per instance;
   10,000 open connections in all (else HTTP 429); 90 seconds with no message closes it (`4010`).
 - **hopper.io records** (R6): `instance_connected`, `instance_disconnected`, `connection_replaced`, `connection_refused`,
   `key_rotated`, `message_refused`, on the account the instance is registered to. Store migration 7 adds the two columns

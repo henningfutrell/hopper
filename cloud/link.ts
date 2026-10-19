@@ -93,10 +93,7 @@ export function createCloudLinkAnswers(o: {
         // A registration from before the connection has no key: the first proved one binds. Else the hello proves the
         // bound key as the one before a rotation, or it is refused.
         const from = l.publicKey ?? null;
-        if (from !== null && previousKey !== from) {
-          await o.store.record(registrant, 'connection_refused', now);
-          return { connects: false, refused: 'unknown-key', registrant };
-        }
+        if (from !== null && previousKey !== from) return { connects: false, refused: 'unknown-key', registrant };
         if (!await o.store.rekey(installId, from, publicKey)) return { connects: false, refused: 'unknown-key', registrant };
         rotated = from !== null;
         if (rotated) await o.store.record(registrant, 'key_rotated', now);

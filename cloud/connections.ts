@@ -25,9 +25,10 @@ export const CLOSE = {
 export const HELLO_MS = 10_000;
 /** How long a connection may stay silent: three heartbeats (the instance sends one each 30 s). */
 export const IDLE_MS = 90_000;
-/** Limits per minute (R7): connections per address and per instance, and messages per connection. A snapshot at most each
- * 2 s and a heartbeat each 30 s is 32 a minute. */
-export const LIMITS = { connectsPerAddress: 30, connectsPerInstance: 10, messagesPerConnection: 120, connections: 10_000 };
+/** Limits per minute (R7): connections per address and per instance and key (so a party without the key cannot use up
+ * the instance's), messages per connection, and records of refused connections per instance; and open connections. A
+ * snapshot at most each 2 s and a heartbeat each 30 s is 32 messages a minute. */
+export const LIMITS = { connectsPerAddress: 30, connectsPerInstance: 10, messagesPerConnection: 120, refusalRecords: 5, connections: 10_000 };
 const MINUTE = 60_000;
 
 export interface CloudConnections {
@@ -69,6 +70,7 @@ export function createCloudConnections(o: {
   const links = new Map<string, Link>();
   const byAddress = perMinute(limits.connectsPerAddress, now);
   const byInstance = perMinute(limits.connectsPerInstance, now);
+  const refusals = perMinute(limits.refusalRecords, now);
   const record = (l: Pick<Link, 'registrant'>, kind: RecordKind) => l.registrant ? o.store.record(l.registrant, kind, now()).catch(() => undefined) : undefined;
   const send = (socket: WebSocket, text: string | undefined) => { if (text && socket.readyState === socket.OPEN) socket.send(text); };
 
@@ -119,6 +121,7 @@ export function createCloudConnections(o: {
       const h = await o.answers.hello({ ...proved, now: now() });
       if (socket.readyState !== socket.OPEN) return;
       if (!h.connects) {
+        if (h.refused === 'unknown-key' && refusals(proved.installId)) await record(h, 'connection_refused');
         send(socket, h.answer);
         socket.close(h.refused === 'revoked' ? CLOSE.revoked : CLOSE.unknownKey, h.refused);
         return;
@@ -149,7 +152,7 @@ export function createCloudConnections(o: {
       } else {
         proved = text === undefined ? undefined : provedHello(text, c.nonce);
         if (!proved) { socket.close(CLOSE.badHello, 'bad hello'); return; }
-        if (!byInstance(proved.installId)) { socket.close(CLOSE.tooMany, 'too many connections'); return; }
+        if (!byInstance(`${proved.installId}/${proved.publicKey}`)) { socket.close(CLOSE.tooMany, 'too many connections'); return; }
         awake(IDLE_MS, CLOSE.idle, 'idle');
         const p = proved;
         queue = queue.then(() => hello(p));

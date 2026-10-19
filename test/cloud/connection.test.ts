@@ -7,7 +7,7 @@
 //   Scenario: a second connection of the instance replaces the first, and each is recorded (R6, T2)
 //   Scenario: a heartbeat keeps the last-seen time; a snapshot is kept; the unlink notice removes the registration
 //   Scenario: a bad hello, a message over a cap or of another type is refused and recorded once (R7)
-//   Scenario: too many connections of one instance in a minute are refused (R7)
+//   Scenario: too many connections of one instance and key in a minute are refused (R7)
 import { generateKeyPairSync } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
@@ -212,7 +212,7 @@ describe("the cloud link's connection at hopper.io", () => {
     expect(await instances(s)).toHaveLength(1);
   });
 
-  it('too many connections of one instance in a minute are refused', async () => {
+  it('too many connections of one instance and key in a minute are refused', async () => {
     const s = await setUp();
     const url = await listening(s);
     const k = key();
@@ -223,5 +223,10 @@ describe("the cloud link's connection at hopper.io", () => {
     }
     const over = await connect(url, k);
     expect(await over.closed).toBe(CLOSE.tooMany);
+    // The limit is per instance and key: a hello with another key does not use up the instance's own.
+    const other = await connect(url, key());
+    await new Promise((r) => setTimeout(r, 50));
+    other.ws.close();
+    expect(await other.closed).toBe(1005);
   });
 });
