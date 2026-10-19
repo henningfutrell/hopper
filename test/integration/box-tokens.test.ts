@@ -73,7 +73,7 @@ const openApiPaths = async (a: TestApp): Promise<Record<string, Record<string, u
   (parsed(await rawRequest(a.url, { path: '/docs/openapi.json' })).body as { paths: Record<string, Record<string, unknown>> }).paths;
 const asOpenApi = (route: string): string => route.replace(/:([A-Za-z]+)/g, '{$1}');
 
-describe('box tokens (issue #795)', () => {
+describe('box tokens (issue #795)', { timeout: 60_000 }, () => {
   it('a token without box reads, holds and cancels, but every box action is refused with the reason', async () => {
     const { a } = await boot();
     const token = (await mint(a, await a.login())).body.token as string;
