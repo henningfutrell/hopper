@@ -49,11 +49,21 @@ async function firstClaimed(a: TestApp, blocker: Job, ids: string[]): Promise<st
   try {
     for (const id of ids) await a.waitForStatus(id, 'finished', 20000);
   } catch (e) {
-    // The lane stayed busy on CI only (issue #1918): say where the blocker and the two jobs stood.
+    // The lane stayed busy on CI only (issues #1918, #2073): say where the blocker and the two jobs stood, why a job
+    // waits (a wait for a lane writes no event of the job), and what the newest Decisions saw.
     const all = [blocker.id, ...ids];
-    const states = await Promise.all(all.map(async (id) => `${id.slice(0, 8)} ${(await a.job(id)).status}`));
-    const events = (await a.events('limit=1000')).filter((x) => all.includes(x.jobId!)).map((x) => `${x.type} ${x.jobId!.slice(0, 8)}`);
-    throw new Error(`${e instanceof Error ? e.message : String(e)}; jobs: ${states.join(', ')}; events: ${events.join(', ')}`, { cause: e });
+    const short = (id: string): string => id.slice(0, 8);
+    const states = await Promise.all(all.map(async (id) => {
+      const j = await a.job(id);
+      return `${short(id)} ${j.status}${j.waitReason ? ` (${j.waitReason})` : ''}${j.holdReason ? ` (held: ${j.holdReason})` : ''}`;
+    }));
+    const events = (await a.events('limit=1000')).filter((x) => all.includes(x.jobId!)).map((x) => `${x.type} ${short(x.jobId!)}`);
+    const decisions = (await a.events('types=decision.made&limit=1000')).slice(-3).map((x) => {
+      const d = x.data as { trigger: string; starts: { jobId: string }[]; waits: { jobId: string; reason: string }[]; lanes: { reason: string }[] };
+      const waits = d.waits.map((w) => `${short(w.jobId)} ${w.reason}`).join('; ');
+      return `${x.at} ${d.trigger}: start [${d.starts.map((st) => short(st.jobId)).join(', ')}], wait [${waits}], lanes [${d.lanes.map((l) => l.reason).join('; ')}]`;
+    });
+    throw new Error(`${e instanceof Error ? e.message : String(e)}; jobs: ${states.join(', ')}; events: ${events.join(', ')}; last decisions: ${decisions.join(' | ')}; now ${new Date().toISOString()}`, { cause: e });
   }
   const claims = (await a.events('types=job.claimed&limit=1000')).map((e) => e.jobId).filter((id) => ids.includes(id!));
   return claims[0]!;

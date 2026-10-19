@@ -218,4 +218,18 @@ describe('the pull request after done', () => {
     expect([...failures.recent, ...failures.handoffs].filter((r) => r.jobId === job!.id)).toEqual([]);
     await labelled(gh, issue.number, 'hopper:pr-ready');
   });
+  it('a job that ends failed after it delivered (issue #2040): its source is asked, the job is finished, its record resolved', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const message = 'this machine cannot reach the hopper (HOPPER_GH is empty), so I cannot confirm the remote head of the branch';
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'fail', message, ms: 0 }), labels: ['hopper'] });
+    gh.openPullRequest(REPO, issue.number, { createdAt: new Date().toISOString() });
+    await app.sync();
+    const [job] = await jobsFor(app, issue.url);
+    await app.waitForStatus(job!.id, 'finished');
+    expect(app.user().store.failures.forJob(job!.id)).toMatchObject({ outcome: 'resolved', note: expect.stringMatching(/^done at its source/) });
+    expect((await app.events('types=handoff.opened')).filter((e) => e.jobId === job!.id)).toEqual([]);
+    await labelled(gh, issue.number, 'hopper:pr-ready');
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
+  });
 });

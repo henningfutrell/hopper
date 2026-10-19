@@ -12,8 +12,8 @@ afterEach(async () => {
   for (const w of worlds.splice(0)) await w.close();
 });
 
-const count = Number(process.env.HOPPER_CRASH_SEEDS ?? 2);
-const first = Number(process.env.HOPPER_CRASH_SEED ?? Date.now() % 1_000_000);
+const count = Number(process.env.HOPPER_CRASH_SEEDS || 2);
+const first = Number(process.env.HOPPER_CRASH_SEED || Date.now() % 1_000_000);
 
 describe('the crash harness, randomised (issue #1954)', () => {
   for (let seed = first; seed < first + count; seed++) {
