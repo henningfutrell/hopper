@@ -39,6 +39,8 @@ export async function openUserVault(o: {
   plans?: MintingOptions['plans'];
   /** Whether infra applies are on (issue #1722): the instance's setting, read at each ask. Absent: on. */
   applies?: MintingOptions['applies'];
+  /** The sandboxes another live hopper runs now, by name (issue #1954): the reconcile pass leaves their tokens bound. */
+  elsewhere?: () => ReadonlySet<string>;
 }): Promise<Vault> {
   const vault = await open(o);
   const shared = o.shared ? withSharedSecrets(vault, { shared: o.shared, userId: o.user, store: o.store, targets: o.targets, holds: o.holds }) : vault;
@@ -51,7 +53,7 @@ async function open(o: Parameters<typeof openUserVault>[0]): Promise<Vault> {
   const { shared: sharedSecrets } = o;
   const shared = {
     store: o.store, userId: o.user, ...(o.access ? { access: o.access } : {}), ...(o.minter ? { minter: o.minter } : {}), clock: o.clock, logger: o.logger, targets: o.targets, holds: o.holds, backends: o.backends,
-    ...(o.plans ? { plans: o.plans } : {}), ...(o.applies ? { applies: o.applies } : {}),
+    ...(o.plans ? { plans: o.plans } : {}), ...(o.applies ? { applies: o.applies } : {}), ...(o.elsewhere ? { elsewhere: o.elsewhere } : {}),
     ...(sharedSecrets ? { shared: (row: string) => sharedSecrets.get(row) } : {}),
   };
   if (o.vaultUrl) {

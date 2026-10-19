@@ -1,0 +1,1 @@
+- When you run more than one hopper on one database, one hopper no longer stops a sandbox step that another hopper runs.

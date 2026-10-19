@@ -93,6 +93,21 @@ describe('the bindings of a sandbox\'s tokens (issue #1371)', () => {
     await b.reconcile();
     expect(u.unbound).toHaveLength(2);
   });
+
+  it('the reconcile pass leaves a binding of a sandbox another live hopper runs; it unbinds it once that sandbox is no longer there (issue #1954)', async () => {
+    const events = eventLog();
+    // Another hopper on the same database minted for its need box box-1, which runs there now: this hopper holds nothing.
+    events.append({ type: 'vault.minted', jobId: 'job-1', machineId: 'box-1', data: { machine: 'box-1', job: 'job-1', credential: A.credential, bound: { namespace: A.namespace, secret: A.secret } } });
+    const away = new Set(['box-1']);
+    const u = unbinder();
+    const b = mintBindings({ events, clock, unbindFrom: u.from, logger: { warn: () => {} }, elsewhere: () => away });
+    await b.reconcile();
+    expect(u.unbound).toEqual([]);
+    // That hopper stopped, and its step's lease ended: the binding is left behind, and this pass unbinds it.
+    away.clear();
+    await b.reconcile();
+    expect(u.unbound).toEqual([A]);
+  });
 });
 
 describe('a need step\'s Kubernetes token is bound to its sandbox (issue #1371)', () => {

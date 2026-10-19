@@ -66,6 +66,8 @@ export interface HostOptions {
   topology?: boolean;
   /** Windows steps run on the crash Windows host (test/crash/windows-host.ts), which keeps what it did in this directory. */
   windows?: string;
+  /** Need boxes start through the real Podman adapter on this socket: the test process's libpod double. */
+  podman?: string;
 }
 
 const children = new Set<ChildProcess>();
@@ -84,7 +86,7 @@ export function startHost(o: HostOptions): Promise<CrashHost> {
       ...(o.githubToken ? { CRASH_GITHUB_TOKEN: o.githubToken } : {}), ...(o.plant ? { CRASH_PLANT: o.plant } : {}),
       ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}), ...(o.job ? { CRASH_JOB: o.job } : {}),
       ...(o.clockSkewMs ? { CRASH_CLOCK_SKEW_MS: String(o.clockSkewMs) } : {}), ...(o.topology ? { CRASH_TOPOLOGY: '1' } : {}),
-      ...(o.windows ? { CRASH_WINDOWS: o.windows } : {}),
+      ...(o.windows ? { CRASH_WINDOWS: o.windows } : {}), ...(o.podman ? { CRASH_PODMAN_SOCKET: o.podman } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -20505,7 +20505,9 @@ nothing and worked to its expiry (10 minutes), and an AWS session to its own (15
 - **Reconcile.** An unbind that fails (the cluster is not reachable) is logged and waits. The reconcile pass
   (`reconcilePass`, each user's runtime) runs at start and every 5 minutes. It reads the last 7 days of mint events and
   unbinds each binding that no sandbox holds now and no `vault.unbound` ended: one a hopper that stopped mid-step left,
-  or one whose unbind failed.
+  or one whose unbind failed. A binding of a need box that another live hopper on the same database runs is that
+  hopper's (issue #1954, "The crash harness" part 7): its step's `need-step` saga is leased to that hopper, so the pass
+  leaves it; once that lease ended, the binding is left behind and the pass unbinds it.
 - **The minting credential needs more rights.** Its identity needs `create` and `delete` on `secrets` in each namespace
   where it mints (`docs/deploy.md` "Minting short-lived credentials"). Without them, a sandbox's mint fails and says so.
   It is no fallback to an unbound token, because that token would outlive its sandbox. Only `create` and `delete`: the
@@ -24052,7 +24054,10 @@ steps (issue #1004) ran in that box between other jobs' work.
   latest runs (`runs`).
 - **The sweep** (the check pass, every 10 s, beside the hopper). Every need box of this hopper that no step holds is
   burned: stopped, removed, its home volume removed. Then every run beside the hopper not destroyed whose box is gone is
-  marked destroyed, and one whose step never ended (a hopper that stopped mid-step) ends as `swept`. A box whose remove
+  marked destroyed, and one whose step never ended (a hopper that stopped mid-step) ends as `swept`. A step held here is
+  one this process runs, or one another live hopper on the same database runs: its `need-step` saga's lease is that
+  hopper's (issue #1954, "The crash harness" part 7, `SagaRepository.heldByOthers`), so its box, home and run are left
+  to it. A box whose remove
   fails stays open in the ledger, and the next sweep tries again.
 - **Registered sandboxes leave `machines`** (tenant migration 70, `src/store/migration-no-sandbox-machines.ts`). Each
   `client` machine whose `container` names a `hopper-sandbox-…` box is removed from the user's `plugins` record. At the
@@ -28703,7 +28708,37 @@ nothing; the step's host lease and its kept result held at every point.
 - **The compensation of `sweep` is not in this part.** It runs only when the sweep fails past its tries; the job's stop
   reaches the compensation of `run` only.
 
-**Left for later parts.** The other saga kinds (need step, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
+**Part 7: a need step** (2026-10-19, "Need steps", "A need step kept as a saga"). The test (`test/crash/need-kill.test.ts`,
+`test/crash/need-world.ts`) runs a job on a first host, keeps the minting credentials of an AWS account and a cluster, and
+saves and approves a template that covers a read of each. The job asks for a need step on `/job/step`. The host is killed
+at each boundary of the `need-step` saga's `run` and `release` steps, while the need box runs (a plain SIGKILL), and while
+it compensates a step the job stopped (`run`'s `before-compensate` and `after-compensate`). Each host starts need boxes
+through the real Podman adapter (`CRASH_PODMAN_SOCKET`, as `HOPPER_PODMAN_SOCKET`) on the libpod double
+(`test/support/fake-libpod.ts`) in the test process, whose box runs on while its command says `hang`; STS and the
+Kubernetes API are the loopback fakes. A second host ends the saga: the need box was made once at the most, no box or
+home is left at the runtime, every Secret a minted token was bound to is deleted, the job's ask sent again is the same
+step, and the job reads one result: exit 0 after a kill at a step boundary, `STEP_INTERRUPTED` after a kill while the box
+ran, cancelled after a kill while it compensated. A last test starts the second host while the first host's box runs.
+**What it found:** a hopper burned the need boxes of another live hopper on the same database. Its sandbox sweep, at its
+start and every 10 s, burned each need box its own process did not run, and its reconcile pass of the sandboxes' tokens
+deleted each Secret its own process did not hold. A second hopper that started, or that swept, while the first ran a step
+stopped that step's box and ended its token. Now both leave a need box whose step's `need-step` saga another host holds on
+the database's clock (`SagaRepository.heldByOthers`): the sandbox module takes those steps (`drivenElsewhere`) and names
+their boxes (`elsewhere`), and the vault's reconcile pass takes the names. Once that lease ends (the host stopped), the next
+sweep burns the box and the next pass unbinds its token.
+**Decisions (part 7).**
+- **The libpod double through the real adapter, not a seam.** The runtime is chosen from `HOPPER_PODMAN_SOCKET`, which a
+  deploy sets too, so no test-only setting is added; and the boxes outlive a host because the double is in the test process.
+- **The saga's lease says who runs a step, not the box's labels.** Two hoppers on one database share an instance id, so
+  the box label cannot tell them apart. The `need-step` saga is leased to the host that runs the step, and renewed while it
+  runs; a killed host renews nothing.
+- **The release step and the reconcile pass.** A host that ends a step another host started holds none of its bindings,
+  so its `release` step unbinds nothing; the reconcile pass does it once the other host's lease ended (at a start, else within 5 minutes). The
+  test asserts what is left at the Kubernetes API, not which of the two deleted it.
+- **The fake runtime API asks its handlers in order and stops at the first that answers** (`test/support/fake-runtime-api.ts`),
+  as its comment said: a handler before the libpod double holds a box's wait (`after`) without the double ending the box.
+
+**Left for later parts.** The other saga kind (the item saga); landing batches killed between each GitHub write and its event (#1589); kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below; a job's push: part 4); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28711,7 +28746,7 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/need-kill.test.ts` (part 7: a need step at each step boundary, while its box runs, while it compensates, and a second host while the box runs); `test/store/sagas-held.test.ts` and `test/vault/mint-bindings.test.ts` (part 7: the sagas another host holds; the reconcile pass leaves their bindings); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).
