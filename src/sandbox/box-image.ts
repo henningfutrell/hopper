@@ -37,6 +37,9 @@ let built: { branch: string | undefined } | undefined;
 /** The branch this build was made from, as its install.json says; read once. Undefined for a checkout with none. */
 const buildBranch = (): string | undefined => (built ??= { branch: readInstallInfo(fileURLToPath(new URL('../..', import.meta.url))).known.branch }).branch;
 
+/** The image a box of a template that names `named` pulls (issue #1976): the test image of `branch`, else `named`. */
+export const pulledImage = (named: string, branch = buildBranch()): string => (named === TEST_IMAGE ? testImageOf(branch) : named);
+
 /**
  * The tools image CI publishes for a box image (issue #1286, .github/workflows/image.yml `box-tools`): the box image with
  * every box tool added as tools.ts adds them, its tag the box image's with `-tools`, or `-tools-read-only` for a
@@ -57,7 +60,7 @@ export function publishedToolsImage(base: string, readOnly?: boolean): string {
  * keeps the test image as `TEST_IMAGE`; the box pulls the one of `branch`, the hopper's own by default (issue #1976).
  */
 export async function boxImage(runtime: ContainerRuntime, named: string, tools: readonly BoxTool[] | undefined, readOnly?: boolean, branch = buildBranch()): Promise<{ image: string; user: string }> {
-  const base = named === TEST_IMAGE ? testImageOf(branch) : named;
+  const base = pulledImage(named, branch);
   const read = await runtime.pull(base);
   if (isRootUser(read.user)) throw new Error(`the image ${base} runs as root: a sandbox box runs as a non-root user (USER in its image)`);
   if (!tools?.length) return { image: base, user: read.user };

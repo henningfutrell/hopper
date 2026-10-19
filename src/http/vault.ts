@@ -5,7 +5,7 @@ import { profileRef } from '../domain/confirmation-asks.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
-import { BOX_IMAGE } from '../sandbox/box-image.ts';
+import { BOX_IMAGE, pulledImage } from '../sandbox/box-image.ts';
 import { createImageCheck } from '../sandbox/image-published.ts';
 import type { TemplateRequestUser } from '../skills/template-request.ts';
 import type { TenantParts } from './tenants.ts';
@@ -45,8 +45,12 @@ const approvalsInFull = (a: SandboxApprovals): SandboxApprovals => ({ ...a, auto
 /** A person's write approvals the hopper remembers now (issue #1001), each with its end. */
 const rememberedNow = (store: TenantParts['store']) => liveWrites(store.settings.getRememberedWrites(), rememberHoursOf(store.settings.getSandboxApprovals()), new Date());
 
-/** Whether a template's image is published (issue #1977): one check for every user, so its answers are kept once. */
-const publishedImage = createImageCheck();
+/**
+ * Whether the image a template's box pulls is published (issue #1977): the test image of the hopper's own branch (issue
+ * #1976). One check for every user, so its answers are kept once.
+ */
+const published = createImageCheck();
+const publishedImage = (image: string): Promise<string | undefined> => published(pulledImage(image));
 
 /**
  * The user's side of a template request (issue #716): their templates, through the vault's own save and approve, their

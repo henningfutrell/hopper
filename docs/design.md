@@ -28921,8 +28921,10 @@ named that line).
   image is not published. A registry not reached, a timeout (10 s), or any other answer says nothing. A local image
   (`localhost/…`) is asked of no registry. A published answer is kept 10 minutes, a missing one a minute, for every user.
 - **The request** (`requestTemplate`, `imageProblem` on `TemplateRequestUser`). Before it saves a template, the request
-  asks for the image the template runs: the reused or earlier template's, else the one the request names. A missing image
-  is a 400 with the reason, and no template is saved. Issue #1976 publishes the test image; this part only refuses early.
+  asks for the image a box of the template pulls (`pulledImage`, `src/sandbox/box-image.ts`): the reused or earlier
+  template's, else the one the request names, the test image as the tag of the hopper's own branch (issue #1976). A
+  missing image is a 400 with the reason, and no template is saved. Issue #1976 publishes the test image of each branch;
+  this part only refuses early.
 
 ### More providers in the read-only mirror (part 3)
 
