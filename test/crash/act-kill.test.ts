@@ -4,10 +4,9 @@
 // source gave the item back — or once it answered, before the row is `sent`, leaves the row to a second hopper on the
 // same database. GitHub then holds each effect once: the pull request merged or closed once, the issue closed with one
 // comment, and one new job of the item; and each act is recorded once.
-import { afterEach, describe, expect, it } from 'vitest';
-import { killedAt, stopHosts } from './harness.ts';
-import { endClaims } from './outbox-world.ts';
-import { actedOnce, actWorld, JOB_ACTS, killPointsOf, press, SCENARIO_MS, type ActWorld } from './act-world.ts';
+import { afterEach, describe, it } from 'vitest';
+import { stopHosts } from './harness.ts';
+import { actWorld, JOB_ACTS, killedThenActed, killPointsOf, SCENARIO_MS, type ActWorld } from './act-world.ts';
 
 const worlds: ActWorld[] = [];
 afterEach(async () => {
@@ -21,14 +20,7 @@ describe('a person\'s act on a job, the hopper killed at each kill point of its 
       it(`${act.name}, killed at ${point}: the next hopper sends what is left, each effect once`, async () => {
         const w = await actWorld();
         worlds.push(w);
-        const a = await w.host({ killPoint: point, connect: true });
-        w.seed();
-        // Answered at once; a kill as the answer goes out answers nothing.
-        expect([202, 0]).toContain(await press(w, a, act));
-        await killedAt(a, point);
-        endClaims(w);
-        const b = await w.host();
-        await actedOnce(w, b, act);
+        await killedThenActed(w, act, point);
       }, SCENARIO_MS);
     }
   }

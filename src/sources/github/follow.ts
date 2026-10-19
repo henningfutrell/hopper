@@ -43,7 +43,8 @@
 // The merge marker (issue #1588): before its merge call — yolo mode or Merge now — the hopper keeps in the job's source
 // state the pull request, the head it merges and who merges it (`merging`). A stop after the call and before the record
 // leaves the pull request merged on GitHub: read merged with the marker on it at that head, it is the hopper's merge, so
-// the issue is closed as above, once, and who merged it is recorded. Seen open, or ended, the marker goes.
+// the issue is closed as above, once, and who merged it is recorded. Seen open, or ended, the marker goes. A stop after
+// the close and before its comment (issue #1959): the close is made again, and the comment only when the issue lacks it.
 
 import {
   classifyChange, contentNeeded, DEFAULT_CHANGE_RULE, mergesOnReady, pullRequestRepo, rechecksMerge, readyToMerge, ruleKey,
@@ -57,8 +58,9 @@ import { isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from '
 import { LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
-import { closeAfterMerge, closedByMerge, mergedByMarker } from './own-merge.ts';
+import { closedByMerge, closesIssue, mergedByMarker, type OwnMerge } from './own-merge.ts';
 import { relabel, type ReportContext } from './report.ts';
+import { killPoint } from '../../sagas/kill-points.ts';
 
 /** `mention`: the pull request only mentions the issue, with no "Part of #N" (issue #1891): followed as a part all the same. */
 interface Followed { pullRequest?: string; follow?: string; part?: boolean; mention?: boolean; seen?: PullRequestSeen; mergeChecked?: boolean }
@@ -235,6 +237,7 @@ export async function waiting(ctx: FollowContext, job: Job, url: string, before:
   if (act === 'merge') {
     if (mark) mark((await ctx.api.pullRequest(repo, numberOf(url)))?.headOid);
     await ctx.api.merge(repo, numberOf(url));
+    killPoint('follow:merge:after-call');
     return { ended: 'merged' };
   }
   const pr = await ctx.api.pullRequest(repo, numberOf(url));
@@ -419,7 +422,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     if (!now) return undefined;
     const part = s.part === true;
     let byHopper = false;
-    let mergedHere = false;
+    let merged: OwnMerge | undefined;
     let acting: ActingPerson | undefined;
     let superseded: string | undefined;
     // Done by another pull request (issue #1143): nothing is left to land, and the item is done. A part too (issue #1433):
@@ -442,18 +445,17 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       // The hopper's merge keeps what it saw: the change kind it merged by (issue #1076).
       if (w.seen?.change) s = { ...s, seen: w.seen };
       byHopper = !act;
-      mergedHere = w.ended === 'merged';
+      merged = w.ended === 'merged' ? 'here' : undefined;
       superseded = w.superseded;
     } else if (now.state === 'merged' && await mergedByMarker(ctx.api, pullRequestRepo(now.url, repo), now.url, marker)) {
       // The hopper's merge call went through, and a stop came before its record (issue #1588).
       byHopper = marker!.byHopper === true;
-      mergedHere = true;
+      merged = 'again';
       acting = marker!.acting;
     }
     // A merge that did not close the issue is a part (issue #721), whatever the report took it for — unless the hopper
-    // merged it and it ships no part: then the hopper closes the issue (issue #677).
-    const whole = now.state === 'merged' && !part && (await closedByMerge(ctx.api, repo, number, now.url)
-      || (mergedHere && await closeAfterMerge(ctx.api, repo, number, now.url)));
+    // merged it and it ships no part: then the hopper closes the issue (issue #677), again after a stop (issue #1959).
+    const whole = now.state === 'merged' && !part && await closesIssue(ctx.api, repo, number, now.url, merged);
     const shipsPart = part || (now.state === 'merged' && !whole);
     // A merged part that makes every declared part done (issue #729): the issue is done.
     const parts = now.state === 'merged' && shipsPart ? await partsOf(ctx.api, await ctx.api.getIssue(repo, number), now.url) : undefined;

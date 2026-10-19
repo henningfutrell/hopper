@@ -15,7 +15,7 @@ import { tempDbPath } from '../support/app.ts';
 import { databaseUrlFor, ownerSchemaUrlFor } from '../support/database.ts';
 import { TEST_ACCOUNT_TOKEN } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
-import { startHost, type CrashHost } from './harness.ts';
+import { killedAt, startHost, type CrashHost } from './harness.ts';
 
 export const REPO = 'owner/hopper-sandbox';
 export const issueUrl = (n: number): string => `https://github.com/${REPO}/issues/${n}`;
@@ -115,4 +115,13 @@ export async function writtenOnce(w: OutboxWorld, h: CrashHost): Promise<void> {
   const events = async (type: string) => (await h.get<{ events: DomainEvent[] }>(`/api/events?types=${type}`)).events;
   expect((await events('source.request_decline_written')).map((e) => e.data.key)).toEqual([issueUrl(1)]);
   expect((await events('source.issues_assigned')).map((e) => e.data.keys)).toEqual([[issueUrl(2)]]);
+}
+
+/** The scenario: a first hopper killed at `point` while it sends the person's acts; a second sends what is left, each effect once. */
+export async function killedThenSent(w: OutboxWorld, point: string): Promise<void> {
+  const a = await w.host({ killPoint: point, connect: true });
+  await act(w, a);
+  await killedAt(a, point);
+  endClaims(w);
+  await writtenOnce(w, await w.host());
 }

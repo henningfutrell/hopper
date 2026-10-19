@@ -15,6 +15,7 @@ import { SourceError, type JobSource, type RerunBy, type RerunResult, type Sourc
 import type { OutboxActs } from '../domain/github-outbox.ts';
 import type { AfterAnswerAct, GiveBackAct, GiveBackAnswer, GiveBackCheck, GiveBackInput, GiveBackRun } from '../domain/give-back.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
+import { killPoint } from '../sagas/kill-points.ts';
 import { liveWhy } from '../failures/continued.ts';
 import { withAct } from './after-answer-timings.ts';
 import { sourceRef, withEdits } from './item-text.ts';
@@ -146,7 +147,12 @@ export function createRerun(c: RerunContext) {
   /** A person's Run again: the item given back, and the new job. */
   const runAgain = (jobId: string, acting?: ActingPerson, wrap: Wrap = as): Promise<RerunResult> =>
     takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), 'user', undefined, acting) }),
-      async (source, job) => ({ item: await wrap(source.rerun!(job)) }));
+      async (source, job) => {
+        const item = await wrap(source.rerun!(job));
+        // A kill here leaves the item given back and no new job (issue #1959): the row sent again gives it back again.
+        killPoint('give-back:rerun:after-give');
+        return { item };
+      });
 
   /** The services' checks of the give-backs they run (part 5): set at the start, before the outbox sends. */
   let checks: GiveBackCheck | undefined;

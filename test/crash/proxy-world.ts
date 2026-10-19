@@ -10,7 +10,7 @@ import { tempDbPath } from '../support/app.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { createFakeGitHub, type FakeForge, type FakePull } from '../support/fake-forges.ts';
 import { TEST_ACCOUNT_TOKEN } from '../support/github-account.ts';
-import { startHost, type CrashHost } from './harness.ts';
+import { killedAt, startHost, type CrashHost } from './harness.ts';
 
 export const REPO = 'octo/tools';
 /** The most one scenario takes: two hoppers start, one is killed. */
@@ -104,4 +104,21 @@ export async function writtenOnce(w: ProxyWorld, h: CrashHost, write: ProxyWrite
   } else {
     expect(pr!.draft).toBe(false);
   }
+}
+
+/**
+ * The scenario: a first hopper killed at `point` while it makes the job's write; the job sends the same request, with the
+ * same resend key, to a second hopper, and GitHub holds the write once.
+ */
+export async function killedThenSentAgain(w: ProxyWorld, write: ProxyWrite, point: string): Promise<void> {
+  const a = await w.host({ killPoint: point, job: true });
+  const job = a.job!;
+  const pull = write.pull ? await openPull(w, a) : 0;
+  const sent = write.fields(pull);
+  expect((await a.proxy(sent)).status).toBe(0);
+  await killedAt(a, point);
+  const b = await w.host();
+  const again = await b.proxy(sent, job.proxyToken);
+  expect(again.status, JSON.stringify(again.body)).toBe(200);
+  await writtenOnce(w, b, write, sent, pull);
 }

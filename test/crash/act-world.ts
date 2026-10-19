@@ -15,8 +15,8 @@ import { tempDbPath } from '../support/app.ts';
 import { databaseUrlFor, ownerSchemaUrlFor } from '../support/database.ts';
 import { TEST_ACCOUNT_TOKEN } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
-import { startHost, type CrashHost } from './harness.ts';
-import { openRows } from './outbox-world.ts';
+import { killedAt, startHost, type CrashHost } from './harness.ts';
+import { endClaims, openRows } from './outbox-world.ts';
 
 export const REPO = 'owner/hopper-sandbox';
 const issueUrl = (n: number): string => `https://github.com/${REPO}/issues/${n}`;
@@ -145,4 +145,15 @@ export async function actedOnce(w: ActWorld, h: CrashHost, act: JobAct): Promise
     expect((await events(h, 'job.rerun')).map((e) => e.jobId)).toEqual([jobId]);
   }
   expect((await events(h, 'job.pull_request_act_failed')).concat(await events(h, 'job.give_back_failed'))).toEqual([]);
+}
+
+/** The scenario: a first hopper killed at `point` while it sends the person's act; a second sends what is left, each effect once. */
+export async function killedThenActed(w: ActWorld, act: JobAct, point: string): Promise<void> {
+  const a = await w.host({ killPoint: point, connect: true });
+  w.seed();
+  // Answered at once; a kill as the answer goes out answers nothing.
+  expect([202, 0]).toContain(await press(w, a, act));
+  await killedAt(a, point);
+  endClaims(w);
+  await actedOnce(w, await w.host(), act);
 }
