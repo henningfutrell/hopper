@@ -22,8 +22,8 @@
 // pass until a person fixes the minting credential, so the job is told which needs mint, and asks for those.
 // Issue #1875: a request may also name vault secrets, the hopper's test image and egress hosts (template-ask.ts); with a
 // secret or an egress host, its needs may be none, and only a person approves the template.
-// Issue #1977: a request whose template runs an image that is not published is refused at once (`imageProblem`), not
-// saved to fail its read-only check later with "manifest unknown".
+// Issue #1977: a request that would make a template of an image that is not published is refused at once (`imageProblem`),
+// not saved to fail its read-only check later with "manifest unknown".
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type Asset, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { OPERATOR_CLI_NAME } from '../domain/failures.ts';
@@ -287,10 +287,10 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
       reason: `a person changed template ${name} ${changedWhere(was)} since it was asked for: a request does not change it back. ${now ? `It holds these needs now: ask for them with --needs "${now}".` : 'It holds no need now.'} Else ask a person in Settings → Vault, or find another way.`,
     };
   }
-  const image = (reused ?? was)?.image ?? r.image;
-  const missing = await u.imageProblem?.(image);
-  if (missing) return { status: 400, reason: `${missing}. A box of this template could not start, so the hopper makes no template of it. Ask with another --image, or ask a person to publish it.` };
   if (!reused && !was) {
+    // Only for a template made now: one made before was asked about then, and a poll of a waiting job asks no registry.
+    const missing = await u.imageProblem?.(r.image);
+    if (missing) return { status: 400, reason: `${missing}. A box of this template could not start, so the hopper makes no template of it. Ask with another --image, or ask a person to publish it.` };
     const readOnly = readOnlyOf(needs);
     const saved = await u.save({ name, image: r.image, secrets: extras.secrets, ...(extras.egress.length ? { egress: extras.egress } : {}), profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}),
       ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}) }, by);

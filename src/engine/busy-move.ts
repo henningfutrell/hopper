@@ -5,7 +5,7 @@
 // a new start, not pinned. The hopper parks it first (`recordPark`, auto, with why), so nothing claims it meanwhile; a job
 // whose answer waits in its live pane gets its pane and agent ended (`Executor.park`) and one more checkpoint. A job the move
 // cannot checkpoint, or whose checkpoint holds work but no agent session, stays on its machine and is tried again after a while.
-import { busyMove } from '../decider/busy-move.ts';
+import { busyMove, resumesOnItsMachine } from '../decider/busy-move.ts';
 import type { Job } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 import { recordPark, recordUnpark } from './park.ts';
@@ -13,6 +13,8 @@ import { howToMove, MOVE_RETRY_MS } from './signed-out-move.ts';
 
 /** How long a resuming job waits for a lane on its own full machine while another machine has room. */
 export const RESUME_WAIT_MS = 5 * 60_000;
+/** How often the engine runs the pass: a statement on each tick holds a busy hopper's event loop. */
+export const BUSY_MOVE_EVERY_MS = 10_000;
 
 /** The busy-machine move: one pass over the queued jobs. */
 export function createBusyMove(c: EngineContext): () => Promise<void> {
@@ -24,13 +26,15 @@ export function createBusyMove(c: EngineContext): () => Promise<void> {
     const { store } = c;
     const now = c.clock.now().getTime();
     for (const [id, at] of tried) if (now - at >= MOVE_RETRY_MS) tried.delete(id);
-    const queued = store.jobs.list({ status: ['queued'] });
+    const queued = store.jobs.list({ status: ['queued'] }).filter(resumesOnItsMachine);
     const seen = new Set(queued.map((j) => j.id));
     for (const id of since.keys()) if (!seen.has(id)) since.delete(id);
+    if (queued.length === 0) return;
     const machines = await c.machines.list();
+    const lanes = store.lanes.list();
     for (const waiting of queued) {
       if (c.stopping()) return;
-      const to = busyMove(waiting, machines, store.lanes.list());
+      const to = busyMove(waiting, machines, lanes);
       if (!to) {
         since.delete(waiting.id);
         continue;

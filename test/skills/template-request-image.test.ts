@@ -47,12 +47,10 @@ describe('a template request for an image that is not published (issue #1977)', 
     expect([...templates.values()][0]!.image).toBe(TEST_IMAGE);
   });
 
-  it('is refused for a template it asked for before, whose image is not published', async () => {
-    const ok = user([]);
-    const first = await requestTemplate(ok.u, E2E, 'job j1', 'j1');
-    expect(first.status).toBe(202);
-    const gone: TemplateRequestUser = { ...ok.u, imageProblem: async (image) => `the image ${image} is not published: its registry answers manifest unknown` };
-    const again = await requestTemplate(gone, E2E, 'job j1', 'j1');
-    expect(again.status).toBe(400);
+  it('asks no registry for a template it asked for before: a poll of a waiting job stays as fast as before', async () => {
+    const { u, asked } = user([]);
+    expect((await requestTemplate(u, E2E, 'job j1', 'j1')).status).toBe(202);
+    expect((await requestTemplate(u, E2E, 'job j1', 'j1')).status).toBe(202);
+    expect(asked).toEqual([TEST_IMAGE]);
   });
 });

@@ -28892,7 +28892,8 @@ named that line).
 
 ### The busy-machine move (part 1)
 
-- **When.** On each engine tick (`src/engine/busy-move.ts`, one pass at a time, on the `busy-move` sweep lease), a queued
+- **When.** Every 10 s on an engine tick (`BUSY_MOVE_EVERY_MS`, `src/engine/busy-move.ts`, one pass at a time, on the
+  `busy-move` sweep lease; a pass with no resuming job reads nothing more), a queued
   job moves when (`busyMove`, `src/decider/busy-move.ts`, pure):
   - it resumes on its machine: an answer pending, `resumeOn` set — a job picked up, a **preempted** job, or a job whose
     answer waits for its live pane;
@@ -28921,9 +28922,10 @@ named that line).
   image is not published. A registry not reached, a timeout (10 s), or any other answer says nothing. A local image
   (`localhost/…`) is asked of no registry. A published answer is kept 10 minutes, a missing one a minute, for every user.
 - **The request** (`requestTemplate`, `imageProblem` on `TemplateRequestUser`). Before it saves a template, the request
-  asks for the image a box of the template pulls (`pulledImage`, `src/sandbox/box-image.ts`): the reused or earlier
-  template's, else the one the request names, the test image as the tag of the hopper's own branch (issue #1976). A
-  missing image is a 400 with the reason, and no template is saved. Issue #1976 publishes the test image of each branch;
+  asks for the image a box of it pulls (`pulledImage`, `src/sandbox/box-image.ts`): the one the request names, the test
+  image as the tag of the hopper's own branch (issue #1976). A missing image is a 400 with the reason, and no template is
+  saved. Only a request that makes a template asks: a template made before was asked about then, so a poll of a waiting
+  job asks no registry. Issue #1976 publishes the test image of each branch;
   this part only refuses early.
 
 ### More providers in the read-only mirror (part 3)
@@ -28950,5 +28952,5 @@ named that line).
 Tests: `test/decider/busy-move.test.ts` (which jobs, which machines), `test/engine/busy-move.test.ts` (the real database:
 the wait, a move from the checkpoint, a live pane ended first, a new start, a checkpoint with no session),
 `test/sandbox/image-published.test.ts` (the registry double: published, 404, unreachable, local, kept answers, image
-references), `test/skills/template-request-image.test.ts` (refused with no template saved, an earlier template refused),
+references), `test/skills/template-request-image.test.ts` (refused with no template saved, no registry asked for an earlier template),
 `test/sandbox/tools.test.ts` and `test/sandbox/check-script.test.ts` (the mirror's providers, the probe's provider).
