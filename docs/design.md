@@ -29088,8 +29088,12 @@ the need box is a real container of a real image with a real home volume, on a r
   (default `docker.io/library/alpine:3.20`) with a user that is not root. `npm test` and the pull request check skip it.
 - **Found.** No leak: after the step's saga ended, no canary was in any container, volume, image or storage file.
 
-**Left for later parts.** The nightly run of this test (a workflow that starts a rootless Podman's socket and sets
-`HOPPER_TEST_PODMAN_SOCKET`): a workflow file, a change to CI, which a job does not make from an issue's text.
+**The nightly run** (part 9, `.github/workflows/secret-canary.yml`). Nightly on the default branch, by hand, and on a
+pull request that changes the sandbox module, the vault or the canary tests. The step starts the runner's own rootless
+Podman as an API socket (`podman system service`), waits for its `/_ping`, sets `HOPPER_TEST_PODMAN_SOCKET` to it and
+runs every `secret-canary*` test file, so the e2e mode runs beside the in-process mode. The runner's Podman is 4.9
+(ubuntu-24.04); it answers the hopper's `/v5.0.0/libpod` calls, and the e2e test passes on a rootless Podman 4.9.4.
+`test/scripts/secret-canary-workflow.test.ts` checks the workflow. With this part, issue #1957 is done.
 
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
