@@ -4,7 +4,8 @@
 // the labels change through the GitHub outbox (act `mirror`, tagged with the state), coalesced, once, so `hopper:pr-ready`
 // comes off an item the item reconciler blocked, an end label comes off an item a job works, and PR open gets its waiting
 // label. A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
-// last moments, or that has outbox rows not sent, is not judged: the move's own writes are on their way.
+// last moments, or that has outbox rows not sent, is not judged: the move's own writes are on their way. The source passes
+// no issue its discover takes as a new job (issue #1954): that job moves the item.
 import { RECONCILE_GRACE_MS } from '../../domain/item-lifecycle.ts';
 import type { WorkItem } from '../../domain/work-items.ts';
 import { labelCorrected, labelDriftSeen } from '../../telemetry/sources.ts';

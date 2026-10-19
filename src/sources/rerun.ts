@@ -274,7 +274,12 @@ export function createRerun(c: RerunContext) {
       return job ? takesBackOf(job, c.sourceOf(job)) : { ok: false, why: 'its job is gone' };
     },
     rerun(jobId: string, by: RerunBy = 'user', brief?: string, acting?: ActingPerson): Promise<RerunResult> {
-      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), by, brief, acting) }), undefined, false, by === 'tending');
+      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), by, brief, acting) }), async (source, job) => {
+        const item = await source.rerun!(job);
+        // A kill here leaves the item given back and no new job (issue #1954): the next try gives it back again.
+        killPoint(`give-back:rerun-by-${by}:after-give`);
+        return { item };
+      }, false, by === 'tending');
     },
     /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
     continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult> {

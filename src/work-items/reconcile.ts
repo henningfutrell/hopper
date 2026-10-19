@@ -10,6 +10,8 @@
 // A blocked item that is stuck work for a person gets one notice: `work_item.person_asked`, which a notifier sends on.
 // A block of an item whose job is a GitHub job writes its issue's label change as GitHub outbox rows (act `mirror`, part 8)
 // in the event's transaction: the move and its rows are kept together or not at all, and the source's outbox sends them.
+// Kill points (issue #1954, design.md "The crash harness"): inside a block's transaction, between its event and its rows;
+// once a correction's event is kept; and before and after a run again's call.
 import type { GitHubOutboxRepository, OutboxInput } from '../domain/github-outbox.ts';
 import type { SweepLease } from '../domain/leases.ts';
 import type { RerunResult } from '../domain/ports.ts';
@@ -17,6 +19,7 @@ import { following } from '../domain/pull-requests.ts';
 import { TERMINAL_STATUSES, type DomainEvent, type EventType, type Job, type NewEvent } from '../domain/types.ts';
 import { checkOf, correctionOf, type ItemCorrection } from '../domain/item-lifecycle.ts';
 import type { WorkItem, WorkItemLedger } from '../domain/work-items.ts';
+import { killPoint } from '../sagas/kill-points.ts';
 import { blockLabels } from '../sources/github/item-labels.ts';
 
 /** How often it checks: every 5 minutes. */
@@ -24,11 +27,17 @@ export const RECONCILE_INTERVAL_MS = 5 * 60_000;
 /** The most items one pass checks. */
 export const RECONCILE_LIMIT = 200;
 
+/** The kill points of a correction (issue #1954): inside its transaction, once its event is kept, around a run again's call. */
+export const itemKillPoint = (kind: ItemCorrection['kind'], at: 'inside-tx' | 'after-record' | 'before-call' | 'after-call'): string => `item:${kind}:${at}`;
+
 /** The brief of the job that runs an item again after its pull request was closed without a merge. */
 export const closedBrief = (pullRequest: string | undefined): string =>
   `The earlier pull request of this issue${pullRequest ? ` (${pullRequest})` : ''} was closed without a merge. Read its comments `
   + 'and reviews, and the comments of the issue, to learn why. Then do the work again so that it answers why. Open a new pull '
   + 'request: do not reopen the closed one.';
+
+/** The kinds of a GitHub job source: a connected account's (`github-account`, every account's), the app's, and `github`. */
+const GITHUB_KINDS: ReadonlySet<string> = new Set(['github', 'github-account', 'github-app']);
 
 /** The end event of each ended job status: what an item is folded again from. */
 const END_EVENT: Readonly<Record<string, EventType>> = { finished: 'job.finished', failed: 'job.failed', cancelled: 'job.cancelled', rejected: 'job.rejected' };
@@ -62,8 +71,9 @@ export function createItemReconciler(o: {
   function runAgain(c: Extract<ItemCorrection, { kind: 'run_again' }>): boolean {
     if (!o.runAgain || running.has(c.key)) return false;
     running.add(c.key);
+    killPoint(itemKillPoint('run_again', 'before-call'));
     void o.runAgain(c.jobId, closedBrief(c.pullRequest))
-      .then((r) => { if (!r.ok) o.log(`hopper: the item reconciler could not run ${c.key} again, tries again later: ${r.message}`); })
+      .then((r) => { killPoint(itemKillPoint('run_again', 'after-call')); if (!r.ok) o.log(`hopper: the item reconciler could not run ${c.key} again, tries again later: ${r.message}`); })
       .catch((e: unknown) => o.log(`hopper: the item reconciler could not run ${c.key} again, tries again later: ${(e as Error).message}`))
       .finally(() => running.delete(c.key));
     o.log(`hopper: the item reconciler runs ${c.key} again: its pull request was closed without a merge`);
@@ -86,7 +96,7 @@ export function createItemReconciler(o: {
   /** The outbox rows of a block: its issue's label change, sent by the job's GitHub source; none for an item with no GitHub job. */
   function rowsOf(c: ItemCorrection, job: Job | undefined): OutboxInput[] {
     const src = job?.source;
-    if (c.kind !== 'block' || !o.outbox || src?.kind !== 'github' || !src.repo) return [];
+    if (c.kind !== 'block' || !o.outbox || !src || !GITHUB_KINDS.has(src.kind) || !src.repo) return [];
     const { remove, add } = blockLabels(c.from, c.cause);
     const base = { source: src.source, repo: src.repo, key: c.key, act: 'mirror' as const, tag: `blocked:${c.cause}` };
     return [
@@ -111,8 +121,9 @@ export function createItemReconciler(o: {
       const rows = rowsOf(correction, job);
       if (rows.length && o.outbox) {
         const outbox = o.outbox;
-        outbox.tx(() => { o.events.append(event); outbox.add(rows, now); });
+        outbox.tx(() => { o.events.append(event); killPoint(itemKillPoint(correction.kind, 'inside-tx')); outbox.add(rows, now); });
       } else o.events.append(event);
+      killPoint(itemKillPoint(correction.kind, 'after-record'));
       o.log(correction.kind === 'ask'
         ? `hopper: the item reconciler asked a person about ${item.key}: blocked, ${correction.cause}`
         : `hopper: the item reconciler moved ${item.key} out of ${item.state}: ${correction.kind === 'block' ? `blocked, ${correction.cause}` : `folded again from its job's end (${job?.status ?? 'ended'})`}`);

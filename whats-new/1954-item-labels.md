@@ -1,0 +1,1 @@
+- When the hopper blocks an issue it can no longer move on, the issue's labels on GitHub now change at once, and an issue you run again by taking its label off keeps that label off.
