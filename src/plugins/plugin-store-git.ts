@@ -25,12 +25,13 @@ export interface StoreMirror {
 
 export function createStoreMirror(dir: string): StoreMirror {
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: sshCommand(process.env, homedir(), existsSync) };
-  // A failure says what git said, not the whole command line (the plugin store card shows it).
+  // A failure says what git said, not the whole command line, and without git's "fatal:" (the plugin store card
+  // shows it, and the hopper logs it; issue #2082).
   const git = async (...args: string[]): Promise<string> => {
     try {
       return (await exec('git', ['--git-dir', dir, ...args], { env, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 })).stdout;
     } catch (e) {
-      const said = String((e as { stderr?: unknown }).stderr ?? '').trim().replace(/\s*\n\s*/g, ' ');
+      const said = String((e as { stderr?: unknown }).stderr ?? '').trim().replace(/^(?:fatal|error): /gm, '').replace(/\s*\n\s*/g, ' ');
       throw new Error(said || (e instanceof Error ? e.message : String(e)), { cause: e });
     }
   };

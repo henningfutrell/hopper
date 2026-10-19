@@ -8544,8 +8544,12 @@ check.
 **Reading.** A bare mirror at `<work dir>/plugin-store/repo.git`; each read fetches the store's
 `HEAD` (its default branch) with the update mirror's git environment (never prompts, ssh batch
 mode). Read at start in the background (a slow or unreachable store never delays the boot), and on
-`refresh`. A catalogue that cannot be fetched or parsed → state `error` with the reason; the last
-good catalogue stays listed. When that catalogue was read from another plugin store (the setting
+`refresh`. A plugin store that cannot be fetched (not published yet, offline, gone) → state
+`unavailable` with a `reason` (`<store> cannot be read: <what git said>`, without git's `fatal:`); the
+last good catalogue stays listed, nothing installs until a read succeeds, and the hopper logs each new
+reason once, as info, never as a warning (issue #2082: the default plugin store is published from
+`stable`, so a newer build can name it before it is served). A catalogue that cannot be parsed →
+state `error` with the reason; the last good catalogue stays listed. When that catalogue was read from another plugin store (the setting
 changed and the new one could not be read), the report names it (`from`), and nothing installs from
 it: Install is refused (409) and the card offers none. No plugin store (set to none, or no default in
 this build) → state `unavailable` with a `reason` that names the setting, never an environment
