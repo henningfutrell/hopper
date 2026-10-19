@@ -17681,8 +17681,15 @@ the fix adds no second approval of an item:
 - **A job with no item** (no source: queued by hand, an older build) has no request card. Below `approved`, a person approves
   its trust on the job (`trustApprovable`), and its hold text says so.
 - **Cancel in each row** of Held by trust, for an operator, after a confirm (`POST /ui/api/jobs/:id/cancel`).
+- **A job made from an item offered with no origin** (issue #2113). The sync judges the origin only of an issue whose job
+  has ended or that has none; an issue whose job was still live is offered with no origin, to refresh that job. When the
+  job ended between the judgement and the offer, `ingest` made a new job of that item with no origin: stamped `untrusted`
+  (`origin:none`), with no `originPending`, and so again in Held by trust with no request card and no approval. `ingest`
+  now marks such a job (`awaitsOrigin`) `originPending`, as the backfill does: the next sync judges its issue, and it goes
+  on, or its request card opens in Intake. An issue a job filed (a routed child) is no trusted origin, so a person approves
+  its card. Tenant migration 86 marks the jobs made so since migration 85 that have not ended.
 
-Persisted state: migration 85 sets `originPending` on rows only; the build before reads it as migration 39's. A job a job
+Persisted state: migrations 85 and 86 set `originPending` on rows only; the build before reads it as migration 39's. A job a job
 made keeps the level its parent had at the backfill.
 
 **The comment command** (part 21, `src/domain/comment-command.ts`; `nominated` in `src/sources/github/discover.ts`,
