@@ -27,6 +27,10 @@ export interface CrashHost {
   exited: Promise<Exit>;
   /** What the process wrote to stderr so far. */
   stderr(): string;
+  /** What the process wrote so far, stdout (but the ready line, the harness's own) then stderr: its logs and its crash output. */
+  output(): string;
+  /** The host's own work dir (HOPPER_WORK_DIR). */
+  workDir: string;
   /** POST a UI mutation as the admin; a host killed meanwhile answers status 0. */
   ui(path: string, body: unknown): Promise<{ status: number; body: unknown }>;
   /** GET as the admin. */
@@ -48,48 +52,56 @@ export interface HostOptions {
   fakes: { cloudflare?: string; ngrok?: string; github?: string };
   /** The job repositories to connect the GitHub account with, at this host's start (the first host of a test). */
   connectGitHub?: string[];
+  /** The connected account's access token, when not TEST_ACCOUNT_TOKEN (a secret canary, issue #1957). */
+  githubToken?: string;
   /** The kill point to end this host at. */
   killPoint?: string;
   /** `owner/name#N`: the host pulls a job of that issue, which runs on and asks the GitHub proxy (issue #1959). */
   job?: string;
+  /** A value the host says in an unhandled rejection once it serves, which ends it: a planted leak (issue #1957). */
+  plant?: string;
   /** How far this host's clock is ahead of the real time (behind, when negative), as a machine's clock that is off. */
   clockSkewMs?: number;
 }
 
 const children = new Set<ChildProcess>();
 /** The master key of every host this test process starts: they share their databases. */
-const MASTER_KEY = randomBytes(32).toString('hex');
+export const MASTER_KEY = randomBytes(32).toString('hex');
 
 export function startHost(o: HostOptions): Promise<CrashHost> {
+  const workDir = mkdtempSync(join(tmpdir(), 'crash-host-'));
   const child = spawn(process.execPath, [HOST], {
     env: {
       ...process.env, CRASH_DB_PATH: o.dbPath, HOPPER_DATABASE_URL: o.databaseUrl,
-      HOPPER_WORK_DIR: mkdtempSync(join(tmpdir(), 'crash-host-')),
+      HOPPER_WORK_DIR: workDir,
       CRASH_MASTER_KEY: MASTER_KEY,
       ...(o.fakes.cloudflare ? { CRASH_CLOUDFLARE_URL: o.fakes.cloudflare } : {}), ...(o.fakes.ngrok ? { CRASH_NGROK_URL: o.fakes.ngrok } : {}),
       ...(o.fakes.github ? { CRASH_GITHUB_URL: o.fakes.github } : {}), ...(o.connectGitHub ? { CRASH_GITHUB_CONNECT: o.connectGitHub.join(',') } : {}),
+      ...(o.githubToken ? { CRASH_GITHUB_TOKEN: o.githubToken } : {}), ...(o.plant ? { CRASH_PLANT: o.plant } : {}),
       ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}), ...(o.job ? { CRASH_JOB: o.job } : {}),
       ...(o.clockSkewMs ? { CRASH_CLOCK_SKEW_MS: String(o.clockSkewMs) } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.add(child);
-  let stderr = '', stdout = '';
+  let stderr = '', stdout = '', served = '';
   child.stderr!.setEncoding('utf8').on('data', (d: string) => (stderr += d));
   const exited = new Promise<Exit>((resolve) => child.once('exit', (code, signal) => { children.delete(child); resolve({ code, signal }); }));
   return new Promise<CrashHost>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`the crash host did not serve in ${START_MS} ms:\n${stderr}`)), START_MS);
     void exited.then((e) => { clearTimeout(timer); reject(new Error(`the crash host ended before it served (${e.signal ?? e.code}):\n${stderr}`)); });
     child.stdout!.setEncoding('utf8').on('data', (d: string) => {
+      served += d;
       stdout += d;
       const line = stdout.split('\n').slice(0, -1).find((l) => l.startsWith(READY));
       if (!line) return;
       stdout = '';
+      served = served.replace(`${line}\n`, '');
       clearTimeout(timer);
       const { url, token, job, proxyToken } = JSON.parse(line.slice(READY.length)) as { url: string; token: string; job?: string; proxyToken?: string };
       const headers = { 'content-type': 'application/json', origin: url, 'x-hopper-session': token };
       resolve({
-        url, token, exited, stderr: () => stderr, ...(job && proxyToken ? { job: { id: job, proxyToken } } : {}),
+        url, token, exited, workDir, stderr: () => stderr, output: () => `${served}\n${stderr}`, ...(job && proxyToken ? { job: { id: job, proxyToken } } : {}),
         kill: () => { child.kill('SIGKILL'); return exited; },
         ui: async (path, body) => {
           try {
