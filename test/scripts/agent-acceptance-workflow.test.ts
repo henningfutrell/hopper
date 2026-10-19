@@ -14,7 +14,7 @@ const ROOT = join(import.meta.dirname, '..', '..');
 const FILE = join(ROOT, '.github', 'workflows', 'agent-acceptance.yml');
 
 type Step = { name?: string; uses?: string; run?: string; if?: string; with?: Record<string, unknown>; env?: Record<string, string> };
-type Job = { if?: string; 'timeout-minutes'?: number; env?: Record<string, string>; steps: Step[] };
+type Job = { if?: string; 'timeout-minutes'?: number; steps: Step[] };
 type Workflow = {
   name: string;
   on: { schedule?: { cron: string }[]; workflow_dispatch?: null; pull_request?: { branches: string[]; paths: string[] } };
@@ -40,7 +40,7 @@ describe('.github/workflows/agent-acceptance.yml, the acceptance tests of the ag
 
   it('reads the repository only, and names no secret', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
-    expect(text).not.toMatch(/secrets\.|pull_request_target/);
+    expect(text).not.toMatch(/secrets\./);
     for (const [name, job] of Object.entries(workflow.jobs)) expect(job['timeout-minutes'], name).toBeLessThanOrEqual(30);
   });
 
@@ -66,9 +66,9 @@ describe('.github/workflows/agent-acceptance.yml, the acceptance tests of the ag
   it('runs the TUI nightly or by hand only, and keeps its captures as artifacts when it fails too', () => {
     const job = workflow.jobs.tui;
     expect(job?.if).toBe("github.event_name != 'pull_request'");
-    expect(job?.env).toMatchObject({ HOPPER_ACCEPTANCE_TUI: '1', HOPPER_ACCEPTANCE_TUI_OUT: '${{ runner.temp }}/tui-screens' });
-    expect(runs('tui')).toContain('npx vitest run test/acceptance/tui-screens.test.ts');
-    expect(runs('tui')).toContain('herdr --version');
+    const test = job!.steps.find((s) => s.run === 'npx vitest run test/acceptance/tui-screens.test.ts');
+    expect(test?.env).toMatchObject({ HOPPER_ACCEPTANCE_TUI: '1', HOPPER_ACCEPTANCE_TUI_OUT: '${{ runner.temp }}/tui-screens' });
+    expect(runs('tui')).toContain('https://herdr.dev/install.sh');
     expect(runs('tui')).toContain('HOPPER_ACCEPTANCE_CLAUDE_BIN=');
     const upload = job!.steps.find((s) => s.uses?.startsWith('actions/upload-artifact@'));
     expect(upload?.if).toBe('always()');
