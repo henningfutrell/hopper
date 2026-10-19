@@ -38,6 +38,32 @@ describe('what a wait waits on (issue #1245)', () => {
     expect(waitOnOf({ for: 'write access to the repository' })).toEqual({ kind: 'outside', what: 'write access to the repository' });
   });
 
+  it('a number with no owner is in the repository the text names, never the job\'s own (issue #2090)', () => {
+    const elsewhere = { kind: 'pull_request', repo: 'Some-Org/infra-code', number: 95, about: 'merge' };
+    expect(waitOnOf({ for: 'the trunk merge of PR #95 in Some-Org/infra-code' })).toEqual(elsewhere);
+    expect(waitOnOf({ for: 'a merge', on: 'pr 95 merge in repository `Some-Org/infra-code`' })).toEqual(elsewhere);
+    expect(waitOnOf({ for: 'PR #95 to merge', until: 'a poll of https://github.com/Some-Org/infra-code/pull/95' })).toEqual(elsewhere);
+    // The repository written after the number is the one it is in.
+    expect(waitOnOf({ for: 'a fix in a/b, then PR #95 in Some-Org/infra-code to merge' })).toEqual(elsewhere);
+    expect(waitOnOf({ for: 'a merge', on: 'issue 4 in x/y' })).toEqual({ kind: 'item', repo: 'x/y', number: 4 });
+    // A path is no repository.
+    expect(waitOnOf({ for: 'PR #95 to merge', until: 'scripts/poll.sh ends' })).toEqual({ kind: 'pull_request', number: 95, about: 'merge' });
+  });
+
+  it('a wait on another repository\'s pull request is not ended by the job\'s own with the same number (issue #2090)', () => {
+    const job = (wait: Parameters<typeof waitOnOf>[0]): Job =>
+      ({ id: 'j', status: 'waiting_on', wait: { ...wait, since, on: waitOnOf(wait) }, source: { repo: 'o/platform' } }) as unknown as Job;
+    const named = job({ for: 'the trunk merge of PR #95 in Some-Org/infra-code', until: 'a background poll of its state' });
+    const outside = job({ for: 'the trunk merge', on: 'outside: gated: trunk merge of PR #95 in Some-Org/infra-code' });
+    const own = settledBy({ type: 'job.waited_pull_request_ended', data: { pullRequest: 'https://github.com/o/platform/pull/95', state: 'merged' } })!;
+    const theirs = settledBy({ type: 'job.waited_pull_request_ended', data: { pullRequest: 'https://github.com/Some-Org/infra-code/pull/95', state: 'merged' } })!;
+    expect([waitsFor(named, own), waitsFor(outside, own)]).toEqual([false, false]);
+    expect(waitsFor(named, theirs)).toBe(true);
+    expect(waitedPullRequests([named, outside])).toEqual([{ repo: 'Some-Org/infra-code', number: 95, jobIds: ['j'] }]);
+    const ledger = { get: () => undefined, byPullRequest: (url: string) => (url.includes('/o/platform/') ? { pullRequestState: 'merged' as const } : undefined) };
+    expect(settledAlready(named.wait!.on!, 'o/platform', ledger)).toBeUndefined();
+  });
+
   it('an on: line it cannot read is an outside event with what the job wrote', () => {
     expect(waitOnOf({ for: 'a release', on: 'the moon' })).toEqual({ kind: 'outside', what: 'the moon' });
   });

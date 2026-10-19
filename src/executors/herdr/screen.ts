@@ -115,10 +115,12 @@ function authAt(lines: string[], index: number): AuthFields | undefined {
   return fields;
 }
 
-/** The wait in the lines after a wait marker (issue #483): its `for:` line, and `until:`, `on:` and `check:` lines, when present. None without `for:`. */
+/** The wait after a wait marker (issue #483): `for:`, and `until:`, `on:`, `check:` when there; a wrapped line goes on with its field (issue #2090). None without `for:`. */
 export function waitFields(after: string[]): WaitFields | undefined {
   const fields: Partial<WaitFields> = {};
-  for (const f of after.filter((x) => stripGutter(x) !== '').map((l) => fieldOf(l, WAIT_FIELDS))) { if (!f) break; fields[f[0]] = f[1]; }
+  let last: keyof WaitFields | undefined;
+  const wrapped = (l: string) => (last && !markerOf(l) && !ASSISTANT_START.test(l) && !USER_ECHO.test(l) ? [last, `${fields[last]} ${normaliseMarkerLine(l)}`] as const : undefined);
+  for (const l of after.filter((x) => stripGutter(x) !== '')) { const f = fieldOf(l, WAIT_FIELDS) ?? wrapped(l); if (!f) break; [last, fields[f[0]]] = [f[0], f[1]]; }
   return fields.for ? { for: fields.for, ...(fields.until ? { until: fields.until } : {}), ...(fields.on ? { on: fields.on } : {}), ...(fields.check ? { check: fields.check } : {}) } : undefined;
 }
 

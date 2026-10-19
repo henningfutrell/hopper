@@ -23296,7 +23296,12 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   `job <id>`, `issue 45`, `question <id>`, `sandbox approval`, `template approval`, `vault grant`, `own command`,
   `outside: <what>`. `waitFields` reads it beside `for:` and `until:`. With no `on:` line, `waitOnOf` reads it from `for:` and
   `until:` (own command as `namesOwnCommand`; a pull request; an approval; a grant); what reads as none of them is an outside
-  event with the `for:` text. So a wait is never recorded without one.
+  event with the `for:` text. So a wait is never recorded without one. A pull request or an issue number written with no
+  owner (`PR #95`, `issue 4`) is in the repository the same text names, in a link or in words (`in owner/name`,
+  `repository owner/name`): the first one after the number, else the last before it; only when the text names none is it the
+  job's own (issue #2090: a wait on another repository's pull request was ended by the job repository's pull request with
+  the same number). A field line the terminal wrapped goes on with that field in `waitFields`, so the `on:` line after a
+  long `for:` line still reads (issue #2090).
 - **Never without one.** The job repository refuses to write a job that enters `waiting_on` with no `wait.on`
   (`waitEntryProblem`, `src/store/jobs.ts`): the one place every write goes through. A job already on a wait keeps it.
 - **Woken on the event, never a poll.** The engine hears each event and asks `settledBy` (`src/domain/wait-on.ts`) what it
