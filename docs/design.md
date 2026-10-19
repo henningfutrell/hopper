@@ -26940,7 +26940,8 @@ hopper's running jobs and closed their lanes. Two hoppers deciding at once could
 
 **The job lease** (`JobLeaseRepository`, `src/domain/job-leases.ts`; the user's `job_leases` table, tenant migration 74,
 `src/store/job-leases.ts`; driven by `src/engine/leases.ts`). One row per job a hopper drives: its owner (this engine's host,
-pid and a nonce) and until when.
+pid and a nonce) and until when, on the database's clock (issue #1954, "The crash harness" part 3): a hopper whose clock is
+off neither takes a lease another holds nor holds one past its end.
 - **Taken at the claim.** A Decision is read and applied in one transaction under the **claim lock** of the user's jobs (a
   transaction-level advisory lock, `lockClaims`): one hopper at a time claims, so no job is claimed twice. The claim takes the
   job's lease in the same transaction, whoever held one: a lease on a waiting job is over.
@@ -27136,7 +27137,7 @@ after a restart, or another hopper on the same database, goes on from it:
 
 **The sweeper** (`src/engine/wait-checks.ts`, on each engine tick, one pass at a time). Each job on its own wait gets its
 check, in a transaction, if it has none. Each check due is taken under a **lease** (`wait_check_leases`, tenant migration
-76: one row per job, its wait, its holder, until when; `LEASE_MS`, 2 minutes), claimed in one statement, so two hoppers or
+76: one row per job, its wait, its holder, until when, on the database's clock (issue #1954); `LEASE_MS`, 2 minutes), claimed in one statement, so two hoppers or
 two passes never test the same check at once. Its condition met: the wait ends in a transaction that first sees the lease
 still held and the job on the same wait (`job.wait_ended { by: hopper, note, check }`); the job is queued again and told
 what happened. Not met: the check is written with its next time. A hopper that stops mid-check holds the lease until it ends;
@@ -28635,9 +28636,21 @@ lease now end it in the database (`endLeases`).
 - **Job leases and the wait-check leases are not in this part.** `job_leases` and `wait_check_leases` also compare a
   host's times; they are listed below.
 
-**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); the
-job leases (`src/store/job-leases.ts`) and the wait-check leases (`src/store/wait-check-leases.ts`) on the database's
-clock too, with a skewed-clock test each; landing batches killed between each GitHub write and its event (#1589); kill
+**Part 3: the job leases and the wait-check leases under a skewed clock** (2026-10-18). **What it found:** the same fault
+as part 2. A hopper whose clock was ahead read another hopper's live job lease as ended: it listed the job as unheld, took
+its lease, and could take the job over; a person's act was no longer relayed to the hopper that drove it. A hopper whose
+clock was behind wrote a lease end already past for the others. The wait-check leases did the same: a second hopper tested
+a wait check the first was testing. Now both are timed on the database's clock (`src/store/db-clock.ts`), and the
+repositories take a lease's length, not its end: `take(jobId, { owner, ms }, force)`, `renew(owner, ms)`, `unheld()`,
+`heldByOthers(owner)`, `relay(jobId, act, owner)`; `claim(jobId, since, owner, ms)`, `holds(jobId, owner)`.
+`createJobLeases` takes no clock. The rows kept have the same text format, so no migration is necessary.
+**Decisions (part 3).**
+- **The tests are in the process, not crash hosts.** A running job of a crash host is on a `job-run` saga, whose lease
+  (part 2) decides who drives it; the takeover skips such a job. The job lease's own fault shows at the store, so its test
+  is there (`test/store/job-leases.test.ts`), with each host's clock a faked `Date`. The wait-check test runs two wait
+  sweepers with their own clocks on one database (`test/engine/wait-checks.test.ts`).
+
+**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28646,7 +28659,9 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
 record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
-first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock).
+first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
+and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
+first's behind).
 
 ## The GitHub outbox under crashes and faults (issue #1959, part 1, 2026-10-18)
 
