@@ -20,6 +20,7 @@ import type { ChecksState, Job, OwnPullRequestChecks, UnfinishedPullRequest, Wor
 import { GitHubApiError } from './api.ts';
 import { closingReferences } from '../../domain/cross-references.ts';
 import { RELEASE_BRANCHES } from '../../domain/landing-batches.ts';
+import { pullRequestRepo } from '../../domain/pull-requests.ts';
 import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 /** The job's own pull request: opened at or after the job was created. */
@@ -101,11 +102,19 @@ export const namesIssue = (branch: string, n: number): boolean =>
 /** A pull request's number, from its URL. */
 const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
 
-/** How a pull request was found, for the miss's text: `#N (open, draft)`. */
-function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDraft: boolean; conflicting: boolean; checks?: string }): string {
+/** How a pull request was found, for the miss's text: `#N (open, draft)`, `owner/name#N (…)` in another repository than `repo`'s. */
+function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDraft: boolean; conflicting: boolean; checks?: string }, repo: string): string {
   const why = pr.state !== 'open' ? [] : [...(pr.isDraft ? ['draft'] : []), ...(pr.conflicting ? ['merge conflicts'] : []), ...(pr.checks === 'failing' ? ['checks failing'] : [])];
-  return `#${numberOf(pr.url)} (${[pr.state, ...why].join(', ')})`;
+  const of = pullRequestRepo(pr.url, repo);
+  return `${of.toLowerCase() === repo.toLowerCase() ? '' : of}#${numberOf(pr.url)} (${[pr.state, ...why].join(', ')})`;
 }
+
+/**
+ * Whether a pull request that mentions the issue of `repo` is looked at for it (issue #2004): one of `repo`, or the job's
+ * own in another repository (opened, updated or reworked by it) — its change lands there, as infrastructure code does.
+ */
+const looksAt = (pr: ReferencingPullRequest, repo: string, job: Job): boolean =>
+  pr.repo.toLowerCase() === repo.toLowerCase() || isOwnOrReworked(pr, job) || isUpdatedBy(pr, job);
 
 /** An issue whose deliverable is an artifact, not a code change (issue #673): a line of its body says `Deliverable: artifact`. */
 const DELIVERABLE_ARTIFACT = /^\s*deliverable:\s*artifact\s*$/im;
@@ -134,7 +143,7 @@ async function artifactMissing(api: GitHubApi, job: Job, artifacts: JobArtifacts
  * Whether the job's issue is done on GitHub (issue #637), decided from what GitHub shows, not from what the job did:
  * - its issue closed as completed, by anyone, at any time (`isClosedAsCompleted`);
  * - a pull request of its repo that closes or references the issue — opened by the job or before it, by any author —
- *   open and ready for review, or merged since the job began; one that ships only part of it ("Part of #N") is a part,
+ *   or the job's own in another repository (`looksAt`, issue #2004), open and ready for review, or merged since the job began; one that ships only part of it ("Part of #N") is a part,
  *   not the whole (`partlyDone`); one that only mentions it and closes or ships part of another issue is that issue's
  *   work, not this one's (`worksOnAnotherIssue`, issue #786), and one from a release branch (a promotion) is no issue's
  *   work (`fromReleaseBranch`, issue #876);
@@ -171,7 +180,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
   }
   const parts = new Set<string>();
   for (const pr of await api.referencingPullRequests(repo, number)) {
-    if (pr.repo.toLowerCase() !== repo.toLowerCase()) continue;
+    if (!looksAt(pr, repo, job)) continue;
     if (isPartOf(pr, repo, number)) { parts.add(pr.url); continue; }
     if (worksOnAnotherIssue(pr, repo, number)) continue;
     if (pr.state === 'open' ? counts(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
@@ -197,7 +206,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
   if (unfinished && unfinished.step !== 'fix_checks') lines.push(unfinishedLine(unfinished));
   if (!red || found.size > 0) {
     lines.push(found.size === 0 ? `no pull request in ${repo} closes or references it`
-      : `no pull request in ${repo} that closes or references it is ready for review or merged since the job began: ${[...found.values()].map(described).join(', ')}`);
+      : `no pull request in ${repo} that closes or references it is ready for review or merged since the job began: ${[...found.values()].map((pr) => described(pr, repo)).join(', ')}`);
   }
   if (unpushed !== undefined) lines.push(`the pull request sent back for rework, #${numberOf(unpushed)}, has no push since the rework`);
   if (artifact !== undefined) lines.push(artifact);
@@ -208,7 +217,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
       if (pr) named.push(pr);
     }
     if (named.length > 0 && named.every((pr) => pr.state === 'merged' || (pr.state === 'open' && !pr.conflicting))) return undefined;
-    if (named.length > 0) lines.push(`the pull requests it asks to update are not each merged or free of merge conflicts: ${named.map(described).join(', ')}`);
+    if (named.length > 0) lines.push(`the pull requests it asks to update are not each merged or free of merge conflicts: ${named.map((pr) => described(pr, repo)).join(', ')}`);
   }
   return lines.join(', and ');
 }
@@ -216,10 +225,10 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
 /**
  * The job's open pull requests of its issue: opened by it, updated by it, or the one it reworks; closing the issue, shipping
  * part of it, or only referencing it in its own repository with no closing keyword for another issue (issue #1522: a
- * referencing one is the job's too, so its miss names it by number).
+ * referencing one is the job's too, so its miss names it by number), in its own repository or another (issue #2004).
  */
 export async function ownOpenPullRequests(api: GitHubApi, job: Job, repo: string, number: number): Promise<OpenPullRequest[]> {
-  const referencing = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase()
+  const referencing = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && looksAt(pr, repo, job)
     && (isPartOf(pr, repo, number) || !worksOnAnotherIssue(pr, repo, number)));
   const closing = await api.openClosingPullRequests(repo, number);
   const all = [...closing, ...referencing.filter((pr) => !closing.some((c) => c.url === pr.url))];
@@ -262,7 +271,7 @@ export async function ownPullRequestChecks(api: GitHubApi, job: Job): Promise<Ow
     .filter((pr) => !pr.isDraft && !pr.conflicting)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (!own) return undefined;
-  const read = own.checks === 'failing' ? await pullRequestOrNone(api, repo, numberOf(own.url)) : undefined;
+  const read = own.checks === 'failing' ? await pullRequestOrNone(api, pullRequestRepo(own.url, repo), numberOf(own.url)) : undefined;
   const checks = read ? read.checks : own.checks;
   const headOid = read?.headOid ?? own.headOid;
   return {
@@ -271,9 +280,17 @@ export async function ownPullRequestChecks(api: GitHubApi, job: Job): Promise<Ow
   };
 }
 
-/** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n"; never one from a release branch (issue #876). */
-export const isPartOf = (pr: ReferencingPullRequest, repo: string, n: number): boolean =>
-  pr.repo.toLowerCase() === repo.toLowerCase() && !fromReleaseBranch(pr) && new RegExp(`\\bpart of #${n}\\b`, 'i').test(pr.body);
+/**
+ * A pull request that ships part of issue `n` of `repo` (issue #579): its body says "Part of #n" in its own repo, or, in
+ * any repo (issue #2004: the change lands in another one), "Part of repo#n" or the issue's URL; never one from a release
+ * branch (issue #876).
+ */
+export function isPartOf(pr: ReferencingPullRequest, repo: string, n: number): boolean {
+  if (fromReleaseBranch(pr)) return false;
+  const escaped = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const bare = pr.repo.toLowerCase() === repo.toLowerCase() ? '#|' : '';
+  return new RegExp(`\\bpart of (?:${bare}${escaped}#|https://github\\.com/${escaped}/issues/)${n}(?!\\d)`, 'i').test(pr.body);
+}
 
 /**
  * A pull request body that closes issue `n` of `repo` with one of GitHub's closing keywords (issues #721, #430): close,
@@ -295,13 +312,17 @@ export const fromReleaseBranch = (pr: { headRef?: string }): boolean =>
  * (`fromReleaseBranch`), or one that closes or ships part of another issue of `repo` — that issue's work. Its mention of
  * `n` ("depends on #n") never makes `n` done, it is never followed for `n`, and its merge never closes `n`.
  */
-export function worksOnAnotherIssue(pr: { body: string; headRef?: string }, repo: string, n: number): boolean {
+export function worksOnAnotherIssue(pr: { body: string; headRef?: string; repo?: string }, repo: string, n: number): boolean {
   if (fromReleaseBranch(pr)) return true;
   const { body } = pr;
-  if (closesByKeyword(body, repo, n)) return false;
+  // `#N` in a pull request of another repository names that repository's issue (issue #2004).
+  const from = pr.repo ?? repo;
+  if (closingReferences(body, from).some((r) => r.number === n && r.repo.toLowerCase() === repo.toLowerCase())) return false;
+  const elsewhere = from.toLowerCase() !== repo.toLowerCase();
   const escaped = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const target = `(?:#|${escaped}#|https://github\\.com/${escaped}/issues/)(\\d+)(?!\\d)`;
-  return [...body.matchAll(new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|part\\s+of)\\s*:?\\s+${target}`, 'gi'))].some((m) => Number(m[1]) !== n);
+  const target = `(?:(#)|${escaped}#|https://github\\.com/${escaped}/issues/)(\\d+)(?!\\d)`;
+  return [...body.matchAll(new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|part\\s+of)\\s*:?\\s+${target}`, 'gi'))]
+    .some((m) => (elsewhere && m[1] !== undefined) || Number(m[2]) !== n);
 }
 
 /**

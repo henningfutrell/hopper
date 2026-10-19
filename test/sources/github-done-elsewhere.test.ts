@@ -4,6 +4,7 @@
 // request of another repository the job did not open or push to never counts.
 import { describe, expect, it } from 'vitest';
 import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
+import { judge } from '../../src/domain/pull-requests.ts';
 
 const OTHER = 'owner/infra';
 const BEFORE = '2026-10-01T09:00:00.000Z';
@@ -29,11 +30,10 @@ describe('the job\'s pull request in another repository (issue #2004)', () => {
     expect(await source.notComplete!(job)).toBeUndefined();
   });
 
-  it('its own pull request there that says "Part of owner/repo#N": a part, partly done, not "no pull request"', async () => {
+  it('its own pull request there that says "Part of owner/repo#N": the job ends partly done, not handed to a person', async () => {
     const { gh, source, job } = withIssue();
     const url = gh.mentionIssue(REPO, 1, { from: OTHER, text: `Part of ${REPO}#1\n\nIt replaces an older one.`, closes: false, createdAt: AFTER });
-    expect(await source.partlyDone!(job)).toBe(url);
-    expect(await source.notComplete!(job)).not.toMatch(/no pull request/);
+    expect(await judge(source, job)).toEqual({ done: false, partlyDone: url });
   });
 
   it('its own pull request there with merge conflicts: the miss names it by its repository', async () => {
