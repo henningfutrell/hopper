@@ -74,6 +74,11 @@ export interface EngineOptions {
    */
   agentSignIn?: (job: Job, machine: MachineSnapshot) => Promise<{ variable: string; value: string } | { none: true } | { refused: string }>;
   /**
+   * The values of the vault secrets the vault delivered to a job (issue #1957, `Vault.deliveredTo`): its checkpoint is
+   * scrubbed of them by value. Absent: none.
+   */
+  deliveredSecrets?: (jobId: string) => Promise<readonly string[]>;
+  /**
    * The job's trace context (issue #1486, design.md "Telemetry: a job's trace on its machine"): the variables its processes
    * run with to join its trace (`TRACEPARENT`). Empty while telemetry is off. Absent: none.
    */

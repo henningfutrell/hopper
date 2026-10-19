@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export interface SeenRequest { method: string; path: string; query: URLSearchParams; body: unknown }
-/** `bytes`: a body sent as it is, binary (a container's framed logs). */
-export interface Reply { status: number; body?: unknown; text?: string; bytes?: Buffer }
+/** `bytes`: a body sent as it is, binary (a container's framed logs). `after`: the answer is sent once it settles (a box that runs on). */
+export interface Reply { status: number; body?: unknown; text?: string; bytes?: Buffer; after?: Promise<unknown> }
 export type Handler = (r: SeenRequest) => Reply | undefined;
 
 export interface FakeRuntimeApi {
@@ -31,9 +31,14 @@ export async function startFakeRuntimeApi(handlers: Handler[] = []): Promise<Fak
       const url = new URL(req.url ?? '/', 'http://localhost');
       const seen: SeenRequest = { method: req.method ?? '', path: url.pathname, query: url.searchParams, body: raw ? (String(req.headers['content-type']).includes('json') ? JSON.parse(raw) : raw) : undefined };
       api.seen.push(seen);
-      const reply = api.handlers.map((h) => h(seen)).find((r) => r !== undefined) ?? { status: 404, body: { message: 'no such thing' } };
-      res.writeHead(reply.status, { 'content-type': 'application/json' });
-      res.end(reply.bytes ?? reply.text ?? (reply.body === undefined ? '' : JSON.stringify(reply.body)));
+      let reply: Reply | undefined;
+      // The first handler that answers wins, and the ones after it are not asked: a handler may change what it keeps.
+      for (const h of api.handlers) if ((reply = h(seen)) !== undefined) break;
+      reply ??= { status: 404, body: { message: 'no such thing' } };
+      void Promise.resolve(reply.after).catch(() => undefined).then(() => {
+        res.writeHead(reply.status, { 'content-type': 'application/json' });
+        res.end(reply.bytes ?? reply.text ?? (reply.body === undefined ? '' : JSON.stringify(reply.body)));
+      });
     });
   });
   await new Promise<void>((resolve) => server.listen(socket, resolve));

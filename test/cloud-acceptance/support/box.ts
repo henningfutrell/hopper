@@ -19,9 +19,20 @@ export const REAL_TERRAFORM = '/opt/hopper-tools/bin/terraform';
 
 /** The read-only box image of a template that reads a terraform workspace (its tools: terraform and aws). */
 export async function readOnlyBoxImage(): Promise<{ image: string; user: string }> {
+  return boxImage(runtime(), BOX_BASE, ['terraform', 'aws'], true);
+}
+
+/**
+ * The box image of a template that changes a terraform workspace (its tools: terraform and aws): terraform behind the
+ * apply wrapper, which applies only the saved file of a plan the hopper recorded. Its providers come from the registry.
+ */
+export async function writeBoxImage(): Promise<{ image: string; user: string }> {
+  return boxImage(runtime(), BOX_BASE, ['terraform', 'aws'], false);
+}
+
+function runtime() {
   const socket = (process.env.DOCKER_HOST ?? 'unix:///var/run/docker.sock').replace(/^unix:\/\//, '');
-  const runtime = CLI === 'podman' ? createPodmanRuntime(socket) : createDockerRuntime(socket);
-  return boxImage(runtime, BOX_BASE, ['terraform', 'aws'], true);
+  return CLI === 'podman' ? createPodmanRuntime(socket) : createDockerRuntime(socket);
 }
 
 export interface Box { exec(args: string[], o?: { env?: Record<string, string> }): Promise<Run>; end(): Promise<void> }

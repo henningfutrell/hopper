@@ -13,7 +13,7 @@ const SSH_AGENT = new Set(['SSH_AUTH_SOCK', 'SSH_AGENT_PID']);
 const MASTER_KEY = /^HOPPER_(MASTER|TOKEN)_KEY(_PREVIOUS)?(_FILE)?$/;
 
 /** `env` without the master key's variables. */
-const keyless = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => Object.fromEntries(Object.entries(env).filter(([k]) => !MASTER_KEY.test(k)));
+export const keyless = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => Object.fromEntries(Object.entries(env).filter(([k]) => !MASTER_KEY.test(k)));
 
 /**
  * process.env without CLAUDECODE and CLAUDE_CODE_* but the claude CLI's credential — a child-session marker must not leak

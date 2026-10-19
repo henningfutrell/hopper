@@ -77,7 +77,7 @@ afterEach(async () => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-const herdrVia = (rg: Rig) => createHerdrCliClient({ client: { machine: 'studio', link: () => rg.link(), token: () => TOKEN, ping: PING } });
+const herdrVia = (rg: Rig, ping = PING) => createHerdrCliClient({ client: { machine: 'studio', link: () => rg.link(), token: () => TOKEN, ping } });
 
 describe('the link keepalive', () => {
   it('a live, idle link stays up through many PINGs on both ends', async () => {
@@ -125,11 +125,13 @@ describe('the link keepalive', () => {
     dir = mkdtempSync(join(tmpdir(), 'jh-ping-'));
     process.env.FAKE_HERDR_DIR = dir;
     r = await rig(PING);
-    const herdr = herdrVia(r);
+    // A PING is late when the next one is due, so the hopper's end PINGs at an interval a loaded CI worker's event loop
+    // does not stall through; 40 ms did (issue #1991). The window still holds several PINGs.
+    const herdr = herdrVia(r, { everyMs: 250, timeoutMs: 750 });
     const said: string[] = [];
     herdr.onLinkLate!(() => said.push('late'));
     await herdr.getAgent('jh-a');
-    await new Promise((res) => setTimeout(res, 400));
+    await new Promise((res) => setTimeout(res, 1200));
     expect(said).toEqual([]);
   });
 

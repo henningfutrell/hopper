@@ -12,19 +12,23 @@ const MAX_UNPACKED = 512 * 1024 * 1024;
 /** A checkpoint's parts, each gzip: the patch of the work not pushed, and the agent session's log when there is one. */
 export interface CheckpointParts { patch: Buffer; session?: Buffer }
 
+/** What a scrub is given: the parts, and the values of the vault secrets delivered to the job (issue #1957), masked by value. */
+export interface ScrubAsk { patch: Uint8Array; session?: Uint8Array | undefined; held?: readonly string[] | undefined }
+
 /** A part scrubbed of secrets (`scrub`), compressed again. `latin1` keeps a patch's bytes as they were. */
 const scrubbed = (gz: Uint8Array, scrub: (text: string) => string, encoding: BufferEncoding): Buffer =>
   gzipSync(Buffer.from(scrub(gunzipSync(gz, { maxOutputLength: MAX_UNPACKED }).toString(encoding)), encoding));
 
 /** The parts scrubbed here, on the calling thread: what the worker runs. */
-export function scrubParts(t: { patch: Uint8Array; session?: Uint8Array | undefined }): CheckpointParts {
-  return { patch: scrubbed(t.patch, scrubPatch, 'latin1'), ...(t.session ? { session: scrubbed(t.session, scrubSessionLog, 'utf8') } : {}) };
+export function scrubParts(t: ScrubAsk): CheckpointParts {
+  const held = t.held ?? [];
+  return { patch: scrubbed(t.patch, (x) => scrubPatch(x, held), 'latin1'), ...(t.session ? { session: scrubbed(t.session, (x) => scrubSessionLog(x, held), 'utf8') } : {}) };
 }
 
 const asBuffer = (u: Uint8Array): Buffer => Buffer.from(u.buffer, u.byteOffset, u.byteLength);
 
 /** The parts scrubbed in a worker thread; rejects with the worker's error. */
-export function scrubCheckpoint(t: CheckpointParts): Promise<CheckpointParts> {
+export function scrubCheckpoint(t: CheckpointParts & Pick<ScrubAsk, 'held'>): Promise<CheckpointParts> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./checkpoint-scrub-worker.ts', import.meta.url), { workerData: t });
     let answered = false;

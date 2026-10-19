@@ -348,7 +348,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
-  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.infraApplies ? { applies: () => o.infraApplies!() } : {}), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
+  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.infraApplies ? { applies: () => o.infraApplies!() } : {}), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}), ...(o.sandboxes ? { elsewhere: () => o.sandboxes!.elsewhere() } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter, lease,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() }, configuredMachines: () => host.configuredMachineIds(),
@@ -370,7 +370,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
     // A job's processes join its trace (issue #1486): its run span's context, from the job traces below (made before the engine starts).
-    jobProxy: proxy.jobProxy, agentSignIn: (job, machine) => lanePodSignIn(machine.id, job.id), boxRadius: (machine) => vault.boxRadius(machine), traceContext: (jobId) => jobTraces.traceContext(jobId),
+    jobProxy: proxy.jobProxy, agentSignIn: (job, machine) => lanePodSignIn(machine.id, job.id), deliveredSecrets: (jobId) => vault.deliveredTo(jobId), boxRadius: (machine) => vault.boxRadius(machine), traceContext: (jobId) => jobTraces.traceContext(jobId),
     // Read at each Decision; reached only after `failures` (and `sandboxRequests`) exists. An applied lane recommendation edits the machine (issue #688).
     // The sandboxes a waiting job's prompt names are asked for before it starts, and hold it until approved and ready (issue #1471).
     problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins), sandboxesHeld: (waiting) => sandboxesHeld(sandboxRequests, () => vault.view().templates, waiting),

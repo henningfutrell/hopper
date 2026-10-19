@@ -23,6 +23,9 @@ against shell stubs (`test/support/fake-cloud-tools.ts`) or a loopback STS (`tes
   (`ghcr.io/henningfutrell/hopper:box-claude`) with terraform and the aws CLI added, terraform behind the read-only
   wrapper, its providers from the image's mirror. The build fetches the tools' own releases, so it needs the network.
   The box runs on the host's network with the read session's keys in its environment.
+- **A write box image** (`support/box.ts`), made the same way for a template that applies on a terraform workspace:
+  terraform behind the apply wrapper, which applies only the saved file of a plan the hopper recorded. Its providers come
+  from the registry, so `terraform init` in it needs the network. GitHub is faked on loopback for the plan's branch head.
 
 ## Run
 
@@ -44,13 +47,14 @@ changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` o
 | 2 | Read-only by every route: the aws CLI (delete, terminate, schedule deletion, send, attach, assume another role), curl's raw SigV4 PUT and the SDK are denied at the proxy; moto's state hash is the same before and after | `read-session.test.ts` |
 | 2 | The terraform route, in the read-only box: init and plan work; `apply` and `apply -auto-approve` are refused by the wrapper before any call; the real binary's `apply -auto-approve` by its absolute path is denied at the proxy; the box's aws CLI is denied too; moto is unchanged | `terraform.test.ts` |
 | 3 | Lifetime: after the job ends, or a person revokes the template's approval in Access, the helper's renewal is refused and STS is asked for no new session; the session the job held is denied once its lifetime (900 s at most) is over | `lifetime.test.ts` |
+| 4 | Write path: a box of a write template plans with its read session, the job records the plan with its saved file, a person approves it; the apply session is minted only for that plan at its branch's commit (not before the approval, not after the branch moved); the apply wrapper refuses a tampered copy of the file and an apply that names no plan, before any call; the recorded plan applies, one CreateBucket; the same plan again is refused by terraform as stale, and moto is unchanged | `write-path.test.ts` |
 | 5 | Drift: a bucket and a VPC made in moto out of band show in the next Discover now; every call of discovery's session is a Describe, List or Get, allowed, and moto's state is what the change left | `discovery.test.ts` |
 
 Criterion 3, stated: the hopper does not end an STS session early. A session it handed a job lives until its own
 expiry (900 s at most), after the job ends or a revoke too; the test moves the proxy's clock past it.
 
-Not yet: the box under the hopper's own sandbox flags and egress proxy (a need box), an SDK script inside the box, the
-write path's saved plan, saga resume, egress, and kubectl on kind. The pull request of each part lists what is left.
+Not yet: the box under the hopper's own sandbox flags and egress proxy (a need box), an SDK script inside the box, saga
+resume, egress, and kubectl on kind. The pull request of each part lists what is left.
 
 ## Notes
 
@@ -58,3 +62,7 @@ write path's saved plan, saga resume, egress, and kubectl on kind. The pull requ
   the tests use the `s3api` commands, which make the same calls.
 - moto answers two `Date` headers; node joins them and the AWS SDK fails its clock-skew check. The proxy makes them
   one, so the seed and the state hash go through the proxy with the seed's key.
+- The proxy names a bucket's subresources (tagging, CORS, lifecycle, object lock and the others terraform's
+  `aws_s3_bucket` reads and writes). A PUT or DELETE of one it cannot name is unnamed and denied, never taken for
+  `CreateBucket` or `DeleteBucket`. Each allowed call in its log keeps moto's HTTP status (`status`): the AWS provider
+  sends `CreateBucket` again without its tags when moto refuses the first, so a test counts the calls moto took.

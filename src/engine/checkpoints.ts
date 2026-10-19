@@ -1,6 +1,7 @@
 // Job checkpoints (issue #921, design.md "Checkpoints and resume elsewhere"): while a job is at work, every
 // CHECKPOINT_EVERY_MS its executor reads its agent session and its work not pushed on its machine, through the machine's
-// own connection; the hopper scrubs both of secrets and keeps the latest, so the job can resume on another machine when
+// own connection; the hopper scrubs both of secrets — by pattern, and the vault secrets delivered to the job by value
+// (issue #1957) — and keeps the latest, so the job can resume on another machine when
 // its own is lost. One more is taken when a job is parked, once its agent has ended. A checkpoint of a job that ended
 // goes after CHECKPOINT_KEEP_MS. One more at a missed heartbeat of its machine (issue #1569, `soon`): before its link
 // drops, while the machine may still answer, so a move elsewhere loses less than ten minutes of work. The scrub runs in a worker thread (checkpoint-scrub.ts, issue #1154), off the event loop.
@@ -42,7 +43,7 @@ const unchanged = (k: JobCheckpoint, kept: { patch: Buffer; session?: Buffer }, 
   k.branch === taken.branch && k.base === taken.base && k.head === taken.head && k.commits.join('\n') === taken.commits.slice(0, CHECKPOINT_COMMITS).join('\n')
   && kept.patch.equals(patch) && (kept.session && session ? kept.session.equals(session) : kept.session === session);
 
-export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' | 'clock' | 'stopping'>, everyMs = CHECKPOINT_EVERY_MS): Checkpoints {
+export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' | 'clock' | 'stopping' | 'deliveredSecrets'>, everyMs = CHECKPOINT_EVERY_MS): Checkpoints {
   const { store } = c;
   const inFlight = new Set<string>();
   /** When each job's checkpoint was last tried, taken or not: a machine that cannot be reached is not asked every pass. */
@@ -60,7 +61,9 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
       const got = await executor.checkpoint(job);
       if (!got) return 'it has no agent session or worktree of its own to checkpoint';
       if ('none' in got) return got.none;
-      const { patch, session } = await scrubCheckpoint({ patch: got.taken.patch, ...(got.taken.session ? { session: got.taken.session } : {}) });
+      // The vault secrets delivered to the job, masked by value: no pattern knows one (issue #1957).
+      const held = await c.deliveredSecrets(jobId);
+      const { patch, session } = await scrubCheckpoint({ patch: got.taken.patch, ...(got.taken.session ? { session: got.taken.session } : {}), held });
       if (c.stopping()) return 'the hopper stops';
       return store.tx(() => {
         const now = store.jobs.get(jobId);

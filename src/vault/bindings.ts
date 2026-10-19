@@ -40,7 +40,7 @@ export interface MintBindings {
   named(box: string, b: MintBinding, job?: string): void;
   /** The sandbox ended: each Secret its tokens are bound to is deleted. Never rejects; one that fails waits for the reconcile pass. */
   release(box: string, from?: UnbindFrom): Promise<void>;
-  /** Unbinds each binding a mint of the last `RECONCILE_DAYS` recorded that no sandbox holds now and no `vault.unbound` ended. */
+  /** Unbinds each binding a mint of the last `RECONCILE_DAYS` recorded that no sandbox holds now, here or on another live hopper, and no `vault.unbound` ended. */
   reconcile(from?: UnbindFrom): Promise<void>;
 }
 
@@ -48,6 +48,8 @@ interface Held { box: string; binding: MintBinding; job?: string }
 
 export function mintBindings(o: {
   events: Pick<EventLog, 'append' | 'between'>; clock: Clock; unbindFrom: UnbindFrom; logger: { warn(line: string): void }; newName?: () => string;
+  /** The sandboxes another live hopper on this database runs now, by name (issue #1954): that hopper holds their bindings. */
+  elsewhere?: () => ReadonlySet<string>;
 }): MintBindings {
   const held = new Map<string, Held[]>();
   /** The Secrets unbound or being unbound by this process: a release and a reconcile pass never both delete one. */
@@ -91,6 +93,7 @@ export function mintBindings(o: {
       const events = o.events.between(['vault.binding_named', 'vault.minted', 'vault.check_minted', 'vault.unbound'], since);
       const ended = new Set(events.filter((e) => e.type === 'vault.unbound').map((e) => (e.data as { secret?: unknown }).secret));
       const holding = new Set([...held.values()].flat().map((h) => h.binding.secret));
+      const away = o.elsewhere?.() ?? new Set<string>();
       for (const e of events) {
         const d = e.data as { bound?: { namespace?: unknown; secret?: unknown }; namespace?: unknown; secret?: unknown; credential?: unknown; machine?: unknown; check?: unknown; box?: unknown; job?: unknown };
         // A named binding carries its Secret at the top; a mint's event, as `bound`.
@@ -98,6 +101,7 @@ export function mintBindings(o: {
         if (typeof namespace !== 'string' || typeof secret !== 'string' || typeof d.credential !== 'string') continue;
         if (ended.has(secret) || holding.has(secret)) continue;
         const box = typeof d.machine === 'string' ? d.machine : typeof d.check === 'string' ? d.check : typeof d.box === 'string' ? d.box : 'a sandbox';
+        if (away.has(box)) continue;
         await unbind({ box, binding: { credential: d.credential, namespace, secret }, ...(typeof d.job === 'string' ? { job: d.job } : {}) }, from);
         ended.add(secret);
       }

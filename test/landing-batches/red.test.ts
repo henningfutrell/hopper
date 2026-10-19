@@ -144,7 +144,7 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     w.checks.set(P2, fail(9));
     w.logs.set(9, 'FAIL test/a.test.ts\nexpected 1 to be 2');
     await r.pass(); // P2 fails
-    expect(w.calls.slice(-2)).toEqual(['close #101', `delete hopper-batch/bisect-${P2.slice(0, 12)}`]);
+    expect(w.calls.slice(-2)).toEqual([`delete hopper-batch/bisect-${P2.slice(0, 12)}`, 'close #101']);
     expect(events.at(-1)!.data).toMatchObject({ index: 1, sha: P2, outcome: 'bad', checks: [{ name: 'test', id: 9 }] });
 
     await r.pass(); // a bisect run of P1

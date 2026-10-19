@@ -18,7 +18,7 @@ import type { DomainEvent, NewEvent } from '../domain/types.ts';
 import { backMergePass, startBackMerge } from './back-merge.ts';
 import { retargetNote } from '../sources/github/pr-notes.ts';
 import { canaryPass } from './canary.ts';
-import { openOnce } from './once.ts';
+import { openOnce, withKillPoints } from './once.ts';
 import { bisectPass, bisectStart, culpritPass, type RedPass } from './red.ts';
 
 /** How often the runner passes: 2 minutes. */
@@ -102,10 +102,14 @@ export function createLandingBatches(o: {
   // A run of passes that failed the same way (issue #1333), per repository: recorded stuck once, at LANDING_BATCH_STUCK_PASSES.
   const failing = new Map<string, LandingBatchStuck & { recorded: boolean }>();
 
-  /** A batch or bisect run's pull request closed and its branch removed; a refusal is logged, and a later pass tries again. */
+  /**
+   * A batch or bisect run's branch removed and its pull request closed; a refusal is logged, and a later pass tries again.
+   * The branch first (issue #1954): GitHub closes a pull request whose branch is removed, and a pass closes an ended run's
+   * pull request still open, so a stop between the two leaves neither. The other way, the branch of a closed pull request stays.
+   */
   async function closeRun(gh: LandingBatchGitHub, repo: string, pullRequest: number | undefined, branch: string): Promise<void> {
-    if (pullRequest !== undefined) await gh.close(repo, pullRequest).catch((e: unknown) => o.log(`hopper: landing batches: #${pullRequest} of ${repo} not closed: ${(e as Error).message}`));
     await gh.deleteBranch(repo, branch).catch((e: unknown) => o.log(`hopper: landing batches: ${branch} of ${repo} not removed: ${(e as Error).message}`));
+    if (pullRequest !== undefined) await gh.close(repo, pullRequest).catch((e: unknown) => o.log(`hopper: landing batches: #${pullRequest} of ${repo} not closed: ${(e as Error).message}`));
   }
 
   /** The batch run at work: read, and merged on green or ended on red. */
@@ -269,7 +273,8 @@ export function createLandingBatches(o: {
   async function runPass(): Promise<void> {
     const repos = Object.keys(o.settings().repos);
     if (repos.length === 0) return;
-    const gh = o.github();
+    const given = o.github();
+    const gh = 'problem' in given ? given : withKillPoints(given);
     for (const repo of repos) {
       if ('problem' in gh) { note(repo, { problem: gh.problem }); track(repo, gh.problem); continue; }
       const problems = await passRepo(gh, repo).catch((e: unknown) => [(e as Error).message]);
@@ -291,7 +296,7 @@ export function createLandingBatches(o: {
   /**
    * A person's way out of a stuck batch (issue #1333). Recorded at once: `landing_batch.restarted` ends the batch run and
    * the bisect at work, so the next batch run starts at the landing branch's tip, the same tip too. Then, after the pass
-   * in flight, a pass closes their pull requests and removes their branches, as for every run that ended (issue #1589),
+   * in flight, a pass removes their branches and closes their pull requests, as for every run that ended (issue #1589),
    * and starts it. A close or a removal GitHub refuses is logged: the restart goes on, the removed branch closes the pull
    * request all the same, and a later pass tries again.
    */

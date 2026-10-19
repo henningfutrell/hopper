@@ -13,12 +13,20 @@
 // `new Date()` and `Date.now()`. CRASH_JOB (`owner/name#N`): the host pulls a job of that issue that sleeps on the local
 // machine, and the ready line names it and its proxy token, so the test asks the GitHub proxy as that job does.
 // CRASH_PLANT (issue #1957): once it serves, the host ends with an unhandled rejection that says that value.
+// CRASH_TOPOLOGY: topology discovery reads with the crash reader (test/crash/topology-reader.ts), not AWS and Kubernetes.
+// CRASH_WINDOWS: a directory; Windows steps run on the crash Windows host (test/crash/windows-host.ts), which keeps what it did there.
+// CRASH_PODMAN_SOCKET: need boxes start through the real Podman adapter on this socket (HOPPER_PODMAN_SOCKET), the test
+// process's libpod double, so the boxes a killed host left outlive it.
+// CRASH_LANDING_URL: the landing batches' GitHub (test/crash/landing-github.ts) as the connected account's GitHub, with
+// no job source: the batch runner's calls go there.
 import '../support/isolate.ts';
 import { cloudflareProvider } from '../../src/remote-access/cloudflare.ts';
 import { ngrokProvider } from '../../src/remote-access/ngrok.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { lanes, startTestApp } from '../support/app.ts';
 import { TEST_ACCOUNT_TOKEN, connectGitHub, fakeGitHubEnv, githubSource } from '../support/github-account.ts';
+import { crashTopologyReader } from './topology-reader.ts';
+import { crashWindowsHost } from './windows-host.ts';
 
 const need = (name: string): string => {
   const v = process.env[name];
@@ -26,7 +34,11 @@ const need = (name: string): string => {
   return v;
 };
 
-const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect, CRASH_JOB: issue } = process.env;
+const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect, CRASH_JOB: issue, CRASH_PODMAN_SOCKET: podman, CRASH_LANDING_URL: landing } = process.env;
+
+// A call the fake never answers (skewed-lease.test.ts) stays in flight for the whole scenario, not the 15 s a real
+// provider call waits: on a slow runner a second host's start and two of its passes take longer than that.
+const HUNG_CALL_MS = 300_000;
 
 const skew = Number(process.env.CRASH_CLOCK_SKEW_MS ?? 0);
 if (skew) {
@@ -41,11 +53,13 @@ if (skew) {
 
 const app = await startTestApp({
   dbPath: need('CRASH_DB_PATH'),
-  env: { HOPPER_DATABASE_URL: need('HOPPER_DATABASE_URL'), HOPPER_WORK_DIR: need('HOPPER_WORK_DIR'), ...(github ? fakeGitHubEnv({ url: github }) : {}) },
+  env: { HOPPER_DATABASE_URL: need('HOPPER_DATABASE_URL'), HOPPER_WORK_DIR: need('HOPPER_WORK_DIR'), ...(github ?? landing ? fakeGitHubEnv({ url: (github ?? landing)! }) : {}), ...(podman ? { HOPPER_PODMAN_SOCKET: podman } : {}) },
   secrets: { HOPPER_MASTER_KEY: need('CRASH_MASTER_KEY') },
   ...(github ? { plugins: { jobSources: [githubSource()], machines: lanes(2) } } : {}),
   seams: {
-    ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
+    ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare, timeoutMs: HUNG_CALL_MS }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
+    ...(process.env.CRASH_TOPOLOGY ? { topologyReader: crashTopologyReader } : {}),
+    ...(process.env.CRASH_WINDOWS ? { windowsStepHost: crashWindowsHost(process.env.CRASH_WINDOWS) } : {}),
   },
 });
 if (connect) connectGitHub(app, connect.split(','), { token: process.env.CRASH_GITHUB_TOKEN ?? TEST_ACCOUNT_TOKEN, key: need('CRASH_MASTER_KEY') });

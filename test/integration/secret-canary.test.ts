@@ -4,13 +4,16 @@
 // the hopper mints. Jobs then run every path this part covers: a sandbox the job asks for, a box step that reads the
 // vault secret after a person grants the vault, a question answered, a failure, and the outbound webhook of each event.
 // Then the whole database, the work dir, the job's files, the console, the event log, an SSE replay, the webhook bodies
-// and the boxes' environment and argv are scanned: no canary is anywhere. A planted leak in each kind of place is found.
+// the boxes' environment and argv, the WAL the database wrote meanwhile, and the file, argv and environment of each tool
+// the process spawned are scanned: no canary is anywhere. A planted leak in each kind of place is found.
 // The container runtime is a double at its port (its boxes run the real need box script under `sh`); OpenFGA is a
 // double at its seam.
 //
 // Feature: a secret appears only where it is kept
 //   Scenario: after a full job run, no canary is in any place the scan reads
 //   Scenario: a leak planted in the database, a file, a gzip file and a log line is found, and each place is named
+//     (in the database also as gzip in base64 text, as a checkpoint's row keeps it)
+//   Scenario: a leak written to the database and removed is found in the WAL, and one given to a spawned tool is found
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,7 +26,8 @@ import { STEP_SCRIPT } from '../../src/windows-steps/script.ts';
 import { databaseUrlFor, ownerSchemaUrlFor } from '../support/database.ts';
 import { boot, runningJob, skill, stopAll, type Booted, type Run } from '../support/read-only-check.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
-import { canary, databasePlaces, filePlaces, formsOf, report, scan, type Place } from '../support/secret-canary.ts';
+import { canary, databasePlaces, filePlaces, formsOf, report, scan, walMark, walPlaces, type Place } from '../support/secret-canary.ts';
+import { recordSpawns } from '../support/spawn-recorder.ts';
 import { openSse } from '../support/sse.ts';
 import { putAccount } from '../support/system-secrets.ts';
 import { waitFor } from '../support/wait.ts';
@@ -31,7 +35,9 @@ import { KEY } from '../support/webhooks.ts';
 
 let logged: string[] = [];
 const receivers: Receiver[] = [];
+let spawns: ReturnType<typeof recordSpawns>;
 beforeEach(() => {
+  spawns = recordSpawns();
   logged = [];
   for (const level of ['log', 'info', 'warn', 'error', 'debug'] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => { logged.push(args.map(String).join(' ')); });
@@ -39,6 +45,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await stopAll();
+  spawns.stop();
   for (const r of receivers.splice(0)) await r.close();
   vi.restoreAllMocks();
 });
@@ -63,6 +70,7 @@ describe('the secret canary check (issue #1957)', () => {
   it('after a full job run, no canary is in any place the scan reads', async () => {
     const b = await boot([]);
     const { a, token } = b;
+    const wal = walMark(databaseUrlFor(a.dbPath));
     // The need box's own home, where the vault copies the step's secrets: the box, not the hopper (issue #1875).
     const homeOf = (name: string): string => { const h = join(b.cloud.dir, 'boxes', `home-${name}`); mkdirSync(h, { recursive: true }); return h; };
     const run = b.cloud.runScript;
@@ -132,8 +140,14 @@ describe('the secret canary check (issue #1957)', () => {
       captured('webhook deliveries', rx.received),
       captured('box step output', read),
       captured('box environment and argv', boxes),
+      captured('spawned tools: file, argv and environment', spawns.spawned),
+      ...(wal ? walPlaces(databaseUrlFor(a.dbPath), wal) : []),
     ];
     expect(places.filter((p) => p.name.startsWith('database ')).length).toBeGreaterThan(20);
+    // The controls: the run spawned tools (the job's step and skill clients, git, the box's script), and the WAL holds
+    // what the run wrote (the job's id).
+    expect(spawns.spawned.length).toBeGreaterThan(2);
+    if (wal) expect(places.some((p) => p.name.startsWith('WAL ') && p.text.includes(jobId))).toBe(true);
     expect(report(scan(canaries, places))).toBe('');
     // The controls: the box got the vault secret (in its own home, where the vault copied it), webhooks went out, and the
     // replay is the event log.
@@ -146,24 +160,52 @@ describe('the secret canary check (issue #1957)', () => {
 
   it('a leak planted in the database, a file, a gzip file and a log line is found, each place named', async () => {
     const b = await boot([]);
-    const planted = canary('planted');
+    const planted = canary('planted'), packed = canary('packed');
     const user = openDb(ownerSchemaUrlFor(b.a.dbPath));
     try {
       user.exec('CREATE TABLE planted_leak (note text)');
       user.run('INSERT INTO planted_leak (note) VALUES (?)', `left here: ${planted}`);
+      user.run('INSERT INTO planted_leak (note) VALUES (?)', gzipSync(`session ${packed}`).toString('base64'));
     } finally {
       user.close();
     }
     writeFileSync(join(b.a.dataDir, 'planted.log'), `token=${formsOf(planted).base64}\n`);
     writeFileSync(join(b.a.dataDir, 'planted.gz'), gzipSync(`checkpoint ${planted}`));
     console.warn(`url ${formsOf(planted)['url-encoded']}`);
-    const found = scan({ planted }, [...databasePlaces(databaseUrlFor(b.a.dbPath)), ...filePlaces('work dir', b.a.dataDir), captured('console', logged.join('\n'))]);
+    const found = scan({ planted, packed }, [...databasePlaces(databaseUrlFor(b.a.dbPath)), ...filePlaces('work dir', b.a.dataDir), captured('console', logged.join('\n'))]);
     expect(found).toEqual(expect.arrayContaining([
       expect.objectContaining({ place: expect.stringMatching(/^database .*_u_admin\.planted_leak$/), form: 'plain' }),
+      expect.objectContaining({ canary: 'packed', place: expect.stringMatching(/^database .*_u_admin\.planted_leak$/), form: 'plain' }),
       { canary: 'planted', place: 'work dir planted.log', form: 'base64' },
       { canary: 'planted', place: 'work dir planted.gz', form: 'plain' },
       expect.objectContaining({ place: 'console', form: 'plain' }),
     ]));
     expect(report(found)).toMatch(/canary planted found in work dir planted\.log \(base64\)/);
+  }, 60_000);
+
+  it('a leak written to the database and removed is found in the WAL, and one given to a spawned tool is found', async (ctx) => {
+    const b = await boot([]);
+    const url = ownerSchemaUrlFor(b.a.dbPath);
+    const wal = walMark(url);
+    if (!wal) ctx.skip(); // the test's database role cannot read the WAL: an environment skip
+    const removed = canary('removed'), given = canary('given');
+    const user = openDb(url);
+    try {
+      user.exec('CREATE TABLE planted_leak (note text)');
+      user.run('INSERT INTO planted_leak (note) VALUES (?)', `left here: ${removed}`);
+      user.run('DELETE FROM planted_leak');
+    } finally {
+      user.close();
+    }
+    execFileSync('true', [`--token=${given}`]);
+    spawn('true', [], { env: { PATH: process.env.PATH, PLANTED: formsOf(given).base64 } });
+    const tables = databasePlaces(databaseUrlFor(b.a.dbPath));
+    expect(report(scan({ removed }, tables))).toBe('');
+    const found = scan({ removed, given }, [...walPlaces(url, wal!), captured('spawned tools', spawns.spawned)]);
+    expect(found).toEqual(expect.arrayContaining([
+      expect.objectContaining({ canary: 'removed', place: expect.stringMatching(/^WAL [0-9A-F]{24}$/), form: 'plain' }),
+      { canary: 'given', place: 'spawned tools', form: 'plain' },
+      { canary: 'given', place: 'spawned tools', form: 'base64' },
+    ]));
   }, 60_000);
 });

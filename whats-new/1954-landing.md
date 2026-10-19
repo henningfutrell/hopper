@@ -1,0 +1,1 @@
+- Landing batches leave no test branch behind on GitHub when the hopper stops suddenly while it ends a batch run.

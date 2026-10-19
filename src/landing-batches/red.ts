@@ -4,7 +4,7 @@
 // merged —, read and closed when its checks end; then the culprit. For the culprit (`culpritPass`): GitHub's revert of
 // its pull request on the landing branch, merged once GitHub lets it, and a fix issue with the hopper label, assigned
 // to the user, so Intake takes it. Each step an event, with the user's own GitHub connection; the rules and the text are
-// `src/domain/landing-bisect.ts`. A bisect run's end is recorded before its close; its pull request, the revert and the
+// `src/domain/landing-bisect.ts`. A bisect run's end is recorded before its branch is removed and it is closed; its pull request, the revert and the
 // fix issue are found before they are made again (issue #1589, `once.ts`).
 import { batchChecks, type LandingBatchState } from '../domain/landing-batches.ts';
 import {
@@ -59,8 +59,9 @@ export async function bisectPass(p: RedPass, b: Bisect): Promise<void> {
         data: { repo: p.repo, tested: b.tested, tip: b.tip, index: run.index, sha: run.sha, pullRequest: run.pullRequest, url: run.url, outcome, ...(outcome === 'unknown' ? { reason: why } : {}), ...(checks.length > 0 ? { checks } : {}) },
       });
       p.note({ why: outcome === 'unknown' ? `the bisect ended: ${why}` : `bisect run #${run.pullRequest}: ${short(run.sha)} ${why}` });
-      if (pr.state === 'open') await p.gh.close(p.repo, run.pullRequest).catch((e: unknown) => p.log(`hopper: landing batches: #${run.pullRequest} of ${p.repo} not closed: ${(e as Error).message}`));
+      // The branch first, as the runner's closeRun: a stop between the two leaves neither.
       await p.gh.deleteBranch(p.repo, run.branch).catch((e: unknown) => p.log(`hopper: landing batches: ${run.branch} of ${p.repo} not removed: ${(e as Error).message}`));
+      if (pr.state === 'open') await p.gh.close(p.repo, run.pullRequest).catch((e: unknown) => p.log(`hopper: landing batches: #${run.pullRequest} of ${p.repo} not closed: ${(e as Error).message}`));
     };
     if (pr.merged) return end('good', 'passed');
     if (pr.state === 'closed') return end('unknown', 'its pull request was closed without a merge');

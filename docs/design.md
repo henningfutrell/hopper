@@ -68,7 +68,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8) | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
-| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); each write that makes something found before it is made again, and a **kill point** after each write (`once.ts`, issues #1589, #1954); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/issue-drafts/` | File an issue (issue #471, "File an issue"): one user's drafts and filed issues — the status and why not, a job's context masked, the file-issue run skill's prompt as sent, the draft with its timeout and cancel, the confirm step, the filing on the person's confirmation with no label and no assignee, the events (`service.ts`); the drafter, the user's own `claude` CLI running the run skill (`claude.ts`, `draftIssue` of `src/run-skills/`, composed by the user runtime alone); the request, the draft, the confirm step, the refusal and the note are `src/domain/issue-drafts.ts`, the constraints `src/run-skills/constraints.ts`, the masking Promote to GitHub's (`src/promotions/scan.ts`), the user's GitHub for it `src/users/github-proxy.ts`, the routes `src/http/ui/issue-drafts.ts` | engine, http, store, decider; plugins but in `claude.ts` |
@@ -84,7 +84,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
-| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the **kill points** a test of the crash harness ends the process at, off in a deploy (`kill-points.ts`, issue #1954, "The crash harness"); the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
@@ -19600,7 +19600,10 @@ runs, and a parked job with such a copy can resume on any machine.
   (`src/secrets/mask.ts`): in the session log, every string of each JSON line, so each line stays JSON its agent reads;
   in the patch, only the lines it adds — a context or removed line is the base's, and masking it would keep the patch from
   applying. `maskSecrets`: GitHub tokens, 32-byte keys (which covers a job's proxy token and the hopper's own), private
-  key blocks, AWS access key ids, Anthropic and OpenAI keys, Slack tokens. The patch is read as bytes (`latin1`), so a file
+  key blocks, AWS access key ids, Anthropic and OpenAI keys, Slack tokens. And by value (issue #1957) each vault secret the
+  vault delivered to the job — the user's own and the shared ones its delivery events (`vault.delivered`,
+  `vault.step_delivered`) name, read now as a delivery reads them (`Vault.deliveredTo`, `src/vault/delivered.ts`; in the
+  vault container, the wire op `delivered-to`) —, as `[vault secret, masked]`: a vault secret has no pattern. The patch is read as bytes (`latin1`), so a file
   in any encoding comes back as it was. The latest checkpoint is kept, compressed, in the user's schema
   (`job_checkpoints`, tenant migration 48: a table only, the build before runs on it); what it is — when, where, the
   branch, base, HEAD, the commits not pushed, its size, whether it holds the session — is `job.checkpoint`, and
@@ -20502,7 +20505,9 @@ nothing and worked to its expiry (10 minutes), and an AWS session to its own (15
 - **Reconcile.** An unbind that fails (the cluster is not reachable) is logged and waits. The reconcile pass
   (`reconcilePass`, each user's runtime) runs at start and every 5 minutes. It reads the last 7 days of mint events and
   unbinds each binding that no sandbox holds now and no `vault.unbound` ended: one a hopper that stopped mid-step left,
-  or one whose unbind failed.
+  or one whose unbind failed. A binding of a need box that another live hopper on the same database runs is that
+  hopper's (issue #1954, "The crash harness" part 7): its step's `need-step` saga is leased to that hopper, so the pass
+  leaves it; once that lease ended, the binding is left behind and the pass unbinds it.
 - **The minting credential needs more rights.** Its identity needs `create` and `delete` on `secrets` in each namespace
   where it mints (`docs/deploy.md` "Minting short-lived credentials"). Without them, a sandbox's mint fails and says so.
   It is no fallback to an unbound token, because that token would outlive its sandbox. Only `create` and `delete`: the
@@ -21537,9 +21542,11 @@ Now the record comes first, or the write is found before it is made again:
   back-merge's; their branches are named by a sha, so the branch is the key. Making a branch that is there moves it to
   the sha (`createBranch`), so a back-merge's merge is made again on a branch a stopped pass left.
 - **An end is recorded before its close.** `landing_batch.failed` (with the bisect's start or the culprit, whose points
-  are read first) and `landing_batch.bisect_tested` come before the close of the pull request and the removal of its
-  branch; `landing_batch.restarted` lists the ones it ends. The state keeps these pull requests (`closedRuns`), and each
-  pass closes the ones still open among the open pull requests into the tested branch it reads anyway. Merge conflicts
+  are read first) and `landing_batch.bisect_tested` come before the removal of the run's branch and the close of its pull
+  request; `landing_batch.restarted` lists the ones it ends. The state keeps these pull requests (`closedRuns`), and each
+  pass closes the ones still open among the open pull requests into the tested branch it reads anyway. The branch goes
+  first (issue #1954 part 8): GitHub closes a pull request whose branch is removed, so a stop between the two leaves
+  neither. The other way, a stop after the close left the branch of a closed pull request, which no pass reads again. Merge conflicts
   record the back-merge due with the failure (`conflicts`), and a pass starts a due back-merge.
 - **A revert and an issue are found first.** Before GitHub's revert of the culprit, the open pull request into the
   landing branch with the revert's title; before a fix issue, a back-merge issue or a canary issue, the open issue with
@@ -24049,7 +24056,10 @@ steps (issue #1004) ran in that box between other jobs' work.
   latest runs (`runs`).
 - **The sweep** (the check pass, every 10 s, beside the hopper). Every need box of this hopper that no step holds is
   burned: stopped, removed, its home volume removed. Then every run beside the hopper not destroyed whose box is gone is
-  marked destroyed, and one whose step never ended (a hopper that stopped mid-step) ends as `swept`. A box whose remove
+  marked destroyed, and one whose step never ended (a hopper that stopped mid-step) ends as `swept`. A step held here is
+  one this process runs, or one another live hopper on the same database runs: its `need-step` saga's lease is that
+  hopper's (issue #1954, "The crash harness" part 7, `SagaRepository.heldByOthers`), so its box, home and run are left
+  to it. A box whose remove
   fails stays open in the ledger, and the next sweep tries again.
 - **Registered sandboxes leave `machines`** (tenant migration 70, `src/store/migration-no-sandbox-machines.ts`). Each
   `client` machine whose `container` names a `hopper-sandbox-…` box is removed from the user's `plugins` record. At the
@@ -25216,8 +25226,8 @@ UI: Settings → hopper.io.
 **No outbound traffic.** The cloud link makes no connection to hopper.io at all, linked or not
 (`test/integration/cloud-link.test.ts` watches every socket of a daemon that never links). The connection — an outbound
 link agent (no inbound port, so a container install needs no change) and hopper.io's confirmation that moves `state` from
-`pending` — is the install side of issue #464 ("Cloud link (issue #464)", "Left for the install side"), filed once a
-hopper.io server and its key exist. Its key is a secret the hopper owns, so it is a system secret ("The vault's system
+`pending` — is the install side of issue #464 ("Cloud link (issue #464)", "Left for the install side"), filed as
+issue #2039 once the hopper.io server (`cloud/`) existed. Its key is a secret the hopper owns, so it is a system secret ("The vault's system
 scope"), named by the link record: built in part 2 ("The cloud link key").
 Open (the tracking issue's decisions, issue #469): whether the first-run flow offers the link, and a minimum version or
 channel.
@@ -25650,8 +25660,9 @@ naming to the owner at hopper.io ("Cloud link", "What may leave the instance").
   table with keys no instance sent. A name kept for a machine no longer in the state stays in the API, and can be cleared.
 - **No merge across instances.** One box under two instances has two keys and two names (item 6: merging is deferred).
 
-**Left for later parts of issue #465:** the connection (issue #464) that calls `hello`, `registerMessage`, `registration`,
-`unlinked` and `snapshot`, and gives the stable `machineKey`; the link state; the open questions (issue #469 decision 6).
+**Left for later parts of issue #465:** the connection (issue #2039, the install side of issue #464) that calls `hello`,
+`registerMessage`, `registration`, `unlinked` and `snapshot`, and gives the stable `machineKey`; the link state, which
+hopper.io keeps from that connection (issue #2039); the open questions (issue #469 decision 6).
 
 **Verification:** `test/cloud/machine-names.test.ts` (real Postgres, real server): the owner names a machine of the state,
 the API and the escaped page show it, an empty name clears it; a key not in the state, another account's instance, a bad
@@ -25731,7 +25742,8 @@ HTTP request into the instance: the instance serves nothing on it. A remote acti
 - **The key pin ships in the code.** hopper.io's key is not set in Settings: a key a person can change is a key a
   person can be tricked into changing. A new hopper.io key arrives as an update, with a time when both keys are valid.
 
-**Left for the install side** (an issue filed once the hopper.io server and its key exist):
+**Left for the install side** (issue #2039, filed once the hopper.io server existed in `cloud/`; the production pin
+of hopper.io's key waits for issue #469 decision 7):
 
 - the hello and its schema, and the cloud link key: minting, the system secret that holds it ("The vault's system
   scope"), rotate and revoke through the UI session and the operator CLI. R4 and the glossary name an X25519 key; X25519
@@ -28670,7 +28682,94 @@ nothing; the saga and its read of GitHub's refs held at every point.
 - **The test checks the event against GitHub, not against the point.** Where the saga's `before-do` kills the host, the
   push may or may not have reached GitHub yet; the test asserts the one event says what GitHub holds.
 
-**Left for later parts.** The other saga kinds (need step, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
+**Part 5: topology discovery** (2026-10-19, "The infrastructure topology"). The test (`test/crash/topology-kill.test.ts`,
+`test/crash/topology-world.ts`) keeps a minting credential for an AWS account and one for its cluster on a first host, asks
+for Discover now, and kills the host at each boundary of the `topology-discovery` saga's `aws` and `kubernetes` steps. STS
+and the Kubernetes API are the loopback fakes of `test/support/fake-mint-apis.ts` in the test process; each host reads
+with the crash reader (`test/crash/topology-reader.ts`, `CRASH_TOPOLOGY`). A second host ends the run: the person's run is
+`done`, no run of discovery stays open, the graph holds the account and its cluster as one source each, read by
+discovery, no Secret is left at the cluster, and neither host wrote a key. **What it found:** nothing; a step read again
+reports the same sources again, which replace their snapshots.
+**Decisions (part 5).**
+- **The reader is in each host, not the test process.** It reads with what the vault minted and changes nothing outside;
+  STS and the Kubernetes API, which the vault asks, are the fakes that outlive a host.
+- **No exactly-once count of reads.** Discovery is read-only, with no compensation: a step done again reads again. The test
+  asserts what it leaves (one source each, the run done), not how many reads it took.
+
+**Part 6: a Windows step** (2026-10-19, "Windows sandbox steps"). The test (`test/crash/windows-kill.test.ts`,
+`test/crash/windows-world.ts`) runs a job on a first host, adds a Windows host, and has the job ask for a step on
+`/job/step`. It kills the host at each boundary of the `windows-step` saga's `run` and `sweep` steps, while the step runs on
+the host (no kill point: a plain SIGKILL), and while it compensates a step the job stopped (`run`'s `before-compensate` and
+`after-compensate`). Each host runs steps on the crash Windows host (`test/crash/windows-host.ts`, `CRASH_WINDOWS`), a
+double at the `WindowsStepHost` seam that keeps each run and the host's scratch in files of the test's directory, so they
+outlive a host. A second host ends the saga: the step ran on the host once, the host's scratch is swept, no step keeps a
+host lease, the job's ask sent again is the same step, and the job reads one result: exit 0 after a kill at a step
+boundary, `STEP_INTERRUPTED` after a kill while it ran, cancelled after a kill while it compensated. **What it found:**
+nothing; the step's host lease and its kept result held at every point.
+**Decisions (part 6).**
+- **A double at the seam, not ssh with a fake binary.** The ssh host takes no binary from the environment, and a setting
+  for one would be production surface. The ssh calls have their own test (`test/windows-steps/ssh-host.test.ts`).
+- **The compensation of `sweep` is not in this part.** It runs only when the sweep fails past its tries; the job's stop
+  reaches the compensation of `run` only.
+
+**Part 7: a need step** (2026-10-19, "Need steps", "A need step kept as a saga"). The test (`test/crash/need-kill.test.ts`,
+`test/crash/need-world.ts`) runs a job on a first host, keeps the minting credentials of an AWS account and a cluster, and
+saves and approves a template that covers a read of each. The job asks for a need step on `/job/step`. The host is killed
+at each boundary of the `need-step` saga's `run` and `release` steps, while the need box runs (a plain SIGKILL), and while
+it compensates a step the job stopped (`run`'s `before-compensate` and `after-compensate`). Each host starts need boxes
+through the real Podman adapter (`CRASH_PODMAN_SOCKET`, as `HOPPER_PODMAN_SOCKET`) on the libpod double
+(`test/support/fake-libpod.ts`) in the test process, whose box runs on while its command says `hang`; STS and the
+Kubernetes API are the loopback fakes. A second host ends the saga: the need box was made once at the most, no box or
+home is left at the runtime, every Secret a minted token was bound to is deleted, the job's ask sent again is the same
+step, and the job reads one result: exit 0 after a kill at a step boundary, `STEP_INTERRUPTED` after a kill while the box
+ran, cancelled after a kill while it compensated. A last test starts the second host while the first host's box runs.
+**What it found:** a hopper burned the need boxes of another live hopper on the same database. Its sandbox sweep, at its
+start and every 10 s, burned each need box its own process did not run, and its reconcile pass of the sandboxes' tokens
+deleted each Secret its own process did not hold. A second hopper that started, or that swept, while the first ran a step
+stopped that step's box and ended its token. Now both leave a need box whose step's `need-step` saga another host holds on
+the database's clock (`SagaRepository.heldByOthers`): the sandbox module takes those steps (`drivenElsewhere`) and names
+their boxes (`elsewhere`), and the vault's reconcile pass takes the names. Once that lease ends (the host stopped), the next
+sweep burns the box and the next pass unbinds its token.
+**Decisions (part 7).**
+- **The libpod double through the real adapter, not a seam.** The runtime is chosen from `HOPPER_PODMAN_SOCKET`, which a
+  deploy sets too, so no test-only setting is added; and the boxes outlive a host because the double is in the test process.
+- **The saga's lease says who runs a step, not the box's labels.** Two hoppers on one database share an instance id, so
+  the box label cannot tell them apart. The `need-step` saga is leased to the host that runs the step, and renewed while it
+  runs; a killed host renews nothing.
+- **The release step and the reconcile pass.** A host that ends a step another host started holds none of its bindings,
+  so its `release` step unbinds nothing; the reconcile pass does it once the other host's lease ended (at a start, else within 5 minutes). The
+  test asserts what is left at the Kubernetes API, not which of the two deleted it.
+- **The fake runtime API asks its handlers in order and stops at the first that answers** (`test/support/fake-runtime-api.ts`),
+  as its comment said: a handler before the libpod double holds a box's wait (`after`) without the double ending the box.
+
+**Part 8: landing batches** (2026-10-19, "Landing batches", "A stop between a GitHub call and its record"). The batch
+runner's GitHub (`withKillPoints`, `src/landing-batches/once.ts`) passes a kill point once each write answered, before
+the pass records its event: `landing:<write>:after-call`, for each of `createBranch`, `deleteBranch`, `openPullRequest`,
+`merge`, `close`, `mergeInto`, `retarget`, `comment`, `revert`, `fileIssue` and `fastForward`. The test
+(`test/crash/landing-kill-*.test.ts`, `test/crash/landing-world.ts`; a scenario's tests are split over files, so the
+shards of the pull request check share them inside their 10 minutes) runs five scenarios of the in-process test of issue
+#1589 on crash hosts: a red batch (batch run, bisect runs, culprit, revert, fix issue, the rest promoted), merge
+conflicts (a back-merge, then the batch promoted), a real conflict (one issue), the canary held (one issue) and the
+canary's window passed (`stable` moved). The landing batches' GitHub is a node:http fake in the test process
+(`test/crash/landing-github.ts`, `CRASH_LANDING_URL`, the connected account's GitHub with no job source), so it holds
+what a killed host made. A clean run of each scenario lists its writes, and the test kills the first host after each one
+in turn (`landing:<write>:after-call#<n>`). A second host takes the passes on (a save of the same settings runs a pass)
+to the end the clean run reaches: each pull request from one head once, one revert, one issue of each title, no pull
+request left open and no branch `hopper-batch/…` left, and each step's event once. The randomised run on GitHub's writes
+picks landing batches as a fifth family. **What it found:** a kill between a batch or bisect run's close and the removal
+of its branch left the branch on GitHub for good: the next pass reads only the open pull requests. Now the branch is
+removed first, then the pull request closed ("A stop between a GitHub call and its record").
+**Decisions (part 8).**
+- **A kill point after each write, in one place.** The runner's GitHub is wrapped once per pass, not each call site, so a
+  write added later passes its point too. No point before a write: a kill there leaves only what a pass that never ran
+  leaves.
+- **A fake of the landing calls, not the source's fake GitHub.** The node:http fake GitHub of the job source has no refs,
+  compare, merges or check runs. The landing fake answers only what `src/landing-batches/github.ts` asks, and the host
+  runs no job source over it.
+- **The branch first, not a sweep of old branches.** A sweep would need the branch of each ended run in the state, and a
+  read of the repository's branches; the order needs neither.
+
+**Left for later parts.** The other saga kind (the item saga); kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below; a job's push: part 4); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28678,7 +28777,7 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/need-kill.test.ts` (part 7: a need step at each step boundary, while its box runs, while it compensates, and a second host while the box runs); `test/crash/landing-kill-*.test.ts` (part 8: landing batches killed after each GitHub write of five scenarios, and each scenario's clean run); `test/store/sagas-held.test.ts` and `test/vault/mint-bindings.test.ts` (part 7: the sagas another host holds; the reconcile pass leaves their bindings); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).
@@ -28899,6 +28998,131 @@ scan** (`test/support/secret-canary.ts`) over the crash harness:
 
 **Left for later parts.** A kill mid-step of a box, Windows or need step with a vault secret; WAL, container layers and
 inspect output, process argv and environment of spawned tools; the e2e mode and its nightly run.
+
+## The secret canary scan and a vault secret in a checkpoint (issue #1957, part 4, 2026-10-19)
+
+Part 2 left a gap open: the checkpoint scrub masked secrets by pattern only, so a vault secret a job read — a box's job
+through its vault helper, or a box or Windows step's output — stayed in the job's agent session and its work not pushed,
+and so in its checkpoint, kept in the database and served to the job that resumes elsewhere. A vault secret is a value a
+person set; no pattern knows it.
+
+- **The fix.** Before a checkpoint is scrubbed, the hopper asks the vault for the values of the secrets it delivered to the
+  job (`Vault.deliveredTo`): the names its delivery events name, each read now as a delivery reads it — opened under the
+  master key, read in its vault backend, or, for a shared secret, read after Access. The scrub masks each by value, in the
+  session log's strings and the lines the patch adds ("Checkpoints and resume elsewhere"). One that cannot be read now
+  (removed, a minting credential, a backend that does not answer, a vault container out of reach) is left out: the scrub
+  by pattern still runs.
+- **The test.** `test/integration/secret-canary-vault-checkpoint.test.ts`, with the vault in the hopper and in a
+  container of its own: a vault secret (a canary) is delivered for the job's step after a person grants the vault; the
+  job's agent session and its patch say it; the job is parked. The whole database, the work dir and the kept checkpoint
+  hold no form of it; the checkpoint keeps the rest of the work, the value as `[vault secret, masked]`.
+- **The scan opens base64 gzip.** A checkpoint's row keeps its parts as base64 text, which the scan did not open: a leak
+  in a kept checkpoint was not found by the database scan. It now opens a gzip value as base64 (`H4sI…`) too; the planted
+  leak test plants one.
+
+**Left for later parts.** A kill mid-step of a box, Windows or need step with a vault secret; WAL, container layers and
+inspect output, process argv and environment of spawned tools; the e2e mode and its nightly run. A vault secret a job
+changed (encoded, split) is not found by value, as with a step's output.
+
+## The secret canary scan: the WAL and spawned tools (issue #1957, part 5, 2026-10-19)
+
+Two places a secret leaks to that no table or file shows:
+
+- **The WAL.** A row that held a canary and was changed or removed is gone from its table, but Postgres wrote it to the
+  WAL. `walMark` (`test/support/secret-canary.ts`) takes the WAL's position before the run; `walPlaces` reads every
+  segment the server wrote since then (`pg_read_binary_file` on `pg_wal/`), one place per segment. Reading the WAL needs
+  a superuser or `pg_read_server_files`: the test's Postgres container has one. Given a database where the role has
+  neither, `walMark` says so and the scan reads no WAL (the planted test is then skipped). The WAL is the whole server's,
+  so it holds other tests' writes too; their canaries are their own. A value Postgres compressed (TOAST, over 2 kB) or
+  one split by a WAL page header is not found.
+- **Spawned tools.** `recordSpawns` (`test/support/spawn-recorder.ts`) records the file, argv and environment of each
+  child the test's process starts: an async child at `ChildProcess.prototype.spawn`, with the environment it really
+  gets; a sync one at the `node:child_process` exports, made live for ES modules by `syncBuiltinESMExports`. A child of a
+  worker thread is not seen.
+- **What it found.** The detection kit (`src/plugins/detect.ts`) ran its tools — the `claude` model list among them —
+  with the daemon's whole environment, so the master key went to each. It now runs them with `keyless` of it
+  (`src/executors/env.ts`), as every other child of the hopper is run.
+- **The control.** A canary inserted and then removed is found in the WAL and not in any table; a canary in a spawned
+  tool's argument, and in base64 in its environment, is found.
+
+**Left for later parts.** A kill mid-step of a box, Windows or need step with a vault secret; container layers and
+inspect output; the e2e mode and its nightly run.
+
+## The secret canary scan: a Windows step's vault secret after a kill mid-step (issue #1957, part 6, 2026-10-19)
+
+A step's vault secret is read when the step runs, goes to the step only and is masked in the log the job reads
+("Windows sandbox steps"). A kill of the hopper mid-step must not change that. `test/crash/secret-canary-windows.test.ts`
+runs the **canary scan** over the crash harness and the crash Windows host (`test/crash/windows-host.ts`):
+
+- **The run.** A person sets a vault secret (a canary), adds the Windows host with that secret in its `secrets`, and
+  grants the job the vault. The job asks for a step with `secret=<name>`. The step prints the secret in its log, split
+  across two chunks, as a careless step would. The hopper is killed at `saga:windows-step:run:before-do`, at
+  `saga:windows-step:run:after-do`, or while the step runs on the host. A second hopper on the same database ends the
+  step's saga (it reads the secret again in the first case, and ends the step interrupted in the last).
+- **The scan** reads the whole database, the WAL written since the test began, both hosts' work dirs and output, the
+  crash Windows host's files, the fake GitHub's requests (but the connection's own `authorization`), and what the job
+  reads of its step from the second hopper: its result and its log. Canaries: the master key, the vault secret, the job's
+  proxy token. No canary is found.
+- **The controls.** The crash Windows host appends each secret it was given to `delivered.jsonl`, by name and the SHA-256
+  of its value (no form the scan looks for): the step got the secret once. The log the job reads holds `MASK` where the
+  step printed it. With the step's masking taken out, the scan finds the secret in the `windows_steps` row, the WAL and
+  the step log.
+
+**Left for later parts.** A kill mid-step of a box or need step with a vault secret (it needs a container runtime beside
+the hopper under the crash harness); container layers and inspect output; the e2e mode and its nightly run.
+
+## The secret canary scan: a box step's vault secret after a kill mid-step (issue #1957, part 7, 2026-10-19)
+
+A box step's vault secrets go into its need box only, by a copy, never into its environment ("Box steps", issue #1875).
+A kill of the hopper mid-step must not leave them anywhere else. `test/crash/secret-canary-box-step.test.ts` runs the
+**canary scan** over the crash harness on a need step (`test/crash/need-world.ts`, the libpod double):
+
+- **The run.** A person sets a vault secret (a canary), saves and approves the template `dig` that gives it, turns on
+  sandbox YOLO and grants the job the vault. The job asks for the sandbox runs of `dig` (`sandbox --template dig`) and
+  runs a box step of it. The hopper is killed at `saga:need-step:run:before-do`, at `saga:need-step:run:after-do`, or
+  while the need box runs. A second hopper on the same database ends the step's saga and burns the box the first left.
+- **The scan** reads the whole database, the WAL written since the test began, both hosts' work dirs and output, the fake
+  GitHub's requests, every request to the container runtime but the copies into the box (the create bodies hold the
+  box's environment and labels: what an inspect shows), and what the job reads of its step: its result and its log.
+  Canaries: the master key, the vault secret, the two minting credentials and the job's proxy token.
+- **The control.** The libpod double records each copy into a container (`FakeLibpod.copies`): the copy into the need box
+  holds the secret.
+- **Found and fixed.** The need box's home tar (`need-home.tar`, the step's files with its vault secrets) stayed in the
+  step's directory in the work dir while the box ran, and was removed only when the step ended. A hopper killed while the
+  box ran left it there, the secret in plain text, until a later step's sweep an hour on. `runNeedBox`
+  (`src/sandbox/need-box.ts`) now removes it as soon as it is copied into the box. A kill in the short time between the
+  write and the end of the copy can still leave it.
+
+**Left for later parts.** Container layers (a real runtime's storage); the e2e mode and its nightly run.
+
+## The secret canary scan on a real container runtime: its e2e mode (issue #1957, part 8, 2026-10-19)
+
+Part 7 ran the box step on the libpod double, which keeps no layers, images or volumes of its own. A real runtime keeps
+all three, and a leak into one of them outlives the box. `test/crash/secret-canary-real-runtime.test.ts` is the **canary
+scan**'s e2e mode: the hosts are the hopper's real composition root in processes of their own (the crash harness), and
+the need box is a real container of a real image with a real home volume, on a rootless Podman.
+
+- **The run.** Part 7's three scenarios: a box step of the template `dig` with a vault secret (a canary), the hopper
+  killed at `saga:need-step:run:before-do`, at `saga:need-step:run:after-do`, or while the need box runs. A second hopper
+  ends the step's saga and burns the box the first left. The step's command reads the secret with `"$HOPPER_SECRET"`.
+- **The scan** reads what part 7's reads, and the runtime (`test/support/runtime-places.ts`, through the libpod API):
+  each container's inspect output, its layers (an export) and its home (an archive of `/home/agent`); each volume's
+  inspect output; each image's inspect output, and the layers of each image made since the test began (as `podman save`
+  gives them); and every file of the runtime's storage (`graphRoot`) this user can read. A file a box's user owns in a
+  volume is not readable from the host: the home is read through the API.
+- **The controls.** While the need box runs, the scan of the runtime finds the vault secret in the box's home, and only
+  there. A canary written into a layer of an image built for the test is found in that image's layers.
+- **When it runs.** Only when `HOPPER_TEST_PODMAN_SOCKET` names a rootless Podman's API socket that the test may fill
+  and empty: the scan reads all of its storage. The template's image is built there from `HOPPER_TEST_BOX_BASE`
+  (default `docker.io/library/alpine:3.20`) with a user that is not root. `npm test` and the pull request check skip it.
+- **Found.** No leak: after the step's saga ended, no canary was in any container, volume, image or storage file.
+
+**The nightly run** (part 9, `.github/workflows/secret-canary.yml`). Nightly on the default branch, by hand, and on a
+pull request that changes the sandbox module, the vault or the canary tests. The step starts the runner's own rootless
+Podman as an API socket (`podman system service`), waits for its `/_ping`, sets `HOPPER_TEST_PODMAN_SOCKET` to it and
+runs every `secret-canary*` test file, so the e2e mode runs beside the in-process mode. The runner's Podman is 4.9
+(ubuntu-24.04); it answers the hopper's `/v5.0.0/libpod` calls, and the e2e test passes on a rootless Podman 4.9.4.
+`test/scripts/secret-canary-workflow.test.ts` checks the workflow. With this part, issue #1957 is done.
 
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
