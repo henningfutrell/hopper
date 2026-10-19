@@ -44,6 +44,8 @@ export interface Decision {
   resource?: string;
   allowed: boolean;
   reason: string;
+  /** The upstream's HTTP status, for an allowed call once it answered. */
+  status?: number;
 }
 
 export interface Request { method: string; url: string; headers: IncomingHttpHeaders; body: string }
@@ -67,15 +69,35 @@ export function signer(r: Request): { accessKeyId: string; service: string } | u
 const queryParams = (r: Request): URLSearchParams =>
   (header(r.headers, 'content-type') ?? '').includes('x-www-form-urlencoded') ? new URLSearchParams(r.body) : new URL(r.url, 'http://x').searchParams;
 
-const S3_BUCKET_GET: Record<string, string> = { location: 'GetBucketLocation', versioning: 'GetBucketVersioning', acl: 'GetBucketAcl', policy: 'GetBucketPolicy', tagging: 'GetBucketTagging', versions: 'ListBucketVersions', uploads: 'ListBucketMultipartUploads', encryption: 'GetEncryptionConfiguration' };
-const S3_BUCKET_PUT: Record<string, string> = { policy: 'PutBucketPolicy', acl: 'PutBucketAcl', tagging: 'PutBucketTagging', versioning: 'PutBucketVersioning', encryption: 'PutEncryptionConfiguration' };
+const S3_BUCKET_GET: Record<string, string> = {
+  location: 'GetBucketLocation', versioning: 'GetBucketVersioning', acl: 'GetBucketAcl', policy: 'GetBucketPolicy', tagging: 'GetBucketTagging',
+  versions: 'ListBucketVersions', uploads: 'ListBucketMultipartUploads', encryption: 'GetEncryptionConfiguration', cors: 'GetBucketCORS',
+  website: 'GetBucketWebsite', accelerate: 'GetAccelerateConfiguration', requestPayment: 'GetBucketRequestPayment', logging: 'GetBucketLogging',
+  lifecycle: 'GetLifecycleConfiguration', replication: 'GetReplicationConfiguration', 'object-lock': 'GetBucketObjectLockConfiguration',
+  ownershipControls: 'GetBucketOwnershipControls', publicAccessBlock: 'GetBucketPublicAccessBlock', notification: 'GetBucketNotification',
+  policyStatus: 'GetBucketPolicyStatus',
+};
+const S3_BUCKET_PUT: Record<string, string> = {
+  policy: 'PutBucketPolicy', acl: 'PutBucketAcl', tagging: 'PutBucketTagging', versioning: 'PutBucketVersioning', encryption: 'PutEncryptionConfiguration',
+  cors: 'PutBucketCORS', website: 'PutBucketWebsite', accelerate: 'PutAccelerateConfiguration', requestPayment: 'PutBucketRequestPayment',
+  logging: 'PutBucketLogging', lifecycle: 'PutLifecycleConfiguration', replication: 'PutReplicationConfiguration',
+  'object-lock': 'PutBucketObjectLockConfiguration', ownershipControls: 'PutBucketOwnershipControls', publicAccessBlock: 'PutBucketPublicAccessBlock',
+  notification: 'PutBucketNotification',
+};
+/** A DELETE of a bucket subresource is, in IAM, the Put of that configuration, or a Delete of its own. */
+const S3_BUCKET_DELETE: Record<string, string> = {
+  policy: 'DeleteBucketPolicy', tagging: 'PutBucketTagging', website: 'DeleteBucketWebsite', cors: 'PutBucketCORS', encryption: 'PutEncryptionConfiguration',
+  lifecycle: 'PutLifecycleConfiguration', replication: 'PutReplicationConfiguration', ownershipControls: 'PutBucketOwnershipControls',
+  publicAccessBlock: 'PutBucketPublicAccessBlock',
+};
 
 /** An S3 REST call, path-style (the style an SDK uses for an endpoint that is an address), as its IAM action. */
 function s3Call(r: Request): Call | undefined {
   const url = new URL(r.url, 'http://x');
   const [bucket = '', ...rest] = url.pathname.slice(1).split('/');
   const key = decodeURIComponent(rest.join('/'));
-  const sub = [...url.searchParams.keys()];
+  // x-id: the operation's name, which an AWS SDK adds to some S3 calls; no subresource.
+  const sub = [...url.searchParams.keys()].filter((k) => k !== 'x-id');
   const has = (k: string): boolean => sub.includes(k);
   const resource = bucket ? `arn:aws:s3:::${bucket}${key ? `/${key}` : ''}` : '*';
   const call = (action: string | undefined): Call | undefined => (action ? { service: 's3', action, resource } : undefined);
@@ -84,8 +106,9 @@ function s3Call(r: Request): Call | undefined {
   if (!key) {
     const named = sub.find((k) => k in S3_BUCKET_GET || k in S3_BUCKET_PUT);
     if (method === 'GET' || method === 'HEAD') return call(named ? S3_BUCKET_GET[named] : 'ListBucket');
-    if (method === 'PUT') return call(named ? S3_BUCKET_PUT[named] : 'CreateBucket');
-    if (method === 'DELETE') return call(has('policy') ? 'DeleteBucketPolicy' : has('tagging') ? 'PutBucketTagging' : 'DeleteBucket');
+    // A PUT or DELETE of a subresource the proxy cannot name is unnamed (fails closed), never CreateBucket or DeleteBucket.
+    if (method === 'PUT') return sub.length ? call(named ? S3_BUCKET_PUT[named] : undefined) : call('CreateBucket');
+    if (method === 'DELETE') return sub.length ? call(named ? S3_BUCKET_DELETE[named] : undefined) : call('DeleteBucket');
     if (method === 'POST' && has('delete')) return call('DeleteObject');
     return undefined;
   }
@@ -231,6 +254,7 @@ export async function startPolicyAssertProxy(o: { upstream: string; admins: stri
           up.on('data', (c: Buffer) => answer.push(c));
           up.on('end', () => {
             const body = Buffer.concat(answer);
+            if (up.statusCode !== undefined) d.status = up.statusCode;
             if (d.action === 'sts:AssumeRole' && up.statusCode === 200) {
               const s = sessionOf(queryParams(r), body.toString('utf8'));
               if (s) sessions.set(s.accessKeyId, s);

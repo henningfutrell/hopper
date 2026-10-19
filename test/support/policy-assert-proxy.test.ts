@@ -78,6 +78,8 @@ describe('the policy-assert proxy (issue #1956)', () => {
       ['sts:AssumeRole', true], ['ec2:DescribeInstances', true], ['s3:ListBucket', true],
       ['ec2:TerminateInstances', false], ['s3:PutObject', false], ['kms:ScheduleKeyDeletion', false],
     ]);
+    // An allowed call keeps what the upstream answered; a denied one never reached it.
+    expect(p.log.map((d) => d.status)).toEqual([200, 200, 200, undefined, undefined, undefined]);
   });
 
   it('denies an unsigned call, an unknown key, and every call of a revoked session', async () => {
@@ -116,6 +118,15 @@ describe('the policy-assert proxy (issue #1956)', () => {
     expect(s3('DELETE', '/b/k')).toMatchObject({ action: 'DeleteObject' });
     expect(s3('POST', '/b?delete')).toMatchObject({ action: 'DeleteObject' });
     expect(s3('PUT', '/b')).toMatchObject({ action: 'CreateBucket' });
+    // A bucket's subresources, as terraform's aws_s3_bucket writes and reads them; a PUT of one the proxy cannot name is no CreateBucket.
+    expect(s3('PUT', '/b?tagging')).toMatchObject({ action: 'PutBucketTagging' });
+    expect(s3('PUT', '/b?publicAccessBlock')).toMatchObject({ action: 'PutBucketPublicAccessBlock' });
+    expect(s3('PUT', '/b?ownershipControls')).toMatchObject({ action: 'PutBucketOwnershipControls' });
+    expect(s3('GET', '/b?cors')).toMatchObject({ action: 'GetBucketCORS' });
+    expect(s3('GET', '/b?object-lock')).toMatchObject({ action: 'GetBucketObjectLockConfiguration' });
+    expect(s3('DELETE', '/b?lifecycle')).toMatchObject({ action: 'PutLifecycleConfiguration' });
+    expect(s3('PUT', '/b?x-id=CreateBucket')).toMatchObject({ action: 'CreateBucket' });
+    expect(s3('PUT', '/b?inventory')).toBeUndefined();
     expect(s3('PATCH', '/b/k')).toBeUndefined();
     expect(callOf({ method: 'POST', url: '/', headers: { ...auth('sqs'), 'x-amz-target': 'AmazonSQS.DeleteQueue' }, body: '{}' })).toEqual({ service: 'sqs', action: 'DeleteQueue' });
     expect(callOf({ method: 'POST', url: '/', headers: { ...auth('sts'), ...form }, body: 'Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A1%3Arole%2Fr' })).toEqual({ service: 'sts', action: 'AssumeRole', resource: 'arn:aws:iam::1:role/r' });
