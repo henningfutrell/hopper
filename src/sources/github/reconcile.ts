@@ -8,10 +8,11 @@
 // A pull request is followed to its end, whatever its issue (issue #786): an issue closed as completed — closed from under
 // its open part, or by another pull request — still has its open pull request followed, if that one closes it by keyword
 // or ships a part of it. One named for it only on its branch is not: the issue is done, and that branch may be stale. An
-// issue closed as not planned has none followed.
+// issue closed as not planned has none followed. A pull request from a release branch or a batch run's branch is no issue's
+// work (`fromReleaseBranch`, issue #2132): a batch run's text closes the issues it carries, and it is never followed.
 import type { FoundPullRequest, Job } from '../../domain/types.ts';
 import type { BranchPullRequest, GitHubApi } from './api.ts';
-import { closesByKeyword, namesIssue } from './completion.ts';
+import { closesByKeyword, fromReleaseBranch, namesIssue } from './completion.ts';
 
 const partOf = (body: string, n: number): boolean => new RegExp(`\\bpart of #${n}\\b`, 'i').test(body);
 
@@ -44,7 +45,7 @@ export async function unfollowedPullRequests(api: GitHubApi, jobs: Job[]): Promi
   for (const [repo, js] of byRepo) {
     const answered = open.repos.get(repo);
     if (!answered) continue;
-    const prs = [...answered].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const prs = answered.filter((pr) => !fromReleaseBranch(pr)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     for (const j of js) {
       if (!pullRequestFor(prs, repo, j.source!.number!)) continue;
       const issue = await api.getIssue(repo, j.source!.number!);

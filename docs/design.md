@@ -2520,6 +2520,8 @@ the list, and nothing tended them). Two ways it fell out, each closed:
   followed for it, and the hopper's merge of it never closes it. A job branch never is a release branch: no job pushes
   to one. Before, a job on an issue that a promotion mentioned ended done with no pull request of its own, and in yolo
   mode the promotion's merge closed the issue.
+  A batch run's branch (`hopper-batch/…`, a batch run, a bisect run or a back-merge) counts as a release branch here
+  (issue #2132, "A batch run is no member's pull request").
 
 **The done-check backfill** (issue #637, `src/failures/backfill.ts`). Failures an earlier done rule left — `not complete:`,
 waiting on a person (its hand-off open, or its record neither run again nor settled), the newest job of its item — are
@@ -21899,6 +21901,35 @@ so a close GitHub made with no delivery is recorded (`work_item.issue_closed`, `
 that issue (`settledBy`). A wait that starts on something the ledger holds settled already — its issue closed, its pull
 request merged or closed (`settledAlready`, `src/domain/wait-on.ts`) — ends at once (`wait`, `src/engine/outcome.ts`), as
 the event would have ended it: no event comes for it any more.
+
+## A batch run is no member's pull request (issue #2132, 2026-10-19)
+
+**The problem.** A batch run closed without a merge (red), and its members whose own pull requests had merged into the
+landing branch got `hopper:pr-closed` and a blocked item (`pr_closed`). Intake then offered them again, and an approval
+would redo merged work. Seen on many batches.
+
+**Why.** A batch run's text closes the issues of its job pull requests ("Closes #N", issue #1175), and it targets the
+default branch, so GitHub lists it among the issue's open closing pull requests. A job whose report found no open pull
+request of its own (its pull request merged into the landing branch while it ran) was then answered the batch run, by the
+report (`pullRequestOf`), by the follow's look for one (`openPullRequestOf`), or by reconciling (`unfollowedPullRequests`,
+issue #763). The follow took the batch run's close for the item's pull request closed without a merge.
+
+**A batch run is no issue's work** (`fromReleaseBranch`, `src/sources/github/completion.ts`). A pull request whose head
+starts with `hopper-batch/` is read as a release branch's (issue #876): never an issue's open closing pull request
+(`openClosingWork`, for the report, the follow, the done-check and the job's own pull requests), never a part or a merged
+mention, and never adopted by reconciling. Only a person's or a job's pull request is followed for an item, so a red batch
+run moves no member: it keeps its merged state (`done`, its pull request merged), and Intake says it waits on its batch
+(`waitsOnBatch`, issue #1337) until a later batch run carries it to the tested branch. A member whose own pull request
+closed without a merge is flagged `hopper:pr-closed` as before. A culprit is still `failed` (issue #1175).
+
+**A merge that closes the issue is the whole item** (`mergedPartOf`, `src/sources/github/follow.ts`). When the follow
+finds no open pull request, it takes the newest merged pull request since the job began. One whose text closes the issue
+with a closing keyword now comes first and is followed as the whole item, so it ends `done` with `hopper:done`. Before, it
+was followed as a part (a mention, issue #1891), and the issue was offered again for its next part.
+
+Not taken: a state of its own for "merged, waits for its batch run". The ledger's `done` with `awaitsBatch`, the graph's
+"Merged: waits on its batch run" and Intake's "done: merged into the landing branch; its batch run closes the issue"
+already say it.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 
