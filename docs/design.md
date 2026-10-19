@@ -2289,6 +2289,16 @@ also reads each check's end (`statusCheckRollup.contexts`): a check run that end
 (`CheckRun.name`, `detailsUrl`; `StatusContext.context`, `targetUrl`). The lists read the rollup
 only: 100 checks of each of 100 pull requests would cost too much of the rate limit.
 
+**The newest run of each check** (issue #2129, `src/sources/github/newest-runs.ts`). A check can run again on the same head
+commit: a re-run, or a new workflow run that another event starts (an edit of the pull request's body re-plans an
+infrastructure pull request). GitHub's rollup then fails on the older failed run, but GitHub's required checks read only
+the newest run of each check name. So every read of a head commit's checks counts the newest run of each check only
+(newest: the greater id): the read by number and the follow's batched read (`statusCheckRollup.contexts`, with
+`totalCount`, and in the batch only each check's id, name, status and end), the checks fallback and the done criteria's
+check runs over REST, and the GitHub proxy's own read of a pull request the hopper does not follow. A rollup that fails
+with no newest run failed is pending while one runs, else passing. When GitHub gives only some of the contexts (more
+than 100), a newer run can be among the others, so the rollup's state stands. `pr checks` still lists every run.
+
 **Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back
 to be reworked, in place of the manual draft, comment and label edits. A person asks from the card in Pull requests
 (Send back for rework), the operator CLI (`hopper job rework <id> --notes <text>`) or `POST /ui/api/jobs/:id/rework`
