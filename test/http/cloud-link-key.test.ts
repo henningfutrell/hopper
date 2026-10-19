@@ -1,5 +1,5 @@
-// The cloud link key (issue #467 part 2, design.md "The cloud link key", docs/hopper-io-security.md R4): one X25519
-// key per instance, minted at the link, its private half a system secret in the instance's vault that the link record
+// The cloud link key (issue #467 part 2, design.md "The cloud link key", docs/hopper-io-security.md R4): one Ed25519
+// key per instance (issue #2039: it signs hopper.io's challenge), minted at the link, its private half a system secret in the instance's vault that the link record
 // names, its public half in the record. The admin rotates it on request; an unlink drops it. Over the real instance store.
 //   Scenario: a link mints the key; the record names the secret and holds the public half; the view never the private half
 //   Scenario: a rotation replaces the key; the old one is gone; not linked, 409
@@ -47,7 +47,7 @@ describe('the cloud link key', () => {
     expect(keyOf(view)).toEqual({ secret: CLOUD_LINK_KEY, publicKey: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/), createdAt: '2026-10-17T08:00:00.000Z' });
     expect(instance.settings.getCloudLink()?.linkKey).toEqual(keyOf(view));
     const secret = secrets.open(CLOUD_LINK_KEY)!;
-    expect(privateOf(secret).asymmetricKeyType).toBe('x25519');
+    expect(privateOf(secret).asymmetricKeyType).toBe('ed25519');
     // The vault keeps a secret's last 4 characters: none of them is the private half's.
     expect(secrets.meta(CLOUD_LINK_KEY)?.last4).toBe('KP"}');
     expect(publicOf(secret)).toBe(keyOf(view)!.publicKey);
