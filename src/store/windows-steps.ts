@@ -88,6 +88,12 @@ export function createWindowsStepRepository(c: StoreContext): WindowsStepReposit
         return false;
       }
     },
+    runAgain(id) {
+      c.tx(() => {
+        const s = get(id);
+        if (s && s.endedAt === undefined) c.db.run('UPDATE windows_steps SET body = ? WHERE id = ?', body({ ...s, runs: (s.runs ?? 1) + 1 }), id);
+      });
+    },
     releaseHost(id) {
       c.db.run('UPDATE windows_steps SET lease_host = NULL WHERE id = ?', id);
     },

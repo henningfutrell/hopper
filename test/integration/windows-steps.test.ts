@@ -203,12 +203,14 @@ describe('Windows sandbox steps (issue #731)', () => {
     await saveHosts(a, session, [HOST]);
     const r = await step(a, job, ['run', 'build-host', '--rerun', '--command', 'podman inspect hopper']);
     expect(r.code).toBe(3);
-    const id = (eventsOf(a, 'step.started')[0]!.data as { step: string }).step;
-    expect(a.app.instance.windowsSteps.get(id)).toMatchObject({ command: 'podman inspect hopper', rerun: true });
     const plain = await step(a, job, ['run', 'build-host', '--command', 'msbuild App.sln']);
     expect(plain.code).toBe(3);
-    const second = (eventsOf(a, 'step.started')[1]!.data as { step: string }).step;
-    expect(a.app.instance.windowsSteps.get(second)?.rerun).toBeUndefined();
+    const kept = (command: string) => {
+      const started = eventsOf(a, 'step.started').map((e) => e.data as { step: string; command: string }).find((d) => d.command === command)!;
+      return a.app.instance.windowsSteps.get(started.step);
+    };
+    expect(kept('podman inspect hopper')?.rerun).toBe(true);
+    expect(kept('msbuild App.sln')?.rerun).toBeUndefined();
     const box = await step(a, job, ['box', 'aws-read', '--rerun', '--command', 'aws s3 ls']);
     expect(box.code).toBe(2);
     expect(box.stderr).toContain('no: --rerun is for a Windows step');
