@@ -10,12 +10,16 @@
 //   issue #18) never runs the real CLI. A test that wants claude names a fake as `bin`; the acceptance tests
 //   (test/acceptance/, issue #1958) name the real one, found past this guard, and point it at the fake model server.
 // - XDG_RUNTIME_DIR is a throwaway dir in the real one (isolateRuntimeDir below, issue #1295).
-// - fetch() to anything but a loopback host rejects, so a webhook can never reach a real URL.
+// - fetch() to anything but a loopback host rejects, so a webhook can never reach a real URL; under it, no client's
+//   connection or DNS lookup leaves this machine (test/support/network-guard.ts, issue #1955), in this worker and,
+//   through NODE_OPTIONS, in every node process a test starts.
 // - KUBERNETES_SERVICE_HOST is unset, so a test run in a pod (a lane pod's job) reads as a host install does; a test
 //   of a cluster install sets it in the environment it passes (issue #1289).
 import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { allowedHost } from './network-guard.ts';
 
 const CLAUDE_GUARD = `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "0.0.0 (hopper test isolation)"; exit 0; fi
@@ -56,11 +60,13 @@ function isolateRuntimeDir(): void {
 
 delete process.env.KUBERNETES_SERVICE_HOST;
 
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+const guard = `--import=${pathToFileURL(join(import.meta.dirname, 'network-guard.ts')).href}`;
+if (!(process.env.NODE_OPTIONS ?? '').includes(guard)) process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} ${guard}`.trim();
+
 const realFetch = globalThis.fetch;
 globalThis.fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
   const url = new URL(input instanceof Request ? input.url : String(input));
-  if (!LOOPBACK.has(url.hostname)) {
+  if (!allowedHost(url.hostname)) {
     return Promise.reject(new Error(`test isolation: refused non-loopback request to ${url.origin}`));
   }
   return realFetch(input, init);
