@@ -62,6 +62,8 @@ export interface HostOptions {
   plant?: string;
   /** How far this host's clock is ahead of the real time (behind, when negative), as a machine's clock that is off. */
   clockSkewMs?: number;
+  /** Topology discovery reads with the crash reader (test/crash/topology-reader.ts). */
+  topology?: boolean;
 }
 
 const children = new Set<ChildProcess>();
@@ -79,7 +81,7 @@ export function startHost(o: HostOptions): Promise<CrashHost> {
       ...(o.fakes.github ? { CRASH_GITHUB_URL: o.fakes.github } : {}), ...(o.connectGitHub ? { CRASH_GITHUB_CONNECT: o.connectGitHub.join(',') } : {}),
       ...(o.githubToken ? { CRASH_GITHUB_TOKEN: o.githubToken } : {}), ...(o.plant ? { CRASH_PLANT: o.plant } : {}),
       ...(o.killPoint ? { HOPPER_TEST_KILL_POINT: o.killPoint } : {}), ...(o.job ? { CRASH_JOB: o.job } : {}),
-      ...(o.clockSkewMs ? { CRASH_CLOCK_SKEW_MS: String(o.clockSkewMs) } : {}),
+      ...(o.clockSkewMs ? { CRASH_CLOCK_SKEW_MS: String(o.clockSkewMs) } : {}), ...(o.topology ? { CRASH_TOPOLOGY: '1' } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

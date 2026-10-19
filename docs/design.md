@@ -28673,7 +28673,21 @@ nothing; the saga and its read of GitHub's refs held at every point.
 - **The test checks the event against GitHub, not against the point.** Where the saga's `before-do` kills the host, the
   push may or may not have reached GitHub yet; the test asserts the one event says what GitHub holds.
 
-**Left for later parts.** The other saga kinds (need step, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
+**Part 5: topology discovery** (2026-10-19, "The infrastructure topology"). The test (`test/crash/topology-kill.test.ts`,
+`test/crash/topology-world.ts`) keeps a minting credential for an AWS account and one for its cluster on a first host, asks
+for Discover now, and kills the host at each boundary of the `topology-discovery` saga's `aws` and `kubernetes` steps. STS
+and the Kubernetes API are the loopback fakes of `test/support/fake-mint-apis.ts` in the test process; each host reads
+with the crash reader (`test/crash/topology-reader.ts`, `CRASH_TOPOLOGY`). A second host ends the run: the person's run is
+`done`, no run of discovery stays open, the graph holds the account and its cluster as one source each, read by
+discovery, no Secret is left at the cluster, and neither host wrote a key. **What it found:** nothing; a step read again
+reports the same sources again, which replace their snapshots.
+**Decisions (part 5).**
+- **The reader is in each host, not the test process.** It reads with what the vault minted and changes nothing outside;
+  STS and the Kubernetes API, which the vault asks, are the fakes that outlive a host.
+- **No exactly-once count of reads.** Discovery is read-only, with no compensation: a step done again reads again. The test
+  asserts what it leaves (one source each, the run done), not how many reads it took.
+
+**Left for later parts.** The other saga kinds (need step, Windows step, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below; a job's push: part 4); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28681,7 +28695,7 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).
