@@ -10,4 +10,10 @@ describe('the push brief', () => {
     expect(brief).toContain('Work in a clone of another repository is pushed to that repository, with a pull request there.');
     expect(brief).not.toContain('only to a branch of this job\'s own repository');
   });
+
+  it('never asks a person to push on the job\'s machine (issue #2087): it holds no GitHub credentials', () => {
+    const brief = pushBrief(undefined, true);
+    expect(brief).toContain('end: a person discards it. Never ask a person to push it on this machine: it holds no GitHub credentials.');
+    expect(brief).not.toContain('a person pushes it');
+  });
 });

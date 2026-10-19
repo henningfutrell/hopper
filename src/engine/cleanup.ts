@@ -4,7 +4,7 @@
 // through does it from the record at its next start (`resume`), and records `job.cleaned_up` with `dueAt`.
 // A cleanup that could not reach the job's machine is deferred (issue #371): recorded on the job, tried
 // again on every tick until it goes through, and meanwhile a waiting job of the same item is held.
-import { keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job } from '../domain/types.ts';
+import { keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
@@ -47,8 +47,12 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
     }
     running.add(jobId);
     try {
-      const reaped = await executor.cleanup(job);
+      const said = await executor.cleanup(job);
       if (c.stopping()) return;
+      // Work the hopper pushed for the job (issue #2087) is not work not pushed, whatever its remote branches say: the
+      // sweep removes it.
+      const pushed = said && said.kept.length > 0 ? keptPushedOf(said, proxyPushedOf(c.store.events.recent(PUSHES_READ, [...PROXY_PUSH_EVENTS], jobId))) : [];
+      const reaped = said && pushed.length > 0 ? { ...said, kept: said.kept.filter((p) => !pushed.includes(p)) } : said;
       deferred.delete(jobId);
       const was = c.store.jobs.get(jobId)?.cleanupDeferred;
       c.store.tx(() => {

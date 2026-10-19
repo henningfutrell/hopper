@@ -51,7 +51,7 @@ const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> 
   stranded: { what: 'Jobs on a wait whose agent session ended', act: 'Wake all' },
   done_by_hand: { what: 'Failed jobs with a ready PR or work done by hand', todo: 'Review and merge the PR, or do the work. Then press Done on its card in Needs a person.' },
   taken_soon: { what: 'Failed jobs the hopper runs again soon', todo: 'Nothing to do now. Look again in a minute.' },
-  kept_work: { what: 'Jobs with work not pushed that cannot go on', todo: 'Open its work tree on its machine and push it, or press Discard in Work not pushed.' },
+  kept_work: { what: 'Jobs with work not pushed that cannot go on', todo: 'Press Discard in Work not pushed, or run its item again. Do not push on its machine: it holds no GitHub credentials.' },
   checks: { what: 'Pull requests whose checks still fail', todo: 'Look at the failing checks on GitHub. Fix them, or close the PR.' },
   tend_refused: { what: 'Pull requests the hopper cannot tend', todo: 'Read why on its card in Pull requests, and remove the block.' },
   parked: { what: 'Parked jobs', todo: 'Answer its question in Parked, then pick it up.' },

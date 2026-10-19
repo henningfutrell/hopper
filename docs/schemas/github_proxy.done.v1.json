@@ -127,6 +127,12 @@
             "type": "string"
           }
         },
+        "heads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "direct": {
           "type": "array",
           "items": {

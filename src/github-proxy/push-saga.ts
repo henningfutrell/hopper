@@ -80,7 +80,7 @@ export function createGitPushes(o: {
     const base = { requestId: data.requestId, ...(data.machine ? { machine: data.machine } : {}), ...(data.as ? { as: data.as } : {}), op: 'git.push', repo: data.repo };
     if (moved.length > 0) {
       const direct = (data.direct ?? []).filter((ref) => moved.some((r) => r.ref === ref));
-      side.user.record({ type: 'github_proxy.done', jobId: data.jobId, data: { ...base, refs: moved.map((r) => r.ref), ...(direct.length > 0 ? { direct } : {}) } });
+      side.user.record({ type: 'github_proxy.done', jobId: data.jobId, data: { ...base, refs: moved.map((r) => r.ref), heads: moved.map((r) => r.new), ...(direct.length > 0 ? { direct } : {}) } });
     }
     if (left.length > 0) {
       side.user.record({ type: 'github_proxy.failed', jobId: data.jobId, data: { ...base, refs: left.map((r) => r.ref), error: 'the hopper stopped before GitHub answered the push, and GitHub does not have it: push again' } });

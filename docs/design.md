@@ -917,6 +917,15 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees,
      `<work tree>/.worktrees/<name>/<job id>` (issue #1188), are read and removed with the scratch dir by the same
      rule: they go or stay with it. An emptied `.worktrees/<name>` goes too.
+     For each repository it keeps with no change, it also prints the commits that hold the work no remote has,
+     `hopper-kept-tip <commit> <path>` (issue #2087): its kept **tips**. A remote branch can be gone or never moved
+     (a push not by the remote's name, a prune after a merge), so the checkout alone cannot always tell work the job
+     pushed. The hopper can: each git push through the hopper records the commit each ref moved to (`heads` on
+     `github_proxy.done` and `gitlab_proxy.done`). A kept repository whose every tip the hopper pushed for the job
+     (`keptPushedOf`, `src/domain/kept-work.ts`) is no work not pushed: the cleanup at the job's end records no
+     `job.work_kept` for it, and the sweep removes it as a discard does (`job.work_removed` with `reason` `pushed` when
+     it was kept before). A repository with a change names no tip and stays kept; so does every repository a client
+     older than this keeps.
   4. removes what the layout before issue #1188 left ("Job worktrees in `.worktrees`" below): the job's scratch dir and
      worktrees there by the same rule, and, once that layout holds no job's, the rest of it. Then `git worktree
      prune` in the work tree's repository and its workspace's checkouts.
@@ -12164,7 +12173,10 @@ Now Failures lists it, and each has an action that moves it.
   `proposal` or `research` (it finished a proposal or a research report, never work to push). The reap's rule reads
   work already on a remote under other commits as pushed ("The reap"), so the sweep's next pass removes such kept work
   with no reason at all. Each pass reads every kept entry again by these rules, so entries kept before them clear
-  themselves.
+  themselves. `pushed` (issue #2087): the hopper pushed each commit of it for the job ("The reap", kept tips).
+- **Never a push on the machine** (issue #2087). A job's machine holds no GitHub credentials, so a push there fails.
+  No refusal, todo or brief tells a person to open the work tree on its machine and push it: Push it goes through the
+  job, which pushes through the hopper; else Discard, or run its item again.
 - **Gone from disk** (issue #1120, "Hopper's own disk use"). Kept work whose scratch dir and job worktree a person or a
   cleanup outside the hopper removed leaves the list at the next sweep: `job.work_removed` with `gone`.
 
@@ -12180,6 +12192,12 @@ job's).
 the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squash-merged, rebased and re-made commits
 read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
 the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused; issue #1470: the same work kept again, Push it refused).
+Issue #2087: `test/client/reap-tips.test.ts` (the kept tips of a clean worktree and a clone, none for a change),
+`test/domain/kept-work.test.ts` (`proxyPushedOf`, `keptPushedOf`), `test/engine/sweep-discard.test.ts` (kept work the
+hopper pushed removed, `pushed`; a tip it did not push stays kept), `test/integration/work-kept.test.ts` (no
+`job.work_kept` at the job's end when the hopper pushed each tip), `test/github-proxy/push-saga.test.ts` and
+`test/gitlab/git-broker.test.ts` (`heads` recorded), `test/failures/push-brief.test.ts` and `test/domain/stuck.test.ts`
+(no push on the machine).
 
 ### Push it by itself (issue #1472 part 2, 2026-10-17)
 

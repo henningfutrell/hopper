@@ -2,7 +2,7 @@
 // read from the work trail. Pure.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
-import { discardReasonOf, keptAgainOf, keptWorkOf, scratchOf } from '../../src/domain/kept-work.ts';
+import { discardReasonOf, keptAgainOf, keptPushedOf, keptWorkOf, proxyPushedOf, scratchOf } from '../../src/domain/kept-work.ts';
 
 let seq = 0;
 const ev = (type: 'job.work_kept' | 'job.work_removed' | 'job.continued', jobId: string, paths: string[], at = '2026-10-13T00:00:00.000Z'): DomainEvent =>
@@ -85,5 +85,23 @@ describe('kept again: the job went on in its work tree and the same work is kept
     // Went on with nothing kept before it: its work is new.
     expect(keptAgainOf([kept([other]), on, removed, kept([other])])).toBe(false);
     expect(keptAgainOf([])).toBe(false);
+  });
+});
+
+describe('kept work the hopper pushed itself (issue #2087)', () => {
+  const push = (type: 'github_proxy.done' | 'gitlab_proxy.done', data: Record<string, unknown>): DomainEvent =>
+    ({ id: `e${++seq}`, seq, type, jobId: 'a', at: '', v: 1, data: { requestId: 'r', op: 'git.push', refs: ['refs/heads/x'], ...data } }) as unknown as DomainEvent;
+
+  it('the commits of its git pushes through the hopper, on GitHub and GitLab; a push recorded before it named none', () => {
+    const trail = [push('github_proxy.done', { repo: 'o/r', heads: ['c1', 'c2'] }), push('gitlab_proxy.done', { project: 'o/r', heads: ['c3'] }), push('github_proxy.done', { repo: 'o/r' })];
+    expect([...proxyPushedOf(trail)].sort()).toEqual(['c1', 'c2', 'c3']);
+    expect(proxyPushedOf([{ ...push('github_proxy.done', { repo: 'o/r' }), data: { op: 'pr.create', heads: ['c4'] } } as unknown as DomainEvent])).toEqual(new Set());
+  });
+
+  it('a kept repository whose every tip the hopper pushed; one with a tip it did not, or with no tip (a change, an older client), is not', () => {
+    const pushed = new Set(['c1', 'c2']);
+    const reaped = { kept: ['/s/a', '/s/b', '/s/c', '/s/d'], tips: { '/s/a': ['c1'], '/s/b': ['c1', 'c2'], '/s/c': ['c1', 'c9'], '/s/d': [] } };
+    expect(keptPushedOf(reaped, pushed)).toEqual(['/s/a', '/s/b']);
+    expect(keptPushedOf({ kept: ['/s/a'] }, pushed)).toEqual([]);
   });
 });

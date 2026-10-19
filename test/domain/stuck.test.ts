@@ -66,6 +66,8 @@ describe('stuck work by cause (issue #1010)', () => {
       keptWork: [kept('job-h', OK, 'h'), kept('k2', no('its agent session cannot resume'))],
     });
     expect(causes.map((c) => [c.cause, c.ids])).toEqual([['push', ['job-h']], ['kept_work', ['k2']]]);
+    // Never a push on its machine (issue #2087): the machine holds no GitHub credentials.
+    expect(causes.find((c) => c.cause === 'kept_work')?.todo).toBe('Press Discard in Work not pushed, or run its item again. Do not push on its machine: it holds no GitHub credentials.');
   });
 
   it('pull requests the hopper gave up on: Tend again in bulk for a failed tend; failing checks and a refused tend say what to do', () => {

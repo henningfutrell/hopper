@@ -131,7 +131,7 @@ export function createGitLabGitProxy(o: GitLabGitProxyOptions) {
           return text(403, `refused: ${why}. A person connects GitLab again with a new token (Sources → GitLab)`);
         }
         if (push && !at.advertise) {
-          if (res.status === 200) record('gitlab_proxy.done', { refs: refs.map((c) => c.ref) });
+          if (res.status === 200) record('gitlab_proxy.done', { refs: refs.map((c) => c.ref), heads: refs.map((c) => c.new) });
           else record('gitlab_proxy.failed', { refs: refs.map((c) => c.ref), error: `GitLab answered ${res.status}` });
         }
         const headers: Record<string, string> = {};
