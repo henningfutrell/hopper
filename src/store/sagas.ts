@@ -64,5 +64,7 @@ export function createSagaRepository(c: StoreContext): SagaRepository {
     due: (now, limit) => c.db.all(`SELECT body, abort FROM sagas WHERE ${OPEN} AND (next_at <= ? OR abort IS NOT NULL)
       AND (lease_owner IS NULL OR lease_until < ${DB_NOW}) ORDER BY created_at, id LIMIT ?`, now, limit).map(sagaOf),
     open: () => c.db.all(`SELECT body, abort FROM sagas WHERE ${OPEN} ORDER BY created_at, id`).map(sagaOf),
+    heldByOthers: (kind, owner) => c.db.all(`SELECT key FROM sagas WHERE kind = ? AND ${OPEN} AND lease_owner IS NOT NULL AND lease_owner <> ?
+      AND lease_until >= ${DB_NOW}`, kind, owner).map((r) => String(r.key)),
   };
 }

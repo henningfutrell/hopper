@@ -127,8 +127,9 @@ export function createVaultService(o: {
   backends?: () => ConfiguredBackend[];
   /** The shared secret a row name `shared/<name>` names (issue #718): a template may name one. Absent: none. */
   shared?: (row: string) => VaultSecret | undefined;
-  /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. Infra applies (issue #1722): off, only a read is minted; absent, on. */
-  plans?: MintingOptions['plans']; applies?: MintingOptions['applies'];
+  /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. Infra applies (issue #1722): off, only a read is minted; absent, on.
+   * `elsewhere`: the sandboxes another live hopper runs now, by name (issue #1954): the reconcile pass leaves their tokens bound. Absent: none. */
+  plans?: MintingOptions['plans']; applies?: MintingOptions['applies']; elsewhere?: () => ReadonlySet<string>;
 }): VaultService {
   const { store: { vault, events }, keys: { sealer } } = o;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
@@ -180,7 +181,7 @@ export function createVaultService(o: {
 
   const mintFrom = mintHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) });
   // A sandbox's tokens end with it (issue #1371): bound for the need box or check box, released at its end.
-  const unbindFrom = unbindHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) }), bindings = mintBindings({ events: o.store.events, clock: o.clock, unbindFrom, logger: o.logger });
+  const unbindFrom = unbindHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) }), bindings = mintBindings({ events: o.store.events, clock: o.clock, unbindFrom, logger: o.logger, ...(o.elsewhere ? { elsewhere: o.elsewhere } : {}) });
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,

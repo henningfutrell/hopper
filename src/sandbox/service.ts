@@ -86,6 +86,11 @@ export interface SandboxesOptions {
   checks?: CheckTemplates;
   /** The probes of the read-only check; absent: the hopper's catalog (src/sandbox/probes.ts). */
   probes?: ProbeCatalog;
+  /**
+   * The steps another live hopper on this database drives now (issue #1954: the keys of the `need-step` sagas whose lease
+   * another host holds). The sweep leaves their need boxes, homes and runs to that hopper. Absent: none.
+   */
+  drivenElsewhere?: () => ReadonlySet<string>;
 }
 
 export interface Sandboxes {
@@ -105,6 +110,8 @@ export interface Sandboxes {
   stepProblem(userId: string, o?: { offline?: true }): Promise<string | undefined>;
   /** One burn pass (burn-launched.ts): each box an older build launched, burned, and its record removed. */
   burnLaunched(): Promise<void>;
+  /** The need boxes another live hopper runs now (`drivenElsewhere`), by name: their tokens stay bound too (issue #1954). */
+  elsewhere(): ReadonlySet<string>;
   /** One pass of the sweep, the read-only check (issue #716) and the warm pass: each due template is checked; a pass that runs already is joined, each on its own (issue #1965). */
   check(): Promise<void>;
   start(): void;
@@ -163,7 +170,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const burnPass = (): Promise<void> => (running ??= pass(o.clock.now()).finally(() => { running = undefined; }));
   // The need boxes' homes no step holds (issue #1371): one whose remove failed, or one a hopper that stopped left.
   const sweepStepHomes = async (at: Place): Promise<void> => {
-    await sweepHomes(at.runtime, { [NEED_LABEL]: o.instanceId, ...at.only }, stepping).catch(() => {});
+    await sweepHomes(at.runtime, { [NEED_LABEL]: o.instanceId, ...at.only }, held()).catch(() => {});
     // And the homes of the boxes an older build launched (issue #1349): no box of theirs starts again.
     await sweepHomes(at.runtime, { [BOX_LABEL]: o.instanceId, ...at.only }, NONE).catch(() => {});
   };
@@ -200,14 +207,21 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       return runtime ? [{ runtime, machine: g.machine, userId: g.userId, only: { [USER_LABEL]: g.userId } }] : [];
     }),
   ];
+  /** The need boxes another live hopper runs now: a sweep here leaves them to it, as its own `stepping` (issue #1954). */
+  const elsewhere = (): Set<string> => {
+    const driven = o.drivenElsewhere?.();
+    return new Set(driven?.size ? o.runs.open().filter((r) => driven.has(r.id)).map((r) => r.box) : []);
+  };
+  /** The need boxes a sweep leaves: this hopper's running now, and those another live hopper runs. */
+  const held = (): Set<string> => new Set([...stepping, ...elsewhere()]);
   const sweepSteps = async (at: Place): Promise<void> => {
     const listed = await at.runtime.list({ [NEED_LABEL]: o.instanceId, ...at.only }).catch(() => undefined);
     if (!listed) return;
     const now = o.clock.now().toISOString();
     const open = o.runs.open().filter((r) => r.machine === at.machine && (at.userId === undefined || r.userId === at.userId));
-    const burned = new Set<string>();
+    const burned = new Set<string>(), keep = held();
     for (const box of listed) {
-      if (stepping.has(box.name)) continue;
+      if (keep.has(box.name)) continue;
       if (await burn(at.runtime, box)) {
         burned.add(box.name);
         o.logger.info(`hopper: sandbox ${box.name} outlived its step: burned${at.machine === LOCAL ? '' : ` on ${at.machine}`}`);
@@ -215,7 +229,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     }
     const there = new Set(listed.map((b) => b.name).filter((n) => !burned.has(n)));
     for (const r of open) {
-      if (stepping.has(r.box) || there.has(r.box)) continue;
+      if (keep.has(r.box) || there.has(r.box)) continue;
       if (r.endedAt === undefined) o.runs.end(r.id, { at: now, outcome: 'swept', problem: 'the step did not end: its sandbox was burned by the sweep' });
       o.runs.destroyed(r.id, now);
     }
@@ -339,6 +353,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     // A need box's run is the job's step `need_box` (issue #1486 part 9): the box runs with the step's trace context.
     needStep: (userId, box, io, run) => traceJobStep(run.jobId, 'need_box', () => needStep(userId, { ...box, env: { ...box.env, ...traceEnv() } }, io, run), outcomeOf),
     burnLaunched: burnPass,
+    elsewhere,
     check,
     start() {
       if (timer) return;

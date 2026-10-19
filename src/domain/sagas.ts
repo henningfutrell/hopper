@@ -78,6 +78,11 @@ export interface SagaRepository {
   due(now: string, limit: number): Saga[];
   /** The sagas not ended, oldest first. */
   open(): Saga[];
+  /**
+   * The keys of the sagas of `kind` not ended whose lease an owner other than `owner` holds now, on the database's clock
+   * (issue #1954): the work another live host drives, which this host's sweeps leave to it.
+   */
+  heldByOthers(kind: string, owner: string): string[];
 }
 
 /** The tries a step gets before its saga compensates (a do), or fails (a compensation). */

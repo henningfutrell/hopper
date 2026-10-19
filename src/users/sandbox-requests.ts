@@ -28,6 +28,8 @@ export interface SandboxLauncher {
   stepProblem: Sandboxes['stepProblem'];
   steps: NeedStepRepository;
   ran(step: string): boolean;
+  /** The need boxes another live hopper runs now, by name (issue #1954): the vault's reconcile pass leaves their tokens bound. */
+  elsewhere(): ReadonlySet<string>;
   sagas: { begin(step: string, userId: string): string; abort(saga: string, reason: string): boolean };
 }
 
