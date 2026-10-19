@@ -59,7 +59,8 @@ describe('in-memory fake GitHub', () => {
     const pr = gh.openPullRequest('h/a', 1, { createdAt: '2026-10-02T10:30:00.000Z', isDraft: true });
     expect(pr).toEqual({ url: 'https://github.com/h/a/pull/1001', createdAt: '2026-10-02T10:30:00.000Z', isDraft: true, conflicting: false, headCommittedAt: '2026-10-02T10:30:00.000Z' });
     expect(gh.issue('h/a', 1).state).toBe('open');
-    expect(await gh.openClosingPullRequests('h/a', 1)).toEqual([pr]);
+    // With its branches, as GitHub answers them (issue #2132).
+    expect(await gh.openClosingPullRequests('h/a', 1)).toEqual([{ ...pr, headRef: 'branch-1001', base: 'dev' }]);
     gh.closeByPullRequest('h/a', 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });
     expect(await gh.openClosingPullRequests('h/a', 1)).toEqual([]);
   });

@@ -68,9 +68,9 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     find(repo, n);
     return addPull(repo, key(repo, n), o, closes, o.body ?? `${says} #${n}`);
   };
-  /** As the port answers a pull request: without the fake's own fields. */
-  const shown = ({ url, createdAt, isDraft, conflicting, headCommittedAt, checks }: OpenPullRequest): OpenPullRequest =>
-    ({ url, createdAt, isDraft, conflicting, ...(headCommittedAt ? { headCommittedAt } : {}), ...(checks ? { checks } : {}) });
+  /** As the port answers a pull request: without the fake's own fields; with its branches, as GitHub says them (issue #2132). */
+  const shown = ({ url, createdAt, isDraft, conflicting, headCommittedAt, checks, headRef, base }: OpenPullRequest): OpenPullRequest =>
+    ({ url, createdAt, isDraft, conflicting, ...(headCommittedAt ? { headCommittedAt } : {}), ...(checks ? { checks } : {}), ...(headRef ? { headRef } : {}), ...(base ? { base } : {}) });
   const merged = (p: (typeof pulls)[number], at: string, by = human) => {
     Object.assign(p, { state: 'merged', mergedAt: at });
     for (const q of pulls) if (q.state === 'open' && conflicts.conflictsWith(p.url).includes(q.url)) q.conflicting = true;

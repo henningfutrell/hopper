@@ -119,4 +119,11 @@ describe('reconciling reads the open pull requests of every repository in one ba
     expect(asked(s.gh)).toContain('openPullRequestsIn');
     expect(asked(s.gh)).not.toContain('openPullRequests');
   });
+
+  it('a batch run that closes the issue in its text is no issue\'s work (issue #2132): never answered', async () => {
+    const s = setup();
+    s.gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    s.gh.openPullRequest(REPO, 1, { createdAt: AFTER, base: 'dev', headRef: 'hopper-batch/abc123def456', body: 'A batch run.\n\nCloses #1' });
+    expect(await s.source.unfollowedPullRequests!([jobForIssue(1, { status: 'finished' })])).toEqual([]);
+  });
 });
