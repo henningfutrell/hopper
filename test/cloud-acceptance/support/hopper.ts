@@ -37,10 +37,9 @@ export function cloudHopper() {
     },
     /**
      * moto reset and seeded, the proxy in front of it (its clock `now`, when given), and a hopper whose AWS_LAB mints
-     * through the proxy, with the template infra-read approved: read on the seed's read role. `env`: more of the daemon's
-     * environment (a fake GitHub's, for the write path).
+     * through the proxy, with the template infra-read approved: read on the seed's read role.
      */
-    async boot(motoUrl: string, o: { now?: () => Date; env?: Record<string, string> } = {}): Promise<Booted> {
+    async boot(motoUrl: string, o: { now?: () => Date } = {}): Promise<Booted> {
       await resetMoto(motoUrl);
       proxy = await startPolicyAssertProxy({ upstream: motoUrl, admins: [SEED_KEYS.accessKeyId, MINTING.AccessKeyId], ...(o.now ? { now: o.now } : {}) });
       const seeded = await seed(proxy.url);
@@ -49,7 +48,7 @@ export function cloudHopper() {
       process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
       process.env.FAKE_HERDR_RUNNING = '1';
       t = await startTestApp({
-        dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, ...(o.env ? { env: o.env } : {}),
+        dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
         plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
       });
       const session = await t.login();
