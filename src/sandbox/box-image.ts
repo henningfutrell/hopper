@@ -1,7 +1,9 @@
 // The image a sandbox runs (issues #708, #716, #1286): a template's approved image, else the published box image of an
 // agent, with the template's tools added — built once per base image and set of tools, or, on a runtime that builds
 // nothing, the tools image CI publishes. A need box and a check box run it; neither runs as root.
+import { fileURLToPath } from 'node:url';
 import type { BoxTool, ContainerRuntime } from '../domain/sandboxes.ts';
+import { readInstallInfo } from '../update/install.ts';
 import { isRootUser } from './flags.ts';
 import { toolsImage } from './tools.ts';
 
@@ -21,6 +23,20 @@ export const BOX_AGENTS = ['claude', 'codex', 'cursor', 'omp', 'opencode'] as co
  */
 export const TEST_IMAGE = `${BOX_IMAGE}:box-test`;
 
+/** The branches CI publishes a `box-test-<branch>` tag of; `box-test` itself follows stable. */
+const TEST_IMAGE_BRANCHES: readonly string[] = ['dev', 'beta', 'canary'];
+
+/**
+ * The test image a box pulls (issue #1976): the tag of the branch the hopper was built from, so a hopper of dev, beta or
+ * canary runs the test image of its own channel, as published before stable has one; else `box-test`.
+ */
+export const testImageOf = (branch: string | undefined): string =>
+  (branch !== undefined && TEST_IMAGE_BRANCHES.includes(branch) ? `${TEST_IMAGE}-${branch}` : TEST_IMAGE);
+
+let built: { branch: string | undefined } | undefined;
+/** The branch this build was made from, as its install.json says; read once. Undefined for a checkout with none. */
+const buildBranch = (): string | undefined => (built ??= { branch: readInstallInfo(fileURLToPath(new URL('../..', import.meta.url))).known.branch }).branch;
+
 /**
  * The tools image CI publishes for a box image (issue #1286, .github/workflows/image.yml `box-tools`): the box image with
  * every box tool added as tools.ts adds them, its tag the box image's with `-tools`, or `-tools-read-only` for a
@@ -35,11 +51,13 @@ export function publishedToolsImage(base: string, readOnly?: boolean): string {
 }
 
 /**
- * The image a box runs, and its user: `base`, with `tools` added when it names any (issue #716), built once per base and
+ * The image a box runs, and its user: `named`, with `tools` added when it names any (issue #716), built once per base and
  * set of tools — or, on a runtime that builds nothing, the published tools image, which has every tool (issue #1286).
- * `readOnly`: a read-only template's box, whose terraform runs through the read-only wrapper (issue #715).
+ * `readOnly`: a read-only template's box, whose terraform runs through the read-only wrapper (issue #715). A template
+ * keeps the test image as `TEST_IMAGE`; the box pulls the one of `branch`, the hopper's own by default (issue #1976).
  */
-export async function boxImage(runtime: ContainerRuntime, base: string, tools: readonly BoxTool[] | undefined, readOnly?: boolean): Promise<{ image: string; user: string }> {
+export async function boxImage(runtime: ContainerRuntime, named: string, tools: readonly BoxTool[] | undefined, readOnly?: boolean, branch = buildBranch()): Promise<{ image: string; user: string }> {
+  const base = named === TEST_IMAGE ? testImageOf(branch) : named;
   const read = await runtime.pull(base);
   if (isRootUser(read.user)) throw new Error(`the image ${base} runs as root: a sandbox box runs as a non-root user (USER in its image)`);
   if (!tools?.length) return { image: base, user: read.user };

@@ -26741,7 +26741,10 @@ Python, no browser and no fonts, and behind the egress proxy a box cannot downlo
   are in `/opt/playwright` (`PLAYWRIGHT_BROWSERS_PATH`), outside the home, which is a fresh volume in each box. It ends as
   the box image's user, `agent`: a box runs no image as root. CI publishes it beside the box images
   (`.github/workflows/image.yml` `box-test`, after `box`, on `box-claude-sha-<commit>`): `box-test` following stable,
-  `box-test-<branch>`, `box-test-sha-<commit>`.
+  `box-test-<branch>`, `box-test-sha-<commit>`. A template keeps `TEST_IMAGE`; a box pulls the tag of the branch the
+  hopper was built from (issue #1976, `testImageOf`, install.json's branch): `box-test-dev`, `-beta` or `-canary` on those
+  channels, `box-test` on stable and for a checkout. `box-test` follows stable alone, so a dev hopper that pulled it
+  before stable published one failed its box with `manifest unknown`.
 - **The ask** (`src/skills/template-ask.ts`). `sandbox-template` and `sandbox` also take `--secrets "NAME ..."` (vault
   secrets by name, at most 8), `--egress "host:port ..."` (egress hosts, at most 8, as `egressHostProblem` reads them) and
   `--image NAME`, one of the hopper's own box images by its short name (`REQUEST_IMAGES`: `box`, `test`). A job never
@@ -26767,13 +26770,18 @@ the job's vault grant, masked in the log, and never on the job's machine.
 - **A person approves every request with a secret or an egress host.** Issue #1875 asks that the approval of such a
   template stays with a person. A toggle (skip template approval, auto-approve) is the admin's statement about needs; it
   says nothing about which secrets a job may get or where a box may send them.
+- **The test image of the hopper's own branch, chosen at the pull** (issue #1976). A template keeps `TEST_IMAGE` as it
+  was saved (persisted state, unchanged), and the box image pull maps it, so a template asked for before keeps its name,
+  its approval and its read-only check. The branch comes from install.json, as the stack drift's image does; no channel
+  setting is read, so no caller passes one.
 - **`requests` and `pytest` in the test image.** Common in an end-to-end test of a web app, small, and a box behind the
   proxy cannot download them.
 
 Tests: `test/skills/template-request-extras.test.ts` (the template saved with what the request names, no needs; a
 person's approval only, every policy and toggle on; ready after it; reuse of one exactly the same and never of a wider
 one; a changed one refused; an image reference, a host that is not `host:port`, a system secret and too many refused),
-`test/scripts/box-test-image.test.ts` (the Containerfile, its user, the workflow's job and tags). Checked by hand with
+`test/scripts/box-test-image.test.ts` (the Containerfile, its user, the workflow's job and tags, the tag of each branch a
+box pulls). Checked by hand with
 rootless Podman: the image built on the published `box-claude`; run as a need box runs (every capability dropped, no new
 privileges, a read-only root, `/tmp` a tmpfs, a fresh home volume) and with no network, Chromium's headless shell
 rendered a page as `agent`.
