@@ -12,14 +12,14 @@ import type { Job } from '../../src/domain/types.ts';
 import type { WindowsHost, WindowsStepHost } from '../../src/domain/windows-steps.ts';
 import { createSagaCoordinator, type SagaCoordinator } from '../../src/sagas/coordinator.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
-import { createWindowsSteps, STEP_INTERRUPTED, WINDOWS_STEP_SAGA, windowsStepSaga, type WindowsSteps } from '../../src/windows-steps/index.ts';
+import { createWindowsSteps, STEP_INTERRUPTED, STEP_RERUN_NOTE, WINDOWS_STEP_SAGA, windowsStepSaga, type StepFields, type WindowsSteps, type WindowsStepsOptions } from '../../src/windows-steps/index.ts';
 import { endLeases } from '../crash/harness.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
 
 const temp = useTempStore();
 const LEASE_MS = 60_000;
 const quiet = { info: () => {}, warn: () => {} };
-const HOST: WindowsHost = { name: 'build-host', ssh: 'builder@winbox', hostKey: 'ssh-ed25519 AAAA', workDir: 'C:\\work\\app' };
+const HOST: WindowsHost = { name: 'build-host', ssh: 'builder@winbox', hostKey: 'ssh-ed25519 AAAA', workDir: 'C:\\work\\app', secrets: ['NUGET_TOKEN'] };
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
 
 /** The Windows host: the scratch directory each host keeps until it is swept, the runs of each step, and how many run at once. */
@@ -69,14 +69,20 @@ describe('a Windows step as a saga (issue #1611)', () => {
   let ids = 0, keys = 0;
 
   /** One hopper: its store, its Windows steps and its coordinator, on the shared database and the shared host. */
-  const hopper = (url: string, owner: string, w: ReturnType<typeof world>, clock: ReturnType<typeof fixedClock>) => {
+  const hopper = (url: string, owner: string, w: ReturnType<typeof world>, clock: ReturnType<typeof fixedClock>, x: Pick<WindowsStepsOptions, 'secret'> & { failEnds?: number } = {}) => {
     const store = openInstanceStore({ url, clock });
+    // The database does not keep a step's end, `failEnds` times: a hopper that stays up meets it on a lost connection.
+    let failEnds = x.failEnds ?? 0;
+    const repo = { ...store.windowsSteps, end: (...a: Parameters<typeof store.windowsSteps.end>) => {
+      if (failEnds-- > 0) throw new Error('Connection terminated unexpectedly');
+      return store.windowsSteps.end(...a);
+    } };
     stores.push(store);
     const dir = mkdtempSync(join(tmpdir(), 'win-saga-'));
     dirs.push(dir);
     const held: { c?: SagaCoordinator } = {};
     const steps: WindowsSteps = createWindowsSteps({
-      userId: 'admin', hosts: () => [HOST], host: w.host, steps: store.windowsSteps, atWork: () => true, dir, record: () => {}, log: () => {}, now: () => clock.now(),
+      userId: 'admin', hosts: () => [HOST], host: w.host, steps: repo, ...(x.secret ? { secret: x.secret } : {}), atWork: () => true, dir, record: () => {}, log: () => {}, now: () => clock.now(),
       sagas: { begin: (step) => held.c!.begin(WINDOWS_STEP_SAGA, step, { step }, { userId: 'admin' }).id, abort: (saga, reason) => held.c!.abort(saga, reason) },
     });
     const c = held.c = createSagaCoordinator({ repo: store.sagas, definitions: [windowsStepSaga({ steps: () => steps })], owner, clock, idGen: () => `saga-${++ids}`, logger: quiet, leaseMs: LEASE_MS, renewMs: 1e9 });
@@ -84,8 +90,8 @@ describe('a Windows step as a saga (issue #1611)', () => {
     return { store, steps, c };
   };
   const later = (clock: ReturnType<typeof fixedClock>, ms: number): void => clock.set(new Date(clock.now().getTime() + ms).toISOString());
-  const start = (steps: WindowsSteps, command = 'msbuild App.sln'): string => {
-    const r = steps.start(JOB, { host: HOST.name, command, outputs: [] }, { key: `key-${String(++keys).padStart(4, '0')}`, inputs: Buffer.alloc(0) });
+  const start = (steps: WindowsSteps, command = 'msbuild App.sln', more: Pick<StepFields, 'rerun' | 'secrets'> = {}): string => {
+    const r = steps.start(JOB, { host: HOST.name, command, outputs: [], ...more }, { key: `key-${String(++keys).padStart(4, '0')}`, inputs: Buffer.alloc(0) });
     if ('no' in r) throw new Error(r.no);
     return r.id;
   };
@@ -171,5 +177,65 @@ describe('a Windows step as a saga (issue #1611)', () => {
     expect(w.scratch.size).toBe(0);
     expect(a.store.windowsSteps.get(id)?.hostLeased).toBeUndefined();
     expect(a.steps.stop(JOB, id)).toBe(false);
+  });
+
+  it('a hopper that stays up never says it stopped: an end the database did not keep is kept at the next try (issue #2117)', async () => {
+    const url = temp.url(), w = world(), clock = fixedClock();
+    const a = hopper(url, 'host-a', w, clock, { failEnds: 1 });
+    const id = start(a.steps);
+    expect((await a.c.drive(sagaOf(a, id)))?.state).toBe('running');
+    later(clock, 1_001);
+    expect((await a.c.drive(sagaOf(a, id)))?.state).toBe('done');
+    expect(a.steps.state(JOB, id)).toEqual({ result: { exit: 0 } });
+    expect(w.runs.get(id)).toBe(1);
+    expect(w.scratch.size).toBe(0);
+  });
+
+  it('a hopper that stays up never says it stopped: a try that fails before the step runs ends it with why (issue #2117)', async () => {
+    const url = temp.url(), w = world(), clock = fixedClock();
+    const a = hopper(url, 'host-a', w, clock, { secret: () => Promise.reject(new Error('the vault did not answer')) });
+    const id = start(a.steps, 'nuget push', { secrets: ['NUGET_TOKEN'] });
+    await a.c.drive(sagaOf(a, id));
+    later(clock, 1_001);
+    expect((await a.c.drive(sagaOf(a, id)))?.state).toBe('done');
+    expect(a.steps.state(JOB, id)).toEqual({ result: { exit: 125, problem: 'the hopper could not run the step: NUGET_TOKEN: the vault did not answer' } });
+    expect(w.runs.get(id)).toBeUndefined();
+    expect(a.store.windowsSteps.get(id)?.hostLeased).toBeUndefined();
+  });
+
+  it('a step asked with rerun that a stopped hopper cut short runs again at the next start, and its log says so (issue #2117)', async () => {
+    const url = temp.url(), w = world(), clock = fixedClock();
+    const a = hopper(url, 'host-a', w, clock);
+    const blocked = w.block();
+    const id = start(a.steps, 'podman inspect hopper', { rerun: true });
+    await blocked;
+    await a.c.stop();
+
+    const b = hopper(url, 'host-b', w, clock);
+    endLeases(url);
+    await b.c.pass();
+    await expect.poll(() => b.steps.state(JOB, id), { timeout: 10_000 }).toEqual({ result: { exit: 0 } });
+    expect(w.runs.get(id)).toBe(2);
+    expect(b.steps.log(JOB, id, 0)?.text).toContain(`hopper-step: ${STEP_RERUN_NOTE} (run 2 of 3)\n`);
+    await b.c.drive(sagaOf(b, id));
+    expect(w.scratch.size).toBe(0);
+  });
+
+  it('a step asked with rerun runs at most three times: cut short a third time, it ends saying the hopper stopped', async () => {
+    const url = temp.url(), w = world(), clock = fixedClock();
+    let h = hopper(url, 'host-0', w, clock);
+    let blocked = w.block();
+    const id = start(h.steps, 'podman inspect hopper', { rerun: true });
+    for (let n = 1; n <= 3; n++) {
+      await blocked;
+      await h.c.stop();
+      if (n < 3) blocked = w.block();
+      h = hopper(url, `host-${n}`, w, clock);
+      endLeases(url);
+      // A pass waits for the run it starts: one cut short blocks until its hopper stops.
+      void h.c.pass();
+    }
+    await expect.poll(() => h.steps.state(JOB, id), { timeout: 10_000 }).toEqual({ result: { exit: 125, problem: STEP_INTERRUPTED } });
+    expect(w.runs.get(id)).toBe(3);
   });
 });

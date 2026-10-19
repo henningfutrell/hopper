@@ -4962,6 +4962,17 @@ kept as sagas"):
 - **Never twice.** A step whose `leased_at` is set may have run on the host. The `run` step of a saga that a stop cut short
   finds it so, and ends the step with exit 125 and `STEP_INTERRUPTED` (it may have had its effect: look before you run it
   again), not run again; the `sweep` step then sweeps the host. A step that only waited for its host runs after the stop.
+- **Only a stop says so** (issue #2117). A `run` try that fails on a hopper that stays up is not a stop: the next try of
+  its saga, on that hopper, must not read `leased_at` as one. A step's end that the database did not keep (a lost
+  connection) is held in that hopper's memory (`endedHere`) and kept at the next try; a try that fails before the step
+  runs (the vault did not answer, the step's directory could not be made) ends the step with exit 125 and `the hopper
+  could not run the step: <why>`. Only a try with no such memory — a hopper that stopped, or a saga another hopper took
+  over — ends with `STEP_INTERRUPTED`.
+- **Rerun** (issue #2117). `hopper-step run --rerun` (`rerun=1`) says the step is safe to run again: one that only reads,
+  or does the same each time. A stop that cuts such a step short does not end it: the next `run` try sweeps the host's
+  scratch, counts the run (`runs`, in the step's row), says `STEP_RERUN_NOTE (run N of 3)` in its log, and runs it from
+  the start, with the same host lease. At most `STEP_RUNS_MAX` (3) runs in all; cut short a third time, it ends with
+  `STEP_INTERRUPTED`. A box or need step takes no `--rerun`: it runs in a new sandbox each time, and keeps "never twice".
 - **The job reads it**, from any host, after a restart too: `hopper-step` asks with its key, reads the log until it ends
   (a hopper away for a restart is read again for up to 300 s), then the result and the outputs, as for a need step.
 
@@ -4970,7 +4981,9 @@ refused then is the step's problem, not the ask's answer. The inputs and outputs
 the database: a larger build sends a script that fetches its sources, or brings back less.
 Tests: `test/windows-steps/step-saga.test.ts` (the real database and coordinator, a double at the host: a step run once and
 read from another host; a hopper stopped mid-step — the next start ends it once, with why, sweeps the host and runs the
-step that waited; one step at a time across two hoppers; a sweep the host does not answer keeps the host lease; the job's stop).
+step that waited; one step at a time across two hoppers; a sweep the host does not answer keeps the host lease; the job's stop;
+issue #2117: an end the database did not keep, and a vault that did not answer, on a hopper that stays up, never end as a
+stop; a step asked with rerun runs again after a stop, and at most three times).
 
 **Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (its log is read
 from `/job/step/:id/log`); more than one step at a time on one host; a host reached through a jump host.

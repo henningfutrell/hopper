@@ -205,7 +205,11 @@ export interface WindowsStep {
   secrets: string[];
   inputsBytes: number;
   createdAt: string;
-  /** When it took its host: from then it may have had its effect there, so it is never run a second time. */
+  /** The job said the step is safe to run again: a hopper that stops while it runs runs it again (issue #2117). */
+  rerun?: true;
+  /** How many times it started on its host, when more than once (a rerun). */
+  runs?: number;
+  /** When it took its host: from then it may have had its effect there, so it is never run a second time, unless `rerun`. */
   leasedAt?: string;
   /** Its host lease holds now: no other step of the user runs there until its scratch is swept. */
   hostLeased?: true;
@@ -234,11 +238,16 @@ export interface WindowsStepRepository {
    * step never had one before. Whether the step has the lease now, by this call.
    */
   leaseHost(id: string, at: string): boolean;
+  /** The step runs again on the host it has the lease on (a rerun, issue #2117): its runs counted. */
+  runAgain(id: string): void;
   /** The step lets its host go: its host lease ends. */
   releaseHost(id: string): void;
   /** Removes the steps that ended before `before` and have no host lease. */
   sweep(before: string): void;
 }
+
+/** The most times a step asked with rerun runs: a hopper that stops while it runs runs it again, until then (issue #2117). */
+export const STEP_RUNS_MAX = 3;
 
 /** The most of a step's log the database keeps: more is cut, and the log says so. */
 export const STEP_LOG_MAX = 4 * 1024 * 1024;
