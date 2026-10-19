@@ -28841,6 +28841,40 @@ second one from the same head, so the next hopper's answer to the same request i
 `outbox:pull_request:after-send` and Merge now at `follow:merge:after-issue-close` fail); `test/crash/random-github.test.ts`;
 `test/sources/github-own-merge.test.ts`; `test/integration/merge-marker.test.ts`.
 
+## A job's pull request under crashes (issue #1959, part 4, 2026-10-18)
+
+**Why.** Part 2 gave a job's issue create and comment a resend key and a post key ("The GitHub proxy under crashes"). A
+pull request a job opens (`pr.create`) had neither. A hopper killed after GitHub opened it, and before it recorded
+`github_proxy.done`, left the job with no answer. The job asked again and got a refusal (GitHub opens one pull request
+from a head only), or, after a close, a second pull request. The new crash test shows it on the code before this change:
+the request with a key is refused.
+
+**The change.** `pr.create` is a write with a resend key, as an issue create is:
+- `hopper-gh pr create` sends a key (`key=`), the same each time it sends the request again after no answer came back
+  (`src/github-proxy/script.ts`); the proxy takes it (`policy.ts`).
+- The broker records `github_proxy.sending` with `op: pr.create`, and the pull request's body ends with the post key.
+- Sent again with a key that was sending before and has no answer recorded, the pull request is looked for first: the
+  pull requests from the request's head (`GET /pulls?head=<owner>:<branch>&state=all`), the one whose body carries the
+  post key (`src/github-proxy/resend.ts`, `findPull`). Found, it is answered (`found: true`) with its number, link and
+  branches. Not found, it is opened.
+- A key already done is answered from its `github_proxy.done` (`replayed`), as for an issue.
+
+**The crash tests.** `test/crash/proxy-kill.test.ts` has a write "a pull request" with the kill points
+`proxy:pr.create:before-send` and `proxy:pr.create:after-send`. GitHub then holds one pull request from the head, opened
+once, its body with the post key, and `github_proxy.done` is recorded once. The randomised run
+(`test/crash/random-github.test.ts`) picks it as it picks the other writes.
+
+**Decisions.**
+- **The post key, not the head alone.** GitHub keeps one open pull request per head, but a head can have a closed one, or
+  one a person opened. The post key finds only the one this request opened.
+- **The look-up reads every state.** A pull request a job closed after the first send is still the one it opened.
+
+**Residual risk, stated.** As in part 2: a create GitHub finishes only after the look-up found nothing is refused by GitHub
+(same head) or, after a close, makes a second one.
+
+**Verification:** `test/crash/proxy-kill.test.ts` (15 scenarios; the two of a pull request fail on the code before this
+change); `test/crash/random-github.test.ts`.
+
 ## The secret canary scan after a crash (issue #1957, part 3, 2026-10-18)
 
 A crash must not leave a secret where a clean run does not. `test/crash/secret-canary-kill.test.ts` runs the **canary

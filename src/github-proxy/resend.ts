@@ -3,7 +3,8 @@
 // comment, and before it recorded that, left no such event. So the broker records `github_proxy.sending` before the call,
 // and the text it posts ends with a **post key** (src/domain/post-key.ts) made from the resend key. A request sent again
 // whose key was sending before, with no answer recorded, is looked for on GitHub by that post key first: what GitHub made is
-// answered, never made twice. The kill points of the crash harness sit before and after each write's call.
+// answered, never made twice. A job's pull request create (part 4) is found so too, by the post key in its body. The kill
+// points of the crash harness sit before and after each write's call.
 import { createHash } from 'node:crypto';
 import { hasPostKey } from '../domain/post-key.ts';
 import { killPoint } from '../sagas/kill-points.ts';
@@ -36,14 +37,29 @@ export function sendingSince(events: LineageEvents, jobId: string, key: string, 
     .filter((e) => e.data.key === key && e.jobId !== undefined && (e.jobId === jobId || sameIssue(e.jobId))).at(-1)?.at;
 }
 
-/** What a look-up found on GitHub: the issue (its REST id, for a sub-issue link) or the comment. */
-export interface Posted { id?: number; number: number; url: string }
+/** What a look-up found on GitHub: the issue (its REST id, for a sub-issue link), the comment, or the pull request (its branches). */
+export interface Posted { id?: number; number: number; url: string; head?: string; base?: string }
 
 /**
- * The issue `login` made on the request's repository, or the comment on its issue, whose text carries `postKey`, made or
- * changed since `since`; undefined: none, or the request posts nothing. One page (100), as the post key's look-ups read.
+ * The pull request from the request's head whose body carries `postKey` (issue #1959 part 4): GitHub refuses a second one
+ * from the same head, so one a crash left is answered, not asked for again. Its `head` is a branch of the repository, or
+ * `owner:branch` of a fork's.
+ */
+async function findPull(req: Request, headers: Record<string, string>, r: Extract<ProxyRequest, { op: 'pr.create' }>, postKey: string): Promise<Posted | undefined> {
+  const { owner, repo } = splitRepo(r.repo);
+  const head = r.head.includes(':') ? r.head : `${owner}:${r.head}`;
+  const d = (await req('GET /repos/{owner}/{repo}/pulls', { owner, repo, head, state: 'all', per_page: 100, headers })).data as { number: number; body?: string | null; html_url: string; head: { ref: string }; base: { ref: string } }[];
+  const p = d.find((x) => hasPostKey(x.body, postKey));
+  return p ? { number: p.number, url: p.html_url, head: p.head.ref, base: p.base.ref } : undefined;
+}
+
+/**
+ * The issue `login` made on the request's repository, the comment on its issue, or the pull request from its head, whose
+ * text carries `postKey`, made or changed since `since`; undefined: none, or the request posts nothing. One page (100), as
+ * the post key's look-ups read.
  */
 export async function findPosted(req: Request, headers: Record<string, string>, r: ProxyRequest, postKey: string, since: string, login: string): Promise<Posted | undefined> {
+  if (r.op === 'pr.create') return findPull(req, headers, r, postKey);
   const at = { ...splitRepo(r.repo), since, per_page: 100, headers };
   if (r.op === 'issue.comment') {
     const d = (await req('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: r.number })).data as { body?: string | null; html_url: string }[];
@@ -74,7 +90,7 @@ export async function findFiled(
 ): Promise<{ number: number; url: string } & Record<string, unknown> | undefined> {
   const headers = { authorization: `token ${token}` };
   const found = await findPosted(req, headers, r, o.postKey, o.since, o.login);
-  if (!found || !o.subIssueOf) return found && { number: found.number, url: found.url };
+  if (!found || !o.subIssueOf) return found && { number: found.number, url: found.url, ...(found.head !== undefined ? { head: found.head, base: found.base } : {}) };
   const linked = found.id !== undefined && await isSubIssue(req, token, o.subIssueOf, found.id);
   return { number: found.number, url: found.url, ...(linked ? { subIssue: true } : await link(req, headers, o.subIssueOf, found.id)) };
 }

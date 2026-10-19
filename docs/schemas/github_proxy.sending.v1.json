@@ -24,7 +24,8 @@
       "type": "string",
       "enum": [
         "issue.create",
-        "issue.comment"
+        "issue.comment",
+        "pr.create"
       ]
     },
     "repo": {
