@@ -92,6 +92,8 @@ export interface LandingBatchState extends BackMergeState, CanaryState {
   due?: DueBatch;
   /** The pull requests of the batch and bisect runs that ended (issue #1589): each pass closes the ones still open. */
   closedRuns?: number[];
+  /** The newest tip whose batch runs were cut off (issue #2086), and how many in a row: it runs again up to BATCH_RERUNS times. */
+  cutOff?: { tip: string; runs: number; pullRequest: number };
   /** How the newest batch run ended. */
   last?: { outcome: 'promoted' | 'failed'; tip: string; at: string; pullRequest: number; url: string; reason?: string };
   /** A bisect at work within the newest red batch. */
@@ -138,6 +140,9 @@ function reduceRed(s: LandingBatchState, type: string, d: Record<string, unknown
     closeRun(s, d.pullRequest);
     const r: BisectResult = { index: Number(d.index), sha: String(d.sha), outcome: d.outcome === 'good' ? 'good' : d.outcome === 'bad' ? 'bad' : 'unknown' };
     delete b.running;
+    // A cut-off bisect run (issue #2086) says nothing of the point: it runs again, BATCH_RERUNS times at most.
+    const cut = b.cutOff?.[r.index] ?? 0;
+    if (d.cutOff === true && cut < BATCH_RERUNS) { (b.cutOff ??= {})[r.index] = cut + 1; return; }
     b.results.push(r);
     if (r.outcome === 'good') b.good = r.index;
     else if (r.outcome === 'bad') { b.bad = r.index; b.checks[r.index] = checks; } else {
@@ -190,6 +195,8 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       if (outcome === 'promoted') { s.lastPromotedTip = tip; delete s.backMergeIssue; }
       if (s.running?.tip === tip) delete s.running;
       if (outcome === 'failed') closeRun(s, d.pullRequest);
+      if (d.cutOff === true) s.cutOff = { tip, runs: s.cutOff?.tip === tip ? s.cutOff.runs + 1 : 1, pullRequest: Number(d.pullRequest) };
+      else delete s.cutOff;
       // Merge conflicts: a back-merge is due, recorded with the failure (issue #1589).
       if (d.conflicts === true) s.backMerge = { tip, state: 'due', batch: Number(d.pullRequest), at: e.at };
       s.last = { outcome, tip, at: e.at, pullRequest: Number(d.pullRequest), url: String(d.url), ...(typeof d.reason === 'string' ? { reason: d.reason } : {}) };
@@ -231,6 +238,9 @@ export function batchDue(s: LandingBatchState | undefined, f: LandingFacts, cfg:
   if (s?.backMerge?.state === 'open') return { due: false, why: `the merge of ${cfg.tested} into the landing branch (#${s.backMerge.pullRequest}) waits to merge` };
   if (f.aheadBy <= 0) return { due: false, why: `nothing new on the landing branch beyond ${cfg.tested}` };
   if (s?.restarted) return { due: true, why: 'a person restarted the landing batch' };
+  if (s?.cutOff?.tip === f.tip && s.cutOff.runs <= BATCH_RERUNS) {
+    return { due: true, why: `batch run #${s.cutOff.pullRequest} was cut off: run ${s.cutOff.runs + 1} of ${BATCH_RERUNS + 1}` };
+  }
   if (s?.lastTestedTip === f.tip) return { due: false, why: `the landing branch tip ${short(f.tip)} was tested already` };
   if (s?.lastStartedAt === undefined) return { due: true, why: 'no batch run before' };
   if (s.revertedSinceRun && c) return { due: true, why: `the culprit ${c.pullRequest !== undefined ? `#${c.pullRequest}` : short(c.sha)} was reverted` };
@@ -245,12 +255,25 @@ export function batchDue(s: LandingBatchState | undefined, f: LandingFacts, cfg:
 export interface BatchCheckRun { name: string; status: string; conclusion?: string | null; id?: number }
 
 const RED = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale']);
+/** A cut-off check (issue #2086): GitHub cancelled it, or it passed its time limit. No test failed in it. */
+const CUT_OFF = new Set(['cancelled', 'timed_out']);
+/** How many times a batch run, or a bisect run of one point, with a cut-off check runs again (issue #2086). */
+export const BATCH_RERUNS = 2;
 
-/** What a batch run's checks say: pending, green (every one passed), or red with why. */
+const failedCheck = (r: BatchCheckRun): FailedCheck => (r.id !== undefined ? { name: r.name, id: r.id } : { name: r.name });
+
+/**
+ * What a batch run's checks say: pending, green (every one passed), cut off, or red with why. Cut off (issue #2086): a
+ * check was cancelled or timed out, so the run says nothing of the tests; the check to require fails with it, so a cut-off
+ * check outweighs every failed one, and the run runs again.
+ */
 export function batchChecks(runs: readonly BatchCheckRun[], pr: { mergeable: boolean | null }, startedAt: string, now: Date):
-  { kind: 'pending' } | { kind: 'green' } | { kind: 'red'; reason: string; checks: FailedCheck[] } {
+  { kind: 'pending' } | { kind: 'green' } | { kind: 'red' | 'cut-off'; reason: string; checks: FailedCheck[] } {
   if (pr.mergeable === false) return { kind: 'red', reason: 'the batch has merge conflicts with the tested branch', checks: [] };
-  const failed = runs.filter((r) => r.status === 'completed' && RED.has(r.conclusion ?? '')).map((r): FailedCheck => (r.id !== undefined ? { name: r.name, id: r.id } : { name: r.name }));
+  const done = runs.filter((r) => r.status === 'completed');
+  const cut = done.filter((r) => CUT_OFF.has(r.conclusion ?? '')).map(failedCheck);
+  if (cut.length > 0) return { kind: 'cut-off', reason: `checks cut off: ${cut.map((c) => c.name).join(', ')}`, checks: cut };
+  const failed = done.filter((r) => RED.has(r.conclusion ?? '')).map(failedCheck);
   if (failed.length > 0) return { kind: 'red', reason: `checks failed: ${failed.map((f) => f.name).join(', ')}`, checks: failed };
   if (runs.length === 0) {
     return now.getTime() - Date.parse(startedAt) >= BATCH_NO_CHECKS_MINUTES * 60_000

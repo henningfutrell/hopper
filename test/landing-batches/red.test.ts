@@ -12,7 +12,7 @@
 //   Scenario: merge conflicts: the tested branch is merged into the landing branch, and the batch runs again at once (part 4)
 //   Scenario: a real conflict: one issue is filed, so Intake takes it; a later conflict files none (part 4)
 import { describe, expect, it } from 'vitest';
-import { fail, merged, P1, P2, P3, pass, REPO, runner, world } from './red-world.ts';
+import { fail, merged, P1, P2, P3, pass, runner, world } from './red-world.ts';
 
 describe('the batch runner on a red batch (issue #1073)', () => {
   it('bisects, finds the culprit, reverts it, files a fix issue, and promotes the rest', async () => {

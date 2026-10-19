@@ -53,10 +53,13 @@ export async function bisectPass(p: RedPass, b: Bisect): Promise<void> {
   if (run) {
     const pr = await p.gh.pullRequest(p.repo, run.pullRequest);
     // Recorded before the close (issue #1589): a later pass closes a bisect run that ended and stays open.
-    const end = async (outcome: 'good' | 'bad' | 'unknown', why: string, checks: FailedCheck[] = []): Promise<void> => {
+    const end = async (outcome: 'good' | 'bad' | 'unknown', why: string, checks: FailedCheck[] = [], cutOff = false): Promise<void> => {
       p.record({
         type: 'landing_batch.bisect_tested',
-        data: { repo: p.repo, tested: b.tested, tip: b.tip, index: run.index, sha: run.sha, pullRequest: run.pullRequest, url: run.url, outcome, ...(outcome === 'unknown' ? { reason: why } : {}), ...(checks.length > 0 ? { checks } : {}) },
+        data: {
+          repo: p.repo, tested: b.tested, tip: b.tip, index: run.index, sha: run.sha, pullRequest: run.pullRequest, url: run.url, outcome,
+          ...(outcome === 'unknown' ? { reason: why } : {}), ...(checks.length > 0 ? { checks } : {}), ...(cutOff ? { cutOff } : {}),
+        },
       });
       p.note({ why: outcome === 'unknown' ? `the bisect ended: ${why}` : `bisect run #${run.pullRequest}: ${short(run.sha)} ${why}` });
       // The branch first, as the runner's closeRun: a stop between the two leaves neither.
@@ -69,6 +72,8 @@ export async function bisectPass(p: RedPass, b: Bisect): Promise<void> {
     const checks = batchChecks(await p.gh.checkRuns(p.repo, run.sha), pr, run.startedAt, p.now());
     if (checks.kind === 'pending') { p.note({ why: `bisect run #${run.pullRequest} waits for its checks` }); return; }
     if (checks.kind === 'green') return end('good', 'passed');
+    // A cut-off check (issue #2086): no outcome; the point runs again, or the bisect ends with no culprit.
+    if (checks.kind === 'cut-off') return end('unknown', checks.reason, checks.checks, true);
     return checks.checks.length > 0 ? end('bad', 'failed', checks.checks) : end('unknown', checks.reason);
   }
   const next = bisectNext(b);

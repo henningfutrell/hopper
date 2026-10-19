@@ -7194,7 +7194,7 @@ Version 1 (`docs/schemas/landing_batch.promoted.v1.json`). A batch run passed ev
 
 ## `landing_batch.failed`
 
-Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). `conflicts` true: merge conflicts with the tested branch, and a back-merge is due. Recorded before the hopper closes the pull request (issue #1589): a pass closes it while it stays open. The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert.
+Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). `conflicts` true: merge conflicts with the tested branch, and a back-merge is due. Recorded before the hopper closes the pull request (issue #1589): a pass closes it while it stays open. The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert. `cutOff` true (issue #2086): a check was cancelled or timed out (`checks`, `checkRuns` those checks), so no bisect starts, and the same `tip` runs again, at most twice in a row.
 
 | field | type | required |
 |---|---|---|
@@ -7207,6 +7207,7 @@ Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pas
 | `checks` | string[] | yes |
 | `checkRuns` | object[] | no |
 | `conflicts` | boolean | no |
+| `cutOff` | boolean | no |
 
 ```json
 {
@@ -7349,7 +7350,7 @@ Version 1 (`docs/schemas/landing_batch.bisect_run.v1.json`). A bisect run starte
 
 ## `landing_batch.bisect_tested`
 
-Version 1 (`docs/schemas/landing_batch.bisect_tested.v1.json`). A bisect run ended (issue #1073): `outcome` `good` (every check passed), `bad` (`checks` failed), or `unknown` with its `reason` (no check in time, merge conflicts, its branch moved, closed by a person), which ends the bisect with no culprit. The hopper closed its pull request and removed its branch.
+Version 1 (`docs/schemas/landing_batch.bisect_tested.v1.json`). A bisect run ended (issue #1073): `outcome` `good` (every check passed), `bad` (`checks` failed), or `unknown` with its `reason` (no check in time, merge conflicts, its branch moved, closed by a person), which ends the bisect with no culprit. `cutOff` true (issue #2086): `unknown` because a check was cancelled or timed out (`checks`); the point runs again, at most twice, and only then the bisect ends. The hopper closed its pull request and removed its branch.
 
 | field | type | required |
 |---|---|---|
@@ -7363,6 +7364,7 @@ Version 1 (`docs/schemas/landing_batch.bisect_tested.v1.json`). A bisect run end
 | `outcome` | `good` \| `bad` \| `unknown` | yes |
 | `reason` | string | no |
 | `checks` | object[] | no |
+| `cutOff` | boolean | no |
 
 ```json
 {

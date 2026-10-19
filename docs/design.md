@@ -21577,7 +21577,16 @@ held canary with no issue). A merge needs nothing: the next pass reads the pull 
 
 **A red batch** (part 2, `src/landing-batches/red.ts`, the rules `src/domain/landing-bisect.ts`, pure). Only failing
 checks say that the batch itself fails; a red batch for no check in time waits for the next merge as before, and one with
-merge conflicts gets a back-merge (below). When checks failed:
+merge conflicts gets a back-merge (below). A **cut-off check** (issue #2086) is no failing check: GitHub cancelled it,
+or it passed its time limit (`cancelled`, `timed_out`; a test shard at the job's limit), so the run says nothing of the
+tests. The check to require fails with it, so one cut-off check makes the whole run cut off (`batchChecks` kind
+`cut-off`), whatever else failed. A cut-off batch run is recorded failed with `cutOff`, closed, and starts no bisect;
+the next pass runs the same tip again (`batchDue`, "batch run #N was cut off"), at most `BATCH_RERUNS` (2) times in a
+row. Then the tip waits for a new merge, as a tip tested already: a cut-off check never bisects, never makes a culprit,
+never reverts and never files a fix issue, because CI timing on a shared runner is no behaviour of the code. A cut-off
+bisect run is `unknown` with `cutOff`: its point runs again, at most `BATCH_RERUNS` times, and only then the bisect
+ends with no culprit. A run with a failed test and a cut-off check runs again too: the run after it, with no cut-off
+check, bisects as before. When checks failed:
 
 1. **The batch's points.** The hopper compares the tested branch with the failed tip and walks the landing branch's
    first-parent line back from the tip (`batchPoints`): each point is the merge of one pull request (its number from

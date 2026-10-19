@@ -31,9 +31,11 @@ describe('the batch runner on a cut-off check (issue #2086)', () => {
     const { r, events } = runner(w, clock);
     await r.pass(); // the batch run #100 of P3
     w.checks.set(P3, cutOff('cancelled'));
-    await r.pass(); // cut off: closed, and run again at once, with no bisect
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed', 'landing_batch.due', 'landing_batch.started']);
+    await r.pass(); // cut off: closed, with no bisect
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.due', 'landing_batch.started', 'landing_batch.failed']);
     expect(events[2]!.data).toMatchObject({ tip: P3, pullRequest: 100, cutOff: true, reason: 'checks cut off: shard (3)' });
+    await r.pass(); // the next pass runs it again at once, the same tip
+    expect(events.map((e) => e.type).slice(3)).toEqual(['landing_batch.due', 'landing_batch.started']);
     expect(events[3]!.data).toMatchObject({ tip: P3, why: 'batch run #100 was cut off: run 2 of 3' });
     expect(w.calls).toContain('close #100');
     expect(w.calls).toContain('open #101 hopper-batch/p3cccccccccc -> dev');
@@ -49,15 +51,16 @@ describe('the batch runner on a cut-off check (issue #2086)', () => {
     const clock = { now: new Date('2026-10-14T12:00:00.000Z') };
     const { r, events } = runner(w, clock);
     w.checks.set(P3, cutOff('timed_out'));
-    for (let i = 0; i < 1 + BATCH_RERUNS; i++) await r.pass();
-    await r.pass(); // the last run cut off: no run again
+    // The first run, then each run again after the one before it ended, then the end of the last one.
+    for (let i = 0; i < 2 * (1 + BATCH_RERUNS); i++) await r.pass();
     const types = events.map((e) => e.type);
     expect(types.filter((t) => t === 'landing_batch.started')).toHaveLength(1 + BATCH_RERUNS);
     expect(types.filter((t) => t === 'landing_batch.failed')).toHaveLength(1 + BATCH_RERUNS);
     expect(types.filter((t) => !['landing_batch.due', 'landing_batch.started', 'landing_batch.failed'].includes(t))).toEqual([]);
     clock.now = new Date('2026-10-14T14:00:00.000Z');
-    await r.pass();
-    expect(events.map((e) => e.type)).toEqual(types);
+    await r.pass(); // two hours on: only the merges that wait are recorded
+    expect(events.map((e) => e.type).slice(types.length)).toEqual(['landing_batch.pending']);
+    expect(r.view().repos[0]!.why).toBe(`the landing branch tip ${P3.slice(0, 12)} was tested already`);
     expect(w.issues).toEqual([]);
     expect(w.calls.some((c) => c.startsWith('revert'))).toBe(false);
 

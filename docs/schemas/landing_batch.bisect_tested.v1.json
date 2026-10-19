@@ -57,6 +57,10 @@
         ],
         "additionalProperties": false
       }
+    },
+    "cutOff": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [
