@@ -6,6 +6,7 @@ import { keptTreeOf, keptWorkOf, REVIEW_KINDS, REVIEW_SECTIONS, WORK_EVENTS, typ
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
+import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts';
 import { preemptRunning } from './preemption.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
@@ -174,6 +175,10 @@ export function createEngine(o: EngineOptions): Engine {
   // The signed-out move (issue #1211): a job held on a not-signed-in question goes on at a signed-in machine.
   const signedOutMove = createSignedOutMove(c);
   let moving = false;
+  // The busy-machine move (issue #1977): a job resuming on a full machine goes on at one with room, after a short wait.
+  const busyMove = createBusyMove(c);
+  let busyMoving = false;
+  let busyMovedAt = 0;
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
@@ -301,6 +306,11 @@ export function createEngine(o: EngineOptions): Engine {
         if (!moving && passes.held('signedOutMove')) {
           moving = true;
           void signedOutMove().catch((e: unknown) => console.error('hopper: the signed-out move failed', e)).finally(() => { moving = false; });
+        }
+        if (!busyMoving && c.clock.now().getTime() - busyMovedAt >= BUSY_MOVE_EVERY_MS && passes.held('busyMove')) {
+          busyMoving = true;
+          busyMovedAt = c.clock.now().getTime();
+          void busyMove().catch((e: unknown) => console.error('hopper: the busy-machine move failed', e)).finally(() => { busyMoving = false; });
         }
         c.trigger('tick');
       }, o.tickMs);

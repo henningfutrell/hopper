@@ -13,6 +13,8 @@ export const PASS_LEASES = {
   autoPark: 'auto-park',
   /** The signed-out move (issue #1211). */
   signedOutMove: 'signed-out-move',
+  /** The busy-machine move (issue #1977). */
+  busyMove: 'busy-move',
   /** The checkpoint pass (issue #921); a park's or a missed heartbeat's checkpoint is the run's own, on its host. */
   checkpoints: 'checkpoints',
   /** The read of each waiting job's pane: an answer typed there, its own command, its pane lost (issues #376, #1037, #1508). */
