@@ -94,7 +94,8 @@ const blastRadiusSettings = strict({
   everyMinutes: z.number().int(),
 });
 
-const usageLimits = strict({ soft: z.number().min(0).max(1), hard: z.number().min(0).max(1) });
+// softLanes: since issue #2091; absent on the events before it.
+const usageLimits = strict({ soft: z.number().min(0).max(1), hard: z.number().min(0).max(1), softLanes: z.number().int().min(0).optional() });
 
 const problemScope = strict({ machineId: z.string().optional(), executor: z.string().optional() });
 

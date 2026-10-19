@@ -2295,7 +2295,7 @@ Version 1 (`docs/schemas/handoff.checked.v1.json`). What an open hand-off's work
 
 ## `usage.limits_changed`
 
-Version 1 (`docs/schemas/usage.limits_changed.v1.json`). The usage limits were set in the UI (issue #522): `from` the soft and hard limits the decider used, `to` the ones it uses from now on. Each is a fraction of a usage budget, from 0 to 1.
+Version 1 (`docs/schemas/usage.limits_changed.v1.json`). The usage limits were set in the UI (issue #522): `from` the soft and hard limits the decider used, `to` the ones it uses from now on. Each is a fraction of a usage budget, from 0 to 1. `softLanes` (issue #2091; absent on events before it): the lanes a machine keeps from the soft limit to the hard limit.
 
 | field | type | required |
 |---|---|---|
@@ -2306,11 +2306,13 @@ Version 1 (`docs/schemas/usage.limits_changed.v1.json`). The usage limits were s
 {
   "from": {
     "soft": 0.7,
-    "hard": 0.95
+    "hard": 0.95,
+    "softLanes": 1
   },
   "to": {
     "soft": 0.6,
-    "hard": 0.9
+    "hard": 0.9,
+    "softLanes": 2
   }
 }
 ```

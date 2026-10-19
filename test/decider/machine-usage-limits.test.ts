@@ -1,5 +1,6 @@
 // Issue #1860: two machines can share one Claude account. A machine's own usage limits let one of them give way: the
 // secondary's lane cap falls first and reaches 0 before the primary loses a lane. Absent, the user's usage limits apply.
+// Issue #2091: from soft to hard a machine keeps its soft lanes; 0 own soft lanes make the secondary give way from its soft limit.
 import { describe, expect, it } from 'vitest';
 import { decide } from '../../src/decider/index.ts';
 import { laneEffect } from '../../src/decider/usage.ts';
@@ -16,18 +17,25 @@ describe('a machine\'s own usage limits (issue #1860)', () => {
       expect(laneEffect(primary, usage(used), policy, NOW)).toMatchObject({ cap: 4, band: 'free' });
     }
     expect(laneEffect(secondary, usage(40), policy, NOW)).toMatchObject({ cap: 4, band: 'free' });
-    expect(laneEffect(secondary, usage(60), policy, NOW)).toMatchObject({ cap: 2, band: 'soft' });
+    expect(laneEffect(secondary, usage(60), policy, NOW)).toMatchObject({ cap: 1, band: 'soft' });
     expect(laneEffect(secondary, usage(70), policy, NOW)).toMatchObject({ cap: 0, band: 'hard' });
-    expect(laneEffect(primary, usage(80), policy, NOW)).toMatchObject({ cap: 2, band: 'soft' });
+    expect(laneEffect(primary, usage(80), policy, NOW)).toMatchObject({ cap: 1, band: 'soft' });
   });
 
-  it('the Decision starts new jobs on the primary only once the secondary is at its own hard limit', () => {
-    const d = decide(inputs({ machines: [primary, secondary], usage: usage(69), waiting: ['a', 'b', 'c', 'd', 'e'].map((id) => job(id)) }), 'd1');
+  it('the Decision starts new jobs on the primary only once the secondary has 0 soft lanes of its own', () => {
+    const giving = machine({ id: 'seat', executors: ['test'], usageLimits: { soft: 0.5, hard: 0.7, softLanes: 0 } });
+    const d = decide(inputs({ machines: [primary, giving], usage: usage(69), waiting: ['a', 'b', 'c', 'd', 'e'].map((id) => job(id)) }), 'd1');
     expect(d.reasons).toEqual(expect.arrayContaining([
       'win: 69% used, lane cap 4 of 4 (free)',
-      'seat: 69% used, lane cap 0 of 4 (soft), its own usage limits 50% / 70%',
+      'seat: 69% used, lane cap 0 of 4 (soft), its own usage limits 50% / 70%, 0 soft lanes',
     ]));
     expect(d.start.map((s) => s.machineId)).toEqual(['win', 'win', 'win', 'win']);
+  });
+
+  it('without its own soft lanes, the secondary keeps the user\'s in its soft band', () => {
+    const d = decide(inputs({ machines: [primary, secondary], usage: usage(69), waiting: ['a', 'b', 'c', 'd', 'e'].map((id) => job(id)) }), 'd1');
+    expect(d.reasons).toEqual(expect.arrayContaining(['seat: 69% used, lane cap 1 of 4 (soft), its own usage limits 50% / 70%']));
+    expect(d.start.map((s) => s.machineId).sort()).toEqual(['seat', 'win', 'win', 'win', 'win']);
   });
 
   it('without them, the machine takes the user\'s usage limits', () => {

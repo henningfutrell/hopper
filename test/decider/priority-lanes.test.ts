@@ -103,14 +103,14 @@ describe('priority lanes', () => {
   });
 
   it('under a usage limit, the lowest-priority busy lane drains first, high-priority work last', () => {
-    // used 80% between soft 70% and hard 95%: cap floor(4 × 0.15 / 0.25) = 2 of the 3 busy lanes.
+    // used 80% between soft 70% and hard 95%: cap 2 (the soft lanes) of the 3 busy lanes.
     const lanes = [
       busy(1, 'low', { openedAt: '2026-10-02T10:01:00.000Z' }),
       busy(2, 'mid', { openedAt: '2026-10-02T10:02:00.000Z' }),
       busy(3, 'high', { openedAt: '2026-10-02T10:03:00.000Z' }),
     ];
     const running = [job('low', { status: 'running', priority: 50 }), job('mid', { status: 'running', priority: 50 }), job('high', { status: 'running', priority: 80 })];
-    const d = decide(inputs({ lanes, running, usage: [reading(80)], policy, priorityLanes: keepFree([]) }), 'd1');
+    const d = decide(inputs({ lanes, running, usage: [reading(80)], policy: { ...policy, softLanes: 2 }, priorityLanes: keepFree([]) }), 'd1');
     expect(plan(d)).toMatchObject({ target: 2, drain: ['local/lane-2'] });
   });
 

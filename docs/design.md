@@ -74,6 +74,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/issue-drafts/` | File an issue (issue #471, "File an issue"): one user's drafts and filed issues — the status and why not, a job's context masked, the file-issue run skill's prompt as sent, the draft with its timeout and cancel, the confirm step, the filing on the person's confirmation with no label and no assignee, the events (`service.ts`); the drafter, the user's own `claude` CLI running the run skill (`claude.ts`, `draftIssue` of `src/run-skills/`, composed by the user runtime alone); the request, the draft, the confirm step, the refusal and the note are `src/domain/issue-drafts.ts`, the constraints `src/run-skills/constraints.ts`, the masking Promote to GitHub's (`src/promotions/scan.ts`), the user's GitHub for it `src/users/github-proxy.ts`, the routes `src/http/ui/issue-drafts.ts` | engine, http, store, decider; plugins but in `claude.ts` |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, kept in the store and read in the background on Refresh or the schedule, the recommendation, Queue job and Dismiss, the events (`service.ts`); conditional reads with the kept ETags (issue #1250, `conditional.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
+| `src/pending-approvals/` | Pending approvals (issue #2088, "Pending approvals"): what GitHub shows of the waiting runs a connection can approve — the repositories it reaches, those of the intake orgs not archived, their waiting runs and pending deployments — with each connected account's own connection, conditional GETs (`github.ts`, `@octokit/request`, `src/repo-checks/conditional.ts`); one user's read on its schedule, kept in memory, the view (`service.ts`); the rows, the intake orgs and the stale mark are `src/domain/pending-approvals.ts`, the route `src/http/ui/pending-approvals.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`orchestrate`), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
@@ -125,11 +126,11 @@ same Decision. Algorithm, in order:
    (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
    No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
-2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`: the usage limits, "Usage limits" (issue #522)):
+2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`, `policy.softLanes`: the usage limits, "Usage limits" (issue #522)):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
-   - between → `floor(maxLanes * (hard - usedFrac) / (hard - soft))` (linear scale-down)
+   - between → `min(maxLanes, softLanes)`: the **soft lanes**, a fixed count, default 1 (issue #2091, "Soft lanes")
 3. **Router verdict per waiting job** (from `job.advice`), always applied (issue #211):
    - no advice yet → hold `awaiting router advice` (nothing starts before the router has
      spoken)
@@ -276,8 +277,8 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
   pauses the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
   - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option: a machine added or joined takes
-    the machine defaults' lanes; only this machine, `local`, falls back to 4), scaled down
-    past the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
+    the machine defaults' lanes; only this machine, `local`, falls back to 4), the soft lanes
+    from the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
   - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaks first; an approval ends a router hold;
   - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
@@ -6210,7 +6211,7 @@ holds no credential. Prior art: `a status-bar script`.
   last good read and never waits: every Decision polls every usage source.
 - Readings: one per **usage window**, `used` = percent, `limit` 100, unit `%`, `resetsAt` (ISO; the
   panel prints no year: the one nearest now), `at` = when read. `session` and `week` (all models)
-  throttle through decider steps 1-2 (soft 0.7 scales down, hard 0.95 stops). A window of one model
+  throttle through decider steps 1-2 (from soft 0.7 the soft lanes, hard 0.95 stops). A window of one model
   (`week (Fable)`) or a shape not known is an **informational reading** (`informational: true`):
   shown, never throttling — decider step 1 skips it (it limits one model, not every job).
 - A window past its `resetsAt` is left out until the next read. No read yet, a failed read
@@ -12769,8 +12770,8 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
   it at every Decision and every usage report (`policyOf`, `src/engine/context.ts`); a Decision's `inputs.policy`
   carries the limits it used. Saving appends `usage.limits_changed { from, to }`, one of the `TRIGGERS`, so the
   next Decision comes at once, not at the next tick. Nothing restarts.
-- **Route.** `POST /ui/api/usage/limits { soft, hard }`, admin. `GET /api/usage` answers `limits` as
-  `{ soft, hard, defaults: { soft, hard }, set }`. A soft limit at or above the hard one is refused with 400; the
+- **Route.** `POST /ui/api/usage/limits { soft, hard, softLanes? }`, admin. `GET /api/usage` answers `limits` as
+  `{ soft, hard, softLanes, defaults: { soft, hard, softLanes }, set }` (`softLanes`: issue #2091, "Soft lanes"). A soft limit at or above the hard one is refused with 400; the
   editor refuses it first (`limitsProblem`, `ui/src/model/usage-limits.ts`) and posts nothing.
 - **Informational readings never throttle**, whatever the limits: unchanged, the limits apply to the throttle
   fraction of decider step 1 only.
@@ -29475,3 +29476,94 @@ of it always calls a real model. The issue names cursor-agent only "where its en
 **Verification:** `test/scripts/agent-acceptance-workflow.test.ts` (failed first, then passes); the three test files of
 `print-agents` pass locally with the CLIs named as the workflow names them (claude 2.1.292, codex 0.161.0, opencode
 1.19.3, omp 18.7.0).
+
+## Soft lanes (issue #2091, 2026-10-19)
+
+**Problem.** From the soft limit to the hard limit the decider scaled a machine's lane cap down linearly:
+`floor(maxLanes * (hard - usedFrac) / (hard - soft))`. At soft 70%, hard 97% and 93% used, a machine of 6 lanes got
+`floor(0.89)` = 0 lanes: every queued job waited, though usage was below the hard limit. The scale-down was never the
+behavior the usage limits (issue #522) were for.
+
+**As built:**
+- **The soft band is a fixed lane count.** Decider step 2 (`laneCap`, `src/decider/usage.ts`): below soft, `maxLanes`;
+  from soft to hard, `min(maxLanes, softLanes)`; at hard, 0. No scale-down. The interpolation is removed, in the decider
+  and in the UI's copy of its rule (`capAt`, `ui/src/model/usage-limits.ts`).
+- **The setting.** `softLanes`, a whole number from 0, beside soft and hard in the usage limits: the user's
+  (`POST /ui/api/usage/limits { soft, hard, softLanes? }`; absent keeps the user's) and a machine's own
+  (`usageLimits.softLanes`, optional: absent takes the user's). Default 1 (`DEFAULT_SOFT_LANES`,
+  `src/domain/decider-policy.ts`); 0 only when a person sets 0. It reaches the decider as `policy.softLanes`
+  (`policyOf`, `machinePolicy`), so a change applies at the next Decision, as the limits do; a change to it alone is a
+  `usage.limits_changed`.
+- **The Usage view.** A **Soft lanes** field beside Soft and Hard; the band says `soft: N lanes per machine`; each
+  machine's lane cap badge shows the fixed count; a machine's own soft lanes show beside its own limits.
+- **Two machines on one account** (issue #1860): to make a secondary give way, give it limits below the primary's soft
+  limit, or `softLanes: 0`.
+
+**Decisions made.**
+- No environment variable for the default: the issue asks for a setting on the panel, and 1 is the default it names.
+- No migration. The stored `usageLimits` setting and the `usage.limits_changed` event get an optional `softLanes`;
+  a value stored before it reads as the default, 1. A build before this one reads the stored setting and ignores the
+  new field.
+
+**Verification:** `test/decider/soft-lanes.test.ts` (below soft, between, just under hard, at hard, 0 soft lanes, capped
+by maxLanes, a machine's own soft lanes), `test/decider/machine-usage-limits.test.ts`, `test/integration/usage-limits.test.ts`
+(set through the route, applied at once, the event), `test/ui/usage-limits.test.ts`, `test/ui/usage-limits-view.test.ts`.
+
+## Pending approvals (issue #2088, 2026-10-19)
+
+Owner request: one place in the hopper that shows every pending approval that waits on the owner, everywhere the hopper's
+GitHub access reaches, so the owner never looks for them repository by repository. GitHub has no view of this across
+organizations. The intake review held the job to: a read of each intake org's repositories with conditional requests and
+no webhooks, a top-level page, the stale mark, a count on the page's nav entry (not the header's in-flight badge), and no
+approve or reject. Not in this job: pull requests that wait on the owner's merge, and a notification.
+
+**What counts.** A **pending approval** is a GitHub Actions run with `status=waiting` whose pending deployments hold an
+environment the user's connection can approve (`current_user_can_approve`): for example a terraform apply that waits on
+`iac-apply-*`, or a promote that waits on `production-approval`. A run that waits only on environments other people
+approve is not one.
+
+**Where it reads.** The **intake orgs** of a connected account are the owners of its job repositories. For each connected
+account, with its own connection:
+
+1. `GET /user/repos`, every page (100 a page). A GitHub App's user token lists only the repositories the app's
+   installations reach, so this is "everywhere the hopper's access reaches". The read keeps those of the intake orgs that
+   are not archived.
+2. `GET /repos/{o}/{r}/actions/runs?status=waiting` for each of them, six at a time (the shared rate limiter paces them).
+3. `GET /repos/{o}/{r}/actions/runs/{id}/pending_deployments` for each waiting run.
+
+The GitHub App's **Actions: read** permission (issue #993) covers 2 and 3. A repository GitHub refuses (no Actions
+permission there, for example) is a **problem** with GitHub's reason; the other repositories are read. A refused token
+(401) is renewed once and the read made again. A run two accounts reach is one row.
+
+**Cost.** Every GET is conditional (`src/repo-checks/conditional.ts`): it carries the ETag of the answer kept from the read
+before, and GitHub's 304 costs no call against the rate limit. So a read where nothing changed is one 304 for each page of
+repositories and each repository, and no full read. The user's schedule ticks every minute and reads when the last read is
+5 minutes old. The first read is one tick after the start.
+
+**Kept in memory only.** The rows and the kept answers are a copy of GitHub, read again after a restart; nothing about a
+deployment is the user's state. So no table, no migration and no event. `GET /api/pending-approvals` answers from the
+last read and never reads GitHub.
+
+**A row.** One per run: the repository, the workflow, the run's title (else the workflow's name), the environments it
+waits on that the user can approve, waiting since (the earliest `wait_timer_started_at` of those, else when the run was
+made), and the run's link. **Stale**: a newer waiting run of the same repository waits on each of its environments (an
+older promote candidate). Run ids grow with each run, so the newest is the highest id. Fresh rows first, the longest
+waiting first, then the stale ones.
+
+**The page.** Pending approvals is its own nav entry in Waiting on you, after Access requests. Its badge counts every
+pending approval, a stale one too (it still waits on the person), and its title says how many are stale. The header's
+in-flight badge does not count them. The empty state says what would show there. Each row links to the run on GitHub,
+where the person approves or rejects it.
+
+**Read-only.** No route approves, rejects or reruns a deployment. The page has no button that acts.
+
+Not taken: webhooks for `deployment_review` events (the hopper pulls); a count on Needs you (the intake review named the
+page's own nav entry); listing each org's repositories with `GET /orgs/{org}/repos` (it lists repositories the user cannot
+reach through the app, and needs another call for an owner that is a user).
+
+Tested: the rows, the intake orgs and the stale mark (`test/domain/pending-approvals.test.ts`); the read against a
+loopback GitHub — two intake orgs, an archived repository and another owner's left out, the `current_user_can_approve`
+filter, a second page of repositories, the 304 path, a refused repository (`test/pending-approvals/github.test.ts`); the
+schedule, the accounts merged, a failed read that keeps the rows before (`test/pending-approvals/service.test.ts`); the
+route on the real daemon (`test/integration/pending-approvals.test.ts`); the page, its empty state and the nav count
+(`test/ui/pending-approvals-view.test.ts`).

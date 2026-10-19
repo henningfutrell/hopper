@@ -131,9 +131,9 @@ describe('critical priority (issue #373)', () => {
   });
 
   it('takes an idle lane left over the cap before opening one', () => {
-    // 75% → soft band, cap 3: three busy, and an idle lane the cap leaves no room for.
+    // 75% → soft band, cap 3 (the soft lanes): three busy, and an idle lane the cap leaves no room for.
     const lanes = [...full.slice(0, 3), lane(4)];
-    const d = decide(inputs({ lanes, usage: [reading(75)], waiting: [job('c', { priority: 100 })], policy: critical }), 'd1');
+    const d = decide(inputs({ lanes, usage: [reading(75)], waiting: [job('c', { priority: 100 })], policy: { ...critical, softLanes: 3 } }), 'd1');
     expect(d.start).toEqual([expect.objectContaining({ jobId: 'c', laneId: 'local/lane-4' })]);
     expect(d.lanes[0]).toMatchObject({ open: 0, target: 4, close: [], drain: [] });
   });
