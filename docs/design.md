@@ -17147,7 +17147,7 @@ asked; a job the rules hold already is not asked either: Jev can only lower.
   only while it is still due (`checkTrust`): another hopper's check, a new spec or a person's act that came first wins.
 - **A person approves its trust** (`POST /ui/api/jobs/:id/approve-trust`, the job view's Approve trust after a confirm,
   `hopper job approve-trust <id>`; least role operator, a box action of kind `start a job`): only a job a check lowered
-  below `approved` (`trustApprovable`). Its stamp is signed `approved` (`by: person`, reason `person:approved`), never
+  below `approved` (`trustApprovable`), or, since issue #1974, a job below `approved` with no item, which no request card can approve. Its stamp is signed `approved` (`by: person`, reason `person:approved`), never
   more; the check stays on it, so Jev is not asked again. `job.trust_approved { from, person, via }`. 409 for any other job:
   a quarantine is lifted with unquarantine; an item of no trusted origin is approved in Intake, which approves its text.
 - **A new spec** (`respecify`: Accept the new text, a re-sort) drops the check: the new text is checked again. An origin
@@ -17543,6 +17543,24 @@ but Intake listed only a source's items, not the jobs a stamp holds. Now Intake 
   and the intake strictness, on Settings → Intake, which the panel links.
 
 No route, no event, no persisted state: the daemon already sends each held job with its hold reason and stamp.
+
+**A held job always has a way on** (issue #1974). A job of a GitHub source made before origins were judged, that had
+started when migration 39 ran, kept no origin and no `originPending`. The stamps' backfill then stamped it `untrusted`
+(`origin:none`), and when it waited again it was in Held by trust with only Quarantine: its hold text sent a person to
+its item in Intake, but its issue had a job, so Intake listed no request card for it. Approvals keep one home (#896), so
+the fix adds no second approval of an item:
+
+- **It waits for its origin** (`awaitsOrigin` in `src/domain/trust-stamp.ts`): the backfill marks a job of a judging source
+  with no origin, not a job a job made, `originPending`; tenant migration 85 marks those that have not ended. The next sync
+  judges its issue as for any job that waits for its origin (`source-host.ts` `refresh`): of a trusted origin, it is stamped
+  again by the rules (the owner's own issue at `owner`), and it goes on; else its request card opens in Intake, and Approve
+  there approves it.
+- **A job with no item** (no source: queued by hand, an older build) has no request card. Below `approved`, a person approves
+  its trust on the job (`trustApprovable`), and its hold text says so.
+- **Cancel in each row** of Held by trust, for an operator, after a confirm (`POST /ui/api/jobs/:id/cancel`).
+
+Persisted state: migration 85 sets `originPending` on rows only; the build before reads it as migration 39's. A job a job
+made keeps the level its parent had at the backfill.
 
 **The comment command** (part 21, `src/domain/comment-command.ts`; `nominated` in `src/sources/github/discover.ts`,
 `nominatedAct` in `src/sources/github/origin.ts`). The issue's Decision N, recommended N1 + N3: the assignment, and "a comment
