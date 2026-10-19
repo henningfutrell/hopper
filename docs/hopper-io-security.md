@@ -327,7 +327,7 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
 |-------|-----------------------------|
 | #463 GitHub account as the identity at hopper.io | R3, R7 (sign-in limits), T4 |
 | #464 outbound link and what data leaves | R1, R4, R5 (the allow-list), R6, R7, R8, T1, T2 |
-| #465 register instances and machines under one account | R3 (and its tests), R4 (registration code), R6 |
+| #465 register instances and machines under one account | R3 (and its tests), R4 (registration code), R6 . Complete: parts 1 to 9 obey them ("What is built"); the connection is #2039 and obeys the rules of #464 |
 | #466 hosted dashboard | R3, R5 (shows only kept fields), T1 (the dashboard can lie), T3 (escaping) |
 | #467 onboard an existing instance | R4, R5 (no data migration), R8. Complete: parts 1 and 2 obey them ("What is built"); the connection is #464's install side and obeys the rules of #464 |
 | any remote action | R2 |

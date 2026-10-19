@@ -25909,6 +25909,37 @@ recorded once, and a frame over the snapshot's cap closes it; the 11th connectio
 `test/cloud/hello.test.ts`: hopper.io takes the instance's hello; a changed field, another challenge or another key's proof
 is refused; one schema on both sides. `test/http/cloud-link-key.test.ts` (Ed25519), `test/store/migration-52.test.ts`.
 
+## Many instances under one hopper.io account (issue #465, done, 2026-10-19)
+
+**The problem.** Issue #465: one hopper.io account registers many instances and sees the machines of each. Each instance
+stays self-hosted and keeps its own data. Parts 1 to 9 built each item on both sides with no connection. Issue #2039 built
+the connection. This part shows the items end to end, with more than one instance.
+
+**Where each item is.**
+
+| Item of #465 | Where it is built |
+|---|---|
+| 1. Many instances per account, each with a stable id, a name the owner can change, link state and last seen | "The instance's display name", "Instances at hopper.io"; link state: "The cloud link's connection" (`connected` in `GET /api/account/instances`) |
+| 2. Registration from the instance, approved at hopper.io with a short-lived, single-use code | "Registering at hopper.io", "Registration requests at hopper.io" |
+| 3. A registration again makes no second entry | "Instances at hopper.io" (one registration per instance id) |
+| 4. Machines reported over the link, shown under their instance | "The machines the link reports", "Instance states at hopper.io", "Machine names at hopper.io" |
+| 5. Unregistering from either side deletes nothing on the instance | "Unregistering at hopper.io", "The cloud link's messages" |
+| 6. One box under two instances shows once under each; no merge | "Machine names at hopper.io" (one key per instance, no merge) |
+
+**Decisions:**
+- **Machines go by an opaque key, not by their name** (R5). The issue says each instance reports a machine's name. The
+  snapshot carries a key that the instance makes with its cloud link key, and the owner names the machine at hopper.io
+  ("Machine names at hopper.io"). So no machine name leaves the instance.
+- **The open questions stay with issue #469 decision 6**: who registers an instance with many users, one instance seen by
+  more than one account, and a cap of instances per account. The issue gives them to the tracking issue. Until the owner
+  decides, the instance admin registers the instance to one account, one account sees it, and an account has no cap of instances.
+
+**Verification:** `test/integration/cloud-link-many-instances.test.ts`, two real instance daemons and the real `cloud/`
+server on loopback, behind a TLS front with a pinned test key: two instances on one box link to one account and register;
+hopper.io shows both, each connected, each with the box as its own machine under its own key; an instance stopped and
+started again on the same database keeps its instance id and its registration, connects again, and a registration again
+keeps one entry for it. `test/integration/cloud-link-connection.test.ts` shows items 2 and 5 over the connection.
+
 ## Cloud link (issue #464, 2026-10-17 — a design; built in issue #2039)
 
 **The problem.** Issue #464: a self-hosted instance links to hopper.io by dialing out. No port opens on the instance's
