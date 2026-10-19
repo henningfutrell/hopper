@@ -61,6 +61,9 @@ describe('the secret canary check, a step\'s vault secret after a kill mid-step 
         expect(asked.status, asked.text).toBe(202);
         const id = String(asked.headers[STEP_HEADER.id]);
         await waitFor(() => (runsOn(w.dir).includes(id) ? true : undefined), { timeoutMs: 30_000, what: 'the step to run on the host' });
+        // The hopper keeps the step's log a short time after the host printed it: kill it once the log holds the
+        // secret's line, so the scan reads the line the step printed (issue #2046).
+        await waitFor(async () => ((await asJob(a, job.proxyToken, 'GET', `${STEP_PATH}/${id}/log?from=0`)).text.includes(`${MASK} used`) ? true : undefined), { timeoutMs: 30_000, what: 'the step\'s log to hold its secret\'s line' });
         await a.kill();
       }
       endLeases(w.url);
