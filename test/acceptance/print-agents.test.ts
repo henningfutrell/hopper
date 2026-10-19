@@ -93,7 +93,10 @@ describe.each(REAL_AGENTS)('the real $agent CLI', (a) => {
 
   describe.each(FAULTS)('on %s', (fault) => {
     const retries = a.retriesPastTimeout?.includes(fault) ?? false;
-    it.skipIf(absent)(retries ? 'the CLI retries until the turn\'s timeout fails the job' : 'the job fails at once, with no answer made up', async () => {
+    const either = a.eitherWay?.includes(fault) ?? false;
+    const title = either ? 'the job fails, at once or at the turn\'s timeout, with no answer made up'
+      : retries ? 'the CLI retries until the turn\'s timeout fails the job' : 'the job fails at once, with no answer made up';
+    it.skipIf(absent)(title, async () => {
       // The fault at every turn: a CLI that retries meets it again.
       server.script(Array.from({ length: 12 }, (): ModelStep => ({ fault, text: 'I wrote greeting.txt.\n\nHOPPER_DONE' })));
       const cwd = work(`fault-${fault}`);
@@ -101,7 +104,7 @@ describe.each(REAL_AGENTS)('the real $agent CLI', (a) => {
       const out: ExecutionOutcome = await withArgs().run(ctxFor(payload(cwd, FAULT_TURN_MS)).ctx);
       expect(out.kind).toBe('failed');
       // Which way it failed is the CLI's retry behaviour: a change in it shows here.
-      expect(out.kind === 'failed' && out.error).toSatisfy((e: string) => /timed out after/.test(e) === retries);
+      if (!either) expect(out.kind === 'failed' && out.error).toSatisfy((e: string) => /timed out after/.test(e) === retries);
       // It failed on the fault: the CLI reached the server.
       expect(server.requests.slice(from).some((r) => r.step)).toBe(true);
       expect(existsSync(join(cwd, 'greeting.txt'))).toBe(false);
