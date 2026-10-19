@@ -28928,6 +28928,30 @@ person set; no pattern knows it.
 inspect output, process argv and environment of spawned tools; the e2e mode and its nightly run. A vault secret a job
 changed (encoded, split) is not found by value, as with a step's output.
 
+## The secret canary scan: the WAL and spawned tools (issue #1957, part 5, 2026-10-19)
+
+Two places a secret leaks to that no table or file shows:
+
+- **The WAL.** A row that held a canary and was changed or removed is gone from its table, but Postgres wrote it to the
+  WAL. `walMark` (`test/support/secret-canary.ts`) takes the WAL's position before the run; `walPlaces` reads every
+  segment the server wrote since then (`pg_read_binary_file` on `pg_wal/`), one place per segment. Reading the WAL needs
+  a superuser or `pg_read_server_files`: the test's Postgres container has one. Given a database where the role has
+  neither, `walMark` says so and the scan reads no WAL (the planted test is then skipped). The WAL is the whole server's,
+  so it holds other tests' writes too; their canaries are their own. A value Postgres compressed (TOAST, over 2 kB) or
+  one split by a WAL page header is not found.
+- **Spawned tools.** `recordSpawns` (`test/support/spawn-recorder.ts`) records the file, argv and environment of each
+  child the test's process starts: an async child at `ChildProcess.prototype.spawn`, with the environment it really
+  gets; a sync one at the `node:child_process` exports, made live for ES modules by `syncBuiltinESMExports`. A child of a
+  worker thread is not seen.
+- **What it found.** The detection kit (`src/plugins/detect.ts`) ran its tools — the `claude` model list among them —
+  with the daemon's whole environment, so the master key went to each. It now runs them with `keyless` of it
+  (`src/executors/env.ts`), as every other child of the hopper is run.
+- **The control.** A canary inserted and then removed is found in the WAL and not in any table; a canary in a spawned
+  tool's argument, and in base64 in its environment, is found.
+
+**Left for later parts.** A kill mid-step of a box, Windows or need step with a vault secret; container layers and
+inspect output; the e2e mode and its nightly run.
+
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
 **Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event

@@ -5,6 +5,7 @@ import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { delimiter, isAbsolute, join } from 'node:path';
 import type { DetectionKit } from './sdk.ts';
+import { keyless } from '../executors/env.ts';
 import { runtimeSecrets, type RuntimeSecrets } from '../secrets/runtime.ts';
 
 const VERSION_TIMEOUT_MS = 5000;
@@ -18,10 +19,13 @@ async function executable(path: string): Promise<boolean> {
   }
 }
 
-/** stdout of a finished run, or undefined on a non-zero exit, a spawn error, or the timeout. `input` goes to stdin, then closes it. */
+/**
+ * stdout of a finished run, or undefined on a non-zero exit, a spawn error, or the timeout. `input` goes to stdin, then
+ * closes it. The tool gets `env` without the master key (issue #1957: the claude model list got it).
+ */
 function run(bin: string, args: string[], timeoutMs: number, env: NodeJS.ProcessEnv, input = ''): Promise<string | undefined> {
   return new Promise((resolve) => {
-    const child = execFile(bin, args, { timeout: timeoutMs, killSignal: 'SIGKILL', env, encoding: 'utf8' }, (err, stdout) => {
+    const child = execFile(bin, args, { timeout: timeoutMs, killSignal: 'SIGKILL', env: keyless(env), encoding: 'utf8' }, (err, stdout) => {
       resolve(err ? undefined : stdout);
     });
     child.stdin?.on('error', () => {});
