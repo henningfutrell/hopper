@@ -1,5 +1,5 @@
 // hopper.io's side of the cloud link's registration messages (issue #463 decision 5, issue #465), transport-free: the
-// connection (issue #464) is not built. The code an account owner entered at hopper.io is a registration request
+// connection (cloud/connections.ts, issue #2039) hands each message here. The code an account owner entered at hopper.io is a registration request
 // (cloud/requests.ts); `registerMessage` gives it as `register` to the instance it names, while the instance's link names
 // that owner's account, and the instance answers `{ type: 'registration', outcome }` (src/http/cloud-link-messages.ts):
 // only `registered`, to an open request, makes a registration of the account whose owner entered the code (R3).
@@ -9,7 +9,9 @@
 // registration of one account at a time (issue #465 item 3): registered under another, it moves there. Its hello keeps
 // its last-seen time, and its unlink notice (src/http/cloud-link-messages.ts `unlinkedMessage`) removes it. Its state
 // snapshot (src/domain/hopper-io-state.ts) is kept in memory as its last state (cloud/states.ts), under the account it
-// is registered to, while its link names that account; a move or an unlink drops it.
+// is registered to, while its link names that account; a move or an unlink drops it. The cloud link key (R4): the key the
+// instance proved in its hello is bound to its registration when it registers; a registered instance connects only with
+// that key, or with a new one its hello proves by that key too (a rotation). A removal revokes the key: it connects no more.
 import { z } from 'zod';
 import type { RegistrationRequests } from './requests.ts';
 import { instanceState, type InstanceStates } from './states.ts';
@@ -34,12 +36,12 @@ function parsed(text: string): unknown {
 export interface CloudLinkAnswers {
   /** The `register` message to send the instance, whose link names `account`, while a code its owner entered waits for it. */
   registerMessage(o: { installId: string; account: string; now: Date }): string | undefined;
-  /** The instance's answer to `register`, on its connection, whose link names `account`; true: it is now a registration
-   * of the account whose owner entered the code. With no open request, nothing. */
-  registration(o: { installId: string; account: string; answer: string; now: Date }): Promise<boolean>;
-  /** What hopper.io sends back to an instance's hello: `unregister` for the hello's account when a deletion removed
-   * its registration; else nothing. */
-  hello(o: { installId: string; account: string; now: Date }): Promise<string | undefined>;
+  /** The instance's answer to `register`, on its connection, whose link names `account` and whose hello proved
+   * `publicKey`; true: it is now a registration of the account whose owner entered the code, with that key. With no open
+   * request, nothing. */
+  registration(o: { installId: string; account: string; publicKey: string; answer: string; now: Date }): Promise<boolean>;
+  /** The instance's proved hello: whether it connects, the message to send it first, and the account it is registered to. */
+  hello(o: { installId: string; account: string; publicKey: string; previousKey?: string; now: Date }): Promise<HelloOutcome>;
   /** The instance's unlink notice, on its own connection (`installId`); true: its registration is removed. */
   unlinked(o: { installId: string; notice: string; now: Date }): Promise<boolean>;
   /** The instance's state snapshot, on its connection, whose link names `account`; true: kept as its last state. Only a
@@ -47,8 +49,15 @@ export interface CloudLinkAnswers {
   snapshot(o: { installId: string; account: string; text: string; now: Date }): Promise<boolean>;
 }
 
+/**
+ * What a hello comes to. `connects`: the connection goes on; else `refused`: `revoked`, its key was revoked at a removal,
+ * or `unknown-key`, the instance is registered with another key and the hello does not prove it. `answer`: `unregister` for
+ * the hello's account when a removal or a deletion took its registration. `registrant`: the account it is registered to.
+ */
+export type HelloOutcome = { answer?: string; registrant?: string } & ({ connects: true; rotated?: boolean } | { connects: false; refused: 'revoked' | 'unknown-key' });
+
 export function createCloudLinkAnswers(o: {
-  store: Pick<CloudStore, 'register' | 'registrationOf' | 'registrant' | 'seen' | 'unlinked' | 'record'>;
+  store: Pick<CloudStore, 'register' | 'linkOf' | 'rekey' | 'registrant' | 'seen' | 'unlinked' | 'record'>;
   requests: RegistrationRequests; states: InstanceStates;
 }): CloudLinkAnswers {
   return {
@@ -56,25 +65,44 @@ export function createCloudLinkAnswers(o: {
       const r = INSTALL_ID.test(installId) ? o.requests.open(installId, account, now) : undefined;
       return r ? JSON.stringify({ type: 'register', code: r.code, account: r.login }) : undefined;
     },
-    async registration({ installId, account, answer, now }) {
+    async registration({ installId, account, publicKey, answer, now }) {
       const request = INSTALL_ID.test(installId) ? o.requests.open(installId, account, now) : undefined;
       const m = REGISTRATION.safeParse(parsed(answer));
       if (!request || !m.success) return false;
       if (m.data.outcome !== 'registered') { o.requests.refuse(request, m.data.outcome); return false; }
       o.requests.take(request);
       const githubUserId = request.githubUserId;
-      const before = await o.store.register(githubUserId, installId, now);
+      const before = await o.store.register(githubUserId, installId, now, publicKey);
       if (before === githubUserId) return true;
       o.states.drop(installId);
       if (before) await o.store.record(before, 'instance_moved', now);
       await o.store.record(githubUserId, 'instance_registered', now);
       return true;
     },
-    async hello({ installId, account, now }) {
-      if (!INSTALL_ID.test(installId)) return undefined;
-      const state = await o.store.registrationOf(installId, now);
-      if (state === 'registered') await o.store.seen(installId, now);
-      return state === 'removed' ? JSON.stringify({ type: 'unregister', account }) : undefined;
+    async hello({ installId, account, publicKey, previousKey, now }) {
+      if (!INSTALL_ID.test(installId)) return { connects: false, refused: 'unknown-key' };
+      const l = await o.store.linkOf(installId, now);
+      if (l.removed) {
+        const answer = JSON.stringify({ type: 'unregister', account });
+        return l.removed.revoked === publicKey ? { connects: false, refused: 'revoked', answer } : { connects: true, answer };
+      }
+      if (!l.githubUserId) return { connects: true };
+      const registrant = l.githubUserId;
+      let rotated = false;
+      if (l.publicKey !== publicKey) {
+        // A registration from before the connection has no key: the first proved one binds. Else the hello proves the
+        // bound key as the one before a rotation, or it is refused.
+        const from = l.publicKey ?? null;
+        if (from !== null && previousKey !== from) {
+          await o.store.record(registrant, 'connection_refused', now);
+          return { connects: false, refused: 'unknown-key', registrant };
+        }
+        if (!await o.store.rekey(installId, from, publicKey)) return { connects: false, refused: 'unknown-key', registrant };
+        rotated = from !== null;
+        if (rotated) await o.store.record(registrant, 'key_rotated', now);
+      }
+      await o.store.seen(installId, now);
+      return { connects: true, registrant, ...(rotated ? { rotated } : {}) };
     },
     async unlinked({ installId, notice, now }) {
       const m = UNLINKED.safeParse(parsed(notice));
