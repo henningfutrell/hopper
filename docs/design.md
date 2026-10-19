@@ -28887,7 +28887,7 @@ none. So nothing ran them, and a real CLI or TUI that changed was still not seen
 
 | Job | When | What |
 |---|---|---|
-| `print-agents` | nightly on `dev`, by hand, and on a pull request that changes `src/executors/`, the acceptance tests or their fakes | installs claude, codex, opencode and omp (mise, the latest release of each), then runs `test/acceptance/print-agents.test.ts`, `fake-drift.test.ts` and `hooks-mcp.test.ts` |
+| `print-agents` | nightly on `dev`, by hand, and on a pull request that changes `src/executors/`, the acceptance tests or their fakes | installs claude, codex, opencode and omp (mise, the latest release of each; opencode by its aqua backend, `aqua:anomalyco/opencode`), then runs `test/acceptance/print-agents.test.ts`, `fake-drift.test.ts` and `hooks-mcp.test.ts` |
 | `tui` | nightly and by hand only | installs claude and herdr (herdr's installer, as the image does), runs `test/acceptance/tui-screens.test.ts` with `HOPPER_ACCEPTANCE_TUI=1`, and uploads `HOPPER_ACCEPTANCE_TUI_OUT` as the artifact `tui-screens`, also when the check fails |
 
 **Decisions.**

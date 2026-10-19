@@ -50,7 +50,8 @@ jobs:
             [tools]
             claude = "latest"
             codex = "latest"
-            opencode = "latest"
+            # By its backend: a newer mise maps the short name to another npm package.
+            "aqua:anomalyco/opencode" = "latest"
             "github:can1357/oh-my-pi" = "latest"
       - name: Name each CLI
         run: |
