@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
 import { MINTS_FOR_KINDS, mintsForProblem } from './domain/minting.ts';
 import type { StateBackend } from './domain/state-backend.ts';
+import { unknownAssetText } from './domain/unknown-assets.ts';
 import type { VaultView } from './domain/vault.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
@@ -163,6 +164,8 @@ function limitsOf(values: { cpus?: string | undefined; 'memory-mb'?: string | un
 }
 
 const templatesOf = (v: unknown) => (v as VaultView).templates;
+/** The templates as `hopper template list` shows them: one with an unknown asset (issue #2067) says so in words. */
+const templatesListed = (v: unknown) => templatesOf(v).map((t) => (t.unknownAssets?.length ? { ...t, unknownAsset: `unknown asset: ${t.unknownAssets.map(unknownAssetText).join('; ')}` } : t));
 const readPolicyOf = (v: unknown) => (v as VaultView).readPolicy ?? [];
 
 /** One `--mark <probe>=<mark>` (issue #916): the probe and its mark, `none` to drop it. The vault checks the probe and the mark. */
@@ -191,7 +194,7 @@ export function templateCall(args: string[]): Call {
   } });
   const [verb, name, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
-  if (verb === 'list' && !name && !flags) return { role: 'viewer', path: '/api/vault', pick: templatesOf };
+  if (verb === 'list' && !name && !flags) return { role: 'viewer', path: '/api/vault', pick: templatesListed };
   // The read policy (issue #716): shown, or replaced by the entries named (none clears it).
   if (verb === 'read-policy' && !flags) {
     if (name === undefined) return { role: 'viewer', path: '/api/vault', pick: readPolicyOf };

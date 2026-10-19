@@ -76,6 +76,10 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
   let commit: string | undefined;
   let checkedAt: string | undefined;
   let error: string | undefined;
+  /** Why the plugin store in use could not be fetched (issue #2082), or undefined. */
+  let unreachable: string | undefined;
+  /** The last reason logged for it: each reason is logged once, as info. */
+  let logged: string | undefined;
   /** Custom plugin ids this process has imported: installing one again needs a restart (Node caches imports). */
   const loaded = new Set<string>();
   const pending = new Set<string>();
@@ -95,10 +99,12 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
   const repoOf = (s: PluginStoreSource): string | undefined => (s.kind === 'repo' ? s.repo : s.kind === 'default' ? o.defaultRepo : undefined);
   const repo = (): string | undefined => repoOf(source());
   /** Why there is no plugin store, or undefined. Names the setting, never an environment variable. */
-  const unavailable = (): string | undefined => {
+  const noStore = (): string | undefined => {
     if (repo() !== undefined) return undefined;
     return source().kind === 'none' ? 'no plugin store is set' : 'this build has no default plugin store';
   };
+  /** Why nothing installs from the plugin store now: none, or it could not be fetched; or undefined. */
+  const unavailable = (): string | undefined => noStore() ?? unreachable;
 
   const installs = (): Map<string, PluginInstall> => new Map(o.settings.getPluginInstalls().map((i) => [i.id, i]));
   const keep = (id: string, i: PluginInstall | undefined): void => {
@@ -112,7 +118,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     const mine = installs();
     const at = repo();
     const common = { source: source().kind, ...(at !== undefined ? { repo: at } : {}), ...(o.defaultRepo !== undefined ? { defaultRepo: o.defaultRepo } : {}) };
-    const why = unavailable();
+    const why = noStore();
     if (why) {
       const left = [...mine.values()].sort((a, b) => a.id.localeCompare(b.id));
       return {
@@ -130,8 +136,8 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     };
     const listed = new Set(catalogue.map((c) => c.id));
     return {
-      state: error ? 'error' : 'ready',
-      ...(error ? { error } : {}),
+      state: unreachable ? 'unavailable' : error ? 'error' : 'ready',
+      ...(unreachable ? { reason: unreachable } : error ? { error } : {}),
       ...common,
       ...(catalogueRepo !== undefined && catalogueRepo !== at ? { from: catalogueRepo } : {}),
       ...(commit ? { commit } : {}),
@@ -146,8 +152,20 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
   async function refresh(): Promise<void> {
     const at = repo();
     if (at === undefined) return;
+    let head: string;
     try {
-      const head = await mirror.fetch(at);
+      head = await mirror.fetch(at);
+      unreachable = undefined;
+      logged = undefined;
+    } catch (e) {
+      // Not published yet, offline, or gone (issue #2082): the card says so and keeps the last good catalogue.
+      unreachable = `${at} cannot be read: ${message(e)}`;
+      if (unreachable !== logged) o.logger.info(`hopper: plugin store unavailable: ${unreachable}`);
+      logged = unreachable;
+      checkedAt = o.clock.now().toISOString();
+      return;
+    }
+    try {
       const text = await mirror.show(head, CATALOGUE);
       if (text === undefined) throw new Error(`${CATALOGUE}: not in the store's default branch`);
       const r = parseCatalogue(text);
@@ -197,7 +215,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     if (missing.length === 0) return;
     const at = repo();
     if (at === undefined) {
-      o.logger.warn(`hopper: store installs ${missing.map((i) => i.id).join(', ')} not restored: ${unavailable()}`);
+      o.logger.warn(`hopper: store installs ${missing.map((i) => i.id).join(', ')} not restored: ${noStore()}`);
       return;
     }
     await refresh();
@@ -284,6 +302,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
   async function setSource(s: PluginStoreSource): Promise<PluginStoreEditOutcome> {
     o.settings.setPluginStoreSource(s);
     error = undefined;
+    unreachable = undefined;
     o.logger.info(`hopper: plugin store set to ${repoOf(s) ?? 'none'}`);
     await refresh();
     return { ok: true, report: report() };

@@ -9,8 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { userSystemd } from '../support/systemd.ts';
 import { REAP_DONE, readReap, readSurvey, reapArgv, scopeUnitOf, scriptArgvOf, surveyArgv } from '../../src/client/reap.ts';
 
-const JOB = 'job-401-abcdef';
-const OTHER = 'job-401-other';
+const JOB = 'job-401-abcdef', OTHER = 'job-401-other';
 
 let root: string;
 let scratch: string;
@@ -20,6 +19,8 @@ const git = (cwd: string, ...args: string[]): string => execFileSync('git', args
   cwd, encoding: 'utf8',
   env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' },
 });
+/** The tips the reap names for a clean kept checkout (issue #2087): its HEAD. */
+const tipsOf = (dir: string): { tips: Record<string, string[]> } => ({ tips: { [dir]: [git(dir, 'rev-parse', 'HEAD').trim()] } });
 
 /** A bare remote with one commit on main, and a clone of it at `dir`. */
 function cloneAt(dir: string): string {
@@ -153,7 +154,7 @@ describe('the reap at job end (issue #401)', () => {
     writeFileSync(join(ahead, 'd.txt'), 'd\n');
     git(ahead, 'add', '.');
     git(ahead, 'commit', '-q', '-m', 'd');
-    expect(readReap(reap())).toEqual({ kept: [ahead] });
+    expect(readReap(reap())).toEqual({ kept: [ahead], ...tipsOf(ahead) });
   });
 
   it('touches nothing but a job scratch dir', () => {
@@ -320,7 +321,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     commit(repo, 'b.txt');
     git(repo, 'push', '-q', 'origin', 'issue-1');
     commit(repo, 'c.txt');
-    expect(readReap(keeping())).toEqual({ kept: [repo], pushed: [repo] });
+    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo), pushed: [repo] });
   });
 
   it('a branch with commits no remote has is not pushed', () => {
@@ -328,7 +329,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     cloneAt(repo);
     git(repo, 'checkout', '-q', '-b', 'issue-1');
     commit(repo, 'b.txt');
-    expect(readReap(keeping())).toEqual({ kept: [repo] });
+    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo) });
     expect(existsSync(scratch)).toBe(true);
   });
 

@@ -110,8 +110,14 @@ const REAP_SCRIPT = [
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
   'repos() { { dirs | while IFS= read -r d; do find "$d" -name node_modules -prune -o -name .git -print -prune; done; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
   ...UNPUSHED_SH,
+  // The commits of a clean checkout $1 that hold work no remote has (issue #2087): a worktree's HEAD, a clone's HEAD and
+  // branches. The hopper reads a checkout whose every such commit it pushed for the job as pushed: the push says so, though
+  // the checkout's remote branches may not. A checkout with a change names none.
+  'tips() { td=$1; tr="HEAD --branches"; [ -f "$td/.git" ] && tr=HEAD; ts=$(git -C "$td" status --porcelain 2>/dev/null) || return 0;',
+  '  [ -z "$(printf "%s\\n" "$ts" | grep -vx "?? node_modules")" ] || return 0;',
+  '  for tu in $(git -C "$td" rev-parse $tr 2>/dev/null); do unpushed "$td" "$tu" && printf "hopper-kept-tip %s %s\\n" "$tu" "$td"; done; };',
   'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
-  '  d=${g%/.git}; held "$d" && printf "hopper-kept %s\\n" "$d";',
+  '  d=${g%/.git}; held "$d" && { printf "hopper-kept %s\\n" "$d"; tips "$d"; };',
   'done);',
   // What the job pushed (issue #630): a remote branch its HEAD holds that the default branch does not.
   'pushed=$(repos | while IFS= read -r g; do',
@@ -225,7 +231,7 @@ function detailsOf(line: string): ContainerDetails | undefined {
  * could not remove (issue #1452), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] } } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] } } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
@@ -233,9 +239,15 @@ export function readReap(stdout: string): { kept: string[]; pushed?: string[]; l
   const containers = named('hopper-removed-container ');
   const volumes = named('hopper-removed-volume ');
   const left = named('hopper-left ');
+  const kept = named('hopper-kept ');
+  const tips: Record<string, string[]> = {};
+  for (const l of lines) {
+    const t = /^hopper-kept-tip ([0-9a-f]{40,64}) (\/.*)$/.exec(l);
+    if (t && kept.includes(t[2]!) && !tips[t[2]!]?.includes(t[1]!)) (tips[t[2]!] ??= []).push(t[1]!);
+  }
   const details = [...new Map(named(DETAILS_MARK).map(detailsOf).filter((d) => d !== undefined && containers.includes(d.id)).map((d) => [d!.id, d!])).values()];
   return {
-    kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
+    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
   };
 }

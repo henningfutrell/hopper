@@ -153,8 +153,18 @@ export function sandboxApprovalsText(a: SandboxApprovals | undefined): string {
   return `${policy}A person approves each ${levels.length ? 'other ' : ''}new template and sandbox run.`;
 }
 
-/** What a template's card says of its approval: approved, or what waits for a person. */
+/** A template's assets the vault cannot find (issue #2067), in words, as the server says them: `no cluster staging; known: …`. */
+const unknownText = (t: TemplateView): string | undefined =>
+  t.unknownAssets?.length ? `unknown asset: ${t.unknownAssets.map((u) => `no cluster ${u.cluster}; known: ${u.known.join(', ')}`).join('; ')}` : undefined;
+
+/** The templates with an unknown asset (issue #2067), one line each, for Needs you: no approval makes them work. */
+export const unknownAssetLines = (v: VaultView | null): string[] =>
+  (v?.templates ?? []).flatMap((t) => { const u = unknownText(t); return u ? [`template ${t.label ?? t.name}: ${u}`] : []; });
+
+/** What a template's card says of its approval: an unknown asset (issue #2067), approved, or what waits for a person. */
 export function approvalText(t: TemplateView): string {
+  const unknown = unknownText(t);
+  if (unknown) return unknown;
   if (!t.approval) return 'not approved yet: its boxes take no job and get nothing from the vault';
   const waits = [
     ...(t.pending.image ? ['a new image'] : []), ...(t.pending.egress.length ? [`egress to ${t.pending.egress.join(', ')}`] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : []),

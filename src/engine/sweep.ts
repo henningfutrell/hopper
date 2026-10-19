@@ -16,7 +16,8 @@
 // job whose work item is done, as the work-item ledger has it, waits on nobody: the sweep discards it so (issue #1105),
 // recorded as job.work_removed, discarded, with no person and the reason `merged`. So does kept work a newer job of its
 // item took over, once that job finished with nothing kept (`superseded`), and kept work of a job that finished a proposal
-// or a research report (`proposal`, `research`): it never had work to push (issue #1187). Kept work whose scratch dir and job worktree are gone from a
+// or a research report (`proposal`, `research`): it never had work to push (issue #1187). So does work whose every commit
+// the reap names (a clean checkout's) the hopper pushed for the job (`pushed`, issue #2087). Kept work whose scratch dir and job worktree are gone from a
 // work tree the survey found on the job's machine (removed by hand, or by a cleanup outside the hopper) is resolved so
 // (issue #1120): job.work_removed with gone, nothing removed. Should it come back, the sweep finds it and keeps it again.
 // The survey also measures the hopper's own disk use in each work tree (issue #1120, design.md "Hopper's own disk use"): the
@@ -35,7 +36,7 @@
 // Machines shows them; a person keeps or removes each one (`decideLeftover`). The sweep removes none by itself.
 import type { ActingPerson, Discarding, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
-import { discardingOf, discardReasonOf, hopperDiskOf, keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { discardingOf, discardReasonOf, hopperDiskOf, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -158,7 +159,7 @@ export interface Sweep {
 }
 
 const WHY: Record<WorkDiscardReason, string> = {
-  merged: 'its item is done', superseded: 'a newer job of its item finished', proposal: 'it finished a proposal', research: 'it finished a research report',
+  merged: 'its item is done', superseded: 'a newer job of its item finished', proposal: 'it finished a proposal', research: 'it finished a research report', pushed: 'the hopper pushed its work',
 };
 
 const gb = (bytes: number): string => `${(bytes / 1e9).toFixed(1)} GB`;
@@ -189,6 +190,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** The leftovers the sweep does not judge (issue #1116), listed after each pass's reaps. */
   const leftovers = createLeftovers(c, shellOf, log);
 
+  /** The commits the hopper pushed for the job (issue #2087). */
+  const pushedFor = (jobId: string): Set<string> => proxyPushedOf(c.store.events.recent(PUSHES_READ, [...PROXY_PUSH_EVENTS], jobId));
   /** Work kept and not removed since: the newest work event of each job. */
   const keptNow = (): KeptWork[] => keptWorkOf(c.store.events.recent(KEPT_EVENTS, [...WORK_EVENTS]));
 
@@ -292,11 +295,14 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       const where = `${m.id}/${r.jobId}`;
       // A dir the reap could not remove is tried again only after a wait (issue #1613), unless something of the job still runs.
       if ((stuck.get(where) ?? 0) > c.clock.now().getTime() && !running.has(r.jobId)) continue;
-      const reason = r.scratch !== undefined && kept.has(r.jobId) ? discardReason(jobOf(r.jobId), kept) : undefined;
-      const discard = reason !== undefined;
+      let reason = r.scratch !== undefined && kept.has(r.jobId) ? discardReason(jobOf(r.jobId), kept) : undefined;
       let said;
       try {
-        said = discard ? await shell.reap(r.jobId, r.scratch, false, true) : await shell.reap(r.jobId, r.scratch);
+        said = reason !== undefined ? await shell.reap(r.jobId, r.scratch, false, true) : await shell.reap(r.jobId, r.scratch);
+        // Work the hopper pushed for the job (issue #2087), whatever its remote branches say: removed as a discard is.
+        if (reason === undefined && r.scratch && said.kept.length > 0 && keptPushedOf(said, pushedFor(r.jobId)).length === said.kept.length) {
+          reason = 'pushed'; said = await shell.reap(r.jobId, r.scratch, false, true);
+        }
       } catch (e) {
         log(`hopper: the sweep could not reap job ${r.jobId} on ${m.id}: ${(e as Error).message}`);
         continue;
@@ -310,7 +316,9 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       }
       stuck.delete(where);
       if (r.scratch && said.kept.length === 0) removed += 1;
-      if (discard && said.kept.length === 0) {
+      if (reason !== undefined && said.kept.length === 0) {
+        // Never kept before (issue #2087: the cleanup at its end saw it pushed): nothing to say.
+        if (!kept.has(r.jobId)) continue;
         log(`hopper: the sweep discarded job ${r.jobId}'s kept work on ${m.id}: ${WHY[reason]}`);
         c.store.events.append({ type: 'job.work_removed', jobId: r.jobId, data: { paths: [r.scratch!], discarded: true, reason } });
         continue;

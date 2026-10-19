@@ -2,7 +2,7 @@
 // after the answer, and says how the removal goes. Driven with the sweep's rig: a fake machine shell, the store's jobs and
 // work trail as plain lists.
 import { describe, expect, it } from 'vitest';
-import { rig } from './sweep-rig.ts';
+import { HOUR, rig } from './sweep-rig.ts';
 
 describe('discarding kept work (issue #1010)', () => {
   const by = { person: 'Pat', via: 'ui' as const };
@@ -75,5 +75,31 @@ describe('discarding kept work (issue #1010)', () => {
     expect(r.jobs.find((j) => j.id === 'old')!.discard).toBeUndefined();
     expect(r.sweep.discarding('old')).toBeUndefined();
     expect(r.sweep.discarding('done')).toEqual({ state: 'failed', error: 'the machine m is out of reach' });
+  });
+});
+
+describe('kept work the hopper pushed itself (issue #2087)', () => {
+  const scratch = (id: string) => `/w/.worktrees/@scratch/${id}`;
+  const found = (id: string) => ({ scopes: [], processes: [], scratch: [{ jobId: id, path: scratch(id), ageMs: 30 * HOUR }] });
+
+  it('kept before: removed whatever it holds, and recorded as discarded, pushed', async () => {
+    const r = rig({ found: found('old'), kept: ['old'], keeps: ['old'], tips: ['old'], proxied: ['old'] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'old', scratch: scratch('old') }, { jobId: 'old', scratch: scratch('old'), discard: true }]);
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: [scratch('old')], discarded: true, reason: 'pushed' } });
+  });
+
+  it('never kept before: removed, and nothing recorded as kept', async () => {
+    const r = rig({ found: found('done'), keeps: ['done'], tips: ['done'], proxied: ['done'] });
+    await r.sweep.run(true);
+    expect(r.reaps.at(-1)).toEqual({ jobId: 'done', scratch: scratch('done'), discard: true });
+    expect(r.events.filter((e) => e.type.startsWith('job.work_'))).toEqual([]);
+  });
+
+  it('a tip the hopper did not push stays kept', async () => {
+    const r = rig({ found: found('done'), keeps: ['done'], tips: ['done'], proxied: ['old'] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'done', scratch: scratch('done') }]);
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_kept', jobId: 'done', data: { paths: [`${scratch('done')}/repo`] } });
   });
 });

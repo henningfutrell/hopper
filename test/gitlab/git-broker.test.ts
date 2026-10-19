@@ -76,7 +76,7 @@ describe('a GitLab job\'s git through the hopper (issue #1448 part 3)', () => {
     expect(s.sent[0]).toMatchObject({ url: 'https://gitlab.example/ada/tools.git/git-receive-pack', method: 'POST', token: 'glpat-ada' });
     expect(s.sent[0]!.body).toContain('merge_request.create');
     expect(s.sent[0]!.body).toContain('merge_request.description=Closes #1');
-    expect(s.events).toEqual([{ type: 'gitlab_proxy.done', jobId: 'job-1', data: { requestId: 'r1', machine: 'desk', as: 'ada', op: 'git.push', project: 'ada/tools', refs: ['refs/heads/fix-parser'] } }]);
+    expect(s.events).toEqual([{ type: 'gitlab_proxy.done', jobId: 'job-1', data: { requestId: 'r1', machine: 'desk', as: 'ada', op: 'git.push', project: 'ada/tools', refs: ['refs/heads/fix-parser'], heads: [B] } }]);
   });
 
   it('refuses a push to the default branch, to another project, or by a job of GitHub; nothing reaches GitLab', async () => {

@@ -4,7 +4,10 @@
 # require. Which tests depend on the base (issue #1073, docs/deploy.md "Update channels and promotion"): a pull request
 # into `main`, the landing branch where every job's pull request merges, runs only the test files its change
 # affects (`affected`, `vitest --changed`, in ten shards); a pull request into `dev`, `beta` or `stable` — a batch run of
-# `main` into `dev`, or a promotion — runs the full suite in ten shards (`shard`), about 4 minutes (issue #949).
+# `main` into `dev`, or a promotion — runs the full suite in ten shards (`shard`), about 4 minutes (issue #949) when
+# written, about 9 minutes in October 2026. Each shard has a 20-minute limit (issue #2086): a shard at its limit is
+# cancelled, and the batch runner runs a cancelled or timed-out run again instead of a bisect, so the limit has real
+# headroom over a passing shard and catches only a hung one.
 # The tests that need a host service a
 # clean runner does not give (containers they start themselves, a real sshd, LDAP, a vault) are left out
 # (test/support/host-services.ts); the suite's own Postgres still starts through testcontainers. Read-only and
@@ -56,11 +59,11 @@ jobs:
   # The tests the change affects, on a pull request into main only (issue #1073): the files the merge changed
   # against its base (`HEAD^1`), and every test file that imports them. None is a pass. In the same ten shards as the
   # full suite (issue #1104): a change to a module most of the daemon imports affects most of the suite, which on one
-  # runner passed the 10-minute limit. A shard with no affected test passes.
+  # runner passed its time limit. A shard with no affected test passes.
   affected:
     if: github.base_ref == 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -89,7 +92,7 @@ jobs:
   shard:
     if: github.base_ref != 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

@@ -90,7 +90,8 @@ describe('a push kept as a saga (issue #1806)', () => {
     const a = hopper(temp.url(), gh, events, 'host-a');
     expect((await a.git.handle(push)).status).toBe(200);
     await vi.waitFor(() => { expect(sagasOf(a.store)).toEqual([]); });
-    expect(pushEvents(events)).toEqual([expect.objectContaining({ type: 'github_proxy.done', jobId: 'job-1', data: expect.objectContaining({ op: 'git.push', repo: 'acme/api', refs: [BRANCH] }) })]);
+    // The commit each ref moved to (issue #2087): the reap reads it as pushed.
+    expect(pushEvents(events)).toEqual([expect.objectContaining({ type: 'github_proxy.done', jobId: 'job-1', data: expect.objectContaining({ op: 'git.push', repo: 'acme/api', refs: [BRANCH], heads: [B] }) })]);
     expect(gh.asked.filter((u) => u.includes('info/refs'))).toEqual([]);
   });
 
@@ -112,7 +113,7 @@ describe('a push kept as a saga (issue #1806)', () => {
   it('the hopper stops while GitHub has the push, and GitHub took it: the next hopper records it done', async () => {
     const events: NewEvent[] = [];
     const { b } = await stoppedMidPush('took', events);
-    expect(pushEvents(events)).toEqual([expect.objectContaining({ type: 'github_proxy.done', data: expect.objectContaining({ op: 'git.push', repo: 'acme/api', refs: [BRANCH], as: 'ada', machine: 'm' }) })]);
+    expect(pushEvents(events)).toEqual([expect.objectContaining({ type: 'github_proxy.done', data: expect.objectContaining({ op: 'git.push', repo: 'acme/api', refs: [BRANCH], heads: [B], as: 'ada', machine: 'm' }) })]);
     expect(sagasOf(b.store)).toEqual([]);
   });
 

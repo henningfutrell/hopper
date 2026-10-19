@@ -917,6 +917,15 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees,
      `<work tree>/.worktrees/<name>/<job id>` (issue #1188), are read and removed with the scratch dir by the same
      rule: they go or stay with it. An emptied `.worktrees/<name>` goes too.
+     For each repository it keeps with no change, it also prints the commits that hold the work no remote has,
+     `hopper-kept-tip <commit> <path>` (issue #2087): its kept **tips**. A remote branch can be gone or never moved
+     (a push not by the remote's name, a prune after a merge), so the checkout alone cannot always tell work the job
+     pushed. The hopper can: each git push through the hopper records the commit each ref moved to (`heads` on
+     `github_proxy.done` and `gitlab_proxy.done`). A kept repository whose every tip the hopper pushed for the job
+     (`keptPushedOf`, `src/domain/kept-work.ts`) is no work not pushed: the cleanup at the job's end records no
+     `job.work_kept` for it, and the sweep removes it as a discard does (`job.work_removed` with `reason` `pushed` when
+     it was kept before). A repository with a change names no tip and stays kept; so does every repository a client
+     older than this keeps.
   4. removes what the layout before issue #1188 left ("Job worktrees in `.worktrees`" below): the job's scratch dir and
      worktrees there by the same rule, and, once that layout holds no job's, the rest of it. Then `git worktree
      prune` in the work tree's repository and its workspace's checkouts.
@@ -8544,8 +8553,12 @@ check.
 **Reading.** A bare mirror at `<work dir>/plugin-store/repo.git`; each read fetches the store's
 `HEAD` (its default branch) with the update mirror's git environment (never prompts, ssh batch
 mode). Read at start in the background (a slow or unreachable store never delays the boot), and on
-`refresh`. A catalogue that cannot be fetched or parsed → state `error` with the reason; the last
-good catalogue stays listed. When that catalogue was read from another plugin store (the setting
+`refresh`. A plugin store that cannot be fetched (not published yet, offline, gone) → state
+`unavailable` with a `reason` (`<store> cannot be read: <what git said>`, without git's `fatal:`); the
+last good catalogue stays listed, nothing installs until a read succeeds, and the hopper logs each new
+reason once, as info, never as a warning (issue #2082: the default plugin store is published from
+`stable`, so a newer build can name it before it is served). A catalogue that cannot be parsed →
+state `error` with the reason; the last good catalogue stays listed. When that catalogue was read from another plugin store (the setting
 changed and the new one could not be read), the report names it (`from`), and nothing installs from
 it: Install is refused (409) and the card offers none. No plugin store (set to none, or no default in
 this build) → state `unavailable` with a `reason` that names the setting, never an environment
@@ -10775,6 +10788,29 @@ cluster with no minting credential, the job's wait ends with the refusal, a cred
 check, one for that cluster drops it and the next pass passes), `test/skills/template-request-unminted.test.ts`,
 `test/sandbox/check-transient.test.ts`.
 
+**Unknown assets (issue #2067, 2026-10-19).** Reported from a real run: jobs asked for `read/cluster/staging`,
+`read/cluster/control-plane` and `read/cluster/platform`, while EKS names those clusters `staging-eks`,
+`control-plane-eks` and `platform-cluster-eks`. The templates were approved by the read policy, their checks marked
+every probe `not-run`, and the jobs waited for days on a name that never resolves, until a person ended each wait.
+- **What is unknown** (`unknownAssets`, `src/domain/unknown-assets.ts`, pure). A need on a cluster (`cluster/<name>`, or
+  the cluster part of a `namespace` or an `argocd-app`) that **cluster discovery** would look for — no minting credential
+  mints for that cluster, and no cluster override names it — and that no AWS source of the user's **infrastructure
+  topology** lists in its last good snapshot (`knownClusters`). While the topology lists no cluster, no asset is unknown.
+- **The job is told at once.** A template request (and its preview) with an unknown asset is a 400 before anything is
+  saved, so no template waits and no wait is recorded: `no cluster staging; known: staging-eks, …` — the known clusters
+  nearest first (a name that holds the asked name, then by edit distance, `fastest-levenshtein`), at most ten — and the
+  needs to ask for with the nearest name in place. A template saved before is refused the same way, so a job that asks
+  again (its `--wait` too) ends its wait with the refusal.
+- **Shown, not counted as an approval.** The vault's read (`GET /api/vault`, `vaultAnswer`) gives each template its
+  `unknownAssets`; `hopper template list` adds `unknownAsset` in words; the template's card says `unknown asset: …` in
+  place of its approval; Needs you counts it under Access requests, one line each.
+- **Residual risk, stated.** The topology is read every 6 hours and on Discover now: a cluster made since is refused
+  until the next read. The refusal says so, and a cluster override for the name (Settings → Clusters) lets it through at
+  once. The names it gives a job are the ones `GET /job/topology` already serves it.
+
+Tests: `test/domain/unknown-assets.test.ts`, `test/skills/template-request-unknown.test.ts`,
+`test/ui/unknown-assets.test.ts`, `test/integration/unknown-assets.test.ts` (the real daemon and the operator CLI).
+
 **Residual risk, stated.** A probe that writes runs the write for real when the credential allows it (the dry runs do
 not): with a writable credential, `ssm put-parameter` and `iam create-user` make their resource and the cleanup deletes
 it. That is what the check exists to find, and it fails then. Every probe runs under the sandbox flags, as the box's user.
@@ -12137,7 +12173,10 @@ Now Failures lists it, and each has an action that moves it.
   `proposal` or `research` (it finished a proposal or a research report, never work to push). The reap's rule reads
   work already on a remote under other commits as pushed ("The reap"), so the sweep's next pass removes such kept work
   with no reason at all. Each pass reads every kept entry again by these rules, so entries kept before them clear
-  themselves.
+  themselves. `pushed` (issue #2087): the hopper pushed each commit of it for the job ("The reap", kept tips).
+- **Never a push on the machine** (issue #2087). A job's machine holds no GitHub credentials, so a push there fails.
+  No refusal, todo or brief tells a person to open the work tree on its machine and push it: Push it goes through the
+  job, which pushes through the hopper; else Discard, or run its item again.
 - **Gone from disk** (issue #1120, "Hopper's own disk use"). Kept work whose scratch dir and job worktree a person or a
   cleanup outside the hopper removed leaves the list at the next sweep: `job.work_removed` with `gone`.
 
@@ -12153,6 +12192,12 @@ job's).
 the worktree entry gone, nothing outside the job's scratch dir; issue #1187: squash-merged, rebased and re-made commits
 read as pushed, part of the work or other content not), `test/integration/kept-work.test.ts` (Push it through
 the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused; issue #1470: the same work kept again, Push it refused).
+Issue #2087: `test/client/reap-tips.test.ts` (the kept tips of a clean worktree and a clone, none for a change),
+`test/domain/kept-work.test.ts` (`proxyPushedOf`, `keptPushedOf`), `test/engine/sweep-discard.test.ts` (kept work the
+hopper pushed removed, `pushed`; a tip it did not push stays kept), `test/integration/work-kept.test.ts` (no
+`job.work_kept` at the job's end when the hopper pushed each tip), `test/github-proxy/push-saga.test.ts` and
+`test/gitlab/git-broker.test.ts` (`heads` recorded), `test/failures/push-brief.test.ts` and `test/domain/stuck.test.ts`
+(no push on the machine).
 
 ### Push it by itself (issue #1472 part 2, 2026-10-17)
 
@@ -21577,7 +21622,16 @@ held canary with no issue). A merge needs nothing: the next pass reads the pull 
 
 **A red batch** (part 2, `src/landing-batches/red.ts`, the rules `src/domain/landing-bisect.ts`, pure). Only failing
 checks say that the batch itself fails; a red batch for no check in time waits for the next merge as before, and one with
-merge conflicts gets a back-merge (below). When checks failed:
+merge conflicts gets a back-merge (below). A **cut-off check** (issue #2086) is no failing check: GitHub cancelled it,
+or it passed its time limit (`cancelled`, `timed_out`; a test shard at the job's limit), so the run says nothing of the
+tests. The check to require fails with it, so one cut-off check makes the whole run cut off (`batchChecks` kind
+`cut-off`), whatever else failed. A cut-off batch run is recorded failed with `cutOff`, closed, and starts no bisect;
+the next pass runs the same tip again (`batchDue`, "batch run #N was cut off"), at most `BATCH_RERUNS` (2) times in a
+row. Then the tip waits for a new merge, as a tip tested already: a cut-off check never bisects, never makes a culprit,
+never reverts and never files a fix issue, because CI timing on a shared runner is no behaviour of the code. A cut-off
+bisect run is `unknown` with `cutOff`: its point runs again, at most `BATCH_RERUNS` times, and only then the bisect
+ends with no culprit. A run with a failed test and a cut-off check runs again too: the run after it, with no cut-off
+check, bisects as before. When checks failed:
 
 1. **The batch's points.** The hopper compares the tested branch with the failed tip and walks the landing branch's
    first-parent line back from the tip (`batchPoints`): each point is the merge of one pull request (its number from
@@ -23307,6 +23361,10 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   the job's owner), `issue N` or `item N` (the job's own repository), a link to an issue or a pull request; a workflow run
   as `<repo> run N`, `workflow run N` (the job's own repository) or a link to `actions/runs/N`, its id five digits or more.
   The job's own issue is left out: its close ends the job (issue #1460).
+- **The owner a wait writes is kept** (issue #2066). A wait on `outside: octo/hopper#2042` whose `for:` said `hopper#2042`
+  watched `<the job's owner>/hopper#2042` too, which did not exist, and so ended at once. A `name#N` or `<repo> run N`
+  with no owner is the job's owner's only when the text does not name that same name and number with its owner: then
+  it is the one the text names.
 - **Read at each sync** (`src/sources/watched-ends.ts`, `JobSource.endedWatched`; GitHub: `src/sources/github/watched.ts`).
   Each item is read by its number, the pull request first and then the issue, and a run through Actions
   (`GitHubApi.workflowRun`, `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, Actions read). An issue closed, a pull
@@ -23317,8 +23375,9 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
   run does not exist (404, 410, GraphQL's "Could not resolve to …") is permanent, not a failed read: the item is
   `not_found`. A job one of whose items is `not_found` is woken at once, whatever its other items, with
-  `job.waited_items_ended { items }` of those items only; its note says each was not found, so the job rewrites its wait. A
-  refusal (403) or a rate limit is still a failed read.
+  `job.waited_items_ended { items }` of those items only; its note says each cannot be read — GitHub answers a repository
+  the hopper's connection has no access to as one that does not exist (issue #2066) —, so the job checks the owner and name
+  and rewrites its wait. A refusal (403) or a rate limit is still a failed read.
 - **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
   memory, the items each job was last woken for. After a restart such a job is woken once more.
 - **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the

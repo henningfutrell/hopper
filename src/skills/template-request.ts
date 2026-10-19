@@ -24,6 +24,8 @@
 // secret or an egress host, its needs may be none, and only a person approves the template.
 // Issue #1977: a request that would make a template of an image that is not published is refused at once (`imageProblem`),
 // not saved to fail its read-only check later with "manifest unknown".
+// Issue #2067: a request that names a cluster the vault cannot find (an unknown asset: src/domain/unknown-assets.ts) is
+// refused at once, with the clusters the topology lists, nearest first, so the job asks again with the right name.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type Asset, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { OPERATOR_CLI_NAME } from '../domain/failures.ts';
@@ -35,6 +37,7 @@ import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type 
 import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/types.ts';
 import { rateTemplate } from '../blast-radius/template.ts';
 import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
+import { clusterOf, unknownAssetText, type UnknownAsset } from '../domain/unknown-assets.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
 import { needsFromWords } from './needs-in-words.ts';
@@ -149,6 +152,8 @@ export interface TemplateRequestUser {
   approvals?(): SandboxApprovals | undefined;
   /** A person's write approvals the hopper remembers now (issue #1001), ended ones left out; absent: none. */
   remembered?(): RememberedWrite[];
+  /** The needs' assets the vault cannot find (issue #2067); absent: none asked. */
+  unknownAssets?(needs: readonly OperationProfile[]): UnknownAsset[];
   /** Why an image cannot be used (issue #1977: it is not published), or undefined: published, or not known. Absent: none asked. */
   imageProblem?(image: string): Promise<string | undefined>;
   image: string;
@@ -194,6 +199,22 @@ function cannotMint(u: Pick<TemplateRequestUser, 'templates'>, t: TemplateView, 
   return `template ${t.name} cannot pass its read-only check: the vault minted no credential for ${why}. ${instead}. The hopper runs the check again by itself in an hour, or when a person sets the minting credential again.`;
 }
 
+/**
+ * Why the needs cannot be met as asked (issue #2067): each unknown asset, with the clusters the topology lists, and the
+ * needs with each unknown cluster's nearest one in its place; undefined when every asset is known.
+ */
+function unknownOf(u: Pick<TemplateRequestUser, 'unknownAssets'>, needs: readonly OperationProfile[]): string | undefined {
+  const unknown = u.unknownAssets?.(needs) ?? [];
+  if (unknown.length === 0) return undefined;
+  const nearest = new Map(unknown.map((x) => [x.cluster, x.known[0]!]));
+  const instead = needs.map((p) => {
+    const cluster = clusterOf(p.asset);
+    const known = cluster && nearest.get(cluster);
+    return keyOf(known ? { ...p, asset: { ...p.asset, name: [known, ...p.asset.name.split('/').slice(1)].join('/') } } : p);
+  });
+  return `${unknown.map(unknownAssetText).join('; ')}. The vault finds a cluster by its EKS name in the AWS accounts it mints for, and the topology lists no cluster of that name there. Ask again with a known name, for example --needs "${instead.join(' ')}". For a cluster made since the topology was read, a person runs Discover now on the topology page, or names the cluster in a cluster override on Settings → Clusters.`;
+}
+
 /** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */
 function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | undefined, extras?: AskExtras): string[] {
   return [
@@ -236,11 +257,11 @@ function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals' |
 }
 
 /** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
-export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals' | 'remembered'>, ask: TemplateAsk): TemplatePreview | string {
+export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals' | 'remembered' | 'unknownAssets'>, ask: TemplateAsk): TemplatePreview | string {
   const r = readAsk(u, ask);
   if (typeof r === 'string') return r;
   const { needs, extras } = r;
-  const cannot = uncheckable(needs);
+  const cannot = uncheckable(needs) ?? unknownOf(u, needs);
   if (cannot) return cannot;
   const name = requestedName(needs, extras);
   const was = u.template(name);
@@ -271,7 +292,7 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
   const r = readAsk(u, ask);
   if (typeof r === 'string') return { status: 400, reason: r };
   const { needs, extras } = r;
-  const cannot = uncheckable(needs);
+  const cannot = uncheckable(needs) ?? unknownOf(u, needs);
   if (cannot) return { status: 400, reason: cannot };
   const asked = requestedName(needs, extras);
   const was = u.template(asked);

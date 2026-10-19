@@ -5,6 +5,7 @@
 // work tree, told to push) and Discard. Pure. Re-exported from types.ts.
 import type { DomainEvent, Job, JobStatus } from './types.ts';
 import type { Allowed } from './failures.ts';
+import type { Reaped } from './machine-shell.ts';
 import { jobScratchOf, scratchParts, worktreeParts } from './job-layout.ts';
 
 /** The ends whose kept work Push it takes: the job goes on in its own session and work tree. Not a rejected job: it never ran. */
@@ -16,9 +17,9 @@ export const WORK_EVENTS = ['job.work_kept', 'job.work_removed'] as const;
 /**
  * Why the sweep discarded kept work with no person (issue #1187): its item is done (`merged`, issue #1105); a newer job of
  * its item finished, its cleanup done, with nothing kept (`superseded`); or it finished a proposal or a research report, never work to push
- * (`proposal`, `research`).
+ * (`proposal`, `research`); or the hopper pushed each commit of it for the job (`pushed`, issue #2087).
  */
-export const WORK_DISCARD_REASONS = ['merged', 'superseded', 'proposal', 'research'] as const;
+export const WORK_DISCARD_REASONS = ['merged', 'superseded', 'proposal', 'research', 'pushed'] as const;
 export type WorkDiscardReason = typeof WORK_DISCARD_REASONS[number];
 
 /**
@@ -31,6 +32,33 @@ export function discardReasonOf(job: Job, itemDone: boolean, newest: Job | undef
   if (job.status === 'finished' && job.spec.proposal) return 'proposal';
   if (job.status === 'finished' && job.spec.research) return 'research';
   return undefined;
+}
+
+/** The events that say what the hopper pushed for a job (issue #2087): its git pushes through the hopper. */
+export const PROXY_PUSH_EVENTS = ['github_proxy.done', 'gitlab_proxy.done'] as const;
+/** How many of a job's newest such events are read: more than a job pushes. */
+export const PUSHES_READ = 500;
+
+/** Pure (issue #2087): the commits the hopper pushed for a job, from its git pushes (`heads`); a push recorded before names none. */
+export function proxyPushedOf(trail: readonly DomainEvent[]): Set<string> {
+  const out = new Set<string>();
+  for (const e of trail) {
+    const d = e.data as { op?: unknown; heads?: unknown };
+    if (d.op === 'git.push' && Array.isArray(d.heads)) for (const h of d.heads) if (typeof h === 'string') out.add(h);
+  }
+  return out;
+}
+
+/**
+ * Pure (issue #2087): the kept repositories whose work the hopper pushed for the job: each commit the reap named as holding
+ * work no remote has (`tips`, a clean checkout's only) is one the hopper pushed. The push says so, though the checkout's
+ * remote branches may not (gone, or not moved by the push). One with a change, or from a client older than this, names none.
+ */
+export function keptPushedOf(reaped: Pick<Reaped, 'kept' | 'tips'>, pushed: ReadonlySet<string>): string[] {
+  return reaped.kept.filter((p) => {
+    const tips = reaped.tips?.[p];
+    return tips !== undefined && tips.length > 0 && tips.every((c) => pushed.has(c));
+  });
 }
 
 /** One ended job's kept work: the repositories holding it, and when it was kept. */
