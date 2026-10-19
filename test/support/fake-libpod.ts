@@ -20,6 +20,8 @@ export interface FakeLibpod {
   images: Set<string>;
   /** Each image built (issue #708, a tools image on a machine): its tag, and the Containerfile its context carried. */
   builds: Map<string, string>;
+  /** Each copy into a container (issue #1004, a need box's files): the container's name, the directory and the tar, as text. */
+  copies: { container: string; dir: string; tar: string }[];
   /** Put a container there as someone else made it. */
   put(c: Omit<LibpodContainer, 'id' | 'body' | 'state'>): string;
 }
@@ -30,6 +32,7 @@ export function createFakeLibpod(): FakeLibpod {
   const volumes = new Set<string>();
   const images = new Set<string>();
   const builds = new Map<string, string>();
+  const copies: FakeLibpod['copies'] = [];
   /** Each volume's labels, as its create gave them: an inspect answers them (issue #1371). */
   const volumeLabels = new Map<string, Record<string, string>>();
   const byRef = (ref: string): LibpodContainer | undefined => containers.get(ref) ?? [...containers.values()].find((c) => c.name === ref);
@@ -79,6 +82,12 @@ export function createFakeLibpod(): FakeLibpod {
       return { status: 201, body: { Id: id } };
     }
     if (r.method === 'GET' && path(r, /^\/containers\/json$/)) return { status: 200, body: [...containers.values()].filter((c) => matches(c, r.query)).map(listed) };
+    if (r.method === 'PUT' && (m = path(r, /^\/containers\/([^/]+)\/archive$/))) {
+      const c = byRef(decodeURIComponent(m[1]!));
+      if (!c) return { status: 404, body: { message: 'no such container' } };
+      copies.push({ container: c.name, dir: r.query.get('path') ?? '', tar: String(r.body ?? '') });
+      return { status: 200 };
+    }
     if ((m = path(r, /^\/containers\/([^/]+)(\/json|\/start|\/stop|\/healthcheck|\/wait|\/logs)?$/))) {
       const c = byRef(decodeURIComponent(m[1]!));
       if (!c) return { status: 404, body: { message: 'no such container' } };
@@ -98,7 +107,7 @@ export function createFakeLibpod(): FakeLibpod {
     return undefined;
   };
   return {
-    handlers: [handler], containers, volumes, images, builds,
+    handlers: [handler], containers, volumes, images, builds, copies,
     put(c) {
       const id = `c${++n}`;
       containers.set(id, { ...c, id, state: 'running', body: {} });

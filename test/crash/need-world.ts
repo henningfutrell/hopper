@@ -24,14 +24,14 @@ import { endLeases, killedAt, startHost, type CrashHost } from './harness.ts';
 
 const REPO = 'octo/tools';
 const ACCOUNT = '123456789012';
-const TEMPLATE = 'dig';
+export const TEMPLATE = 'dig';
 const PROFILES: OperationProfile[] = [
   { operation: 'read', asset: { kind: 'aws-role', name: `${ACCOUNT}/readonly` } },
   { operation: 'read', asset: { kind: 'cluster', name: 'lab' } },
 ];
 const NEEDS = PROFILES.map((p) => `${p.operation}/${p.asset.kind}/${p.asset.name}`).join(' ');
-const MINTING_SECRET = 'crash-need-minting-secret-never-shown';
-const KUBE_MINTING_TOKEN = 'crash-need-kube-minting-token-never-shown';
+export const MINTING_SECRET = 'crash-need-minting-secret-never-shown';
+export const KUBE_MINTING_TOKEN = 'crash-need-kube-minting-token-never-shown';
 /** The job's key for its ask: the same each time the same step is asked. */
 const KEY = 'crash-need-0001';
 /** The most one scenario takes: two hoppers start, one is killed. */
@@ -94,17 +94,17 @@ export async function needWorld(): Promise<NeedWorld> {
   };
 }
 
-/** A person keeps the minting credentials and saves and approves the template `dig`, which covers the two needs. */
-async function setUp(w: NeedWorld, h: CrashHost): Promise<void> {
+/** A person keeps the minting credentials and saves and approves the template `dig`, which covers the two needs; `secrets`: the vault secrets it gives. */
+export async function setUp(w: NeedWorld, h: CrashHost, secrets: string[] = []): Promise<void> {
   const vault = async (body: Record<string, unknown>) => { const r = await h.ui('/ui/api/vault', body); expect(r.status, JSON.stringify(r.body)).toBe(200); };
   await vault({ action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: MINTING_SECRET, Region: 'eu-west-1', Endpoint: w.sts.url }) });
   await vault({ action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: w.kubeApi.url, token: KUBE_MINTING_TOKEN }) });
-  await vault({ action: 'save-template', name: TEMPLATE, image: 'localhost/box-dig:1', secrets: [], profiles: PROFILES });
+  await vault({ action: 'save-template', name: TEMPLATE, image: 'localhost/box-dig:1', secrets, profiles: PROFILES });
   await vault({ action: 'approve-template', name: TEMPLATE });
 }
 
 /** A job's request on `/job/step` as `hopper-step` sends it; a host killed meanwhile answers status 0. */
-async function asJob(h: CrashHost, proxyToken: string, method: string, path: string): Promise<{ status: number; headers: Record<string, unknown>; text: string }> {
+export async function asJob(h: CrashHost, proxyToken: string, method: string, path: string): Promise<{ status: number; headers: Record<string, unknown>; text: string }> {
   try {
     return await rawRequest(h.url, {
       method, path, ...(method === 'POST' ? { body: '' } : {}),
@@ -117,7 +117,7 @@ const ask = (h: CrashHost, proxyToken: string, command: string) =>
   asJob(h, proxyToken, 'POST', `${STEP_PATH}?${new URLSearchParams({ needs: NEEDS, key: KEY, command, timeout: '600' }).toString()}`);
 
 /** The one step kept. */
-function keptStep(url: string): string {
+export function keptStep(url: string): string {
   const db = openDb(url);
   try {
     const rows = db.all('SELECT id FROM need_steps') as { id: string }[];
@@ -137,7 +137,7 @@ const boxesMade = (w: NeedWorld): string[] => w.runtime.seen
   .filter((s) => s.method === 'POST' && s.path.endsWith('/containers/create') && (s.body as { labels?: Record<string, string> }).labels?.[NEED_LABEL] !== undefined)
   .map((s) => (s.body as { name: string }).name);
 
-const running = (w: NeedWorld): boolean => [...w.libpod.containers.values()].some((c) => c.labels[NEED_LABEL] !== undefined && c.state === 'running');
+export const running = (w: NeedWorld): boolean => [...w.libpod.containers.values()].some((c) => c.labels[NEED_LABEL] !== undefined && c.state === 'running');
 
 /** No key — a minting credential's, the minted session's, or a minted token — in what a host wrote. */
 function noKeyIn(h: CrashHost): void {

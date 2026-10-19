@@ -29040,6 +29040,30 @@ runs the **canary scan** over the crash harness and the crash Windows host (`tes
 **Left for later parts.** A kill mid-step of a box or need step with a vault secret (it needs a container runtime beside
 the hopper under the crash harness); container layers and inspect output; the e2e mode and its nightly run.
 
+## The secret canary scan: a box step's vault secret after a kill mid-step (issue #1957, part 7, 2026-10-19)
+
+A box step's vault secrets go into its need box only, by a copy, never into its environment ("Box steps", issue #1875).
+A kill of the hopper mid-step must not leave them anywhere else. `test/crash/secret-canary-box-step.test.ts` runs the
+**canary scan** over the crash harness on a need step (`test/crash/need-world.ts`, the libpod double):
+
+- **The run.** A person sets a vault secret (a canary), saves and approves the template `dig` that gives it, turns on
+  sandbox YOLO and grants the job the vault. The job asks for the sandbox runs of `dig` (`sandbox --template dig`) and
+  runs a box step of it. The hopper is killed at `saga:need-step:run:before-do`, at `saga:need-step:run:after-do`, or
+  while the need box runs. A second hopper on the same database ends the step's saga and burns the box the first left.
+- **The scan** reads the whole database, the WAL written since the test began, both hosts' work dirs and output, the fake
+  GitHub's requests, every request to the container runtime but the copies into the box (the create bodies hold the
+  box's environment and labels: what an inspect shows), and what the job reads of its step: its result and its log.
+  Canaries: the master key, the vault secret, the two minting credentials and the job's proxy token.
+- **The control.** The libpod double records each copy into a container (`FakeLibpod.copies`): the copy into the need box
+  holds the secret.
+- **Found and fixed.** The need box's home tar (`need-home.tar`, the step's files with its vault secrets) stayed in the
+  step's directory in the work dir while the box ran, and was removed only when the step ended. A hopper killed while the
+  box ran left it there, the secret in plain text, until a later step's sweep an hour on. `runNeedBox`
+  (`src/sandbox/need-box.ts`) now removes it as soon as it is copied into the box. A kill in the short time between the
+  write and the end of the copy can still leave it.
+
+**Left for later parts.** Container layers (a real runtime's storage); the e2e mode and its nightly run.
+
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
 **Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event
