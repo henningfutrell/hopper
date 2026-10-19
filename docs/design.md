@@ -9976,7 +9976,7 @@ default `7d` per `1h`; `POST /ui/api/usage-history/view`, any role: it is the vi
 answers per line (source, machine, usage window):
 - **points**: per graph step (`date_bin`), the highest share of the limit used in it (`used / limit`, so
   every unit plots on one 0-100% axis). The peak, not the mean: a budget is about how close it came.
-- **gaps**: stretches with no sample longer than 3 × the line's usual spacing (median, at least 5 min) —
+- **gaps**: stretches with no sample longer than 3 × the line's usual spacing (at least 5 min) —
   the same 3 intervals after which `polled.ts` calls a reading stale. The UI breaks a line between two
   points only where a gap lies between them; empty steps without a gap (a source reading less often than
   the step) join, so a slow source is not drawn as broken.
@@ -10019,7 +10019,9 @@ knew it); else the source's name (a source that never names its account stays it
 of one account — whichever machine and claude-plan instance read it — makes one line per usage window and
 unit: per graph step the highest share of the limit used, not the sum, because two machines on one plan read
 the same quota. A gap is a stretch where no machine read the account (the spacing is over the account's
-merged samples); a reset is found per source and machine, then named once per account and minute.
+merged samples); its usual spacing is the median spacing of each reader (source and machine), the slowest
+reader's for the line, so two machines that read one account seconds apart do not make every normal wait a gap
+(issue #2135); a reset is found per source and machine, then named once per account and minute.
 `UsageSeries` carries `account` and no `source` or `machineId`; the legend names `<account> · <window>`, never a
 machine. The instance totals sum per account too, so an account on two machines counts once.
 
