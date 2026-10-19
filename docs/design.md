@@ -28624,6 +28624,14 @@ or not there.
 and a kill point (a compensation's when it refuses). `HOPPER_CRASH_SEEDS` seeds (default 2) from `HOPPER_CRASH_SEED`
 (default from the clock); a failure names the seed and the kill point, so the same run is made again with that seed.
 
+**Where it runs** (part 10, `.github/workflows/crash.yml`, `vitest.crash.config.ts`, `npm run test:crash`). Not in
+`npm test`: each crash file runs for minutes, and with them the full suite's shards passed their 10-minute limit (issues
+#2046, #2080). The crash workflow runs `test/crash/` in four shards nightly on the default branch, with ten seeds for each
+randomised run; by hand, with the seeds and the first seed as inputs; and on a pull request that changes the sagas and
+their kinds, the GitHub outbox and its writes, the item lifecycle, landing batches, the failure sweep, the database clock,
+the stalling proxy or the crash tests. The secret canary workflow runs the `test/crash/secret-canary-*` files with this
+config too.
+
 **What part 1 covers: the remote access mint saga** (#1609). A kill at each kill point of each provider's mint, a kill
 before and after its compensation, and a connection dropped before and after the record of a step commits: a second
 hopper ends the saga, with one tunnel and one DNS record at Cloudflare (one credential and one domain at ngrok) and remote

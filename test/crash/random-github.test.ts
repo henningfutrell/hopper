@@ -21,8 +21,8 @@ afterEach(async () => {
   for (const w of worlds.splice(0)) await w.close();
 });
 
-const count = Number(process.env.HOPPER_CRASH_SEEDS ?? 2);
-const first = Number(process.env.HOPPER_CRASH_SEED ?? Date.now() % 1_000_000);
+const count = Number(process.env.HOPPER_CRASH_SEEDS || 2);
+const first = Number(process.env.HOPPER_CRASH_SEED || Date.now() % 1_000_000);
 
 /** What one seed runs: its name, and the scenario. */
 function scenarioOf(seed: number): { name: string; run(): Promise<void> } {
