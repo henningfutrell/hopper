@@ -70,7 +70,7 @@ Each new review request records the event `source.review_requested`. Your webhoo
 
 ## Access requests
 
-**Access requests** shows what jobs on boxes wait on a person for. It always shows four panels, and an admin also sees **Delegate approvers**. A panel with nothing in it says what will show there.
+**Access requests** shows what jobs on boxes wait on a person for. It always shows five panels, and an admin also sees **Delegate approvers**. A panel with nothing in it says what will show there.
 
 | Panel | What you do |
 |---|---|
@@ -78,6 +78,7 @@ Each new review request records the event `source.review_requested`. Your webhoo
 | **Vault grants** | A job on a box asked the vault with no grant. Select **Grant**, or **Deny**: then that job asks no more. Granted items show here, with who granted them and when, and **Revoke**. |
 | **Template approvals** | A template is new, or has a new image, secret or profile. Select **Approve**. When the card lists a write, sync or apply profile, select **Approve all listed** to approve the template and each profile. |
 | **Sandbox runs** | A job asked for a sandbox. Select **Approve** to start the box, or write why not and select **Decline**. Runs that start, run or end show below. A run of a template you approved for the same job, of a blast radius the auto-approve policy holds, or whose every change you approved before (a remembered write approval), does not wait here. Each card shows why the job asks, the job and its link, its plan, and each need in plain words. Skip this step with **Skip sandbox approval** on Settings → Vault. Each card's approval is its own: you can approve several cards in a row. |
+| **Unknown assets** | A template names a cluster that the vault cannot find: no AWS source of the topology lists it, and it has no minting credential or cluster override. No approval makes it work. Select **Add a cluster override** to name the cluster, or **Edit its needs on Settings → Vault** to change it to a known cluster, or select **Remove**. The card lists the known clusters, nearest first. |
 
 To approve several at once, select the box on each template or sandbox run card, or select **Select all waiting**. Then select **Approve selected**. Each approval goes on its own, at the same time. Each card shows **Approving…**, then **Approved**, or why it was not approved. One that fails does not stop the others.
 
