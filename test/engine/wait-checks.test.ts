@@ -21,11 +21,13 @@ afterEach(() => {
   now = T0;
 });
 
-function hopper(url: string, reads: WaitReads, owner = randomUUID()) {
-  const store = openUserStore({ url, clock, idGen: randomUUID });
+/** `skewMs`: this hopper's clock is that far ahead of the test's time (behind, when negative), as a machine's clock that is off. */
+function hopper(url: string, reads: WaitReads, owner = randomUUID(), skewMs = 0) {
+  const own = skewMs ? { now: () => new Date(now + skewMs) } : clock;
+  const store = openUserStore({ url, clock: own, idGen: randomUUID });
   opened.push(store);
   const triggers: string[] = [];
-  const checks = createWaitChecks({ store, clock, executors: noExecutors, stopping: () => false, trigger: (r) => triggers.push(r), ownCommandGraceMs: 300_000, waitReads: reads }, { owner });
+  const checks = createWaitChecks({ store, clock: own, executors: noExecutors, stopping: () => false, trigger: (r) => triggers.push(r), ownCommandGraceMs: 300_000, waitReads: reads }, { owner });
   return { store, checks, triggers };
 }
 
@@ -127,6 +129,30 @@ describe('a wait check (issue #1694)', () => {
     await stuck;
     expect(ended(b.store, job.id)).toHaveLength(1);
   });
+
+  for (const c of [{ what: 'the second hopper\'s clock is ahead', first: 0, second: 2 * LEASE_MS }, { what: 'the first hopper\'s clock is behind', first: -2 * LEASE_MS, second: 0 }]) {
+    it(`two hoppers whose clocks do not agree (issue #1954): ${c.what}, and the second never tests the wait the first tests`, async () => {
+      const url = testDatabaseUrl();
+      let late!: () => void;
+      const hung = reads({ ended: [CLOSED], gate: new Promise<void>((resolve) => { late = resolve; }) });
+      const a = hopper(url, hung, randomUUID(), c.first);
+      const rb = reads({ ended: [CLOSED] });
+      const b = hopper(url, rb, randomUUID(), c.second);
+      const job = waitingJob(a.store, { since: new Date(now + c.first).toISOString() });
+      await a.checks.run();
+      now = T0 + FIRST_CHECK_MS;
+
+      const stuck = a.checks.run();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(hung.asked).toHaveLength(1);
+      await b.checks.run();
+      expect(rb.asked, 'the second hopper tested the wait the first tests').toEqual([]);
+
+      late();
+      await stuck;
+      expect(ended(a.store, job.id)).toHaveLength(1);
+    });
+  }
 
   it('a wait that names an item that does not exist ends at once, though its other items are open (issue #1691)', async () => {
     const url = testDatabaseUrl();

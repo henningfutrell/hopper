@@ -1,6 +1,6 @@
 // The job leases (issue #1662): a hopper that crashed releases nothing, and its leases end by themselves. Two hoppers'
 // leases over one user's store, with the clock moved past the lease of the one that stopped renewing.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createJobLeases } from '../../src/engine/leases.ts';
 import { fixedClock, spec, useTempStore } from './helpers.ts';
 
@@ -95,6 +95,46 @@ describe('the job leases', () => {
     expect(b.relay(job.id, { kind: 'park' })).toBe(true);
     expect(b.take(job.id, true)).toBe(true);
     expect(b.relayed()).toEqual([]);
+    store.close();
+  });
+
+  // Issue #1954: the hosts on one database whose clocks do not agree. Each reads its own clock (`Date`, faked here).
+  const realClock = { now: () => new Date() };
+  const skewed = <T>(ms: number, f: () => T): T => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + ms });
+    try { return f(); } finally { vi.useRealTimers(); }
+  };
+
+  it('a hopper whose clock is ahead takes no lease another hopper holds (issue #1954)', () => {
+    const store = t.open(t.url());
+    const job = store.jobs.create(spec, 1);
+    store.jobs.update(job.id, { status: 'running' });
+    const a = createJobLeases({ store, clock: realClock, owner: 'a', leaseMs: 60_000 });
+    const b = createJobLeases({ store, clock: realClock, owner: 'b', leaseMs: 60_000 });
+    expect(a.take(job.id)).toBe(true);
+    // B's clock is ahead by two leases: by it, A's lease ended long ago.
+    skewed(120_000, () => {
+      expect(b.unheld()).toEqual([]);
+      expect(b.take(job.id)).toBe(false);
+      expect(b.heldByOthers()).toEqual(new Set([job.id]));
+      expect(b.relay(job.id, { kind: 'park' })).toBe(true);
+    });
+    expect(a.renew([job.id])).toEqual([]);
+    store.close();
+  });
+
+  it('a hopper whose clock is behind holds its lease for its length, not past it, and the others see it live (issue #1954)', () => {
+    const store = t.open(t.url());
+    const job = store.jobs.create(spec, 1);
+    store.jobs.update(job.id, { status: 'running' });
+    const a = createJobLeases({ store, clock: realClock, owner: 'a', leaseMs: 60_000 });
+    const b = createJobLeases({ store, clock: realClock, owner: 'b', leaseMs: 60_000 });
+    // A's clock is behind by two leases: the end it writes is already past for the others.
+    skewed(-120_000, () => expect(a.take(job.id)).toBe(true));
+    expect(b.unheld()).toEqual([]);
+    expect(b.take(job.id)).toBe(false);
+    skewed(-120_000, () => expect(a.renew([job.id])).toEqual([]));
+    expect(b.heldByOthers()).toEqual(new Set([job.id]));
     store.close();
   });
 });
