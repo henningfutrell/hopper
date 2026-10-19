@@ -36,6 +36,10 @@ const need = (name: string): string => {
 
 const { CRASH_CLOUDFLARE_URL: cloudflare, CRASH_NGROK_URL: ngrok, CRASH_GITHUB_URL: github, CRASH_GITHUB_CONNECT: connect, CRASH_JOB: issue, CRASH_PODMAN_SOCKET: podman, CRASH_LANDING_URL: landing } = process.env;
 
+// A call the fake never answers (skewed-lease.test.ts) stays in flight for the whole scenario, not the 15 s a real
+// provider call waits: on a slow runner a second host's start and two of its passes take longer than that.
+const HUNG_CALL_MS = 300_000;
+
 const skew = Number(process.env.CRASH_CLOCK_SKEW_MS ?? 0);
 if (skew) {
   const RealDate = Date;
@@ -53,7 +57,7 @@ const app = await startTestApp({
   secrets: { HOPPER_MASTER_KEY: need('CRASH_MASTER_KEY') },
   ...(github ? { plugins: { jobSources: [githubSource()], machines: lanes(2) } } : {}),
   seams: {
-    ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
+    ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare, timeoutMs: HUNG_CALL_MS }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
     ...(process.env.CRASH_TOPOLOGY ? { topologyReader: crashTopologyReader } : {}),
     ...(process.env.CRASH_WINDOWS ? { windowsStepHost: crashWindowsHost(process.env.CRASH_WINDOWS) } : {}),
   },

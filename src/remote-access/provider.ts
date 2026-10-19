@@ -44,17 +44,18 @@ export class ProviderError extends Error {}
 /** The name the hopper gives what it mints at a provider: the same at every try, and per instance. */
 export const mintName = (instanceId: string): string => `hopper-${instanceId}`;
 
+/** How long a call waits for an answer, unless the provider is given another time. */
 const TIMEOUT_MS = 15_000;
 
 /** One JSON call; the parsed body and the status, or ProviderError when nothing answered. */
-export async function call(base: string, path: string, o: { method?: string; headers: Record<string, string>; body?: unknown; who: string }): Promise<{ status: number; body: unknown }> {
+export async function call(base: string, path: string, o: { method?: string; headers: Record<string, string>; body?: unknown; who: string; timeoutMs?: number }): Promise<{ status: number; body: unknown }> {
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
       method: o.method ?? 'GET',
       headers: { ...o.headers, ...(o.body === undefined ? {} : { 'content-type': 'application/json' }) },
       ...(o.body === undefined ? {} : { body: JSON.stringify(o.body) }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(o.timeoutMs ?? TIMEOUT_MS),
     });
   } catch (e) {
     throw new ProviderError(`${o.who} does not answer (${e instanceof Error ? e.message : String(e)})`);

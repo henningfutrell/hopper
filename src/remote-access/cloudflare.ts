@@ -20,12 +20,13 @@ export function ingressOf(domain: string, port: number): unknown[] {
   ];
 }
 
-export function cloudflareProvider(o: { base?: string } = {}): TunnelProvider {
+/** `timeoutMs`: how long a call waits for an answer (default TIMEOUT_MS). */
+export function cloudflareProvider(o: { base?: string; timeoutMs?: number } = {}): TunnelProvider {
   const base = o.base ?? CLOUDFLARE_API;
   const who = 'Cloudflare\'s API';
 
   async function api<T>(token: string, path: string, method = 'GET', body?: unknown): Promise<T> {
-    const r = await call(base, path, { method, headers: { authorization: `Bearer ${token}` }, body, who });
+    const r = await call(base, path, { method, headers: { authorization: `Bearer ${token}` }, body, who, ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
     const env = (r.body ?? {}) as Envelope<T>;
     if (r.status >= 200 && r.status < 300 && env.success !== false) return env.result as T;
     const errors = (env.errors ?? []).map((e) => `${e.message ?? 'error'}${e.code ? ` (${e.code})` : ''}`).join('; ');
