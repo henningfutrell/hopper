@@ -93,7 +93,7 @@ describe('a job waiting on other items (issue #1508)', () => {
     await app.sync();
     await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
     const missing = 'https://github.com/owner/gss/issues/330';
-    expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${missing} was not found: no such repository or item, so the wait never ends on it` }]);
+    expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${missing} cannot be read: no such repository or item, or the hopper has no access to it, so the wait never ends on it; check the owner and name you wrote` }]);
     expect((await app.events('types=job.waited_items_ended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { items: [{ url: missing, state: 'not_found' }] }]]);
   });
 

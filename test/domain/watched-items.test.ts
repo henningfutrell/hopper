@@ -4,9 +4,10 @@
 // way, and its pane carries (a background poll in it), wakes when its pane is lost. Pure.
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { settledBy, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
+import { settledBy, waitOnOf, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
 import { endedNote, paneCarriesWait, watchedItems, watchedOf, watchKey, type WatchedEnd } from '../../src/domain/watched-items.ts';
 
+const NOT_FOUND_NOTE = (url: string) => `${url} cannot be read: no such repository or item, or the hopper has no access to it, so the wait never ends on it; check the owner and name you wrote`;
 const since = '2026-10-16T21:00:00.000Z';
 type W = Pick<Job, 'id' | 'status' | 'wait' | 'source'>;
 const waiting = (id: string, w: { for: string; until?: string; on?: WaitOn }, repo = 'acme/platform-workflows', number = 7): W =>
@@ -22,6 +23,20 @@ describe('what a wait watches (issue #1508)', () => {
     ]);
     expect(watchedOf(waiting('c', { for: 'other/thing#4 and https://github.com/x/y/pull/9', on: { kind: 'outside', what: 'them' } }))).toEqual([
       { kind: 'issue', repo: 'other/thing', number: 4 }, { kind: 'issue', repo: 'x/y', number: 9 },
+    ]);
+  });
+
+  it('the owner a wait writes is kept: a bare name of the same item does not move it to the job\'s owner (issue #2066)', () => {
+    const job = waiting('a', { for: 'the hopper fix (hopper#2042) to merge', on: waitOnOf({ for: 'x', on: 'outside: henningfutrell/hopper#2042' }) }, 'org-a/x');
+    expect(watchedOf(job)).toEqual([{ kind: 'issue', repo: 'henningfutrell/hopper', number: 2042 }]);
+    expect(watchedOf(waiting('b', { for: 'y#5 to close', on: waitOnOf({ for: 'x', on: 'outside: org-b/y#5' }) }, 'org-a/x'))).toEqual([
+      { kind: 'issue', repo: 'org-b/y', number: 5 },
+    ]);
+    expect(watchedOf(waiting('c', { for: 'y#5, run of y 1234567', until: 'https://github.com/org-b/y/actions/runs/1234567 ends', on: { kind: 'outside', what: 'y run 1234567' } }, 'org-a/x'))).toEqual([
+      { kind: 'issue', repo: 'org-a/y', number: 5 }, { kind: 'run', repo: 'org-b/y', runId: 1234567 },
+    ]);
+    expect(watchedOf(waiting('d', { for: 'y#5 and org-b/z#5', on: { kind: 'outside', what: 'both' } }, 'org-a/x'))).toEqual([
+      { kind: 'issue', repo: 'org-a/y', number: 5 }, { kind: 'issue', repo: 'org-b/z', number: 5 },
     ]);
   });
 
@@ -83,9 +98,9 @@ describe('waking on what it watches (issue #1508)', () => {
     expect(endedNote(ended)).toBe('https://github.com/acme/identity/issues/199 was closed; https://github.com/acme/platform/actions/runs/42 completed (failure)');
   });
 
-  it('says an item that does not exist was not found (issue #1691)', () => {
+  it('says an item that does not exist, or the hopper cannot read, was not found (issues #1691, #2066)', () => {
     expect(endedNote([{ url: 'https://github.com/acme/gss/issues/330', state: 'not_found' }]))
-      .toBe('https://github.com/acme/gss/issues/330 was not found: no such repository or item, so the wait never ends on it');
+      .toBe(NOT_FOUND_NOTE('https://github.com/acme/gss/issues/330'));
   });
 
   it('job.waited_items_ended wakes that job only', () => {
