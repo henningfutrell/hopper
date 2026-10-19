@@ -28,14 +28,14 @@ async function boot(gh: FakeGitHub): Promise<TestApp> {
   return a;
 }
 
-/** A job of the github source, on its own outside wait `what`. */
-function waitingOn(app: TestApp, gh: FakeGitHub, what: string): Job {
+/** A job of the github source, on its own outside wait `what`, `forText` its `for:`. */
+function waitingOn(app: TestApp, gh: FakeGitHub, what: string, forText = 'the other changes'): Job {
   // Labelled and assigned, so the source's check keeps it: only what it waits on ends its wait.
   const issue = gh.createIssue({ repo: REPO, body: 'Waits on other changes.', labels: ['hopper'], assignees: ['owner'] });
   const { store } = app.user();
   return store.tx(() => {
     const job = store.jobs.create({ executor: 'scripted', payload: {} }, 50, { source: 'github', kind: 'github-account', key: issue.url, url: issue.url, repo: REPO, number: issue.number });
-    return store.jobs.update(job.id, { status: 'waiting_on', wait: { for: 'the other changes', on: { kind: 'outside', what }, since: new Date().toISOString() } });
+    return store.jobs.update(job.id, { status: 'waiting_on', wait: { for: forText, on: { kind: 'outside', what }, since: new Date().toISOString() } });
   });
 }
 
@@ -93,8 +93,24 @@ describe('a job waiting on other items (issue #1508)', () => {
     await app.sync();
     await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
     const missing = 'https://github.com/owner/gss/issues/330';
-    expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${missing} was not found: no such repository or item, so the wait never ends on it` }]);
+    expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${missing} cannot be read: no such repository or item, or the hopper has no access to it, so the wait never ends on it; check the owner and name you wrote` }]);
     expect((await app.events('types=job.waited_items_ended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { items: [{ url: missing, state: 'not_found' }] }]]);
+  });
+
+  it('an issue of another owner, its name alone in for: (issue #2066): it still waits while that issue is open; closed, it is woken', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const other = gh.createIssue({ repo: 'other-org/identity' });
+    const job = waitingOn(app, gh, `other-org/identity#${other.number}`, `the fix in identity#${other.number} to merge`);
+
+    await app.sync();
+    expect((await app.job(job.id)).status).toBe('waiting_on');
+    expect(await endedWaits(app, job.id)).toEqual([]);
+
+    gh.closeIssue('other-org/identity', other.number);
+    await app.sync();
+    await waitFor(async () => (await endedWaits(app, job.id)).length > 0, { what: 'job.wait_ended' });
+    expect(await endedWaits(app, job.id)).toEqual([{ by: 'hopper', note: `${other.url} was closed` }]);
   });
 
   it('a workflow run: waiting for a deployment decision, it still waits; completed, it is woken', async () => {

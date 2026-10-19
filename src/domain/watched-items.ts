@@ -1,16 +1,19 @@
 // What the hopper watches of a job's own wait (issue #1508, design.md "Watched items"): a wait on an item, or on an outside
-// event whose text names items — an issue or a pull request of any repository (`o/r#N`, `name#N` in the job's owner,
-// `issue N` in its own repository, a link), a workflow run (`<repo> run N`, `workflow run N`, a link). At each sync of the
-// job's source each one is read (`JobSource.endedWatched`); once every one a wait names ended — closed, merged, the run
-// completed —, the job wakes (`job.waited_items_ended`), though it ended before the watch began. A wait the hopper watches
-// no way, and only a background poll in its pane can end, is the pane's (`paneCarriesWait`): it wakes when that pane is
-// lost. Pure.
+// event whose text names items — an issue or a pull request of any repository (`o/r#N`, `name#N` in the job's owner unless
+// the text names it with an owner too, issue #2066; `issue N` in its own repository, a link), a workflow run (`<repo> run N`,
+// `workflow run N`, a link). At each sync of the job's source each one is read (`JobSource.endedWatched`); once every one a
+// wait names ended — closed, merged, the run completed —, the job wakes (`job.waited_items_ended`), though it ended before
+// the watch began. A wait the hopper watches no way, and only a background poll in its pane can end, is the pane's
+// (`paneCarriesWait`): it wakes when that pane is lost. Pure.
 import type { Job } from './types.ts';
 
 /** A thing a wait names that the hopper reads: an issue or a pull request (one GitHub number), or a workflow run. */
 export type WatchedRef = { kind: 'issue'; repo: string; number: number } | { kind: 'run'; repo: string; runId: number };
 
-/** The state of a watched thing that does not exist (issue #1691): no such repository, item or run. It never ends. */
+/**
+ * The state of a watched thing that does not exist (issue #1691): no such repository, item or run, or one the hopper's connection
+ * cannot read (GitHub answers both alike, issue #2066). It never ends.
+ */
 export const NOT_FOUND = 'not_found';
 
 /**
@@ -37,22 +40,28 @@ export const watchKey = (r: WatchedRef): string => `${r.kind}:${r.repo.toLowerCa
 /** The items `text` names, in the order it names them; `ownRepo` for a name with no owner, or none at all. */
 function refsIn(text: string, ownRepo: string | undefined): WatchedRef[] {
   const owner = ownRepo?.split('/')[0];
-  const found: { at: number; ref: WatchedRef }[] = [];
+  // `guessed`: a name with no owner, put in the job's owner; dropped when the text names that item with its owner too.
+  const found: { at: number; ref: WatchedRef; guessed?: boolean }[] = [];
   const named = (o: string | undefined, name: string): string | undefined => (o ? `${o}/${name}` : owner ? `${owner}/${name}` : undefined);
   for (const m of text.matchAll(LINK)) {
     found.push({ at: m.index, ref: m[2] === 'actions/runs' ? { kind: 'run', repo: m[1]!, runId: Number(m[3]) } : { kind: 'issue', repo: m[1]!, number: Number(m[3]) } });
   }
   for (const m of text.matchAll(NUMBERED)) {
     const repo = named(m[1], m[2]!);
-    if (repo) found.push({ at: m.index, ref: { kind: 'issue', repo, number: Number(m[3]) } });
+    if (repo) found.push({ at: m.index, ref: { kind: 'issue', repo, number: Number(m[3]) }, guessed: !m[1] });
   }
   for (const m of text.matchAll(ISSUE_WORD)) if (ownRepo) found.push({ at: m.index, ref: { kind: 'issue', repo: ownRepo, number: Number(m[1]) } });
   for (const m of text.matchAll(RUN)) {
-    const repo = !m[1] && NOT_A_REPO.has(m[2]!.toLowerCase()) ? ownRepo : named(m[1], m[2]!);
-    if (repo) found.push({ at: m.index, ref: { kind: 'run', repo, runId: Number(m[3]) } });
+    const own = !m[1] && NOT_A_REPO.has(m[2]!.toLowerCase());
+    const repo = own ? ownRepo : named(m[1], m[2]!);
+    if (repo) found.push({ at: m.index, ref: { kind: 'run', repo, runId: Number(m[3]) }, guessed: !m[1] && !own });
   }
+  // Issue #2066: `hopper#2042` beside `octo/hopper#2042` is that one, not the job's owner's.
+  const nameKey = (r: WatchedRef) => watchKey({ ...r, repo: r.repo.split('/')[1]! });
+  const written = new Set(found.filter((f) => !f.guessed).map((f) => nameKey(f.ref)));
   const seen = new Set<string>();
-  return found.sort((a, b) => a.at - b.at).map((f) => f.ref).filter((r) => !seen.has(watchKey(r)) && seen.add(watchKey(r)));
+  return found.filter((f) => !f.guessed || !written.has(nameKey(f.ref))).sort((a, b) => a.at - b.at).map((f) => f.ref)
+    .filter((r) => !seen.has(watchKey(r)) && seen.add(watchKey(r)));
 }
 
 /**
@@ -89,7 +98,8 @@ export function watchedItems(jobs: WaitingJob[]): Watched[] {
 
 /** What ended, or was not found, in a few words: what the woken job is told. */
 export const endedNote = (ended: Pick<WatchedEnd, 'url' | 'state'>[]): string =>
-  ended.map((e) => (e.state === NOT_FOUND ? `${e.url} was not found: no such repository or item, so the wait never ends on it`
+  ended.map((e) => (e.state === NOT_FOUND
+    ? `${e.url} cannot be read: no such repository or item, or the hopper has no access to it, so the wait never ends on it; check the owner and name you wrote`
     : /\/actions\/runs\//.test(e.url) ? `${e.url} completed (${e.state})` : `${e.url} was ${e.state}`)).join('; ');
 
 /**
