@@ -20,6 +20,10 @@
 // pack; a push the hopper cannot check is refused, never taken. The push's event names those refs (`direct`).
 // A push kept as a saga (issue #1806, push-saga.ts): a push sent to GitHub is a `git-push` saga first, so a hopper that stops
 // before its event is recorded leaves the record to the next one.
+// A refusal says why (issue #2042): git shows nothing of an error answer's body to a push's pack (the POST), only "HTTP 403",
+// so a refusal there — the hopper's (`refused: …`) or GitHub's error answer (`GitHub refused the push (HTTP n): …`) — is
+// answered as git's own refusal, an `ng` line per ref. GitHub's error answer to a push's ref advertisement is plain text,
+// which git shows as a `remote:` line.
 import { Readable } from 'node:stream';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
@@ -113,6 +117,17 @@ const text = (status: number, message: string, extra: Record<string, string> = {
 
 const UNAUTHORIZED = text(401, 'refused: the token is not a job\'s of this hopper. A job asks with its own HOPPER_TOKEN_FILE', { 'www-authenticate': 'Basic realm="hopper"' });
 
+/** GitHub's error answer to a push, as one line: its status and the start of its text (issue #2042). */
+async function githubRefusal(answer: GitAnswer): Promise<string> {
+  const chunks: Buffer[] = [];
+  try {
+    if (Buffer.isBuffer(answer.body)) chunks.push(answer.body);
+    else for await (const c of answer.body) chunks.push(Buffer.from(c as Buffer));
+  } catch { /* the text is a help only: the status still says it */ }
+  const said = Buffer.concat(chunks).toString('utf8').replace(/\s+/g, ' ').trim().slice(0, 500);
+  return `GitHub refused the push (HTTP ${answer.status})${said ? `: ${said}` : ''}`;
+}
+
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /**
@@ -198,9 +213,16 @@ export function createGitProxy(o: GitProxyOptions) {
         const event: NewEvent = { type, jobId: job.id, data: { requestId, ...(machine ? { machine } : {}), ...acting, op: 'git.push', repo: at.repo, ...data } };
         side.user.record(event);
       };
+      // A push's pack, read before any check (issue #2042), so a refusal of it is git's own, with the reason.
+      const pack = push && !at.advertise;
+      let plain: Buffer | undefined;
+      if (pack && (!r.contentEncoding || r.contentEncoding === 'gzip')) {
+        try { plain = r.contentEncoding === 'gzip' ? await unpack(r.body ?? Buffer.alloc(0)) : r.body ?? Buffer.alloc(0); } catch { plain = undefined; }
+      }
+      const read = plain ? receivePackCommands(plain) : undefined;
       const refuse = (reason: string): GitAnswer => {
-        if (push) record('github_proxy.refused', { reason });
-        return text(403, `refused: ${reason}`);
+        if (push) record('github_proxy.refused', { reason, ...(read?.ok ? { refs: read.commands.map((c) => c.ref) } : {}) });
+        return plain && read?.ok ? refusedReport(plain, read.commands, `refused: ${reason}`) : text(403, `refused: ${reason}`);
       };
       const toOwn = own !== undefined && same(own, at.repo);
       const contribution = side.contribution();
@@ -225,11 +247,9 @@ export function createGitProxy(o: GitProxyOptions) {
       }
       let refs: RefUpdate[] = [];
       let direct: RefUpdate[] = [];
-      if (push && !at.advertise) {
-        let plain: Buffer;
-        try { plain = r.contentEncoding === 'gzip' ? await unpack(r.body ?? Buffer.alloc(0)) : r.body ?? Buffer.alloc(0); } catch { return refuse('not a git push'); }
+      if (pack) {
         if (r.contentEncoding && r.contentEncoding !== 'gzip') return refuse(`a push sent as ${r.contentEncoding} is not taken`);
-        const read = receivePackCommands(plain);
+        if (!plain || !read) return refuse('not a git push');
         if (!read.ok) return refuse(read.reason);
         refs = read.commands;
         const target = side.directPush?.(at.repo) ? side.landingBranch?.(at.repo) ?? facts!.defaultBranch : undefined;
@@ -266,7 +286,7 @@ export function createGitProxy(o: GitProxyOptions) {
         }
       }
       if (!push && at.advertise) traffic.gitFetch(at.repo, job.id);
-      const sends = push && !at.advertise;
+      const sends = pack;
       const kept = sends ? o.pushes?.begin(parts.userId, { jobId: job.id, requestId, repo: at.repo, refs, ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}), ...(machine ? { machine } : {}), ...acting, via: usedHere ? at.repo : own }) : undefined;
       try {
         // The crash harness's kill points (issue #1954): the saga kept and nothing sent; GitHub answered and nothing recorded.
@@ -275,8 +295,13 @@ export function createGitProxy(o: GitProxyOptions) {
         if (sends) {
           passProxyKillPoint('git.push', 'after-send');
           if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
-          else record('github_proxy.failed', { refs: refs.map((c) => c.ref), error: `GitHub answered ${answer.status}` });
+          else {
+            const error = await githubRefusal(answer);
+            record('github_proxy.failed', { refs: refs.map((c) => c.ref), error });
+            return refusedReport(plain!, refs, error);
+          }
         }
+        if (push && answer.status >= 400) return text(answer.status, await githubRefusal(answer));
         return answer;
       } catch (e) {
         const error = (e as Error).message;

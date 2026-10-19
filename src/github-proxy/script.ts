@@ -74,7 +74,9 @@ on any other repository your user can push to when the change belongs there (its
 pull request body says "Closes OWNER/NAME#N" with this job's issue). Only where a person turned on direct push for a
 repository, a push may go straight to its target branch (its landing branch, else its default branch), and only as a
 fast-forward: never rewrite it. When GitHub gives your user no write access there,
-the push is refused and says so. A pull request: push the branch first (git push), on the repository the pull request
+the push is refused and says so. A refused push names whose refusal it is: "refused: ..." is a hopper rule;
+"GitHub refused the push (HTTP N): ..." is GitHub's own (a token GitHub does not take there, single sign-on, a ruleset):
+say it in your final message, so a person can fix the access. A pull request: push the branch first (git push), on the repository the pull request
 is opened on. On a repository the hopper does not work on, a job opens a pull request, and marks ready, edits or closes
 only the one it opened; it files no issue there.
 Where a pull request stands: pr status. Ask it, not GitHub: the hopper answers from what it already knows (from:
