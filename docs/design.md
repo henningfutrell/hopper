@@ -2138,7 +2138,13 @@ works from what was last seen, and the tended job follows its pull request no mo
 on GitHub after its tend job failed was rebased again at each move of its base, and shown open. Before each tend the
 source reads whether it ended (`JobSource.endedPullRequests`); ended, no tend starts, the job follows it again at once, and
 that follow records its end (`job.pull_request_closed` or `job.pull_request_merged`) and its labels, as any follow does. A
-read that fails tends it as before. A refusal because a newer job of
+read that fails tends it as before. **A closed work item is tended no more after a tend job** (issue #2127): a tend job that finds the pull
+request has nothing left to merge (its base already holds the same change) closes the work item's issue, or the pull
+request; a rebase is never capped, and a done tend job follows the pull request, so the same tend job started again and
+again, and each tend's Run again reopened the issue. Before each tend of a tend job's pull request the source reads the
+item's issue when the ledger does not hold it closed (`JobSource.issueState`, recorded as `work_item.issue_closed` with
+`via: read`); closed, no tend starts, and the card says why. A closed item's first tend still runs (issue #927: a merge
+recorded that GitHub contradicts leaves the issue closed and the pull request open). A read that fails tends it as before. A refusal because a newer job of
 the item exists is no failure; any other refusal is kept as the source's retry and asked again next sync. No setting turns
 it off: a job repository whose pull requests the hopper follows is one whose jobs it runs.
 
@@ -14608,7 +14614,9 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    A job edits a pull request's title or body (`pr edit N [--title T] [--body-file F]`, op `pr.edit`) or closes it with
    no merge (`pr close N`, op `pr.close`) only when it opened that pull request through the proxy (a `github_proxy.done`
    of `pr.create` on its timeline) or the pull request is its **work item**'s, one an earlier job of the item opened
-   (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request).
+   (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
+   or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
+   job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).
    A close is the job's act, as its push is; it never merges, and the follow sees the pull request closed as a person's
    close;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
