@@ -29,17 +29,20 @@ function untouched(c: Pick<EngineContext, 'store'>, job: Job, k: JobCheckpoint):
   return kept !== undefined && gunzipSync(kept.patch).length === 0;
 }
 
-/** How the job moves: from its checkpoint, or as a new start; undefined: it cannot move now. */
-async function howToMove(c: EngineContext, job: Job): Promise<'checkpoint' | 'fresh' | undefined> {
+/**
+ * How the job moves: from its checkpoint, or as a new start; undefined: it cannot move now. `waits`: what it waits on, for
+ * the log. The busy-machine move (issue #1977) asks it too.
+ */
+export async function howToMove(c: EngineContext, job: Job, waits = 'waits on a sign-in'): Promise<'checkpoint' | 'fresh' | undefined> {
   if (job.agentSession === undefined) return 'fresh';
   const k = await c.checkpoints?.take(job.id);
   if (k === undefined || typeof k === 'string') {
-    if (!c.stopping()) console.warn(`hopper: job ${job.id} waits on a sign-in, and could not move: its checkpoint ${k ?? 'is not kept by this hopper'}`);
+    if (!c.stopping()) console.warn(`hopper: job ${job.id} ${waits}, and could not move: its checkpoint ${k ?? 'is not kept by this hopper'}`);
     return undefined;
   }
   if (k.session) return 'checkpoint';
   if (untouched(c, job, k)) return 'fresh';
-  console.warn(`hopper: job ${job.id} waits on a sign-in, and could not move: its checkpoint holds work but no agent session`);
+  console.warn(`hopper: job ${job.id} ${waits}, and could not move: its checkpoint holds work but no agent session`);
   return undefined;
 }
 

@@ -57,7 +57,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); a job's trust and a profile's minimum trust (`trust.ts`, `trust-model.ts`, issue #655); what an edit refuses (`edits.ts`); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the busy-machine move — a job resuming on a full machine goes on at one with room after a short wait (`busy-move.ts`, issue #1977); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it, and for a job's done criteria a pipeline's jobs, a job's log, a merge request's notes and changed files and a commit's time (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), a GitLab job's done criteria on its merge request (`done-criteria.ts`, issue #1924 part 4), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
@@ -27317,6 +27317,7 @@ The leases, each one per user (`<user id>/<name>`):
 | `cleanups` | the cleanups a record says are owed (issue #1662) | does every one owed, as at a start |
 | `auto-park` | auto-park (issue #1662) | — |
 | `signed-out-move` | the signed-out move (issue #1662) | — |
+| `busy-move` | the busy-machine move (issue #1977) | — |
 | `checkpoints` | the checkpoint pass (issue #1662) | — |
 | `pane-answers` | the read of each waiting job's pane (issue #1662) | — |
 | `classifier` | the classifier's sweep (issue #1662) | — |
@@ -28869,3 +28870,75 @@ and `test/support/screen-drift.test.ts` (no CLI needed); `test/acceptance/hooks-
 `test/acceptance/tui-screens.test.ts` (opt-in; it failed with the recorded bypass dialog's "Yes, I accept" changed, and
 named that line).
 
+
+## Free machines first, published images, and the utility providers (issue #1977, 2026-10-18)
+
+**The problem.** Three faults of one day's run.
+1. A job queued to resume on its own machine (`resumeOn`) waited there while every lane of it was in use, though other
+   machines that run its executor had free lanes. A resume pins a job to its machine: its pane, its work tree and its
+   agent session's files are there.
+2. A template request named the test image while its tag was not published. The hopper saved and approved the template,
+   and its read-only check failed later with "manifest unknown".
+3. A read-only box's provider mirror held only `hashicorp/aws`. A workspace whose lock file uses `hashicorp/null` could not
+   `init` there.
+
+### The busy-machine move (part 1)
+
+- **When.** On each engine tick (`src/engine/busy-move.ts`, one pass at a time, on the `busy-move` sweep lease), a queued
+  job moves when (`busyMove`, `src/decider/busy-move.ts`, pure):
+  - it resumes on its machine: an answer pending, `resumeOn` set — a job picked up, a **preempted** job, or a job whose
+    answer waits for its live pane;
+  - no pin of its spec (`spec.machineId`: a person's or a routing rule's pin stays), it does not resume elsewhere already,
+    and it is no **continued** job (Continue reopens its agent session in its kept work tree);
+  - its machine is online and every lane of it is in use (busy or draining, at its lane cap);
+  - another machine is online, runs its executor, fits its Windows label, is not leaving or drained, and has room for a job
+    not pinned to it (its lane cap less its reserved lanes);
+  - all of this held for `RESUME_WAIT_MS` (5 minutes) in a row. Room on its own machine starts the wait again.
+- **How.** As the signed-out move ("The signed-out move"), with its `howToMove`: a checkpoint is taken first. Then, in one
+  transaction, the job is parked (`recordPark`, `auto`, its `why` naming its machine and the machines with room), so no
+  Decision claims it meanwhile. A job whose answer waits for its live pane gets its pane and agent ended
+  (`Executor.park`) and one more checkpoint. Then:
+  - **from its checkpoint**, when it holds the agent session: picked up to resume elsewhere (`recordUnpark`, elsewhere),
+    the answer kept;
+  - **as a new start**, when its agent never got its task: queued, not pinned, no answer pending;
+  - a checkpoint that cannot be taken, or holds work but no session, does not move it: it stays queued for its machine,
+    and the move tries it again after 10 minutes (`MOVE_RETRY_MS`).
+- **The decider places it.** A job resuming elsewhere is pinned to no machine: the next Decision places it on any machine
+  with room, its own one included when a lane frees there first.
+
+### A template request for an image that is not published (part 2)
+
+- **The check** (`createImageCheck`, `src/sandbox/image-published.ts`). The distribution API's `HEAD` of the image's
+  manifest at its registry, with the anonymous bearer token its `WWW-Authenticate` challenge names. Only a 404 says the
+  image is not published. A registry not reached, a timeout (10 s), or any other answer says nothing. A local image
+  (`localhost/…`) is asked of no registry. A published answer is kept 10 minutes, a missing one a minute, for every user.
+- **The request** (`requestTemplate`, `imageProblem` on `TemplateRequestUser`). Before it saves a template, the request
+  asks for the image the template runs: the reused or earlier template's, else the one the request names. A missing image
+  is a 400 with the reason, and no template is saved. Issue #1976 publishes the test image; this part only refuses early.
+
+### More providers in the read-only mirror (part 3)
+
+- **The mirror** (`MIRRORED_PROVIDERS`, `src/sandbox/tools.ts`) now also holds HashiCorp's utility providers: `null`
+  3.3.2, `random` 3.9.1, `local` 2.9.1, `time` 0.14.2, `archive` 2.8.1 and `tls` 4.4.1, each its release's zip, pinned and
+  checked by its SHA-256 from the release's `SHA256SUMS`, as the AWS provider is. None of them calls a service of its own.
+- **The probe** `terraform.provider-download` now asks for `hashicorp/dns`, which the mirror does not hold.
+
+**Decisions:**
+- **A short wait, then any machine.** The issue asks that a resume prefers its machine only for a short, bounded time.
+  5 minutes covers a lane that frees soon; after that a free machine is worth the rebuild of the work tree.
+- **Moved through park and resume elsewhere.** The move reuses the one path that rebuilds a job on another machine, so a
+  moved job is told `elsewhereBrief` as a person's Resume elsewhere is.
+- **A continued job does not move.** Its kept work tree is the reason a person continued it.
+- **The registry asked with `fetch`, not a library.** One anonymous `HEAD` and one token read; a registry client library
+  would be a dependency for about 40 lines.
+- **Unknown is no refusal.** A hopper with no route to the registry still takes template requests; the read-only check
+  still pulls the image.
+- **The utility providers, not registry egress.** Issue #715 keeps a read-only box from downloading providers. A fixed,
+  reviewed list keeps that rule. Friction, stated: a lock file that pins another version of one of these providers still
+  cannot `init` there; the person adds that version to `src/sandbox/tools.ts`.
+
+Tests: `test/decider/busy-move.test.ts` (which jobs, which machines), `test/engine/busy-move.test.ts` (the real database:
+the wait, a move from the checkpoint, a live pane ended first, a new start, a checkpoint with no session),
+`test/sandbox/image-published.test.ts` (the registry double: published, 404, unreachable, local, kept answers, image
+references), `test/skills/template-request-image.test.ts` (refused with no template saved, an earlier template refused),
+`test/sandbox/tools.test.ts` and `test/sandbox/check-script.test.ts` (the mirror's providers, the probe's provider).

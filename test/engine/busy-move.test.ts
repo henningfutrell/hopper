@@ -84,7 +84,7 @@ describe('the busy-machine move (issue #1977)', () => {
       { type: 'job.parked', data: { from: 'running', machineId: 'l2', auto: true, why } },
       { type: 'job.unparked', data: { to: 'queued', elsewhere: true } },
     ]);
-    expect(triggers).toContain('busy.move');
+    expect(triggers).toContain('busy_machine.move');
   });
 
   it('a job with an answer pending in its live pane is parked first: its pane ends, then it resumes elsewhere', async () => {
