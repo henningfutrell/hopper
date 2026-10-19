@@ -30,7 +30,7 @@ export const run = (cmd: string, args: string[], o: { cwd?: string; env?: NodeJS
 });
 
 /** A bare repository on the fake GitHub: `dev`, its default, with one commit. */
-async function bareRepo(root: string, repo: string): Promise<void> {
+export async function bareRepo(root: string, repo: string): Promise<void> {
   const bare = join(root, `${repo}.git`);
   const seed = mkdtempSync(join(tmpdir(), 'hopper-git-seed-'));
   const env = { PATH: process.env.PATH, HOME: seed, GIT_CONFIG_NOSYSTEM: '1' };
