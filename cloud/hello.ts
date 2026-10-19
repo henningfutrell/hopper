@@ -8,6 +8,9 @@ import { createPublicKey, randomBytes, verify } from 'node:crypto';
 import { z } from 'zod';
 import { LINK_MESSAGE_MAX_BYTES } from './link.ts';
 
+/** hopper.io's answer to a hello it took (issue #2039 part 2): the instance is connected from here on. Nothing else. */
+export const CONNECTED = JSON.stringify({ type: 'connected' });
+
 export const HELLO_CONTEXT = 'hopper.io cloud link hello 1';
 const B64URL = (n: number) => z.string().regex(new RegExp(`^[A-Za-z0-9_-]{${n}}$`));
 const PUBLIC_KEY = B64URL(43);

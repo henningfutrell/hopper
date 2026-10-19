@@ -38,13 +38,14 @@ export const VAULT_REFERENCE_MAX = 500;
  * connection's tokens, each webhook's signing secret, each sign-in realm's secret (issue #658), and remote access's: each
  * provider's credential and the tunnel token the hopper minted with it (issues #880, #968); and the GitHub webhook secret GitHub
  * signs its deliveries with (issue #1079); the GitLab account's personal access token (issue #1448); the cloud link key's
- * private half (issue #467). The hopper keeps no GitHub App private key (issue #1377). */
+ * private half (issue #467), and the key before a rotation until the new one connected (issue #2039). The hopper keeps no GitHub App private key (issue #1377). */
 export type SystemSecretName =
   | 'typesafe-api-key'
   | `remote-access.${'ngrok-authtoken' | 'ngrok-api-key' | 'cloudflare-api-token' | 'cloudflare-tunnel-token'}`
   | 'artifact-content-key'
   | 'github-webhook-secret'
   | 'cloud-link.key'
+  | 'cloud-link.previous-key'
   | `connected-account.${ConnectedAccountKey}.${'access-token' | 'refresh-token'}`
   | 'gitlab-account.access-token'
   | `webhook.${string}.signing-secret`

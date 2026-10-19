@@ -1,6 +1,7 @@
 // Payload building blocks shared by the current schemas (schemas.ts) and the superseded ones
 // (legacy.ts).
 import { z } from 'zod';
+import { CLOUD_OUTGOING, CLOUD_REFUSALS } from '../domain/cloud-link.ts';
 import { ACTION_VIAS } from '../domain/failures.ts';
 import { JOB_ORIGINS, ORIGIN_ROLES } from '../domain/intake-origin.ts';
 import { REPO_VISIBILITIES } from '../domain/linked-pulls.ts';
@@ -167,7 +168,12 @@ export const rateLimiterEvents = {
   'cloud_link.registration_code_minted': strict({ installId: z.string(), account: z.string(), expiresAt: z.string(), by: z.string() }),
   'cloud_link.registered': strict({ installId: z.string(), account: z.string() }),
   'cloud_link.unregistered': strict({ installId: z.string(), account: z.string() }),
-  'cloud_link.message_refused': strict({ reason: z.enum(['too-large', 'not-json', 'unknown-type', 'bad-shape']) }),
+  'cloud_link.message_refused': strict({ reason: z.enum(['too-large', 'not-json', 'unknown-type', 'bad-shape', 'too-many']) }),
+  'cloud_link.connected': strict({ installId: z.string(), account: z.string() }),
+  'cloud_link.disconnected': strict({ installId: z.string(), account: z.string(), code: z.number().int() }),
+  'cloud_link.connection_refused': strict({ installId: z.string(), account: z.string(), reason: z.enum(CLOUD_REFUSALS) }),
+  'cloud_link.revoked': strict({ installId: z.string(), account: z.string(), by: z.string() }),
+  'cloud_link.message_dropped': strict({ message: z.enum(CLOUD_OUTGOING), reason: z.enum(['secret', 'too-large']) }),
   'source_email_match.changed': strict({ on: z.boolean(), by: z.string() }),
   'display_name.changed': strict({ from: z.string(), to: z.string(), by: z.string() }),
 };

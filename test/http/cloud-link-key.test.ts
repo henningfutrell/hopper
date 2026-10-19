@@ -71,7 +71,7 @@ describe('the cloud link key', () => {
     const secret = secrets.open(CLOUD_LINK_KEY)!;
     expect(secret).not.toBe(old);
     expect(publicOf(secret)).toBe(after.publicKey);
-    expect(events[0]).toEqual({ type: 'vault.secret_set', data: { name: `system/${CLOUD_LINK_PREVIOUS_KEY}`, by: 'admin' } });
+    expect(events[0]).toEqual({ type: 'vault.secret_set', data: { name: `system/${CLOUD_LINK_PREVIOUS_KEY}`, by: 'admin', replaced: false } });
     expect(events[1]).toEqual({ type: 'vault.secret_set', data: { name: `system/${CLOUD_LINK_KEY}`, by: 'admin', replaced: true, rotated: true } });
     // The key before stays until hopper.io took the new one: its hello proves the bound key (R4).
     expect(link.view().link).toMatchObject({ account: 'octo-cat', state: 'pending', linkKey: after, previousKey: { ...before, secret: CLOUD_LINK_PREVIOUS_KEY } });
