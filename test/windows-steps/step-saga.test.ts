@@ -232,7 +232,8 @@ describe('a Windows step as a saga (issue #1611)', () => {
       if (n < 3) blocked = w.block();
       h = hopper(url, `host-${n}`, w, clock);
       endLeases(url);
-      await h.c.pass();
+      // A pass waits for the run it starts: one cut short blocks until its hopper stops.
+      void h.c.pass();
     }
     await expect.poll(() => h.steps.state(JOB, id), { timeout: 10_000 }).toEqual({ result: { exit: 125, problem: STEP_INTERRUPTED } });
     expect(w.runs.get(id)).toBe(3);

@@ -197,6 +197,23 @@ describe('Windows sandbox steps (issue #731)', () => {
     expect(eventsOf(a, 'step.finished')[0]!.data).toMatchObject({ exit: 255, problem: 'timed out after 1 s' });
   }, 60_000);
 
+  it('keeps a step asked with --rerun as one to run again after a stop; a sandbox step takes no --rerun (issue #2117)', async () => {
+    const fake = fakeHost();
+    const { a, session, job } = await h.boot({ seams: { windowsStepHost: fake.host } });
+    await saveHosts(a, session, [HOST]);
+    const r = await step(a, job, ['run', 'build-host', '--rerun', '--command', 'podman inspect hopper']);
+    expect(r.code).toBe(3);
+    const id = (eventsOf(a, 'step.started')[0]!.data as { step: string }).step;
+    expect(a.app.instance.windowsSteps.get(id)).toMatchObject({ command: 'podman inspect hopper', rerun: true });
+    const plain = await step(a, job, ['run', 'build-host', '--command', 'msbuild App.sln']);
+    expect(plain.code).toBe(3);
+    const second = (eventsOf(a, 'step.started')[1]!.data as { step: string }).step;
+    expect(a.app.instance.windowsSteps.get(second)?.rerun).toBeUndefined();
+    const box = await step(a, job, ['box', 'aws-read', '--rerun', '--command', 'aws s3 ls']);
+    expect(box.code).toBe(2);
+    expect(box.stderr).toContain('no: --rerun is for a Windows step');
+  }, 60_000);
+
   it('refuses a host that is not one, and an edit against a version that moved', async () => {
     const { a, session } = await h.boot({ seams: { windowsStepHost: fakeHost().host } });
     const bad = await saveHosts(a, session, [{ ...HOST, workDir: 'C:\\it\'s' }]);
