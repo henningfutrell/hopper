@@ -10779,6 +10779,29 @@ cluster with no minting credential, the job's wait ends with the refusal, a cred
 check, one for that cluster drops it and the next pass passes), `test/skills/template-request-unminted.test.ts`,
 `test/sandbox/check-transient.test.ts`.
 
+**Unknown assets (issue #2067, 2026-10-19).** Reported from a real run: jobs asked for `read/cluster/staging`,
+`read/cluster/control-plane` and `read/cluster/platform`, while EKS names those clusters `staging-eks`,
+`control-plane-eks` and `platform-cluster-eks`. The templates were approved by the read policy, their checks marked
+every probe `not-run`, and the jobs waited for days on a name that never resolves, until a person ended each wait.
+- **What is unknown** (`unknownAssets`, `src/domain/unknown-assets.ts`, pure). A need on a cluster (`cluster/<name>`, or
+  the cluster part of a `namespace` or an `argocd-app`) that **cluster discovery** would look for — no minting credential
+  mints for that cluster, and no cluster override names it — and that no AWS source of the user's **infrastructure
+  topology** lists in its last good snapshot (`knownClusters`). While the topology lists no cluster, no asset is unknown.
+- **The job is told at once.** A template request (and its preview) with an unknown asset is a 400 before anything is
+  saved, so no template waits and no wait is recorded: `no cluster staging; known: staging-eks, …` — the known clusters
+  nearest first (a name that holds the asked name, then by edit distance, `fastest-levenshtein`), at most ten — and the
+  needs to ask for with the nearest name in place. A template saved before is refused the same way, so a job that asks
+  again (its `--wait` too) ends its wait with the refusal.
+- **Shown, not counted as an approval.** The vault's read (`GET /api/vault`, `vaultAnswer`) gives each template its
+  `unknownAssets`; `hopper template list` adds `unknownAsset` in words; the template's card says `unknown asset: …` in
+  place of its approval; Needs you counts it under Access requests, one line each.
+- **Residual risk, stated.** The topology is read every 6 hours and on Discover now: a cluster made since is refused
+  until the next read. The refusal says so, and a cluster override for the name (Settings → Clusters) lets it through at
+  once. The names it gives a job are the ones `GET /job/topology` already serves it.
+
+Tests: `test/domain/unknown-assets.test.ts`, `test/skills/template-request-unknown.test.ts`,
+`test/ui/unknown-assets.test.ts`, `test/integration/unknown-assets.test.ts` (the real daemon and the operator CLI).
+
 **Residual risk, stated.** A probe that writes runs the write for real when the credential allows it (the dry runs do
 not): with a writable credential, `ssm put-parameter` and `iam create-user` make their resource and the cleanup deletes
 it. That is what the check exists to find, and it fails then. Every probe runs under the sandbox flags, as the box's user.

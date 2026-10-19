@@ -10,7 +10,7 @@ import { taggedWaiting } from '@/model/tagged';
 import { trustHeldWaiting } from '@/model/trust';
 import { signedOutLines } from '@/model/tool-accounts';
 import { notReadyLines } from '@/model/machines';
-import { accessRequestsWaiting } from '@/model/vault';
+import { accessRequestsWaiting, unknownAssetLines } from '@/model/vault';
 import { useHopper } from './index';
 import { useInfraPlans, useLandingBatches, usePullRequestsView, useToolAccounts } from './polled';
 import { useAwaitingSort, useSectionBadges, useServerNow } from './selectors';
@@ -18,7 +18,9 @@ import { useVault } from './vault';
 
 export function useNeedsYou(): NeedsYouRow[] {
   const intake = useHopper((s) => requestsWaiting(s.sources) + notAssignedWaiting(s.sources) + trustHeldWaiting(s.jobs));
-  const access = accessRequestsWaiting(useVault());
+  const vault = useVault();
+  const access = accessRequestsWaiting(vault);
+  const unknownAssets = useMemo(() => unknownAssetLines(vault), [vault]);
   const plans = plansWaiting(useInfraPlans(), useServerNow());
   const accounts = useToolAccounts();
   const now = useServerNow();
@@ -35,5 +37,5 @@ export function useNeedsYou(): NeedsYouRow[] {
   const tagged = useHopper((s) => taggedWaiting(s.sources));
   const sorting = useAwaitingSort();
   const sections = useSectionBadges();
-  return useMemo(() => needsYouRows({ intake, access, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections }), [intake, access, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections]);
+  return useMemo(() => needsYouRows({ intake, access, unknownAssets, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections }), [intake, access, unknownAssets, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections]);
 }

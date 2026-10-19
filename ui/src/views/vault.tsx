@@ -143,7 +143,7 @@ function SecretItem({ s, backends, local, can, busy, send }: { s: VaultSecret; b
 
 function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView; secrets: VaultSecret[]; shared: SharedSecretView[]; can: boolean; busy: boolean; send: Send }) {
   const [editing, setEditing] = useState(false);
-  const waiting = templateWaits(t);
+  const waiting = templateWaits(t) || (t.unknownAssets?.length ?? 0) > 0;
   return (
     <li className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">

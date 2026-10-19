@@ -8,6 +8,7 @@
 // Landing (issue #1333) counts the repositories whose landing pass failed the same way on several passes in a row, each with
 // its error: nothing moves to the tested branch until a person restarts the batch or fixes the cause.
 // Machines (issue #1248) counts the online machines that are not ready, each named with why: its job user holds credentials, or it is off-network.
+// Access requests also counts the templates with an unknown asset (issue #2067), each named: a job's need names a cluster the vault cannot find.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
@@ -19,6 +20,8 @@ export interface NeedsYouCounts {
   intake: number;
   /** Credential requests, vault grant asks and templates that wait for approval. */
   access: number;
+  /** The templates with an unknown asset (issue #2067), one line each; absent: none. */
+  unknownAssets?: readonly string[];
   /** Infra plans that wait for a person to approve them. */
   plans: number;
   /** The machines whose agent tool is signed in as nobody (issue #1128), one line each. */
@@ -47,7 +50,7 @@ export interface NeedsYouRow {
 /** Each row's page and words: what it counts, said also when nothing waits, so a person knows the kind is there. */
 const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> = {
   intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval, labelled issues not assigned to you: no job starts until you assign them, and jobs held by their trust stamp' },
-  access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants and box templates that jobs on boxes wait for' },
+  access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants and box templates that jobs on boxes wait for, and templates whose cluster the vault cannot find' },
   plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for a person to approve them' },
   questions: { label: 'Questions', href: '#questions', what: 'questions jobs asked you' },
   proposals: { label: 'Proposals', href: '#proposals', what: 'proposals that wait for you to pick a path' },
@@ -66,7 +69,10 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
 export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
   const count = (k: NeedsYouKind): { n: number; high: number; details?: readonly string[] } => {
     if (k === 'intake') return { n: c.intake, high: 0 };
-    if (k === 'access') return { n: c.access, high: 0 };
+    if (k === 'access') {
+      const unknown = c.unknownAssets ?? [];
+      return { n: c.access + unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };
+    }
     if (k === 'plans') return { n: c.plans, high: 0 };
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
     if (k === 'checks') return { n: c.checksUnread.length, high: 0, ...(c.checksUnread.length ? { details: c.checksUnread } : {}) };

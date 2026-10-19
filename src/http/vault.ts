@@ -4,13 +4,22 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { profileRef } from '../domain/confirmation-asks.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
+import { knownClusters, unknownAssets, type ClusterFacts } from '../domain/unknown-assets.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
 import { BOX_IMAGE, pulledImage } from '../sandbox/box-image.ts';
 import { createImageCheck } from '../sandbox/image-published.ts';
 import type { TemplateRequestUser } from '../skills/template-request.ts';
 import type { TenantParts } from './tenants.ts';
 import { shownAsks } from './ui/confirmation-asks.ts';
+import { readClusters } from '../vault/clusters.ts';
 import { vaultView } from '../vault/vault.ts';
+
+/**
+ * The needs' assets the vault cannot find (issue #2067): from the vault's minting credentials, the user's cluster
+ * overrides, and the clusters the topology's AWS sources list, read now.
+ */
+const clusterFacts = (parts: Pick<TenantParts, 'vault' | 'store'>): ClusterFacts =>
+  ({ secrets: parts.vault.view().secrets, overrides: readClusters(parts.store.config), known: knownClusters(parts.store.topology.list()) });
 
 /**
  * What `GET /api/vault` and each vault edit answer: the vault's view, the user's read policy (issue #716), the
@@ -18,12 +27,16 @@ import { vaultView } from '../vault/vault.ts';
  */
 export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & Partial<Pick<TenantParts, 'sandboxRequests'>>): Promise<VaultView> {
   const view = await vaultView(parts.vault);
-  // Issue #1001: the job that asked for each template, by its title and its issue or pull request.
+  const facts = clusterFacts(parts);
+  // Issue #1001: the job that asked for each template, by its title and its issue or pull request. Issue #2067: the
+  // assets of its needs the vault cannot find.
   const templates = view.templates.map((t) => {
     const job = t.askedBy ? parts.store.jobs.get(t.askedBy) : undefined;
-    if (!t.askedBy || !job) return t;
+    const u = unknownAssets(t.profiles, facts);
+    const shown = u.length ? { ...t, unknownAssets: u } : t;
+    if (!t.askedBy || !job) return shown;
     const title = job.source?.title ?? job.spec.goal, url = job.source?.url;
-    return { ...t, askedByJob: { id: t.askedBy, ...(title ? { title } : {}), ...(url ? { url } : {}) } };
+    return { ...shown, askedByJob: { id: t.askedBy, ...(title ? { title } : {}), ...(url ? { url } : {}) } };
   });
   const asked = shownAsks(parts.store, 'vault-profile');
   const asks = view.templates.flatMap((t) => t.pending.profiles.flatMap((p): ProfileAsk[] => {
@@ -67,6 +80,7 @@ export function templateRequestUser(parts: Pick<TenantParts, 'vault' | 'store'>)
     approvals: () => parts.store.settings.getSandboxApprovals(),
     remembered: () => rememberedNow(parts.store),
     imageProblem: publishedImage,
+    unknownAssets: (needs) => unknownAssets(needs, clusterFacts(parts)),
     image: `${BOX_IMAGE}:box-claude`,
   };
 }
