@@ -29064,6 +29064,31 @@ A kill of the hopper mid-step must not leave them anywhere else. `test/crash/sec
 
 **Left for later parts.** Container layers (a real runtime's storage); the e2e mode and its nightly run.
 
+## The secret canary scan on a real container runtime: its e2e mode (issue #1957, part 8, 2026-10-19)
+
+Part 7 ran the box step on the libpod double, which keeps no layers, images or volumes of its own. A real runtime keeps
+all three, and a leak into one of them outlives the box. `test/crash/secret-canary-real-runtime.test.ts` is the **canary
+scan**'s e2e mode: the hosts are the hopper's real composition root in processes of their own (the crash harness), and
+the need box is a real container of a real image with a real home volume, on a rootless Podman.
+
+- **The run.** Part 7's three scenarios: a box step of the template `dig` with a vault secret (a canary), the hopper
+  killed at `saga:need-step:run:before-do`, at `saga:need-step:run:after-do`, or while the need box runs. A second hopper
+  ends the step's saga and burns the box the first left. The step's command reads the secret with `"$HOPPER_SECRET"`.
+- **The scan** reads what part 7's reads, and the runtime (`test/support/runtime-places.ts`, through the libpod API):
+  each container's inspect output, its layers (an export) and its home (an archive of `/home/agent`); each volume's
+  inspect output; each image's inspect output, and the layers of each image made since the test began (as `podman save`
+  gives them); and every file of the runtime's storage (`graphRoot`) this user can read. A file a box's user owns in a
+  volume is not readable from the host: the home is read through the API.
+- **The controls.** While the need box runs, the scan of the runtime finds the vault secret in the box's home, and only
+  there. A canary written into a layer of an image built for the test is found in that image's layers.
+- **When it runs.** Only when `HOPPER_TEST_PODMAN_SOCKET` names a rootless Podman's API socket that the test may fill
+  and empty: the scan reads all of its storage. The template's image is built there from `HOPPER_TEST_BOX_BASE`
+  (default `docker.io/library/alpine:3.20`) with a user that is not root. `npm test` and the pull request check skip it.
+- **Found.** No leak: after the step's saga ended, no canary was in any container, volume, image or storage file.
+
+**Left for later parts.** The nightly run of this test (a workflow that starts a rootless Podman's socket and sets
+`HOPPER_TEST_PODMAN_SOCKET`): a workflow file, a change to CI, which a job does not make from an issue's text.
+
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
 **Why.** The print-mode executors were tested only against `test/adapters/fake-print-agent.mjs`, which replays event

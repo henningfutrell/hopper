@@ -73,8 +73,11 @@ function hanging(libpod: FakeLibpod): Handler {
   };
 }
 
-/** A fresh database, the fake GitHub with octo/tools and its issue #7, the libpod double, STS and the Kubernetes API. */
-export async function needWorld(): Promise<NeedWorld> {
+/**
+ * A fresh database, the fake GitHub with octo/tools and its issue #7, the libpod double, STS and the Kubernetes API.
+ * `podman`: the hosts start their need boxes on this socket in place of the libpod double's (a real Podman, issue #1957).
+ */
+export async function needWorld(o: { podman?: string } = {}): Promise<NeedWorld> {
   const github = await createFakeGitHub({ clientId: 'gh-client-id' });
   github.tokens.set(TEST_ACCOUNT_TOKEN, 'owner');
   github.issues.push({ repo: REPO, number: 7, title: 'Read the lab', body: 'Please.', author: 'owner', labels: [] });
@@ -87,19 +90,22 @@ export async function needWorld(): Promise<NeedWorld> {
   return {
     url, libpod, runtime, sts, kubeApi, github,
     host: (h = {}) => startHost({
-      dbPath: db.dbPath, databaseUrl: url, fakes: { github: github.url }, podman: runtime.socket,
+      dbPath: db.dbPath, databaseUrl: url, fakes: { github: github.url }, podman: o.podman ?? runtime.socket,
       ...(h.job ? { connectGitHub: [REPO], job: `${REPO}#7` } : {}), ...(h.killPoint ? { killPoint: h.killPoint } : {}),
     }),
     close: async () => { await runtime.close(); sts.close(); kubeApi.close(); await github.close(); db.cleanup(); },
   };
 }
 
+/** The image of the template `dig`: the libpod double has every image. */
+export const DIG_IMAGE = 'localhost/box-dig:1';
+
 /** A person keeps the minting credentials and saves and approves the template `dig`, which covers the two needs; `secrets`: the vault secrets it gives. */
 export async function setUp(w: NeedWorld, h: CrashHost, secrets: string[] = []): Promise<void> {
   const vault = async (body: Record<string, unknown>) => { const r = await h.ui('/ui/api/vault', body); expect(r.status, JSON.stringify(r.body)).toBe(200); };
   await vault({ action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: MINTING_SECRET, Region: 'eu-west-1', Endpoint: w.sts.url }) });
   await vault({ action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: w.kubeApi.url, token: KUBE_MINTING_TOKEN }) });
-  await vault({ action: 'save-template', name: TEMPLATE, image: 'localhost/box-dig:1', secrets, profiles: PROFILES });
+  await vault({ action: 'save-template', name: TEMPLATE, image: DIG_IMAGE, secrets, profiles: PROFILES });
   await vault({ action: 'approve-template', name: TEMPLATE });
 }
 
