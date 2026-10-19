@@ -364,6 +364,6 @@ No deploy is part of this: where hopper.io runs is decision 7 of #469.
 
 The implementation follows, in this order: the `account` table and GitHub sign-in at hopper.io
 (built, part 2), account deletion (built, part 3), the records and the privacy note (built, part 4), the install registrations and their tombstones
-(built, part 5, transport-free), then the cloud link's connection (#464), which carries the messages
+(built, part 5, transport-free), then the cloud link's connection (#2039, the install side of #464), which carries the messages
 and the hello, and the install side of the heartbeat. Each part adds its glossary entries and its row in
 `docs/design.md` "Directories and what each must not know" in the same change.

@@ -25224,8 +25224,8 @@ UI: Settings → hopper.io.
 **No outbound traffic.** The cloud link makes no connection to hopper.io at all, linked or not
 (`test/integration/cloud-link.test.ts` watches every socket of a daemon that never links). The connection — an outbound
 link agent (no inbound port, so a container install needs no change) and hopper.io's confirmation that moves `state` from
-`pending` — is the install side of issue #464 ("Cloud link (issue #464)", "Left for the install side"), filed once a
-hopper.io server and its key exist. Its key is a secret the hopper owns, so it is a system secret ("The vault's system
+`pending` — is the install side of issue #464 ("Cloud link (issue #464)", "Left for the install side"), filed as
+issue #2039 once the hopper.io server (`cloud/`) existed. Its key is a secret the hopper owns, so it is a system secret ("The vault's system
 scope"), named by the link record: built in part 2 ("The cloud link key").
 Open (the tracking issue's decisions, issue #469): whether the first-run flow offers the link, and a minimum version or
 channel.
@@ -25658,8 +25658,9 @@ naming to the owner at hopper.io ("Cloud link", "What may leave the instance").
   table with keys no instance sent. A name kept for a machine no longer in the state stays in the API, and can be cleared.
 - **No merge across instances.** One box under two instances has two keys and two names (item 6: merging is deferred).
 
-**Left for later parts of issue #465:** the connection (issue #464) that calls `hello`, `registerMessage`, `registration`,
-`unlinked` and `snapshot`, and gives the stable `machineKey`; the link state; the open questions (issue #469 decision 6).
+**Left for later parts of issue #465:** the connection (issue #2039, the install side of issue #464) that calls `hello`,
+`registerMessage`, `registration`, `unlinked` and `snapshot`, and gives the stable `machineKey`; the link state, which
+hopper.io keeps from that connection (issue #2039); the open questions (issue #469 decision 6).
 
 **Verification:** `test/cloud/machine-names.test.ts` (real Postgres, real server): the owner names a machine of the state,
 the API and the escaped page show it, an empty name clears it; a key not in the state, another account's instance, a bad
@@ -25739,7 +25740,8 @@ HTTP request into the instance: the instance serves nothing on it. A remote acti
 - **The key pin ships in the code.** hopper.io's key is not set in Settings: a key a person can change is a key a
   person can be tricked into changing. A new hopper.io key arrives as an update, with a time when both keys are valid.
 
-**Left for the install side** (an issue filed once the hopper.io server and its key exist):
+**Left for the install side** (issue #2039, filed once the hopper.io server existed in `cloud/`; the production pin
+of hopper.io's key waits for issue #469 decision 7):
 
 - the hello and its schema, and the cloud link key: minting, the system secret that holds it ("The vault's system
   scope"), rotate and revoke through the UI session and the operator CLI. R4 and the glossary name an X25519 key; X25519
