@@ -130,3 +130,62 @@ export function filePlaces(label: string, dir: string): Place[] {
   walk(dir);
   return out;
 }
+
+/** The WAL read in one call: a part of a segment, so no answer is too large for the store's worker. */
+const WAL_CHUNK = 4 * 1024 * 1024;
+
+const lsnOf = (lsn: string): bigint => {
+  const [hi, lo] = lsn.split('/');
+  return (BigInt(`0x${hi}`) << 32n) | BigInt(`0x${lo}`);
+};
+const hex8 = (n: bigint): string => n.toString(16).toUpperCase().padStart(8, '0');
+
+/**
+ * Where the WAL of the database of `url` is now: the point `walPlaces` reads from. Undefined when the test's role
+ * cannot read the WAL's files (a database a test was given, with no superuser and no `pg_read_server_files`).
+ */
+export function walMark(url: string): string | undefined {
+  const db = openDb(url);
+  try {
+    const r = db.get("SELECT pg_current_wal_lsn()::text AS lsn, pg_walfile_name(pg_current_wal_lsn()) AS f");
+    db.get('SELECT length(pg_read_binary_file(?, 0, 1)) AS n', `pg_wal/${String(r!.f)}`);
+    return String(r!.lsn);
+  } catch {
+    return undefined;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * The WAL the Postgres of `url` wrote since `from` (a `walMark`), one place per segment: what a row held before it was
+ * changed or removed, which no table shows any more. The WAL is the whole server's, so other tests' writes are in it
+ * too; their canaries are their own. A value Postgres compressed (TOAST, over 2 kB) or one split by a WAL page's header
+ * is not found.
+ */
+export function walPlaces(url: string, from: string): Place[] {
+  const db = openDb(url);
+  try {
+    const to = lsnOf(String(db.get('SELECT pg_current_wal_lsn()::text AS lsn')!.lsn));
+    const size = BigInt(String(db.get("SELECT setting FROM pg_settings WHERE name = 'wal_segment_size'")!.setting));
+    const timeline = BigInt(String(db.get('SELECT timeline_id AS t FROM pg_control_checkpoint()')!.t));
+    const perId = 0x100000000n / size;
+    const out: Place[] = [];
+    for (let segment = lsnOf(from) / size; segment * size < to; segment++) {
+      // A segment's file is named for its timeline and number (pg_walfile_name names the one before at its boundary).
+      const file = `${hex8(timeline)}${hex8(segment / perId)}${hex8(segment % perId)}`;
+      const first = lsnOf(from) > segment * size ? lsnOf(from) - segment * size : 0n;
+      const last = to < (segment + 1n) * size ? to - segment * size : size;
+      const chunks: string[] = [];
+      for (let o = first; o < last; o += BigInt(WAL_CHUNK)) {
+        const n = last - o < BigInt(WAL_CHUNK) ? last - o : BigInt(WAL_CHUNK);
+        const got = db.get("SELECT encode(pg_read_binary_file(?, ?, ?, true), 'base64') AS b", `pg_wal/${file}`, Number(o), Number(n));
+        chunks.push(Buffer.from(String(got?.b ?? ''), 'base64').toString('latin1'));
+      }
+      out.push({ name: `WAL ${file}`, text: chunks.join('') });
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}

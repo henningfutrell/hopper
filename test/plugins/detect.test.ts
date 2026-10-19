@@ -56,6 +56,20 @@ describe('detection kit (real)', () => {
     expect(await kit.output('no-such-binary-anywhere', [], '')).toBeUndefined();
   });
 
+  it('a tool it runs gets the environment without the master key (issue #1957)', async () => {
+    const dir = temp();
+    const env = join(dir, 'env-of');
+    writeFileSync(env, '#!/bin/sh\nexport -p\n');
+    chmodSync(env, 0o755);
+    const kit = createDetectionKit({ env: {
+      PATH: dir, JH_KEPT: 'kept', HOPPER_MASTER_KEY: 'k1', HOPPER_MASTER_KEY_FILE: '/run/k', HOPPER_MASTER_KEY_PREVIOUS: 'k0', HOPPER_TOKEN_KEY: 'k2',
+    } });
+    const out = `${await kit.output('env-of', [], '')}\n${await kit.version('env-of', [])}`;
+    expect(out).toContain('JH_KEPT');
+    expect(out).not.toMatch(/HOPPER_(MASTER|TOKEN)_KEY/);
+    expect(kit.env('JH_KEPT')).toBe('kept');
+  });
+
   it('the version timeout is 5 s by default', () => {
     expect(createDetectionKit().timeoutMs).toBe(5000);
   });
