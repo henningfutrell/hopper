@@ -28651,15 +28651,30 @@ repositories take a lease's length, not its end: `take(jobId, { owner, ms }, for
   is there (`test/store/job-leases.test.ts`), with each host's clock a faked `Date`. The wait-check test runs two wait
   sweepers with their own clocks on one database (`test/engine/wait-checks.test.ts`).
 
-**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
-points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below); the nightly run of N seeds and
+**Part 4: a job's push** (2026-10-19, "A push kept as a saga"). The git broker passes two kill points around its call to
+GitHub: `proxy:git.push:before-send` (the `git-push` saga kept, nothing sent) and `proxy:git.push:after-send` (GitHub
+answered, the broker recorded nothing). The test (`test/crash/push-kill.test.ts`, `test/crash/push-world.ts`) runs a job on
+a first host whose real git pushes a new branch through it, to the fake GitHub's `git-http-backend` in the test process,
+and kills the host at each of those points and at each boundary of the saga's `settle` step. A second host settles the
+saga: it records the push once, `github_proxy.done` when GitHub holds the branch at the pushed commit, else
+`github_proxy.failed`; the job's git then sends the push again to the second host, and GitHub holds the branch. The
+randomised run on GitHub's writes (`test/crash/random-github.test.ts`) picks the push as a fourth family. **What it found:**
+nothing; the saga and its read of GitHub's refs held at every point.
+**Decisions (part 4).**
+- **The broker's points take the proxy's names** (`proxyKillPoint('git.push', …)`): the push is one of the job's writes
+  through the proxy, with the op its events already carry.
+- **The test checks the event against GitHub, not against the point.** Where the saga's `before-do` kills the host, the
+  push may or may not have reached GitHub yet; the test asserts the one event says what GitHub holds.
+
+**Left for later parts.** The other saga kinds (need step, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
+points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below; a job's push: part 4); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
 
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).
