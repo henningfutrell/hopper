@@ -1,5 +1,5 @@
 // REST endpoints of the fake GitHub, as a connected account's token reaches them:
-// issues (read; a repository's issue list with `since`, newest change first, and an ETag), comments, assignment events, assignees, labels, a pull request's merge. Response shapes follow the GitHub REST API (the fields the adapter
+// issues (read; a repository's issue list with `since`, newest change first, and an ETag), comments, assignment events, assignees, labels, a pull request's merge and close. Response shapes follow the GitHub REST API (the fields the adapter
 // reads). Authentication is checked by fake-server.ts before a route runs.
 
 import { createHash } from 'node:crypto';
@@ -75,6 +75,14 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
   if (req.method === 'PUT' && merge) {
     if (!endPull(repo, Number(merge[1]), 'MERGED', ctx.now().toISOString())) return { status: 405, body: { message: 'Pull Request is not mergeable' } };
     return { status: 200, body: { merged: true, message: 'Pull Request successfully merged' } };
+  }
+  // Close PR (issue #1959): a pull request closed with no merge; a second close of a closed one changes nothing, as on GitHub.
+  const pull = /^\/pulls\/(\d+)$/.exec(rest);
+  if (req.method === 'PATCH' && pull && body.state === 'closed') {
+    const pr = repo.issues.get(Number(pull[1]));
+    if (!pr?.pullRequest) return notFound;
+    endPull(repo, pr.number, 'CLOSED', ctx.now().toISOString());
+    return { status: 200, body: { number: pr.number, state: 'closed', merged: pr.pull?.state === 'MERGED' } };
   }
   const commit = /^\/commits\/([^/]+)\/(check-runs|status)$/.exec(rest);
   if (req.method === 'GET' && commit) return commitChecks(repo, decodeURIComponent(commit[1]!), commit[2] === 'check-runs' ? 'checks' : 'statuses');

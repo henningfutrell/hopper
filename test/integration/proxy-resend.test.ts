@@ -4,6 +4,8 @@
 //   When  hopper-gh files an issue and the answer is lost on the way back
 //   Then  hopper-gh sends it again with the same key, and the hopper answers the first issue again
 //     And GitHub holds one issue, linked as a sub-issue of octo/tools#7
+//   When  GitHub makes the issue and then fails, and hopper-gh sends it again with its key (issue #1959 part 2)
+//   Then  the hopper finds it on GitHub by its post key: one issue, linked once
 //   When  GitHub refuses the sub-issue link at first
 //   Then  the hopper keeps the link and makes it at a later try
 import { createServer, request, type Server } from 'node:http';
@@ -112,6 +114,33 @@ describe('a job\'s write sent again after its answer was lost (issue #1607)', ()
     const t = await start();
     for (let i = 0; i < 2; i++) expect(json(await hopperGh(t.root, t.env, ['issue', 'comment', '7', '--repo', 'octo/tools', '--body', 'Rebased.']))).not.toHaveProperty('replayed');
     expect(t.github.issues.find((i) => i.number === 7)!.comments).toHaveLength(2);
+  });
+
+  // Issue #1959 part 2: the answer was not lost on the way back, GitHub failed it after it made the issue.
+  it('an issue GitHub made and then failed, sent again with its key: found by its post key, one issue, linked once', async () => {
+    const t = await start();
+    t.github.answerLost = 502;
+    const first = await hopperGh(t.root, t.env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Fix first', '--body', 'Needed.', '--required', '--key', 'fix-first-1']);
+    expect(first.code).not.toBe(0);
+    expect(created(t.github)).toHaveLength(1);
+    t.github.answerLost = undefined;
+    const again = await hopperGh(t.root, t.env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Fix first', '--body', 'Needed.', '--required', '--key', 'fix-first-1']);
+    expect(json(again)).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', required: true, subIssue: true, found: true });
+    expect(created(t.github).map((i) => i.number)).toEqual([8]);
+    expect(t.github.issues.find((i) => i.number === 7)!.subIssues).toEqual(['octo/tools#8']);
+    expect(eventsOf(t.app, 'github_proxy.sending').map((e) => e.data.key)).toEqual(['fix-first-1', 'fix-first-1']);
+  });
+
+  it('a comment GitHub made and then failed, sent again with its key: found by its post key, one comment', async () => {
+    const t = await start();
+    t.github.answerLost = 502;
+    expect((await hopperGh(t.root, t.env, ['issue', 'comment', '7', '--repo', 'octo/tools', '--body', 'Found the cause.', '--key', 'the-cause-1'])).code).not.toBe(0);
+    t.github.answerLost = undefined;
+    const again = await hopperGh(t.root, t.env, ['issue', 'comment', '7', '--repo', 'octo/tools', '--body', 'Found the cause.', '--key', 'the-cause-1']);
+    expect(json(again)).toMatchObject({ ok: true, op: 'issue.comment', number: 7, found: true });
+    const comments = t.github.issues.find((i) => i.number === 7)!.comments!;
+    expect(comments).toHaveLength(1);
+    expect(String(comments[0]!.body)).toMatch(/^Found the cause\.\n\n<!-- hopper post proxy-[0-9a-f]{24} -->$/);
   });
 
   it('a sub-issue link GitHub refused is kept and tried again until it is made', async () => {

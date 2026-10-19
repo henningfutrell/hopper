@@ -7,7 +7,7 @@
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { RelayedAct } from '../domain/job-leases.ts';
-import type { Clock, UserStore } from '../domain/ports.ts';
+import type { UserStore } from '../domain/ports.ts';
 import type { EngineContext } from './context.ts';
 import { takeOver } from './recovery.ts';
 import type { Runner } from './runner.ts';
@@ -44,19 +44,18 @@ export interface JobLeases {
   lockClaims(): void;
 }
 
-export function createJobLeases(o: { store: Pick<UserStore, 'jobLeases'>; clock: Clock; owner?: string; leaseMs?: number }): JobLeases {
+/** The leases are timed on the database's clock (issue #1954), never on this host's: so no clock is given. */
+export function createJobLeases(o: { store: Pick<UserStore, 'jobLeases'>; owner?: string; leaseMs?: number }): JobLeases {
   const owner = o.owner ?? leaseOwner(), leaseMs = o.leaseMs ?? JOB_LEASE_MS, repo = o.store.jobLeases;
-  const now = (): string => o.clock.now().toISOString();
-  const until = (): string => new Date(o.clock.now().getTime() + leaseMs).toISOString();
   const kept = new Map<string, number>();
   return {
     owner, leaseMs,
-    take: (jobId, force) => repo.take(jobId, { owner, until: until() }, now(), force),
+    take: (jobId, force) => repo.take(jobId, { owner, ms: leaseMs }, force),
     release: (jobId) => repo.release(owner, [jobId]),
-    heldByOthers: () => repo.heldByOthers(owner, now()),
-    unheld: () => repo.unheld(now()),
+    heldByOthers: () => repo.heldByOthers(owner),
+    unheld: () => repo.unheld(),
     renew(driving) {
-      const held = new Set(repo.renew(owner, until()));
+      const held = new Set(repo.renew(owner, leaseMs));
       const left = [...held].filter((id) => !driving.includes(id) && !kept.has(id));
       if (left.length) repo.release(owner, left);
       return driving.filter((id) => !held.has(id));
@@ -66,7 +65,7 @@ export function createJobLeases(o: { store: Pick<UserStore, 'jobLeases'>; clock:
       return () => { for (const id of jobIds) { const n = (kept.get(id) ?? 1) - 1; if (n > 0) kept.set(id, n); else kept.delete(id); } };
     },
     releaseAll: () => repo.release(owner),
-    relay: (jobId, act) => repo.relay(jobId, act, owner, now()),
+    relay: (jobId, act) => repo.relay(jobId, act, owner),
     relayed: () => repo.relayed(owner),
     lockClaims: () => repo.lockClaims(),
   };

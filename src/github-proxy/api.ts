@@ -14,6 +14,7 @@ import { fileAssignedIssue } from '../sources/github/http/file-issue.ts';
 import { jobLog } from '../sources/github/http/rest.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/http/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
+import { findFiled, passProxyKillPoint } from './resend.ts';
 import type { PullRequestStatus } from './pr-status.ts';
 
 /** What a done request answers the job: always where it is on GitHub; its number when it is an issue or pull request. */
@@ -56,6 +57,12 @@ export interface ProxyApi {
    * `filed.labels`, `filed.assignees`: a routed child's (issue #1510), set as it is filed.
    */
   perform(req: ProxyRequest, filed?: FiledWith): Promise<ProxyResult>;
+  /**
+   * An issue create or comment sent before, found on GitHub by its post key (issue #1959 part 2, resend.ts): the issue
+   * `login` made, or the comment, made since `since`; undefined: none, so it is made now. A found issue with
+   * `filed.subIssueOf` is linked as its sub-issue, unless it is one already. Absent (a test's double): nothing is looked for.
+   */
+  find?(req: ProxyRequest, postKey: string, since: string, login: string, filed?: FiledWith): Promise<ProxyResult | undefined>;
   /** The repository as the user sees it (issue #652: its default branch, which a job's push never changes; issue #429: the rest). */
   repo(repo: string): Promise<RepoFacts>;
   /** The commit `ref` (a branch) of `repo` is at now (issue #870: the apply gate's check that the code did not move). */
@@ -264,7 +271,7 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
     case 'issue.create': {
       const routed = { ...(filed.labels ? { labels: filed.labels } : {}), ...(filed.assignees ? { assignees: filed.assignees } : {}) };
       const d = await fileAssignedIssue(req, headers, r.repo, { title: r.title, body: r.body, ...routed });
-      return { number: d.number, url: d.url, ...(d.unassigned ? { unassigned: d.unassigned } : {}), ...(filed.subIssueOf ? await linkSubIssue(req, headers, filed.subIssueOf, d.id) : {}) };
+      if (filed.subIssueOf) passProxyKillPoint(r.op, 'before-link'); return { number: d.number, url: d.url, ...(d.unassigned ? { unassigned: d.unassigned } : {}), ...(filed.subIssueOf ? await linkSubIssue(req, headers, filed.subIssueOf, d.id) : {}) };
     }
     case 'issue.comment': {
       const d = (await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: r.number, body: r.body, headers })).data as { html_url: string };
@@ -361,6 +368,7 @@ export function createProxyApi(o: { apiUrl: string; kind?: GitHubCallKind } & To
   const withToken = tokenCaller(o);
   return {
     perform: (r, filed) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), filed), (err) => errorOf(err, r)),
+    find: (r, postKey, since, login, filed = {}) => withToken((token) => findFiled(req, token, r, { postKey, since, login, ...(filed.subIssueOf ? { subIssueOf: filed.subIssueOf } : {}) }, linkSubIssue), (err) => errorOf(err, r)),
     repo: (repo) => withToken(
       (token) => readRepo(req, { authorization: `token ${token}` }, repo),
       (err) => new ProxyGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} reading ${repo}: ${(err as Error).message}`, statusOf(err)),

@@ -10,6 +10,7 @@
 //   Scenario: events with no step id stay single lines
 //   Scenario: a step's and a fork's status
 //   Scenario: a tend job and a rework job are one line each, with the status of that job
+//   Scenario: all the job's checkpoints are one line, at the place of the newest (issue #1975)
 import { describe, expect, it } from 'vitest';
 import { groupStatus, timelineNodes, type TimelineGroup } from '../../ui/src/model/timeline-steps.ts';
 import type { DomainEvent } from '../../ui/src/model/wire.ts';
@@ -47,6 +48,18 @@ describe('the nodes of the job timeline', () => {
     ];
     expect(shape(events)).toEqual(['rework:r1[3]', 'tend:t1[2]', 1]);
     expect((timelineNodes(events)[1] as TimelineGroup).opened?.seq).toBe(2);
+  });
+
+  it('makes one line of all the job\'s checkpoints, at the place of the newest (issue #1975)', () => {
+    const events = [
+      event(5, 'job.checkpointed', { machineId: 'm1' }),
+      event(4, 'question.asked'),
+      event(3, 'job.checkpointed', { machineId: 'm1' }),
+      event(2, 'job.checkpointed', { machineId: 'm1' }),
+      event(1, 'job.started'),
+    ];
+    expect(shape(events)).toEqual(['checkpoint:j1[5,3,2]', 4, 1]);
+    expect(groupStatus(timelineNodes(events)[0] as TimelineGroup, 'running')).toBeUndefined();
   });
 
   it('keeps an event with no step id a single line', () => {

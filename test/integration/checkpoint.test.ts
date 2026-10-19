@@ -85,6 +85,18 @@ describe('taking a checkpoint', () => {
     expect(herdr.checkpoints).toHaveLength(1);
   });
 
+  it('takes no new checkpoint when nothing changed since the last one (issue #1975)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [tree()], checkpoint: CAPTURE });
+    const a = await boot(herdr);
+    const job = await runningJob(a, herdr);
+
+    const k = await a.user().engine.checkpoints.take(job.id);
+    expect(await a.user().engine.checkpoints.take(job.id)).toEqual(k);
+    expect(herdr.checkpoints).toHaveLength(2);
+    expect((await a.job(job.id)).checkpoint).toEqual(k);
+    expect(await a.events('types=job.checkpointed')).toHaveLength(1);
+  });
+
   it('says why it took none, and keeps nothing', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [tree()], checkpoint: { none: 'too large: 99 bytes compressed' } });
     const a = await boot(herdr);

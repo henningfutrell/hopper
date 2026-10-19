@@ -118,7 +118,7 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
   function settle(job: Job, check: WaitCheck, outcome: CheckOutcome): boolean {
     return store.tx(() => {
       const now = store.jobs.get(job.id);
-      if (now?.status !== 'waiting_on' || now.wait?.since !== job.wait?.since || !store.waitCheckLeases.holds(job.id, owner, iso(nowMs()))) return false;
+      if (now?.status !== 'waiting_on' || now.wait?.since !== job.wait?.since || !store.waitCheckLeases.holds(job.id, owner)) return false;
       if (outcome.met && !check.repeat) {
         const key = conditionKey(check.condition);
         recordEndWait(c, job.id, outcome.note, 'hopper', (w) => outcome.told ?? checkEndedNote(w, outcome.note), key);
@@ -135,7 +135,7 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
   async function checkOne(job: Job): Promise<boolean> {
     const check = job.wait?.check;
     if (!check || Date.parse(check.nextCheckAt) > nowMs()) return false;
-    if (!store.waitCheckLeases.claim(job.id, job.wait!.since, owner, iso(nowMs() + LEASE_MS), iso(nowMs()))) return false;
+    if (!store.waitCheckLeases.claim(job.id, job.wait!.since, owner, LEASE_MS)) return false;
     try {
       const outcome = await test(job, check);
       return !c.stopping() && settle(job, check, outcome);

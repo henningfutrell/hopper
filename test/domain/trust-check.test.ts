@@ -94,6 +94,19 @@ describe('the check on the stamp', () => {
     expect(trustApprovable(KEY, ok)).toBe(false);
   });
 
+  it('a job with no item is held below approved, and a person approves its trust on the job (issue #1974)', () => {
+    const bare = stamped(job('a'));
+    expect(verifiedLevel(KEY, bare)).toBe('untrusted');
+    expect(stampHold(KEY, bare)).toBe('trust stamp untrusted is below approved: held — a person approves its trust on the job, or cancels it');
+    expect(trustApprovable(KEY, bare)).toBe(true);
+    expect(verifiedLevel(KEY, { ...bare, stamp: trustApprovedStamp(KEY, bare, LATER) })).toBe('approved');
+  });
+
+  it('a job of an item whose origin is not judged is held for its item in Intake, not approved on the job (issue #1974)', () => {
+    const unjudged = stamped(job('a', { source: github({ origin: undefined }) }));
+    expect(stampHold(KEY, unjudged)).toBe('trust stamp untrusted is below approved: held — a person approves its item in Intake, or cancels it');
+  });
+
   it('a person approves no other job: one the rules hold, one the check kept, a quarantined one', () => {
     expect(trustApprovable(KEY, stamped(job('a', { source: github({ origin: undefined }) })))).toBe(false);
     const j = approvedJob();

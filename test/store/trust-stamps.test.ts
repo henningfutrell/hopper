@@ -90,6 +90,21 @@ describe('trust stamps in the job store (issue #655)', () => {
     s.close();
   });
 
+  it('the key\'s start marks a GitHub job with no origin to wait for it, so the next sync judges it (issue #1974)', () => {
+    const s = t.open(t.url());
+    const unjudged = s.jobs.create(spec, 50, issue({ origin: undefined }));
+    const judged = s.jobs.create(spec, 50, issue({ key: 'k5' }));
+    const manual = s.jobs.create(spec, 50, issue({ key: 'k6', kind: 'manual', origin: undefined }));
+    expect(s.jobs.useStampKey(KEY)).toEqual([unjudged.id, judged.id, manual.id]);
+    expect(s.jobs.get(unjudged.id)).toMatchObject({ originPending: true, stamp: { level: 'untrusted', by: 'backfill' } });
+    expect(s.jobs.get(judged.id)!.originPending).toBeUndefined();
+    expect(s.jobs.get(manual.id)!.originPending).toBeUndefined();
+    // The sync judges its origin: the owner's own issue is stamped owner, and it may start.
+    s.jobs.update(unjudged.id, { originPending: undefined, source: { ...unjudged.source!, origin: 'trusted' } });
+    expect(s.jobs.restamp(unjudged.id).stamp).toMatchObject({ level: 'owner', by: 'intake' });
+    s.close();
+  });
+
   it('a job with no source, queued before stamps, is stamped approved and runs as before', () => {
     const s = t.open(t.url());
     const old = s.jobs.create(spec, 50);

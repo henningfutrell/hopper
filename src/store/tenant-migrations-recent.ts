@@ -31,6 +31,7 @@ import { noQuestionOnOwnWait } from './migration-own-wait-question.ts';
 import { TOPOLOGY_TABLE } from './topology.ts';
 import { containerTargets } from './migration-container-target.ts';
 import { SKILL_LIBRARY_TABLE } from './skill-library.ts';
+import { originPendingStarted } from './migration-origin-pending.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -146,4 +147,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 84: The skill library (issue #1911): each version of a library skill the user made, kept whole. A table only: the build
   // before runs on it, never reads it, and gives jobs no work skill.
   SKILL_LIBRARY_TABLE,
+  // 85: A job of a GitHub source with no origin that had started when 39 ran waits for its origin too (issue #1974), so the
+  // next sync judges it in place of an `untrusted` stamp nothing lets go on. Rows only: the build before reads the flag.
+  originPendingStarted,
 ];

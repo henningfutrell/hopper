@@ -3,6 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { StoreError } from '../../src/domain/store-error.ts';
 import { numberPlaceholders, openDb, parseDatabaseUrl } from '../../src/store/db.ts';
 import { testPostgres } from '../support/database.ts';
 import { stallingProxy } from '../support/stalling-proxy.ts';
@@ -78,6 +79,8 @@ describe('postgres', () => {
     db.exec('CREATE TABLE x (id TEXT PRIMARY KEY)');
     db.run('INSERT INTO x (id) VALUES (?)', 'a');
     expect(() => db.run('INSERT INTO x (id) VALUES (?)', 'a')).toThrow(/postgres: .*\(23505\)/);
+    // A StoreError (issue #1961): the failure sweep tells the store's failure from one of the data it assesses.
+    expect(() => db.run('INSERT INTO x (id) VALUES (?)', 'a')).toThrow(StoreError);
     expect(db.all('SELECT id FROM x')).toEqual([{ id: 'a' }]);
     db.close();
   });
@@ -107,6 +110,7 @@ describe('postgres', () => {
     const db = openDb(url, { timeoutMs: 1000 });
     let started = performance.now();
     expect(() => db.run('UPDATE x SET n = 2 WHERE id = ?', 'a')).toThrow(/postgres: .*\(57014\)/);
+    expect(() => db.run('UPDATE x SET n = 2 WHERE id = ?', 'a')).toThrow(StoreError);
     expect(performance.now() - started).toBeLessThan(5000);
     started = performance.now();
     expect(db.get('SELECT 1 AS one')).toEqual({ one: 1 });

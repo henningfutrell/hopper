@@ -12,6 +12,8 @@ import { shellQuote, sshArgv, type SshAuth } from './ssh.ts';
 
 /** Per stream, the tail kept in the job's result. */
 const OUTPUT_CAP = 16000;
+/** Per stream, the most a run keeps while it runs: past it, the run is stopped (issue #1958). */
+const RUN_BUFFER_MIB = 64;
 const ABORTED: ExecutionOutcome = { kind: 'failed', error: 'aborted' };
 
 export interface CommandExecutorOptions {
@@ -58,13 +60,14 @@ export interface Ran { exitCode: number; stdout: string; stderr: string }
 export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal, userEnv: Readonly<Record<string, string>> = {}, onOutput?: (chunk: string) => void): Promise<Ran | 'aborted' | 'timeout'> {
   return new Promise((resolve, reject) => {
     const child = execFile(file, args, {
-      env: scrubbedEnv(userProcessEnv(userEnv)), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
+      env: scrubbedEnv(userProcessEnv(userEnv)), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: RUN_BUFFER_MIB * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ exitCode: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
       if (signal.aborted) return resolve('aborted');
       if (e.killed) return resolve('timeout');
       if (typeof e.code === 'number') return resolve({ exitCode: e.code, stdout, stderr });
+      if (e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return reject(new Error(`printed more than ${RUN_BUFFER_MIB} MiB`));
       reject(new Error(`${file}: ${e.message}`));
     });
     if (onOutput) for (const out of [child.stdout, child.stderr]) out?.on('data', (c: string | Buffer) => onOutput(String(c)));

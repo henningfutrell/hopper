@@ -1037,7 +1037,7 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 
 ## `job.parked`
 
-Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
+Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
 
 | field | type | required |
 |---|---|---|
@@ -1057,7 +1057,7 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #65
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move re-queues with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move and the busy-machine move (issue #1977) re-queue with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
 
 | field | type | required |
 |---|---|---|
@@ -1363,7 +1363,7 @@ Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #
 
 ## `job.trust_approved`
 
-Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check, a deny at gate 2 or an edit of its item lowered (issue #655 parts 4, 5 and 7, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
+Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check, a deny at gate 2 or an edit of its item lowered, or of a job with no item held below approved (issue #655 parts 4, 5 and 7, issue #1974, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
 
 | field | type | required |
 |---|---|---|
@@ -4069,7 +4069,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`, `pr.edit`, `pr.close`; issue #1734: a pull request the job opened, or its work item's) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`; `direct` (issue #1806), the refs it moved straight on the repository's target branch with direct push on, each a fast-forward. `key` (issue #1607, `issue.create` and `issue.comment`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the GitHub connection of the job's own user (issue #1380): `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.reviews`, `pr.status`, `pr.ready`, `pr.edit`, `pr.close`; issue #1734: a pull request the job opened, or its work item's) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it, `hopper` when its records answered it (issue #1072, `pr.status`: the Pull requests list and the work-item ledger); for a `pr wait` (issue #1072 part 2, asked as `pr.status`), `wait`: the id of the watch it opened on the job's stream while the checks run, `settled` when they had ended, or `none` when the hopper does not follow the pull request — with `--for mergeable` (issue #1210) the watch waits for the next mergeability the hopper sees instead —; `poll` (issue #1210): the job asked the same read this many times in 15 minutes, a poll of hopper state, and the answer told it to wait through the hopper; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`; `direct` (issue #1806), the refs it moved straight on the repository's target branch with direct push on, each a fast-forward. `key` (issue #1607, `issue.create` and `issue.comment`): the **resend key** hopper-gh sent with it; the same request sent again with that key is answered from this event, and nothing is done again on GitHub; that answer is recorded as `github_proxy.done` again, with `replayed`. `found` (issue #1959 part 2): the issue or comment was found on GitHub by its **post key**, made by an earlier send of the same key that a hopper killed before it recorded it; nothing was made again. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `as` (issue #1380), the GitHub login that acted for the job, its own user's connected account. Events recorded before issue #1380 carry `own` (the job was the hopper's oldest user's) and, for another user's job, a copy in the oldest user's log with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -4139,6 +4139,35 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
   "op": "pr.create",
   "repo": "octo/tools",
   "error": "GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)"
+}
+```
+
+## `github_proxy.sending`
+
+Version 1 (`docs/schemas/github_proxy.sending.v1.json`). A running job's issue create or comment with a **resend key** (issue #1607) is on its way to GitHub (issue #1959 part 2): `op` (`issue.create`, `issue.comment`), `repo`, `number` (the issue a comment goes on) and `key`. Recorded before the call, so a hopper killed before it recorded the answer leaves it: the same key sent again then looks for the issue or comment on GitHub by its **post key** first, and makes it only when it is not there. Fields as `github_proxy.done`.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `as` | string | no |
+| `own` | boolean | no |
+| `forUser` | string | no |
+| `job` | string | no |
+| `op` | `issue.create` \| `issue.comment` | yes |
+| `repo` | string | yes |
+| `number` | integer | no |
+| `key` | string | yes |
+
+```json
+{
+  "requestId": "r4",
+  "machine": "desk",
+  "as": "octocat",
+  "op": "issue.comment",
+  "repo": "octo/tools",
+  "number": 42,
+  "key": "5f0c9a2b7d1e4c3a8b6f0e21"
 }
 ```
 

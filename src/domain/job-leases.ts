@@ -4,8 +4,11 @@
 // database then takes the job: it reattaches it, moves it from its last checkpoint, requeues it or fails it, as a restart
 // recovery does. Its rows through `JobLeaseRepository` (`src/store/job-leases.ts`); the engine drives it (src/engine/leases.ts).
 
-/** A hopper's hold on a claimed or running job: until `until`, no other hopper drives it. */
-export interface JobLease { owner: string; until: string }
+/**
+ * A hopper's hold on a claimed or running job, for `ms` from now on the database's clock (issue #1954): until it ends, no
+ * other hopper drives it.
+ */
+export interface JobLease { owner: string; ms: number }
 
 /**
  * A person's cancel or park of a job that another hopper drives, written on the job's lease: the hopper that holds the
@@ -16,24 +19,24 @@ export type RelayedAct = { kind: 'cancel'; reason: string; note?: string } | { k
 /** The job leases, in the user's `job_leases` table: one row per job. */
 export interface JobLeaseRepository {
   /**
-   * Takes, or renews, the job's lease for `lease.owner`, unless another owner holds it until after `now`; with `force`,
+   * Takes, or renews, the job's lease for `lease.owner`, unless another owner holds a lease that has not ended; with `force`,
    * whoever holds it (the claim of a waiting job: a lease left on it is over, and so is an act relayed on it). Whether
    * `lease.owner` holds it now.
    */
-  take(jobId: string, lease: JobLease, now: string, force?: boolean): boolean;
-  /** Renews every lease `owner` holds, until `until`: the jobs whose lease it holds. */
-  renew(owner: string, until: string): string[];
+  take(jobId: string, lease: JobLease, force?: boolean): boolean;
+  /** Renews every lease `owner` holds, for `ms` from now: the jobs whose lease it holds. */
+  renew(owner: string, ms: number): string[];
   /** Releases `owner`'s leases on `jobIds`, or all of them when absent. */
   release(owner: string, jobIds?: readonly string[]): void;
-  /** The jobs claimed or running with no lease, or whose lease ended by `now`: no hopper drives them. Oldest first. */
-  unheld(now: string): string[];
-  /** The jobs another owner than `owner` holds a lease on until after `now`. */
-  heldByOthers(owner: string, now: string): Set<string>;
+  /** The jobs claimed or running with no lease, or whose lease ended: no hopper drives them. Oldest first. */
+  unheld(): string[];
+  /** The jobs another owner than `owner` holds a lease on that has not ended. */
+  heldByOthers(owner: string): Set<string>;
   /**
-   * Writes `act` on the job's lease when another owner than `owner` holds it until after `now`; a later act replaces an
+   * Writes `act` on the job's lease when another owner than `owner` holds it and it has not ended; a later act replaces an
    * earlier one not yet taken. Whether it was written.
    */
-  relay(jobId: string, act: RelayedAct, owner: string, now: string): boolean;
+  relay(jobId: string, act: RelayedAct, owner: string): boolean;
   /** Takes the acts written on `owner`'s leases, and removes them: each is taken once. */
   relayed(owner: string): { jobId: string; act: RelayedAct }[];
   /** Takes the claim lock of this user's jobs until the transaction ends: one hopper at a time claims them. */

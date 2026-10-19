@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
+| `src/domain/` | the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), what a quarantine takes back — the job's steps and its item's vault grant (`quarantine.ts`, issue #655 part 6), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
@@ -49,7 +49,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a pass over many of them finds stale, with a fixed number of reads of the jobs (`pass-reads.ts`, issue #1411); what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), a poison failure, whose assessment throws, handed to a person with the reason (`poison.ts`, issue #1961), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a pass over many of them finds stale, with a fixed number of reads of the jobs (`pass-reads.ts`, issue #1411); what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
@@ -57,11 +57,11 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); a job's trust and a profile's minimum trust (`trust.ts`, `trust-model.ts`, issue #655); what an edit refuses (`edits.ts`); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the busy-machine move — a job resuming on a full machine goes on at one with room after a short wait (`busy-move.ts`, issue #1977); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it, and for a job's done criteria a pipeline's jobs, a job's log, a merge request's notes and changed files and a commit's time (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), a GitLab job's done criteria on its merge request (`done-criteria.ts`, issue #1924 part 4), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
-| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), a write a crash left found by its post key and the proxy's kill points (`resend.ts`, issue #1959 part 2, "The GitHub proxy under crashes"), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
@@ -11694,6 +11694,62 @@ Open decisions taken conservatively, each one entry to change: no model judges a
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
 only through a problem's redirect; the profile is its own view; the assessor never opens or drafts a GitHub issue.
 
+## The failure assessor under crashes, poison failures and retry storms (issue #1961, 2026-10-18)
+
+**Why.** The assessor (#509) and Needs a person (#516) had tests for the usual path and a clean restart only. Not tested:
+a hopper killed during an assessment, a failure whose own data makes the assessment throw, many jobs that fail at once,
+and two hosts on one database.
+
+**Kill points** (`src/sagas/kill-points.ts`, "The crash harness"). The assessment passes two:
+`failures:assess:before-commit`, in its transaction after the record, the assessment, the events, the problem and the
+hand-off are written and before it commits, and `failures:assess:after-commit`, just after the commit. A kill at the first
+leaves nothing of that assessment (Postgres rolls the transaction back); at the second, all of it.
+
+**A poison failure** (`src/failures/poison.ts`). A failure whose assessment throws — for example a job spec with no
+payload, as an older build or a broken plugin can leave — is handed to a person in one transaction: a record with the
+decision "a person", the class "job", the reason `the hopper could not assess this failure: <the error>` and that summary,
+the assessment on the job, `job.assessed`, and its hand-off. It is never assessed again. If that throws too, the hopper says
+so once and leaves the job; it never blocks the assessment of the other failures. A store that fails is not poison: a
+`StoreError` (`src/domain/store-error.ts`, every call `src/store/db.ts` could not make — a lock wait past its time, a
+dropped connection) is said, and the job stays unassessed, not left, so the next sweep assesses it.
+
+**What it found.**
+- **A poison failure stopped every assessment after it.** The throw ended the sweep's backlog pass at that job, on each
+  sweep. Now the poison failure is handed to a person, and the pass goes on.
+- **A host that did not hold the failure sweep's lease never swept again.** The sweep under way was cleared in the pass's
+  `finally`. A pass that ended before its first `await` — the lease held by another host, or a throw — ran that `finally`
+  before the pass was assigned as the sweep under way. The resolved pass then stood as the sweep under way for good: the
+  host never asked the lease again, so when the host that held it was killed, no host assessed the failures it left. The
+  sweep under way is now cleared after the pass ends (`.finally` on the pass).
+- **A store failure was taken for a poison failure.** On a loaded CI runner, host B's assessment of the job A was killed
+  in waited on A's lock past its time. The poison handler took that error as the job's own, its hand-off failed the same
+  way, and B left the job for good. Now a `StoreError` is never poison: the next sweep assesses the job.
+
+**What the tests show.**
+- `test/crash/assess-kill.test.ts`: hosts A (armed) and B on one database, A holding the failure sweep's lease. Failed jobs
+  are written into the database, failed two minutes ago, as a restart leaves them. A is killed at its third assessment, at
+  each kill point. B takes the sweep and assesses each failure once: one record, one decision, one `job.assessed`, one open
+  hand-off for each job-specific failure, and a pending retry for the transient one. B is killed too and a host C starts:
+  each hand-off is still open, and nothing is assessed again.
+- `test/integration/failures-poison.test.ts`: a poison failure between four other failures. Each is assessed; the poison
+  one is handed to a person with the reason, once.
+- `test/integration/failures-storm.test.ts`: 110 jobs fail in one sync, 60 with a reset connection and 50 with a full disk,
+  with a retry limit of 2 and a backoff of 1 s. Each failed job is assessed once. Each signature is one problem, opened
+  once, that its jobs join ("Disk full on local", and "Recurring: read ECONNRESET" once three failed). Each run again by the
+  assessor comes at or after its retry time, and no item runs more than the retry limit allows. Each failure writes at
+  most one grouping and one hand-off, and each job's end is reported to its source at most once (the manual source stands
+  for GitHub's labels). Each failure for a person has one open hand-off.
+
+**Decisions.**
+- **The failed jobs of the crash test are written into the database, not run.** A host's manual source is in its own
+  process, so a host that is killed takes the items it offered with it. A failed job written two minutes back is what a
+  restart leaves, and the sweep's backlog assesses it the same way.
+- **The poison test's poison is a spec with no payload.** It is data a store can hold that the assessment cannot read. The
+  fix catches any throw of the assessment, so the test does not need a seam to throw.
+
+**Not covered here.** A kill between a run again the assessor makes and its record (the host that goes on needs the item
+from a source of its own); a kill while a person resolves a hand-off; a retry storm through the GitHub source.
+
 ## A failure the job reported as a hopper bug (issue #1147, 2026-10-14)
 
 **The problem.** A tend job's push was refused by a bug in the shrink guard. The job reported the bug on the hopper with
@@ -14514,8 +14570,8 @@ one) it sends the same request again with the same key, up to 5 times. The hoppe
 `github_proxy.done`; a request of the same job with a key already done is answered that first answer again (`replayed:
 true`, the first `requestId`, the lineage as its events say), recorded as `github_proxy.done` with `replayed`, and nothing
 reaches GitHub. While the first is still at GitHub, the second waits for its answer. A new command is a new key, so the
-same text sent twice on purpose is two comments. Not covered: the hopper stopping after GitHub made the issue and before
-it recorded `github_proxy.done`.
+same text sent twice on purpose is two comments. The hopper stopping after GitHub made the issue and before it recorded
+`github_proxy.done`: the post key finds it (issue #1959 part 2, "The GitHub proxy under crashes").
 
 **Audit.** Every outcome but a token that names no job is an event on the job's timeline: `github_proxy.done` (`op`,
 `repo`, `number`, `url`), `github_proxy.refused` (`reason`) or `github_proxy.failed` (`error`), each with `requestId`,
@@ -17147,7 +17203,7 @@ asked; a job the rules hold already is not asked either: Jev can only lower.
   only while it is still due (`checkTrust`): another hopper's check, a new spec or a person's act that came first wins.
 - **A person approves its trust** (`POST /ui/api/jobs/:id/approve-trust`, the job view's Approve trust after a confirm,
   `hopper job approve-trust <id>`; least role operator, a box action of kind `start a job`): only a job a check lowered
-  below `approved` (`trustApprovable`). Its stamp is signed `approved` (`by: person`, reason `person:approved`), never
+  below `approved` (`trustApprovable`), or, since issue #1974, a job below `approved` with no item, which no request card can approve. Its stamp is signed `approved` (`by: person`, reason `person:approved`), never
   more; the check stays on it, so Jev is not asked again. `job.trust_approved { from, person, via }`. 409 for any other job:
   a quarantine is lifted with unquarantine; an item of no trusted origin is approved in Intake, which approves its text.
 - **A new spec** (`respecify`: Accept the new text, a re-sort) drops the check: the new text is checked again. An origin
@@ -17543,6 +17599,24 @@ but Intake listed only a source's items, not the jobs a stamp holds. Now Intake 
   and the intake strictness, on Settings → Intake, which the panel links.
 
 No route, no event, no persisted state: the daemon already sends each held job with its hold reason and stamp.
+
+**A held job always has a way on** (issue #1974). A job of a GitHub source made before origins were judged, that had
+started when migration 39 ran, kept no origin and no `originPending`. The stamps' backfill then stamped it `untrusted`
+(`origin:none`), and when it waited again it was in Held by trust with only Quarantine: its hold text sent a person to
+its item in Intake, but its issue had a job, so Intake listed no request card for it. Approvals keep one home (#896), so
+the fix adds no second approval of an item:
+
+- **It waits for its origin** (`awaitsOrigin` in `src/domain/trust-stamp.ts`): the backfill marks a job of a judging source
+  with no origin, not a job a job made, `originPending`; tenant migration 85 marks those that have not ended. The next sync
+  judges its issue as for any job that waits for its origin (`source-host.ts` `refresh`): of a trusted origin, it is stamped
+  again by the rules (the owner's own issue at `owner`), and it goes on; else its request card opens in Intake, and Approve
+  there approves it.
+- **A job with no item** (no source: queued by hand, an older build) has no request card. Below `approved`, a person approves
+  its trust on the job (`trustApprovable`), and its hold text says so.
+- **Cancel in each row** of Held by trust, for an operator, after a confirm (`POST /ui/api/jobs/:id/cancel`).
+
+Persisted state: migration 85 sets `originPending` on rows only; the build before reads it as migration 39's. A job a job
+made keeps the level its parent had at the backfill.
 
 **The comment command** (part 21, `src/domain/comment-command.ts`; `nominated` in `src/sources/github/discover.ts`,
 `nominatedAct` in `src/sources/github/origin.ts`). The issue's Decision N, recommended N1 + N3: the assignment, and "a comment
@@ -18589,7 +18663,7 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 | Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`); the help pages and What's new lines among the files its pull request changes (part 2) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
 | Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
-| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below) |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); its latest checkpoint only, one part however many were taken (`job.checkpoint`, with how many `job.checkpointed` say were taken, issue #1975), with its commits and whether it holds the session; each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below) |
 
 Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
 piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
@@ -18639,7 +18713,8 @@ job waits, an error when the fork job failed, with a link to the fork job; a **t
 a **rework** job's `job.rework_requested` (one `nextJobId` each) — one line that names the step and the pull request, or the
 pull request and the notes, and that job's status: running while it is at work, pending while it waits, an error when it
 failed. Opened, it links that job and reads that job's own events (`GET /api/jobs/:id/bom`, read again when that job's
-status changes), each a line nested under it. An event with no such id stays a line of its own. Data shown as JSON elsewhere (a
+status changes), each a line nested under it; all the job's `job.checkpointed` (issue #1975) — one line, the last
+checkpoint and its machine, and how many were taken, each a line nested under it. An event with no such id stays a line of its own. Data shown as JSON elsewhere (a
 decider decision's raw inputs, the built-in change rule) is the same `JsonBlock`; commands to copy, a direct job's result,
 a failure's error, an out-of-band change's detail and an infra plan's text are `LogBlock`s (title, wrap toggle, copy).
 
@@ -19525,7 +19600,9 @@ runs, and a parked job with such a copy can resume on any machine.
   in any encoding comes back as it was. The latest checkpoint is kept, compressed, in the user's schema
   (`job_checkpoints`, tenant migration 48: a table only, the build before runs on it); what it is — when, where, the
   branch, base, HEAD, the commits not pushed, its size, whether it holds the session — is `job.checkpoint`, and
-  `job.checkpointed` says one was taken. A checkpoint goes a week after its job ended (`CHECKPOINT_KEEP_MS`).
+  `job.checkpointed` says one was taken. A checkpoint the same as the last one kept — the same branch, base, HEAD, commits,
+  machine, patch and session (issue #1975: a job that waits changes nothing) — is not kept again and records no event; the
+  take answers the one kept. A checkpoint goes a week after its job ended (`CHECKPOINT_KEEP_MS`).
 - **Resume elsewhere.** `POST /ui/api/jobs/:id/requeue` `{elsewhere: true}` (least role `operator`, as Pick up), for a
   parked job whose checkpoint holds its agent session (`elsewhereRefusal`, else 409). Its question, proposal or research
   report must be answered first (409): the claim resumes the agent with the answer, never to wait on it again elsewhere.
@@ -26667,7 +26744,10 @@ Python, no browser and no fonts, and behind the egress proxy a box cannot downlo
   are in `/opt/playwright` (`PLAYWRIGHT_BROWSERS_PATH`), outside the home, which is a fresh volume in each box. It ends as
   the box image's user, `agent`: a box runs no image as root. CI publishes it beside the box images
   (`.github/workflows/image.yml` `box-test`, after `box`, on `box-claude-sha-<commit>`): `box-test` following stable,
-  `box-test-<branch>`, `box-test-sha-<commit>`.
+  `box-test-<branch>`, `box-test-sha-<commit>`. A template keeps `TEST_IMAGE`; a box pulls the tag of the branch the
+  hopper was built from (issue #1976, `testImageOf`, install.json's branch): `box-test-dev`, `-beta` or `-canary` on those
+  channels, `box-test` on stable and for a checkout. `box-test` follows stable alone, so a dev hopper that pulled it
+  before stable published one failed its box with `manifest unknown`.
 - **The ask** (`src/skills/template-ask.ts`). `sandbox-template` and `sandbox` also take `--secrets "NAME ..."` (vault
   secrets by name, at most 8), `--egress "host:port ..."` (egress hosts, at most 8, as `egressHostProblem` reads them) and
   `--image NAME`, one of the hopper's own box images by its short name (`REQUEST_IMAGES`: `box`, `test`). A job never
@@ -26693,13 +26773,18 @@ the job's vault grant, masked in the log, and never on the job's machine.
 - **A person approves every request with a secret or an egress host.** Issue #1875 asks that the approval of such a
   template stays with a person. A toggle (skip template approval, auto-approve) is the admin's statement about needs; it
   says nothing about which secrets a job may get or where a box may send them.
+- **The test image of the hopper's own branch, chosen at the pull** (issue #1976). A template keeps `TEST_IMAGE` as it
+  was saved (persisted state, unchanged), and the box image pull maps it, so a template asked for before keeps its name,
+  its approval and its read-only check. The branch comes from install.json, as the stack drift's image does; no channel
+  setting is read, so no caller passes one.
 - **`requests` and `pytest` in the test image.** Common in an end-to-end test of a web app, small, and a box behind the
   proxy cannot download them.
 
 Tests: `test/skills/template-request-extras.test.ts` (the template saved with what the request names, no needs; a
 person's approval only, every policy and toggle on; ready after it; reuse of one exactly the same and never of a wider
 one; a changed one refused; an image reference, a host that is not `host:port`, a system secret and too many refused),
-`test/scripts/box-test-image.test.ts` (the Containerfile, its user, the workflow's job and tags). Checked by hand with
+`test/scripts/box-test-image.test.ts` (the Containerfile, its user, the workflow's job and tags, the tag of each branch a
+box pulls). Checked by hand with
 rootless Podman: the image built on the published `box-claude`; run as a need box runs (every capability dropped, no new
 privileges, a read-only root, `/tmp` a tmpfs, a fresh home volume) and with no network, Chromium's headless shell
 rendered a page as `agent`.
@@ -26855,7 +26940,8 @@ hopper's running jobs and closed their lanes. Two hoppers deciding at once could
 
 **The job lease** (`JobLeaseRepository`, `src/domain/job-leases.ts`; the user's `job_leases` table, tenant migration 74,
 `src/store/job-leases.ts`; driven by `src/engine/leases.ts`). One row per job a hopper drives: its owner (this engine's host,
-pid and a nonce) and until when.
+pid and a nonce) and until when, on the database's clock (issue #1954, "The crash harness" part 3): a hopper whose clock is
+off neither takes a lease another holds nor holds one past its end.
 - **Taken at the claim.** A Decision is read and applied in one transaction under the **claim lock** of the user's jobs (a
   transaction-level advisory lock, `lockClaims`): one hopper at a time claims, so no job is claimed twice. The claim takes the
   job's lease in the same transaction, whoever held one: a lease on a waiting job is over.
@@ -27051,7 +27137,7 @@ after a restart, or another hopper on the same database, goes on from it:
 
 **The sweeper** (`src/engine/wait-checks.ts`, on each engine tick, one pass at a time). Each job on its own wait gets its
 check, in a transaction, if it has none. Each check due is taken under a **lease** (`wait_check_leases`, tenant migration
-76: one row per job, its wait, its holder, until when; `LEASE_MS`, 2 minutes), claimed in one statement, so two hoppers or
+76: one row per job, its wait, its holder, until when, on the database's clock (issue #1954); `LEASE_MS`, 2 minutes), claimed in one statement, so two hoppers or
 two passes never test the same check at once. Its condition met: the wait ends in a transaction that first sees the lease
 still held and the job on the same wait (`job.wait_ended { by: hopper, note, check }`); the job is queued again and told
 what happened. Not met: the check is written with its next time. A hopper that stops mid-check holds the lease until it ends;
@@ -27240,6 +27326,7 @@ The leases, each one per user (`<user id>/<name>`):
 | `cleanups` | the cleanups a record says are owed (issue #1662) | does every one owed, as at a start |
 | `auto-park` | auto-park (issue #1662) | — |
 | `signed-out-move` | the signed-out move (issue #1662) | — |
+| `busy-move` | the busy-machine move (issue #1977) | — |
 | `checkpoints` | the checkpoint pass (issue #1662) | — |
 | `pane-answers` | the read of each waiting job's pane (issue #1662) | — |
 | `classifier` | the classifier's sweep (issue #1662) | — |
@@ -28550,9 +28637,21 @@ lease now end it in the database (`endLeases`).
 - **Job leases and the wait-check leases are not in this part.** `job_leases` and `wait_check_leases` also compare a
   host's times; they are listed below.
 
-**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); the
-job leases (`src/store/job-leases.ts`) and the wait-check leases (`src/store/wait-check-leases.ts`) on the database's
-clock too, with a skewed-clock test each; landing batches killed between each GitHub write and its event (#1589); kill
+**Part 3: the job leases and the wait-check leases under a skewed clock** (2026-10-18). **What it found:** the same fault
+as part 2. A hopper whose clock was ahead read another hopper's live job lease as ended: it listed the job as unheld, took
+its lease, and could take the job over; a person's act was no longer relayed to the hopper that drove it. A hopper whose
+clock was behind wrote a lease end already past for the others. The wait-check leases did the same: a second hopper tested
+a wait check the first was testing. Now both are timed on the database's clock (`src/store/db-clock.ts`), and the
+repositories take a lease's length, not its end: `take(jobId, { owner, ms }, force)`, `renew(owner, ms)`, `unheld()`,
+`heldByOthers(owner)`, `relay(jobId, act, owner)`; `claim(jobId, since, owner, ms)`, `holds(jobId, owner)`.
+`createJobLeases` takes no clock. The rows kept have the same text format, so no migration is necessary.
+**Decisions (part 3).**
+- **The tests are in the process, not crash hosts.** A running job of a crash host is on a `job-run` saga, whose lease
+  (part 2) decides who drives it; the takeover skips such a job. The job lease's own fault shows at the store, so its test
+  is there (`test/store/job-leases.test.ts`), with each host's clock a faked `Date`. The wait-check test runs two wait
+  sweepers with their own clocks on one database (`test/engine/wait-checks.test.ts`).
+
+**Left for later parts.** The other saga kinds (need step, push, Windows step, topology discovery, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28561,7 +28660,9 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
 record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
-first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock).
+first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
+and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
+first's behind).
 
 ## The GitHub outbox under crashes and faults (issue #1959, part 1, 2026-10-18)
 
@@ -28620,6 +28721,110 @@ give-back rows under a kill (the sync loop's acts); a randomised run over the ou
 **Verification:** `test/store/github-outbox.test.ts` (a claim takes each row once, a claim that ended is taken again, a
 failed row never); `test/sources/github-outbox-comment-once.test.ts` (a comment left `sending` is sent once its claim
 ends; two outboxes on one store); `test/crash/outbox-kill.test.ts`; `test/integration/github-outbox-faults.test.ts`.
+
+## The GitHub proxy under crashes (issue #1959, part 2, 2026-10-18)
+
+**Why.** Part 1 proved the GitHub outbox under kills and faults. A job's own writes go another way: through the GitHub proxy
+("GitHub through the hopper"). The resend key (issue #1607) answers a request sent again from its `github_proxy.done`. A
+hopper killed after GitHub made the issue or the comment, and before it recorded that event, left nothing to answer from:
+the same request sent again to the next hopper made the issue or the comment a second time. The new crash test shows it on
+the code before this change: an issue, a required child and a comment made twice.
+
+**The change** (`src/github-proxy/resend.ts`, the broker). A write with a resend key (`issue.create`, `issue.comment`):
+- is recorded `github_proxy.sending` (`op`, `repo`, `number`, `key`) before its call;
+- ends with a **post key** (`src/domain/post-key.ts`, "Posted once"): `proxy-` and 24 hex characters of a hash of the resend
+  key and its scope, the job's issue (a fan-out key is the issue's, issue #1909), else the job;
+- sent again with a key that was sending before and has no answer recorded, is looked for on GitHub first
+  (`ProxyApi.find`), from an hour before that first send: the issues the job's account made (`creator`, `state=all`), or
+  the comments on the issue. Found, it is answered (`found: true` on the answer and on `github_proxy.done`), and a required
+  child is linked as a sub-issue unless it is one already. Not found, it is made.
+
+An edit, a close or a ready of a pull request has no key: it is the same change when made twice. A sub-issue link is
+checked before it is made.
+
+**Kill points** (`proxyKillPoint`): `proxy:<op>:before-send` before each write's call, `proxy:<op>:after-send` once GitHub
+answered it, before `github_proxy.done` is recorded, and `proxy:issue.create:before-link` between a required child and its
+sub-issue link.
+
+**The crash tests** (`test/crash/proxy-kill.test.ts`, `test/crash/proxy-world.ts`). A host runs a job of issue #7 that
+sleeps on the local machine (`CRASH_JOB`); the test asks the proxy as the job does, with its proxy token. For each write — a
+follow-up issue, a required child, a comment, a pull request's edit, close and ready — and each kill point, the first host
+is killed. The same request, with the same resend key, goes to a second host on the same database. GitHub then holds each
+effect once: one issue, linked once, labelled and assigned as a routed child; one comment; the edit, the close, the ready;
+and `github_proxy.done` is recorded once. The fake GitHub is `test/support/fake-forges.ts`, in the test process.
+
+**The fault test** (`test/integration/proxy-resend.test.ts`). GitHub makes the issue or the comment and then answers 502;
+the job sends the same `--key` again: it is found, made once.
+
+**Decisions.**
+- **An event, not a table.** The intent is one event on the job's timeline, as the answer is. The look-up reads the
+  newest 1000 `github_proxy.sending` events, as the replay reads `github_proxy.done`.
+- **A look-up only after a send with no answer.** A first send costs GitHub nothing more. Only a key seen sending before
+  pays a list read.
+- **The post key hashes the resend key.** A job may choose its key (`--key`); the hash keeps it, and the job's issue, off
+  GitHub.
+
+**Residual risk, stated.** As in "Posted once": a call GitHub finishes only after the look-up found nothing makes a second
+one. A routed child whose assignee GitHub dropped, and whose second assign a kill stopped, is found unassigned.
+
+**Left for later parts.** A person's Merge now, Close PR and give-back rows under a kill (the sync loop's acts); a pull
+request a job opens (`pr.create`, no resend key: GitHub refuses a second one from the same head); a randomised run over
+the outbox's and the proxy's kill points.
+
+**Verification:** `test/crash/proxy-kill.test.ts` (13 scenarios; with the look-up turned off, the four after-send and
+before-link cases of an issue and a comment fail); `test/integration/proxy-resend.test.ts`.
+
+## A person's acts on a job under crashes (issue #1959, part 3, 2026-10-18)
+
+**Why.** Parts 1 and 2 proved the GitHub outbox's intake acts and a job's writes through the GitHub proxy under kills. A
+person's Merge now, Close PR and Run again are outbox rows too (issue #1238 parts 3 and 4), but the sync loop's own act
+sends them (`OutboxActs`, `src/sources/pull-request-acts.ts`, `src/sources/rerun.ts`), and each makes more than one call.
+Nothing proved them under a kill.
+
+**What it found.**
+- **Close PR killed after its close.** GitHub closed the pull request and the close was recorded, but the row was not
+  `sent`. The next hopper sent the row again, found the job no longer following an open pull request, and failed the row
+  (`job.pull_request_act_failed`, a Retry on Sources). Merge now had a guard for this since issue #1588; Close PR had none.
+  Now a close row whose close is recorded is done, as a merge row whose merge is recorded is.
+- **Merge now killed between the issue's close and its comment.** After the hopper's own merge of a pull request with no
+  closing keyword, it closes the issue and then posts one comment (issue #677). A kill between the two left the issue closed
+  as completed, so the merge found by its marker after the restart read the issue as closed by the merge and posted no
+  comment. Now a merge found by its marker runs the close after it again (`closeAfterMerge`, `again`): the close is made
+  again — it changes nothing on a closed issue —, and the comment only when the issue does not have it yet (read by its
+  text, which names the pull request). A pull request whose closing keyword closed the issue is left as it is.
+
+**Kill points.** The rows' own `outbox:pull_request|give_back:before-send|after-send`, and three inside the acts:
+`follow:merge:after-call` (GitHub merged, nothing recorded; `src/sources/github/follow.ts`), `follow:merge:after-issue-close`
+(the issue closed, its comment not posted; `src/sources/github/own-merge.ts`), and `give-back:rerun:after-give` (the source
+gave the item back, no new job yet; `src/sources/rerun.ts`).
+
+**The crash tests** (`test/crash/act-kill.test.ts`, `test/crash/act-world.ts`). A host runs the connected account's job source
+over the node:http fake GitHub. Three jobs are kept in the admin's store, each finished or failed with its end reported:
+one follows an open pull request that only mentions its issue (Merge now), one another open pull request (Close PR), one
+failed with `hopper:failed` on its issue (Run again). For each act and each kill point the first host is killed; once the
+claims end, a second host sends what is left. GitHub then holds each effect once: the pull request merged, the issue closed
+as completed with one comment; the other pull request closed and its issue open; the end label off and one new job of the
+item. Each act is recorded once (`job.pull_request_merged` with who pressed it, `job.pull_request_closed`, `job.rerun`), and
+no act failed. The node:http fake GitHub now closes a pull request (`PATCH /pulls/{n}`).
+
+**The randomised run** (`test/crash/random-github.test.ts`). Each seed picks a family — the outbox's intake acts, a job's
+write through the proxy, a person's act on a job —, one of its writes and one of its kill points, and runs that scenario. A
+failure names its seed: `HOPPER_CRASH_SEED=<seed>` runs it again; `HOPPER_CRASH_SEEDS` says how many (2 by default). Each
+family's scenario is one function of its world file (`killedThenSent`, `killedThenSentAgain`, `killedThenActed`), which the
+fixed tests run too.
+
+**Decisions.**
+- **The comment is found by its text, not by a post key.** Its text is fixed and names the pull request, so it is unique to
+  the merge. The look-up costs one read only on a merge found by its marker, never on the first close.
+- **The close is made again, not read first.** A second close of a closed issue changes nothing on GitHub; a read would cost
+  the same call.
+
+**Left for later parts.** A pull request a job opens (`pr.create`) under a kill: it has no resend key, and GitHub refuses a
+second one from the same head, so the next hopper's answer to the same request is a refusal, not the pull request.
+
+**Verification:** `test/crash/act-kill.test.ts` (9 scenarios; on the code before this change, Close PR at
+`outbox:pull_request:after-send` and Merge now at `follow:merge:after-issue-close` fail); `test/crash/random-github.test.ts`;
+`test/sources/github-own-merge.test.ts`; `test/integration/merge-marker.test.ts`.
 
 ## Acceptance tests: the real agent CLIs against a fake model server (issue #1958, part 1, 2026-10-18)
 
@@ -28680,3 +28885,139 @@ to an in-memory MCP server double; the drift check for `fake-cursor-agent.mjs`.
 **Verification:** `test/support/fake-model-server.test.ts` (each API's answer, streamed and not, each fault, a side
 call, the proxy); `test/support/event-drift.test.ts` (kinds, paths, a field and a kind the real CLI does not print);
 `test/acceptance/print-agents.test.ts` and `test/acceptance/fake-drift.test.ts` (the real CLIs, where installed).
+
+## Acceptance tests, part 2: faults of the CLI, hooks and MCP, the TUI's screens (issue #1958, 2026-10-18)
+
+**Why.** Part 1 tested the faults of a model. A CLI also misbehaves by itself: it stops mid-line, prints a broken line,
+asks on a terminal it does not have, prints too much, prints bytes that are not UTF-8, or ends with no answer. And the
+herdr fakes record Claude Code's screens once; nothing showed when the real TUI changed them.
+
+**Faults of a CLI** (`test/adapters/print-agent-faults.test.ts`, `FAKE_AGENT_MODE` in `test/adapters/fake-print-agent.mjs`,
+each in the CLI's own shape, for codex, opencode, omp and claude):
+
+| Fault | The job |
+|---|---|
+| `partial-hang`: the events before the answer, half a line, then nothing | fails when the turn's timeout ends it |
+| `malformed`: a cut line before the answer | finishes: an event stream skips a line that is not JSON; claude's one result, cut, fails ("printed no JSON result") |
+| `permission-prompt`: a prompt on a terminal it does not have, exit 1 | fails with what the CLI said |
+| `huge`: megabytes of tool output before the answer | finishes, its summary capped at 2000 characters |
+| more than 64 MiB on a stream | fails: "printed more than 64 MiB" (the run's buffer, `src/executors/command.ts`; before, Node's "stdout maxBuffer length exceeded") |
+| `non-utf8`: a byte that is not UTF-8 in the answer | finishes; the byte reads as U+FFFD |
+| `no-final`: the events before the answer only, exit 0 | fails: "answered no message" (claude: "printed no JSON result") |
+
+**Hooks and MCP** (`test/acceptance/hooks-mcp.test.ts`, the **MCP server double** `test/support/fake-mcp-server.ts`). What
+the hopper configures for a print-mode run is the plugin's own `args` and the job's environment. The test gives the
+claude plugin `--mcp-config` (the double) and `--settings` with a `PostToolUse` hook, and the **fake model server** scripts
+a call of the double's tool. It asserts that the tool reached the model as `mcp__double__echo`, the double took the call,
+the hook fired on it with the job's `HOPPER_JOB_ID`, and the tool's answer went back to the model. Hooks are Claude
+Code's; the other CLIs are not in this test.
+
+**The screen-drift check** (`test/acceptance/tui-screens.test.ts`, `test/support/screen-drift.ts`; opt-in,
+`HOPPER_ACCEPTANCE_TUI=1`, for the nightly run). The real Claude Code TUI starts in a real herdr pane of a throwaway
+session with an empty home, against the fake model server. The hopper's own `startupStep` takes it past each screen to
+its prompt, then one turn runs. Each screen is matched to its recording in `src/executors/herdr/fake-screens.ts` (trust,
+imports, API key, bypass, the prompt's chrome), and every recorded line must be on the real screen with whitespace
+removed (a pane wraps a long path mid-word). The test fails on a screen the fakes do not record, a screen the hopper
+would ask a person about, or a recorded line the real screen no longer shows, and names it. Each capture goes to
+`HOPPER_ACCEPTANCE_TUI_OUT` when set (the nightly run's artifacts). `HOPPER_ACCEPTANCE_TUI_DIR` names a short directory
+where the temp dir's path is too long for herdr's session socket.
+
+**Decisions.**
+- **Onboarding is seeded done**, as the hopper's own seed writes it. Claude's first-run screens check
+  `api.anthropic.com`, which the fake server's proxy refuses, so the theme and login screens are not checked here.
+- **The MCP server double is written here, not taken from `@modelcontextprotocol/sdk`.** The SDK is no dependency of this
+  repository; the double answers four JSON-RPC methods in about 40 lines, and a dependency install for a test double costs
+  more than that code.
+- **The TUI run is opt-in**, not on whenever claude and herdr are found: it starts a herdr server, and it is the nightly
+  run's.
+
+**Found.** Claude Code 2.1.292's startup screens, in a home with onboarding done: trust, then the API key, then bypass.
+Its trust and bypass dialogs show lines the recordings leave out ("Claude Code'll be able to read, edit, and execute files
+here.", the security link); the hopper reads none of them.
+
+**Left for later parts.** The CI run of the acceptance tests on pull requests and the nightly run that sets
+`HOPPER_ACCEPTANCE_TUI=1` and keeps `HOPPER_ACCEPTANCE_TUI_OUT` as artifacts: workflow files, a change to CI, which a job
+does not make from an issue's text. The drift check for `fake-cursor-agent.mjs`: Cursor's agent cannot be pointed at
+another server, so no run of it is free of a real model.
+
+**Verification:** `test/adapters/print-agent-faults.test.ts` (each fault, each CLI); `test/support/fake-mcp-server.test.ts`
+and `test/support/screen-drift.test.ts` (no CLI needed); `test/acceptance/hooks-mcp.test.ts` (claude, where installed);
+`test/acceptance/tui-screens.test.ts` (opt-in; it failed with the recorded bypass dialog's "Yes, I accept" changed, and
+named that line).
+
+
+## Free machines first, published images, and the utility providers (issue #1977, 2026-10-18)
+
+**The problem.** Three faults of one day's run.
+1. A job queued to resume on its own machine (`resumeOn`) waited there while every lane of it was in use, though other
+   machines that run its executor had free lanes. A resume pins a job to its machine: its pane, its work tree and its
+   agent session's files are there.
+2. A template request named the test image while its tag was not published. The hopper saved and approved the template,
+   and its read-only check failed later with "manifest unknown".
+3. A read-only box's provider mirror held only `hashicorp/aws`. A workspace whose lock file uses `hashicorp/null` could not
+   `init` there.
+
+### The busy-machine move (part 1)
+
+- **When.** Every 10 s on an engine tick (`BUSY_MOVE_EVERY_MS`, `src/engine/busy-move.ts`, one pass at a time, on the
+  `busy-move` sweep lease; a pass with no resuming job reads nothing more), a queued
+  job moves when (`busyMove`, `src/decider/busy-move.ts`, pure):
+  - it resumes on its machine: an answer pending, `resumeOn` set — a job picked up, a **preempted** job, or a job whose
+    answer waits for its live pane;
+  - no pin of its spec (`spec.machineId`: a person's or a routing rule's pin stays), it does not resume elsewhere already,
+    and it is no **continued** job (Continue reopens its agent session in its kept work tree);
+  - its machine is online and every lane of it is in use (busy or draining, at its lane cap);
+  - another machine is online, runs its executor, fits its Windows label, is not leaving or drained, and has room for a job
+    not pinned to it (its lane cap less its reserved lanes);
+  - all of this held for `RESUME_WAIT_MS` (5 minutes) in a row. Room on its own machine starts the wait again.
+- **How.** As the signed-out move ("The signed-out move"), with its `howToMove`: a checkpoint is taken first. Then, in one
+  transaction, the job is parked (`recordPark`, `auto`, its `why` naming its machine and the machines with room), so no
+  Decision claims it meanwhile. A job whose answer waits for its live pane gets its pane and agent ended
+  (`Executor.park`) and one more checkpoint. Then:
+  - **from its checkpoint**, when it holds the agent session: picked up to resume elsewhere (`recordUnpark`, elsewhere),
+    the answer kept;
+  - **as a new start**, when its agent never got its task: queued, not pinned, no answer pending;
+  - a checkpoint that cannot be taken, or holds work but no session, does not move it: it stays queued for its machine,
+    and the move tries it again after 10 minutes (`MOVE_RETRY_MS`).
+- **The decider places it.** A job resuming elsewhere is pinned to no machine: the next Decision places it on any machine
+  with room, its own one included when a lane frees there first.
+
+### A template request for an image that is not published (part 2)
+
+- **The check** (`createImageCheck`, `src/sandbox/image-published.ts`). The distribution API's `HEAD` of the image's
+  manifest at its registry, with the anonymous bearer token its `WWW-Authenticate` challenge names. Only a 404 says the
+  image is not published. A registry not reached, a timeout (10 s), or any other answer says nothing. A local image
+  (`localhost/…`) is asked of no registry. A published answer is kept 10 minutes, a missing one a minute, for every user.
+- **The request** (`requestTemplate`, `imageProblem` on `TemplateRequestUser`). Before it saves a template, the request
+  asks for the image a box of it pulls (`pulledImage`, `src/sandbox/box-image.ts`): the one the request names, the test
+  image as the tag of the hopper's own branch (issue #1976). A missing image is a 400 with the reason, and no template is
+  saved. Only a request that makes a template asks: a template made before was asked about then, so a poll of a waiting
+  job asks no registry. Issue #1976 publishes the test image of each branch;
+  this part only refuses early.
+
+### More providers in the read-only mirror (part 3)
+
+- **The mirror** (`MIRRORED_PROVIDERS`, `src/sandbox/tools.ts`) now also holds HashiCorp's utility providers: `null`
+  3.3.2, `random` 3.9.1, `local` 2.9.1, `time` 0.14.2, `archive` 2.8.1 and `tls` 4.4.1, each its release's zip, pinned and
+  checked by its SHA-256 from the release's `SHA256SUMS`, as the AWS provider is. None of them calls a service of its own.
+- **The probe** `terraform.provider-download` now asks for `hashicorp/dns`, which the mirror does not hold.
+
+**Decisions:**
+- **A short wait, then any machine.** The issue asks that a resume prefers its machine only for a short, bounded time.
+  5 minutes covers a lane that frees soon; after that a free machine is worth the rebuild of the work tree.
+- **Moved through park and resume elsewhere.** The move reuses the one path that rebuilds a job on another machine, so a
+  moved job is told `elsewhereBrief` as a person's Resume elsewhere is.
+- **A continued job does not move.** Its kept work tree is the reason a person continued it.
+- **The registry asked with `fetch`, not a library.** One anonymous `HEAD` and one token read; a registry client library
+  would be a dependency for about 40 lines.
+- **Unknown is no refusal.** A hopper with no route to the registry still takes template requests; the read-only check
+  still pulls the image.
+- **The utility providers, not registry egress.** Issue #715 keeps a read-only box from downloading providers. A fixed,
+  reviewed list keeps that rule. Friction, stated: a lock file that pins another version of one of these providers still
+  cannot `init` there; the person adds that version to `src/sandbox/tools.ts`.
+
+Tests: `test/decider/busy-move.test.ts` (which jobs, which machines), `test/engine/busy-move.test.ts` (the real database:
+the wait, a move from the checkpoint, a live pane ended first, a new start, a checkpoint with no session),
+`test/sandbox/image-published.test.ts` (the registry double: published, 404, unreachable, local, kept answers, image
+references), `test/skills/template-request-image.test.ts` (refused with no template saved, no registry asked for an earlier template),
+`test/sandbox/tools.test.ts` and `test/sandbox/check-script.test.ts` (the mirror's providers, the probe's provider).

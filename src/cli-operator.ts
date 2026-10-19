@@ -56,7 +56,7 @@ export const OPERATOR_USAGE = `  hopper job show <id>                           
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
   hopper job quarantine|unquarantine <id>            quarantine a job: held, and it reaches nothing through the hopper; or lift it
-  hopper job approve-trust <id>                      approve the trust of a job Jev's check, a deny or an edit lowered
+  hopper job approve-trust <id>                      approve the trust of a job Jev's check, a deny or an edit lowered, or one with no item
   hopper job stamp <id>                              a job's trust stamp: its level, whether it verifies, and what it holds (start, gate 2, doors)
 ${DISMISS_USAGE}
 ${DIRECT_USAGE}

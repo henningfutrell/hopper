@@ -15,7 +15,7 @@ const LINEAGE_READ = 1000;
 
 /** The events the replay and the link pass read: what `UserStore['events']` gives. */
 export interface LineageEvents {
-  recent(limit?: number, types?: EventType[], jobId?: string): { jobId?: string; data: Record<string, unknown> }[];
+  recent(limit?: number, types?: EventType[], jobId?: string): { jobId?: string; at: string; data: Record<string, unknown> }[];
   append(event: NewEvent): unknown;
 }
 

@@ -94,7 +94,7 @@ describe('the read-only check script (issue #716)', () => {
     expect(results.find((r) => r.id === 'terraform.state-rm')).toMatchObject({ outcome: 'denied', expect: 'denied' });
     // A provider the image's mirror does not hold is not downloaded: init finds it nowhere (issue #715).
     expect(results.find((r) => r.id === 'terraform.provider-download')).toMatchObject({ outcome: 'denied', passed: true });
-    expect(results.find((r) => r.id === 'terraform.provider-download')!.output).toContain('hashicorp/null was not found in any of the search locations');
+    expect(results.find((r) => r.id === 'terraform.provider-download')!.output).toContain('hashicorp/dns was not found in any of the search locations');
   });
 
   it('a workspace need with no state backend: the state push past the wrapper is not run, and it does not pass (issue #715)', async () => {

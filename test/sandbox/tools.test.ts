@@ -10,13 +10,14 @@
 //   Scenario: the tools a need's asset kind uses
 //   Scenario: a read-only template's image puts the read-only terraform wrapper first on PATH (issue #715)
 //   Scenario: a read-only template's image holds the AWS provider in a mirror terraform installs only from (issue #715)
+//   Scenario: the mirror also holds the utility providers lock files use, hashicorp/null among them (issue #1977)
 //   Scenario: any other image with terraform puts the apply wrapper first on PATH (issue #870)
 //   Scenario: each image of the fetch stage carries the stage label, so a leftover stage is known as the hopper's (issue #1120)
 //   Scenario: each download tries again after a network error, so one lost DNS answer does not fail the build (issue #1737)
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS, toolsProblem } from '../../src/domain/sandboxes.ts';
 import { TERRAFORM_CLI_CONFIG, TERRAFORM_APPLY_WRAPPER, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
-import { TOOLS_IMAGE, TOOLS_STAGE_LABEL, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
+import { MIRRORED_PROVIDERS, TOOLS_IMAGE, TOOLS_STAGE_LABEL, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
 
 const BASE = { image: 'ghcr.io/henningfutrell/hopper:box-claude', id: 'sha256:base1' };
 const SHA = /^[0-9a-f]{64}$/;
@@ -85,7 +86,7 @@ describe('the tools image (issue #716)', () => {
     // The provider's own release, pinned and checked by its SHA-256 like each tool, kept in the mirror's packed layout.
     expect(ro.containerfile).toMatch(/https:\/\/releases\.hashicorp\.com\/terraform-provider-aws\/(\d+\.\d+\.\d+)\/terraform-provider-aws_\1_linux_\$\{a\}\.zip/);
     expect(ro.containerfile).toMatch(/\/opt\/hopper-tools\/providers\/registry\.terraform\.io\/hashicorp\/aws\/terraform-provider-aws_\d+\.\d+\.\d+_linux_\$a\.zip/);
-    expect(ro.containerfile.match(/sha256sum -c/g)).toHaveLength(3);
+    expect(ro.containerfile.match(/sha256sum -c/g)).toHaveLength(2 + MIRRORED_PROVIDERS.length);
     for (const m of ro.containerfile.matchAll(/(amd64|arm64)\) sum=([0-9a-f]+)/g)) expect(m[2]).toMatch(SHA);
     // The CLI config names the mirror and no other way to install: no registry, no network mirror.
     expect(TERRAFORM_CLI_CONFIG).toContain('filesystem_mirror');
@@ -99,6 +100,18 @@ describe('the tools image (issue #716)', () => {
     const plain = toolsImage(BASE, ['terraform', 'aws']).containerfile;
     expect(plain).not.toContain('terraform-provider-aws');
     expect(plain).not.toContain('TF_CLI_CONFIG_FILE');
+  });
+
+  it('the mirror also holds the utility providers lock files use, hashicorp/null among them (issue #1977)', () => {
+    expect(MIRRORED_PROVIDERS).toEqual(['hashicorp/aws', 'hashicorp/null', 'hashicorp/random', 'hashicorp/local', 'hashicorp/time', 'hashicorp/archive', 'hashicorp/tls']);
+    const ro = toolsImage(BASE, ['terraform', 'aws'], { readOnly: true }).containerfile;
+    for (const source of MIRRORED_PROVIDERS) {
+      const name = source.split('/')[1]!;
+      // Each one's own release, pinned and checked by its SHA-256, in the mirror's packed layout under its registry address.
+      expect(ro).toMatch(new RegExp(`https://releases\\.hashicorp\\.com/terraform-provider-${name}/(\\d+\\.\\d+\\.\\d+)/terraform-provider-${name}_\\1_linux_\\$\\{a\\}\\.zip`));
+      expect(ro).toContain(`/opt/hopper-tools/providers/registry.terraform.io/${source}/terraform-provider-${name}_`);
+    }
+    expect(toolsImage(BASE, ['terraform', 'aws']).containerfile).not.toContain('terraform-provider-null');
   });
 
   it('any other image with terraform puts the apply wrapper first on PATH (issue #870)', () => {
@@ -122,7 +135,7 @@ describe('the tools image (issue #716)', () => {
   it('each download tries again after a network error, so one lost DNS answer does not fail the build (issue #1737)', () => {
     const { containerfile } = toolsImage(BASE, [...BOX_TOOLS], { readOnly: true });
     const curls = [...containerfile.matchAll(/curl -[^;]*/g)].map((m) => m[0]);
-    expect(curls).toHaveLength(BOX_TOOLS.length + 1);
+    expect(curls).toHaveLength(BOX_TOOLS.length + MIRRORED_PROVIDERS.length);
     // --retry-all-errors: curl tries again on a host it could not resolve (exit 6) too, not only on a timeout or a 5xx.
     for (const c of curls) expect(c).toMatch(/^curl -fsSL --retry \d+ --retry-delay \d+ --retry-all-errors --connect-timeout \d+ /);
     expect(containerfile).toContain('apt-get -o Acquire::Retries=');

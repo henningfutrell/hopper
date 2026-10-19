@@ -139,9 +139,9 @@ const issueKey = (repo: string, n: number) => `${repo}#${n}`;
 const idOf = (login: string) => [...login].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1_000_000, 7);
 
 /** GitHub: OAuth at the root (`/login/device/code`, `/login/oauth/access_token`), REST under `/api/v3`. */
-export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number; gitRoot?: string; deviceInterval?: number }): Promise<FakeForge> {
+export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; pulls?: FakePull[]; tokenLifetimeS?: number; tokenLimit?: number; gitRoot?: string; deviceInterval?: number }): Promise<FakeForge> {
   const issues = o.issues ?? [];
-  const pulls: FakePull[] = [];
+  const pulls = o.pulls ?? [];
   const tokens = new Map<string, string>();
   const refreshTokens = new Map<string, { login: string; web: boolean }>();
   /** The access token each refresh token came with: GitHub refuses it once the refresh token is used. */

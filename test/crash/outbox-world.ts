@@ -15,7 +15,7 @@ import { tempDbPath } from '../support/app.ts';
 import { databaseUrlFor, ownerSchemaUrlFor } from '../support/database.ts';
 import { TEST_ACCOUNT_TOKEN } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
-import { startHost, type CrashHost } from './harness.ts';
+import { killedAt, startHost, type CrashHost } from './harness.ts';
 
 export const REPO = 'owner/hopper-sandbox';
 export const issueUrl = (n: number): string => `https://github.com/${REPO}/issues/${n}`;
@@ -68,7 +68,7 @@ export function keepRows(w: OutboxWorld, rows: Omit<OutboxInput, 'source' | 'rep
 }
 
 /** Ends every outbox claim at once, as its time would (`OUTBOX_CLAIM_MS`): the rows a killed host left are due again. */
-export function endClaims(w: OutboxWorld): void {
+export function endClaims(w: Pick<OutboxWorld, 'userUrl'>): void {
   const db = openDb(w.userUrl);
   const past = '1970-01-01T00:00:00.000Z';
   try {
@@ -77,7 +77,7 @@ export function endClaims(w: OutboxWorld): void {
 }
 
 /** The outbox's rows not sent, by state. */
-export function openRows(w: OutboxWorld): { state: string; op: string }[] {
+export function openRows(w: Pick<OutboxWorld, 'userUrl'>): { state: string; op: string }[] {
   const db = openDb(w.userUrl);
   try {
     return db.all("SELECT state, body FROM github_outbox WHERE state <> 'sent' ORDER BY id")
@@ -115,4 +115,13 @@ export async function writtenOnce(w: OutboxWorld, h: CrashHost): Promise<void> {
   const events = async (type: string) => (await h.get<{ events: DomainEvent[] }>(`/api/events?types=${type}`)).events;
   expect((await events('source.request_decline_written')).map((e) => e.data.key)).toEqual([issueUrl(1)]);
   expect((await events('source.issues_assigned')).map((e) => e.data.keys)).toEqual([[issueUrl(2)]]);
+}
+
+/** The scenario: a first hopper killed at `point` while it sends the person's acts; a second sends what is left, each effect once. */
+export async function killedThenSent(w: OutboxWorld, point: string): Promise<void> {
+  const a = await w.host({ killPoint: point, connect: true });
+  await act(w, a);
+  await killedAt(a, point);
+  endClaims(w);
+  await writtenOnce(w, await w.host());
 }
