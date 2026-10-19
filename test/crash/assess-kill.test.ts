@@ -52,13 +52,16 @@ async function world(killPoint?: string): Promise<World & { a: CrashHost }> {
   return { url, store, host, a };
 }
 
-/** The failed jobs, not assessed yet. */
+/**
+ * The failed jobs, not assessed yet. Each made and failed in one transaction: a host never sees it queued, so no engine
+ * takes it to run first (on a loaded runner one did, and the job never failed again).
+ */
 function leaveFailed(store: UserStore, errors: readonly string[]): Job[] {
   const at = new Date(Date.now() - 120_000).toISOString();
-  return errors.map((error) => {
+  return errors.map((error) => store.tx(() => {
     const job = store.jobs.create({ executor: 'test', payload: {} }, 50);
     return store.jobs.update(job.id, { status: 'failed', error, startedAt: at, finishedAt: at });
-  });
+  }));
 }
 
 /** Ends the failure sweep's lease too, as its time would: a killed host's sweeps are due again on another. */
@@ -106,7 +109,10 @@ describe('a kill during assessment (issue #1961)', () => {
       endSweepLeases(w.url);
       // Its log on a timeout: a loaded runner is where this test is slow.
       await waitFor(settled(w.store, jobs), { timeoutMs: 90_000, what: 'host B to assess every failure' })
-        .catch((e: Error) => { throw new Error(`${e.message}; host B said:\n${b.stderr().slice(-4000)}`); });
+        .catch((e: Error) => {
+          const left = jobs.map((j) => w.store.jobs.get(j.id)!).filter((j) => j.assessment === undefined).map((j) => `${j.id} ${j.status}`);
+          throw new Error(`${e.message}; not assessed: ${left.join(', ')}; host B said:\n${b.stderr().slice(-4000)}`);
+        });
       assessedOnce(w.store, jobs);
       handedOff(w.store, person, transient!);
 
