@@ -9,6 +9,7 @@
 //     Then GitHub changes the body with the job's user's connection, then closes the pull request, with no merge
 //     And each is on the job's timeline (`github_proxy.done`)
 //   Scenario: a job edits the pull request of its own work item, which it did not open
+//   Scenario: a tend job closes the pull request it was started to tend, which is not its work item's (issue #2127)
 //   Scenario: a job asks to edit or close a pull request that is not its own
 //     Then it is refused with the reason, and nothing reaches GitHub
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -96,6 +97,33 @@ describe('a job edits or closes its own pull request (issue #1734)', () => {
 
     const edit = await hopperGh(t.root, t.env, ['pr', 'edit', String(n), '--repo', 'octo/tools', '--body', 'Closes #7']);
     expect(json(edit)).toMatchObject({ ok: true, op: 'pr.edit', number: n });
+  });
+
+  it('closes the pull request it was started to tend, which it did not open and is not its work item\'s (issue #2127)', async () => {
+    const t = await start();
+    const n = await openElsewhere(t.github, 'issue-3-same-fix');
+    const other = await openElsewhere(t.github, 'issue-4-other');
+    const store = t.app.user(ADMIN_ID).store;
+    // The job reruns a job of its item, which tending ran again with the tend brief of pull request n.
+    store.jobs.update(t.job.id, { rerunOf: 'tended-job' });
+    store.events.append({ type: 'job.pull_request_tended', jobId: 'tended-job', data: { pullRequest: `${t.github.url}/octo/tools/pull/${n}`, step: 'rebase', nextJobId: t.job.id } });
+
+    const close = await hopperGh(t.root, t.env, ['pr', 'close', String(n), '--repo', 'octo/tools']);
+    expect(json(close)).toMatchObject({ ok: true, op: 'pr.close', number: n, state: 'closed', merged: false });
+    // Only that one: another pull request stays refused.
+    const refused = await hopperGh(t.root, t.env, ['pr', 'close', String(other), '--repo', 'octo/tools']);
+    expect(json(refused).error).toBe(`refused: a job edits or closes only a pull request it opened, or the pull request of its own work item: not octo/tools#${other}`);
+  });
+
+  it('refuses the pull request a tend job of the item tended, when the job is not that tend job (issue #2127)', async () => {
+    const t = await start();
+    const n = await openElsewhere(t.github, 'issue-3-same-fix');
+    const store = t.app.user(ADMIN_ID).store;
+    store.jobs.update(t.job.id, { rerunOf: 'tended-job' });
+    store.events.append({ type: 'job.pull_request_tended', jobId: 'tended-job', data: { pullRequest: `${t.github.url}/octo/tools/pull/${n}`, step: 'rebase', nextJobId: 'another-job' } });
+    const r = await hopperGh(t.root, t.env, ['pr', 'close', String(n), '--repo', 'octo/tools']);
+    expect(r.code).toBe(1);
+    expect(patches(t.github)).toEqual([]);
   });
 
   it('refuses a pull request the job did not open and that is not its work item\'s; nothing reaches GitHub', async () => {
