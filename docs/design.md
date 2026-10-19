@@ -93,7 +93,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name as steps, find what a mint cut short made, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`, issue #1609) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`); the cloud link to hopper.io, its agent — the one outbound WebSocket, the pin of hopper.io's key — and its outgoing secret scan (`cloud-link.ts`, `cloud-link-agent.ts`, `cloud-link-scan.ts`, issues #467, #2039) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, else from the telemetry setting, off unless one names an exporter (`sdk.ts`, `start.ts`); the setting kept and applied at once (`settings.ts`, "Telemetry settings"); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the steps the hopper does for a job — its worktree, a follow of its pull request, the base merge, a tend, a need box — as spans of the job's trace (`job-steps.ts`, "Telemetry: job steps"); each landing batch run a span, and a deploy span in the trace of each job in it (`deploys.ts`, "Telemetry: a box's own processes and deploys"); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); what runs now — the sandboxes that run at the same time and the store's open connections —, from the readers the parts that hold them add (`live.ts`, "Telemetry: what runs now"); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**, the **hopper.io machine names**), its **registration requests** (`requests.ts`: the code an owner entered, in memory only), its **instance states** (`states.ts`: each registered instance's last **hopper.io state snapshot**, checked against hopper.io's own copy of its schema, in memory only), its side of the cloud link's registration messages (`link.ts`, transport-free: a request given as `register` to its instance, a registration kept on that instance's `registered` with the key its hello proved, a tombstone answered `unregister` at the hello and its key refused, a snapshot kept as the instance's state), its end of the cloud link's connection (`connections.ts`: the WebSocket at `GET /link` through `ws`, the challenge, the limits, connected now in memory; `hello.ts`: the challenge and the check of the **cloud link hello**, a copy of the instance's schema), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
@@ -25782,7 +25782,7 @@ the API and the escaped page show it, an empty name clears it; a key not in the 
 name or key, another Origin and no session change nothing; the names stay at a new snapshot and a registration again;
 a removal, an unlink, a move and an account deletion drop them; at most 500 per instance.
 
-## The cloud link's connection (issue #2039, part 1, 2026-10-19)
+## The cloud link's connection (issue #2039, parts 1 and 2, 2026-10-19)
 
 **The problem.** Issue #2039, the install side of "Cloud link (issue #464)": the instance and hopper.io must talk over a
 real connection. The messages, the registration and the state snapshot are built on both sides, transport-free (issue
@@ -25839,13 +25839,65 @@ the instance had no way to prove itself to hopper.io.
   know; closing would make it reconnect in a loop. One record per connection keeps the records small.
 - **`ws`, with no fastify plugin.** The server takes the HTTP upgrade itself, so the limits are its own (R7).
 
-**Left for part 2:** the instance's agent (connect while the link record exists, R8; reconnect with backoff and jitter;
-stop after `4003`; snapshot at connect and on change, at most each 2 s; heartbeat each 30 s; hand each message to
-`receive`; `unlinked` before an unlink closes it; keep the key before a rotation until the new one connects; mint an
-Ed25519 key when the link has none); the pin of hopper.io's key, with TLS (the production pin waits for issue #469 decision
-7); the outgoing secret scan (R4); `machineKey` and `executorPlugin` for the snapshot; the instance's events (R6) in
-`docs/events.md`; Settings → hopper.io shows the connection; the operator CLI's rotate and revoke; the end-to-end test with
-the real daemon and the real `cloud/` server.
+**The change (part 2): the instance's agent** (`src/http/cloud-link-agent.ts`, the `ws` client).
+- **When it connects** (R8): only while the link record exists. With no record, no socket opens. An unlink sends
+  `unlinked`, then closes (`1000`). A rotation or a revoke closes the connection and starts again with the record's key.
+- **The pin** (R4, T1): `HOPPER_IO` in the code names hopper.io's URL (`wss://hopper.io/link`) and the pins of its public
+  key: the base64 SHA-256 of the SPKI of hopper.io's TLS certificate. TLS checks the chain against the system's roots; the
+  pin then checks the key. A key that does not match closes the connection before the hello. The shipped pin list is empty
+  until issue #469 decision 7 says who runs hopper.io, so a real instance connects to nothing (`no-pin`). Tests pin a
+  certificate they make (`test/support/cloud-tls.ts`, a TLS front before `cloud/`).
+- **The hello and `connected`.** The agent answers the challenge with the hello. hopper.io answers a hello it takes with
+  `{ type: 'connected' }` (`cloud/hello.ts` `CONNECTED`), so the instance knows it is connected; a refused hello is closed with
+  a code that says why.
+- **The key before a rotation** (R4): Rotate key keeps the old key as the system secret `cloud-link.previous-key` and the
+  record's `previousKey`, and the hello proves it as `previous`. When the new key connected, the key before is dropped. A
+  second rotation before that keeps the first key before, which hopper.io may still have bound. A link with no key (one
+  migration 52 cleared) gets one when the agent connects.
+- **Revoke** (R4): `POST /ui/api/cloud-link/revoke-key` and `hopper cloud-link revoke-key` drop both keys and close the
+  connection. The record stays, with `keyRevokedAt`, and no key is minted until Rotate key (`hopper cloud-link rotate-key`).
+  hopper.io's revoke (`4003`, after `unregister`) stops the agent until the key changes.
+- **What it sends**: a heartbeat each 30 seconds; the state snapshot only while the link is `registered`, at once, then only
+  when it changed (its `sentAt` aside), checked at most each 2 seconds; the answer of `receive` to each message it takes.
+  The snapshot's `machineKey` is an HMAC-SHA256 under the cloud link key's private half of the user and the machine id, 22
+  characters base64url: opaque and stable while the key stays (R5). `executorPlugin` gives each executor's plugin.
+- **Outgoing scan** (R4, `src/http/cloud-link-scan.ts`): each message, before it is sent, is searched for the patterns
+  `maskSecrets` knows and for the values of the keys the link holds; the public halves the hello names are taken out first.
+  A message that holds one, or is over its cap (1024 bytes; the snapshot 192 KiB), is dropped, `cloud_link.message_dropped`.
+- **Incoming limits** (R7): a frame over 64 KiB closes the connection; under it, `receive` refuses one over 1024 bytes; over
+  120 messages a minute is `cloud_link.message_refused` `too-many` and closes it (`1008`).
+- **Backoff**: a lost or refused connection is tried again after 1 second, doubling, at most 5 minutes, half of it jitter
+  (`retryDelay`). The backoff starts again only after a connection lasted a minute, so two hoppers of one instance that
+  replace each other's connection (`4000`) settle at one swap each 5 minutes.
+- **Events** (R6, `docs/events.md`): `cloud_link.connected`, `cloud_link.disconnected` (with the close code),
+  `cloud_link.connection_refused` (`pin`, `tls`, `http`, `too-many`, `bad-hello`, `unknown-key`, `hello-timeout`; once while
+  the same refusal repeats), `cloud_link.revoked` (`by` `hopper.io`, or the admin), `cloud_link.message_dropped`; and
+  `cloud_link.message_refused` gains `too-many`. A network failure is no event: Settings shows it.
+- **Settings → hopper.io** shows the connection (`GET /api/cloud-link` `connection`, kept in memory): `no-pin`, `no-key`,
+  `connecting`, `connected` since, `waiting` with the problem and the next try, or `revoked`; and a Revoke key button.
+  `hopper cloud-link show` prints the same.
+- **hopper.io** takes a message that came before the connection closed, so `unlinked` followed at once by the close counts.
+
+**Decisions (part 2):**
+- **`connected` from hopper.io**, not a timeout after the hello: the instance can tell a taken hello from a refused one with
+  no guess. It is no action (R1); `receive` still takes only `register` and `unregister`.
+- **The snapshot only while registered** (R5): hopper.io keeps no state of an unregistered instance, so it gets none.
+- **The machine key under the cloud link key**: a rotation changes every machine key, and the names at hopper.io stay under
+  the old keys until the owner names them again. A key of its own would be one more secret to keep.
+- **One refusal record while it repeats**, and no record of a network failure: a hopper.io that is down for a day is not
+  hundreds of events.
+- **No HTTPS proxy** support yet: the agent connects directly. A proxy needs an agent library; it waits for a person who
+  needs it.
+
+**Verification (part 2):** `test/http/cloud-link-agent.test.ts` (a TLS WebSocket server on loopback, and the real `cloud/`
+server behind a TLS front): no record, no connection; no pin, no connection; another pin or no root is refused before the
+hello and recorded once; heartbeats, the snapshot only while registered and only on change, an opaque machine key; a
+message goes to `receive`, too many close the connection; a secret or an oversized snapshot is dropped and recorded; the
+backoff; a rotation moves the registration and drops the key before after the connection; a revoke at hopper.io stops the
+agent until a rotation. `test/integration/cloud-link-connection.test.ts`, the real daemon and the real `cloud/` server: a
+link and the owner's code register it on both sides, its machine shows, a second registration keeps one entry; a removal at
+hopper.io and an unlink on the instance each remove it on the other side and delete nothing; the CLI revokes and rotates.
+`test/http/cloud-link-scan.test.ts`, `test/http/cloud-link-key.test.ts`, `test/ui/cloud-link.test.ts`.
 
 **Verification:** `test/cloud/connection.test.ts` (real Postgres, the real server on loopback, a real WebSocket client that
 answers with the instance's own hello): a code the owner enters reaches the connected instance as `register`, and its answer
@@ -25857,7 +25909,7 @@ recorded once, and a frame over the snapshot's cap closes it; the 11th connectio
 `test/cloud/hello.test.ts`: hopper.io takes the instance's hello; a changed field, another challenge or another key's proof
 is refused; one schema on both sides. `test/http/cloud-link-key.test.ts` (Ed25519), `test/store/migration-52.test.ts`.
 
-## Cloud link (issue #464, 2026-10-17 — a design; hopper.io's end built in issue #2039 part 1)
+## Cloud link (issue #464, 2026-10-17 — a design; built in issue #2039)
 
 **The problem.** Issue #464: a self-hosted instance links to hopper.io by dialing out. No port opens on the instance's
 host, and it needs no reverse proxy, DNS name or public URL. Today the instance reaches outside its host only through
@@ -25930,19 +25982,10 @@ HTTP request into the instance: the instance serves nothing on it. A remote acti
 - **The key pin ships in the code.** hopper.io's key is not set in Settings: a key a person can change is a key a
   person can be tricked into changing. A new hopper.io key arrives as an update, with a time when both keys are valid.
 
-**Left for the install side** (issue #2039, filed once the hopper.io server existed in `cloud/`; the production pin
-of hopper.io's key waits for issue #469 decision 7). Part 1 built the Ed25519 key, the hello and hopper.io's end ("The cloud
-link's connection"); the rest is its part 2:
-
-- the hello and its schema, and the cloud link key: minting, the system secret that holds it ("The vault's system
-  scope"), rotate and revoke through the UI session and the operator CLI. R4 and the glossary name an X25519 key; X25519
-  agrees keys and cannot sign. That issue picks an Ed25519 key that signs the challenge, or keeps X25519 in a handshake an
-  established library implements, and changes R4 and the glossary in the same change;
-- the agent: connect while the link record exists, close at an unlink after `unlinked`, reconnect, send the snapshot and
-  heartbeat at the rate "The hopper.io state snapshot" names, and hand incoming text to `receive`;
-- the outgoing secret scan, the events, and `machineKey` and `executorPlugin` for the snapshot;
-- the WebSocket client: an established one (Node's own, or `ws`), the one that takes the key pin;
-- Settings → hopper.io shows the connection's state.
+**Built** (issue #2039, "The cloud link's connection"): part 1, the Ed25519 key, the hello and hopper.io's end; part 2, the
+instance's agent, the pin, the outgoing scan, the events, the machine key, revoke and rotate through the UI session and the
+operator CLI, and the connection in Settings → hopper.io. The production pin of hopper.io's key waits for issue #469
+decision 7.
 
 **Verification:** a docs change; no code. The install-side issue's tests must show R1, R4, R5, R6, R7 and R8
 (`docs/hopper-io-security.md` "What each child issue must show").

@@ -96,7 +96,7 @@ export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 export { createGitHubDeliveries, type GitHubDeliveries } from './github-deliveries.ts';
 export { createAllowedHosts } from './allowed-hosts.ts';
 export { createSourceEmailMatch } from './source-email-match.ts'; export { createInfraApplies } from './infra-applies.ts';
-export { createCloudLink } from './cloud-link.ts';
+export { createCloudLink } from './cloud-link.ts'; export { createCloudLinkParts } from './cloud-link-agent.ts';
 export { createDisplayName } from './display-name.ts';
 export { kernelVersion, runsInWsl } from './ui/host-link.ts';
 export type { TailnetSource } from './tailnet.ts';

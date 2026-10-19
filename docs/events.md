@@ -3963,15 +3963,101 @@ Version 1 (`docs/schemas/cloud_link.unregistered.v1.json`). hopper.io removed th
 
 ## `cloud_link.message_refused`
 
-Version 1 (`docs/schemas/cloud_link.message_refused.v1.json`). The instance refused a message hopper.io sent over the cloud link (issue #465): it was larger than 1024 bytes (`too-large`), not JSON (`not-json`), of a type other than `register` or `unregister` (`unknown-type`), or not of that type's closed shape (`bad-shape`). Nothing changed on the instance. `reason`, why; never the message. An instance event: in every user's log.
+Version 1 (`docs/schemas/cloud_link.message_refused.v1.json`). The instance refused a message hopper.io sent over the cloud link (issue #465): it was larger than 1024 bytes (`too-large`), not JSON (`not-json`), of a type other than `register` or `unregister` (`unknown-type`), or not of that type's closed shape (`bad-shape`); or one too many in a minute (`too-many`), which also closes the connection. Nothing changed on the instance. `reason`, why; never the message. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
-| `reason` | `too-large` \| `not-json` \| `unknown-type` \| `bad-shape` | yes |
+| `reason` | `too-large` \| `not-json` \| `unknown-type` \| `bad-shape` \| `too-many` | yes |
 
 ```json
 {
   "reason": "unknown-type"
+}
+```
+
+## `cloud_link.connected`
+
+Version 1 (`docs/schemas/cloud_link.connected.v1.json`). The cloud link connected to hopper.io (issue #2039, design.md "The cloud link's connection"): the instance checked hopper.io by TLS and the pin of its key, its hello proved the cloud link key, and hopper.io took it. From here the instance sends its heartbeat and, while registered, its state snapshot. `installId` and `account`, the link. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat"
+}
+```
+
+## `cloud_link.disconnected`
+
+Version 1 (`docs/schemas/cloud_link.disconnected.v1.json`). The cloud link's connection to hopper.io ended (issue #2039): it was lost, hopper.io closed it, or an unlink, a key change or a stop closed it. The agent tries again with backoff (1 second, doubling, at most 5 minutes) while the link record exists. `installId` and `account`, the link; `code`, the WebSocket close code (`1000` closed by the instance, `1006` lost, `4000` another connection of this instance took its place). An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `code` | integer | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat",
+  "code": 1006
+}
+```
+
+## `cloud_link.connection_refused`
+
+Version 1 (`docs/schemas/cloud_link.connection_refused.v1.json`). A connection to hopper.io was refused (issue #2039): by the instance before its hello — hopper.io's key does not match the pin in the code (`pin`), its certificate is not good (`tls`), or it answered with no WebSocket (`http`) — or by hopper.io after the hello: too many connections (`too-many`), a hello it does not take (`bad-hello`), another key than the one its registration holds (`unknown-key`), or no hello in time (`hello-timeout`). Recorded once while the same refusal repeats. `installId` and `account`, the link; `reason`, why. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `reason` | `pin` \| `tls` \| `http` \| `too-many` \| `bad-hello` \| `unknown-key` \| `hello-timeout` | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat",
+  "reason": "pin"
+}
+```
+
+## `cloud_link.revoked`
+
+Version 1 (`docs/schemas/cloud_link.revoked.v1.json`). The cloud link key was revoked (issue #2039, docs/hopper-io-security.md R4): by hopper.io (`by` is `hopper.io`), when its account owner removed this instance there or deleted the account — the agent does not connect again until the admin rotates the key —, or by the hopper's admin on this instance (`by`, who), which drops the key and keeps the link with no key until a rotation. `installId` and `account`, the link. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat",
+  "by": "hopper.io"
+}
+```
+
+## `cloud_link.message_dropped`
+
+Version 1 (`docs/schemas/cloud_link.message_dropped.v1.json`). The instance did not send a message to hopper.io (issue #2039, docs/hopper-io-security.md R4, R7): the outgoing scan found a secret in it (`secret`), or it was over its cap (`too-large`: 1024 bytes, or the snapshot's 192 KiB). Nothing of it left the instance. `message`, which kind; `reason`, why; never the message. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `message` | `hello` \| `heartbeat` \| `snapshot` \| `registration` \| `unregistration` \| `refused` \| `unlinked` | yes |
+| `reason` | `secret` \| `too-large` | yes |
+
+```json
+{
+  "message": "snapshot",
+  "reason": "secret"
 }
 ```
 

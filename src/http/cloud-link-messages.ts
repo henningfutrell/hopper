@@ -17,8 +17,8 @@ const INCOMING = {
   unregister: z.strictObject({ type: z.literal('unregister'), account: z.string() }),
 };
 
-/** Why a message from hopper.io was refused. */
-export type CloudMessageRefusal = 'too-large' | 'not-json' | 'unknown-type' | 'bad-shape';
+/** Why a message from hopper.io was refused; `too-many`: over the agent's rate (R7), which closes the connection. */
+export type CloudMessageRefusal = 'too-large' | 'not-json' | 'unknown-type' | 'bad-shape' | 'too-many';
 
 export interface CloudLinkMessages {
   /** Takes one message from hopper.io and answers the message to send back. */

@@ -7,9 +7,12 @@
 // The cloud link key (part 2, design.md "The cloud link key", docs/hopper-io-security.md R4): a link mints one
 // Ed25519 key (issue #2039: it signs hopper.io's challenge in the hello, src/http/cloud-link-hello.ts), its private half a
 // system secret of the instance's vault, its public half in the record; the admin rotates it on request; an unlink drops it.
+// Issue #2039 part 2: a rotation keeps the key before (`previousKey`) until the new key connected, so hopper.io moves its
+// registration only on a hello that proves both (R4); the admin revokes the key, which keeps the link with no key until a
+// rotation; the cloud link's agent (cloud-link-agent.ts) mints a key for a link that has none, and is told of each change.
 import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { InstanceEvents, InstanceSettingsRepository } from '../domain/ports.ts';
-import { CLOUD_LINK_KEY, normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudLinkKey, type CloudLinkView, type RegistrationCodeMinted, type RegistrationOutcome, type UnregistrationOutcome } from '../domain/cloud-link.ts';
+import { CLOUD_LINK_KEY, CLOUD_LINK_PREVIOUS_KEY, normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudConnectionView, type CloudLinkKey, type CloudLinkSettings, type CloudLinkView, type RegistrationCodeMinted, type RegistrationOutcome, type UnregistrationOutcome } from '../domain/cloud-link.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { HttpError } from './errors.ts';
 
@@ -19,8 +22,20 @@ export interface CloudLink {
   link(account: string, by: string): CloudLinkView;
   /** Removes the link record, its registration code and its cloud link key; not linked: nothing changes. */
   unlink(by: string): CloudLinkView;
-  /** A new cloud link key in place of the one before, at once. Throws HttpError 409 while not linked. */
+  /**
+   * A new cloud link key in place of the one before, at once; the one before is kept as `previousKey` until the new key
+   * connected (the first one before, after two rotations). Throws HttpError 409 while not linked.
+   */
   rotateKey(by: string): CloudLinkView;
+  /** Drops the key and the key before; the link stays, with no key, until a rotation. Throws HttpError 409 while not linked. */
+  revokeKey(by: string): CloudLinkView;
+  /**
+   * The link record, with a key: a link with none gets one now, as the hopper, unless its key was revoked. Undefined while
+   * not linked. Throws HttpError 503 when no system secret can be kept (no master key).
+   */
+  ensureKey(): CloudLinkSettings | undefined;
+  /** hopper.io took the connection of `publicKey`: when it is the link's key, the key before is dropped. */
+  keyConnected(publicKey: string): void;
   /** A new registration code, in place of any before it; answered once, kept only hashed. Throws HttpError 409 while not linked. */
   mintRegistrationCode(by: string): RegistrationCodeMinted;
   /**
@@ -50,9 +65,13 @@ function newKey(): { secret: string; publicKey: string } {
 export function createCloudLink(o: {
   settings: Pick<InstanceSettingsRepository, 'instanceId' | 'getCloudLink' | 'setCloudLink' | 'removeCloudLink' | 'getCloudRegistrationCode' | 'setCloudRegistrationCode' | 'removeCloudRegistrationCode'>;
   /** The instance's system secrets: the cloud link key's private half. */
-  secrets: Pick<SystemSecrets, 'keep' | 'drop'>;
+  secrets: Pick<SystemSecrets, 'keep' | 'drop' | 'open'>;
   events: Pick<InstanceEvents, 'append'>;
   now: () => Date;
+  /** Told after the admin links, unlinks, rotates or revokes, with the record before: the cloud link's agent. */
+  changed?: (before: CloudLinkSettings | undefined) => void;
+  /** The connection now, for the view while linked: the cloud link's agent's. */
+  connection?: () => CloudConnectionView;
 }): CloudLink {
   /** Mints a cloud link key and keeps its private half; throws HttpError 503 when no system secret can be kept (no master key). */
   const mintKey = (by: string, rotated: boolean): CloudLinkKey => {
@@ -69,7 +88,15 @@ export function createCloudLink(o: {
   };
   const view = (): CloudLinkView => {
     const code = openCode();
-    return { link: o.settings.getCloudLink() ?? null, ...(code ? { registrationCode: { expiresAt: code.expiresAt, by: code.by } } : {}) };
+    const link = o.settings.getCloudLink() ?? null;
+    return { link, ...(code ? { registrationCode: { expiresAt: code.expiresAt, by: code.by } } : {}), ...(link && o.connection ? { connection: o.connection() } : {}) };
+  };
+  /** The admin's change: written, then the agent told, with the record before. */
+  const change = (before: CloudLinkSettings | undefined): CloudLinkView => { o.changed?.(before); return view(); };
+  const dropPrevious = (link: CloudLinkSettings, by: string): CloudLinkSettings => {
+    const { previousKey, ...rest } = link;
+    if (previousKey) o.secrets.drop(CLOUD_LINK_PREVIOUS_KEY, by);
+    return rest;
   };
   return {
     view,
@@ -79,7 +106,7 @@ export function createCloudLink(o: {
       const link = { installId: o.settings.instanceId(), account: normalCloudAccount(account), state: 'pending' as const, linkedAt: o.now().toISOString(), by, linkKey };
       o.settings.setCloudLink(link);
       o.events.append({ type: 'cloud_link.linked', data: { installId: link.installId, account: link.account, by } });
-      return view();
+      return change(undefined);
     },
     unlink(by) {
       const link = o.settings.getCloudLink();
@@ -87,15 +114,45 @@ export function createCloudLink(o: {
       if (link) {
         o.settings.removeCloudLink();
         o.secrets.drop(CLOUD_LINK_KEY, by);
+        if (link.previousKey) o.secrets.drop(CLOUD_LINK_PREVIOUS_KEY, by);
         o.events.append({ type: 'cloud_link.unlinked', data: { installId: link.installId, account: link.account, by } });
+        return change(link);
       }
       return view();
     },
     rotateKey(by) {
       const link = o.settings.getCloudLink();
       if (!link) throw new HttpError(409, 'this install is not linked: link it first');
-      o.settings.setCloudLink({ ...link, linkKey: mintKey(by, true) });
-      return view();
+      // The first key before stays: hopper.io may still have it bound, as no key after it connected.
+      let previousKey = link.previousKey;
+      if (!previousKey && link.linkKey) {
+        const secret = o.secrets.open(CLOUD_LINK_KEY, 'keep the cloud link key until the new one connected');
+        const kept = secret === undefined ? undefined : o.secrets.keep(CLOUD_LINK_PREVIOUS_KEY, secret, by);
+        if (kept?.ok) previousKey = { ...link.linkKey, secret: CLOUD_LINK_PREVIOUS_KEY };
+      }
+      const { keyRevokedAt: _revoked, previousKey: _previous, ...rest } = link;
+      o.settings.setCloudLink({ ...rest, linkKey: mintKey(by, true), ...(previousKey ? { previousKey } : {}) });
+      return change(link);
+    },
+    revokeKey(by) {
+      const link = o.settings.getCloudLink();
+      if (!link) throw new HttpError(409, 'this install is not linked: link it first');
+      o.secrets.drop(CLOUD_LINK_KEY, by);
+      const { linkKey: _key, ...rest } = dropPrevious(link, by);
+      o.settings.setCloudLink({ ...rest, keyRevokedAt: o.now().toISOString() });
+      o.events.append({ type: 'cloud_link.revoked', data: { installId: link.installId, account: link.account, by } });
+      return change(link);
+    },
+    ensureKey() {
+      const link = o.settings.getCloudLink();
+      if (!link || link.linkKey || link.keyRevokedAt) return link;
+      const minted = { ...link, linkKey: mintKey('hopper', false) };
+      o.settings.setCloudLink(minted);
+      return minted;
+    },
+    keyConnected(publicKey) {
+      const link = o.settings.getCloudLink();
+      if (link?.previousKey && link.linkKey?.publicKey === publicKey) o.settings.setCloudLink(dropPrevious(link, 'hopper'));
     },
     mintRegistrationCode(by) {
       const link = o.settings.getCloudLink();
@@ -122,7 +179,8 @@ export function createCloudLink(o: {
       if (!link) return 'not-linked';
       if (normalCloudAccount(account) !== link.account) return 'other-account';
       if (link.state !== 'registered') return 'not-registered';
-      o.settings.setCloudLink({ installId: link.installId, account: link.account, state: 'pending', linkedAt: link.linkedAt, by: link.by, ...(link.linkKey ? { linkKey: link.linkKey } : {}) });
+      const { registeredAt: _at, ...rest } = link;
+      o.settings.setCloudLink({ ...rest, state: 'pending' });
       o.events.append({ type: 'cloud_link.unregistered', data: { installId: link.installId, account: link.account } });
       return 'unregistered';
     },

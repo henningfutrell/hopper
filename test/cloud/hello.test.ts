@@ -6,14 +6,14 @@
 //   Scenario: a hello for another challenge, with a field changed, another key's proof or a key outside the schema is refused
 //   Scenario: after a rotation the hello proves the key before too; a wrong proof of it refuses the whole hello
 //   Scenario: the instance takes only a challenge of the closed shape
-//   Scenario: both sides use one schema, and a hello fits the 1024-byte cap
+//   Scenario: both sides use one schema, and a hello fits the 1024-byte cap; hopper.io answers an accepted hello `connected`
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { CHALLENGE_SCHEMA, challenge, HEARTBEAT_SCHEMA, HELLO_CONTEXT, HELLO_SCHEMA, provedHello } from '../../cloud/hello.ts';
+import { CHALLENGE_SCHEMA, challenge, CONNECTED, HEARTBEAT_SCHEMA, HELLO_CONTEXT, HELLO_SCHEMA, provedHello } from '../../cloud/hello.ts';
 import { LINK_MESSAGE_MAX_BYTES } from '../../cloud/link.ts';
 import {
-  challengeNonce, CLOUD_CHALLENGE_SCHEMA, CLOUD_HEARTBEAT_SCHEMA, CLOUD_HELLO_SCHEMA, HELLO_CONTEXT as INSTANCE_CONTEXT, heartbeatMessage, helloMessage,
+  challengeNonce, CLOUD_CHALLENGE_SCHEMA, CLOUD_CONNECTED, CLOUD_HEARTBEAT_SCHEMA, CLOUD_HELLO_SCHEMA, HELLO_CONTEXT as INSTANCE_CONTEXT, heartbeatMessage, helloMessage,
 } from '../../src/http/cloud-link-hello.ts';
 
 /** A cloud link key as the instance keeps it: the vault's JWK, and the record's public half. */
@@ -69,7 +69,9 @@ describe("the cloud link's hello", () => {
     expect(challengeNonce('{')).toBeUndefined();
   });
 
-  it('both sides use one schema, and a hello fits the 1024-byte cap', () => {
+  it('both sides use one schema, and a hello fits the 1024-byte cap; hopper.io answers an accepted hello `connected`', () => {
+    expect(CONNECTED).toBe(CLOUD_CONNECTED);
+    expect(JSON.parse(CONNECTED)).toEqual({ type: 'connected' });
     expect(z.toJSONSchema(HELLO_SCHEMA)).toEqual(z.toJSONSchema(CLOUD_HELLO_SCHEMA));
     expect(z.toJSONSchema(CHALLENGE_SCHEMA)).toEqual(z.toJSONSchema(CLOUD_CHALLENGE_SCHEMA));
     expect(z.toJSONSchema(HEARTBEAT_SCHEMA)).toEqual(z.toJSONSchema(CLOUD_HEARTBEAT_SCHEMA));

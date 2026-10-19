@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createAllowedHosts, createCloudLink, createDisplayName, createInfraApplies, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld, type HeldWatch } from './http/event-loop-held.ts';
+import { createAllowedHosts, createCloudLinkParts, createDisplayName, createInfraApplies, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld, type HeldWatch } from './http/event-loop-held.ts'; import type { CloudLinkTarget } from './http/cloud-link-agent.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts'; import { inCluster } from './client/cluster.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -96,7 +96,8 @@ export interface AppSeams extends UserSeams {
   searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null; /** The kernel's /proc/version text (issue #712); default the file. */ procVersion?: string; /** The thread that reads a held event loop, with the health port (issue #1383); default watchHeld's; null: none (a test process starts many daemons, issue #1717). */ held?: HeldWatch | null; /** The daemon's telemetry (issue #1486), which the telemetry setting applies to; default none: the setting is only kept. */ telemetry?: TelemetryControl;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
-  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
+  /** And hopper.io with the pins of its key, for the cloud link's agent (issue #2039); default HOPPER_IO, which pins none. */
+  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck }; cloudLink?: CloudLinkTarget;
 }
 
 const PLUGINS_CONFIG_CHECK_MS = 5000;
@@ -115,7 +116,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, telemetry: _telemetry, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, held: _held, ...shared } = seams;
+  const { env: _env, telemetry: _telemetry, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, cloudLink: _cloudLink, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, procVersion: _proc, held: _held, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -305,7 +306,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // their clients, Postgres through the store, OpenFGA and Solr their metrics, with every user's documents waiting to be
   // indexed; the stack recorder keeps them over time.
   const solrMeter = seams.solrMeter ?? (config.solrUrl ? createSolrMeter({ url: config.solrUrl }) : undefined), stack = createStack({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), remote: seams.remoteBoxMeter ?? createRemoteBoxMeter({ instanceId: instance.settings.instanceId(), records: () => instance.sandboxes.list(), clients: sandboxClientsOf(runtimes) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), solr: solrMeter && { meter: solrMeter, pending: () => runtimes.all().reduce((n, r) => n + r.search.status().pending, 0) }, database: store.databaseStats, history: store.stackHistory, clock, logger });
-  const server = createServer({
+  // The cloud link (issue #467) and its agent, the connection to hopper.io (issue #2039): told of each change the admin makes.
+  const cloudLinkParts = createCloudLinkParts({ settings: instance.settings, secrets: secrets.system, events: runtimes.events, now: () => clock.now(), state: { tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, updater, clock }, ...(seams.cloudLink ? { target: seams.cloudLink } : {}) }), { cloudLink } = cloudLinkParts, server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
     // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.
     instance, clock, version: VERSION, pluginStore, updater, gitPushes, buildDir: appDir, access, sandboxes, playground, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: stack.resources, cluster, stackDrift: startStackDrift({ appDir, env, logger, cluster, channel: () => clusterChannelTag(updater.status()), probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl, database: databaseHostOf(config.databaseUrl, () => { store.databaseStats.read(); return true; }) }) }),
@@ -327,7 +329,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     port: () => port, signIn, signInEnvironment, events: runtimes.events, held: seams.held === undefined ? watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }) : seams.held ?? undefined, // issue #1383: where a held loop runs, and the health port
     // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, telemetrySettings, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), infraApplies: createInfraApplies({ settings: instance.settings, events: runtimes.events }), cloudLink: createCloudLink({ settings: instance.settings, secrets: secrets.system, events: runtimes.events, now: () => clock.now() }), displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, telemetrySettings, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), infraApplies: createInfraApplies({ settings: instance.settings, events: runtimes.events }), cloudLink, displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8'), poolKey: () => { try { return secret(LANE_POOL_KEY_VARIABLE); } catch { return undefined; } } }, // the lane pool key (issue #1284)
   });
 
@@ -340,7 +342,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   await runtimes.start();
   runtimes.watch(intervalMs);
   // After the runtimes: a box is kept only when a machine names it, so the machines must be known first.
-  sandboxes.start(); sagas.start(); topologyDiscoveries.start(); void playground.start(); stack.recorder.start();
+  sandboxes.start(); sagas.start(); cloudLinkParts.agent.start(); topologyDiscoveries.start(); void playground.start(); stack.recorder.start();
   const stopQueueTelemetry = observeQueueOf(() => runtimes.all().map((rt) => rt.store)); // the queue's state, read only while telemetry is on (issue #1486)
 
   let stopped: Promise<void> | undefined;
@@ -363,7 +365,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     addUser,
     stop() {
       stopped ??= (async () => {
-        updater.stop(); stack.recorder.stop(); stopQueueTelemetry();
+        updater.stop(); stack.recorder.stop(); stopQueueTelemetry(); await cloudLinkParts.agent.stop();
         await access.stop();
         topologyDiscoveries.stop(); const passes = Promise.all([sandboxes.stop(), playground.stop(), sagas.stop()]);
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
