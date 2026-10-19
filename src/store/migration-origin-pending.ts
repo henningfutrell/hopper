@@ -16,3 +16,19 @@ export function originPendingBackfill(db: Db): void {
     db.run('UPDATE jobs SET body = ? WHERE id = ?', JSON.stringify(job), String(row.id));
   }
 }
+
+/**
+ * Tenant migration 85 (issue #1974): a job of a GitHub source with no origin that had started when migration 39 ran was
+ * left by it; the stamps' backfill then stamped it `untrusted` (`origin:none`), and once it waited again no request card
+ * and no approval let it go on. It waits for its issue's origin too, whatever its status: the next sync judges the issue,
+ * stamps the job again by the rules, or opens its request card in Intake. A job a job made keeps its parent's level.
+ * Rows only: the build before reads the flag as migration 39's.
+ */
+export function originPendingStarted(db: Db): void {
+  for (const row of db.all("SELECT id, body FROM jobs WHERE status NOT IN ('finished', 'failed', 'cancelled', 'rejected')")) {
+    const job = JSON.parse(String(row.body)) as { source?: { kind?: string; origin?: string }; originPending?: true; forkOf?: unknown; followOn?: unknown };
+    if (!job.source?.kind || !JUDGING_KINDS.includes(job.source.kind) || job.source.origin || job.originPending || job.forkOf || job.followOn) continue;
+    job.originPending = true;
+    db.run('UPDATE jobs SET body = ? WHERE id = ?', JSON.stringify(job), String(row.id));
+  }
+}

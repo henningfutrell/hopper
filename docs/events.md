@@ -1363,7 +1363,7 @@ Version 1 (`docs/schemas/job.trust_lowered.v1.json`). Jev's trust check (issue #
 
 ## `job.trust_approved`
 
-Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check, a deny at gate 2 or an edit of its item lowered (issue #655 parts 4, 5 and 7, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
+Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent with a box token, approved the trust of a job Jev's trust check, a deny at gate 2 or an edit of its item lowered, or of a job with no item held below approved (issue #655 parts 4, 5 and 7, issue #1974, `POST /ui/api/jobs/:id/approve-trust`): its stamp is signed `approved`, `from` the level it had. Who (`person`) and how (`via`).
 
 | field | type | required |
 |---|---|---|

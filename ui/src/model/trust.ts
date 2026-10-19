@@ -65,8 +65,13 @@ export function trustCheckText(job: Pick<Job, 'stamp'>): string | undefined {
   return `Jev's trust check lowered it: ${CHECK_REASON[id] ?? id}`;
 }
 
-/** Whether the job view offers Approve trust: a job that has not ended that Jev's trust check, a deny or an edit lowered below approved. */
-export const trustApprovalOffered = (job: Pick<Job, 'status' | 'stamp'>): boolean => quarantineOffered(job) && trustCheckText(job) !== undefined;
+/**
+ * Whether the job view offers Approve trust: a job that has not ended that Jev's trust check, a deny or an edit lowered below
+ * approved, or one below approved with no item (issue #1974: no request card approves it). A job of an item is approved
+ * through its request card in Intake (issue #896).
+ */
+export const trustApprovalOffered = (job: Pick<Job, 'status' | 'stamp' | 'source'>): boolean => quarantineOffered(job)
+  && (trustCheckText(job) !== undefined || (!job.source && BELOW_APPROVED.includes(job.stamp!.level)));
 
 type OriginAct = NonNullable<NonNullable<Job['source']>['originActs']>[number];
 

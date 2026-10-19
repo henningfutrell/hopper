@@ -82,6 +82,12 @@ export const lowest = (first: TrustLevel, ...rest: TrustLevel[]): TrustLevel =>
 /** The source kinds that judge origins (issue #652): the GitHub sources. */
 const JUDGING_KINDS = ['github', 'github-account', 'github-app'];
 
+/**
+ * Whether the job's item judges origins and the job has none (issue #1974): made before origins were judged. Its home is its
+ * item: it waits for its origin (`originPending`), the next sync judges it, and a person approves its request card in Intake.
+ */
+export const awaitsOrigin = (job: Pick<Job, 'source'>): boolean => job.source !== undefined && JUDGING_KINDS.includes(job.source.kind) && !job.source.origin;
+
 /** The level the rules give a job from where its work came, and why. */
 export function ruleCeiling(job: Pick<Job, 'source'>): { level: TrustLevel; reasons: string[] } {
   const s = job.source;
@@ -157,7 +163,7 @@ function loweredText(reasons: readonly string[]): string | undefined {
  * minimum with none); undefined: it may start. Below `approved` a person's approval is the way out; at `approved` or
  * above, only a looser brake.
  */
-export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, brake?: Brake): string | undefined {
+export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp' | 'source'>, brake?: Brake): string | undefined {
   if (!job.stamp) return STAMP_MISSING;
   const level = verifiedLevel(key, job);
   if (level === undefined) return STAMP_MISMATCH;
@@ -166,6 +172,8 @@ export function stampHold(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>, 
   if (atLeast(level, min)) return undefined;
   const why = loweredText(job.stamp.reasons);
   if (why && !atLeast(level, DISPATCH_MIN)) return `trust stamp ${level} is below ${min} (${why}): held — a person approves its trust on the job, or cancels it`;
+  // A job with no item has no request card: its trust is approved on the job (issue #1974).
+  if (!job.source && !atLeast(level, DISPATCH_MIN)) return `trust stamp ${level} is below ${min}: held — a person approves its trust on the job, or cancels it`;
   if (!atLeast(level, DISPATCH_MIN) || !brake) return `trust stamp ${level} is below ${min}: held — a person approves its item in Intake, or cancels it`;
   return `trust stamp ${level} is below ${min} (intake strictness ${brake.strictness} ${brakeWhere(brake)}): held — an admin changes the intake strictness in Settings → Intake, or a person cancels it`;
 }
@@ -250,11 +258,12 @@ export function checkedStamp(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'
 
 /**
  * Whether a person may approve the job's trust: Jev's check, a person's deny or an edit lowered it below the dispatch
- * minimum, and its stamp verifies.
+ * minimum, or it has no item (issue #1974: no request card can approve it), and its stamp verifies. A job of an item is
+ * approved through its item's request card (issue #896).
  */
-export function trustApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp'>): boolean {
+export function trustApprovable(key: Buffer, job: Pick<Job, 'id' | 'spec' | 'stamp' | 'source'>): boolean {
   const level = verifiedLevel(key, job);
-  return level !== undefined && level !== 'quarantined' && !atLeast(level, DISPATCH_MIN) && lastLowered(job.stamp?.reasons ?? []) !== undefined;
+  return level !== undefined && level !== 'quarantined' && !atLeast(level, DISPATCH_MIN) && (lastLowered(job.stamp?.reasons ?? []) !== undefined || !job.source);
 }
 
 /**

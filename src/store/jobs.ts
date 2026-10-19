@@ -1,7 +1,7 @@
 import type { JobFilter, JobRepository } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import {
-  checkDue, checkedStamp, deniedStamp, editedStamp, childLevel, gate2Hold, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampedEvent, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy, type StampedEvent, type TrustLevel,
+  awaitsOrigin, checkDue, checkedStamp, deniedStamp, editedStamp, childLevel, gate2Hold, liftedStamp, lowest, opensDoors, quarantinedStamp, ruleCeiling, signStamp, stampedEvent, stampHold, trustApprovable, trustApprovedStamp, verifiedLevel, type StampedBy, type StampedEvent, type TrustLevel,
 } from '../domain/trust-stamp.ts';
 import { stampView } from '../domain/stamp-view.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
@@ -167,7 +167,9 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
       stampKey = key;
       const unstamped = c.db.all(`SELECT id FROM jobs WHERE status NOT IN (${TERMINAL_STATUSES.map(() => '?').join(',')}) ORDER BY seq`, ...TERMINAL_STATUSES)
         .map((r) => String(r.id)).filter((id) => get(id)?.stamp === undefined);
-      for (const id of unstamped) told(write(id, (cur) => ({ ...cur, stamp: backfillStamp(key, cur) })));
+      // A job of an item with no origin waits for it (issue #1974): the next sync judges it and stamps it again.
+      const pending = (cur: Job): Partial<Job> => (awaitsOrigin(cur) && !cur.forkOf && !cur.followOn ? { originPending: true } : {});
+      for (const id of unstamped) told(write(id, (cur) => ({ ...cur, ...pending(cur), stamp: backfillStamp(key, cur) })));
       return unstamped;
     },
     restamp(id) {
