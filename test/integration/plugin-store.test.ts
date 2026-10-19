@@ -7,7 +7,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PluginStoreReport, PluginsReport } from '../../src/domain/types.ts';
 import type { AppSeams } from '../../src/main.ts';
 import { startTestApp, tempDbPath, writePlugins, TEST_PLUGINS, type TestApp } from '../support/app.ts';
@@ -243,6 +243,29 @@ describe('the plugin store setting', () => {
     expect(plugin(installed.body, 'echo-executor')?.installed).toMatchObject({ current: true });
   });
 
+  // Issue #2082: the default plugin store is published from stable only, so a newer build can name it before
+  // it is served. A start then logs no git "fatal:" and no warning, and the card says the store is unavailable.
+  it('a default plugin store that is not published yet: a quiet start, and the card shows it unavailable with the reason', async () => {
+    const w = world();
+    const site = tempDir('jh-plugin-store-site-');
+    cleanups.push(() => rmSync(site, { recursive: true, force: true }));
+    const served = await serveDir(site);
+    cleanups.push(() => void served.close());
+    const url = `${served.url}/plugin-store.git`;
+    const warned = vi.spyOn(console, 'warn');
+    const said = vi.spyOn(console, 'log');
+    cleanups.push(() => { warned.mockRestore(); said.mockRestore(); });
+    const app = await start(w, {}, { pluginStoreDefault: url });
+    await waitFor(async () => (await read(app)).checkedAt !== undefined);
+    const r = await read(app);
+    expect(r).toMatchObject({ state: 'unavailable', source: 'default', repo: url, defaultRepo: url, plugins: [] });
+    expect(r.reason).toMatch(/plugin-store\.git/);
+    expect(r.error).toBeUndefined();
+    const lines = [...warned.mock.calls, ...said.mock.calls].map((c) => String(c[0])).filter((l) => l.includes('plugin store'));
+    expect(lines.filter((l) => /fatal/i.test(l))).toEqual([]);
+    expect(warned.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('plugin store'))).toEqual([]);
+  });
+
   it('with no plugin store, says so without naming an environment variable', async () => {
     const w = world();
     const app = await start(w, {});
@@ -279,15 +302,17 @@ describe('the plugin store setting', () => {
     expect((await source(app, token, { kind: 'repo', repo: ' ' })).status).toBe(400);
   });
 
-  it('a bad plugin store shows the error, keeps the last good catalogue and offers no install from it', async () => {
+  it('an unreachable plugin store shows as unavailable with the reason, keeps the last good catalogue and offers no install from it', async () => {
     const w = world();
     const app = await start(w);
     await ready(app);
     const token = await app.login();
     const missing = join(w.store.dir, '..', 'no-such-store');
     const r = (await source(app, token, { kind: 'repo', repo: missing })).body;
-    expect(r).toMatchObject({ state: 'error', source: 'repo', repo: missing, from: w.store.dir, commit: w.first });
-    expect(r.error).toMatch(/no-such-store/);
+    expect(r).toMatchObject({ state: 'unavailable', source: 'repo', repo: missing, from: w.store.dir, commit: w.first });
+    expect(r.reason).toMatch(/no-such-store/);
+    expect(r.reason).not.toMatch(/fatal:/);
+    expect(r.error).toBeUndefined();
     expect(r.plugins.map((p) => p.id)).toEqual(['echo-executor', 'word-first']);
     const refused = await app.ui<{ error: string }>('/ui/api/plugin-store', { action: 'install', id: 'echo-executor' }, { token });
     expect(refused.status).toBe(409);
