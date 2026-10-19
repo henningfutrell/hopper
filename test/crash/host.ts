@@ -14,6 +14,7 @@
 // machine, and the ready line names it and its proxy token, so the test asks the GitHub proxy as that job does.
 // CRASH_PLANT (issue #1957): once it serves, the host ends with an unhandled rejection that says that value.
 // CRASH_TOPOLOGY: topology discovery reads with the crash reader (test/crash/topology-reader.ts), not AWS and Kubernetes.
+// CRASH_WINDOWS: a directory; Windows steps run on the crash Windows host (test/crash/windows-host.ts), which keeps what it did there.
 import '../support/isolate.ts';
 import { cloudflareProvider } from '../../src/remote-access/cloudflare.ts';
 import { ngrokProvider } from '../../src/remote-access/ngrok.ts';
@@ -21,6 +22,7 @@ import { proxyToken } from '../../src/github-proxy/token.ts';
 import { lanes, startTestApp } from '../support/app.ts';
 import { TEST_ACCOUNT_TOKEN, connectGitHub, fakeGitHubEnv, githubSource } from '../support/github-account.ts';
 import { crashTopologyReader } from './topology-reader.ts';
+import { crashWindowsHost } from './windows-host.ts';
 
 const need = (name: string): string => {
   const v = process.env[name];
@@ -49,6 +51,7 @@ const app = await startTestApp({
   seams: {
     ...(cloudflare && ngrok ? { tunnelProviders: { cloudflare: cloudflareProvider({ base: cloudflare }), ngrok: ngrokProvider({ base: ngrok }) } } : {}),
     ...(process.env.CRASH_TOPOLOGY ? { topologyReader: crashTopologyReader } : {}),
+    ...(process.env.CRASH_WINDOWS ? { windowsStepHost: crashWindowsHost(process.env.CRASH_WINDOWS) } : {}),
   },
 });
 if (connect) connectGitHub(app, connect.split(','), { token: process.env.CRASH_GITHUB_TOKEN ?? TEST_ACCOUNT_TOKEN, key: need('CRASH_MASTER_KEY') });

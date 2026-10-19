@@ -28687,7 +28687,23 @@ reports the same sources again, which replace their snapshots.
 - **No exactly-once count of reads.** Discovery is read-only, with no compensation: a step done again reads again. The test
   asserts what it leaves (one source each, the run done), not how many reads it took.
 
-**Left for later parts.** The other saga kinds (need step, Windows step, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
+**Part 6: a Windows step** (2026-10-19, "Windows sandbox steps"). The test (`test/crash/windows-kill.test.ts`,
+`test/crash/windows-world.ts`) runs a job on a first host, adds a Windows host, and has the job ask for a step on
+`/job/step`. It kills the host at each boundary of the `windows-step` saga's `run` and `sweep` steps, while the step runs on
+the host (no kill point: a plain SIGKILL), and while it compensates a step the job stopped (`run`'s `before-compensate` and
+`after-compensate`). Each host runs steps on the crash Windows host (`test/crash/windows-host.ts`, `CRASH_WINDOWS`), a
+double at the `WindowsStepHost` seam that keeps each run and the host's scratch in files of the test's directory, so they
+outlive a host. A second host ends the saga: the step ran on the host once, the host's scratch is swept, no step keeps a
+host lease, the job's ask sent again is the same step, and the job reads one result: exit 0 after a kill at a step
+boundary, `STEP_INTERRUPTED` after a kill while it ran, cancelled after a kill while it compensated. **What it found:**
+nothing; the step's host lease and its kept result held at every point.
+**Decisions (part 6).**
+- **A double at the seam, not ssh with a fake binary.** The ssh host takes no binary from the environment, and a setting
+  for one would be production surface. The ssh calls have their own test (`test/windows-steps/ssh-host.test.ts`).
+- **The compensation of `sweep` is not in this part.** It runs only when the sweep fails past its tries; the job's stop
+  reaches the compensation of `run` only.
+
+**Left for later parts.** The other saga kinds (need step, the item saga); landing batches killed between each GitHub write and its event (#1589); kill
 points between a GitHub call and its record (between an outbox send and its `sent` mark: issue #1959, below; a job's push: part 4); the nightly run of N seeds and
 the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `src/work-items` or `src/landing-batches`
 (a workflow file: a change to CI, which a job does not make from an issue's text).
@@ -28695,7 +28711,7 @@ the run on pull requests that touch `src/sagas`, `src/sources/github/outbox*`, `
 **Verification:** `test/sagas/kill-points.test.ts` (a point ends the process with SIGKILL and says which, its nth pass, off
 outside a test run and with none named, the points of a saga kind); `test/crash/mint-steps.test.ts` (each step boundary of
 each provider); `test/crash/mint-compensation.test.ts` (each compensation boundary); `test/crash/db-drop.test.ts` (the
-record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
+record of two steps, dropped before and after it commits); `test/crash/random.test.ts` (seeded picks); `test/crash/push-kill.test.ts` (part 4: a job's push at each kill point); `test/crash/topology-kill.test.ts` (part 5: topology discovery at each step boundary); `test/crash/windows-kill.test.ts` (part 6: a Windows step at each step boundary, while it runs and while it compensates); `test/crash/skewed-lease.test.ts` (part 2: the second host's clock ahead, the
 first's behind); `test/integration/two-hosts.test.ts` (a sweep lease under a skewed clock); `test/store/job-leases.test.ts`
 and `test/engine/wait-checks.test.ts` (part 3: a job lease and a wait-check lease, the second hopper's clock ahead, the
 first's behind).
