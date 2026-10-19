@@ -1,3 +1,4 @@
+import { DEFAULT_SOFT_LANES } from '../domain/decider-policy.ts';
 import type { DeciderPolicy, ExecutorLaneEffect, MachineSnapshot, UsageReading } from '../domain/types.ts';
 
 export interface MachineUsage {
@@ -77,18 +78,25 @@ export interface LaneCap {
   band: CapBand;
 }
 
-/** The policy on machine `m`: its own usage limits, when it has them, in place of the user's (issue #1860). */
+/**
+ * The policy on machine `m`: its own usage limits, when it has them, in place of the user's (issue #1860); its own soft
+ * lanes when it names them, else the user's.
+ */
 export const machinePolicy = (m: Pick<MachineSnapshot, 'usageLimits'>, p: DeciderPolicy): DeciderPolicy =>
-  (m.usageLimits ? { ...p, softLimit: m.usageLimits.soft, hardLimit: m.usageLimits.hard } : p);
+  (m.usageLimits
+    ? { ...p, softLimit: m.usageLimits.soft, hardLimit: m.usageLimits.hard, ...(m.usageLimits.softLanes === undefined ? {} : { softLanes: m.usageLimits.softLanes }) }
+    : p);
 
-/** Step 2: the most lanes the machine may run, by its own usage limits when it has them (`machinePolicy`). */
+/**
+ * Step 2: the most lanes the machine may run, by its own usage limits when it has them (`machinePolicy`): every lane below
+ * the soft limit, the soft lanes (at most maxLanes) from it to the hard limit, none at the hard limit (issue #2091).
+ */
 export function laneCap(m: MachineSnapshot, usedFrac: number, policy: DeciderPolicy): LaneCap {
   if (!m.online) return { cap: 0, band: 'offline' };
   const p = machinePolicy(m, policy);
   if (usedFrac < p.softLimit) return { cap: m.maxLanes, band: 'free' };
   if (usedFrac >= p.hardLimit) return { cap: 0, band: 'hard' };
-  const scaled = (m.maxLanes * (p.hardLimit - usedFrac)) / (p.hardLimit - p.softLimit);
-  return { cap: Math.max(0, Math.floor(scaled + 1e-9)), band: 'soft' };
+  return { cap: Math.min(m.maxLanes, p.softLanes ?? DEFAULT_SOFT_LANES), band: 'soft' };
 }
 
 export interface LaneEffect extends LaneCap {

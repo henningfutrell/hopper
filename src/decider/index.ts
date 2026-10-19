@@ -9,9 +9,12 @@ import { laneEffect, machinePolicy, placementPressure } from './usage.ts';
 import { signedOutNote } from './signed-out.ts';
 import { preempt } from './preempt.ts';
 
-/** A machine's own usage limits (issue #1860), as its usage reason names them; nothing when the user's apply. */
+/** A machine's own usage limits (issue #1860) and soft lanes (issue #2091), as its usage reason names them; nothing when the user's apply. */
 const ownLimits = (m: MachineSnapshot): string =>
-  (m.usageLimits ? `, its own usage limits ${Math.round(m.usageLimits.soft * 100)}% / ${Math.round(m.usageLimits.hard * 100)}%` : '');
+  (m.usageLimits
+    ? `, its own usage limits ${Math.round(m.usageLimits.soft * 100)}% / ${Math.round(m.usageLimits.hard * 100)}%`
+      + (m.usageLimits.softLanes === undefined ? '' : `, ${m.usageLimits.softLanes} soft lanes`)
+    : '');
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';

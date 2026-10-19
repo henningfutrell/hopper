@@ -114,7 +114,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'research.revision_requested': { researchId: 'r1', version: 1, stage: 'human', decision: 'steer', notes: 'Only the AWS side.', by: 'owner' },
   'research.accepted': { researchId: 'r1', version: 2, stage: 'human', by: 'owner', notes: 'Enough to propose.' },
   'research.cancelled': { researchId: 'r1', version: 1, reason: 'its job is cancelled' },
-  'usage.limits_changed': { from: { soft: 0.7, hard: 0.95 }, to: { soft: 0.6, hard: 0.9 } },
+  'usage.limits_changed': { from: { soft: 0.7, hard: 0.95, softLanes: 1 }, to: { soft: 0.6, hard: 0.9, softLanes: 2 } },
   'priority_lanes.changed': { from: [], to: ['desk/lane-1'], by: 'reliability' },
   'priority_lanes.settings_changed': {
     from: { highPriority: 75, count: 1, whenIdle: 'keep-free', windowDays: 14, minRuns: 5 },

@@ -125,11 +125,11 @@ same Decision. Algorithm, in order:
    (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
    No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
-2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`: the usage limits, "Usage limits" (issue #522)):
+2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`, `policy.softLanes`: the usage limits, "Usage limits" (issue #522)):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
-   - between → `floor(maxLanes * (hard - usedFrac) / (hard - soft))` (linear scale-down)
+   - between → `min(maxLanes, softLanes)`: the **soft lanes**, a fixed count, default 1 (issue #2091, "Soft lanes")
 3. **Router verdict per waiting job** (from `job.advice`), always applied (issue #211):
    - no advice yet → hold `awaiting router advice` (nothing starts before the router has
      spoken)
@@ -276,8 +276,8 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
   pauses the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
   - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option: a machine added or joined takes
-    the machine defaults' lanes; only this machine, `local`, falls back to 4), scaled down
-    past the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
+    the machine defaults' lanes; only this machine, `local`, falls back to 4), the soft lanes
+    from the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
   - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaks first; an approval ends a router hold;
   - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
@@ -6210,7 +6210,7 @@ holds no credential. Prior art: `a status-bar script`.
   last good read and never waits: every Decision polls every usage source.
 - Readings: one per **usage window**, `used` = percent, `limit` 100, unit `%`, `resetsAt` (ISO; the
   panel prints no year: the one nearest now), `at` = when read. `session` and `week` (all models)
-  throttle through decider steps 1-2 (soft 0.7 scales down, hard 0.95 stops). A window of one model
+  throttle through decider steps 1-2 (from soft 0.7 the soft lanes, hard 0.95 stops). A window of one model
   (`week (Fable)`) or a shape not known is an **informational reading** (`informational: true`):
   shown, never throttling — decider step 1 skips it (it limits one model, not every job).
 - A window past its `resetsAt` is left out until the next read. No read yet, a failed read
@@ -12769,8 +12769,8 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
   it at every Decision and every usage report (`policyOf`, `src/engine/context.ts`); a Decision's `inputs.policy`
   carries the limits it used. Saving appends `usage.limits_changed { from, to }`, one of the `TRIGGERS`, so the
   next Decision comes at once, not at the next tick. Nothing restarts.
-- **Route.** `POST /ui/api/usage/limits { soft, hard }`, admin. `GET /api/usage` answers `limits` as
-  `{ soft, hard, defaults: { soft, hard }, set }`. A soft limit at or above the hard one is refused with 400; the
+- **Route.** `POST /ui/api/usage/limits { soft, hard, softLanes? }`, admin. `GET /api/usage` answers `limits` as
+  `{ soft, hard, softLanes, defaults: { soft, hard, softLanes }, set }` (`softLanes`: issue #2091, "Soft lanes"). A soft limit at or above the hard one is refused with 400; the
   editor refuses it first (`limitsProblem`, `ui/src/model/usage-limits.ts`) and posts nothing.
 - **Informational readings never throttle**, whatever the limits: unchanged, the limits apply to the throttle
   fraction of decider step 1 only.
@@ -29470,3 +29470,35 @@ of it always calls a real model. The issue names cursor-agent only "where its en
 **Verification:** `test/scripts/agent-acceptance-workflow.test.ts` (failed first, then passes); the three test files of
 `print-agents` pass locally with the CLIs named as the workflow names them (claude 2.1.292, codex 0.161.0, opencode
 1.19.3, omp 18.7.0).
+
+## Soft lanes (issue #2091, 2026-10-19)
+
+**Problem.** From the soft limit to the hard limit the decider scaled a machine's lane cap down linearly:
+`floor(maxLanes * (hard - usedFrac) / (hard - soft))`. At soft 70%, hard 97% and 93% used, a machine of 6 lanes got
+`floor(0.89)` = 0 lanes: every queued job waited, though usage was below the hard limit. The scale-down was never the
+behavior the usage limits (issue #522) were for.
+
+**As built:**
+- **The soft band is a fixed lane count.** Decider step 2 (`laneCap`, `src/decider/usage.ts`): below soft, `maxLanes`;
+  from soft to hard, `min(maxLanes, softLanes)`; at hard, 0. No scale-down. The interpolation is removed, in the decider
+  and in the UI's copy of its rule (`capAt`, `ui/src/model/usage-limits.ts`).
+- **The setting.** `softLanes`, a whole number from 0, beside soft and hard in the usage limits: the user's
+  (`POST /ui/api/usage/limits { soft, hard, softLanes? }`; absent keeps the user's) and a machine's own
+  (`usageLimits.softLanes`, optional: absent takes the user's). Default 1 (`DEFAULT_SOFT_LANES`,
+  `src/domain/decider-policy.ts`); 0 only when a person sets 0. It reaches the decider as `policy.softLanes`
+  (`policyOf`, `machinePolicy`), so a change applies at the next Decision, as the limits do; a change to it alone is a
+  `usage.limits_changed`.
+- **The Usage view.** A **Soft lanes** field beside Soft and Hard; the band says `soft: N lanes per machine`; each
+  machine's lane cap badge shows the fixed count; a machine's own soft lanes show beside its own limits.
+- **Two machines on one account** (issue #1860): to make a secondary give way, give it limits below the primary's soft
+  limit, or `softLanes: 0`.
+
+**Decisions made.**
+- No environment variable for the default: the issue asks for a setting on the panel, and 1 is the default it names.
+- No migration. The stored `usageLimits` setting and the `usage.limits_changed` event get an optional `softLanes`;
+  a value stored before it reads as the default, 1. A build before this one reads the stored setting and ignores the
+  new field.
+
+**Verification:** `test/decider/soft-lanes.test.ts` (below soft, between, just under hard, at hard, 0 soft lanes, capped
+by maxLanes, a machine's own soft lanes), `test/decider/machine-usage-limits.test.ts`, `test/integration/usage-limits.test.ts`
+(set through the route, applied at once, the event), `test/ui/usage-limits.test.ts`, `test/ui/usage-limits-view.test.ts`.

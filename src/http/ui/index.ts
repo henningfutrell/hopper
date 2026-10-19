@@ -149,7 +149,9 @@ export const queueOrderBody = z.strictObject({
 // The usage graph (issue #385): the history retention, whole days.
 /** The usage limits (issue #522): the same bounds as HOPPER_SOFT_LIMIT / HOPPER_HARD_LIMIT. */
 const limitFraction = z.number().min(0, 'a limit is a fraction from 0 to 1').max(1, 'a limit is a fraction from 0 to 1');
-export const usageLimitsBody = z.strictObject({ soft: limitFraction, hard: limitFraction })
+/** The soft lanes (issue #2091): a whole number from 0; absent: the user's soft lanes stay as they are. */
+const softLanes = z.number().int('the soft lanes are a whole number').min(0, 'the soft lanes must not be negative').optional();
+export const usageLimitsBody = z.strictObject({ soft: limitFraction, hard: limitFraction, softLanes })
   .refine((b) => b.soft < b.hard, { message: 'the soft limit must be below the hard limit', path: ['soft'] });
 export const historyRetentionBody = z.strictObject({ days: z.number().int().min(1, 'keep at least 1 day').max(MAX_HISTORY_RETENTION_DAYS) });
 export { usageGraphViewBody };
