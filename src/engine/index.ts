@@ -152,7 +152,7 @@ export function createEngine(o: EngineOptions): Engine {
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}), ...(o.jobMoves ? { jobMoves: o.jobMoves } : {}), ...(o.waitReads ? { waitReads: o.waitReads } : {}), ...(o.jobRuns ? { jobRuns: o.jobRuns } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
-    leases: createJobLeases({ store, clock: o.clock, ...(o.jobLeaseMs ? { leaseMs: o.jobLeaseMs } : {}) }),
+    leases: createJobLeases({ store, ...(o.jobLeaseMs ? { leaseMs: o.jobLeaseMs } : {}) }),
   };
   const cleanups = createCleanups(c);
   const cleanup = cleanups.run;

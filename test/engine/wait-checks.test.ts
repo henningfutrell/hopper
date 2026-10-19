@@ -7,6 +7,7 @@ import type { Job, JobWait } from '../../src/domain/types.ts';
 import type { WatchedEnd, WatchedRef } from '../../src/domain/watched-items.ts';
 import { DEADLINE_MS, FIRST_CHECK_MS, type WaitedChecks, type WaitedReviews } from '../../src/domain/wait-checks.ts';
 import { createWaitChecks, LEASE_MS, type WaitReads } from '../../src/engine/wait-checks.ts';
+import { openDb } from '../../src/store/db.ts';
 import { openUserStore } from '../../src/store/user-store.ts';
 import { testDatabaseUrl } from '../support/database.ts';
 
@@ -47,6 +48,12 @@ const CLOSED: WatchedEnd = { ref: ISSUE, url: 'https://github.com/octo/tools/iss
 function waitingJob(store: UserStore, wait: Partial<JobWait> = {}): Job {
   const job = store.jobs.create({ executor: 'x', payload: {} }, 50, { source: 's', kind: 'github', key: 'https://github.com/octo/tools/issues/7', repo: 'octo/tools', number: 7 });
   return store.jobs.update(job.id, { status: 'waiting_on', wait: { for: 'issue 9 to close', since: new Date(now).toISOString(), on: { kind: 'item', number: 9 }, ...wait } });
+}
+
+/** Ends every wait-check lease of `url` at once. */
+function endLeases(url: string): void {
+  const db = openDb(url);
+  try { db.run("UPDATE wait_check_leases SET until = '1970-01-01T00:00:00.000Z'"); } finally { db.close(); }
 }
 
 const ended = (s: UserStore, id: string) => s.events.recent(50, ['job.wait_ended'], id);
@@ -120,7 +127,8 @@ describe('a wait check (issue #1694)', () => {
     await b.checks.run();
     expect(rb.asked).toEqual([]);
 
-    now += LEASE_MS + 1;
+    // Its lease ends, as its time would: on the database's clock (issue #1954).
+    endLeases(url);
     await b.checks.run();
     expect(rb.asked).toHaveLength(1);
     expect(b.store.jobs.get(job.id)!.status).toBe('queued');
