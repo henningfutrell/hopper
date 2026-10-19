@@ -45,18 +45,20 @@ export const elbowInsOption = (z: typeof Z) => z.number().int().min(0, 'elbowIns
   .meta({ description: 'lanes a job labelled hopper:specialty, or a job that tends a pull request, may start past this machine\'s lane cap at once (default 1); 0: none' });
 
 /**
- * The machine's own usage limits (issue #1860): its lane cap scales down from `soft` and is 0 at `hard`, whatever the user's
- * usage limits are. Two machines on one account: give the secondary lower limits, so its lanes give way first. Absent: the user's.
+ * The machine's own usage limits (issue #1860): from `soft` its lane cap is its soft lanes (issue #2091; absent: the user's),
+ * and 0 at `hard`, whatever the user's usage limits are. Two machines on one account: give the secondary lower limits, or
+ * 0 soft lanes, so its lanes give way first. Absent: the user's.
  */
 export const usageLimitsOption = (z: typeof Z) => z.strictObject({
   soft: z.number().min(0).max(1),
   hard: z.number().min(0).max(1),
+  softLanes: z.number().int().min(0).optional(),
 }).refine((l) => l.soft < l.hard, 'usageLimits: soft must be below hard').optional()
-  .meta({ description: 'this machine\'s own usage limits, as {"soft": 0.5, "hard": 0.7} (fractions of the usage): its lanes scale down from soft and stop at hard; absent: the usage limits set on Usage. Two machines on one account: give the one that gives way lower limits' });
+  .meta({ description: 'this machine\'s own usage limits, as {"soft": 0.5, "hard": 0.7, "softLanes": 1} (fractions of the usage; softLanes optional, absent: the soft lanes set on Usage): from soft it keeps only the soft lanes, at hard it stops; absent: the usage limits set on Usage. Two machines on one account: give the one that gives way lower limits' });
 
 /** The `usageLimits` field of a machine that has its own; nothing for one that does not. */
 export const usageLimitsOf = (o: { usageLimits?: UsageLimitPair }): { usageLimits?: UsageLimitPair } =>
-  (o.usageLimits ? { usageLimits: { soft: o.usageLimits.soft, hard: o.usageLimits.hard } } : {});
+  (o.usageLimits ? { usageLimits: { soft: o.usageLimits.soft, hard: o.usageLimits.hard, ...(o.usageLimits.softLanes === undefined ? {} : { softLanes: o.usageLimits.softLanes }) } } : {});
 
 /**
  * A Windows machine (issue #1350): the jobs labelled `hopper:win` or `hopper:windows` go only to one, and wait while none

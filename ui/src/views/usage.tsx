@@ -20,6 +20,10 @@ import { act, refreshUsage, useHopper } from '@/store';
 import { MachinesResourcesPanel } from './machine-resources';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
+const lanes = (n: number) => `${n} ${n === 1 ? 'lane' : 'lanes'}`;
+const softLanes = (n: number) => `${n} soft ${n === 1 ? 'lane' : 'lanes'}`;
+/** A machine's own usage limits (issue #1860), and its own soft lanes when it names them (issue #2091). */
+const ownLimits = (l: UsageLimitPair) => `${pct(l.soft)} / ${pct(l.hard)}${l.softLanes === undefined ? '' : `, ${softLanes(l.softLanes)}`}`;
 const BAND_TONE: Record<MachineLaneEffect['band'], Tone> = { free: 'ok', soft: 'warn', hard: 'bad', offline: 'muted' };
 
 function AccountRow({ a }: { a: PartAccount }) {
@@ -54,7 +58,7 @@ function LaneEffect({ usage }: { usage: UsageReport }) {
   return (
     <Panel title="Lane effect" icon={Layers} bodyClassName="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Past <span className="num text-foreground">{pct(soft)}</span> of a throttling budget the lane cap scales down; at <span className="num text-foreground">{pct(hard)}</span> lanes stop.
+        From <span className="num text-foreground">{pct(soft)}</span> of a throttling budget a machine keeps <span className="num text-foreground">{lanes(usage.limits.softLanes)}</span>; at <span className="num text-foreground">{pct(hard)}</span> lanes stop.
         Informational readings never throttle.
       </p>
       {usage.machines.length ? (
@@ -72,7 +76,7 @@ function LaneEffect({ usage }: { usage: UsageReport }) {
               </div>
               <div className="num text-xs text-muted-foreground">{pct(m.usedFrac)} used · {laneEffectText(m)}</div>
               {m.usageLimits && (
-                <div className="num text-xs text-muted-foreground" data-own-limits={m.machineId}>its own usage limits: {pct(m.usageLimits.soft)} / {pct(m.usageLimits.hard)}</div>
+                <div className="num text-xs text-muted-foreground" data-own-limits={m.machineId}>its own usage limits: {ownLimits(m.usageLimits)}</div>
               )}
               {executorEffectLines(m).map((line) => <div key={line} className="num text-xs text-muted-foreground">{line}</div>)}
             </li>
@@ -103,9 +107,11 @@ function Sources({ usage }: { usage: UsageReport }) {
   );
 }
 
-const BAND_SAYS: Record<LimitBand, string> = { free: 'every lane open', soft: 'lanes scale down', hard: 'nothing new starts' };
+const bandSays = (band: LimitBand, n: number) =>
+  (band === 'free' ? 'every lane open' : band === 'soft' ? `${lanes(n)} per machine` : 'nothing new starts');
 const BAND_TEXT: Record<LimitBand, string> = { free: 'text-ok', soft: 'text-warn', hard: 'text-bad' };
-const same = (a: UsageLimitPair, b: UsageLimitPair) => a.soft === b.soft && a.hard === b.hard;
+type Limits = Required<UsageLimitPair>;
+const same = (a: Limits, b: Limits) => a.soft === b.soft && a.hard === b.hard && a.softLanes === b.softLanes;
 const DAY_MS = 86_400_000;
 
 function LimitInput({ id, label, value, disabled, onChange }: { id: string; label: string; value: number; disabled: boolean; onChange: (f: number) => void }) {
@@ -115,6 +121,17 @@ function LimitInput({ id, label, value, disabled, onChange }: { id: string; labe
       <Input id={id} type="number" min={0} max={100} step={1} inputMode="numeric" className="num h-8 w-[4.5rem]" disabled={disabled}
         value={Number.isFinite(value) ? Math.round(value * 100) : ''} onChange={(e) => onChange(e.target.value === '' ? Number.NaN : Number(e.target.value) / 100)} />
       <span className="text-muted-foreground">%</span>
+    </label>
+  );
+}
+
+/** The soft lanes (issue #2091): how many lanes each machine keeps from the soft limit to the hard limit. */
+function SoftLanesInput({ value, disabled, onChange }: { value: number; disabled: boolean; onChange: (n: number) => void }) {
+  return (
+    <label htmlFor="usage-soft-lanes" className="flex items-center gap-1.5 text-sm">
+      <span className="text-muted-foreground">Soft lanes</span>
+      <Input id="usage-soft-lanes" type="number" min={0} step={1} inputMode="numeric" className="num h-8 w-[4.5rem]" disabled={disabled}
+        value={Number.isFinite(value) ? value : ''} onChange={(e) => onChange(e.target.value === '' ? Number.NaN : Number(e.target.value))} />
     </label>
   );
 }
@@ -130,13 +147,13 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
   const clock = useNow();
   const saved = usage.limits;
   // The daemon's limits, until the admin starts an edit.
-  const [edited, setEdited] = useState<UsageLimitPair | null>(null);
-  const draft = edited ?? { soft: saved.soft, hard: saved.hard };
+  const [edited, setEdited] = useState<Limits | null>(null);
+  const draft = edited ?? { soft: saved.soft, hard: saved.hard, softLanes: saved.softLanes };
   const [history, setHistory] = useState<UsageHistory | null>(null);
   useEffect(() => { get<UsageHistory>('/api/usage/history?range=24h').then(setHistory, () => {}); }, [recorded]);
-  const edit = (l: UsageLimitPair) => setEdited(l);
+  const edit = (l: Limits) => setEdited(l);
   const problem = limitsProblem(draft);
-  const shown = problem ? { soft: saved.soft, hard: saved.hard } : draft;
+  const shown = problem ? { soft: saved.soft, hard: saved.hard, softLanes: saved.softLanes } : draft;
   const online = usage.machines.filter((m) => m.online);
   const now = online.length ? Math.max(...online.map((m) => m.usedFrac)) : 0;
   const band = bandAt(now, shown);
@@ -146,7 +163,7 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (problem || !dirty) return;
-    if (await act('/ui/api/usage/limits', draft, `Usage limits saved: soft ${pct(draft.soft)}, hard ${pct(draft.hard)}`)) {
+    if (await act('/ui/api/usage/limits', draft, `Usage limits saved: soft ${pct(draft.soft)}, hard ${pct(draft.hard)}, ${softLanes(draft.softLanes)}`)) {
       await refreshUsage().catch(() => {});
       setEdited(null);
     }
@@ -158,18 +175,18 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
           <div className="num text-3xl font-semibold tracking-tight" data-slot="usage-now-value">{pct(now)}</div>
           <div className="text-xs text-muted-foreground">used now, the highest throttling reading</div>
         </div>
-        <div className={`text-sm font-medium ${BAND_TEXT[band]}`} data-slot="usage-band">{band}: {BAND_SAYS[band]}</div>
+        <div className={`text-sm font-medium ${BAND_TEXT[band]}`} data-slot="usage-band">{band}: {bandSays(band, shown.softLanes)}</div>
         {online.length > 0 && (
           <ul className="ml-auto flex flex-wrap gap-1.5" aria-label="Lane cap per machine at these limits">
             {online.map((m) => {
-              // A machine with its own usage limits (issue #1860) keeps them whatever the user's are.
-              const cap = capAt(m.maxLanes, m.usedFrac, m.usageLimits ?? shown);
+              // A machine with its own usage limits (issue #1860) keeps them whatever the user's are; with no soft lanes of its own, the user's apply.
+              const cap = capAt(m.maxLanes, m.usedFrac, m.usageLimits ? { softLanes: shown.softLanes, ...m.usageLimits } : shown);
               return (
                 <li key={m.machineId} data-machine-cap={m.machineId} className="num rounded-md border px-2 py-0.5 text-xs">
                   <span className="text-muted-foreground">{m.label || m.machineId}</span>{' '}
                   {cap !== m.cap && <span className="text-muted-foreground line-through">{m.cap}</span>}{cap !== m.cap && ' '}
                   <span className="font-semibold">{cap}</span>/{m.maxLanes} lanes
-                  {m.usageLimits && <span className="text-muted-foreground"> · own limits {pct(m.usageLimits.soft)} / {pct(m.usageLimits.hard)}</span>}
+                  {m.usageLimits && <span className="text-muted-foreground"> · own limits {ownLimits(m.usageLimits)}</span>}
                 </li>
               );
             })}
@@ -177,14 +194,15 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
         )}
       </div>
       <UsageLimitsGraph points={points} now={now} from={history ? Date.parse(history.from) : clock - DAY_MS} to={clock} limits={shown}
-        {...(canSet ? { onChange: edit } : {})} />
+        {...(canSet ? { onChange: (l: UsageLimitPair) => edit({ ...draft, soft: l.soft, hard: l.hard }) } : {})} />
       <form className="flex flex-wrap items-center gap-x-4 gap-y-2" onSubmit={save}>
         <LimitInput id="usage-soft-limit" label="Soft" value={draft.soft} disabled={!canSet} onChange={(soft) => edit({ ...draft, soft })} />
         <LimitInput id="usage-hard-limit" label="Hard" value={draft.hard} disabled={!canSet} onChange={(hard) => edit({ ...draft, hard })} />
+        <SoftLanesInput value={draft.softLanes} disabled={!canSet} onChange={(n) => edit({ ...draft, softLanes: n })} />
         {canSet && (
           <div className="ml-auto flex items-center gap-2">
             {!same(draft, saved.defaults) && (
-              <Button type="button" size="sm" variant="ghost" onClick={() => edit({ ...saved.defaults })}>Defaults ({pct(saved.defaults.soft)} / {pct(saved.defaults.hard)})</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => edit({ ...saved.defaults })}>Defaults ({pct(saved.defaults.soft)} / {pct(saved.defaults.hard)}, {softLanes(saved.defaults.softLanes)})</Button>
             )}
             {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => setEdited(null)}>Undo</Button>}
             <Button type="submit" size="sm" disabled={!!problem || !dirty}>Save</Button>
@@ -193,7 +211,7 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
       </form>
       {problem && <p role="alert" className="text-xs text-bad" data-slot="usage-limits-problem">{problem}</p>}
       <p className="text-xs text-muted-foreground">
-        Below the soft limit every lane is open; between the two a machine's lanes scale down; at the hard limit nothing new starts.
+        Below the soft limit every lane is open; from the soft limit to the hard limit each machine keeps only the soft lanes (at most its own lanes); at the hard limit nothing new starts.
         Informational readings never throttle. {saved.set
           ? 'Set here, these win over the HOPPER_SOFT_LIMIT and HOPPER_HARD_LIMIT settings of the environment, and apply at once.'
           : 'Until saved here, they come from HOPPER_SOFT_LIMIT and HOPPER_HARD_LIMIT in the environment.'}

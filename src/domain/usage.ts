@@ -110,7 +110,7 @@ export interface MachineLaneEffect {
   maxLanes: number;
   /** Max of used/limit over the readings that throttle this machine. */
   usedFrac: number;
-  /** The lane cap: maxLanes below the soft limit, scaled down past it, 0 at the hard limit or offline. */
+  /** The lane cap: maxLanes below the soft limit, the soft lanes (at most maxLanes) from it to the hard limit, 0 at the hard limit or offline. */
   cap: number;
   band: 'offline' | 'free' | 'soft' | 'hard';
   /** Per executor the machine runs, in its order. */
@@ -119,15 +119,21 @@ export interface MachineLaneEffect {
   usageLimits?: UsageLimitPair;
 }
 
-/** The usage limits (issue #522): the usage fraction where a machine's lanes scale down (soft) and where it starts nothing (hard). */
+/**
+ * The usage limits (issue #522): the usage fraction where a machine's lanes drop to the soft lanes (soft) and where it
+ * starts nothing (hard). `softLanes` (issue #2091): the lanes a machine keeps from soft to hard, at most its maxLanes;
+ * absent: the user's soft lanes for a machine's own limits, else 1.
+ */
 export interface UsageLimitPair {
   soft: number;
   hard: number;
+  softLanes?: number;
 }
 
-/** The usage limits the decider uses now: the user's, once set in the UI, else the defaults (HOPPER_SOFT_LIMIT / HOPPER_HARD_LIMIT). */
+/** The usage limits the decider uses now: the user's, once set in the UI, else the defaults (HOPPER_SOFT_LIMIT / HOPPER_HARD_LIMIT, 1 soft lane). */
 export interface UsageLimits extends UsageLimitPair {
-  defaults: UsageLimitPair;
+  softLanes: number;
+  defaults: Required<UsageLimitPair>;
   /** True once the user set them: they win over the defaults from then on. */
   set: boolean;
 }
