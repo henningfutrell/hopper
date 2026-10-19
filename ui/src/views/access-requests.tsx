@@ -1,7 +1,8 @@
 // Access requests (issue #897): the one home of what jobs on boxes wait on a person for — the credentials they asked for
 // (Asked for, issue #583), the vault grants they wait for (issue #652), the templates that wait for approval (issues
 // #558, #584), and the sandbox runs jobs asked for (issue #991). Always rendered: each panel says what will show there when nothing waits. Settings → Vault keeps the
-// configuration. Its nav badge, and its row in Needs you, count what waits (accessRequestsWaiting).
+// configuration. Its nav badge, and its row in Needs you, count what waits (accessRequestsWaiting) and the templates with
+// an unknown asset (unknownAssetTemplates), and each one counted shows here (issue #2123).
 // Issue #1018: an admin selects template and sandbox run cards, or all that wait, and one Approve selected approves
 // them all, side by side; each card shows its own progress and result, and the bar counts what was approved and failed.
 // Issue #1138: an admin mints a delegate approver here, an agent that approves what waits for them, and revokes it here.
@@ -10,7 +11,7 @@ import { useEffect } from 'react';
 import { Confirm } from '@/components/confirm';
 import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
-import { sandboxRunsWaiting, templateWaits } from '@/model/vault';
+import { sandboxRunsWaiting, templateWaits, unknownAssetTemplates } from '@/model/vault';
 import type { VaultView } from '@/model/wire';
 import { approveItems, batchText, forgetEndedItems, runItem, selectOnly, templateItem, useAccessApprovals } from '@/store/access-approvals';
 import { useCanAdmin } from '@/store/selectors';
@@ -19,6 +20,7 @@ import { AskedFor } from './vault-requests';
 import { VaultGrants } from './vault-grants';
 import { TemplateApprovals } from './template-approvals';
 import { SandboxRuns } from './sandbox-approvals';
+import { UnknownAssets } from './unknown-assets';
 import { DelegateApprovers } from './delegate-approvers';
 
 /** The template and sandbox run cards that wait: each one Approve selected can approve. */
@@ -58,6 +60,7 @@ export function AccessRequests() {
       {can && <ApproveSelected view={view} />}
       <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} secrets={view?.secrets ?? []} can={can} />
       <SandboxRuns view={view} can={can} />
+      <UnknownAssets templates={unknownAssetTemplates(view)} can={can} />
       {can && <DelegateApprovers />}
       <Panel title="Box tokens" icon={Ticket}>
         <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>

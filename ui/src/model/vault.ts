@@ -153,13 +153,17 @@ export function sandboxApprovalsText(a: SandboxApprovals | undefined): string {
   return `${policy}A person approves each ${levels.length ? 'other ' : ''}new template and sandbox run.`;
 }
 
+/** Its reason in words (issue #2123): `no cluster staging; known: …`, each unknown asset once. */
+export const unknownReason = (t: TemplateView): string => (t.unknownAssets ?? []).map((u) => `no cluster ${u.cluster}; known: ${u.known.join(', ')}`).join('; ');
+
 /** A template's assets the vault cannot find (issue #2067), in words, as the server says them: `no cluster staging; known: …`. */
-const unknownText = (t: TemplateView): string | undefined =>
-  t.unknownAssets?.length ? `unknown asset: ${t.unknownAssets.map((u) => `no cluster ${u.cluster}; known: ${u.known.join(', ')}`).join('; ')}` : undefined;
+const unknownText = (t: TemplateView): string | undefined => (t.unknownAssets?.length ? `unknown asset: ${unknownReason(t)}` : undefined);
+
+/** The templates with an unknown asset (issue #2067): what the Access requests badge counts and its page lists (issue #2123). */
+export const unknownAssetTemplates = (v: VaultView | null): TemplateView[] => (v?.templates ?? []).filter((t) => (t.unknownAssets?.length ?? 0) > 0);
 
 /** The templates with an unknown asset (issue #2067), one line each, for Needs you: no approval makes them work. */
-export const unknownAssetLines = (v: VaultView | null): string[] =>
-  (v?.templates ?? []).flatMap((t) => { const u = unknownText(t); return u ? [`template ${t.label ?? t.name}: ${u}`] : []; });
+export const unknownAssetLines = (v: VaultView | null): string[] => unknownAssetTemplates(v).map((t) => `template ${t.label ?? t.name}: ${unknownText(t)!}`);
 
 /** What a template's card says of its approval: an unknown asset (issue #2067), approved, or what waits for a person. */
 export function approvalText(t: TemplateView): string {
