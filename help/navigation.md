@@ -13,7 +13,7 @@ The menu puts the other pages in groups. Each group has a heading.
 
 | Group | Pages |
 |---|---|
-| Waiting on you | Intake, Access requests, Questions, Proposals, Research, Logins, Failures, Parked |
+| Waiting on you | Intake, Access requests, Pending approvals, Questions, Proposals, Research, Logins, Failures, Parked |
 | Jobs | Jobs, Queue, Direct jobs, Pull requests, Artifacts, Decisions, Events, Your reports |
 | Infra | Infra |
 | Sources & machines | Sources, Machines, Usage, Resources |
@@ -39,3 +39,11 @@ A collapsed group never hides a badge:
 - The backburner count of Intake shows next to it, with a dashed edge.
 
 Open the group to see the badge of each page.
+
+## Pending approvals
+
+**Pending approvals** lists each GitHub Actions run that waits for a deployment approval you can give, for example a terraform apply or a production promote. It looks in the repositories of the organizations your job repositories are in. Its badge counts them.
+
+- Each row shows the repository, the workflow, the run, the environment and how long it waited. Select **Open run** to approve or reject it on GitHub. The hopper never approves or rejects a deployment.
+- A run marked **stale** has a newer run of the same repository that waits on the same environment.
+- The hopper reads GitHub every 5 minutes. A repository it cannot read shows under the list with the reason.

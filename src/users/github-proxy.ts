@@ -15,6 +15,7 @@ import { isGitLabItem } from '../domain/gitlab-account.ts';
 import { GITLAB_GIT_PATH } from '../gitlab/git-broker.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecks, createRepoChecksGitHub, type RepoChecksService } from '../repo-checks/index.ts';
+import { createApprovalsGitHub, createPendingApprovals, type PendingApprovals } from '../pending-approvals/index.ts';
 import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
 import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
@@ -60,6 +61,8 @@ export interface UserGitHubProxy {
    * #1250); its schedule reads with the user's runtime.
    */
   repoChecks: RepoChecksService;
+  /** Pending approvals (issue #2088): each connected account's waiting deployment approvals, read with its own connection; its schedule reads with the user's runtime. */
+  pendingApprovals: PendingApprovals;
   /** The trusted actor picker (issue #930): this user's own GitHub connection and its login, or why there is none. */
   actors(): { api: ActorsGitHub; login: string } | { problem: string };
   /** Promote to GitHub (issue #946): this user's direct jobs posted with this user's own GitHub connection, never a job's. */
@@ -329,6 +332,13 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         yolo: (repo) => yoloModeFor(o.store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(o.store)),
         dismissed: () => o.store.settings.getRepoChecksDismissed(), setDismissed: (repos) => o.store.settings.setRepoChecksDismissed(repos),
         record: (e) => { o.store.events.append(e); }, now: () => o.clock.now().getTime(), log: (l) => o.logger.warn(l),
+      }),
+      pendingApprovals: createPendingApprovals({
+        sources: () => o.accounts.keys().map((key) => (!o.accounts.account(key) ? { account: key, problem: notMineAt(key, notMine) } : {
+          account: key, repos: o.accounts.jobRepositories(key),
+          api: createApprovalsGitHub({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused: string) => o.accounts.renew(key, refused) }),
+        })),
+        now: () => o.clock.now().getTime(), log: (l) => o.logger.warn(l),
       }),
       actors: () => {
         const login = o.accounts.account('github');

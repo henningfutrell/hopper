@@ -1,8 +1,8 @@
 // Issue #2088: one user's pending approvals — each connected account's intake orgs read in the background, the view
 // answered from what was read last and never from GitHub, the stale mark over every account's runs, the kept answers
 // given back to the next read, and a failed read that keeps what was read before with why. The reader is a fake at its seam.
-import { describe, expect, it } from 'vitest';
-import type { KeptAnswer, PendingApproval } from '../../src/domain/types.ts';
+import { describe, expect, it, vi } from 'vitest';
+import type { PendingApproval } from '../../src/domain/types.ts';
 import { createPendingApprovals, FRESH_MS } from '../../src/pending-approvals/service.ts';
 import type { ApprovalsGitHub } from '../../src/pending-approvals/github.ts';
 import type { ConditionalAnswers } from '../../src/repo-checks/conditional.ts';
@@ -12,13 +12,17 @@ const row = (repo: string, runId: number, environment: string, waitingSince: str
   repo, runId, workflow: 'promote', title: `Promote ${runId}`, environments: [environment], waitingSince, url: `https://github.example/runs/${runId}`,
 });
 
+/** GitHub answers 304 to everything: an answer the read was given back is answered from what was kept. */
+const unchanged = async () => { throw Object.assign(new Error('Not Modified'), { status: 304 }); };
+
 function fakeReader(answer: () => Promise<{ approvals: Row[]; problems: { where: string; error: string }[] }>) {
-  const asked: { orgs: readonly string[]; kept: Record<string, KeptAnswer> }[] = [];
+  const asked: { orgs: readonly string[]; given: unknown }[] = [];
   const api: ApprovalsGitHub = {
     async waiting(orgs, answers: ConditionalAnswers) {
-      asked.push({ orgs, kept: answers.kept() });
-      // What the read keeps: one answer, so the next read is given it back.
-      answers.keep('GET /user/repos {"page":1}', { etag: '"e1"', data: [] });
+      // The answer kept from the read before, if the read was given it; then this read keeps one for the next.
+      const given = await answers.get(unchanged, 'GET /user/repos', { page: 1 }).catch(() => undefined);
+      asked.push({ orgs, given });
+      answers.keep('GET /user/repos {"page":1}', { etag: '"e1"', data: ['kept'] });
       return answer();
     },
   };
@@ -53,7 +57,8 @@ describe('pending approvals (issue #2088)', () => {
     expect(one.asked).toHaveLength(1);
     now += 1;
     await s.tick();
-    expect(one.asked[1]!.kept).toEqual({ 'GET /user/repos {"page":1}': { etag: '"e1"', data: [] } });
+    expect(one.asked[0]!.given).toBeUndefined();
+    expect(one.asked[1]!.given).toEqual(['kept']);
   });
 
   it('a failed read keeps the account\'s approvals read before, and says why', async () => {
@@ -84,13 +89,13 @@ describe('pending approvals (issue #2088)', () => {
   });
 
   it('one read at a time: a tick while one runs joins it, and the view says it reads', async () => {
-    let release!: () => void;
+    let release: (() => void) | undefined;
     const r = fakeReader(() => new Promise((ok) => { release = () => ok({ approvals: [], problems: [] }); }));
     const s = createPendingApprovals({ sources: () => [{ account: 'github', api: r.api, repos: ['acme/gss'] }], now: () => 0, log: () => undefined });
     const a = s.tick(), b = s.tick();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     expect(s.view().reading).toBe(true);
-    release();
+    release!();
     await Promise.all([a, b]);
     expect(r.asked).toHaveLength(1);
     expect(s.view().reading).toBeUndefined();
