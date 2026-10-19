@@ -135,7 +135,7 @@ describe('the tools image (issue #716)', () => {
   it('each download tries again after a network error, so one lost DNS answer does not fail the build (issue #1737)', () => {
     const { containerfile } = toolsImage(BASE, [...BOX_TOOLS], { readOnly: true });
     const curls = [...containerfile.matchAll(/curl -[^;]*/g)].map((m) => m[0]);
-    expect(curls).toHaveLength(BOX_TOOLS.length + 1);
+    expect(curls).toHaveLength(BOX_TOOLS.length + MIRRORED_PROVIDERS.length);
     // --retry-all-errors: curl tries again on a host it could not resolve (exit 6) too, not only on a timeout or a 5xx.
     for (const c of curls) expect(c).toMatch(/^curl -fsSL --retry \d+ --retry-delay \d+ --retry-all-errors --connect-timeout \d+ /);
     expect(containerfile).toContain('apt-get -o Acquire::Retries=');

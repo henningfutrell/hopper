@@ -72,21 +72,34 @@ const RECIPES: Record<BoxTool, Recipe> = {
   },
 };
 
-/**
- * The one provider a read-only image holds in its mirror (issue #715), and so the only one terraform installs there: the
- * AWS provider, as the hopper reads a terraform workspace with an AWS read session. Kept in the mirror's packed layout:
- * the release's zip, as published, under its registry address.
- */
-const AWS_PROVIDER_DIR = `${PROVIDER_MIRROR}/registry.terraform.io/hashicorp/aws`;
-const AWS_PROVIDER: Recipe = {
-  version: '6.68.0',
-  arch: {
-    amd64: { a: 'amd64', sum: 'b2511842cb6b23036c72babbaf12b4984835bb2824f938882330b51c68bdaecd' },
-    arm64: { a: 'arm64', sum: 'abd449fbf38cf828b8b17bc8540752733dd861160504a45b411e72e1792c758c' },
-  },
-  url: 'https://releases.hashicorp.com/terraform-provider-aws/6.68.0/terraform-provider-aws_6.68.0_linux_${a}.zip',
-  install: `mkdir -p ${AWS_PROVIDER_DIR} && mv "$f" ${AWS_PROVIDER_DIR}/terraform-provider-aws_6.68.0_linux_$a.zip`,
+/** A provider of the mirror: its release for each architecture, kept as published under its registry address. */
+const provider = (name: string, version: string, amd64: string, arm64: string): Recipe => {
+  const dir = `${PROVIDER_MIRROR}/registry.terraform.io/hashicorp/${name}`;
+  return {
+    version, arch: { amd64: { a: 'amd64', sum: amd64 }, arm64: { a: 'arm64', sum: arm64 } },
+    url: `https://releases.hashicorp.com/terraform-provider-${name}/${version}/terraform-provider-${name}_${version}_linux_\${a}.zip`,
+    install: `mkdir -p ${dir} && mv "$f" ${dir}/terraform-provider-${name}_${version}_linux_$a.zip`,
+  };
 };
+
+/**
+ * The providers a read-only image holds in its mirror (issue #715), and so the only ones terraform installs there: the
+ * AWS provider, as the hopper reads a terraform workspace with an AWS read session, and HashiCorp's utility providers,
+ * which IaC lock files use beside it (issue #1977: a workspace that needs hashicorp/null could not init). Each is the
+ * release's zip, as published, in the mirror's packed layout. None of them reaches a service of its own.
+ */
+const PROVIDERS: Record<string, Recipe> = {
+  'hashicorp/aws': provider('aws', '6.68.0', 'b2511842cb6b23036c72babbaf12b4984835bb2824f938882330b51c68bdaecd', 'abd449fbf38cf828b8b17bc8540752733dd861160504a45b411e72e1792c758c'),
+  'hashicorp/null': provider('null', '3.3.2', 'd2855b922ea345dbd89ea287e4c6c4757e38bc0aaffeb2b79aa0b8004f9c53ff', '98da9c42785d27a50f0604758bcb61a30f6278b9f2acd92bb3b2046e0e71916c'),
+  'hashicorp/random': provider('random', '3.9.1', '60b4f8a8ef18f52bf8e19215229dae408bee732825964092db7c989fd2de4097', '7c7fbb8895eb75bb4de1f933e98553bd99c8d048c89a925ddba490aa5a67f7dc'),
+  'hashicorp/local': provider('local', '2.9.1', 'a8ea1c155bd5e0d695a28d3c0e2f542de8844e1791ea021f015a3f08e1c059e1', 'eedffca70074ae153790fb23c4ace8d1637a60ceba4e3c42c8eaeda7c1f9d10f'),
+  'hashicorp/time': provider('time', '0.14.2', '0aa1028d91041f4dceba193e3707dac57358d0063d97e20700e554758b67baca', '32bee9f2b2678e2a0789ad86e716d09ca1d5450180b3cd8033ee7a251bfd352e'),
+  'hashicorp/archive': provider('archive', '2.8.1', '50f0e72ba53bfe6e11b03b7fc899e1f72536354381d302a743a274ae2a3f45f4', '66069e604bcf5c4af0278e15997d9e6bd755c54fb3801d78885838b889729c5f'),
+  'hashicorp/tls': provider('tls', '4.4.1', 'debc830ec123f27944c6170d76cb4ea3542845896960bb9fc530702774df328e', '693b810e438bb1dfbc13a42629597284ac1eb08eb30f46f18738d7a9bb768d34'),
+};
+
+/** The registry addresses of the providers a read-only image's mirror holds. */
+export const MIRRORED_PROVIDERS = Object.keys(PROVIDERS);
 
 /**
  * How a download tries again (issue #1737): a network error while the image builds (a host it could not resolve, a reset)
@@ -107,10 +120,10 @@ RUN set -eu; case "$(dpkg --print-architecture)" in ${arches} *) echo "${name}: 
 const b64 = (text: string): string => Buffer.from(text).toString('base64');
 
 /**
- * The read-only steps of an image with terraform (issue #715): the provider of its mirror, then the wrapper and the CLI
+ * The read-only steps of an image with terraform (issue #715): the providers of its mirror, then the wrapper and the CLI
  * config, each in base64, so the Containerfile needs no build context and no heredoc, which not every builder takes.
  */
-const readOnlySteps = (): string => `${step('terraform-provider-aws', AWS_PROVIDER)}
+const readOnlySteps = (): string => `${Object.entries(PROVIDERS).map(([source, r]) => step(`terraform-provider-${source.split('/')[1]}`, r)).join('\n')}
 # the read-only terraform wrapper and its CLI config: providers from the mirror only (issue #715)
 RUN mkdir -p ${READ_ONLY_DIR} && echo ${b64(TERRAFORM_WRAPPER)} | base64 -d > ${READ_ONLY_DIR}/terraform && chmod 755 ${READ_ONLY_DIR}/terraform \\
     && echo ${b64(TERRAFORM_CLI_CONFIG)} | base64 -d > ${CLI_CONFIG}`;
