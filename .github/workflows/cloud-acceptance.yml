@@ -17,6 +17,7 @@ on:
       - src/sandbox/**
       - src/infra-plans/**
       - src/domain/minting.ts
+      - src/domain/topology*.ts
       - test/cloud-acceptance/**
       - test/support/policy-assert-proxy.ts
       - vitest.cloud.config.ts
