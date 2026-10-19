@@ -11,7 +11,7 @@ import type { StoreContext } from './context.ts';
 
 /** A stretch shorter than this is never a gap, however often the source reads. */
 const MIN_GAP_MS = 5 * 60_000;
-/** A stretch with no sample longer than this many of the line's usual spacing is a gap (a source is stale after 3 intervals). */
+/** A stretch with no sample longer than this many of the line's usual spacing (its slowest reader's) is a gap (a source is stale after 3 intervals). */
 const GAP_SPACINGS = 3;
 /** A resetsAt that moves on by less than this is the same reset, read again. */
 const SAME_RESET = "interval '1 minute'";
@@ -48,10 +48,15 @@ const params = (q: UsageHistoryQuery): Param[] => [...range(q), q.stepMs / 1000,
 
 export function createUsageHistoryRepository(c: StoreContext): UsageHistoryRepository {
   const gapsOf = (q: UsageHistoryQuery): Map<string, UsageGap[]> => {
+    // A gap is over the line's merged samples (no reader read it); its usual spacing is each reader's own (median per
+    // source and machine), the slowest reader's for the line: two readers seconds apart make no short usual (issue #2135).
     const rows = c.db.all(`
       WITH ${named(q)},
       s AS (SELECT ${LINE}, at, ${ms(`(at - lag(at) OVER (PARTITION BY ${LINE} ORDER BY at))`)} AS spacing FROM named),
-      m AS (SELECT ${LINE}, percentile_cont(0.5) WITHIN GROUP (ORDER BY spacing) AS usual FROM s WHERE spacing IS NOT NULL GROUP BY ${LINE})
+      r AS (SELECT ${LINE}, source, machine_id, ${ms(`(at - lag(at) OVER (PARTITION BY ${LINE}, source, machine_id ORDER BY at))`)} AS spacing FROM named),
+      m AS (SELECT ${LINE}, max(usual) AS usual FROM (
+        SELECT ${LINE}, percentile_cont(0.5) WITHIN GROUP (ORDER BY spacing) AS usual FROM r WHERE spacing IS NOT NULL GROUP BY ${LINE}, source, machine_id
+      ) x GROUP BY ${LINE})
       SELECT ${LINE}, ${ms('s.at')} - s.spacing AS gap_from, ${ms('s.at')} AS gap_to
       FROM s JOIN m USING (${LINE}) WHERE s.spacing > greatest(? * m.usual, ?) ORDER BY s.at`, ...range(q), GAP_SPACINGS, MIN_GAP_MS);
     const out = new Map<string, UsageGap[]>();
