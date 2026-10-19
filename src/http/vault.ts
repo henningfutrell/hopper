@@ -45,13 +45,13 @@ const approvalsInFull = (a: SandboxApprovals): SandboxApprovals => ({ ...a, auto
 /** A person's write approvals the hopper remembers now (issue #1001), each with its end. */
 const rememberedNow = (store: TenantParts['store']) => liveWrites(store.settings.getRememberedWrites(), rememberHoursOf(store.settings.getSandboxApprovals()), new Date());
 
+/** Whether a template's image is published (issue #1977): one check for every user, so its answers are kept once. */
+const publishedImage = createImageCheck();
+
 /**
  * The user's side of a template request (issue #716): their templates, through the vault's own save and approve, their
  * read policy deciding. A job's (`POST /job/skill`) and an API caller's (`request-template`, issue #718) are the same.
  */
-/** Whether a template's image is published (issue #1977): one check for every user, so its answers are kept once. */
-const publishedImage = createImageCheck();
-
 export function templateRequestUser(parts: Pick<TenantParts, 'vault' | 'store'>): TemplateRequestUser {
   return {
     template: (name) => parts.vault.view().templates.find((t) => t.name === name),
