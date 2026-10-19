@@ -31,6 +31,11 @@ against shell stubs (`test/support/fake-cloud-tools.ts`) or a loopback STS (`tes
   hopper's image, which carries tinyproxy) on that network and on a routed one; and a second moto on the routed network
   only, the host the box's credential names. A need box of the read-only image runs through the hopper's sandbox module
   (`createSandboxes`, the real sandbox flags) and the real `createEgress`, which writes the allowlist the proxy loads.
+- **Hoppers killed mid-step** (`saga-resume.test.ts`): the crash harness's hoppers (`test/crash/harness.ts`), the real
+  composition root in processes of their own over one database, each ended with SIGKILL at a kill point of the
+  `need-step` saga or while its need box runs. Their need boxes start on the same container runtime (Podman's or Docker's
+  socket, as `HOPPER_TEST_CONTAINER_CLI` names it), from the image the hopper makes for the template (the write box
+  image's tools), on the host's network, so the box's aws CLI reaches the proxy with the session the vault minted for the step.
 
 ## Run
 
@@ -55,13 +60,14 @@ changes `src/vault`, `src/sandbox`, `src/infra-plans`, `src/domain/minting.ts` o
 | 3 | Lifetime: after the job ends, or a person revokes the template's approval in Access, the helper's renewal is refused and STS is asked for no new session; the session the job held is denied once its lifetime (900 s at most) is over | `lifetime.test.ts` |
 | 4 | Write path: a box of a write template plans with its read session, the job records the plan with its saved file, a person approves it; the apply session is minted only for that plan at its branch's commit (not before the approval, not after the branch moved); the apply wrapper refuses a tampered copy of the file and an apply that names no plan, before any call; the recorded plan applies, one CreateBucket; the same plan again is refused by terraform as stale, and moto is unchanged | `write-path.test.ts` |
 | 5 | Drift: a bucket and a VPC made in moto out of band show in the next Discover now; every call of discovery's session is a Describe, List or Get, allowed, and moto's state is what the change left | `discovery.test.ts` |
+| 6 | Saga resume: the hopper is killed before the mint, after the mint while the step's command runs, after the box exited before the saga recorded it, and before and after the credentials' release; a second hopper on the same database ends the step's saga once; STS minted one session and the command's listing reached moto once (never run again: a step interrupted mid-command ends `STEP_INTERRUPTED`); the job reads one result; no need box or home volume is left; the step's session is denied once its lifetime is over | `saga-resume.test.ts` |
 | 7 | Egress: a read-only need box, started by the sandbox module behind the egress proxy, reaches the STS endpoint its credential names through the proxy (curl and the aws CLI); a public host, the metadata address, a raw IP and that endpoint by its IP are refused by the proxy (403), and past the proxy none has a route or resolves; the proxy refuses a name that carries data, and the box's resolver answers no public name; the box has no capability, no new privileges and a read-only root, and is burned after the step | `egress.test.ts` |
 
 Criterion 3, stated: the hopper does not end an STS session early. A session it handed a job lives until its own
 expiry (900 s at most), after the job ends or a revoke too; the test moves the proxy's clock past it.
 
 Not yet: the terraform and write paths in a need box (under the sandbox flags and the egress proxy), an SDK script
-inside the box, saga resume, and kubectl on kind. The pull request of each part lists what is left.
+inside the box, and kubectl on kind. The pull request of each part lists what is left.
 
 ## Notes
 

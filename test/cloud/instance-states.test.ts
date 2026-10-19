@@ -64,7 +64,7 @@ describe("an instance's machines at hopper.io", () => {
     const next = snapshot({ queue: { waiting: 0, running: 3, locked: 1, gate: 'review' } });
     expect(await link.snapshot({ installId: INSTANCE, account: 'Ada', text: JSON.stringify(next), now: later(3000) })).toBe(true);
     expect((await instances(s, 'ada-session'))[0]).toEqual({
-      installId: INSTANCE, registeredAt: t0.toISOString(), state: { ...next, receivedAt: later(3000).toISOString() },
+      installId: INSTANCE, registeredAt: t0.toISOString(), connected: false, state: { ...next, receivedAt: later(3000).toISOString() },
     });
   });
 

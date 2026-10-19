@@ -1,7 +1,7 @@
 # The cloud acceptance tests (issue #1956, test/cloud-acceptance/README.md): a session the vault mints, used by the real
 # `aws` CLI, curl's SigV4 and the AWS SDK against a mock AWS (moto) behind the policy-assert proxy, through the hopper's
 # real composition root, and terraform in the read-only box image the hopper builds, and a read-only need box behind the egress proxy
-# (the compose service `egress`, in the hopper's dev image). Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
+# (the compose service `egress`, in the hopper's dev image), and a need step whose hopper is killed mid-step (the crash harness). Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
 # plans or the tests themselves: they start containers and take minutes, so `pr / test` leaves them out.
 # Read-only and with no secrets: `pull_request`, never `pull_request_target`. moto, Postgres, the AWS CLI and the box image are public
 # images; nothing reaches a real cloud.
@@ -21,6 +21,10 @@ on:
       - src/domain/topology*.ts
       - test/cloud-acceptance/**
       - test/support/policy-assert-proxy.ts
+      - src/sagas/**
+      - test/crash/harness.ts
+      - test/crash/host.ts
+      - test/crash/need-world.ts
       - compose.yaml
       - vitest.cloud.config.ts
       - .github/workflows/cloud-acceptance.yml

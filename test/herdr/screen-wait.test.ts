@@ -57,6 +57,17 @@ describe('the wait marker', () => {
     expect(WAIT_LINE).toContain('check: after <time>');
   });
 
+  it('a field the terminal wrapped goes on to its next line, and the fields after it still read (issue #2090)', () => {
+    const wrapped = ['● Waiting on the trunk merge.', '  HOPPER_WAITING', '  for: the trunk merge of PR #95 in Some-Org/infra-code, after which the', '  deploy runs', '  on: outside: gated: trunk merge of PR #95 in Some-Org/infra-code', '  until: a background poll of its state'];
+    expect(readTurn(screen(ECHO, wrapped, END), FOOTER_ANCHOR).wait).toEqual({
+      for: 'the trunk merge of PR #95 in Some-Org/infra-code, after which the deploy runs',
+      on: 'outside: gated: trunk merge of PR #95 in Some-Org/infra-code',
+      until: 'a background poll of its state',
+    });
+    expect(outcomeOf('Waiting.\nHOPPER_WAITING\nfor: the trunk merge of\nPR #95\non: outside: gated: the merge', 'm', 'c'))
+      .toEqual({ kind: 'wait', wait: { for: 'the trunk merge of PR #95', on: 'outside: gated: the merge' } });
+  });
+
   it('a wait that names nothing it waits for is no wait: the turn is a status note', () => {
     const turn = readTurn(screen(ECHO, ['● Blocked.', '  HOPPER_WAITING'], END), FOOTER_ANCHOR);
     expect(turn.lastMarker).toBeNull();

@@ -9,6 +9,7 @@ import { settleLiveAgain } from '../failures/continued.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
+import { awaitsOrigin } from '../domain/trust-stamp.ts';
 import { appendStamped } from './quarantine.ts';
 import { EngineError } from './errors.ts';
 import { changedSince, gateItem, holdForChange, recordSnapshot, refreshEdit, refreshText } from './item-snapshots.ts';
@@ -162,9 +163,12 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       // A job that cannot run ran nothing: its item's snapshot waits for a job that can.
       if (gate.record && invalid === undefined) recordSnapshot(c, job, item.key, gate.record, 'intake');
       if (change && invalid === undefined) holdForChange(c, job.id, item.key, change);
-      // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
+      // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it. An item of a source that
+      // judges origins offered with none (issue #2113: its issue's job had not ended when the sync judged it) waits for it:
+      // the next sync judges its issue, stamps it again by the rules or opens its request card in Intake.
       if (invalid === undefined) {
-        const queued = store.jobs.update(job.id, { accepted: false, fromConfig, ...(known ? { rerunOf: known.id } : {}) });
+        const pending = awaitsOrigin(job) ? { originPending: true as const } : {};
+        const queued = store.jobs.update(job.id, { accepted: false, fromConfig, ...pending, ...(known ? { rerunOf: known.id } : {}) });
         // The notes its item's earlier job never delivered go on to this one (issue #997).
         if (!known) return queued;
         carryNotes(c, known, job.id);

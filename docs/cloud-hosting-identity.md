@@ -340,6 +340,11 @@ tombstones, in `cloud/` (decision 2).
   `test/cloud/registrations.test.ts` and `test/cloud/privacy.test.ts` (real Postgres, real
   server, a fake GitHub, `test/cloud/harness.ts`) and
   `test/cloud/config.test.ts` (the config, and the `cloud/` seam both ways).
+- **The cloud link's connection** (issue #2039 part 1, `docs/design.md` "The cloud link's connection"). `GET /link` takes
+  an instance's WebSocket (`cloud/connections.ts`). hopper.io sends a challenge; the instance's hello proves its cloud link
+  key (`cloud/hello.ts`); then each message goes to `cloud/link.ts`. The key is bound to the registration
+  (`registration.public_key`), a removal revokes it (`registration_tombstone.public_key`), and "connected now" shows on
+  `GET /` and in `GET /api/account/instances`. Tests: `test/cloud/connection.test.ts`, `test/cloud/hello.test.ts`.
 
 ## Run it
 
@@ -365,5 +370,5 @@ No deploy is part of this: where hopper.io runs is decision 7 of #469.
 The implementation follows, in this order: the `account` table and GitHub sign-in at hopper.io
 (built, part 2), account deletion (built, part 3), the records and the privacy note (built, part 4), the install registrations and their tombstones
 (built, part 5, transport-free), then the cloud link's connection (#2039, the install side of #464), which carries the messages
-and the hello, and the install side of the heartbeat. Each part adds its glossary entries and its row in
+and the hello (hopper.io's end built, #2039 part 1), and the instance's agent with its heartbeat (#2039 part 2). Each part adds its glossary entries and its row in
 `docs/design.md` "Directories and what each must not know" in the same change.

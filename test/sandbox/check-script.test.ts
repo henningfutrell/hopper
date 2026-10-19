@@ -131,6 +131,14 @@ describe('the read-only check script (issue #716)', () => {
     expect(results.find((x) => x.id === 'terraform.state-push-direct')).toMatchObject({ outcome: 'denied', passed: true });
   });
 
+  it('a provider download the egress filtered is a refusal; a registry out of reach for another reason is an error (issue #2107)', () => {
+    const runs = probeCatalog(PROBES).runsFor([read('terraform-workspace', 'shop-prod')]).filter((r) => r.probe.id === 'terraform.provider-download');
+    const b64 = (s: string): string => Buffer.from(s).toString('base64');
+    const init = (cause: string): string => `Error: Failed to query available provider packages\n\nCould not retrieve the list of available versions for provider hashicorp/dns: could not connect to registry.terraform.io: failed to request discovery document: Get "https://registry.terraform.io/.well-known/terraform.json": ${cause}`;
+    expect(readResults(runs, `HOPPER-PROBE 0 1 ${b64(init('Filtered'))}\n`)[0]).toMatchObject({ outcome: 'denied', passed: true });
+    expect(readResults(runs, `HOPPER-PROBE 0 1 ${b64(init('dial tcp: lookup registry.terraform.io: no such host'))}\n`)[0]).toMatchObject({ outcome: 'error', passed: false });
+  });
+
   it('a probe with no line did not run; a failure that is not a refusal is an error', () => {
     const runs = probeCatalog(PROBES).runsFor([read('cluster', 'lab')]);
     const b64 = (s: string): string => Buffer.from(s).toString('base64');

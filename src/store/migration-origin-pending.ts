@@ -32,3 +32,10 @@ export function originPendingStarted(db: Db): void {
     db.run('UPDATE jobs SET body = ? WHERE id = ?', JSON.stringify(job), String(row.id));
   }
 }
+
+/**
+ * Tenant migration 86 (issue #2113): a job made after 85 from an item offered with no origin (its issue's job had not ended
+ * when the sync judged it) was stamped `untrusted` (`origin:none`) with no `originPending`, so no request card and no
+ * approval let it go on. 85's mark again: such a job that has not ended waits for its issue's origin. Rows only.
+ */
+export const originPendingOffered = (db: Db): void => originPendingStarted(db);

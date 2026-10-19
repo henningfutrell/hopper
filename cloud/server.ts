@@ -22,6 +22,7 @@
 //                               in memory only, that the instance gets as `register` (cloud/requests.ts)
 //   GET  /api/account/registration-requests  its open requests as JSON, never the code, else 401
 //   GET  /privacy               the privacy note (cloud/privacy.ts), signed in or not
+//   GET  /link                  an instance's cloud link: a WebSocket (cloud/connections.ts), never a person's
 import { randomBytes } from 'node:crypto';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -30,7 +31,8 @@ import { whoIs } from '../src/connected-accounts/identity.ts';
 import { grantDeletion } from '../src/connected-accounts/revocation.ts';
 import { webFlow } from '../src/connected-accounts/web-flow.ts';
 import type { CloudConfig } from './config.ts';
-import { INSTALL_ID } from './link.ts';
+import { createCloudConnections, type CloudConnections } from './connections.ts';
+import { createCloudLinkAnswers, INSTALL_ID } from './link.ts';
 import { NEVER_KEPT, PRIVACY_NOTE } from './privacy.ts';
 import { REQUESTS_PER_ACCOUNT, type RegistrationRequests, type RequestRefusal, type RequestView } from './requests.ts';
 import type { InstanceStates, KeptState } from './states.ts';
@@ -45,7 +47,10 @@ const RECORD_LABELS: Record<RecordKind, string> = {
   signed_in: 'Signed in', signed_out: 'Signed out', deletion_refused: 'Deletion refused: confirmed as another GitHub account',
   instance_registered: 'Instance registered', instance_renamed: 'Instance named', instance_removed: 'Instance removed',
   instance_unlinked: 'Instance unlinked on the instance', instance_moved: 'Instance registered under another account',
-  machine_renamed: 'Machine named',
+  machine_renamed: 'Machine named', instance_connected: 'Instance connected', instance_disconnected: 'Instance disconnected',
+  connection_replaced: 'Instance connected a second time: the first connection was closed',
+  connection_refused: 'A connection as your instance was refused: it did not prove the instance\'s key',
+  key_rotated: 'Instance changed its key', message_refused: 'A message from your instance was refused',
 };
 const REFUSAL_LABELS: Record<RequestRefusal, string> = {
   'not-linked': 'it is not linked to hopper.io', 'other-account': 'it is linked to another hopper.io account',
@@ -79,8 +84,8 @@ const stateHtml = (i: CloudInstance, k: KeptState | undefined): string => {
     + `<ul>${rows || '<li>No machine.</li>'}</ul>`;
 };
 
-const instanceRow = (i: CloudInstance, k: KeptState | undefined): string => `<li><strong>${i.name ? html(i.name) : 'No name'}</strong> (${i.installId}),`
-  + ` registered ${i.registeredAt.toISOString()}, last seen ${i.seenAt ? i.seenAt.toISOString() : 'never'}${stateHtml(i, k)}`
+const instanceRow = (i: CloudInstance, k: KeptState | undefined, connected: boolean): string => `<li><strong>${i.name ? html(i.name) : 'No name'}</strong> (${i.installId}),`
+  + ` registered ${i.registeredAt.toISOString()}, ${connected ? 'connected now' : 'not connected'}, last seen ${i.seenAt ? i.seenAt.toISOString() : 'never'}${stateHtml(i, k)}`
   + `<form method="post" action="/account/instances/${i.installId}/name"><input name="name" maxlength="${INSTANCE_NAME_MAX}"`
   + ` value="${i.name ? html(i.name) : ''}" aria-label="Name"> <button type="submit">Name</button></form>`
   + `<form method="post" action="/account/instances/${i.installId}/remove"><button type="submit">Remove</button></form></li>`;
@@ -124,6 +129,7 @@ export async function cloudServer(o: {
 }): Promise<FastifyInstance> {
   const { config, store, requests, states } = o;
   const now = o.now ?? (() => new Date());
+  const connections: CloudConnections = createCloudConnections({ store, answers: createCloudLinkAnswers({ store, requests, states }), trustProxy: config.trustProxy, now });
   const app = cloudApp(config);
   const flow = webFlow(app, config.clientSecret, `${config.publicUrl}${CALLBACK_PATH}`);
   const deleteGrant = grantDeletion(app, config.clientSecret);
@@ -136,6 +142,8 @@ export async function cloudServer(o: {
   // The forms post urlencoded; only an instance's name and register forms have fields hopper.io reads.
   server.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, body));
   server.addHook('onSend', async (_req, reply) => { reply.headers(SECURITY_HEADERS); });
+  connections.attach(server.server);
+  server.addHook('preClose', async () => connections.close());
 
   const signedIn = (req: FastifyRequest): Promise<CloudAccount | undefined> => {
     const token = cookiesOf(req.headers.cookie).get(SESSION_COOKIE);
@@ -149,7 +157,7 @@ export async function cloudServer(o: {
     if (!a) return page(reply, 200, `<h1>hopper.io</h1><p><a href="/auth/github">Sign in with GitHub</a></p>${PRIVACY_LINK}`);
     const avatar = a.avatarUrl ? `<img src="${html(a.avatarUrl)}" alt="" width="40" height="40"> ` : '';
     const records = (await store.records(a.githubUserId, now())).map((r) => `<li>${r.at.toISOString()}: ${RECORD_LABELS[r.kind]}</li>`).join('');
-    const instances = (await store.instances(a.githubUserId)).map((i) => instanceRow(i, states.of(a.githubUserId, i.installId))).join('')
+    const instances = (await store.instances(a.githubUserId)).map((i) => instanceRow(i, states.of(a.githubUserId, i.installId), connections.connected(i.installId))).join('')
       || '<li>No instance is registered.</li>';
     const open = requests.of(a.githubUserId, now()).map(requestRow).join('');
     return page(reply, 200, `<h1>hopper.io</h1><p>${avatar}Signed in as <strong>${html(a.login)}</strong>.</p>`
@@ -192,8 +200,10 @@ export async function cloudServer(o: {
         await store.record(taken.deletes, 'deletion_refused', now());
         return page(reply.header('set-cookie', clear), 403, '<p>You confirmed as another GitHub account. Nothing was deleted. <a href="/">Back</a>.</p>');
       }
+      const registered = await store.instances(taken.deletes);
       await store.deleteAccount(taken.deletes, now());
       states.dropAccount(taken.deletes);
+      for (const i of registered) connections.revoke(i.installId);
       const gone = await deleteGrant(accessToken).then(() => true, () => false);
       const grantNote = gone ? '<p>hopper.io no longer has your permission at GitHub.</p>'
         : `<p>GitHub did not remove hopper.io's permission. Remove it at <a href="${GITHUB_AUTHORIZATIONS}">${GITHUB_AUTHORIZATIONS}</a>.</p>`;
@@ -239,7 +249,7 @@ export async function cloudServer(o: {
     return { instances: (await store.instances(a.githubUserId)).map((i) => {
       const k = states.of(a.githubUserId, i.installId);
       return {
-        installId: i.installId, ...(i.name ? { name: i.name } : {}), registeredAt: i.registeredAt.toISOString(),
+        installId: i.installId, ...(i.name ? { name: i.name } : {}), registeredAt: i.registeredAt.toISOString(), connected: connections.connected(i.installId),
         ...(i.seenAt ? { seenAt: i.seenAt.toISOString() } : {}), ...(i.machineNames ? { machineNames: i.machineNames } : {}),
         ...(k ? { state: { ...k.state, receivedAt: k.receivedAt.toISOString() } } : {}),
       };
@@ -265,6 +275,7 @@ export async function cloudServer(o: {
     if (requests.enter({ githubUserId: a.githubUserId, login: a.login, installId, code, now: now() }) === 'full') {
       return reply.code(429).send({ error: `at most ${REQUESTS_PER_ACCOUNT} registration requests open` });
     }
+    await connections.offer(installId);
     return reply.redirect('/', 303);
   });
 
@@ -309,6 +320,7 @@ export async function cloudServer(o: {
     if (!own) return reply;
     if (!await store.remove(own.account, own.installId, now())) return reply.code(404).send({ error: 'no such instance' });
     states.drop(own.installId);
+    connections.revoke(own.installId);
     await store.record(own.account, 'instance_removed', now());
     return reply.redirect('/', 303);
   });

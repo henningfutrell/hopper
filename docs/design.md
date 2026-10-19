@@ -96,7 +96,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, else from the telemetry setting, off unless one names an exporter (`sdk.ts`, `start.ts`); the setting kept and applied at once (`settings.ts`, "Telemetry settings"); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the steps the hopper does for a job — its worktree, a follow of its pull request, the base merge, a tend, a need box — as spans of the job's trace (`job-steps.ts`, "Telemetry: job steps"); each landing batch run a span, and a deploy span in the trace of each job in it (`deploys.ts`, "Telemetry: a box's own processes and deploys"); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); what runs now — the sandboxes that run at the same time and the store's open connections —, from the readers the parts that hold them add (`live.ts`, "Telemetry: what runs now"); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
-| `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**, the **hopper.io machine names**), its **registration requests** (`requests.ts`: the code an owner entered, in memory only), its **instance states** (`states.ts`: each registered instance's last **hopper.io state snapshot**, checked against hopper.io's own copy of its schema, in memory only), its side of the cloud link's registration messages (`link.ts`, transport-free: a request given as `register` to its instance, a registration kept on that instance's `registered`, a tombstone answered `unregister` at the hello, a snapshot kept as the instance's state), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
+| `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**, the **hopper.io machine names**), its **registration requests** (`requests.ts`: the code an owner entered, in memory only), its **instance states** (`states.ts`: each registered instance's last **hopper.io state snapshot**, checked against hopper.io's own copy of its schema, in memory only), its side of the cloud link's registration messages (`link.ts`, transport-free: a request given as `register` to its instance, a registration kept on that instance's `registered` with the key its hello proved, a tombstone answered `unregister` at the hello and its key refused, a snapshot kept as the instance's state), its end of the cloud link's connection (`connections.ts`: the WebSocket at `GET /link` through `ws`, the challenge, the limits, connected now in memory; `hello.ts`: the challenge and the check of the **cloud link hello**, a copy of the instance's schema), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI of `BOX_AGENTS`, issue #865; herdr; the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — `install.html`, the install page, `guide.html`, the user guide (issue #556), and the **help pages** (issue #790): `help/*.md` rendered by `site/help.ts` into `help/<page>.html`, with each page's Markdown beside it, never copied into `site/`; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml`, the **Windows CLI wrapper** (`scripts/hopper.cmd`, `scripts/hopper.ps1`) and the logo; nothing loaded from another site | everything of `src/` (it renders the help pages itself, with `marked`, the way `src/help/book.ts` does); of `ui/` only `index.css` and `app/story.ts`; of `help/` only its Markdown; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
@@ -10996,7 +10996,9 @@ registry.
   rewrites the lock file too). `providers` and `providers schema` still run.
 - **Its probe** (`terraform.provider-download`, `src/sandbox/probes.ts`). `init` of a stack that needs `hashicorp/null`,
   terraform on PATH, must fail. `hashicorp/null` is small and real: with the registry in reach and no mirror, `init`
-  installs it, and the probe fails. A box with no mirror config fails it.
+  installs it, and the probe fails. A box with no mirror config fails it, unless the egress proxy filters the registry:
+  `init` then fails with `could not connect to registry.terraform.io: … Filtered`, and that is a refusal too (issue
+  #2107). A registry out of reach for another reason (no DNS, no route) is an error.
 
 Considered and not built: a read-only plugin cache (`TF_PLUGIN_CACHE_DIR` on a directory the box cannot write) — a cache
 does not stop a download, it only keeps one; more providers or more versions of the AWS provider — no case asks for one
@@ -17681,8 +17683,15 @@ the fix adds no second approval of an item:
 - **A job with no item** (no source: queued by hand, an older build) has no request card. Below `approved`, a person approves
   its trust on the job (`trustApprovable`), and its hold text says so.
 - **Cancel in each row** of Held by trust, for an operator, after a confirm (`POST /ui/api/jobs/:id/cancel`).
+- **A job made from an item offered with no origin** (issue #2113). The sync judges the origin only of an issue whose job
+  has ended or that has none; an issue whose job was still live is offered with no origin, to refresh that job. When the
+  job ended between the judgement and the offer, `ingest` made a new job of that item with no origin: stamped `untrusted`
+  (`origin:none`), with no `originPending`, and so again in Held by trust with no request card and no approval. `ingest`
+  now marks such a job (`awaitsOrigin`) `originPending`, as the backfill does: the next sync judges its issue, and it goes
+  on, or its request card opens in Intake. An issue a job filed (a routed child) is no trusted origin, so a person approves
+  its card. Tenant migration 86 marks the jobs made so since migration 85 that have not ended.
 
-Persisted state: migration 85 sets `originPending` on rows only; the build before reads it as migration 39's. A job a job
+Persisted state: migrations 85 and 86 set `originPending` on rows only; the build before reads it as migration 39's. A job a job
 made keeps the level its parent had at the backfill.
 
 **The comment command** (part 21, `src/domain/comment-command.ts`; `nominated` in `src/sources/github/discover.ts`,
@@ -23294,7 +23303,12 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   `job <id>`, `issue 45`, `question <id>`, `sandbox approval`, `template approval`, `vault grant`, `own command`,
   `outside: <what>`. `waitFields` reads it beside `for:` and `until:`. With no `on:` line, `waitOnOf` reads it from `for:` and
   `until:` (own command as `namesOwnCommand`; a pull request; an approval; a grant); what reads as none of them is an outside
-  event with the `for:` text. So a wait is never recorded without one.
+  event with the `for:` text. So a wait is never recorded without one. A pull request or an issue number written with no
+  owner (`PR #95`, `issue 4`) is in the repository the same text names, in a link or in words (`in owner/name`,
+  `repository owner/name`): the first one after the number, else the last before it; only when the text names none is it the
+  job's own (issue #2090: a wait on another repository's pull request was ended by the job repository's pull request with
+  the same number). A field line the terminal wrapped goes on with that field in `waitFields`, so the `on:` line after a
+  long `for:` line still reads (issue #2090).
 - **Never without one.** The job repository refuses to write a job that enters `waiting_on` with no `wait.on`
   (`waitEntryProblem`, `src/store/jobs.ts`): the one place every write goes through. A job already on a wait keeps it.
 - **Woken on the event, never a poll.** The engine hears each event and asks `settledBy` (`src/domain/wait-on.ts`) what it
@@ -25324,7 +25338,8 @@ instance, minted on the instance, kept as a system secret of the instance's vaul
 rotated or revoked from either side. So this part mints it. The transport (issue #469 decision 4) and the agent that uses
 the key (issue #464) are not decided or built here.
 
-**The key** (`src/http/cloud-link.ts`, `src/domain/cloud-link.ts`): a link mints one X25519 key (Node's crypto). Its private
+**The key** (`src/http/cloud-link.ts`, `src/domain/cloud-link.ts`): a link mints one X25519 key (Node's crypto; Ed25519
+since issue #2039, "The cloud link's connection"). Its private
 half is the system secret `cloud-link.key` (`CLOUD_LINK_KEY`) in the instance's vault, kept through `SystemSecrets.keep`
 and sealed under the master key; its value is the key as a JWK with `d` first, so the last 4 characters the vault keeps of
 each secret are none of the private half. The link record names it: `linkKey: { secret, publicKey, createdAt }`, with
@@ -25746,7 +25761,82 @@ the API and the escaped page show it, an empty name clears it; a key not in the 
 name or key, another Origin and no session change nothing; the names stay at a new snapshot and a registration again;
 a removal, an unlink, a move and an account deletion drop them; at most 500 per instance.
 
-## Cloud link (issue #464, 2026-10-17 — a design, not built)
+## The cloud link's connection (issue #2039, part 1, 2026-10-19)
+
+**The problem.** Issue #2039, the install side of "Cloud link (issue #464)": the instance and hopper.io must talk over a
+real connection. The messages, the registration and the state snapshot are built on both sides, transport-free (issue
+#465). Nothing carried them. Also, the cloud link key was X25519 (issue #467 part 2), which agrees keys and cannot sign, so
+the instance had no way to prove itself to hopper.io.
+
+**The change (part 1).**
+- **The cloud link key is Ed25519** (`src/http/cloud-link.ts`, Node's crypto): it signs. Its secret, its record and its
+  rotation are as before. Migration 52 (`src/store/migration-cloud-link-ed25519.ts`) drops an X25519 `linkKey` from the
+  link record, which no connection ever used; Rotate key mints the Ed25519 key, and replaces the vault's row.
+- **The hello** (`src/http/cloud-link-hello.ts`; hopper.io's copy `cloud/hello.ts`, held to it by
+  `test/cloud/hello.test.ts`). hopper.io's first message is `{ type: 'challenge', nonce }` (32 random bytes). The instance
+  answers `{ type: 'hello', installId, account, publicKey, proof }`: `proof` is the Ed25519 signature over the context
+  `hopper.io cloud link hello 1`, the nonce, the instance id, the account and the public key, one per line. So a proof is
+  good for one challenge and one key only. After a rotation the instance adds `previous: { publicKey, proof }`, the key
+  before, over the same text. The heartbeat is `{ type: 'heartbeat', sentAt }`. Each is a closed schema, in the 1024-byte cap.
+- **hopper.io's end** (`cloud/connections.ts`, `GET /link`, the `ws` library): one WebSocket per instance. The first
+  frame must be a hello whose proof holds (else close `4001`), within 10 seconds (else `4009`). Then each text frame is one
+  message, handed to `cloud/link.ts`: `registration`, `unlinked`, a snapshot (a frame with `schema`), or a heartbeat, which
+  keeps the last-seen time. `unregistration` and `refused` are taken and change nothing. hopper.io sends only `register`
+  (after the hello, and at once when the owner enters a code while the instance is connected) and `unregister` (R1).
+- **The key at hopper.io** (R4, T2). The key the hello proved is bound to the **hopper.io registration** when the instance
+  answers `registered` (`registration.public_key`). A registered instance then connects only with that key, or with a new
+  key whose hello proves the bound one as `previous` (a rotation: the registration takes the new key, `key_rotated`).
+  Anything else is closed `4004` and recorded `connection_refused` on the owner's account. A registration from before
+  this part has no key: the first proved one binds. An unregistered instance connects with any key it proves.
+- **Revoked at hopper.io.** A removal by the owner and an account deletion revoke the key: the tombstone keeps it
+  (`registration_tombstone.public_key`). A connected instance gets `unregister`, then close `4003`. A hello with the
+  revoked key gets `unregister`, then `4003`; a hello with a new key connects, so the admin registers again after Rotate key.
+- **Connected now** is kept in memory, one connection per instance: a second one with a proved key replaces the first
+  (close `4000`, `connection_replaced`). `GET /api/account/instances` gives each instance `connected`; `GET /` says
+  "connected now" or "not connected".
+- **Limits** (R7): a frame over the snapshot's cap closes the connection (`1009`, the ws server's own check); any other
+  message over 1024 bytes, of another type or shape, or binary, is dropped, not cut, and recorded once per connection
+  (`message_refused`). Per minute: 30 connections per address, 10 per instance and key (else `4008`; so a party without
+  the key cannot use up the instance's), 120 messages per connection, 5 records of refused connections per instance;
+  10,000 open connections in all (else HTTP 429); 90 seconds with no message closes it (`4010`).
+- **hopper.io records** (R6): `instance_connected`, `instance_disconnected`, `connection_replaced`, `connection_refused`,
+  `key_rotated`, `message_refused`, on the account the instance is registered to. Store migration 7 adds the two columns
+  and the kinds; the privacy note has a line for each column.
+
+**Decisions:**
+- **Ed25519, not X25519.** Node's crypto signs with it, so no protocol library is needed (an X25519 key would need a key
+  agreement protocol, such as Noise or TLS client certificates). R4 and the glossary say Ed25519.
+- **Drop the old key, do not convert it.** An X25519 private key is no Ed25519 key. A migration cannot seal a new secret
+  (it has no master key), so it drops the record's key; the vault's old row stays until the next mint replaces it.
+- **The key binds at registration, not at the first hello.** Before it registers, an instance is known to hopper.io only
+  by its id and the account its link names; its registration request already needs the owner's code (part 7). Residual
+  risk: before the registration, a party that knows an instance id can connect as it and take the owner's code. The
+  instance id is shown only to the instance admin.
+- **A rotation is proved by the old key.** R4 revokes the old key after the new one connects; hopper.io moves its
+  registration to the new key only when the hello proves both.
+- **A refused message does not close the connection.** A newer instance can send a message an older hopper.io does not
+  know; closing would make it reconnect in a loop. One record per connection keeps the records small.
+- **`ws`, with no fastify plugin.** The server takes the HTTP upgrade itself, so the limits are its own (R7).
+
+**Left for part 2:** the instance's agent (connect while the link record exists, R8; reconnect with backoff and jitter;
+stop after `4003`; snapshot at connect and on change, at most each 2 s; heartbeat each 30 s; hand each message to
+`receive`; `unlinked` before an unlink closes it; keep the key before a rotation until the new one connects; mint an
+Ed25519 key when the link has none); the pin of hopper.io's key, with TLS (the production pin waits for issue #469 decision
+7); the outgoing secret scan (R4); `machineKey` and `executorPlugin` for the snapshot; the instance's events (R6) in
+`docs/events.md`; Settings → hopper.io shows the connection; the operator CLI's rotate and revoke; the end-to-end test with
+the real daemon and the real `cloud/` server.
+
+**Verification:** `test/cloud/connection.test.ts` (real Postgres, the real server on loopback, a real WebSocket client that
+answers with the instance's own hello): a code the owner enters reaches the connected instance as `register`, and its answer
+registers it with its key; another key, and a forged rotation, are refused and recorded; a proved rotation moves the key, and
+the old key is refused after; a removal sends `unregister` and closes `4003`, the revoked key connects no more and a new key
+does; a second connection replaces the first; a heartbeat keeps the last-seen time, a snapshot is kept, the unlink notice
+removes the registration; a bad hello, a binary hello, a message of another type, over 1024 bytes or binary, is refused and
+recorded once, and a frame over the snapshot's cap closes it; the 11th connection of one instance in a minute is refused.
+`test/cloud/hello.test.ts`: hopper.io takes the instance's hello; a changed field, another challenge or another key's proof
+is refused; one schema on both sides. `test/http/cloud-link-key.test.ts` (Ed25519), `test/store/migration-52.test.ts`.
+
+## Cloud link (issue #464, 2026-10-17 — a design; hopper.io's end built in issue #2039 part 1)
 
 **The problem.** Issue #464: a self-hosted instance links to hopper.io by dialing out. No port opens on the instance's
 host, and it needs no reverse proxy, DNS name or public URL. Today the instance reaches outside its host only through
@@ -25761,9 +25851,9 @@ restate them.
 
 | Message | Content | Where its schema is |
 |---------|---------|---------------------|
-| the hello | the instance id (`installId`), the link's account, the proof of the cloud link key (below) | #464's install side |
+| the hello | the instance id (`installId`), the link's account, the public half of the cloud link key and its proof over hopper.io's challenge ("The cloud link's connection") | `src/http/cloud-link-hello.ts` |
 | the state snapshot | `HOPPER_IO_STATE_SCHEMA`: version and channel, queue and attention counts, per machine an opaque key, online state, lanes and executor kinds | `src/domain/hopper-io-state.ts` |
-| a heartbeat | `sentAt` only | #464's install side |
+| a heartbeat | `sentAt` only | `src/http/cloud-link-hello.ts` |
 | `registration`, `unregistration` | the outcome of `register` or `unregister`, a closed word | `src/http/cloud-link-messages.ts` |
 | `refused` | the reason, a closed word, never the message refused | `src/http/cloud-link-messages.ts` |
 | `unlinked` | the instance id and the account, before an unlink closes the connection | `src/http/cloud-link-messages.ts` |
@@ -25820,7 +25910,8 @@ HTTP request into the instance: the instance serves nothing on it. A remote acti
   person can be tricked into changing. A new hopper.io key arrives as an update, with a time when both keys are valid.
 
 **Left for the install side** (issue #2039, filed once the hopper.io server existed in `cloud/`; the production pin
-of hopper.io's key waits for issue #469 decision 7):
+of hopper.io's key waits for issue #469 decision 7). Part 1 built the Ed25519 key, the hello and hopper.io's end ("The cloud
+link's connection"); the rest is its part 2:
 
 - the hello and its schema, and the cloud link key: minting, the system secret that holds it ("The vault's system
   scope"), rotate and revoke through the UI session and the operator CLI. R4 and the glossary name an X25519 key; X25519

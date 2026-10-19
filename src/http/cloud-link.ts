@@ -5,8 +5,8 @@
 // it registers (issue #465, design.md "Registering at hopper.io") with a one-time registration code the admin minted, and
 // is `pending` again when hopper.io's account owner unregisters it there (design.md "Unregistering at hopper.io").
 // The cloud link key (part 2, design.md "The cloud link key", docs/hopper-io-security.md R4): a link mints one
-// X25519 key, its private half a system secret of the instance's vault, its public half in the record; the admin rotates
-// it on request; an unlink drops it. Nothing uses it yet: the cloud link's agent (issue #464) will prove the install with it.
+// Ed25519 key (issue #2039: it signs hopper.io's challenge in the hello, src/http/cloud-link-hello.ts), its private half a
+// system secret of the instance's vault, its public half in the record; the admin rotates it on request; an unlink drops it.
 import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { InstanceEvents, InstanceSettingsRepository } from '../domain/ports.ts';
 import { CLOUD_LINK_KEY, normalCloudAccount, REGISTRATION_CODE_MINUTES, type CloudLinkKey, type CloudLinkView, type RegistrationCodeMinted, type RegistrationOutcome, type UnregistrationOutcome } from '../domain/cloud-link.ts';
@@ -38,13 +38,13 @@ export interface CloudLink {
 const hash = (code: string): Buffer => createHash('sha256').update(code).digest();
 
 /**
- * A new X25519 key: its private half as the secret keeps it, a JWK with `d` first, so the last 4 characters the vault
+ * A new Ed25519 key: its private half as the secret keeps it, a JWK with `d` first, so the last 4 characters the vault
  * keeps of a secret are none of it; and its public half, base64url.
  */
 function newKey(): { secret: string; publicKey: string } {
-  const { privateKey } = generateKeyPairSync('x25519');
+  const { privateKey } = generateKeyPairSync('ed25519');
   const { d, x } = privateKey.export({ format: 'jwk' }) as { d: string; x: string };
-  return { secret: JSON.stringify({ d, x, crv: 'X25519', kty: 'OKP' }), publicKey: x };
+  return { secret: JSON.stringify({ d, x, crv: 'Ed25519', kty: 'OKP' }), publicKey: x };
 }
 
 export function createCloudLink(o: {
