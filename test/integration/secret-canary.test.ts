@@ -11,6 +11,7 @@
 // Feature: a secret appears only where it is kept
 //   Scenario: after a full job run, no canary is in any place the scan reads
 //   Scenario: a leak planted in the database, a file, a gzip file and a log line is found, and each place is named
+//     (in the database also as gzip in base64 text, as a checkpoint's row keeps it)
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -146,20 +147,22 @@ describe('the secret canary check (issue #1957)', () => {
 
   it('a leak planted in the database, a file, a gzip file and a log line is found, each place named', async () => {
     const b = await boot([]);
-    const planted = canary('planted');
+    const planted = canary('planted'), packed = canary('packed');
     const user = openDb(ownerSchemaUrlFor(b.a.dbPath));
     try {
       user.exec('CREATE TABLE planted_leak (note text)');
       user.run('INSERT INTO planted_leak (note) VALUES (?)', `left here: ${planted}`);
+      user.run('INSERT INTO planted_leak (note) VALUES (?)', gzipSync(`session ${packed}`).toString('base64'));
     } finally {
       user.close();
     }
     writeFileSync(join(b.a.dataDir, 'planted.log'), `token=${formsOf(planted).base64}\n`);
     writeFileSync(join(b.a.dataDir, 'planted.gz'), gzipSync(`checkpoint ${planted}`));
     console.warn(`url ${formsOf(planted)['url-encoded']}`);
-    const found = scan({ planted }, [...databasePlaces(databaseUrlFor(b.a.dbPath)), ...filePlaces('work dir', b.a.dataDir), captured('console', logged.join('\n'))]);
+    const found = scan({ planted, packed }, [...databasePlaces(databaseUrlFor(b.a.dbPath)), ...filePlaces('work dir', b.a.dataDir), captured('console', logged.join('\n'))]);
     expect(found).toEqual(expect.arrayContaining([
       expect.objectContaining({ place: expect.stringMatching(/^database .*_u_admin\.planted_leak$/), form: 'plain' }),
+      expect.objectContaining({ canary: 'packed', place: expect.stringMatching(/^database .*_u_admin\.planted_leak$/), form: 'plain' }),
       { canary: 'planted', place: 'work dir planted.log', form: 'base64' },
       { canary: 'planted', place: 'work dir planted.gz', form: 'plain' },
       expect.objectContaining({ place: 'console', form: 'plain' }),
