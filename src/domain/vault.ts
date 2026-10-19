@@ -3,6 +3,7 @@
 import type { VaultGrantAsk, VaultGrantView } from './vault-grants.ts';
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
+import type { UnknownAsset } from './unknown-assets.ts';
 import { checkWait, type ProbeMarks, type ReadOnlyCheck } from './read-only-check.ts';
 
 export * from './read-only-check.ts';
@@ -333,6 +334,8 @@ export interface TemplateView extends Template {
   label?: string;
   /** The job that asked for it (issue #1001): its title and its issue or pull request, while the hopper knows the job. */
   askedByJob?: { id: string; title?: string; url?: string };
+  /** Its needs' assets the vault cannot find (issue #2067), with the clusters the topology lists; absent: none. */
+  unknownAssets?: UnknownAsset[];
 }
 
 /** The longest purpose a job gives, and the longest plan (issue #1001). */
