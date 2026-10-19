@@ -1,8 +1,9 @@
-// Issue #1909: the hopper ships the orchestrate skill itself, and a job fans out sub-tasks that survive a move.
+// Issue #1909: the hopper ships the orchestrate skill itself, and a job fans out sub-tasks that survive a move. Issue
+// #2145 made it one skill with work: `orchestrate` is another name of it.
 //
 //   Given a running job of octo/tools#7, on a machine with no workflow repository, only the hopper's own files
-//   When  the job runs `sh "$HOPPER_SKILL" orchestrate`
-//   Then  it gets the bundled skill, headed by its version, and `skill.loaded` on its timeline names that version
+//   When  the job runs `sh "$HOPPER_SKILL" work`, or `sh "$HOPPER_SKILL" orchestrate`
+//   Then  it gets the bundled work skill, headed by its version, and `skill.loaded` on its timeline names that version
 //   When  the job files a sub-task with `--required --key fanout-t1`, and files it again with the same key
 //   Then  GitHub holds one child issue, a sub-issue of octo/tools#7, and the second answer is the first (replayed)
 //   When  the job moves to another machine (its proxy token is the new run's) and files the sub-task again
@@ -88,23 +89,28 @@ const SUB_TASK = ['issue', 'create', '--repo', 'octo/tools', '--title', 'Part on
 describe('the orchestrate skill the hopper ships (issue #1909)', () => {
   it('is delivered to a job with nothing installed, the same text both ways, and its version is on the job\'s timeline', async () => {
     const t = await start();
-    const { version, files } = builtInSkills().find((s) => s.name === 'orchestrate')!;
-    // The work skill's files beside the scripts (issue #1911) carry the same text, at the version the job's record names.
-    expect(readFileSync(join(t.root, t.env.HOPPER_WORK_SKILL!, '../../orchestrate/SKILL.md'), 'utf8')).toBe(files['SKILL.md']);
-    expect(eventsOf(t.app, 'job.work_skill_chosen')[0]!.data.requires).toEqual([{ name: 'orchestrate', version, seq: 0 }]);
+    const { version, files } = builtInSkills().find((s) => s.name === 'work')!;
+    // The work skill's files beside the scripts (issue #1911) carry the same text, at the version the job's record names;
+    // it requires no other skill (issue #2145).
+    expect(readFileSync(join(t.root, t.env.HOPPER_WORK_SKILL!), 'utf8')).toBe(files['SKILL.md']);
+    expect(eventsOf(t.app, 'job.work_skill_chosen')[0]!.data).toMatchObject({ name: 'work', version, requires: [], missing: [] });
 
     const catalog = await hopperSkill(t.root, t.env, []);
-    expect(catalog.stdout).toMatch(/^orchestrate: /m);
+    expect(catalog.stdout).toMatch(/^work: /m);
+    expect(catalog.stdout).not.toMatch(/^orchestrate: /m);
 
-    const r = await hopperSkill(t.root, t.env, ['orchestrate']);
-    expect(r.code).toBe(0);
-    expect(r.stdout.startsWith(`skill orchestrate, version ${version}\n`)).toBe(true);
-    expect(r.stdout).toContain(files['SKILL.md']!.trim());
-    expect(eventsOf(t.app, 'skill.loaded')).toEqual([expect.objectContaining({ jobId: t.jobId, data: expect.objectContaining({ skill: 'orchestrate', version }) })]);
+    // Its other name loads the same skill, and the record names the skill it loaded.
+    for (const name of ['work', 'orchestrate']) {
+      const r = await hopperSkill(t.root, t.env, [name]);
+      expect(r.code).toBe(0);
+      expect(r.stdout.startsWith(`skill work, version ${version}\n`)).toBe(true);
+      expect(r.stdout).toContain(files['SKILL.md']!.trim());
+    }
+    expect(eventsOf(t.app, 'skill.loaded')).toEqual([0, 1].map(() => expect.objectContaining({ jobId: t.jobId, data: expect.objectContaining({ skill: 'work', version }) })));
 
     const missing = await hopperSkill(t.root, t.env, ['orchestrate', 'nothing.md']);
     expect(missing.code).toBe(1);
-    expect(missing.stdout).toMatch(/^no: the skill orchestrate has no file nothing\.md\. It has: SKILL\.md/);
+    expect(missing.stdout).toMatch(/^no: the skill work has no file nothing\.md\. It has: SKILL\.md/);
   });
 
   it('a sub-task filed with a fan-out key is filed once: again, and again after a move to another machine', async () => {
@@ -161,12 +167,12 @@ describe('the orchestrate skill the hopper ships (issue #1909)', () => {
     const commit = git(repo, 'rev-parse', 'HEAD');
     const tree = git(repo, 'rev-parse', 'HEAD:.agents/skills/workflow-orchestrate');
 
-    const r = await hopperSkill(t.root, t.env, ['orchestrate', '--repo-copy', copy]);
+    const r = await hopperSkill(t.root, t.env, ['work', '--repo-copy', copy]);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('the repository\'s own copy at .agents/skills/workflow-orchestrate');
-    const { version } = builtInSkills().find((s) => s.name === 'orchestrate')!;
+    const { version } = builtInSkills().find((s) => s.name === 'work')!;
     expect(eventsOf(t.app, 'skill.loaded').map((e) => e.data)).toEqual([expect.objectContaining({
-      skill: 'orchestrate', version, repoCopy: { path: '.agents/skills/workflow-orchestrate', tree, commit, changed: false },
+      skill: 'work', version, repoCopy: { path: '.agents/skills/workflow-orchestrate', tree, commit, changed: false },
     })]);
 
     writeFileSync(join(copy, 'SKILL.md'), '# Changed here\n');

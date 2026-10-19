@@ -142,7 +142,7 @@ describe('the skill catalog and broker (issue #582)', () => {
 
     const other = await skill(a, job, ['example-api']);
     expect(other.code).toBe(1);
-    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics, sandbox, sandbox-template, artifacts, windows-step, box-step, need-step, topology, help, orchestrate\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
+    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics, sandbox, sandbox-template, artifacts, windows-step, box-step, need-step, topology, help, work\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
     expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'example-api', reason: expect.stringContaining('no skill example-api') }) })]);
   });
 

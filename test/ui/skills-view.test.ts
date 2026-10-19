@@ -10,16 +10,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const A = 'a'.repeat(16);
 const B = 'b'.repeat(16);
-const builtIn = (name: string, text: string) => ({ name, builtIn: true, description: text, latest: { name, version: A, seq: 0, source: { kind: 'built-in' }, by: 'the hopper' }, versions: 1, requires: name === 'work' ? ['orchestrate'] : [] });
+const builtIn = (name: string, text: string) => ({ name, builtIn: true, description: text, latest: { name, version: A, seq: 0, source: { kind: 'built-in' }, by: 'the hopper' }, versions: 1, requires: [] });
 const LIBRARY = {
   skills: [
     builtIn('work', 'Do the work end to end.'), builtIn('research', 'Research, then report.'), builtIn('proposal', 'Propose paths.'),
-    { name: 'orchestrate', builtIn: false, description: 'Task lists.', latest: { name: 'orchestrate', version: B, seq: 1, source: { kind: 'imported', repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 1, requires: [] },
+    { name: 'workflow-orchestrate', builtIn: false, description: 'Task lists.', latest: { name: 'workflow-orchestrate', version: B, seq: 1, source: { kind: 'imported', repo: 'octo/workflows', path: 'skills/orchestrate', ref: 'HEAD', commit: 'c'.repeat(40) }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 1, requires: [] },
     { name: 'deep-research', builtIn: false, description: 'Dig deep.', latest: { name: 'deep-research', version: B, seq: 2, source: { kind: 'created' }, by: 'an admin', at: '2026-10-18T10:00:00.000Z' }, versions: 2, requires: ['orchestrate', 'gone'] },
   ],
-  workSkills: { kinds: {}, repos: { 'octo/site': { research: 'deep-research' } }, rules: [{ skill: 'orchestrate', repos: ['octo/infra'], paths: ['*.tf'] }] },
+  workSkills: { kinds: {}, repos: { 'octo/site': { research: 'deep-research' } }, rules: [{ skill: 'workflow-orchestrate', repos: ['octo/infra'], paths: ['*.tf'] }] },
   defaults: { code: 'work', research: 'research', proposal: 'proposal' },
   kinds: ['code', 'research', 'proposal'],
+  aliases: { orchestrate: 'work' },
 };
 const FILES: Record<string, Record<string, string>> = {
   work: { 'SKILL.md': '---\nname: work\ndescription: Do the work end to end.\n---\n# Work\n' },
@@ -108,7 +109,9 @@ describe('the Skills page (issue #1911)', () => {
     expect(skill('deep-research').textContent).toContain('written by an admin');
     expect(skill('deep-research').textContent).toContain(B.slice(0, 8));
     expect(skill('deep-research').textContent).toContain('2 versions');
-    expect(skill('work').textContent).toContain('requires orchestrate');
+    // Issue #2145: orchestrate is another name of work; a skill that requires it has it.
+    expect(skill('work').textContent).toContain('Also named orchestrate');
+    expect(skill('work').textContent).not.toContain('requires');
     expect(skill('deep-research').textContent).toContain('requires orchestrate, gone (not in the library)');
     expect(buttonIn(skill('work'), 'Edit')).toBeUndefined();
     expect(buttonIn(skill('work'), 'Remove')).toBeUndefined();
@@ -177,10 +180,10 @@ describe('the Skills page (issue #1911)', () => {
 
   it('imports a skill from a folder of a repository, and refreshes an imported one', async () => {
     const daemon = await boot();
-    expect(skill('orchestrate').textContent).toContain('imported from octo/workflows/skills/orchestrate at HEAD');
+    expect(skill('workflow-orchestrate').textContent).toContain('imported from octo/workflows/skills/orchestrate at HEAD');
     expect(buttonIn(skill('deep-research'), 'Refresh')).toBeUndefined();
-    await click(buttonIn(skill('orchestrate'), 'Refresh'));
-    await vi.waitFor(() => expect(posted(daemon, '/ui/api/skill-library')).toEqual([{ action: 'refresh', name: 'orchestrate' }]));
+    await click(buttonIn(skill('workflow-orchestrate'), 'Refresh'));
+    await vi.waitFor(() => expect(posted(daemon, '/ui/api/skill-library')).toEqual([{ action: 'refresh', name: 'workflow-orchestrate' }]));
     await click(buttonIn(page()!, 'Import'));
     const form = page()!.querySelector('[data-slot="skill-import"]')!;
     await type(form.querySelector<HTMLInputElement>('input[name="import-repo"]')!, 'octo/workflows');
@@ -209,7 +212,7 @@ describe('the skill rules editor (issue #1924 part 5)', () => {
   it('lists each rule with its skill and conditions', async () => {
     await boot();
     expect(rules().querySelectorAll('[data-slot="skill-rule"]')).toHaveLength(1);
-    expect(rule(0).textContent).toContain('orchestrate');
+    expect(rule(0).textContent).toContain('workflow-orchestrate');
     expect(rule(0).textContent).toContain('repository octo/infra and the change touches *.tf');
   });
 
@@ -223,7 +226,7 @@ describe('the skill rules editor (issue #1924 part 5)', () => {
     await click(field('rule-kind-code'));
     await click(buttonIn(form(), 'Save rule'));
     await vi.waitFor(() => expect(posted(daemon, '/ui/api/work-skills')).toEqual([{ rules: [
-      { skill: 'orchestrate', repos: ['octo/infra'], paths: ['*.tf'] },
+      { skill: 'workflow-orchestrate', repos: ['octo/infra'], paths: ['*.tf'] },
       { skill: 'deep-research', labels: ['iac', 'gitops'], kinds: ['code'] },
     ] }]));
   });
@@ -235,7 +238,7 @@ describe('the skill rules editor (issue #1924 part 5)', () => {
     expect(field('rule-paths').value).toBe('*.tf');
     await type(field('rule-paths'), '*.tf, *.tfvars');
     await click(buttonIn(form(), 'Save rule'));
-    await vi.waitFor(() => expect(posted(daemon, '/ui/api/work-skills')).toEqual([{ rules: [{ skill: 'orchestrate', repos: ['octo/infra'], paths: ['*.tf', '*.tfvars'] }] }]));
+    await vi.waitFor(() => expect(posted(daemon, '/ui/api/work-skills')).toEqual([{ rules: [{ skill: 'workflow-orchestrate', repos: ['octo/infra'], paths: ['*.tf', '*.tfvars'] }] }]));
     await vi.waitFor(() => expect(rules().querySelector('[data-slot="skill-rule-editor"]')).toBeNull());
     await click(buttonIn(rule(0), 'Remove'));
     await vi.waitFor(() => expect(posted(daemon, '/ui/api/work-skills')[1]).toEqual({ rules: [] }));
