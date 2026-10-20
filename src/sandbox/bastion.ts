@@ -3,13 +3,13 @@
 // template approved for an **observe** on each target's namespace or cluster. The box holds `kubectl port-forward` to
 // each target on 127.0.0.1 inside it, a local port each, and starts a forward again when it ends (a pod that restarted).
 // Its kube tokens are files the hopper renews while it runs (the kubeconfig's `tokenFile`, which kubectl reads again
-// within a minute); they never go to the job. Only the box reaches the forwards: the hopper's relay (part 2) joins a
-// job's connection to one through a command it starts in the box for each connection (relayCommand). Pure.
+// within a minute); they never go to the job. Nothing reaches the forwards yet but the box itself: the hopper's relay
+// (part 2) joins a job to them. Pure.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import { credentialName } from './need-box.ts';
 
-/** How long a bastion lives with no use: its TTL, renewed by each relay connection, and kept while one is open. */
+/** How long a bastion lives with no use: its TTL, renewed while it is in use (the relay, part 2). */
 export const BASTION_TTL_MS = 60 * 60_000;
 /** The most a bastion lives, in use or not: its need box's time limit. */
 export const BASTION_MAX_MS = 12 * 60 * 60_000;
@@ -127,26 +127,3 @@ export function bastionCommand(placed: readonly PlacedTarget[]): string {
     'wait',
   ].join('\n');
 }
-
-/**
- * The command the relay starts in the box for one connection (part 2): its stdin to 127.0.0.1:`local`, what comes back to
- * its stdout. It takes the first the box's image has of socat, bash (its /dev/tcp) and nc. It ends when the target ends
- * the connection; when its stdin ends first, it waits at most 5 s for the rest of the answer. Exit 127: the image has
- * none of them.
- */
-export const relayCommand = (local: number): string[] => ['sh', '-c', RELAY_CONNECT, 'hopper-relay', String(local)];
-
-export const RELAY_CONNECT = `p=$1
-if command -v socat >/dev/null 2>&1; then exec socat -t 5 - "TCP:127.0.0.1:$p"; fi
-if command -v bash >/dev/null 2>&1; then
-  exec bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$1" || exit 1
-cat <&3 & r=$!
-cat <&0 >&3 & w=$!
-wait -n
-if kill -0 $r 2>/dev/null; then (sleep 5; kill $r) >/dev/null 2>&1 & s=$!; wait $r; kill $s 2>/dev/null; fi
-kill $w 2>/dev/null
-exit 0' hopper-relay "$p"
-fi
-if command -v nc >/dev/null 2>&1; then exec nc 127.0.0.1 "$p"; fi
-echo "hopper-relay: the box's image has no socat, bash or nc to reach 127.0.0.1:$p" >&2
-exit 127`;
