@@ -33,10 +33,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
 import { MAP_TAG } from '../../src/domain/infra-plan-changes.ts';
 import { APPLY_STEP_OFF, type InfraPlan } from '../../src/domain/infra-plans.ts';
-import { NEED_LABEL } from '../../src/sandbox/need-box.ts';
+import { STEP_PATH } from '../../src/windows-steps/script.ts';
 import { APPLY_WRAPPER_REFUSAL } from '../../src/sandbox/terraform-wrapper.ts';
-import { openDb } from '../../src/store/db.ts';
-import { STEP_HEADER, STEP_PATH } from '../../src/windows-steps/script.ts';
 import { tempDbPath } from '../support/app.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
@@ -44,8 +42,9 @@ import { TEST_ACCOUNT_TOKEN } from '../support/github-account.ts';
 import { startPolicyAssertProxy, type PolicyAssertProxy } from '../support/policy-assert-proxy.ts';
 import { waitFor } from '../support/wait.ts';
 import { startHost, stopHosts, type CrashHost } from '../crash/harness.ts';
-import { BOX_BASE, cli, runtimeSocket, writeBoxImage } from './support/box.ts';
+import { BOX_BASE, runtimeSocket, writeBoxImage } from './support/box.ts';
 import { MINTING, SESSION_NAME } from './support/hopper.ts';
+import { asJob, leftAtRuntime, removeLeft, step as stepIn, tarOf } from './support/need-step.ts';
 import { ACCOUNT, REGION, resetMoto, seed, SEED_KEYS, startMoto, stateHash, WRITE_ROLE, type Moto } from './support/moto.ts';
 
 const REPO = 'octo/infra';
@@ -72,7 +71,7 @@ beforeAll(async () => {
 afterAll(async () => { await moto?.stop(); });
 afterEach(async () => {
   await stopHosts();
-  if (world) for (const id of await leftAtRuntime(world.url)) await cli(['rm', '-f', '-t', '0', id]).then((r) => (r.code === 0 ? r : cli(['volume', 'rm', '-f', id])));
+  if (world) await removeLeft(world.url);
   await world?.proxy.close();
   await world?.github.close();
   world?.cleanup();
@@ -107,55 +106,7 @@ resource "aws_s3_bucket" "planted" {
 }
 `;
 
-/** The instance id the hopper on the database at `url` has: its need boxes carry it. */
-function instanceOf(url: string): string | undefined {
-  const db = openDb(url);
-  try { return (db.get('SELECT value FROM settings WHERE key = ?', 'instanceId') as { value: string } | undefined)?.value; } finally { db.close(); }
-}
-
-/** The need boxes and their home volumes of the hopper on the database at `url` that the runtime still holds. */
-async function leftAtRuntime(url: string): Promise<string[]> {
-  const instance = instanceOf(url);
-  if (!instance) return [];
-  const label = `label=${NEED_LABEL}=${instance}`;
-  const boxes = (await cli(['ps', '-a', '-q', '--filter', label])).stdout.split('\n').filter(Boolean);
-  const homes = (await cli(['volume', 'ls', '-q', '--filter', label])).stdout.split('\n').filter(Boolean);
-  return [...boxes, ...homes];
-}
-
-/** The files of `from` named, as a tar: a step's inputs. */
-function tarOf(from: string, files: string[]): Buffer {
-  return execFileSync('tar', ['-cf', '-', '-C', from, ...files]);
-}
-
-interface Ended { exit: number; problem: string | undefined; log: string; outputs: Buffer }
-
-/** A job's request on `/job/step` as `hopper-step` sends it, with its inputs as the body. */
-async function asJob(h: CrashHost, method: string, path: string, body?: Buffer): Promise<Response> {
-  return fetch(`${h.url}${path}`, {
-    method, headers: { authorization: `Bearer ${h.job!.proxyToken}`, ...(body ? { 'content-type': 'application/x-tar' } : {}) },
-    ...(body ? { body: new Uint8Array(body) } : {}),
-  });
-}
-
-/** A need step asked and read to its end: its exit code, the hopper's problem, its log and its outputs. */
-async function step(h: CrashHost, q: { needs: string; key: string; command: string; planId?: string; output?: string[] }, inputs: Buffer): Promise<Ended> {
-  const params = new URLSearchParams({ needs: q.needs, key: q.key, command: q.command, timeout: String(STEP_MS / 1000) });
-  if (q.planId) params.set('planId', q.planId);
-  for (const o of q.output ?? []) params.append('output', o);
-  const asked = await asJob(h, 'POST', `${STEP_PATH}?${params.toString()}`, inputs);
-  const text = await asked.text();
-  expect(asked.status, text).toBe(202);
-  const id = asked.headers.get(STEP_HEADER.id)!;
-  const result = await waitFor(async () => {
-    const r = await asJob(h, 'GET', `${STEP_PATH}/${id}`);
-    return r.status === 202 ? (await r.arrayBuffer(), undefined) : r;
-  }, { timeoutMs: STEP_MS, intervalMs: 500, what: `step ${q.key} to end` });
-  expect(result.status).toBe(200);
-  const outputs = Buffer.from(await result.arrayBuffer());
-  const log = await (await asJob(h, 'GET', `${STEP_PATH}/${id}/log?from=0`)).text();
-  return { exit: Number(result.headers.get(STEP_HEADER.exit)), problem: result.headers.get(STEP_HEADER.problem) ?? undefined, log, outputs };
-}
+const step = (h: CrashHost, q: Parameters<typeof stepIn>[1], inputs: Buffer) => stepIn(h, q, inputs, STEP_MS);
 
 /** The buckets moto holds, read with the seed's key through the proxy. */
 async function buckets(url: string): Promise<string[]> {
