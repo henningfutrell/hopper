@@ -35,6 +35,11 @@ export interface QueueView {
   presort: PreSort;
   /** The high-priority threshold (issue #535): a job at or above it is high priority, tagged and listed first. */
   highPriority: number;
+  /**
+   * The critical priority (issues #373, #2203, `HOPPER_CRITICAL_PRIORITY`): a job at or above it is a critical job — it may
+   * take a lane over the cap, and the critical job tracker shows it on every page. 0: off.
+   */
+  criticalPriority: number;
   /** Each waiting job's effective priority (issue #1776), the one the queue order uses: its priority with any boost. */
   effectivePriority: Record<string, number>;
 }
@@ -92,7 +97,7 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
       const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
-      return { waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked: lockedOf(all, c.store.workItems), items: c.store.workItems.counts(), inFlight: c.store.workItems.inFlight(), ended, gate: gateOf(c), presort, highPriority, effectivePriority: Object.fromEntries(candidates.map((x) => [x.job.id, x.effectivePriority])) };
+      return { waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked: lockedOf(all, c.store.workItems), items: c.store.workItems.counts(), inFlight: c.store.workItems.inFlight(), ended, gate: gateOf(c), presort, highPriority, criticalPriority: c.policy.pacing?.criticalPriority ?? 0, effectivePriority: Object.fromEntries(candidates.map((x) => [x.job.id, x.effectivePriority])) };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);

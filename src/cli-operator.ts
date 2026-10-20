@@ -34,7 +34,7 @@ import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts'; import { CLOUD_LINK_USAGE, cloudLinkCall } from './cli-operator-cloud-link.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts'; import { INFRA_USAGE, infraCall } from './cli-operator-infra.ts';
-import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
+import { REPO_USAGE, repoCall } from './cli-operator-repo.ts'; import { INTAKE_USAGE, intakeCall } from './cli-operator-intake.ts';
 import { QUEUE_USAGE, ownWaitOf, queueCall } from './cli-operator-queue.ts';
 import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
@@ -43,7 +43,7 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra', 'intake'] as const;
 
 export const OPERATOR_USAGE = `  hopper job show <id>                               one job, by its id or short id: its state, and why it is held or waits (holdReason, waitReason),
                                                      or, on its own wait, what it waits on (waitsOn, waitsFor, wait)
@@ -82,6 +82,7 @@ ${QUEUE_USAGE}
   hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
 ${PR_USAGE}
 ${REPO_USAGE}
+${INTAKE_USAGE}
   hopper yolo <owner/repo> on|off|default            yolo mode for one repository: the hopper merges its ready pull requests; default follows every repository's
   hopper backfill done-check                         judge again each done-check failure waiting on a person: done, PR waiting, or it stays
   hopper auto-park                                   the auto-park timeouts: minutes a question waits on a person before its job parks by itself
@@ -280,7 +281,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'proposal') return proposalCall(args);
   if (command === 'prs') return prsCall(args);
   if (command === 'pr') return prCall(args);
-  if (command === 'repo') return repoCall(args);
+  if (command === 'repo') return repoCall(args); if (command === 'intake') return intakeCall(args);
   if (command === 'yolo') return yoloCall(args);
   if (command === 'backfill') return backfillCall(args);
   if (command === 'job') return jobCall(args);
@@ -331,7 +332,8 @@ export async function runOperatorAction(
   // A CLI session is no gateway realm's: no token of one is ever checked for it.
   const signIn = { config: () => loadSignInConfig(instance.signInConfig.read()), checkGateway: async () => ({ ok: false as const, status: 403 as const, error: 'the operator CLI checks no gateway token' }) };
   const sessions = createUiSessions({ repo: instance.uiSessions, clock: { now: () => new Date() }, signIn });
-  const session = sessions.create({ role: call.role, identity: CLI_IDENTITY, userId: user.id, lastsMs: SESSION_MS });
+  // `--as` (issue #2220) names who decided, in the session's name only: its role and user stay the CLI's.
+  const session = sessions.create({ role: call.role, identity: call.as === undefined ? CLI_IDENTITY : { ...CLI_IDENTITY, name: call.as }, userId: user.id, lastsMs: SESSION_MS });
   try {
     return await perform(call, sender(url, { [SESSION_HEADER]: session.token, origin: url.origin }), io);
   } finally {
@@ -350,7 +352,7 @@ export const REFRESH_TOKEN_FILE = 'HOPPER_REFRESH_TOKEN_FILE';
 export async function runOperatorActionWithGrant(command: string, args: string[], io: OperatorIo): Promise<number> {
   const { rest, url: rawUrl, user } = common(args);
   if (user !== undefined) throw new OperatorRefusal(`--user: with ${REFRESH_TOKEN_FILE}, the grant names the user it acts for`);
-  const call = callOf(command, rest, io.stdin);
+  const call = callOf(command, rest, io.stdin); if (call.as !== undefined) throw new OperatorRefusal(`--as: with ${REFRESH_TOKEN_FILE}, the grant names who acts`);
   const url = daemonUrl(rawUrl, io.env);
   const file = io.env[REFRESH_TOKEN_FILE]!;
   let refresh: string;

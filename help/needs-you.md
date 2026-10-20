@@ -30,6 +30,36 @@ The badge on **Needs you** is the sum of all rows. When a high-priority job wait
 
 Every row shows, also when its count is 0. The page says *Nothing waits on you* when all counts are 0.
 
+## Critical jobs
+
+A **critical job** is a job whose priority is at or above the critical priority (100 unless your admin changed `HOPPER_CRITICAL_PRIORITY`). The **Critical jobs** widget shows each critical job under the header, on every page. It stays when you go to another page or reload.
+
+For each job, the widget shows:
+
+- its title, its issue and its status;
+- its lane and the sandboxes it runs on;
+- its current step in plain words, and for how long;
+- its last few actions.
+
+When the job waits on you, the widget turns red and its dot pulses. Each wait has its action in the widget:
+
+| Wait | Action in the widget |
+|---|---|
+| A question | **Answer** opens the question's card from **Questions**. |
+| A sandbox run | **Approve** opens the run card from **Access requests**. |
+| A vault grant | **Grant**. |
+| A credential | **Give** opens the request from **Access requests**. |
+| A proposal or a research report | **Pick a path** or **Decide** opens its card from **Proposals** or **Research**. |
+| A hand-off | **Resolve** opens it from **Failures**. |
+| A login | **Log in** opens its card from **Logins**. |
+| A hold for a person | **Approve**. |
+| The blast-radius gate | **Let through** (an admin). |
+| Its own wait | **Continue** tells the job that what it waits for happened. |
+
+These are the same entries as on their home pages. When you act in the widget, the entry clears on its home page too, and Needs you counts it no more.
+
+Select **Notify me** to get a browser notification when a critical job needs you. **Timeline** shows every step of the job; **Job page** opens it. A job that ended stays in the widget until you select **Dismiss**. This browser remembers what you dismissed.
+
 ## Intake
 
 **Intake** lists the open labelled issues your job sources list that wait on an intake decision, per source. The issues are in groups, each with a count:
