@@ -22205,7 +22205,11 @@ and the branch's own change (start → head) did not empty or shrink it so. A fi
 not empty or remove, is still refused (issue #1218) when the push empties or removes it and the base branch kept it, or
 when the push takes more than the percent of the lines the branch kept and the base branch did not shrink it too. So a
 pull request that removes or shrinks a file keeps doing so through a rebase, a file the base branch removed stays
-removed, and small edits pass. A binary file
+removed, and small edits pass. A file the branch added, which is neither where its change starts nor on the base branch
+as brought in, is the pull request's own and is not judged (issue #2225): a rebase may rename it, empty it or remove it.
+A case: a pull request adds `docs/adrs/ADR-0019-….md`, the base branch takes ADR 19 for another decision, and the
+rebase renames the pull request's ADR to 20. git counts each path on its own (`--no-renames`), so the old path went
+from its lines to none, and the guard refused the push. A file both sides added at one path is still judged. A binary file
 has no lines and is not judged. `git diff --numstat` against the empty tree counts the lines, with one batch fetch of the
 blobs it needs.
 
