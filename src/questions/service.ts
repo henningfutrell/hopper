@@ -40,10 +40,11 @@ export interface QuestionServiceOptions {
   onExpired: (q: Question) => void;
   /** Synchronous, called inside the tx that marks the question dismissed. */
   onDismissed: (q: Question) => void;
-  /** Synchronous, called inside the tx that records a person's correction of an auto-answer (issue #632): the job gets it. */
-  onCorrected: (q: Question) => void;
-  /** Synchronous, called inside the tx that moves the question to the human stage, once per question (issue #2184). */
-  onToHuman?: (q: Question, answerUrl: string) => void;
+  /**
+   * Synchronous, called inside the tx that records a person's correction of an auto-answer (issue #632): the job gets it.
+   * `onToHuman`: inside the tx that moves the question to the human stage, once per question (issue #2184).
+   */
+  onCorrected: (q: Question) => void; onToHuman?: (q: Question, answerUrl: string) => void;
   /** Where a level's run reports a login it waits on (issue #476): never an answer, and never a question of its own. */
   logins?: Logins;
   /** Whether the blast-radius gate keeps a machine: a question raised on one is a guard case. */
