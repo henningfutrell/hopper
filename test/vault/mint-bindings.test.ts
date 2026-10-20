@@ -123,7 +123,7 @@ describe('a need step\'s Kubernetes token is bound to its sandbox (issue #1371)'
       { id: 's2', name: 'AWS', mints: { kind: 'aws-account', name: '123456789012' } },
     ];
     const store = {
-      config: { read: () => undefined },
+      config: { read: () => undefined }, topology: { list: () => [] },
       vault: { list: () => credentials, get: (n: string) => credentials.find((c) => c.name === n), replace: () => {}, sealed: () => undefined },
       events, tx: <T>(f: () => T): T => f(), jobs: { get: () => ({ id: 'job-1', status: 'running' }) },
     };
@@ -153,7 +153,7 @@ describe('a need step\'s Kubernetes token is bound to its sandbox (issue #1371)'
     const { events, targets } = minting();
     const credentials = [{ id: 's1', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' } }];
     const store = {
-      config: { read: () => undefined },
+      config: { read: () => undefined }, topology: { list: () => [] },
       vault: { list: () => credentials, get: () => credentials[0], replace: () => {}, sealed: () => undefined },
       events, tx: <T>(f: () => T): T => f(), jobs: { get: () => ({ id: 'job-1', status: 'running' }) },
     };
