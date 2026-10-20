@@ -29712,8 +29712,10 @@ Two places a secret leaks to that no table or file shows:
   segment the server wrote since then (`pg_read_binary_file` on `pg_wal/`), one place per segment. Reading the WAL needs
   a superuser or `pg_read_server_files`: the test's Postgres container has one. Given a database where the role has
   neither, `walMark` says so and the scan reads no WAL (the planted test is then skipped). The WAL is the whole server's,
-  so it holds other tests' writes too; their canaries are their own. A value Postgres compressed (TOAST, over 2 kB) or
-  one split by a WAL page header is not found.
+  so it holds other tests' writes too; their canaries are their own. A record runs on over a WAL page's end after the
+  next page's header, so `walPlaces` reads whole pages and drops each header, and a segment's place starts with the
+  end of the segment before: a value at a page's or a segment's end is found (issue #2236). A value Postgres compressed
+  (TOAST, over 2 kB) is not found.
 - **Spawned tools.** `recordSpawns` (`test/support/spawn-recorder.ts`) records the file, argv and environment of each
   child the test's process starts: an async child at `ChildProcess.prototype.spawn`, with the environment it really
   gets; a sync one at the `node:child_process` exports, made live for ES modules by `syncBuiltinESMExports`. A child of a

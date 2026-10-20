@@ -134,6 +134,21 @@ export function filePlaces(label: string, dir: string): Place[] {
 /** The WAL read in one call: a part of a segment, so no answer is too large for the store's worker. */
 const WAL_CHUNK = 4 * 1024 * 1024;
 
+/** What a segment's place starts with of the segment before: more than any canary in any form. */
+const CARRIED = 512;
+/** A WAL page's header (XLogPageHeaderData, MAXALIGNed): the long one heads a segment's first page. */
+const SHORT_HEADER = 24, LONG_HEADER = 40;
+
+/** The WAL bytes read at `offset` of a segment (a page's start), as text, each page's header dropped. */
+function withoutPageHeaders(bytes: Buffer, offset: number, page: number): string {
+  const parts: string[] = [];
+  for (let at = 0; at < bytes.length; at += page) {
+    const header = offset + at === 0 ? LONG_HEADER : SHORT_HEADER;
+    parts.push(bytes.subarray(at + header, at + page).toString('latin1'));
+  }
+  return parts.join('');
+}
+
 const lsnOf = (lsn: string): bigint => {
   const [hi, lo] = lsn.split('/');
   return (BigInt(`0x${hi}`) << 32n) | BigInt(`0x${lo}`);
@@ -160,8 +175,9 @@ export function walMark(url: string): string | undefined {
 /**
  * The WAL the Postgres of `url` wrote since `from` (a `walMark`), one place per segment: what a row held before it was
  * changed or removed, which no table shows any more. The WAL is the whole server's, so other tests' writes are in it
- * too; their canaries are their own. A value Postgres compressed (TOAST, over 2 kB) or one split by a WAL page's header
- * is not found.
+ * too; their canaries are their own. A record runs on over a page's end after the next page's header, so the reader
+ * reads whole pages and drops each header; a segment's place starts with the end of the one before, so a record that
+ * runs over a segment's end is found too (in both). A value Postgres compressed (TOAST, over 2 kB) is not found.
  */
 export function walPlaces(url: string, from: string): Place[] {
   const db = openDb(url);
@@ -169,20 +185,24 @@ export function walPlaces(url: string, from: string): Place[] {
     const to = lsnOf(String(db.get('SELECT pg_current_wal_lsn()::text AS lsn')!.lsn));
     const size = BigInt(String(db.get("SELECT setting FROM pg_settings WHERE name = 'wal_segment_size'")!.setting));
     const timeline = BigInt(String(db.get('SELECT timeline_id AS t FROM pg_control_checkpoint()')!.t));
+    const page = BigInt(String(db.get("SELECT setting FROM pg_settings WHERE name = 'wal_block_size'")!.setting));
     const perId = 0x100000000n / size;
     const out: Place[] = [];
+    let carried = '';
     for (let segment = lsnOf(from) / size; segment * size < to; segment++) {
       // A segment's file is named for its timeline and number (pg_walfile_name names the one before at its boundary).
       const file = `${hex8(timeline)}${hex8(segment / perId)}${hex8(segment % perId)}`;
-      const first = lsnOf(from) > segment * size ? lsnOf(from) - segment * size : 0n;
+      const first = lsnOf(from) > segment * size ? ((lsnOf(from) - segment * size) / page) * page : 0n;
       const last = to < (segment + 1n) * size ? to - segment * size : size;
-      const chunks: string[] = [];
+      const chunks: string[] = [carried];
       for (let o = first; o < last; o += BigInt(WAL_CHUNK)) {
         const n = last - o < BigInt(WAL_CHUNK) ? last - o : BigInt(WAL_CHUNK);
         const got = db.get("SELECT encode(pg_read_binary_file(?, ?, ?, true), 'base64') AS b", `pg_wal/${file}`, Number(o), Number(n));
-        chunks.push(Buffer.from(String(got?.b ?? ''), 'base64').toString('latin1'));
+        chunks.push(withoutPageHeaders(Buffer.from(String(got?.b ?? ''), 'base64'), Number(o), Number(page)));
       }
-      out.push({ name: `WAL ${file}`, text: chunks.join('') });
+      const text = chunks.join('');
+      carried = text.slice(-CARRIED);
+      out.push({ name: `WAL ${file}`, text });
     }
     return out;
   } finally {
