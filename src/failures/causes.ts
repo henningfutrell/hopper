@@ -17,12 +17,6 @@ export const NO_WAY_TO_HOPPER = 'no-way-to-hopper';
 export const DONE_CRITERIA_UNMET = 'done-criteria-unmet';
 
 export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
-  // First (issue #2235): the read error it names is the hopper's own read of the source, never the machine's or the agent's.
-  cause({
-    id: 'done-check-unread', name: 'Done check unread', cls: 'transient', decision: 'retry', scope: 'machine',
-    description: 'The job said it was done, but the hopper could not read its source to check the work, also after it tried again with backoff (a connect timeout, a busy service, a rate limit). Nothing showed the work incomplete. Before it runs again, its source is asked whether the work is done there: then it ends finished.',
-    pattern: /could not confirm the work is complete/i,
-  }),
   cause({
     id: 'socket-path-too-long', name: 'Socket path too long', cls: 'shared', decision: 'redirect', scope: 'machine',
     description: 'A Unix socket path under the job\'s TMPDIR is longer than the system allows: every job with the same TMPDIR on that machine crashes the same way.',
@@ -111,7 +105,7 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
   cause({
     id: 'not-complete', name: 'Not complete', cls: 'job', decision: 'person', scope: 'machine',
     description: 'The job said it was done, but its source, asked twice a minute apart, found its item open and no pull request that closes or references it ready for review (not a draft, no merge conflicts) or merged. A pull request waiting for its merge is never this: it is done. Looked at once more before it is assessed; then Jev may pick run it again. Its own job\'s: it never groups or holds other jobs.',
-    pattern: /^not complete:/i,
+    pattern: /^not complete:|could not confirm the work is complete/i,
   }),
 ];
 

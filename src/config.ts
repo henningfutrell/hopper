@@ -37,7 +37,7 @@ export interface Config extends SandboxSettings {
   /** How long a running job is held once its machine's link drops, before it fails (issue #752). */
   linkGraceMs: number;
   /** How long a done job its source finds not done waits before it is asked again (issue #637). */
-  doneRecheckMs: number; doneReadRetryMs: number;
+  doneRecheckMs: number;
   /** How long the assessor waits between looks at a job's own pull request's checks while they run (issue #1230). */
   checksWaitMs: number;
   /** How long a job waiting on its own command shows no background work before its nudge, then before it is stuck (issue #1037). */
@@ -128,7 +128,6 @@ const schema = z.object({
   HOPPER_RECONNECT_GRACE_MS: int(0).default(120000),
   HOPPER_LINK_GRACE_MS: int(0).default(600000),
   HOPPER_DONE_RECHECK_MS: int(0).default(60000),
-  HOPPER_DONE_READ_RETRY_MS: int(0).default(5000),
   HOPPER_CHECKS_WAIT_MS: int(1).default(60000),
   HOPPER_OWN_COMMAND_GRACE_MS: int(0).default(300000),
   HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
@@ -195,7 +194,6 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_RECONNECT_GRACE_MS: 'after a restart, how long a running job waits for its machine to answer (a client to dial in, an ssh target to reply) before it fails',
   HOPPER_LINK_GRACE_MS: 'once a running job\'s machine link drops, how long the job is held on its lane for the link to come back before it fails',
   HOPPER_DONE_RECHECK_MS: 'a job that ended done whose source finds it not done is asked again after this long (GitHub may not show a new pull request at once) before it fails; 0: at once',
-  HOPPER_DONE_READ_RETRY_MS: 'a job that ended done whose source cannot be read to check its work (a connect timeout, a busy service, a rate limit) is read again after this long, then after twice as long, before it fails; 0: at once',
   HOPPER_CHECKS_WAIT_MS: 'a job whose own pull request\'s checks were red (Own PR checks red): how long the hopper waits between looks at those checks while they run again, before it sends the job back to fix them',
   HOPPER_OWN_COMMAND_GRACE_MS: 'a job waiting on its own background command whose pane shows no background work for this long, its agent not gone on, is nudged once; this long after the nudge it is flagged stuck',
   HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per escalation level\'s call on a question',
@@ -341,7 +339,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     laneIdleGraceMs: e.HOPPER_LANE_IDLE_GRACE_MS,
     reconnectGraceMs: e.HOPPER_RECONNECT_GRACE_MS,
     linkGraceMs: e.HOPPER_LINK_GRACE_MS,
-    doneRecheckMs: e.HOPPER_DONE_RECHECK_MS, doneReadRetryMs: e.HOPPER_DONE_READ_RETRY_MS,
+    doneRecheckMs: e.HOPPER_DONE_RECHECK_MS,
     checksWaitMs: e.HOPPER_CHECKS_WAIT_MS,
     ownCommandGraceMs: e.HOPPER_OWN_COMMAND_GRACE_MS,
     answerTimeoutMs: e.HOPPER_ANSWER_TIMEOUT_MS,

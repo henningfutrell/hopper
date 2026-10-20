@@ -361,7 +361,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     policy: { softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing },
     tickMs: config.tickMs,
-    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, linkGraceMs: config.linkGraceMs, doneRecheckMs: config.doneRecheckMs, doneReadRetryMs: config.doneReadRetryMs, ownCommandGraceMs: config.ownCommandGraceMs,
+    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, linkGraceMs: config.linkGraceMs, doneRecheckMs: config.doneRecheckMs, ownCommandGraceMs: config.ownCommandGraceMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
     // A job whose last push the shrink guard refused (issue #1096) does not end done: tending failed, whatever its source says.
     verdict: (job) => guardedVerdict(store.events.recent(200, ['github_proxy.refused', 'github_proxy.done'], job.id), job, () => judge(sourceOf(job), job)),
