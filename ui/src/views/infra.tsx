@@ -5,9 +5,10 @@
 // writes, newest first. Out-of-band changes (out-of-band.tsx). The topology has its own page (topology-page.tsx, issue
 // #1943): a line here links to it, and each timeline entry links to the nodes it touched there; the page reads the graph
 // only to name those nodes. Every panel always shows: loading, an error with Try again, or an empty list that says how a
-// job fills it.
+// job fills it. `#infra/<plan id>` (issue #2205: a job's wait on a plan links so) picks that plan, or says it is not recorded.
 import { FileDiff, History, ShieldAlert } from 'lucide-react';
 import { Empty, Panel } from '@/components/panel';
+import { useSection } from '@/app/nav';
 import { infraTimeline, plansWaiting } from '@/model/infra-plans';
 import type { InfraPlanSettings, InfraWatchers, PlanApply, PlanView } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
@@ -22,6 +23,7 @@ type Plans = { plans: PlanView[]; applies: PlanApply[]; settings: InfraPlanSetti
 
 export function Infra() {
   const now = useServerNow();
+  const picked = useSection() || undefined;
   const [plans, changePlans, reloadPlans] = useLoad<Plans>('/api/infra-plans');
   const [changes, changeChanges, reloadChanges] = useLoad<OutOfBandList>('/api/out-of-band');
   const [topology] = useLoad<TopologyGraph>('/api/topology');
@@ -43,7 +45,10 @@ export function Infra() {
         {plans.kind === 'ok' && plans.data.plans.length === 0 && (
           <Empty>No plans yet. A job records one with POST /job/infra-plans before it applies a change: <code>terraform plan</code>, <code>helm diff</code> or an Argo CD diff. Then the plan waits here for a person to approve it.</Empty>
         )}
-        {plans.kind === 'ok' && plans.data.plans.length > 0 && <PlanList plans={plans.data.plans} applies={plans.data.applies} onPlan={onPlan} />}
+        {plans.kind === 'ok' && picked && !plans.data.plans.some((p) => p.id === picked) && (
+          <p data-slot="infra-plan-missing" className="text-sm text-destructive">No plan {picked} is recorded on this hopper, so there is nothing to approve. The job that waits on it is told so; it records the plan with POST /job/infra-plans.</p>
+        )}
+        {plans.kind === 'ok' && plans.data.plans.length > 0 && <PlanList plans={plans.data.plans} applies={plans.data.applies} onPlan={onPlan} picked={picked} />}
       </Panel>
       <Panel title="Applies and drift" icon={History} count={timeline.length || ''} list>
         {plans.kind !== 'ok' ? <NotYet state={plans} what="plans" retry={reloadPlans} />

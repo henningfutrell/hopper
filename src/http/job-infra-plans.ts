@@ -10,7 +10,8 @@
 //                                  each judged by the out-of-band rule; the out-of-band ones kept, 200, with the counts
 //
 // Plain text back, or JSON when `Accept: application/json` asks for it; every no says why. It changes no job, question,
-// webhook or setting: it records a plan, an event on the job's timeline. A job never approves one.
+// webhook or setting: it records a plan, an event on the job's timeline. A job never approves one. A plan that waits for a
+// person is said with where it shows and the wait line that the hopper wakes on its approval (issue #2205).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { failedChecks, PLAN_FILE_MAX, PLAN_JSON_MAX, PLAN_TEXT_MAX, type PlanInput } from '../domain/infra-plans.ts';
 import type { Job, JobStatus } from '../domain/types.ts';
@@ -87,7 +88,8 @@ export function jobInfraPlanRoutes(app: FastifyInstance, o: { tenants: Tenants }
       const failed = failedChecks(p);
       const next = failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again`
         : view.approval ? `approved by ${nameWithoutEmail(view.approval.by)} (auto-approve: ${view.approver.why})\nnext: ask with --plan ${p.id}`
-          : `next: ${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it on Infra (${view.approver.why}); then ask with --plan ${p.id}`;
+          : `next: ${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it (${view.approver.why}). It shows in Needs you, under Infra plans, and at the hopper's #infra/${p.id}.
+wait: end your turn with HOPPER_WAITING and on: infra plan ${p.id}; the hopper wakes you when it is approved. Then ask with --plan ${p.id}`;
       return answer(req, reply, 201, { plan: view }, `recorded: plan ${p.id}  ${p.tool}  ${p.asset.kind}/${p.asset.name}  ${p.target}  stale at ${p.expiresAt}
 summary: ${p.summary?.words ?? ''} (${p.summary?.level ?? ''} risk)
 ${next}`);

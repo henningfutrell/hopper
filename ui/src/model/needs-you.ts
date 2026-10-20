@@ -12,6 +12,8 @@
 // cluster the vault cannot find, or a short name of several. A row of its own, never in Access requests: that row, and its
 // nav badge, count only what waits for a person's approval, and no approval makes such a template work.
 // Access requests marks the run cards of high-priority jobs (issue #2197), as the nav badge marks a high-priority question.
+// Infra plans names each plan that waits, and marks those a high-priority job recorded (issue #2205): a job that waits on a
+// plan's approval links to it on Infra, where a person approves it.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
@@ -29,6 +31,10 @@ export interface NeedsYouCounts {
   unknownAssets?: readonly string[];
   /** Infra plans that wait for a person to approve them. */
   plans: number;
+  /** Of those, the ones a high-priority job recorded (issue #2205); absent: none. */
+  plansHigh?: number;
+  /** One line per plan that waits (issue #2205); absent: none. */
+  planLines?: readonly string[];
   /** The machines whose agent tool is signed in as nobody (issue #1128), one line each. */
   signedOut: readonly string[];
   /** The online machines that are not ready (issue #1248), one line each, with why. */
@@ -80,7 +86,7 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
       const unknown = c.unknownAssets ?? [];
       return { n: unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };
     }
-    if (k === 'plans') return { n: c.plans, high: 0 };
+    if (k === 'plans') return { n: c.plans, high: c.plansHigh ?? 0, ...(c.planLines?.length ? { details: c.planLines } : {}) };
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
     if (k === 'checks') return { n: c.checksUnread.length, high: 0, ...(c.checksUnread.length ? { details: c.checksUnread } : {}) };
     if (k === 'accounts') return { n: c.signedOut.length, high: 0, ...(c.signedOut.length ? { details: c.signedOut } : {}) };

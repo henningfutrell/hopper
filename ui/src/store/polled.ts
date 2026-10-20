@@ -37,9 +37,9 @@ function usePolled<T>(path: string, events: readonly string[] = NO_EVENTS): T | 
   return usePolledStore((s) => s[path]) as T | undefined;
 }
 
-/** The shared reads, each with the events after which it is read again; a plan is recorded with no event. */
+/** The shared reads, each with the events after which it is read again: a plan recorded or approved at once (issue #2205). */
 export const usePullRequestsView = (): PullRequestsView | undefined => usePolled('/api/pull-requests', ['job.pull_request_', 'yolo_mode.']);
-export const useInfraPlans = (): { plans: PlanView[] } | undefined => usePolled('/api/infra-plans');
+export const useInfraPlans = (): { plans: PlanView[] } | undefined => usePolled('/api/infra-plans', ['infra.plan_']);
 export const useOutOfBand = (): { changes: OutOfBandView[] } | undefined => usePolled('/api/out-of-band', ['infra.out_of_band_']);
 export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-mode', ['yolo_mode.']);
 /** The landing batches (issue #1333): Needs you's stuck landing passes. What is stuck is found by the pass, with no event: polled. */
