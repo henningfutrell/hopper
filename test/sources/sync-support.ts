@@ -41,6 +41,7 @@ export function createWorld(): World {
     for (const l of [...listeners]) l(e);
   }
 
+  const arrivals = new Map<string, string>();
   const store = {
     events: {
       append: (n: { type: EventType; jobId?: string; questionId?: string; data: Record<string, unknown> }) => {
@@ -62,6 +63,13 @@ export function createWorld(): World {
       get: (id: string) => questions.get(id),
       list: (f?: { jobId?: string; status?: string[] }) => [...questions.values()]
         .filter((q) => (!f?.jobId || q.jobId === f.jobId) && (!f?.status || f.status.includes(q.status))),
+    },
+    // Each item's arrival (issue #2228), in memory: the first time each source listed it.
+    intakeArrivals: {
+      arrive: (source: string, keys: readonly string[], at: string) => {
+        for (const k of keys) if (!arrivals.has(`${source} ${k}`)) arrivals.set(`${source} ${k}`, at);
+        return new Map(keys.map((k) => [k, arrivals.get(`${source} ${k}`)!]));
+      },
     },
     tx: <T>(fn: () => T) => fn(),
   } as unknown as UserStore;

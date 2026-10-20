@@ -28,4 +28,7 @@ export function countdown(iso: string, now: number): string {
   return s <= 0 ? 'expired' : `in ${duration(s)}`;
 }
 
+/** A date and time in the viewer's own time zone, with the zone named (issue #2228). */
+export const zonedTime = (iso: string): string => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'long' });
+
 export const clock = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour12: false });

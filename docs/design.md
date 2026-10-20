@@ -11430,6 +11430,29 @@ and a dropped one looked the same. Built on Not taken (issue #798), which lists 
   "on the backburner <age>, by <login>"; its group heading has the backburner icon. Never the word *parked*: that is a
   job a person took out of its lane.
 
+## When each card arrived in Intake (issue #2228, 2026-10-20)
+
+Owner request: Intake showed no time, so a card that waited overnight looked the same as one that arrived a minute ago.
+
+**As built:**
+- **The arrival is kept.** After each sync the sync loop (`keepArrivals`, `src/sources/sync-slots.ts`) gives each item the
+  source lists its **arrival**: the time of the sync that first listed it, kept in `intake_arrivals` (tenant migration 87,
+  `src/store/intake-arrivals.ts`), one row per source and item key. A row is never changed or removed: a later sync, a
+  restart and a second hopper on the same store read the same arrival. A paused source keeps the arrivals it had.
+- **One field for every reader.** Each `detail.intake[]` entry of `GET /api/sources` carries `arrivedAt` (ISO 8601, UTC),
+  for every source kind, so automations and the operator CLI read the card's age from it and compute none of their own.
+- **Shown on each row.** Intake says "arrived <age>" on each row, with the date and time in the viewer's time zone, the zone
+  named, on hover (`zonedTime`, `ui/src/model/format.ts`).
+
+**Decisions.** The arrival is the hopper's own first listing, not the issue's creation time on GitHub: the store always keeps
+it, so no fallback to the creation time is needed. A row is never removed, so an issue that leaves Intake and comes back
+(closed and reopened, or taken and back as a reopened card) keeps its first arrival; one row per item is small. An item
+listed before this change arrives at the first sync after the update. Intake keeps its order: the issue's optional sort by
+age is not built.
+
+Tests: `test/integration/intake-arrival.test.ts` (the real daemon and store: the arrival is kept at the next sync and across
+a restart, and a later item arrives later), `test/ui/intake-view.test.ts` (the age on the row and the time on hover).
+
 ## Per-machine work trees (issue #361, 2026-10-08)
 
 Owner request: jobs failed when routed to a machine that did not have the configured work tree — four

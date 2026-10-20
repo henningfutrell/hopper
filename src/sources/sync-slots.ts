@@ -4,6 +4,7 @@
 // until the sync loop finds nothing of its own left to report.
 import type { Clock, JobSource, UserStore } from '../domain/ports.ts';
 import type { SourceStatus } from '../domain/types.ts';
+import { withArrivals, type IntakeArrivalRepository } from '../domain/intake.ts';
 import type { Cause } from '../telemetry/sources.ts';
 import type { SyncAsk } from './after-answer-timings.ts';
 
@@ -38,6 +39,8 @@ export interface Slot {
   /** When its last round of follows started, and its last round of every one (issue #985), ms since the epoch. */
   followedAt?: number;
   followedAllAt?: number;
+  /** Each listed item's arrival (issue #2228), as the store kept it at the last sync: detail.intake names it. */
+  arrivals?: ReadonlyMap<string, string>;
   /** A GitHub delivery named one of its job repositories (issue #1079): the sync it starts soon after. */
   delivered?: NodeJS.Timeout;
   /** The pause last logged (issue #1351), so each is said once, and once when it ends. */
@@ -153,10 +156,19 @@ export function detailOf(slot: Slot, paused: string | undefined, permanentErrors
   const intake = paused === undefined ? slot.source.intake?.() : undefined;
   return {
     ...slot.source.describe(),
-    ...(intake ? { intake } : {}),
+    ...(intake ? { intake: slot.arrivals ? withArrivals(intake, slot.arrivals) : intake } : {}),
     ...(paused !== undefined ? { paused } : {}),
     permanentErrors,
     reportRetries: slot.retrying.size,
     ...(slot.notRerun.length ? { notRerun: slot.notRerun } : {}),
   };
+}
+
+/**
+ * After a sync: each item the source lists arrives in the store the first time it is listed (issue #2228), and keeps that
+ * arrival. A paused source, or one that lists no intake, keeps the arrivals it had.
+ */
+export function keepArrivals(slot: Slot, paused: string | undefined, arrivals: IntakeArrivalRepository, now: string): void {
+  const intake = paused === undefined ? slot.source.intake?.() : undefined;
+  if (intake) slot.arrivals = arrivals.arrive(slot.source.name, intake.map((x) => x.key), now);
 }

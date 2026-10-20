@@ -40,7 +40,19 @@ export interface IntakeOutcome {
   backburner?: BackburnerSince;
   /** The GitHub work a person's action left after its answer (issue #1194): while it runs, and once it failed. */
   writeBehind?: IntakeWriteBehind;
+  /** Its **arrival** (issue #2228): when the hopper first listed the item, ISO 8601. Kept in the store, never reset by a sync or a restart. */
+  arrivedAt?: string;
 }
+
+/** Each item's **arrival** in a source's intake (issue #2228), in the user's store: the first time the source listed it. */
+export interface IntakeArrivalRepository {
+  /** The arrival of each of `keys` in `source`: a key the source never listed before arrives `at`; one listed before keeps its arrival. */
+  arrive(source: string, keys: readonly string[], at: string): Map<string, string>;
+}
+
+/** The outcomes, each with its arrival when one is known (issue #2228). */
+export const withArrivals = (outcomes: readonly IntakeOutcome[], arrivals: ReadonlyMap<string, string>): IntakeOutcome[] =>
+  outcomes.map((x) => { const at = arrivals.get(x.key); return at === undefined ? x : { ...x, arrivedAt: at }; });
 
 /**
  * An intake action's write-behind: its rows in the GitHub outbox (issues #1194, #1238): running, or failed with why. Absent
