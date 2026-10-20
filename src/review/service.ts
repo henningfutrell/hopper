@@ -12,7 +12,7 @@
 // selection made so far for the next version.
 import type { Clock, ConfigRecords, EscalationLevel, ReviewActionResult, ReviewReply, ReviewRequest, ReviewService, ReviewServices, UserStore } from '../domain/ports.ts';
 import {
-  AUTO_CONTINUE, amendPaths, jobPriorityTag, needsAPerson, pathsOf, selectionRefusal, viablePaths, type PathPick, type SelectedPath, PRE_CHECK, PRE_CHECK_RETURNS, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
+  AUTO_CONTINUE, amendPaths, parkedItemOf, jobPriorityTag, needsAPerson, pathsOf, selectionRefusal, viablePaths, type PathPick, type SelectedPath, PRE_CHECK, PRE_CHECK_RETURNS, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
   thenChoices, type ReviewDecisionId, type ReviewEntry, type ReviewItem, type ReviewKind, type ReviewSettings, type ShiftThen,
 } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
@@ -68,6 +68,8 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
   }
 
   function abortReview(id: string, reason: string) { inflight.get(id)?.abort(reason); inflight.delete(id); }
+  /** Its job is parked on it (issue #2167): no level reviews it, the hopper continues with nothing, and no person decides, until it is picked up. */
+  const parked = (p: ReviewItem): boolean => parkedItemOf(store.jobs.get(p.jobId), p) !== undefined;
 
   /** The first part of the newest version, as the escalation event names it (a proposal's goal, a report's question). */
   const headline = (p: ReviewItem): Record<string, string> => {
@@ -140,7 +142,7 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
   async function review(id: string, level: EscalationLevel, number: number, of: number, reason: string, s: ReviewSettings): Promise<string | undefined> {
     const entered = store.tx((): ReviewItem | undefined => {
       const p = items.get(id);
-      return p && p.status === 'open' ? enter(p, level.name, reason) : undefined;
+      return p && p.status === 'open' && !parked(p) ? enter(p, level.name, reason) : undefined;
     });
     if (!entered) return undefined;
     const version = entered.versions.length;
@@ -154,8 +156,9 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     const reply = check(REVIEW_REPLY, 'review', replied);
     return store.tx((): string | undefined => {
       if (items.get(id)?.call?.key === callKey) items.update(id, { call: undefined });
+      // Parked meanwhile: the reply is dropped, and the level asked again once the job is picked up.
       const p = stillAt(id, level.name, version);
-      if (!p) return undefined;
+      if (!p || parked(p)) return undefined;
       const model = (reply.ok ? reply.value.model : undefined) ?? level.model;
       const machine = reply.ok ? reply.value.machine : undefined;
       const base = { version, stage: level.name, role: 'level' as const, ...(model ? { model } : {}), ...(machine ? { machine } : {}), startedAt, finishedAt: iso(), callKey };
@@ -251,7 +254,7 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     }
     store.tx(() => {
       const p = items.get(id);
-      if (!p || p.status !== 'open') return;
+      if (!p || p.status !== 'open' || parked(p)) return;
       const reason = reviewers.length === 0 ? 'no reviewer levels configured' : why;
       if (kind !== 'proposal' || !s.autoContinue) return void toHuman(p, reason);
       // Where a person would decide, the hopper continues with the recommended paths, unless a rule does not settle it (issues #1059, #1174).
@@ -304,6 +307,7 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
       return first ?? HUMAN;
     },
     handle(id) { start(id, 'submitted'); },
+    resume(id) { const p = items.get(id); if (p?.status === 'open' && p.stage !== HUMAN && !inflight.has(id) && !parked(p)) start(id, 'its job was picked up', true); },
     /** A person's decision on an open item, over any level in flight. */
     decide(id, decision, by, notes, then, picks) {
       const offered = type.decisions.find((d) => d.id === decision);
@@ -311,6 +315,7 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
       return store.tx((): ReviewActionResult => {
         const p = items.get(id);
         if (!p) return { ok: false, reason: 'not_found', message: `${type.noun} ${id} not found` };
+        if (parked(p)) return { ok: false, reason: 'parked', message: `${type.noun} ${id}: its job is parked: pick it up first` };
         // A reject (issue #1659) ends the whole item: in review at any stage, or sent back while its job writes the next version.
         const decidable = p.status === 'open' || (offered.effect === 'reject' && p.status === 'revising');
         if (!decidable) return { ok: false, reason: 'not_open', message: `${type.noun} ${id} is ${p.status}: only an open ${type.noun} can be decided` };

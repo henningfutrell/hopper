@@ -193,8 +193,10 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * that claim reopens the session instead of typing into a pane. `auto` (issue #650): auto-park parked it, `why` says
    * so, and the answer to its question re-queues it with no pick up. `elsewhere` (issue #921): a person picked it up to
    * resume elsewhere — not pinned to its machine, its claim rebuilds its work tree from its checkpoint where it runs.
+   * `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did, and the reason they gave.
+   * `parkAsk`: a running job's park, kept until its executor stepped aside and the park is recorded.
    */
-  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere };
+  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere } & import('./park-ask.ts').ParkAsk; parkAsk?: import('./park-ask.ts').ParkAsk;
   /**
    * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:

@@ -8,6 +8,8 @@ import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { cleanupDue, type Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
+import { openItemOf } from './reviews.ts';
+import { parkAskOf, type ParkAsk } from '../domain/park-ask.ts';
 import type { Runner } from './runner.ts';
 import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
@@ -46,8 +48,9 @@ export interface Commands {
   /**
    * Park a running job, or one on a question (issue #501): its lane frees, its pane and agent end, its work tree,
    * agent session, machine and open question are kept. A running job is parked once its executor stepped aside.
+   * `ask` (issue #2167): who parked it and why, kept on it.
    */
-  park(id: string): Job;
+  park(id: string, ask?: ParkAsk): Job;
   /**
    * Re-queue a parked job (issue #501): pinned to its machine, its claim resumes its agent session; with its question open, it waits on it again.
    * A job with no agent session only with `freshSession` (issue #530): its claim starts a fresh one in its kept work tree.
@@ -155,12 +158,15 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       });
     },
 
-    park(id) {
+    park(id, ask) {
       const job = existing(c, id);
       const refused = parkRefusal(c, job);
       if (refused) throw new EngineError('conflict', refused);
       if (job.status === 'running') {
-        if (runner.park(id) || c.leases.relay(id, { kind: 'park' })) return job;
+        // Who asked, kept on the job before its run is stopped: the run, here or on another hopper, records the park with it.
+        const asked = store.tx(() => (existing(c, id).status === 'running' ? store.jobs.update(id, { parkAsk: parkAskOf(ask) }) : undefined));
+        if (asked && (runner.park(id) || c.leases.relay(id, { kind: 'park' }))) return asked;
+        if (asked) store.tx(() => store.jobs.update(id, { parkAsk: undefined }));
         throw new EngineError('conflict', `job ${id} is not running here yet: try again`);
       }
       const parked = store.tx(() => {
@@ -168,7 +174,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
         const now = existing(c, id);
         const late = parkRefusal(c, now);
         if (late) throw new EngineError('conflict', late);
-        return recordPark(c, now, 'waiting_answer');
+        return recordPark(c, now, 'waiting_answer', undefined, undefined, ask);
       });
       void releaseParked(c, parked);
       return parked;
@@ -177,6 +183,9 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     requeue(id, o = {}) {
       const next = store.tx(() => recordUnpark(c, id, o.freshSession === true, o.elsewhere === true));
       if (next.status === 'waiting_answer' && next.questionId) c.questions.unparked(next.questionId);
+      // Its proposal or research report (issue #2167): a reviewer level the park stopped goes on.
+      const item = next.status === 'waiting_answer' ? openItemOf(c, next) : undefined;
+      if (item) c.reviews[item.kind].resume(item.id);
       return next;
     },
 

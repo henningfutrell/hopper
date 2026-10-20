@@ -6,15 +6,18 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { UserStore } from '../domain/ports.ts';
-import { highFirst, jobPriorityTag, pathsOf, thenChoices, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, REVIEW_STATUSES, reviewSectionView, type ReviewItem, type ReviewItemView } from '../domain/types.ts';
+import { highFirst, jobPriorityTag, parkedItemOf, pathsOf, thenChoices, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, REVIEW_STATUSES, reviewSectionView, type ReviewItem, type ReviewItemView } from '../domain/types.ts';
 import { reviewSettingsView } from '../review/index.ts';
 import { tldrSettings, withShownTldr } from '../tldr/index.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
 
-/** `open`: open or being revised, so a decision is still to come. */
+/**
+ * `open`: open or being revised, so a decision is still to come, and its job not parked on it. `parked` (issue #2167):
+ * open or being revised, its job parked on it.
+ */
 export const reviewQuery = z.object({
-  status: z.enum([...REVIEW_STATUSES, 'all']).default('open'),
+  status: z.enum([...REVIEW_STATUSES, 'all', 'parked']).default('open'),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 const idParams = z.object({ id: z.string() });
@@ -23,6 +26,7 @@ const idParams = z.object({ id: z.string() });
  * The item with its job's live priority: 0 and not high when its job is gone. While it is open and its job is in a
  * phase a question switched it to (issue #548), `then`: what a person may pick for the job at Accept. A fork's (issue
  * #570): the question it was forked from as it is now. A proposal's (issue #651): its paths, and its follow-ons' live status.
+ * While its job is parked on it (issue #2167), `parked`: since when, and who parked it and why.
  */
 export function reviewItemView(store: UserStore, p: ReviewItem): ReviewItemView {
   const switched = p.status === 'open' && store.jobs.get(p.jobId)?.shift?.to === p.kind;
@@ -31,11 +35,12 @@ export function reviewItemView(store: UserStore, p: ReviewItem): ReviewItemView 
   // A proposal (issue #651): every version with its paths — one written before paths reads as one —, and each
   // follow-on of its selected paths with its job's live status.
   const versions = p.kind === 'proposal' ? p.versions.map((v) => (v.paths ? v : { ...v, paths: pathsOf(v) })) : p.versions;
+  const parked = parkedItemOf(store.jobs.get(p.jobId), p);
   const followOns = (p.signOff?.selected ?? []).flatMap((x) => (x.jobId ? [{ pathId: x.id, jobId: x.jobId, jobStatus: store.jobs.get(x.jobId)?.status ?? 'missing' }] : []));
   return {
     // Its TL;DR (issue #569) only while it is shown: written from its newest version, the setting on.
     ...withShownTldr(p.kind, p, tldrSettings(store)), versions, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}),
-    ...(forkQuestion ? { forkQuestion } : {}), ...(followOns.length > 0 ? { followOns } : {}),
+    ...(forkQuestion ? { forkQuestion } : {}), ...(followOns.length > 0 ? { followOns } : {}), ...(parked ? { parked } : {}),
   };
 }
 
@@ -45,9 +50,10 @@ export function reviewRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReq
     app.get(`/api/${section}`, async (req) => {
       const q = parseWith(reviewQuery, req.query);
       const t = o.tenant(req);
-      const open = q.status === 'open';
-      const items = t.store.reviews[kind].list({ ...(q.status === 'all' ? {} : { status: open ? [...REVIEW_OPEN_STATUSES] : [q.status] }), limit: q.limit, order: open ? 'oldest-first' : 'newest-first' })
-        .map((p) => reviewItemView(t.store, p));
+      const { status } = q, open = status === 'open' || status === 'parked';
+      // Open and parked filter the open items by their job's park; the limit counts the items the filter keeps.
+      const items = t.store.reviews[kind].list(status === 'all' ? { limit: q.limit, order: 'newest-first' } : status === 'open' || status === 'parked' ? { status: [...REVIEW_OPEN_STATUSES], order: 'oldest-first' } : { status: [status], limit: q.limit, order: 'newest-first' })
+        .map((p) => reviewItemView(t.store, p)).filter((p) => !open || (p.parked !== undefined) === (status === 'parked')).slice(0, q.limit);
       return { items: open ? highFirst(items, (p) => p.high) : items, settings: reviewSettingsView(t.store, kind, t.levelNames()), type: reviewSectionView(kind) };
     });
 

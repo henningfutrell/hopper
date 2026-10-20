@@ -1037,7 +1037,7 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 
 ## `job.parked`
 
-Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
+Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
 
 | field | type | required |
 |---|---|---|
@@ -1045,6 +1045,9 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: 
 | `machineId` | string | no |
 | `auto` | boolean | no |
 | `why` | string | no |
+| `by` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+| `reason` | string | no |
 
 ```json
 {
