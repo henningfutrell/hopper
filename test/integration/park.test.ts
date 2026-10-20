@@ -101,7 +101,7 @@ describe('parking a running job', () => {
     expect(herdr.prompts[1]!.text).not.toContain('Paint the shed');
     expect(herdr.prompts[1]!.text).toContain('parked');
     const events = await ofJob(a, job.id);
-    expect(events.find((e) => e.type === 'job.unparked')!.data).toEqual({ to: 'queued' });
+    expect(events.find((e) => e.type === 'job.unparked')!.data).toEqual({ to: 'queued', by: expect.any(String), via: 'ui' });
     expect(done.parked).toBeUndefined();
   });
 
@@ -165,7 +165,7 @@ describe('parking a job on a question', () => {
 
     const r = await requeue(a, token, job.id);
     expect(r.body.status).toBe('waiting_answer');
-    expect((await a.events('types=job.unparked'))[0]!.data).toEqual({ to: 'waiting_answer' });
+    expect((await a.events('types=job.unparked'))[0]!.data).toEqual({ to: 'waiting_answer', by: expect.any(String), via: 'ui' });
     await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Blue.' }, { token });
     await a.waitForStatus(job.id, 'finished', 8000);
     expect(herdr.agentStarts[1]!.args).toEqual(expect.arrayContaining(['--resume', (await a.job(job.id)).agentSession!]));
