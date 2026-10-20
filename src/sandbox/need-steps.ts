@@ -34,7 +34,7 @@ import type { OperationProfile } from '../domain/access.ts';
 import { APPLY_STEP_OFF } from '../domain/infra-plans.ts';
 import { mintKindFor, type Minted, type MintReach } from '../domain/minting.ts';
 import type { NeedStep, NeedStepRepository } from '../domain/need-steps.ts';
-import { templateReady as ready } from '../domain/sandboxes-before-start.ts';
+import { templateReady as ready, templateWait } from '../domain/sandboxes-before-start.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import { isSharedSecret, type TemplateView } from '../domain/vault.ts';
 import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
@@ -306,7 +306,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       }
       if (fields.secrets.length > 0) return refuse(job, 400, 'a box step takes no --secret: its sandbox gets what its template gives, its vault secrets too', box);
       const t = o.templates().find((x) => x.name === box);
-      if (!t || !ready(t, job.id)) return refuse(job, 409, `template ${box} is not ready now: ${t ? 'something of it waits for a person or for its read-only check' : 'it is not there any more'}`, box);
+      const waits = t ? templateWait(t, job.id) : 'it is not there any more';
+      if (!t || waits) return refuse(job, 409, `template ${box} is not ready now: ${waits}`, box);
       return start(job, {
         // Its vault secrets: those the template gives a box's job, but a shared secret and the agent credential (a box's sign-in).
         template: t, needs: boxNeeds(t, fields.plan), outputs: fields.outputs, secrets: t.gives.filter((n) => !isSharedSecret(n) && n !== t.agentCredential),

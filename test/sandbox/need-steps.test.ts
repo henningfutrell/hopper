@@ -239,7 +239,7 @@ describe('a box step (issue #1349)', () => {
     expect(s.box(JOB, { box: 'asked-1', approved: ['asked-1'], command: 'true', outputs: [], secrets: ['AWS_KEY'] }, ask()))
       .toEqual({ status: 400, no: expect.stringContaining('a box step takes no --secret') });
     expect(s.box(JOB, { box: 'asked-2', approved: ['asked-2'], command: 'true', outputs: [], secrets: [] }, ask()))
-      .toEqual({ status: 409, no: expect.stringContaining('template asked-2 is not ready now') });
+      .toEqual({ status: 409, no: 'template asked-2 is not ready now: template asked-2 waits for a person to approve apply on aws-role 123456789012/deploy on Access requests' });
     expect(runs).toEqual([]);
     expect(begun).toEqual([]);
     expect(events.map((e) => e.type)).toEqual(['step.refused', 'step.refused', 'step.refused']);

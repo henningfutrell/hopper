@@ -36,7 +36,8 @@ describe('an approved read template gets its check while another check does not 
       const role = await templateFor(a, token, 'aws-role');
       expect(role).toMatchObject({ readOnly: true, approval: { by: 'the read policy' } });
 
-      await a.app.sandboxes.check();
+      // A check pass ends when every check that runs has: the job's wait ends before it.
+      void a.app.sandboxes.check();
       const end = await done.end;
       expect(end.code, end.stdout + end.stderr).toBe(0);
       expect(end.stdout).toContain(`template ${role!.name} is ready`);
@@ -48,7 +49,7 @@ describe('an approved read template gets its check while another check does not 
 
       letGo();
       await first;
-    expect((await templateFor(a, token, 'cluster'))?.check).toMatchObject({ state: 'passed' });
+      expect((await templateFor(a, token, 'cluster'))?.check).toMatchObject({ state: 'passed' });
     } finally {
       // A hung check would hold the app's stop.
       letGo();

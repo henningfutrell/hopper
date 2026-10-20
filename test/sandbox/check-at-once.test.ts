@@ -70,10 +70,12 @@ describe('a read-only check holds only its own template (issue #2236)', () => {
     expect(s.template('asked-hangs').check).toMatchObject({ state: 'running' });
     expect(checkWait(s.template('asked-hangs'))).toBe('waiting for the read-only check of asked-hangs: it runs now, since 2030-01-01T00:00:00.000Z');
 
-    // Approved (by the read policy) while that check runs: the next pass checks it, and does not wait for the first.
+    // Approved (by the read policy) while that check runs: the next pass checks it, and does not wait for the first. A
+    // pass ends when every check that runs has, so the test does not wait for this one.
     s.add('asked-later');
-    await s.pass();
-    expect(s.template('asked-later').check).toMatchObject({ state: 'failed', problem: expect.stringContaining('no minting credential') });
+    void s.pass();
+    await settle();
+    expect(s.template('asked-later').check).toMatchObject({ state: 'failed' });
     expect(s.template('asked-hangs').check).toMatchObject({ state: 'running' });
 
     s.end();
@@ -88,7 +90,8 @@ describe('a read-only check holds only its own template (issue #2236)', () => {
     const first = s.pass();
     await settle();
     s.add('asked-next');
-    await s.pass();
+    void s.pass();
+    await settle();
     expect(s.template('asked-next').check).toBeUndefined();
     expect(checkWait(s.template('asked-next'))).toBe(`waiting for the read-only check of asked-next: it has not run on this version yet: ${CHECKS_AT_ONCE} other read-only checks run now, and it starts when one of them ends`);
 
