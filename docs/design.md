@@ -30557,6 +30557,70 @@ no; infra applies off asks nothing; a bare change on the action role refused), `
 not allow refuses the template request before a template is made; on the action role the grant is asked at once; a need
 step with no template asks for both in one visit, and runs once both are approved).
 
+## Action grants (issue #2206, part 1, 2026-10-19)
+
+Seen on a hopper: during a production outage a job was told to scale a managed node group. No role the vault mints for
+could call `eks:UpdateNodegroupConfig`, so the job handed the command back to a person, who ran it by hand, and
+production went out of step with the infrastructure code.
+
+**Mechanism decided here.** A session policy only narrows what a role may do: the hopper cannot give a session an action
+its role does not allow, and it never changes IAM (the hopper never changes the cluster or the account's identities). So
+an operator makes one wide role per account, the **action role** `hopper-action` (`ACTION_ROLE`, `src/domain/minting.ts`),
+and the hopper mints it only narrowed to the actions a person granted. `docs/deploy.md` "The action role" says how to make it.
+
+- **The ask.** A need step names each action its one change on an aws-role needs: `sh "$HOPPER_STEP" need
+  "apply/aws-role/<account>/hopper-action" --action "eks:UpdateNodegroupConfig=<ARN>" --plan-id <id> …` (at most 10;
+  `actionsOf`: an IAM action with no wildcard, an ARN in the role's account or of no account). `actionNeed`: the actions
+  go to the step's only write, sync or apply need on an aws-role; a change on the action role with no `--action` is
+  refused. Each action no live grant covers is a `vault.action_asked` once per job and scope, and the route answers 202
+  `waiting: a person grants <action> on <resource> as aws-role <role>`; `hopper-step` asks again by itself, as for a
+  template that waits, and a job that ends its turn waits `on: vault grant`, which `vault.action_granted` and
+  `vault.action_declined` settle (`settledBy`). The ask is read from the event log (`actionAsks`, `src/vault/action-grants.ts`:
+  of a job at work, not declined, not covered now), so a restart keeps it and no state is kept in memory.
+- **Infra applies off** (issue #1722): the route refuses the step with `APPLY_STEP_OFF` before any ask, so no action
+  grant is asked for a change that cannot be minted.
+- **The grant.** On Access requests, panel **AWS actions** (`ui/src/views/action-grants.tsx`): each ask names the
+  action, the resource, the role, the job and why, with **Grant** and **Decline**; it counts in the Access requests badge
+  and the Needs you row, and marks the badge for a high-priority job, as a run card does. `POST /ui/api/sandbox-requests`
+  `grant-action` / `decline-action` (`job`, `grant`: `role`, `action`, `resource`), admin and a box action, as the route
+  is. Only a waiting ask is decided (404 else). A grant is kept in the user's settings (`actionGrants`, no migration:
+  absent reads as none) and covers a later ask of the same role, action and resource — the one-approval carry-over of
+  issue #1001 — until the time limit of remembered write approvals (`rememberWritesHours`, `liveGrants`). `revokeAction`
+  on `POST /ui/api/sandbox-approvals` revokes it (`vault.action_revoked`). The vault's view answers `actionAsks` and
+  `actionGrants`.
+- **The mint** (`mintTarget` with the actions, `src/vault/need-mint.ts`). The step keeps its actions (`NeedStep.actions`,
+  in its JSON body: no migration), and its narrowed need is minted with `ReadOnlyAccess` and an inline session policy that
+  allows each granted action on its resource and denies assuming any other role (`actionSession`, at most the 2048
+  characters STS takes). Each grant is read again at each mint, so a revoke or the time limit bites at the next one. The
+  rest is unchanged: Access and the template's approval, the apply gate (a current approved plan, issue #870), and
+  `vault.minted`, which now names `actions`.
+- **The record.** The apply is in the Infra changes feed as every plan-bound apply is (`GET /api/infra-plans`
+  `applies`, issue #896), with the granted actions (`PlanApply.actions`); the out-of-band rule (issue #871) reads the
+  minted principal as a plan-bound apply credential, as before.
+
+**Decided here.** An API token or a delegate approver cannot grant or decline an action (403): granting a wide role's
+action is a person's act, as the confirmation asks of issue #909 make an API token's write approval. The grant is per role,
+action and resource, not per job, so an outage's second step needs no second click; its end is the remembered-write time
+limit, so an admin who sets it to 1 hour has a person decide almost each time.
+
+**Not built (left for later parts).** The template check before a job starts that says which actions the minted role
+cannot do (IAM policy simulation at the read-only check); the action on the job's run card, so a step that waits on both
+its template and an action is one approval; `hopper sandbox` commands for the grants; the deploy guide's Terraform for
+the action role.
+
+**Residual risk, stated.** The action role is wide in IAM; only the hopper's minting narrows it. A person who holds the
+minting credential can assume it unnarrowed, as with any role it can assume. A resource ARN with a wildcard (`nodegroup/<cluster>/<group>/*`)
+is granted as written: the card shows it whole before the click.
+
+Tests: `test/domain/action-grants.test.ts` (the actions read, the need they go to, a grant's cover and time limit, the
+session policy and its size, the action role never minted wider), `test/integration/action-grants.test.ts` (the real
+daemon and the real `hopper-step`: an action outside the role asked once and shown on Access requests; one grant and the
+step runs in its need box, STS asked for the action role with `ReadOnlyAccess` and the action on its resource; `vault.minted`
+names the plan and the action; the apply in the Infra changes feed; the same action again at once; a decline tells the step
+no; infra applies off asks nothing; a bare change on the action role refused), `test/ui/action-grants-view.test.ts`,
+`test/ui/needs-you.test.ts` (the count), `test/ui/infra-plans.test.ts` (the apply's words), `test/domain/wait-on.test.ts`
+(the wake).
+
 ## Unhealthy lanes (issue #2234, 2026-10-20)
 
 **What happened.** The hopper's sandbox box `hopper-sandbox-claude` failed every job it took for two hours, 11 of 11,
