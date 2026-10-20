@@ -19,7 +19,7 @@ export const directKey = (id: string): string => `${DIRECT_SOURCE}:${id}`;
  * The ends of the pull requests and items its jobs' waits name are read with it too (issue #1721): no other source lists a
  * direct job, so the sync asks the direct source.
  */
-export type DirectPullRequests = Required<Pick<FollowsPullRequests, 'follow' | 'mergesOnReady' | 'tendStarted' | 'checkLogs' | 'endedPullRequests' | 'endedWatched'>>;
+export type DirectPullRequests = Required<Pick<FollowsPullRequests, 'follow' | 'mergesOnReady' | 'tendStarted' | 'checkLogs' | 'endedPullRequests' | 'endedWatched' | 'waitedChecks' | 'waitedReviews'>>;
 
 /**
  * The pull request a direct job opened on its repository `repo` through the hopper's GitHub proxy (issue #1068): the

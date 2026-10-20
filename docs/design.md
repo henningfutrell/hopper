@@ -11430,6 +11430,29 @@ and a dropped one looked the same. Built on Not taken (issue #798), which lists 
   "on the backburner <age>, by <login>"; its group heading has the backburner icon. Never the word *parked*: that is a
   job a person took out of its lane.
 
+## When each card arrived in Intake (issue #2228, 2026-10-20)
+
+Owner request: Intake showed no time, so a card that waited overnight looked the same as one that arrived a minute ago.
+
+**As built:**
+- **The arrival is kept.** After each sync the sync loop (`keepArrivals`, `src/sources/sync-slots.ts`) gives each item the
+  source lists its **arrival**: the time of the sync that first listed it, kept in `intake_arrivals` (tenant migration 87,
+  `src/store/intake-arrivals.ts`), one row per source and item key. A row is never changed or removed: a later sync, a
+  restart and a second hopper on the same store read the same arrival. A paused source keeps the arrivals it had.
+- **One field for every reader.** Each `detail.intake[]` entry of `GET /api/sources` carries `arrivedAt` (ISO 8601, UTC),
+  for every source kind, so automations and the operator CLI read the card's age from it and compute none of their own.
+- **Shown on each row.** Intake says "arrived <age>" on each row, with the date and time in the viewer's time zone, the zone
+  named, on hover (`zonedTime`, `ui/src/model/format.ts`).
+
+**Decisions.** The arrival is the hopper's own first listing, not the issue's creation time on GitHub: the store always keeps
+it, so no fallback to the creation time is needed. A row is never removed, so an issue that leaves Intake and comes back
+(closed and reopened, or taken and back as a reopened card) keeps its first arrival; one row per item is small. An item
+listed before this change arrives at the first sync after the update. Intake keeps its order: the issue's optional sort by
+age is not built.
+
+Tests: `test/integration/intake-arrival.test.ts` (the real daemon and store: the arrival is kept at the next sync and across
+a restart, and a later item arrives later), `test/ui/intake-view.test.ts` (the age on the row and the time on hover).
+
 ## Per-machine work trees (issue #361, 2026-10-08)
 
 Owner request: jobs failed when routed to a machine that did not have the configured work tree — four
@@ -18024,7 +18047,8 @@ owner's.
 - **Audit.** An approval by a delegate records `by` as `<label> (delegate of <person>)` in its event (`vault.granted`,
   `vault.grant_denied`, `vault.approved`, `vault.sandbox_approved`, `vault.sandbox_declined`), on the vault grant and on the
   template's approval, so Access requests shows it on the card, with the time. A notifier or webhook subscribed to those
-  events tells the owner.
+  events tells the owner. An approval through another grant's API token (a `*` key, issue #2229) records `by` as
+  `<label> (API token of <person>)` the same way, so a key's decisions are told apart from the person's own.
 - **The CLI, headless.** `hopper grant [list] | approve <job> | deny <job>`, `hopper sandbox requests | approve <id> |
   decline <id> --reason <text>`, `hopper template approve <name>`. With `HOPPER_REFRESH_TOKEN_FILE` set the operator CLI
   opens no database (`runOperatorActionWithGrant`, `src/cli-operator.ts`): it trades the refresh token in that file at
@@ -18386,9 +18410,9 @@ for each installation token. An error on one alias fails only that pull request;
 its state from the batch, once, and keeps what it saw (`seen`) with no other read. It reads GitHub as before only when:
 merged or closed; a new head commit, a new base, or merge conflicts that changed or are not computed yet (`UNKNOWN`);
 checks that fail now (the read names the failed checks for the tend); its issue closed as not planned (abandoned); a part
-whose body names the issue no more; or ready while yolo mode merges (a read before the write). Checks a read saw fail on
-the same head stay failing while the batch says pending: the batch reads only the rollup, which stays pending while other
-checks run. A pull request the batch has no answer for is read as before. A person's Merge now and Close PR read and write
+whose body names the issue no more; or ready while yolo mode merges (a read before the write). The batch reads the newest
+run of each check (issue #2129), so a failed check that runs again on the same head is pending, not failing, as GitHub's
+required checks read it (issue #2230). A pull request the batch has no answer for is read as before. A person's Merge now and Close PR read and write
 as before, at once.
 
 **Reconciling** (`src/sources/github/reconcile.ts`) runs only in an `all` round, and reads the open pull requests of every
@@ -22231,7 +22255,11 @@ and the branch's own change (start → head) did not empty or shrink it so. A fi
 not empty or remove, is still refused (issue #1218) when the push empties or removes it and the base branch kept it, or
 when the push takes more than the percent of the lines the branch kept and the base branch did not shrink it too. So a
 pull request that removes or shrinks a file keeps doing so through a rebase, a file the base branch removed stays
-removed, and small edits pass. A binary file
+removed, and small edits pass. A file the branch added, which is neither where its change starts nor on the base branch
+as brought in, is the pull request's own and is not judged (issue #2225): a rebase may rename it, empty it or remove it.
+A case: a pull request adds `docs/adrs/ADR-0019-….md`, the base branch takes ADR 19 for another decision, and the
+rebase renames the pull request's ADR to 20. git counts each path on its own (`--no-renames`), so the old path went
+from its lines to none, and the guard refused the push. A file both sides added at one path is still judged. A binary file
 has no lines and is not judged. `git diff --numstat` against the empty tree counts the lines, with one batch fetch of the
 blobs it needs.
 
@@ -23664,8 +23692,8 @@ their own pane waited for ever once a host restart killed the pane, and one fail
 - **Read at each sync** (`src/sources/watched-ends.ts`, `JobSource.endedWatched`; GitHub: `src/sources/github/watched.ts`).
   Each item is read by its number, the pull request first and then the issue, and a run through Actions
   (`GitHubApi.workflowRun`, `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, Actions read). An issue closed, a pull
-  request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began,
-  `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
+  request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began
+  (but not for a wait on an outside event, issue #2219 below), `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
   only), `job.wait_ended { by: hopper, note }`. A read that fails is logged and asked again at the next sync.
 - **An item that does not exist** (issue #1691). A wait named `gss#330`, a repository that does not exist, and was read
   again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
@@ -23676,6 +23704,17 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   and rewrites its wait. A refusal (403) or a rate limit is still a failed read.
 - **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
   memory, the items each job was last woken for. After a restart such a job is woken once more.
+- **What ended before an outside wait began** (issue #2219, 2026-10-20). Reported from a real run: a wait `on: outside:
+  gated: …` whose text named a pull request closed before the wait began ended at once with "was closed", twice in a row.
+  That close was what the job knew, not the event it waited for. Now each end carries when it happened, when the source
+  says (`WatchedEnd.at`: an issue's `closedAt`, a pull request's `mergedAt`, else its `closedAt`, which the pull request read
+  by its number now asks GraphQL for). An item a wait on an outside event (or one with nothing recorded) names that ended
+  before the wait's `since` is left out of that wait (`endedBeforeWait`, `src/domain/watched-items.ts`), at the sync
+  (`src/sources/watched-ends.ts`) and at the wait check (`items_ended`, `src/engine/wait-checks.ts`): the wait ends once
+  every other item ended, and a wait whose items all ended before it began is not ended by them (its check says "ended
+  before the wait began"). A wait on an item or a pull request still ends on one that ended before it (issue #1356), an
+  item that does not exist is still said at once (issue #1691), and a run has no end time, so it ends the wait as before.
+  Tests: `test/domain/watched-items.test.ts`, `test/integration/watched-items.test.ts`.
 - **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the
   run ends. A run that waits for its approval is not ended.
 - **A wait its pane carries** (`paneCarriesWait`): on its own command, on an outside event that names nothing watched (the
@@ -27805,6 +27844,24 @@ Part 3 left three items. Each is closed here by a decision. No code changes.
 **Verification:** read of `src/executors/herdr/executor.ts` (`watch`, the quiet watch's `startedAt`),
 `src/executors/herdr/monitor.ts` (`timeoutMs`), `src/failures/chain.ts` (`livenessOf`), `src/engine/leases.ts` (`renew`),
 `src/engine/recovery.ts` (`takeOver`). Their tests are those of issues #491, #630 and #1662.
+
+### A pull request read that fails (issue #2210, 2026-10-20)
+
+Report: a job waited on the checks of a pull request of another organization. The checks ended green, but the check said
+only "the hopper cannot read <repo>#<n> now" and never ended the wait. `hopper-gh` read the same pull request (over REST).
+
+- **The cause.** The source reads one pull request over GraphQL with each check run and its annotations
+  (`PULL_REQUEST_QUERY`, issue #927). A FORBIDDEN error inside the rollup — on a check run, or on its annotations — was not
+  the error on `statusCheckRollup` that issue #855 keeps the answer for, so the whole read threw. Now a FORBIDDEN error
+  anywhere under `statusCheckRollup` keeps the answer (`checksForbidden`, `src/sources/github/closer.ts`): the parts GitHub
+  gave hold, and the rollup's state still says the checks. A rollup GitHub refused whole stays `unknown`, and the checks
+  fallback reads it over REST (issue #1244).
+- **The error is said.** The sweeper kept no error: any failed read was "cannot read now". Now the check's result names it
+  (`readPull`, `src/engine/wait-checks.ts`): `the hopper cannot read <repo>#<n> now: <GitHub's error>`, or `the job's source
+  reads no pull request` when the job's source has no such read. The check is tried again, the time between doubling, as
+  before; past its deadline it is overdue once and a stuck item for a person.
+- **A direct job's waits.** The direct source (issue #901) now reads a pull request's checks and review too
+  (`createDirectPullRequests`), with the user's own connection; unconnected, the read fails and says why.
 
 ## A labelled issue not assigned to the user is said (issue #1614, 2026-10-17)
 

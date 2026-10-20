@@ -39,6 +39,14 @@ describe('a pull request query whose checks the app may not read (issue #855)', 
     expect(openPullRequestsFrom({ data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [pr] } } } } }, 'closing')[0]).not.toHaveProperty('checks');
   });
 
+  it('a FORBIDDEN error inside the rollup (a check run\'s annotations): the read holds, checks as the rollup says (issue #2210)', () => {
+    const rollup = { state: 'SUCCESS', contexts: { totalCount: 1, nodes: [{ __typename: 'CheckRun', databaseId: 1, name: 'plan', status: 'COMPLETED', conclusion: 'SUCCESS', annotations: null }] } };
+    const passing = { ...pr, commits: { nodes: [{ commit: { committedDate: AT, statusCheckRollup: rollup } }] } };
+    const path = ['repository', 'issueOrPullRequest', 'commits', 'nodes', 0, 'commit', 'statusCheckRollup', 'contexts', 'nodes', 0, 'annotations'];
+    const body = { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', ...passing } } }, errors: [{ type: 'FORBIDDEN', path, message: 'Resource not accessible by integration' }] };
+    expect(pullRequestFrom(body, 'pull request')).toMatchObject({ url: URL, state: 'open', checks: 'passing' });
+  });
+
   it('any other FORBIDDEN error still throws, permanent', () => {
     const body = { data: { repository: null }, errors: [{ type: 'FORBIDDEN', path: ['repository'], message: 'Resource not accessible by integration' }] };
     expect(() => repoPullRequestsFrom(body, 'open pull requests of owner/repo')).toThrow(/open pull requests of owner\/repo: Resource not accessible by integration/);

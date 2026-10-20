@@ -50,7 +50,7 @@ export const REFERENCING_PULL_REQUESTS_QUERY = `query($owner: String!, $name: St
 
 export const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issueOrPullRequest(number: $number) {
-    __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt ${HEAD_COMMIT_CHECKS} }
+    __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt closedAt ${HEAD_COMMIT_CHECKS} }
   } }
 }`;
 
@@ -75,7 +75,7 @@ interface Referenced {
   baseRefName?: string;
   body?: string;
 }
-interface Numbered extends Referenced { __typename?: string; mergedAt?: string | null }
+interface Numbered extends Referenced { __typename?: string; mergedAt?: string | null; closedAt?: string | null }
 interface Source extends Referenced { __typename?: string; body?: string; mergedAt?: string | null; repository?: { nameWithOwner?: string } }
 const PR_STATES: Record<string, ReferencingPullRequest['state']> = { OPEN: 'open', CLOSED: 'closed', MERGED: 'merged' };
 interface GqlResponse {
@@ -89,8 +89,11 @@ interface GqlError { type?: string; message?: string; path?: (string | number)[]
 
 const PERMANENT_TYPES = new Set(['NOT_FOUND', 'FORBIDDEN']);
 
-/** A head commit's checks the app may not read (issue #855): it has no Checks and Commit statuses read; the rest of the answer holds. */
-const checksForbidden = (e: GqlError): boolean => e.type === 'FORBIDDEN' && e.path?.at(-1) === 'statusCheckRollup';
+/**
+ * A head commit's checks the app may not read (issue #855): it has no Checks and Commit statuses read; the rest of the answer
+ * holds. Also a part inside the rollup (issue #2210: a check run, its annotations): the rest of the rollup holds.
+ */
+const checksForbidden = (e: GqlError): boolean => e.type === 'FORBIDDEN' && (e.path ?? []).includes('statusCheckRollup');
 
 /**
  * Throws a GitHubApiError for a GraphQL error (NOT_FOUND/FORBIDDEN permanent, the rest transient), but for checks the app
@@ -198,7 +201,7 @@ export function pullRequestFrom(body: unknown, what: string): NumberedPullReques
   if (n?.__typename !== 'PullRequest' || !n.url || !n.createdAt || !state) return undefined;
   return {
     url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', state,
-    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...headOf(n, r2.checksUnknown),
+    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...(n.closedAt ? { closedAt: n.closedAt } : {}), ...headOf(n, r2.checksUnknown),
   };
 }
 

@@ -8,6 +8,8 @@
 //     And a job that ends with its last push refused ends failed, not done
 //   Scenario: the pull request's own change empties the file
 //     Then the rebase that keeps it empty goes through
+//   Scenario: a rebase renames a file the pull request added, as dev took its number (issue #2225)
+//     Then the push goes through, and a push that empties dev's file of that number is still refused
 //   Scenario: a rebase onto main, the pull request's base, while main shrank a file dev still has whole (issue #1147)
 //     Given a repository whose default branch is dev, and a pull request into main
 //     Then the guard compares the push with main: the rebase goes through, and a push that empties the file is refused
@@ -15,7 +17,7 @@
 //     Then the guard compares the push with the landing branch, main: a push that empties the file is refused, the rebase goes through
 //   Scenario: an admin sets the guard's percent (Settings → Shrink guard)
 //     Then a push that takes more than that percent of a file's lines is refused, and the change is recorded
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { branchesOf, eventsOf, linesOf, run, running, seedCommit, start, stopGitProxies, type Started } from '../support/git-proxy.ts';
@@ -98,6 +100,36 @@ describe('the shrink guard (issue #1096)', () => {
     const t = await start();
     const r = await branchThenDevMoves(t, '');
     expect(await resolve(r, '')).toMatchObject({ code: 0 });
+  });
+
+  it('takes a rebase that renames a file the pull request added, and still refuses one that empties dev\'s (issue #2225)', async () => {
+    const t = await start();
+    await seedCommit(t, 'octo/tools', 'dev', { 'docs/design.md': linesOf(200) });
+    const r = await running(t);
+    expect((await r.git(['clone', '--quiet', `${t.github.url}/octo/tools.git`, 'tools'])).code).toBe(0);
+    const work = join(r.home, 'tools');
+    mkdirSync(join(work, 'docs/adrs'));
+    writeFileSync(join(work, 'docs/adrs/ADR-0019-dashboard.md'), linesOf(98));
+    await r.git(['add', '.'], work);
+    await r.git(['commit', '--quiet', '-m', 'Add ADR 19'], work);
+    expect((await r.git(['push', '--quiet', 'origin', 'HEAD:refs/heads/issue-7'], work)).code).toBe(0);
+    await seedCommit(t, 'octo/tools', 'dev', { 'docs/adrs/ADR-0019-kotlin.md': linesOf(120) });
+    expect((await r.git(['fetch', '--quiet', 'origin'], work)).code).toBe(0);
+    const rebase = async (kotlin: string) => {
+      await r.git(['checkout', '--quiet', '-B', 'tended', 'origin/dev'], work);
+      writeFileSync(join(work, 'docs/adrs/ADR-0020-dashboard.md'), linesOf(98));
+      writeFileSync(join(work, 'docs/adrs/ADR-0019-kotlin.md'), kotlin);
+      await r.git(['add', '.'], work);
+      await r.git(['commit', '--quiet', '-m', 'Add ADR 20'], work);
+      return r.git(['push', '--force-with-lease=issue-7:origin/issue-7', 'origin', 'HEAD:refs/heads/issue-7'], work);
+    };
+
+    const blanked = await rebase('');
+    expect(blanked.code).not.toBe(0);
+    expect(blanked.stderr).toContain('docs/adrs/ADR-0019-kotlin.md (120 lines on dev, 0 after)');
+    expect(blanked.stderr).not.toContain('ADR-0019-dashboard');
+
+    expect(await rebase(linesOf(120))).toMatchObject({ code: 0 });
   });
 
   /**
