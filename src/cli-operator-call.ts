@@ -7,10 +7,15 @@ import type { UiRole } from './domain/types.ts';
 export class OperatorRefusal extends Error {}
 
 /**
- * A POST of `body`, or, without one, a GET whose answer `pick` narrows; `body` may ask the daemon first (`send`). `exit`:
- * the exit code the answer gives, for a script that checks it (default 0).
+ * A POST of `body`, or, without one, a GET whose answer `pick` narrows; `body` may ask the daemon first (`send`). `post`: a
+ * POST whose path is found first too (`path` is then the route's pattern). `exit`: the exit code the answer gives, for a
+ * script that checks it (default 0). `as`: who the CLI's own session names as the person who acts (issue #2220); it gives
+ * no role or permission of theirs.
  */
-export interface Call { role: UiRole; path: string; body?: (get: Getter) => Promise<unknown>; pick?: (answer: unknown) => unknown; exit?: (answer: unknown) => number }
+export interface Call {
+  role: UiRole; path: string; body?: (get: Getter) => Promise<unknown>; post?: (get: Getter) => Promise<{ path: string; body: unknown }>;
+  pick?: (answer: unknown) => unknown; exit?: (answer: unknown) => number; as?: string;
+}
 /** A GET of `path`, or with `body` a POST, on the same session. */
 export type Getter = (path: string, body?: unknown) => Promise<unknown>;
 
@@ -18,7 +23,8 @@ export const usage = (line: string): OperatorRefusal => new OperatorRefusal(`usa
 
 /** The call on the daemon, its answer printed; the exit code the call gives it. */
 export async function perform(call: Call, send: Getter, io: { out(text: string): void }): Promise<number> {
-  const answer = call.body ? await send(call.path, await call.body(send)) : await send(call.path);
+  const post = call.post ? await call.post(send) : undefined;
+  const answer = post ? await send(post.path, post.body) : call.body ? await send(call.path, await call.body(send)) : await send(call.path);
   io.out(`${JSON.stringify(call.pick ? call.pick(answer) : answer, null, 2)}\n`);
   return call.exit ? call.exit(answer) : 0;
 }
