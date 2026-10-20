@@ -19,7 +19,7 @@ import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, unbindHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
 import { mintBindings, type MintReleases } from './bindings.ts';
 import { createMintTest, type MintTestAnswer } from './mint-test.ts'; import { createDiscoveryMinting, type DiscoveryMintAnswer } from './discovery-mint.ts';
-import { systemReadRefusal } from './system-read.ts';
+import { systemReadRefusal } from './system-read.ts'; import { templateTargets } from '../sandbox/bastion.ts';
 import { stepDelivery, type StepDelivery } from './step-delivery.ts'; import { deliveredValues, type Delivered } from './delivered.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
 import { approvalJobs, egressHostProblem, givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
@@ -49,7 +49,7 @@ export interface VaultService extends TemplateChecks, AgentCredentials, StepDeli
    * through every save, as are `purpose` and `plan` (issue #1001). `agentCredential` (issue #708, part 10): one of its secrets its boxes' agent
    * signs in with; absent keeps it, null drops it. `probeMarks` (issue #916): a person's marks on its read probes, replacing them; absent keeps them.
    */
-  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; egress?: readonly string[]; readOnly?: boolean; askedBy?: string; purpose?: string; plan?: string; agentCredential?: string | null; probeMarks?: Readonly<Record<string, string>> }, by: string): Promise<VaultResult>;
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; egress?: readonly string[]; bastionTargets?: readonly string[]; readOnly?: boolean; askedBy?: string; purpose?: string; plan?: string; agentCredential?: string | null; probeMarks?: Readonly<Record<string, string>> }, by: string): Promise<VaultResult>;
   /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
   /** A person approves a template as it is now: image, scope, read profiles, never a change; `job`: its runs only (issue #2197 part 3, `approvalJobs`). */
@@ -259,7 +259,7 @@ export function createVaultService(o: {
       });
     },
 
-    async saveTemplate({ name, image, secrets, profiles, limits, tools, egress, readOnly, askedBy, purpose, plan, agentCredential, probeMarks }, by) {
+    async saveTemplate({ name, image, secrets, profiles, limits, tools, egress, bastionTargets, readOnly, askedBy, purpose, plan, agentCredential, probeMarks }, by) {
       if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
       if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
       const scope = [...new Set(secrets)];
@@ -277,13 +277,15 @@ export function createVaultService(o: {
       const declared = profiles ? [...new Map(profiles.map((p) => [keyOf(p), { operation: p.operation, asset: { kind: p.asset.kind, name: p.asset.name }, ...(p.backend ? { backend: p.backend } : {}) }])).values()] : was?.profiles ?? [];
       // Limits and tools left out keep the ones it has (issues #708, #716).
       const adds = tools ? toolSet(tools) : was?.tools ?? [], reach = hosts ?? was?.egress ?? []; // Issue #1875: egress left out keeps the hosts it has.
+      // Issue #2146 part 3: bastion targets left out keep the ones it has; each needs an observe of the template.
+      const forwards = templateTargets(bastionTargets ?? was?.bastionTargets ?? [], declared); if (typeof forwards === 'string') return fail('invalid', forwards);
       o.store.tx(() => {
         vault.saveTemplate({
           name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), ...((limits ?? was?.limits) ? { limits: limits ?? was?.limits } : {}),
-          ...(adds.length ? { tools: adds } : {}), ...(reach.length ? { egress: reach } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), ...((was?.askedBy ?? askedBy) ? { askedBy: was?.askedBy ?? askedBy } : {}), ...((was?.purpose ?? purpose) ? { purpose: was?.purpose ?? purpose } : {}), ...((was?.plan ?? plan) ? { plan: was?.plan ?? plan } : {}), ...(credential !== undefined ? { agentCredential: credential } : {}), ...marks.keep, savedBy: by, savedAt: o.clock.now().toISOString(),
+          ...(adds.length ? { tools: adds } : {}), ...(reach.length ? { egress: reach } : {}), ...(forwards.length ? { bastionTargets: forwards } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), ...((was?.askedBy ?? askedBy) ? { askedBy: was?.askedBy ?? askedBy } : {}), ...((was?.purpose ?? purpose) ? { purpose: was?.purpose ?? purpose } : {}), ...((was?.plan ?? plan) ? { plan: was?.plan ?? plan } : {}), ...(credential !== undefined ? { agentCredential: credential } : {}), ...marks.keep, savedBy: by, savedAt: o.clock.now().toISOString(),
           ...(was?.approval ? { approval: was.approval } : {}),
         });
-        events.append({ type: 'template.saved', data: { template: name, image: image.trim(), ...(adds.length ? { tools: adds } : {}), ...(reach.length ? { egress: reach } : {}), secrets: scope, profiles: declared, ...marks.keep, by } });
+        events.append({ type: 'template.saved', data: { template: name, image: image.trim(), ...(adds.length ? { tools: adds } : {}), ...(reach.length ? { egress: reach } : {}), ...(forwards.length ? { bastionTargets: forwards } : {}), secrets: scope, profiles: declared, ...marks.keep, by } });
       });
       // A profile dropped loses its approval: access holds none the template does not declare.
       for (const p of approvedOf(name)) if (!declared.some((d) => keyOf(d) === keyOf(p))) await o.access!.revokeProfile(name, p, by);
@@ -304,12 +306,11 @@ export function createVaultService(o: {
     },
 
     async approveTemplate(name, by, job) {
-      const t = vault.template(name);
-      if (!t) return fail('not_found', `no template ${name}`);
+      const t = vault.template(name); if (!t) return fail('not_found', `no template ${name}`);
       const low = viewOf(t).pending.profiles.filter((p) => !highRadius(p));
       if (low.length && !o.access) return noAccess();
       o.store.tx(() => {
-        const jobs = approvalJobs(t, job), tools = { ...(t.tools?.length ? { tools: [...t.tools] } : {}), ...(t.egress?.length ? { egress: [...t.egress] } : {}) };
+        const jobs = approvalJobs(t, job), tools = { ...(t.tools?.length ? { tools: [...t.tools] } : {}), ...(t.egress?.length ? { egress: [...t.egress] } : {}), ...(t.bastionTargets?.length ? { bastionTargets: [...t.bastionTargets] } : {}) };
         vault.saveTemplate({ ...t, approval: { image: t.image, ...tools, secrets: [...t.secrets], by, at: o.clock.now().toISOString(), ...(jobs ? { jobs } : {}) } });
         events.append({ type: 'vault.approved', data: { template: name, image: t.image, ...tools, secrets: t.secrets, by, ...(jobs ? { jobs } : {}) } });
       });

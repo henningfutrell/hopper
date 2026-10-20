@@ -62,7 +62,7 @@ describe('a template request with bastion targets (issue #2146, part 3)', () => 
     const { u } = user();
     const r = await requestTemplate(u, { ...ASK, targets: 'prod/monitoring/svc/grafana:80' }, 'job j1', 'j1');
     expect(r.status).toBe(400);
-    expect('text' in r && r.text).toContain('observe/namespace/prod/monitoring');
+    expect('reason' in r && r.reason).toContain('observe/namespace/prod/monitoring');
     expect(extrasOf({ targets: 'uat/monitoring/grafana:80' })).toMatch(/a target is <cluster>\/<namespace>/);
   });
 

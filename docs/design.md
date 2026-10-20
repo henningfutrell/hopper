@@ -30229,7 +30229,7 @@ command runs once the port is forwarded, its exit code, the forward stopped afte
 ready runs no command; a bad call), `test/skills/template-request-extras.test.ts` (tools on request: saved, named,
 approved by the read policy, reused, an unknown tool refused), `test/skills/observability.test.ts`.
 
-## Bastions (issue #2146, the bastion path, parts 1 and 2, 2026-10-20)
+## Bastions (issue #2146, the bastion path, parts 1 to 3, 2026-10-20)
 
 **The problem.** Part 1 gave a sandbox the query tools and `hopper-port-forward`, but its credential could not forward: a
 read maps to view access, which has no `pods/portforward`. The owner then ruled out new cluster openings made by jobs
@@ -30299,7 +30299,34 @@ with no new opening in the cluster: the forward is the bastion's own.
   anything uses the port. With COMMAND it runs it with `HOPPER_RELAY_PORT` set, then closes the port and exits with
   its code; without, it holds the port until stopped. The token goes in a header from its file, never on a command line.
 
+**Approved targets and Access for each connection (part 3).** An observe reaches every pod of its namespace; a person now
+names, with the template, which services a bastion of it reaches.
+- **A template's bastion targets** (`Template.bastionTargets`, `templateTargets` in `src/sandbox/bastion.ts`). Each a
+  target, on a namespace or cluster the template has an observe on, sorted, at most 32; a save that leaves them out keeps
+  them, `[]` drops them. They are approved with the template, as its egress hosts are (`approval.bastionTargets`): a
+  target added waits for a person (`pending.bastionTargets`, a run card and Access requests show it), and holds no other
+  box of the template. A job names them in its template request: `sh "$HOPPER_SKILL" sandbox-template --needs
+  "observe/namespace/<cluster>/<namespace>" --targets "<target> ..."` (`AskExtras.targets`; they name the template, as
+  its other extras do). `template.saved` and `vault.approved` carry them.
+- **A bastion forwards only to approved targets** (`targetsOutside`). The ask (`bastion --targets`) is a 400 for a target
+  the template does not name, with the template request to make, and waits (202) for one a person has not approved;
+  `Bastions.start` refuses both (403).
+- **Access decides each relay connection** (`bastion#can_relay`, `decideRelay`, `relayCheck` in `src/authz/objects.ts`).
+  The object is the target, per user (`bastion:<user>/<target, escaped>`). The hopper tells, for that check only, the
+  job as its owner, the job as running the bastion's template, and the template as approved for the target only when
+  the template as it is now approves it (`approvedTarget`): a revoked template, or a target that waits again, denies the
+  next connection. The default model: `can_relay: owner and requester from approved_for`. A model edited before it
+  (`bastionGaps`) still decides every mint and denies every relay. A denied connection starts no command in the box: a
+  403 and `bastion.relay_refused` (the reason). An allowed one is `bastion.relayed` when it closes: the target, when it
+  opened and how long (`ms`), never what went through it.
+
 **Decisions:**
+- **The target is the object, not the bastion** (part 3). A bastion lives an hour and holds up to 8 targets; a person
+  approves a service, not a box. The same target approved with two templates is one object with two `approved_for`.
+- **Targets are approved with the template, as egress hosts are**, not one by one as profiles are: they narrow what an
+  approved observe reaches, and give nothing on their own. Skip template approval approves them with the template.
+- **One event at a connection's end**, with its time open, and one for each refusal. A byte count would need a counter
+  in the pipe's path; it is not asked for.
 - **Observe is an operation, not a read with another role.** Access decides each mint by its operation: approving a read
   must not approve a port-forward, and a template's rating, its run card and the person's approval show it as what it is.
 - **High radius, but no change.** A forward can reach a pod's every port, so it needs its own approval; it applies
@@ -30328,15 +30355,17 @@ with no new opening in the cluster: the forward is the bastion's own.
 **Residual risk, stated.** A forward reaches every port of its pod, whatever port the target names; the cluster role does
 not limit ports. Read-only past the forward is the target's own credential (a Grafana Viewer token, a read-only database
 role); nothing in the bastion enforces it. The relay reaches only the job's own bastion, whose every target was
-approved as an observe; until part 3 it records no event for a connection.
+approved as an observe and as a bastion target of its template (part 3).
 
-**Not built (the later parts).** Part 3: Access for relay targets (`bastion#can_relay`), approved
-bastion targets in templates, and each connection an event. Part 4: the observability skill text on the bastion and the
+**Not built (the later parts).** Part 4: the observability skill text on the bastion and the
 relay. Part 5: the read-only check's probes under observe (`kubectl exec` and a Secret read refused). Part 6: the live
 check on a cluster. A person's stop of a bastion in the UI.
 
 **Persisted state.** No schema change: a bastion is kept in memory, its run is a row of the sandbox runs ledger, and its
 events are new types a build before this one ignores. A model with the observe relations is the default's next version.
+Part 3: a template's `bastionTargets` and its approval's are optional fields of its stored body; absent is none, so a
+template saved before names none, and a build before this one ignores them. A model with `bastion` is the default's next
+version, upgraded at start as before.
 
 Tests: `test/domain/observe-operation.test.ts` (observe minted, no plan, high radius; a model edited before it),
 `test/skills/needs-in-words.test.ts` (a port-forward reads as observe), `test/sandbox/bastion.test.ts` (targets, the
@@ -30350,7 +30379,13 @@ apart, a refusal, no command in a box that is no need box), `test/sandbox/relay-
 under `sh` with socat, bash or nc alone, and none), `test/sandbox/bastions.test.ts` (the relay's pipe, its noes, the TTL
 kept while a connection is open, connections closed at the end), and `test/integration/bastion.test.ts` (the real daemon,
 route and `hopper-relay`: a command reaches a target through a local port; another target and a stranger's token are
-refused).
+refused). Part 3: `test/authz/bastion-relay.test.ts` (real Access, OpenFGA a double that evaluates the model: an approved
+target allowed, another denied; a model without bastions denies every relay and still decides mints),
+`test/authz/model.test.ts` (`bastionGaps`), `test/integration/template-bastion-targets.test.ts` (the real daemon: targets
+wait for a person with the template, the approval names them, a new one waits again, a bad one is refused),
+`test/skills/template-request-targets.test.ts` (`--targets` in a template request), `test/skills/bastion-skill.test.ts`
+and `test/sandbox/bastions.test.ts` (a target not named or not approved; Access asked for each connection; both events),
+and `test/integration/bastion.test.ts` (each connection a `bastion.relayed`).
 
 **The read-only check under observe (part 5).** An observe credential may port-forward to the monitoring pods, so the
 hopper proves it can do nothing more before a bastion of its template starts.

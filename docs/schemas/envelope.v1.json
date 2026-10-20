@@ -243,6 +243,8 @@
         "vault.unbound",
         "bastion.started",
         "bastion.ended",
+        "bastion.relayed",
+        "bastion.relay_refused",
         "vault.credential_asked",
         "vault.credential_given",
         "vault.agent_credential_given",

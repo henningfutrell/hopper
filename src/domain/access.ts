@@ -220,6 +220,12 @@ export interface ApiTokenAsk { userId: string; tokenId: string; role: 'viewer' |
 /** An ask about a box action with an API token (issue #795): `box` — whether it is a box token — is told at each ask. */
 export interface ApiTokenBoxAsk { userId: string; tokenId: string; box: boolean }
 
+/**
+ * An ask about a relay connection (issue #2146): the job whose bastion it is, its template, the target, and whether a
+ * person approved the target with the template (`approved`, from the template), told at each ask.
+ */
+export interface RelayAsk { userId: string; jobId: string; template: string; target: string; approved: boolean }
+
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;
@@ -229,6 +235,8 @@ export interface VaultAccess extends TemplateApprovals {
   decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
   /** Whether a user may read or change a shared secret (issue #718): OpenFGA's answer, the readers told at each ask; a deny when it cannot be had. */
   decideSharedSecret(ask: SharedSecretAsk): Promise<AccessAnswer>;
+  /** Whether a job may relay to a target of its bastion (issue #2146): OpenFGA's `bastion#can_relay`, asked at each connection. Absent: no relay. */
+  decideRelay?(ask: RelayAsk): Promise<AccessAnswer>;
   /** Each operation profile's minimum trust (issue #655 part 15): what a job's stamp may ask for at gate 2 (part 16). Absent: none. */
   minTrusts?(): MinTrust[];
 }

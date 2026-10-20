@@ -32,7 +32,8 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --egress TEXT      for sandbox and sandbox-template: the hosts its sandboxes may reach, as host:port (issue #1875)
 #     --image NAME       for sandbox and sandbox-template: one of the hopper's box images, box or test (issue #1875)
 #     --tools TEXT       for sandbox and sandbox-template: box tools beside the ones its needs use (issue #2146)
-#     --targets TEXT     for bastion: what it forwards to, each <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port> (issue #2146)
+#     --targets TEXT     for bastion: what it forwards to, each <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>;
+#                        for sandbox and sandbox-template: the bastion targets its template names (issue #2146)
 #                        A request with --secrets or --egress needs no --needs, and a person always approves it.
 #     --actions TEXT     for sandbox-template: the AWS actions its one change on an aws-role does, each
 #                        <service:Action>=<resource ARN>; the hopper says which the minted session cannot do (issue #2206)

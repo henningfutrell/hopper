@@ -3,12 +3,12 @@
 // of that template are asked for as a sandbox ask's are (`sandbox --template`), and wait for the same approvals. Once
 // they are approved and the template is ready, the hopper starts the job's bastion, or answers the one it has.
 // `bastion` alone says where the job's bastion stands, and how `hopper-relay` reaches a target (part 2); `bastion stop`
-// stops it.
+// stops it. Part 3: each target must be one the template names as a bastion target, approved with it.
 import type { Job } from '../domain/types.ts';
 import type { SandboxRequestView } from '../domain/sandbox-approvals.ts';
 import { templateWait } from '../domain/sandboxes-before-start.ts';
 import type { TemplateView } from '../domain/vault.ts';
-import { parseTargets, placeTargets, targetText } from '../sandbox/bastion.ts';
+import { parseTargets, placeTargets, targetsOutside, targetText } from '../sandbox/bastion.ts';
 import type { Bastions, BastionView } from '../sandbox/bastions.ts';
 import type { AskAbout } from './template-request.ts';
 
@@ -67,12 +67,18 @@ export async function bastionAsk<A>(u: BastionUser, job: Job, f: BastionFields, 
   if (!t) return say.no(404, `there is no template ${f.template}. Ask for one with an observe on each target's namespace: sh "$HOPPER_SKILL" sandbox-template --needs "observe/namespace/<cluster>/<namespace>" --why "…"`);
   const placed = placeTargets(targets, t.profiles);
   if (typeof placed === 'string') return say.no(400, placed);
+  const outside = targetsOutside(t, targets);
+  if (outside?.why === 'unnamed') {
+    const needs = placed.observes.map((p) => `${p.operation}/${p.asset.kind}/${p.asset.name}`).join(' ');
+    return say.no(400, `${outside.no}. Ask for one: sh "$HOPPER_SKILL" sandbox-template --needs "${needs}" --targets "${targets.map(targetText).join(' ')}" --why "…"`);
+  }
   const r = u.sandbox(t.name, job, { purpose: f.why, plan: `a bastion that port-forwards to ${targets.map(targetText).join(' ')}` });
   const later = ' Add --wait to have the hopper tell you when the bastion can start.\n';
   if (r.state === 'waiting') return say.waiting(`${say.waitingText(t.name, r)}${later}`);
   if (r.state === 'declined') return say.no(403, say.declinedText(t.name, r));
   const waits = templateWait(t, job.id);
   if (waits) return say.waiting(`waiting: ${waits}.${later}`);
+  if (outside) return say.waiting(`waiting: ${outside.no}.${later}`);
   const v = await b.start(job, t, targets);
   return 'no' in v ? say.no(v.status, v.no) : say.loaded(bastionText(v));
 }

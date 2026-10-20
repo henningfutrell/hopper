@@ -4484,7 +4484,7 @@ Version 1 (`docs/schemas/vault.master_key_rotated.v1.json`). The hopper's admin 
 
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), its `egress` hosts when it names any (issue #1875: each `host:port` its boxes may reach through the egress proxy), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, its `probeMarks` when it has any (issue #916: a read probe of the read-only check marked `expect-denied` or `skip`), and who saved it. A scope wider than the one approved, a new image, or a new egress host, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), its `egress` hosts when it names any (issue #1875: each `host:port` its boxes may reach through the egress proxy), its `bastionTargets` when it names any (issue #2146: each target a bastion of it may forward to), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, its `probeMarks` when it has any (issue #916: a read probe of the read-only check marked `expect-denied` or `skip`), and who saved it. A scope wider than the one approved, a new image, a new egress host, or a new bastion target, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
@@ -4492,6 +4492,7 @@ Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #
 | `image` | string | yes |
 | `tools` | string[] | no |
 | `egress` | string[] | no |
+| `bastionTargets` | string[] | no |
 | `secrets` | string[] | yes |
 | `profiles` | object[] | no |
 | `probeMarks` | object | no |
@@ -4535,7 +4536,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`. `jobs` (issue #2197 part 3): a run card approved with no allow again approves those jobs' runs only; absent, every job's.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875), its bastion targets (issue #2146) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`. `jobs` (issue #2197 part 3): a run card approved with no allow again approves those jobs' runs only; absent, every job's.
 
 | field | type | required |
 |---|---|---|
@@ -4543,6 +4544,7 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
 | `image` | string | yes |
 | `tools` | string[] | no |
 | `egress` | string[] | no |
+| `bastionTargets` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
 | `jobs` | string[] | no |
@@ -4959,6 +4961,44 @@ Version 1 (`docs/schemas/bastion.ended.v1.json`). A bastion ended (issue #2146):
   "box": "hopper-bastion-observe-uat-5c1d2e3f",
   "reason": "stopped",
   "by": "job"
+}
+```
+
+## `bastion.relayed`
+
+Version 1 (`docs/schemas/bastion.relayed.v1.json`). A job's relay connection to `target` of its bastion ended (issue #2146 part 3, design.md "Bastions"): Access allowed it (`bastion#can_relay`, the target approved with the bastion's template), it opened at `openedAt` and was open `ms` milliseconds. Never what went through it.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `target` | string | yes |
+| `openedAt` | string | yes |
+| `ms` | integer | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "target": "uat/monitoring/svc/prometheus-server:9090",
+  "openedAt": "2026-10-20T12:10:00.000Z",
+  "ms": 1500
+}
+```
+
+## `bastion.relay_refused`
+
+Version 1 (`docs/schemas/bastion.relay_refused.v1.json`). A job's relay connection to `target` of its bastion was refused (issue #2146 part 3): Access denied it, or could not be asked (`reason`); no command started in the box.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `target` | string | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "target": "uat/monitoring/svc/grafana:80",
+  "reason": "job:u1/j1 may not relay to uat/monitoring/svc/grafana:80"
 }
 ```
 

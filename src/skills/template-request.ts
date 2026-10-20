@@ -38,7 +38,7 @@ import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/types.ts';
 import { rateTemplate } from '../blast-radius/template.ts';
 import { approvalCovers, type TemplatePreview, type TemplateView } from '../domain/vault.ts';
 import { clusterOf, unknownAssetText, type UnknownAsset } from '../domain/unknown-assets.ts';
-import { toolsForNeeds } from '../sandbox/tools.ts';
+import { toolsForNeeds } from '../sandbox/tools.ts'; import { templateTargets } from '../sandbox/bastion.ts';
 import { toolSet } from '../domain/sandboxes.ts';
 import { SKILLS } from './catalog.ts';
 import { needsFromWords } from './needs-in-words.ts';
@@ -131,6 +131,9 @@ function readAsk(u: Pick<TemplateRequestUser, 'image'>, ask: TemplateAsk): ReadA
   if (typeof extras === 'string') return extras;
   const needs = !ask.needs?.trim() && forPerson(extras) ? [] : needsOf(ask.needs);
   if (typeof needs === 'string') return needs;
+  // Issue #2146 part 3: each bastion target needs an observe of the request on its namespace or cluster.
+  const placed = extras.targets ? templateTargets(extras.targets, needs) : [];
+  if (typeof placed === 'string') return placed;
   return { needs, extras, image: extras.image ? REQUEST_IMAGES[extras.image]! : u.image };
 }
 
@@ -149,7 +152,7 @@ export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
   /** Every template of the user's (issue #998): one approved for the same needs is used for them. */
   templates(): TemplateView[];
-  save(t: { name: string; image: string; secrets: string[]; egress?: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string; purpose?: string; plan?: string }, by: string): Promise<Result>;
+  save(t: { name: string; image: string; secrets: string[]; egress?: string[]; bastionTargets?: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string; purpose?: string; plan?: string }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<Result>;
   policy(): ReadPolicy | undefined;
@@ -177,6 +180,7 @@ function waitsOf(t: TemplateView, job: string | undefined): string[] {
     ...(t.approval && !approvalCovers(t, job) ? ['the template is approved for another job\'s runs only'] : []),
     ...(t.approval && t.pending.secrets.length ? [`its vault secret ${t.pending.secrets.join(', ')} is not approved`] : []),
     ...(t.approval && t.pending.egress.length ? [`its egress host ${t.pending.egress.join(', ')} is not approved`] : []),
+    ...(t.approval && t.pending.bastionTargets?.length ? [`its bastion target ${t.pending.bastionTargets.join(', ')} is not approved`] : []),
     ...t.pending.profiles.map((p) => `${inWords(p)} is not approved`),
   ];
 }
@@ -320,7 +324,7 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
     const missing = await u.imageProblem?.(r.image);
     if (missing) return { status: 400, reason: `${missing}. A box of this template could not start, so the hopper makes no template of it. Ask with another --image, or ask a person to publish it.` };
     const readOnly = readOnlyOf(needs);
-    const saved = await u.save({ name, image: r.image, secrets: extras.secrets, ...(extras.egress.length ? { egress: extras.egress } : {}), profiles: needs, tools: toolsOf(r), readOnly, ...(job ? { askedBy: job } : {}),
+    const saved = await u.save({ name, image: r.image, secrets: extras.secrets, ...(extras.egress.length ? { egress: extras.egress } : {}), ...(extras.targets ? { bastionTargets: extras.targets } : {}), profiles: needs, tools: toolsOf(r), readOnly, ...(job ? { askedBy: job } : {}),
       ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // Only a template made now is approved with no person (automaticApprover): as it is, then each write, sync or apply

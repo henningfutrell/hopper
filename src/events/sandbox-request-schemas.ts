@@ -33,5 +33,5 @@ export const SANDBOX_REQUEST_EVENT_SCHEMAS = {
   'vault.action_revoked': strict({ ...action, by: z.string() }),
   // Issue #2146: a bastion started for a job, and its end.
   'bastion.started': strict({ bastion: z.string(), template: z.string(), box: z.string(), targets: z.array(z.string()), expiresAt: z.string() }),
-  'bastion.ended': strict({ bastion: z.string(), template: z.string(), box: z.string(), reason: z.enum(['stopped', 'expired', 'job-ended', 'failed']), by: z.string().optional(), problem: z.string().optional() }),
+  'bastion.ended': strict({ bastion: z.string(), template: z.string(), box: z.string(), reason: z.enum(['stopped', 'expired', 'job-ended', 'failed']), by: z.string().optional(), problem: z.string().optional() }), 'bastion.relayed': strict({ bastion: z.string(), target: z.string(), openedAt: z.string(), ms: z.number().int().nonnegative() }), 'bastion.relay_refused': strict({ bastion: z.string(), target: z.string(), reason: z.string() }),
 };
