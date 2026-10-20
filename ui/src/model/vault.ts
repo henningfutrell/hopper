@@ -215,7 +215,7 @@ export const unknownAssetTemplates = (v: VaultView | null): TemplateView[] => (v
 export const unknownAssetLines = (v: VaultView | null): string[] => unknownAssetTemplates(v).map((t) => `template ${t.label ?? t.name}: ${unknownText(t)!}`);
 
 /** What a template's card says of its approval: an unknown asset (issue #2067), approved, or what waits for a person. */
-export function approvalText(t: TemplateView): string {
+export function approvalText(t: TemplateView, jobId?: string): string {
   const unknown = unknownText(t);
   if (unknown) return unknown;
   if (!t.approval) return 'not approved yet: its boxes take no job and get nothing from the vault';
@@ -223,7 +223,9 @@ export function approvalText(t: TemplateView): string {
     ...(t.pending.image ? ['a new image'] : []), ...(t.pending.egress.length ? [`egress to ${t.pending.egress.join(', ')}`] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : []),
     ...t.pending.profiles.map((p) => `${profileText(p)}${highRadius(p) ? ' (explicit)' : ''}`),
   ];
-  return waits.length ? `waits for approval: ${waits.join('; ')}` : 'approved';
+  if (waits.length) return `waits for approval: ${waits.join('; ')}`;
+  // Issue #2197 part 3: a run card approved with no allow again approves its jobs' runs only.
+  return jobId !== undefined && t.approval.jobs && !t.approval.jobs.includes(jobId) ? 'approved for another job only: this job needs its own approval' : 'approved';
 }
 
 /** A template's rating in a few words (issue #584): the level, then the reasons that set it. */

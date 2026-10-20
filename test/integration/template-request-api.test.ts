@@ -109,7 +109,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect(r.body.request).toMatchObject({ template: made!.name, ready: false });
     expect(r.body.request.text).toContain(`waiting: template ${made!.name} is approved; waiting for the read-only check`);
     expect(r.body.templates).toEqual(expect.arrayContaining([expect.objectContaining({ name: made!.name })]));
-    expect(ready(made!)).toBe(false);
+    expect(ready(made!, 'job-1')).toBe(false);
 
     // The read-only check: every write refused, every read works.
     await a.app.sandboxes.check();
@@ -124,7 +124,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect((await asked(a, token)).length).toBe(1);
 
     expect(again.body.request.text).toContain(`sh "$HOPPER_STEP" box ${made!.name}`);
-    expect(ready((await asked(a, token))[0]!)).toBe(true);
+    expect(ready((await asked(a, token))[0]!, 'job-1')).toBe(true);
   });
 
   it('a write need waits for a person: the template is saved, nothing of it approved, and no step runs in a box of it', async () => {
@@ -138,7 +138,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect(r.body.request).toMatchObject({ template: made!.name, ready: false });
     expect(r.body.request.text).toMatch(/^waiting: template asked-[0-9a-f]+ waits for a person on Access requests/);
     expect(r.body.request.text).toContain('write on cluster lab changes the asset');
-    expect(ready(made!)).toBe(false);
+    expect(ready(made!, 'job-1')).toBe(false);
   });
 
   it('needs the hopper cannot read are refused, saying how; a viewer\'s token is refused for its role', async () => {

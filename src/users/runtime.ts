@@ -334,7 +334,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
     // onShift: a level's suggested phase shift (issue #548), made when the phase-shift settings allow the level.
-    onDismissed: (q: Question) => engine.onDismissed(q), onCorrected: (q: Question) => engine.onCorrected(q), onShift: (q, suggest, by) => engine.phaseShifts.byLevel(q, suggest, by),
+    // onToHuman: a direct query's question that reaches a person goes to its caller's callback too (issue #2184).
+    onDismissed: (q: Question) => engine.onDismissed(q), onCorrected: (q: Question) => engine.onCorrected(q), onShift: (q, suggest, by) => engine.phaseShifts.byLevel(q, suggest, by), onToHuman: (q, answerUrl) => directJobs.questionAsked(q, answerUrl),
   });
   // Each review section's review (issues #537, #543): the escalation levels its settings name review; the engine ends,
   // moves on or re-queues the job.
@@ -360,7 +361,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     policy: { softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing },
     tickMs: config.tickMs,
-    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, linkGraceMs: config.linkGraceMs, doneRecheckMs: config.doneRecheckMs, ownCommandGraceMs: config.ownCommandGraceMs,
+    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, linkGraceMs: config.linkGraceMs, doneRecheckMs: config.doneRecheckMs, doneReadRetryMs: config.doneReadRetryMs, ownCommandGraceMs: config.ownCommandGraceMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
     // A job whose last push the shrink guard refused (issue #1096) does not end done: tending failed, whatever its source says.
     verdict: (job) => guardedVerdict(store.events.recent(200, ['github_proxy.refused', 'github_proxy.done'], job.id), job, () => judge(sourceOf(job), job)),

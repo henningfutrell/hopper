@@ -28,6 +28,12 @@
     },
     "by": {
       "type": "string"
+    },
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

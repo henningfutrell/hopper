@@ -35,7 +35,7 @@ import { actionNeed, type AwsAction } from '../domain/action-grants.ts';
 import { APPLY_STEP_OFF } from '../domain/infra-plans.ts';
 import { mintKindFor, type Minted, type MintReach } from '../domain/minting.ts';
 import type { NeedStep, NeedStepRepository } from '../domain/need-steps.ts';
-import { templateReady as ready } from '../domain/sandboxes-before-start.ts';
+import { templateReady as ready, templateWait } from '../domain/sandboxes-before-start.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import { isSharedSecret, type TemplateView } from '../domain/vault.ts';
 import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
@@ -50,11 +50,11 @@ const AT_WORK_MS = 5_000;
 
 const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 
-/** The ready template that declares every need, the one with the fewest profiles first; undefined: none. */
-export function coveringTemplate(templates: readonly TemplateView[], needs: readonly OperationProfile[]): TemplateView | undefined {
+/** The template ready for the job's step that declares every need, the one with the fewest profiles first; undefined: none. */
+export function coveringTemplate(templates: readonly TemplateView[], needs: readonly OperationProfile[], jobId: string): TemplateView | undefined {
   const wanted = needs.map(keyOf);
   return templates
-    .filter((t) => ready(t) && wanted.every((k) => t.profiles.some((p) => keyOf(p) === k)))
+    .filter((t) => ready(t, jobId) && wanted.every((k) => t.profiles.some((p) => keyOf(p) === k)))
     .sort((a, b) => a.profiles.length - b.profiles.length || a.name.localeCompare(b.name))[0];
 }
 
@@ -117,8 +117,8 @@ export const boxNeeds = (t: TemplateView, plan: string | undefined): OperationPr
 export type NeedStepState = { running: true } | { result: StepResult; outputs?: Buffer };
 
 export interface NeedSteps {
-  /** The ready template that covers the needs; undefined: none yet. */
-  covering(needs: readonly OperationProfile[]): TemplateView | undefined;
+  /** The template ready for the job's step that covers the needs; undefined: none yet. */
+  covering(needs: readonly OperationProfile[], jobId: string): TemplateView | undefined;
   /** Whether infra applies are off now (issue #1722): then no step that changes infrastructure runs, and no action grant is asked (issue #2206). */
   appliesOff(): boolean;
   /**
@@ -298,7 +298,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
   };
 
   return {
-    covering: (needs) => coveringTemplate(o.templates(), needs), appliesOff: () => o.applies?.() === false,
+    covering: (needs, jobId) => coveringTemplate(o.templates(), needs, jobId), appliesOff: () => o.applies?.() === false,
     sweep,
     start,
     run,
@@ -312,7 +312,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       }
       if (fields.secrets.length > 0) return refuse(job, 400, 'a box step takes no --secret: its sandbox gets what its template gives, its vault secrets too', box);
       const t = o.templates().find((x) => x.name === box);
-      if (!t || !ready(t)) return refuse(job, 409, `template ${box} is not ready now: ${t ? 'something of it waits for a person or for its read-only check' : 'it is not there any more'}`, box);
+      const waits = t ? templateWait(t, job.id) : 'it is not there any more';
+      if (!t || waits) return refuse(job, 409, `template ${box} is not ready now: ${waits}`, box);
       return start(job, {
         // Its vault secrets: those the template gives a box's job, but a shared secret and the agent credential (a box's sign-in).
         template: t, needs: boxNeeds(t, fields.plan), outputs: fields.outputs, secrets: t.gives.filter((n) => !isSharedSecret(n) && n !== t.agentCredential),

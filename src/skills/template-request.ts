@@ -36,7 +36,7 @@ import { AUTO_APPROVER, autoApproves, NO_SKIPS, SKIP_TEMPLATE_APPROVER, type San
 import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/types.ts';
 import { rateTemplate } from '../blast-radius/template.ts';
-import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
+import { approvalCovers, type TemplatePreview, type TemplateView } from '../domain/vault.ts';
 import { clusterOf, unknownAssetText, type UnknownAsset } from '../domain/unknown-assets.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { toolSet } from '../domain/sandboxes.ts';
@@ -168,10 +168,12 @@ export type TemplateAnswer = { status: 200 | 202; text: string; template: string
 
 const STATUS: Record<string, 400 | 409 | 503> = { invalid: 400, conflict: 409 };
 
-/** What waits for a person on the template, in words; empty when nothing does. */
-function waitsOf(t: TemplateView): string[] {
+/** What waits for a person on the template for the job's runs (none: a person's ask), in words; empty when nothing does. */
+function waitsOf(t: TemplateView, job: string | undefined): string[] {
   return [
     ...(!t.approval ? ['the template is not approved'] : t.pending.image ? ['its image changed since it was approved'] : []),
+    // Issue #2197 part 3: a run card approved with no allow again approves its job's runs only.
+    ...(t.approval && !approvalCovers(t, job) ? ['the template is approved for another job\'s runs only'] : []),
     ...(t.approval && t.pending.secrets.length ? [`its vault secret ${t.pending.secrets.join(', ')} is not approved`] : []),
     ...(t.approval && t.pending.egress.length ? [`its egress host ${t.pending.egress.join(', ')} is not approved`] : []),
     ...t.pending.profiles.map((p) => `${inWords(p)} is not approved`),
@@ -230,10 +232,10 @@ function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | 
 
 /**
  * A template approved for exactly these needs (issue #998): the same profiles, no vault secret, nothing waiting for a
- * person; one whose read-only check passed first. Undefined when there is none.
+ * person for the job's runs; one whose read-only check passed first. Undefined when there is none.
  */
-function approvedFor(u: Pick<TemplateRequestUser, 'templates'>, r: ReadAsk): TemplateView | undefined {
-  const same = u.templates().filter((t) => (hasExtras(r.extras) ? sameAsk(t, r) : t.secrets.length === 0 && sameNeeds(t.profiles, r.needs)) && waitsOf(t).length === 0);
+function approvedFor(u: Pick<TemplateRequestUser, 'templates'>, r: ReadAsk, job: string | undefined): TemplateView | undefined {
+  const same = u.templates().filter((t) => (hasExtras(r.extras) ? sameAsk(t, r) : t.secrets.length === 0 && sameNeeds(t.profiles, r.needs)) && waitsOf(t, job).length === 0);
   return same.find((t) => !checkWait(t)) ?? same[0];
 }
 
@@ -269,7 +271,7 @@ export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templ
   if (cannot) return cannot;
   const name = requestedName(needs, extras);
   const was = u.template(name);
-  const reused = was && waitsOf(was).length === 0 && sameAsk(was, r) ? undefined : approvedFor(u, r);
+  const reused = was && waitsOf(was, undefined).length === 0 && sameAsk(was, r) ? undefined : approvedFor(u, r, undefined);
   if (reused) {
     return {
       template: reused.name, image: reused.image, tools: [...(reused.tools ?? [])], needs: needs.map(inWords),
@@ -302,7 +304,7 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
   const was = u.template(asked);
   // Issue #998: the template the needs name, when it is approved for them; else another approved for them; else the one
   // the needs name, made now when it is not there.
-  const reused = was && waitsOf(was).length === 0 && sameAsk(was, r) ? undefined : approvedFor(u, r);
+  const reused = was && waitsOf(was, job).length === 0 && sameAsk(was, r) ? undefined : approvedFor(u, r, job);
   const name = reused?.name ?? asked;
   if (!reused && was && !sameAsk(was, r)) {
     // Issue #1468: the needs it holds now, so a job can ask for those.
@@ -334,7 +336,7 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
   }
   const t = u.template(name);
   if (!t) return { status: 503, reason: `template ${name} was not kept: ask again` };
-  const waits = waitsOf(t);
+  const waits = waitsOf(t, job);
   if (waits.length > 0) {
     const why = outsidePolicy(needs, u.policy(), extras);
     return { status: 202, template: name, text: `waiting: template ${name} waits for a person on Access requests: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };

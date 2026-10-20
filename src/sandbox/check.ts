@@ -1,7 +1,7 @@
 // The read-only check's runs (issue #716, item 4; design.md "The read-only check"). A template that needs a check (a job
 // asked for it with read needs only), approved, with no check of its current version, gets one: the hopper runs the
 // probes for its needs in a check box — the template's image with its tools, under the sandbox flags, its probe script
-// in place of the entrypoint — and keeps the result on the template. One check at a time. A check box carries its own
+// in place of the entrypoint — and keeps the result on the template. A check box carries its own
 // label, not the box label: the reconcile pass leaves it, and this pass removes one no run holds (a hopper stopped
 // mid-check). Issue #797: before the box starts, once its image is ready (issue #2112), the vault mints the read credential each read need takes, under Access
 // (`CheckTemplates.credential`); the box gets them in its environment, so its reads work and a write is refused by the
@@ -18,6 +18,12 @@
 // Issue #1736: a check that failed only on probes the catalog passes now (helm list refused on secrets, on a view role)
 // runs again at the next pass, with no person (`judgedAgain`).
 // Issue #1779: a failed check keeps the read needs the vault minted nothing for (`unminted`), not on a network error.
+// Issue #2226: a check that does not end in `CHECK_DEADLINE_MS` (a pull, a build or a mint that hangs) fails as transient,
+// saying the step it stopped at, and the pass goes on: one check that hangs never holds every later check. A check a
+// stopped hopper left `running` runs again, after the templates with no check.
+// Issue #2236: up to `CHECKS_AT_ONCE` checks run at once, and each pass starts the due ones that do not run yet: a check
+// that does not end holds its own template, not every template after it. A due check that cannot start (no place, or as
+// many checks run) is held with the reason (`CheckTemplates.held`), which its template's wait says (`checkWait`).
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ProbeRun, ReadOnlyCheck, Unminted } from '../domain/read-only-check.ts';
@@ -33,8 +39,14 @@ import { boxLimits } from './params.ts';
 
 export { CHECK_LABEL };
 
-/** How long a whole check may run. */
+/** How long a check box may run. */
 export const CHECK_MS = 30 * 60_000;
+/** How long a whole check may take, its image and its mints with its box (issue #2226): then it fails, and the pass goes on. */
+export const CHECK_DEADLINE_MS = CHECK_MS + 15 * 60_000;
+/** How many read-only checks run at once (issue #2236): a check that does not end holds its own template only. */
+export const CHECKS_AT_ONCE = 3;
+/** Why a due check does not start when no place can run it (issue #708). */
+export const NO_CHECK_PLACE = 'no container runtime can run it now: none beside the hopper, and no machine of the user is dialled in with one';
 /** How often a passed check runs again (issue #715). */
 export const CHECK_EVERY_MS = 24 * 60 * 60_000;
 /** How soon a check that failed only on a network error runs again (issue #1468). */
@@ -52,6 +64,8 @@ export interface CheckTemplates {
   release?(userId: string, check: string): Promise<void>;
   /** Keeps an ended check's report as an artifact (issue #715): its id; undefined when no job asked for the template. */
   report(userId: string, t: Template, check: ReadOnlyCheck): Promise<string | undefined>;
+  /** Why the user's template's due check does not start now (issue #2236), or undefined once it starts: kept in memory. */
+  held?(userId: string, name: string, why: string | undefined): void;
 }
 
 export interface CheckContext {
@@ -65,6 +79,8 @@ export interface CheckContext {
   probes: ProbeCatalog;
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
+  /** Told each step the check comes to, in words (issue #2226): a check that does not end says where it stopped. */
+  stepped?(what: string): void;
 }
 
 /** Where a check runs: the machine, its runtime, the network a check box joins there, and its egress (issue #849). */
@@ -76,11 +92,13 @@ export interface CheckPassContext extends Omit<CheckContext, 'runtime' | 'networ
   local?: ContainerRuntime;
   /** Where a check of the user's template runs now; undefined: nowhere, and the template waits. */
   place(userId: string): Promise<CheckPlace | undefined>;
+  /** How long a whole check may take (issue #2226); `CHECK_DEADLINE_MS` when absent. */
+  checkMs?: number;
 }
 
 /**
  * Whether the template gets a check now: it needs one, its image is approved, and its version has none — or one still
- * `running`, which a pass finds only when a hopper stopped mid-check: passes run one after the other —, or one that
+ * `running`, which the pass does not run itself only when a hopper stopped mid-check —, or one that
  * passed `CHECK_EVERY_MS` ago or more (issue #715), or one that failed only on a network error `CHECK_RETRY_MS` ago or
  * more (issue #1468), or one that failed as the vault minted nothing for a need `CHECK_UNMINTED_MS` ago or more (issue
  * #1845). Any other failed check waits for a person.
@@ -200,12 +218,14 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   let boxed: { image: string; user: string } | undefined;
   if (runs.some((r) => r.notRun === undefined && r.mark !== 'skip')) {
     try {
+      c.stepped?.('pulling or building the box image');
       boxed = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
       return ended('failed', [], `the check box did not run: ${why}`, onlyNetworkErrors([why]));
     }
   }
+  c.stepped?.('minting the read credentials');
   const given = await credentialsFor(c, userId, t, name, needs);
   ({ unminted } = given);
   // Issue #873: a probe of a need with no credential is not run, and says why; the probes of the other needs still run.
@@ -229,6 +249,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   let madeHome = false;
   try {
     const { image, user } = boxed;
+    c.stepped?.('starting the check box');
     if (!(await c.runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
     // Issue #849: behind the egress proxy, which holds the hosts of its credentials before the box starts.
@@ -236,7 +257,9 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     const env = { ...checkEnv(given.credentials), ...(c.egress ? c.egress.env : {}) };
     id = await c.runtime.create({ name, image, network: c.egress?.network ?? c.network, volume, labels, user, env, limits: boxLimits(t.limits), script: checkScript(checked, given.credentials) });
     await c.runtime.start(id);
+    c.stepped?.('running the probes');
     const exit = await c.runtime.wait(id, CHECK_MS);
+    c.stepped?.('reading the probe results');
     const probes = readResults(checked, await c.runtime.logs(id));
     // Every probe passed, each need had its credential and the script ended well, or it failed: a script cut short is no pass.
     const passed = exit === 0 && given.missing.size === 0 && probes.every((p) => p.passed);
@@ -252,7 +275,8 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
 }
 
 /**
- * The check pass: removes check boxes and their homes no run holds, then checks each template that is due, one after the other. A
+ * The check pass: removes check boxes and their homes no run holds, then starts the check of each template that is due
+ * and not checked now, up to `CHECKS_AT_ONCE` at once (issue #2236), and ends when every check that runs now has. A
  * client target's check boxes no run holds are removed before the first check of a pass there.
  */
 export function createCheckPass(c: CheckPassContext, templates: CheckTemplates): () => Promise<void> {
@@ -266,37 +290,75 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
     }
     await sweepHomes(runtime, { [CHECK_LABEL]: c.instanceId }, holds);
   };
+  const limit = c.checkMs ?? CHECK_DEADLINE_MS;
+  /** One check of the user's template at its place, recorded when it ends, or when its time is up (issue #2226). */
+  const checkOne = async (userId: string, t: Template, at: CheckPlace): Promise<void> => {
+    const name = `hopper-check-${t.name}-${Date.now().toString(36)}${(n++).toString(36)}`;
+    holds.add(name);
+    let late: Promise<unknown> | undefined;
+    try {
+      // A scheduled check (issue #715) leaves the passed one in place while it runs: the template's boxes go on.
+      if (currentCheck(t)?.state !== 'passed') await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
+      let step = 'starting';
+      const checking = runCheck({ ...c, runtime: at.runtime, network: at.network, ...(at.egress ? { egress: at.egress } : {}), stepped: (what) => { step = what; } }, userId, t, name);
+      let timer: NodeJS.Timeout | undefined;
+      const overdue = new Promise<ReadOnlyCheck>((resolve) => {
+        timer = setTimeout(() => { late = checking.catch(() => {}); resolve({
+          version: t.savedAt, state: 'failed', at: c.clock.now().toISOString(), probes: [], transient: true,
+          problem: `the check did not end in ${Math.round(limit / 60_000)} min: it stopped at ${step}`,
+        }); }, limit);
+        timer.unref();
+      });
+      const check = await Promise.race([checking, overdue]).finally(() => clearTimeout(timer));
+      // A check that did not end is left behind: its box, if it ever starts, is no run's, and the next pass removes it.
+      if (late) c.logger.warn(`hopper: the read-only check of template ${t.name} ${check.problem}; it runs again in ${CHECK_RETRY_MS / 60_000} min`);
+      // A report that cannot be kept never changes the check: it is kept with no artifact, and the log says why.
+      const artifact = await templates.report(userId, t, check).catch((e: unknown) => {
+        c.logger.warn(`hopper: the read-only check of template ${t.name} ${check.state}, but its report was not kept: ${e instanceof Error ? e.message : String(e)}`);
+        return undefined;
+      });
+      await templates.record(userId, t.name, artifact ? { ...check, artifact } : check);
+      c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}${at.runtime === c.local ? '' : ` on ${at.machine}`}`);
+    } finally {
+      // The check box is removed by now, or never started: its credentials end with it (issue #1371). A check that did not
+      // end (issue #2226) releases them now, and again when its run ends, as it may mint after this.
+      await templates.release?.(userId, name).catch(() => {});
+      void late?.then(() => templates.release?.(userId, name)).catch(() => {});
+      holds.delete(name);
+    }
+  };
+  // Issue #2236: the checks that run now, by user and template, across passes. A pass starts the due ones not here.
+  const checking = new Map<string, Promise<void>>();
   return async () => {
     if (c.local) await sweep(c.local);
     const swept = new Set<string>();
-    for (const { userId, template: t } of templates.templates()) {
-      if (!dueForCheck(t, c.clock.now()) && !judgedAgain(t, c.probes)) continue;
+    const due = templates.templates().filter(({ template: t }) => dueForCheck(t, c.clock.now()) || judgedAgain(t, c.probes));
+    // Issue #2226: a check a stopped hopper left `running` goes last, so a check that hangs again holds no template with none.
+    const left = (t: Template): boolean => currentCheck(t)?.state === 'running';
+    for (const { userId, template: t } of [...due.filter((x) => !left(x.template)), ...due.filter((x) => left(x.template))]) {
+      const one = `${userId}\0${t.name}`;
+      if (checking.has(one)) continue;
+      if (checking.size >= CHECKS_AT_ONCE) {
+        templates.held?.(userId, t.name, `${checking.size} other read-only checks run now, and it starts when one of them ends`);
+        continue;
+      }
       const at = await c.place(userId);
-      if (!at) continue;
+      if (!at) {
+        templates.held?.(userId, t.name, NO_CHECK_PLACE);
+        continue;
+      }
+      templates.held?.(userId, t.name, undefined);
       const key = `${userId}\0${at.machine}`;
       if (at.runtime !== c.local && !swept.has(key)) {
         swept.add(key);
         await sweep(at.runtime).catch(() => {});
       }
-      const name = `hopper-check-${t.name}-${Date.now().toString(36)}${(n++).toString(36)}`;
-      holds.add(name);
-      try {
-        // A scheduled check (issue #715) leaves the passed one in place while it runs: the template's boxes go on.
-        if (currentCheck(t)?.state !== 'passed') await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
-        const check = await runCheck({ ...c, runtime: at.runtime, network: at.network, ...(at.egress ? { egress: at.egress } : {}) }, userId, t, name);
-        // A report that cannot be kept never changes the check: it is kept with no artifact, and the log says why.
-        const artifact = await templates.report(userId, t, check).catch((e: unknown) => {
-          c.logger.warn(`hopper: the read-only check of template ${t.name} ${check.state}, but its report was not kept: ${e instanceof Error ? e.message : String(e)}`);
-          return undefined;
-        });
-        await templates.record(userId, t.name, artifact ? { ...check, artifact } : check);
-        c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}${at.runtime === c.local ? '' : ` on ${at.machine}`}`);
-      } finally {
-        // The check box is removed by now, or never started: its credentials end with it (issue #1371).
-        await templates.release?.(userId, name).catch(() => {});
-        holds.delete(name);
-      }
+      checking.set(one, checkOne(userId, t, at).finally(() => { checking.delete(one); }));
     }
+    // The pass ends when every check that runs now has: a tick does not wait for it (src/sandbox/service.ts).
+    const ended = await Promise.allSettled([...checking.values()]);
+    const failed = ended.find((r) => r.status === 'rejected');
+    if (failed) throw failed.reason;
   };
 }
 
@@ -309,6 +371,7 @@ interface UserVault {
     recordCheck(name: string, check: ReadOnlyCheck): boolean;
     mintForCheck(ask: { template: string; check: string; profile: OperationProfile }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
     releaseMints(box: string): Promise<void>;
+    holdCheck(name: string, why: string | undefined): void;
   };
 }
 
@@ -320,6 +383,7 @@ export const usersTemplates = (all: () => readonly UserVault[]): CheckTemplates 
     const rt = all().find((x) => x.user.id === userId);
     return rt ? rt.vault.mintForCheck({ template, check, profile }) : { refused: `no user ${userId}` };
   },
+  held: (userId, name, why) => { all().find((x) => x.user.id === userId)?.vault.holdCheck(name, why); },
   release: async (userId, check) => { await all().find((x) => x.user.id === userId)?.vault.releaseMints(check); },
   report: async (userId, t, check) => {
     const rt = all().find((x) => x.user.id === userId);

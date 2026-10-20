@@ -4515,7 +4515,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`. `jobs` (issue #2197 part 3): a run card approved with no allow again approves those jobs' runs only; absent, every job's.
 
 | field | type | required |
 |---|---|---|
@@ -4525,6 +4525,7 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
 | `egress` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
+| `jobs` | string[] | no |
 
 ```json
 {
@@ -6886,6 +6887,34 @@ Version 1 (`docs/schemas/direct_query.cancelled.v1.json`). A direct query's job 
   "id": "query-5f1c",
   "requestId": "r-42",
   "jobId": "j1",
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.question_asked`
+
+Version 1 (`docs/schemas/direct_query.question_asked.v1.json`). A direct query's job asked a question that reached a person (issue #2184, part 2): once per question, with its `question.escalated_to_human`. `questionId`, `question` (the text, masked), `answerUrl` (where a person answers it in the UI). The caller answers it with `POST /ui/api/questions/:id/answer`, as a person does in Questions. Delivered to the `callback` subscription too.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `questionId` | string | yes |
+| `question` | string | yes |
+| `answerUrl` | string | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "questionId": "q1",
+  "question": "Which cluster do you mean?",
+  "answerUrl": "https://hopper.example.com/#question-q1",
   "url": "https://hopper.example.com/#direct-queries/query-5f1c",
   "callback": "grok-bot"
 }

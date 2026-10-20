@@ -31,9 +31,13 @@ export const runKey = (c: RunCardView, t?: Pick<TemplateView, 'savedAt'>): strin
 export const templateItem = (t: TemplateView): ApprovalItem => ({
   key: templateKey(t), label: t.name, posts: allListed(t).map((edit) => ({ path: '/ui/api/vault', body: edit })),
 });
-/** The run card's one approval (issue #2197): its template as it is, each profile it lists, and its run. */
-export const runItem = (c: RunCardView, t?: Pick<TemplateView, 'savedAt' | 'label'>): ApprovalItem => ({
-  key: runKey(c, t), label: t?.label ?? c.template, posts: [{ path: '/ui/api/sandbox-requests', body: { action: 'approve-run', job: c.jobId, template: c.template } }],
+/**
+ * The run card's one approval (issue #2197): its template as it is, each profile it lists, and its run; for this job's
+ * runs only, or with `allowAgain` (part 3) for later jobs with the same needs too.
+ */
+export const runItem = (c: RunCardView, t?: Pick<TemplateView, 'savedAt' | 'label'>, allowAgain = false): ApprovalItem => ({
+  key: runKey(c, t), label: t?.label ?? c.template,
+  posts: [{ path: '/ui/api/sandbox-requests', body: { action: 'approve-run', job: c.jobId, template: c.template, ...(allowAgain ? { allowAgain: true } : {}) } }],
 });
 
 const put = (key: string, a: ItemApproval): void => useAccessApprovals.setState((s) => ({ items: { ...s.items, [key]: a } }));

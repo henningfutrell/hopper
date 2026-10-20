@@ -183,7 +183,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         if (need && steps.appliesOff()) return no(reply, 409, `${APPLY_STEP_OFF}. No action grant is asked for`);
         const waits = need ? actionWait(who.t, who.job, need.asset.name, actions, one(query.why)) : undefined;
         if (waits && waits.status !== 202) return reply.code(waits.status).type('text/plain; charset=utf-8').send(waits.text);
-        let template = steps.covering(read);
+        let template = steps.covering(read, who.job.id);
         if (!template) {
           // No ready template covers the needs: asked for as a template request is — made once, approved only by a person or
           // a policy —, and its wait opens a watch that ends the job's own wait when the answer is ready (issue #998). Its
@@ -191,7 +191,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
           const why = one(query.why), plan = one(query.plan);
           const asked = await o.skillWaits.handle(req.headers.authorization, { name: TEMPLATE_SKILL, needs, ...(why ? { why } : {}), ...(plan ? { plan } : {}), ...(said.length ? { actions: said.join(' ') } : {}) });
           if (asked.status !== 200) return reply.code(asked.status).type('text/plain; charset=utf-8').send(asked.text);
-          template = steps.covering(read);
+          template = steps.covering(read, who.job.id);
           if (!template) return no(reply, 503, 'the template for these needs is ready, but no need box can run it yet: ask again in a minute');
         }
         if (waits) return reply.code(waits.status).type('text/plain; charset=utf-8').send(waits.text);
