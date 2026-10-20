@@ -10,6 +10,9 @@ import { z } from 'zod';
 import type { Access } from '../../authz/service.ts';
 import { ACCESS_UNAVAILABLE } from '../../domain/access.ts';
 import { authorizesVault, directKey } from '../../domain/direct-jobs.ts';
+import { DIRECT_QUERY_OPERATIONS, directQueryReadRoutes, registerDirectQueryRoutes } from './direct-queries.ts';
+
+export { DIRECT_QUERY_OPERATIONS };
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -40,6 +43,7 @@ export const DIRECT_JOB_OPERATIONS: Operation[] = [
 
 /** The direct jobs' reads (issue #901), beside the other `/api/` reads. */
 export function directJobReadRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
+  directQueryReadRoutes(app, o);
   app.get('/api/direct-jobs', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     return { directJobs: o.tenant(req).directJobs.list() };
@@ -54,6 +58,7 @@ export function directJobReadRoutes(app: FastifyInstance, o: { tenant: (req: Fas
 }
 
 export function registerDirectJobRoutes(app: FastifyInstance, o: { operator: Guard; tenant: (req: FastifyRequest) => TenantParts; access: Pick<Access, 'decideVaultGrant'> }): void {
+  registerDirectQueryRoutes(app, o);
   app.post('/ui/api/direct-jobs', o.operator, async (req) => {
     const b = parseWith(directJobBody, req.body);
     const s = signedInOf(req);

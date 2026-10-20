@@ -49,10 +49,13 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     return d;
   }
 
-  /** An event that says it tells no one (`notify: false`, issue #516) is delivered to none. */
+  /**
+   * An event that says it tells no one (`notify: false`, issue #516) is delivered to none. An event that names a
+   * subscription as its `callback` (a direct query's, issue #2184) is delivered to it too, whatever events it lists.
+   */
   function matches(sub: WebhookSubscription, event: DomainEvent): boolean {
     if (event.data.notify === false) return false;
-    return sub.active && (sub.events.includes('*') || sub.events.includes(event.type));
+    return sub.active && (sub.events.includes('*') || sub.events.includes(event.type) || (typeof event.data.callback === 'string' && event.data.callback === sub.name));
   }
 
   const request = (sub: WebhookSubscription, event: Pick<DomainEvent, 'id' | 'type' | 'jobId'>): OutboundRequest =>

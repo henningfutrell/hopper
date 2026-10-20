@@ -25,7 +25,7 @@
 // ends with a post key; sent again with no answer recorded, it is looked for on GitHub first (`found`), so it is made once.
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
-import { isGitLabItem } from '../domain/gitlab-account.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts'; import { isDirectQuery } from '../domain/direct-jobs.ts';
 import { postKeySince, withPostKey } from '../domain/post-key.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
@@ -211,7 +211,7 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       }
       const owns = PR_OWNED.includes(req.op) && 'number' in req ? { ownsPullRequest: user.ownsPullRequest?.(job, req.repo, req.number, req.op) === true } : {};
       const asker: ProxyAsker = {
-        jobId: job.id, contribution, ...(login ? { login } : {}), ...facts, ...owns,
+        jobId: job.id, contribution, ...(login ? { login } : {}), ...facts, ...owns, ...(isDirectQuery(job) ? { lookOnly: true } : {}),
         ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
       };
       // No connection of the job's own user (issue #1380): refused with how to connect, before the repositories it would
