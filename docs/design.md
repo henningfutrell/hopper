@@ -86,7 +86,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`), the action grants and the asks of jobs for an AWS action (`action-grants.ts`, issue #2206, pure in `src/domain/action-grants.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), a job's bastion, the one need box that outlives a step (`bastion.ts`, `bastions.ts`, issue #2146), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), a job's bastion, the one need box that outlives a step, and the relay's pipe into it and `hopper-relay` (`bastion.ts`, `bastions.ts`, `box-pipe.ts`, `relay-script.ts`, issue #2146), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the **kill points** a test of the crash harness ends the process at, off in a deploy (`kill-points.ts`, issue #1954, "The crash harness"); the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
@@ -30221,7 +30221,7 @@ command runs once the port is forwarded, its exit code, the forward stopped afte
 ready runs no command; a bad call), `test/skills/template-request-extras.test.ts` (tools on request: saved, named,
 approved by the read policy, reused, an unknown tool refused), `test/skills/observability.test.ts`.
 
-## Bastions (issue #2146, the bastion path, part 1, 2026-10-20)
+## Bastions (issue #2146, the bastion path, parts 1 and 2, 2026-10-20)
 
 **The problem.** Part 1 gave a sandbox the query tools and `hopper-port-forward`, but its credential could not forward: a
 read maps to view access, which has no `pods/portforward`. The owner then ruled out new cluster openings made by jobs
@@ -30263,10 +30263,33 @@ credential.
   its user's `tokenFile`, which kubectl reads again within a minute. Every 5 minutes the hopper mints each observe again
   and copies the new tokens over the old (`NeedBoxIo.running`, a need box's secrets renewed while it runs). The job gets
   none: its answer names the forwards, never a token.
-- **Lifetime.** A bastion ends when its TTL passes with no use (an hour; `touch`, the relay's use, starts it again), when
+- **Lifetime.** A bastion ends when its TTL passes with no use (an hour; each relay connection starts it again, and it
+  does not expire while one is open), when
   its job is no longer at work, when the job stops it, when a renewal is refused, when its box ends by itself, or at 12
   hours whatever its use. Its tokens are released (`releaseMints`: their Secrets deleted), and its box burned.
   `bastion.started` and `bastion.ended` (its reason, who stopped it, its problem) are on the job's timeline.
+
+**The relay (part 2).** Only the box reaches its forwards; the relay joins a job's connection to one, protocol-agnostic,
+with no new opening in the cluster: the forward is the bastion's own.
+- **The route** (`src/http/job-relay.ts`). `GET /job/relay?target=<target>`, an HTTP/1.1 upgrade to `hopper-relay/1`
+  with the job's proxy token, only while the job is at work, behind the Host guard (the upgrade bypasses Fastify's
+  hooks, so `classifyRequest` is applied as for a machine's dial-in). The target must be one of the job's own bastion's,
+  as `bastion` names it; any other, a bastion that is not running yet, or none is a plain-text no with its status. It
+  changes no job, question, webhook or setting.
+- **The pipe** (`Bastions.relay`, `ContainerRuntime.pipe`, `src/sandbox/box-pipe.ts`). For each connection the hopper
+  starts one command in the bastion's box through the runtime's exec API — Podman's and Docker's, over the socket beside
+  the hopper; the exec's start is an upgrade the runtime hijacks, stdout and stderr in frames — and joins the job's
+  connection to its stdin and stdout. Only into a need box (`NEED_LABEL`); a runtime on a machine or in Kubernetes has
+  no pipe, and a bastion runs on neither. The command (`relayCommand`) connects to the target's forward on 127.0.0.1
+  with the first of socat, bash (`/dev/tcp`) and nc the image has (exit 127 and its reason when none), ends when the
+  target ends the connection, and when the job's side ends first waits at most 5 s for the rest of the answer. Each
+  connection starts the TTL again, and an open one keeps the bastion; the bastion's end closes each one.
+- **The client** (`hopper-relay`, `src/sandbox/relay-script.ts`). `sh "$HOPPER_RELAY" TARGET [LOCAL] [-- COMMAND]`, in
+  every job's credentials dir: a POSIX sh line that runs a Node module of no dependency beside it (curl holds no two-way
+  byte stream). It holds a port on 127.0.0.1 where the job runs (LOCAL, else one the system picks) and joins each
+  connection to it to the target through the route. A first connection checks the target, so a no ends it before
+  anything uses the port. With COMMAND it runs it with `HOPPER_RELAY_PORT` set, then closes the port and exits with
+  its code; without, it holds the port until stopped. The token goes in a header from its file, never on a command line.
 
 **Decisions:**
 - **Observe is an operation, not a read with another role.** Access decides each mint by its operation: approving a read
@@ -30282,13 +30305,24 @@ credential.
   A job asks again.
 - **An exception to "Sandboxes are fresh and leave nothing":** a bastion lives until its TTL, not one step. It still
   leaves nothing when it ends.
+- **The relay is a byte pipe, not an HTTP proxy** (part 2). Prometheus, Grafana and Loki speak HTTP, but a database or
+  another service may not: one pipe serves each, and the job's own tools speak their protocol.
+- **One command in the box per connection, through the runtime's exec.** The box's network stays as it is: nothing
+  listens outside it, and the hopper reaches no container address. The runtimes' exec API is written here
+  (`box-pipe.ts`), as the rest of the adapters are.
+- **The connect command takes what the image has** (socat, bash, nc). The hopper adds no binary to the tools image for
+  it; an image with none of them is said so on the first connection.
+- **A Node client** (`relay.mjs`). The job's tools want a port; only a program that holds one can give it, and curl
+  cannot. Node is where every job runs (the client is a Node program), and the module uses Node's built-ins only.
+- **A first connection checks the target**, so a wrong target or a bastion not running yet is a no at once, not a
+  closed connection later.
 
 **Residual risk, stated.** A forward reaches every port of its pod, whatever port the target names; the cluster role does
 not limit ports. Read-only past the forward is the target's own credential (a Grafana Viewer token, a read-only database
-role); nothing in the bastion enforces it.
+role); nothing in the bastion enforces it. The relay reaches only the job's own bastion, whose every target was
+approved as an observe; until part 3 it records no event for a connection.
 
-**Not built (the later parts).** Part 2: the relay (`/job/relay`, a byte pipe through the box runtime, `hopper-relay`);
-until it lands nothing outside the box reaches a forward. Part 3: Access for relay targets (`bastion#can_relay`), approved
+**Not built (the later parts).** Part 3: Access for relay targets (`bastion#can_relay`), approved
 bastion targets in templates, and each connection an event. Part 4: the observability skill text on the bastion and the
 relay. Part 5: the read-only check's probes under observe (`kubectl exec` and a Secret read refused). Part 6: the live
 check on a cluster. A person's stop of a bastion in the UI.
@@ -30302,7 +30336,13 @@ kubeconfig, the command; the box's real script with a kubectl of the test's own:
 token read, the box gone when stopped), `test/sandbox/bastions.test.ts` (one a job, a refused mint, renewal, TTL, the
 job's end, a stop), `test/skills/bastion-skill.test.ts`, `test/integration/bastion.test.ts` (the real daemon and
 `hopper-skill`: under YOLO a job's observe template and its bastion start with no person; the token only in the box; the
-job stops it, its Secret is deleted, its start and end on the timeline).
+job stops it, its Secret is deleted, its start and end on the timeline). Part 2: `test/sandbox/box-pipe.test.ts` (the
+Podman and Docker adapters' pipe against an exec API double on a unix socket: stdin, binary stdout across frames, stderr
+apart, a refusal, no command in a box that is no need box), `test/sandbox/relay-connect.test.ts` (the connect command
+under `sh` with socat, bash or nc alone, and none), `test/sandbox/bastions.test.ts` (the relay's pipe, its noes, the TTL
+kept while a connection is open, connections closed at the end), and `test/integration/bastion.test.ts` (the real daemon,
+route and `hopper-relay`: a command reaches a target through a local port; another target and a stranger's token are
+refused).
 
 ## A comment ends the job's own wait (issue #2159, 2026-10-19)
 

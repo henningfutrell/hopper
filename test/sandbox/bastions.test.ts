@@ -2,7 +2,8 @@
 // template with an observe on each target: the vault mints each observe for the bastion's box, the box starts with the
 // tokens as files, and the hopper mints them again while it runs. It ends when its TTL passes, when its job ends, when
 // the job stops it, or when a mint is refused; its tokens are released, and each start and end is an event on the job's
-// timeline. The vault's mint and the need box are doubles at their seams.
+// timeline. Part 2: a job's relay connection to one of its targets is a pipe to the connect command in the box, which
+// keeps it from expiring while it is open and ends with it. The vault's mint and the need box are doubles at their seams.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,8 +11,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { OperationProfile } from '../../src/domain/access.ts';
 import type { Job, NewEvent } from '../../src/domain/types.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
-import type { NeedBox, NeedBoxIo, NeedBoxResult } from '../../src/sandbox/need-box.ts';
-import { parseTargets, type BastionTarget } from '../../src/sandbox/bastion.ts';
+import { PassThrough } from 'node:stream';
+import type { BoxPipe } from '../../src/domain/sandboxes.ts';
+import type { NeedBox, NeedBoxIo, NeedBoxResult, RunningNeedBox } from '../../src/sandbox/need-box.ts';
+import { parseTargets, relayCommand, type BastionTarget } from '../../src/sandbox/bastion.ts';
 import { createBastions, type BastionsOptions } from '../../src/sandbox/bastions.ts';
 
 const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
@@ -33,7 +36,7 @@ const until = async (what: () => boolean): Promise<void> => {
 };
 
 /** Bastions with the box a double that runs until it is stopped, and a mint that counts. */
-function bastions(o: Partial<BastionsOptions> = {}) {
+function bastions(o: Partial<BastionsOptions> & { pipe?: RunningNeedBox['pipe'] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bastions-'));
   dirs.push(dir);
   const events: NewEvent[] = [];
@@ -45,7 +48,7 @@ function bastions(o: Partial<BastionsOptions> = {}) {
     const b = { box, renewed: [] as Record<string, string>[] };
     boxes.push(b);
     io.log('hopper-bastion: forwarding 2 targets\n');
-    io.running?.(async (secrets) => { b.renewed.push(secrets); });
+    io.running?.({ renew: async (secrets) => { b.renewed.push(secrets); }, ...(o.pipe ? { pipe: o.pipe } : {}) });
     await new Promise((r) => { io.signal.addEventListener('abort', r, { once: true }); });
     return { exit: 125, problem: 'the job stopped waiting for it', stopped: 'cancelled' };
   };
@@ -157,5 +160,86 @@ describe('a bastion (issue #2146)', () => {
   it('a hopper that runs no sandbox starts none', async () => {
     const { b } = bastions({ run: undefined });
     expect(await b.start(JOB, TEMPLATE, TARGETS)).toMatchObject({ status: 503 });
+  });
+});
+
+/** A box's pipe double: what the relay writes, and the command it started. */
+function pipes() {
+  const started: (readonly string[])[] = [];
+  const opened: BoxPipe[] = [];
+  const pipe = async (cmd: readonly string[]): Promise<BoxPipe> => {
+    started.push(cmd);
+    const p = Object.assign(new PassThrough(), { stderr: () => '' }) as unknown as BoxPipe;
+    opened.push(p);
+    return p;
+  };
+  return { started, opened, pipe };
+}
+
+describe('the relay to a bastion (issue #2146, part 2)', () => {
+  it('pipes a connection to the target\'s forward in the box, through the connect command', async () => {
+    const p = pipes();
+    const { b } = bastions({ pipe: p.pipe });
+    await b.start(JOB, TEMPLATE, TARGETS);
+    await until(() => b.of('job-1')?.state === 'running');
+    const r = await b.relay('job-1', 'uat/monitoring/svc/grafana:80');
+    expect('no' in r).toBe(false);
+    expect(p.started).toEqual([relayCommand(20001)]);
+    const echoed = new Promise((resolve) => (r as BoxPipe).once('data', (d: Buffer) => resolve(d.toString())));
+    (r as BoxPipe).write('GET / HTTP/1.1\r\n\r\n');
+    expect(await echoed).toBe('GET / HTTP/1.1\r\n\r\n');
+  });
+
+  it('says no for a job with no bastion, a target it does not forward to, and a bastion that is not running yet', async () => {
+    const p = pipes();
+    const { b } = bastions({ pipe: p.pipe });
+    expect(await b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 404, no: expect.stringMatching(/^this job has no bastion that runs/) });
+    await b.start(JOB, TEMPLATE, TARGETS);
+    await until(() => b.of('job-1')?.state === 'running');
+    expect(await b.relay('job-1', 'uat/monitoring/svc/loki:3100')).toEqual({
+      status: 404, no: 'the job\'s bastion forwards to uat/monitoring/svc/prometheus-server:9090, uat/monitoring/svc/grafana:80; not to uat/monitoring/svc/loki:3100',
+    });
+    expect(await b.relay('job-2', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 404 });
+    expect(p.started).toEqual([]);
+  });
+
+  it('says no when the box\'s runtime starts no command, and when the start fails', async () => {
+    const none = bastions();
+    await none.b.start(JOB, TEMPLATE, TARGETS);
+    await until(() => none.b.of('job-1')?.state === 'running');
+    expect(await none.b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 503 });
+    const failing = bastions({ pipe: async () => { throw new Error('podman refused to start a command in the box (500): oops'); } });
+    await failing.b.start(JOB, TEMPLATE, TARGETS);
+    await until(() => failing.b.of('job-1')?.state === 'running');
+    expect(await failing.b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toEqual({
+      status: 502, no: 'the relay did not reach uat/monitoring/svc/grafana:80 in the box: podman refused to start a command in the box (500): oops',
+    });
+  });
+
+  it('does not expire while a connection is open; a closed one starts its TTL again', async () => {
+    const p = pipes();
+    const { b } = bastions({ pipe: p.pipe, ttlMs: 100 });
+    await b.start(JOB, TEMPLATE, TARGETS);
+    await until(() => b.of('job-1')?.state === 'running');
+    const r = await b.relay('job-1', 'uat/monitoring/svc/grafana:80') as BoxPipe;
+    await tick(250);
+    expect(b.of('job-1')?.state).toBe('running');
+    r.destroy();
+    await tick(50);
+    expect(b.of('job-1')?.state).toBe('running');
+    await until(() => b.of('job-1')?.state === 'ended');
+    expect(b.of('job-1')?.ended).toBe('expired');
+  });
+
+  it('closes each open connection when it ends', async () => {
+    const p = pipes();
+    const { b } = bastions({ pipe: p.pipe });
+    await b.start(JOB, TEMPLATE, TARGETS);
+    await until(() => b.of('job-1')?.state === 'running');
+    const r = await b.relay('job-1', 'uat/monitoring/svc/grafana:80') as BoxPipe;
+    b.stop('job-1', 'job');
+    await until(() => b.of('job-1')?.state === 'ended');
+    expect(r.destroyed).toBe(true);
+    expect(await b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 404 });
   });
 });
