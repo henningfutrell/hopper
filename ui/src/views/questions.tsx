@@ -92,7 +92,8 @@ function ReasonBanner({ q }: { q: QuestionView }) {
   );
 }
 
-function QuestionCard({ q }: { q: QuestionView }) {
+/** One open question's card: also in the critical job tracker (issue #2203), the same card on the same question. */
+export function QuestionCard({ q }: { q: QuestionView }) {
   const job = useJobIndex().get(q.jobId);
   const role = useHopper((s) => s.user?.role);
   const canAnswer = useCanOperate();
