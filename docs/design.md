@@ -16055,6 +16055,8 @@ person's question list as if it needed an answer), or ended failed though it was
   (one more over the cap when none is idle), `wait` cleared, `job.reattached { reason: 'the wait ended in the pane' }`, and the
   runner watches the turn with the wait already taken left out. Its own background poll ending is what wakes Claude: the
   hopper runs no check of its own.
+- **A comment ends it** (issue #2159, "A comment ends the job's own wait"). A trusted account's new comment on its issue or
+  its own pull request, seen by a GitHub watch while it waits, ends the wait; the job is told the comment as untrusted text.
 - **The hopper ends it** (issue #998, "An answer ends the job's own wait"). When an answer the job asked the hopper for
   (a skill request that answered 202) is ready, the hopper ends the wait with it, as a person does below, `by: hopper`.
 - **A person ends it.** `POST /ui/api/jobs/:id/end-wait { note? }` (least role `operator`; 409 unless `waiting_on`): queued
@@ -18558,7 +18560,8 @@ issue or pull request. The jobs the hopper already has, read as pointed jobs, ar
 already (`src/sources/github/follow.ts`). One exception (issue #435): such a job while its question is posted on its issue
 thread, read as a pointed job on that issue (`pointedJobOf`); its change event carries the job's `jobId`. The service
 follows `pointed_job.created`, `pointed_job.status_changed` and every `question.*` event, so a new pointed job or a new
-thread ask is watched at once and an ended one is dropped, with no restart.
+thread ask is watched at once and an ended one is dropped, with no restart. A job on its own wait is watched too (issue #2159, "A comment ends the job's own wait"): its issue and its own pull
+request.
 
 **A poll** (`src/github-watch/github.ts`). With the user's own GitHub connection (`githubProxy.watches`, as Report a bug
 and the repository checks): `GET /repos/{repo}/issues/{n}` — it answers a pull request too, with its merge — and every
@@ -29904,3 +29907,49 @@ image with kubectl only), `test/sandbox/port-forward-helper.test.ts` (the helper
 command runs once the port is forwarded, its exit code, the forward stopped after it; a forward that fails or is never
 ready runs no command; a bad call), `test/skills/template-request-extras.test.ts` (tools on request: saved, named,
 approved by the read policy, reused, an unknown tool refused), `test/skills/observability.test.ts`.
+
+## A comment ends the job's own wait (issue #2159, 2026-10-19)
+
+**The problem.** A job on its own wait (waiting on a pull request to merge) did not see new comments on its issue. The owner
+commented three times over three hours with a new blocker; nothing reached the job. It waited until a person ran End the wait.
+Nothing watched the issue of a job on its own wait: the GitHub watch (issue #427) followed pointed jobs and jobs on a
+question posted on the thread only, and no wait check reads comments.
+
+- **Watched while it waits** (`src/github-watch/service.ts`, `waitWatchesOf` in `src/domain/comment-wake.ts`). A job on its
+  own wait gets a GitHub watch on its issue, under the job's id (as a thread ask's), and one on its own pull request (the one
+  its source follows), under `<job id>:pr`. `job.waiting` starts them, and its first poll is at once; a poll of a job no longer
+  on its wait drops them. The poll is the watch's own (`GET …/issues/{n}` and its timeline, ETag 304s), on the user's interval
+  (default a minute).
+- **Which comment wakes it** (`wakingComment`). On `github_watch.changed` with comments added, for a job on its own wait,
+  the sync loop reads the item's comments through the job source's thread (`src/sources/comment-wakes.ts`, on the job's report
+  chain). The first comment the watch saw added, made at or after the wait began, by a trusted account — the user's connected
+  account (the job's `source.assignee`) or a maintainer of the repository (`author_association` owner, member or collaborator),
+  the rule of a thread ask's reply (`isTrustedReply`) —, not marked by the hopper, not empty, and not one a job posted through
+  the GitHub proxy (`github_proxy.done` of `issue.comment`, by its link), ends the wait. A comment by anyone else wakes nothing.
+- **Ended** (`SourceHost.wakeOnComment`, `recordCommentWake` in `src/engine/wait.ts`). In one tx, only while the job is on
+  the same wait (`wait.since`): `job.wait_ended { by: hopper, note, comment: <its link> }`, queued again and pinned to its
+  machine, as any wait the hopper ends. The job is told the comment's link and its text between `<<<hopper-untrusted-comment`
+  and `hopper-untrusted-comment>>>` (cut at 4000 characters), as data, not instructions, and to wait again if its wait still
+  holds.
+- **UI.** The job view says "woken by a comment", with the comment's link, until the job waits again; the timeline line of
+  `job.wait_ended` names the link.
+
+**Decisions:**
+- **Trusted is the thread ask's rule**, not intake trust (Access, `intake#can_start_jobs`). A comment that wakes a job
+  starts no job and changes no text the job runs: it is a hint the job weighs as untrusted text. The same rule already lets a
+  reply answer a job's question.
+- **The GitHub watch, not the wait check.** The watch already polls an item on the user's interval with conditional
+  requests, and records comment ids, authors and times, never their text. The text is read only when the watch saw a new
+  comment.
+- **Issue comments only.** A pull request's reviews and review comments wake nothing here: a wait on its review is tested
+  as its reviews (issue #1694 part 3).
+
+**Not built.** A comment made between the wait's start and the first poll of its watch, when the watch had no snapshot
+before, is in that first snapshot and wakes nothing. A comment on a pull request the issue links but the job does not own.
+
+**Persisted state.** No schema change: the watches are rows of `github_watches` (tenant migration 44), and `comment` is an
+optional field of `job.wait_ended`. A build before this one ignores both.
+
+**Verification:** `test/domain/comment-wake.test.ts`, `test/integration/comment-wake.test.ts` (the real daemon over the
+fake herdr: a job on its own wait on a pull request; a stranger's comment on its issue wakes nothing; the owner's comment
+wakes it within one poll, told the comment as untrusted text).

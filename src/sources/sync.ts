@@ -38,7 +38,7 @@ import { needsWork, pauseTold } from './sync-setup.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
-import { createThreadAsks } from './thread-asks.ts';
+import { createThreadAsks } from './thread-asks.ts'; import { createCommentWakes } from './comment-wakes.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts'; import { waitedPullRequestEnds } from './waited-pull-requests.ts'; import { watchedEnds } from './watched-ends.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
@@ -189,7 +189,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   function onEvent(e: DomainEvent) {
-    if (running && PR_ENDED.has(e.type)) pullRequestEnded(slots.get(store.jobs.get(e.jobId ?? '')?.source?.source ?? ''));
+    if (running && PR_ENDED.has(e.type)) pullRequestEnded(slots.get(store.jobs.get(e.jobId ?? '')?.source?.source ?? '')); if (running) commentWakes.follows(e);
     if (running && (writeBacks.follows(e) || threadAsks.follows(e) || fixingReports.follows(e))) return;
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
@@ -345,7 +345,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const sourceOfJob = (jobId: string) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined);
   const sendNow = (source: JobSource) => { const slot = slots.get(source.name); if (slot && running) outbox.now(slot); }, retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
   const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob, kept: (s) => { const slot = slots.get(s.name); if (slot && running) outbox.soon(slot); } });
-  const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
+  const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry }), commentWakes = createCommentWakes({ store, host, enqueue, sourceOf: sourceOfJob, failed: retry });
 
   const waitedEnds = waitedPullRequestEnds(store), watchedItemEnds = watchedEnds(store);
   const afterDone = createAfterDone({

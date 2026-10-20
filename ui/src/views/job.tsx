@@ -23,6 +23,7 @@ import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
 import { gateHoldText, heldAtGate } from '@/model/blast-radius';
 import { accountFor, actingIdentity, actingText, forgeOf, gitlabActingIdentity } from '@/model/acting-identity';
+import { wokenByComment } from '@/model/comment-wake';
 import { directJobOf } from '@/model/promotions';
 import type { ConnectedAccountStatus, DomainEvent, GitLabAccountStatus, Job, JobBom } from '@/model/wire';
 import { useHopper } from '@/store';
@@ -101,6 +102,7 @@ export function JobView() {
   const read = useJob(id);
   const bom = useJobBom(id);
   const events = useJobEvents(id, bom?.events ?? NONE);
+  const woken = wokenByComment(events);
   const forge = forgeOf(read.state === 'found' ? read.job.source : undefined);
   const github = useGitHubAccounts(), gitlab = useGitLabAccount(forge === 'GitLab');
   const acting = forge === 'GitLab' ? gitlabActingIdentity(events, gitlab) : actingIdentity(events, accountFor(github, read.state === 'found' ? read.job.source?.repo : undefined));
@@ -146,6 +148,9 @@ export function JobView() {
             )}
             {read.job.status === 'waiting_on' && read.job.wait && (
               <Fact label="waits on"><span data-slot="job-waits-on"><WaitsOnLink on={read.job.wait.on} repo={read.job.source?.repo} />, for <Since iso={read.job.wait.since} /></span></Fact>
+            )}
+            {read.job.status !== 'waiting_on' && woken && (
+              <Fact label="woken by"><a data-slot="job-woken-by-comment" href={woken} target="_blank" rel="noreferrer" className="underline underline-offset-4">a comment</a></Fact>
             )}
             {read.job.error && <Fact label="error"><span className="text-bad">{read.job.error}</span></Fact>}
             {directJobOf(read.job) && <JobPromotion directJobId={directJobOf(read.job)!} />}
