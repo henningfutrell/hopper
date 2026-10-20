@@ -1,17 +1,26 @@
 // The critical job tracker (issue #2203): every **critical job** — its priority at or above the critical priority the queue
-// answers (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off) — in one widget pinned on every page, until the job ended and a
-// person dismissed it (a dismissal is kept per browser, model/dismissed.ts). For each: where it runs, its current step in
-// plain words and since when, its last few actions, and every wait that is a person's — each one an entry of its one home
-// (Questions, Access requests, Proposals, Research, Needs a person, Logins, the queue), never a copy, so acting in either
-// place clears both. Pure.
+// answers (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off), or its critical flag a person set (part 2) — in one widget
+// pinned on every page, until the job ended and a person dismissed it (a dismissal is kept per browser, model/dismissed.ts).
+// For each: where it runs, its current step in plain words and since when, its last few actions, and every wait that is a
+// person's — each one an entry of its one home (Questions, Access requests, Proposals, Research, Needs a person, Logins, the
+// queue), never a copy, so acting in either place clears both. Pure.
 import { heldAtGate } from './blast-radius.ts';
 import type { CredentialRequest, DomainEvent, FailuresView, HandoffView, Job, LoginView, QuestionView, ReviewItemView, ReviewKind, RunCardView, VaultView } from './wire.ts';
 
 type VaultGrantAsk = NonNullable<VaultView['grantAsks']>[number];
 
-/** Critical: at or above the critical priority. None is while the queue has answered none, or 0 (off). */
-export const isCriticalJob = (job: Pick<Job, 'priority'>, critical: number | null): boolean =>
+/** At or above the critical priority. None is while the queue has answered none, or 0 (off). */
+export const atCriticalPriority = (job: Pick<Job, 'priority'>, critical: number | null): boolean =>
   critical !== null && critical > 0 && job.priority >= critical;
+
+/** Critical: the critical flag a person set (part 2), whatever its priority and the critical priority, or at the critical priority. */
+export const isCriticalJob = (job: Pick<Job, 'priority' | 'critical'>, critical: number | null): boolean =>
+  job.critical === true || atCriticalPriority(job, critical);
+
+/** Why the job is a critical job, or `no`, as the job view says it. The flag first: it holds whatever the priority. */
+export const criticalText = (job: Pick<Job, 'priority' | 'critical'>, critical: number | null): string =>
+  job.critical === true ? 'yes: a person marked it critical'
+    : atCriticalPriority(job, critical) ? `yes: its priority is at or above ${critical}` : 'no';
 
 const ENDED: ReadonlySet<string> = new Set(['finished', 'failed', 'cancelled', 'rejected']);
 export const hasEnded = (job: Pick<Job, 'status'>): boolean => ENDED.has(job.status);

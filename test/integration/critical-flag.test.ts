@@ -8,7 +8,7 @@
 //     Then the job is `critical`, and `job.critical_flag_changed` names who acted
 //     When the person clears the flag
 //     Then the job is no longer `critical`, and a second event names who acted
-//   Scenario: the same flag again changes nothing; an ended job is not marked; an unknown job is 404; no person is 401
+//   Scenario: the same flag again changes nothing; an ended job is not marked; an unknown job is 404; no session is 403
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
@@ -51,12 +51,12 @@ describe('the critical flag (issue #2203)', () => {
     expect(flagEvents(app)).toHaveLength(2);
   });
 
-  it('the same flag again changes nothing; an ended job is not marked; unknown 404; no person 401; a bad body 400', async () => {
+  it('the same flag again changes nothing; an ended job is not marked; unknown 404; no session 403; a bad body 400', async () => {
     const { app, job, session } = await start();
     expect((await app.ui(`/ui/api/jobs/${job.id}/critical`, { critical: false }, { token: session })).status).toBe(200);
     expect(flagEvents(app)).toHaveLength(0);
     expect((await app.ui(`/ui/api/jobs/${job.id}/critical`, { critical: 'yes' }, { token: session })).status).toBe(400);
-    expect((await app.ui(`/ui/api/jobs/${job.id}/critical`, { critical: true })).status).toBe(401);
+    expect((await app.ui(`/ui/api/jobs/${job.id}/critical`, { critical: true })).status).toBe(403);
     expect((await app.ui('/ui/api/jobs/nope/critical', { critical: true }, { token: session })).status).toBe(404);
 
     expect((await app.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token: session })).status).toBe(200);

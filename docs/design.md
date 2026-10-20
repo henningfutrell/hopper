@@ -30267,7 +30267,7 @@ starts), `test/ui/infra-plan-needs-you.test.ts` (the count, the lines, the high 
 outside event; Infra and `hopper infra plans` list it; `hopper infra approve` or Approve on Infra wakes the job; a plan not
 recorded ends the wait at once and tells the job why).
 
-## The critical job tracker (issue #2203, part 1, 2026-10-19)
+## The critical job tracker (issue #2203, parts 1 and 2, 2026-10-19)
 
 Owner report, during a production outage: a critical job's template approval had no badge (issue #2196), and a question
 the operator did not see cost minutes. What a critical job waits on must be in front of the person on every page.
@@ -30302,9 +30302,27 @@ number would make two kinds of critical. The widget is sticky in the page, not a
 no toast, and it fits a phone's width. The ended-job dismissal is per browser, as the other notices are: it is a view
 setting, not a decision.
 
-**Left for a later part.** A **critical flag** a person sets on any job, whatever its priority (a route, an event, the
-job's field and the UI's toggle). Until then a job is critical only by its priority.
-
 Tests: `test/ui/critical-jobs.test.ts` (the model), `test/ui/critical-tracker.test.ts` (the whole app in happy-dom: on
 every page and after a reload, live from the stream, each wait's action by its home's route, the dismissal after a
 reload), `test/integration/high-priority.test.ts` (the queue answers the critical priority, and 0 when it is off).
+
+### Part 2: the critical flag (2026-10-20)
+
+- **The flag.** `critical: true` on the job (`src/domain/types.ts`; the job's body is JSON, so no migration). A job with
+  it is a critical job whatever its priority, also while the critical priority is 0 (`isCriticalJob`,
+  `ui/src/model/critical-jobs.ts`).
+- **The route.** `POST /ui/api/jobs/:id/critical` with `{ critical: boolean }`, least role operator, the API's too
+  (`jobs:critical`). The engine (`src/engine/critical-flag.ts`) sets or clears it in one transaction with
+  `job.critical_flag_changed` (`critical`, `person`, `via`). 409 when it marks a job that ended; a clear is taken on any
+  job. The same flag again records nothing.
+- **The toggle.** The job view's **critical** row (`ui/src/views/job-critical.tsx`) says whether the job is critical and
+  why — the flag first, else its priority —, with **Mark critical** (a job that has not ended) or **Clear critical flag**.
+
+**Decided here.** The flag changes only what the tracker shows. The lane over the cap stays a rule of the critical
+priority (help/lanes.md: "a rule of the priority, not a label"), so a person's flag spends no usage past the caps. The
+flag is a mark on one job: a new job of the same item (run again, rework, a fork) does not take it. No box token: the
+flag starts nothing.
+
+Tests: `test/integration/critical-flag.test.ts` (set and clear through the real daemon, with who acted; the same flag
+again, an ended job, an unknown job, no session, a bad body), `test/ui/critical-jobs.test.ts` (a flagged job is
+tracked), `test/ui/job-critical-view.test.ts` (the job view's row and its buttons).

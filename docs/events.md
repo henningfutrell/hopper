@@ -1385,6 +1385,24 @@ Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent wit
 }
 ```
 
+## `job.critical_flag_changed`
+
+Version 1 (`docs/schemas/job.critical_flag_changed.v1.json`). A person, or an agent over the API, set (`critical` true) or cleared the job's critical flag (issue #2203, `POST /ui/api/jobs/:id/critical`): a job with the flag is a critical job whatever its priority, so the critical job tracker shows it on every page. The lane over the cap stays a rule of the critical priority. `person` and `via` say who acted.
+
+| field | type | required |
+|---|---|---|
+| `critical` | boolean | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "critical": true,
+  "person": "ada",
+  "via": "ui"
+}
+```
+
 ## `intake.stamped`
 
 Version 1 (`docs/schemas/intake.stamped.v1.json`). The job store signed the job's trust stamp from where its work came (issue #655 part 11, design.md "Trust stamps"): at its making (`by` `intake`, or `job` for a job a job made), for a new spec (`respecify`), at the backfill of a job made before stamps (`backfill`), or when a sync judged its origin later (`intake`, or `person` when a quarantine stays). `level` and `reasons`: as on the stamp; `was`: a quarantined job's level before it. `from`: the level its stamp verified at before, when it had one. `spec`: the SHA-256 of the spec the stamp covers, as canonical JSON. The MAC is never in it. A job with no stamp (no stamp key, or a parent whose stamp does not verify) has none.
