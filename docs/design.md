@@ -19620,11 +19620,14 @@ rendered nothing when empty, so a person could not tell the feature was there.
 - **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
   grants, and Template approvals (`template-approvals.tsx`: Approve, and Approve `<profile>` for a high-radius profile),
   plus a pointer to Settings → API tokens for box tokens. A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
-  it was never approved or a new image, secret or profile waits. Settings → Vault keeps Revoke, Check again, Edit and
+  it was never approved or a new image, secret or profile waits. A template a job asked for (`askedBy`) counts in the
+  badge and the Needs you row while its job has not ended (issue #2196), and a high-priority job's template or sandbox run
+  marks them (`accessRequestsHigh`) and comes first in its panel. Settings → Vault keeps Revoke, Check again, Edit and
   Remove, and links a waiting template here. The texts the hopper gives a job or a box for an approval or a grant name
   Access requests.
 - **One vault read.** `useVault` (`ui/src/store/vault.ts`) keeps one copy of `GET /api/vault`, read when first used and
-  again after each `vault.*` event; the nav, Needs you, Access requests and Settings → Vault share it, and an edit's
+  again after each `vault.*` or `template.*` event (`rereadsVault`; issue #2196: a job's template request records only
+  `template.saved`); the nav, Needs you, Access requests and Settings → Vault share it, and an edit's
   answer replaces it. A read that fails is no count; Access requests says why and still renders its panels.
 - **Always rendered.** Needs you, Intake and each panel of Access requests render with nothing in them, and say what will
   show there.

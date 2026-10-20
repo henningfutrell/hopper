@@ -10,7 +10,7 @@ import { taggedWaiting } from '@/model/tagged';
 import { trustHeldWaiting } from '@/model/trust';
 import { signedOutLines } from '@/model/tool-accounts';
 import { notReadyLines } from '@/model/machines';
-import { accessRequestsWaiting, unknownAssetLines } from '@/model/vault';
+import { accessRequestsHigh, accessRequestsWaiting, unknownAssetLines } from '@/model/vault';
 import { useHopper } from './index';
 import { useInfraPlans, useLandingBatches, usePullRequestsView, useToolAccounts } from './polled';
 import { useAwaitingSort, useSectionBadges, useServerNow } from './selectors';
@@ -19,7 +19,11 @@ import { useVault } from './vault';
 export function useNeedsYou(): NeedsYouRow[] {
   const intake = useHopper((s) => requestsWaiting(s.sources) + notAssignedWaiting(s.sources) + trustHeldWaiting(s.jobs));
   const vault = useVault();
-  const access = accessRequestsWaiting(vault);
+  // Issue #2196: a template a job asked for counts while its job waits, and marks the badge when the job is high priority.
+  const jobs = useHopper((s) => s.jobs);
+  const threshold = useHopper((s) => s.highPriority);
+  const access = accessRequestsWaiting(vault, jobs);
+  const accessHigh = accessRequestsHigh(vault, jobs, threshold);
   const unknownAssets = useMemo(() => unknownAssetLines(vault), [vault]);
   const plans = plansWaiting(useInfraPlans(), useServerNow());
   const accounts = useToolAccounts();
@@ -37,5 +41,5 @@ export function useNeedsYou(): NeedsYouRow[] {
   const tagged = useHopper((s) => taggedWaiting(s.sources));
   const sorting = useAwaitingSort();
   const sections = useSectionBadges();
-  return useMemo(() => needsYouRows({ intake, access, unknownAssets, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections }), [intake, access, unknownAssets, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections]);
+  return useMemo(() => needsYouRows({ intake, access, accessHigh, unknownAssets, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections }), [intake, access, accessHigh, unknownAssets, plans, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections]);
 }
