@@ -1037,7 +1037,7 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 
 ## `job.parked`
 
-Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
+Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
 
 | field | type | required |
 |---|---|---|
@@ -1045,6 +1045,9 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: 
 | `machineId` | string | no |
 | `auto` | boolean | no |
 | `why` | string | no |
+| `by` | string | no |
+| `via` | `ui` \| `cli` \| `api` \| `job` | no |
+| `reason` | string | no |
 
 ```json
 {
@@ -1057,12 +1060,14 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: 
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move and the busy-machine move (issue #1977) re-queue with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `by`, `via` (issue #2167): the person who picked it up and the way (`ui`, `cli`, `api`), or `job <its id>` and `job` for a running job that picked up a proposal or research report it parked through the `park` skill. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move and the busy-machine move (issue #1977) re-queue with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
 
 | field | type | required |
 |---|---|---|
 | `to` | `queued` \| `waiting_answer` | yes |
 | `elsewhere` | boolean | no |
+| `by` | string | no |
+| `via` | `ui` \| `cli` \| `api` \| `job` | no |
 
 ```json
 {
@@ -1112,13 +1117,14 @@ Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it na
 
 ## `job.wait_ended`
 
-Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any. `check` (issue #1694): the hopper's wait check ended it — its condition, as a key (`items_ended:…`, `job_ended:<id>`, `question_settled:<id>`, `command_exited`) —; a later wait of the job on the same items is not woken for them again.
+Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any. `check` (issue #1694): the hopper's wait check ended it — its condition, as a key (`items_ended:…`, `job_ended:<id>`, `question_settled:<id>`, `command_exited`) —; a later wait of the job on the same items is not woken for them again. `comment` (issue #2159): the link of the comment that woke it — a trusted account (the user's connected account or a maintainer of the repository) commented on the job's issue or its own pull request while it waited; the job is told the comment as untrusted text.
 
 | field | type | required |
 |---|---|---|
 | `by` | `person` \| `hopper` | yes |
 | `note` | string | no |
 | `check` | string | no |
+| `comment` | string | no |
 
 ```json
 {
@@ -3611,9 +3617,9 @@ Version 1 (`docs/schemas/library_skill.refreshed.v1.json`). A person refreshed a
 
 ```json
 {
-  "name": "orchestrate",
+  "name": "workflow-orchestrate",
   "repo": "owner/workflows",
-  "path": "skills/orchestrate",
+  "path": "skills/workflow-orchestrate",
   "ref": "HEAD",
   "commit": "9b2e4c7d1a3f5e6b8c0d2f4a6b8c0e2d4f6a8b0c",
   "version": "7c1e3a5b9d2f4e60",
@@ -3675,7 +3681,7 @@ Version 1 (`docs/schemas/job.work_skill_chosen.v1.json`). The work skill this jo
   "from": "user",
   "requires": [
     {
-      "name": "orchestrate",
+      "name": "work",
       "version": "8a1d3c5e7f9b2d40",
       "seq": 0
     }
@@ -3963,15 +3969,101 @@ Version 1 (`docs/schemas/cloud_link.unregistered.v1.json`). hopper.io removed th
 
 ## `cloud_link.message_refused`
 
-Version 1 (`docs/schemas/cloud_link.message_refused.v1.json`). The instance refused a message hopper.io sent over the cloud link (issue #465): it was larger than 1024 bytes (`too-large`), not JSON (`not-json`), of a type other than `register` or `unregister` (`unknown-type`), or not of that type's closed shape (`bad-shape`). Nothing changed on the instance. `reason`, why; never the message. An instance event: in every user's log.
+Version 1 (`docs/schemas/cloud_link.message_refused.v1.json`). The instance refused a message hopper.io sent over the cloud link (issue #465): it was larger than 1024 bytes (`too-large`), not JSON (`not-json`), of a type other than `register` or `unregister` (`unknown-type`), or not of that type's closed shape (`bad-shape`); or one too many in a minute (`too-many`), which also closes the connection. Nothing changed on the instance. `reason`, why; never the message. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
-| `reason` | `too-large` \| `not-json` \| `unknown-type` \| `bad-shape` | yes |
+| `reason` | `too-large` \| `not-json` \| `unknown-type` \| `bad-shape` \| `too-many` | yes |
 
 ```json
 {
   "reason": "unknown-type"
+}
+```
+
+## `cloud_link.connected`
+
+Version 1 (`docs/schemas/cloud_link.connected.v1.json`). The cloud link connected to hopper.io (issue #2039, design.md "The cloud link's connection"): the instance checked hopper.io by TLS and the pin of its key, its hello proved the cloud link key, and hopper.io took it. From here the instance sends its heartbeat and, while registered, its state snapshot. `installId` and `account`, the link. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat"
+}
+```
+
+## `cloud_link.disconnected`
+
+Version 1 (`docs/schemas/cloud_link.disconnected.v1.json`). The cloud link's connection to hopper.io ended (issue #2039): it was lost, hopper.io closed it, or an unlink, a key change or a stop closed it. The agent tries again with backoff (1 second, doubling, at most 5 minutes) while the link record exists. `installId` and `account`, the link; `code`, the WebSocket close code (`1000` closed by the instance, `1006` lost, `4000` another connection of this instance took its place). An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `code` | integer | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat",
+  "code": 1006
+}
+```
+
+## `cloud_link.connection_refused`
+
+Version 1 (`docs/schemas/cloud_link.connection_refused.v1.json`). A connection to hopper.io was refused (issue #2039): by the instance before its hello — hopper.io's key does not match the pin in the code (`pin`), its certificate is not good (`tls`), or it answered with no WebSocket (`http`) — or by hopper.io after the hello: too many connections (`too-many`), a hello it does not take (`bad-hello`), another key than the one its registration holds (`unknown-key`), or no hello in time (`hello-timeout`). Recorded once while the same refusal repeats. `installId` and `account`, the link; `reason`, why. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `reason` | `pin` \| `tls` \| `http` \| `too-many` \| `bad-hello` \| `unknown-key` \| `hello-timeout` | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat",
+  "reason": "pin"
+}
+```
+
+## `cloud_link.revoked`
+
+Version 1 (`docs/schemas/cloud_link.revoked.v1.json`). The cloud link key was revoked (issue #2039, docs/hopper-io-security.md R4): by hopper.io (`by` is `hopper.io`), when its account owner removed this instance there or deleted the account — the agent does not connect again until the admin rotates the key —, or by the hopper's admin on this instance (`by`, who), which drops the key and keeps the link with no key until a rotation. `installId` and `account`, the link. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `installId` | string | yes |
+| `account` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "installId": "a1b2c3d4e5f60718",
+  "account": "octo-cat",
+  "by": "hopper.io"
+}
+```
+
+## `cloud_link.message_dropped`
+
+Version 1 (`docs/schemas/cloud_link.message_dropped.v1.json`). The instance did not send a message to hopper.io (issue #2039, docs/hopper-io-security.md R4, R7): the outgoing scan found a secret in it (`secret`), or it was over its cap (`too-large`: 1024 bytes, or the snapshot's 192 KiB). Nothing of it left the instance. `message`, which kind; `reason`, why; never the message. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `message` | `hello` \| `heartbeat` \| `snapshot` \| `registration` \| `unregistration` \| `refused` \| `unlinked` | yes |
+| `reason` | `secret` \| `too-large` | yes |
+
+```json
+{
+  "message": "snapshot",
+  "reason": "secret"
 }
 ```
 
@@ -6574,6 +6666,100 @@ Version 1 (`docs/schemas/direct_job.promotion_revoked.v1.json`). A person revoke
   "kind": "issue",
   "number": 12,
   "by": "octocat"
+}
+```
+
+## `direct_query.accepted`
+
+Version 1 (`docs/schemas/direct_query.accepted.v1.json`). A caller asked a direct query (issue #2184): `id` the query, `requestId` the caller's own id of it, `by` who and `via` the way, `callback` the webhook subscription its callback goes to. Its job is queued in the same transaction (`job.queued`, source `direct`). Never the question: it stays on the record. Delivered to the `callback` subscription too, whatever events it lists.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `by` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "by": "octocat",
+  "via": "api",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.answered`
+
+Version 1 (`docs/schemas/direct_query.answered.v1.json`). A direct query's job finished (issue #2184): `answer` its result, `artifacts` its evidence kept in the hopper (links need a hopper sign-in), `url` the query in the hopper. Delivered to the `callback` subscription too, whatever events it lists: that delivery is the callback.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `answer` | any | yes |
+| `artifacts` | object[] | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "answer": "The collector runs as the otel-collector deployment in the observability namespace.",
+  "artifacts": [],
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.failed`
+
+Version 1 (`docs/schemas/direct_query.failed.v1.json`). A direct query's job failed or was turned away (issue #2184): `error` why — for a question whose answer needs a change, what a person must file as an issue. Delivered to the `callback` subscription too.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `error` | string | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "error": "the answer needs a change: file an issue",
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.cancelled`
+
+Version 1 (`docs/schemas/direct_query.cancelled.v1.json`). A direct query's job was cancelled (issue #2184). Delivered to the `callback` subscription too.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
 }
 ```
 

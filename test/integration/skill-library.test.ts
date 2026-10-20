@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor } from '../../src/domain/ports.ts';
 import type { DomainEvent } from '../../src/domain/types.ts';
-import { workSkillOf, type SkillLibraryView } from '../../src/skill-library/index.ts';
+import { jobSkillsOf, workSkillOf, type SkillLibraryView } from '../../src/skill-library/index.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -69,8 +69,9 @@ describe('the skill library (issue #1911)', () => {
     const t = await start();
     const first = await library(t);
     expect(first.skills.map((s) => [s.name, s.builtIn, s.latest.seq, s.requires])).toEqual([
-      ['work', true, 0, ['orchestrate']], ['research', true, 0, []], ['proposal', true, 0, []], ['orchestrate', true, 0, []], ['iac', true, 0, []], ['gitops-deploy', true, 0, []],
+      ['work', true, 0, []], ['research', true, 0, []], ['proposal', true, 0, []], ['iac', true, 0, []], ['gitops-deploy', true, 0, []],
     ]);
+    expect(first.aliases).toEqual({ orchestrate: 'work' });
     expect(first.workSkills).toEqual({ kinds: {}, repos: {} });
     expect(first.defaults).toEqual({ code: 'work', research: 'research', proposal: 'proposal' });
 
@@ -124,13 +125,13 @@ describe('the skill library (issue #1911)', () => {
     expect(builtIn.skill).toMatch(/^---\nname: work\n/);
     const work = (await library(t)).skills.find((s) => s.name === 'work')!.latest.version;
     expect(builtIn.rules).toContain(`[hopper work skill] This job's skill for its kind of work (code) is work, version ${work}.`);
-    const orchestrate = (await library(t)).skills.find((s) => s.name === 'orchestrate')!.latest.version;
     expect(eventsOf(t, 'job.work_skill_chosen').map((e) => [e.jobId, e.data])).toEqual([[builtIn.job.id, {
-      kind: 'code', name: 'work', version: work, seq: 0, from: 'default', requires: [{ name: 'orchestrate', version: orchestrate, seq: 0 }], missing: [],
+      kind: 'code', name: 'work', version: work, seq: 0, from: 'default', requires: [], missing: [],
     }]]);
-    // The built-in work skill requires the built-in orchestrate skill: it comes beside it, with no workflow repository.
-    expect(readFileSync(join(t.root, builtIn.env.HOPPER_WORK_SKILL!.replace('/work/SKILL.md', '/orchestrate/SKILL.md')), 'utf8')).toMatch(/^---\nname: orchestrate\n/);
-    expect(builtIn.rules).toContain(`It requires orchestrate (version ${orchestrate})`);
+    // The built-in work skill is one skill with what orchestrate had (issue #2145): delivered in full, with nothing beside it.
+    expect(builtIn.skill).toContain('--required --key fanout-');
+    expect(builtIn.skill).toContain('smallest change');
+    expect(builtIn.rules).not.toContain('It requires');
 
     await change(t, { action: 'create', name: 'careful', files: { 'SKILL.md': 'Go slowly.', 'scripts/check.sh': 'echo ok\n' } });
     await choose(t, { kinds: { code: 'careful' }, repos: { 'octo/site': { research: 'careful' } } });
@@ -164,7 +165,7 @@ describe('the skill library (issue #1911)', () => {
     });
     expect((await change(t, { action: 'create', name: 'sneaky', files: { 'SKILL.md': 'x' } }, null)).status).toBe(403);
     expect((await t.app.ui('/ui/api/work-skills', { kinds: { code: 'research' } })).status).toBe(403);
-    expect((await library(t)).skills.map((s) => s.name)).toEqual(['work', 'research', 'proposal', 'orchestrate', 'iac', 'gitops-deploy']);
+    expect((await library(t)).skills.map((s) => s.name)).toEqual(['work', 'research', 'proposal', 'iac', 'gitops-deploy']);
     expect(eventsOf(t, 'library_skill.saved')).toEqual([]);
   });
 });
@@ -201,9 +202,11 @@ describe('a skill that requires others (issue #1911)', () => {
     const job = await running(t, 'octo/tools');
     const dir = job.env.HOPPER_WORK_SKILL!.replace('/careful/SKILL.md', '');
     expect(readFileSync(join(t.root, dir, 'helper/SKILL.md'), 'utf8')).toMatch(/helper v1$/);
-    expect(readFileSync(join(t.root, dir, 'orchestrate/SKILL.md'), 'utf8')).toMatch(/^---\nname: orchestrate\n/);
+    // helper requires orchestrate: another name of work (issue #2145), which comes beside it under its own name.
+    expect(readFileSync(join(t.root, dir, 'work/SKILL.md'), 'utf8')).toMatch(/^---\nname: work\n/);
     const [chosen] = eventsOf(t, 'job.work_skill_chosen');
-    expect(chosen!.data).toMatchObject({ name: 'careful', requires: [{ name: 'helper', seq: 1 }, { name: 'orchestrate', seq: 0 }], missing: ['not-there'] });
+    expect(chosen!.data).toMatchObject({ name: 'careful', requires: [{ name: 'helper', seq: 1 }, { name: 'work', seq: 0 }], missing: ['not-there'] });
+    expect(job.rules).toContain('It requires work (version');
     expect(job.rules).toContain('It requires helper (version');
     expect(job.rules).toContain('The library has no skill not-there that it requires: go on without it.');
 
@@ -216,5 +219,36 @@ describe('a skill that requires others (issue #1911)', () => {
     const next = workSkillOf(store, { ...pinned, id: 'j-next' });
     expect(next.skills.map((s) => s.name)).toEqual(['careful', 'helper']);
     expect(next.skills[1]!.files['SKILL.md']).toMatch(/helper v2$/);
+  });
+});
+
+describe('orchestrate, another name of work (issue #2145)', () => {
+  it('a requires:, a work skill setting and a skill rule that name it get work; no skill takes the name', async () => {
+    const t = await start();
+    const { store } = t.app.user();
+    const job = (id: string, labels: string[] = []) => ({ id, spec: {}, source: { repo: 'octo/tools', labels } }) as Parameters<typeof jobSkillsOf>[1];
+    const work = (await library(t)).skills.find((s) => s.name === 'work')!.latest;
+
+    // No skill takes the name: not created, duplicated, imported or removed.
+    expect((await change(t, { action: 'create', name: 'orchestrate', files: { 'SKILL.md': 'mine' } })).status).toBe(409);
+    expect((await change(t, { action: 'duplicate', from: 'research', name: 'orchestrate' })).status).toBe(409);
+    expect((await change(t, { action: 'remove', name: 'orchestrate' })).status).toBe(409);
+    // Read by its other name, it is work.
+    expect((await t.app.api('GET', '/api/skill-library/orchestrate')).body.skill).toMatchObject({ name: 'work', version: work.version });
+
+    // A user's skill that requires it gets work beside it.
+    await change(t, { action: 'create', name: 'careful', files: { 'SKILL.md': '---\nrequires: orchestrate\n---\nGo slowly.' } });
+    await choose(t, { kinds: { code: 'careful' } });
+    expect(workSkillOf(store, job('j-requires')).chosen).toMatchObject({ name: 'careful', requires: [{ name: 'work', version: work.version, seq: 0 }], missing: [] });
+
+    // A work skill setting that names it chooses work.
+    expect((await choose(t, { kinds: { code: 'orchestrate' } })).status).toBe(200);
+    expect(workSkillOf(store, job('j-setting')).chosen).toMatchObject({ name: 'work', version: work.version, from: 'user', requires: [] });
+
+    // A skill rule that names it gives work: none beside work itself, and work beside another work skill.
+    expect((await choose(t, { rules: [{ skill: 'orchestrate', labels: ['plan'] }] })).status).toBe(200);
+    expect(jobSkillsOf(store, job('j-rule-work', ['plan'])).conditional).toEqual([]);
+    await choose(t, { kinds: { code: 'research' } });
+    expect(jobSkillsOf(store, job('j-rule', ['plan'])).conditional.map((c) => [c.chosen.name, c.chosen.version])).toEqual([['work', work.version]]);
   });
 });

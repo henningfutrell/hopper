@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import { EngineError } from '../../engine/errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { cancelBody, dismissManyBody, endWaitBody, noteBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
+import { cancelBody, dismissManyBody, endWaitBody, noteBody, parkBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
 import type { Access } from '../../authz/service.ts';
 import { signedInOf } from '../tenants.ts';
 import { actingOf } from './sessions.ts';
@@ -51,8 +51,16 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   };
   app.post('/ui/api/jobs/:id/rerun', o.operator, async (req, reply) => giveBack(req, reply, { kind: 'rerun' }));
   app.post('/ui/api/jobs/:id/rework', o.operator, async (req, reply) => giveBack(req, reply, { kind: 'rework', notes: parseWith(reworkBody, req.body ?? {}).notes }));
-  app.post('/ui/api/jobs/:id/park', o.operator, async (req) => o.tenant(req).engine.park(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, parseWith(requeueBody, req.body ?? {})));
+  // Who parked it, and the reason they gave (issue #2167), are kept on the job.
+  app.post('/ui/api/jobs/:id/park', o.operator, async (req) => {
+    const { reason } = parseWith(parkBody, req.body ?? {});
+    const s = signedInOf(req), acting = s ? actingOf(s) : undefined;
+    return o.tenant(req).engine.park(parseWith(idParams, req.params).id, { ...(acting ? { by: acting.person, via: acting.via } : {}), ...(reason ? { reason } : {}) });
+  });
+  app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => {
+    const s = signedInOf(req), acting = s ? actingOf(s) : undefined;
+    return o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, { ...parseWith(requeueBody, req.body ?? {}), ...(acting ? { who: { by: acting.person, via: acting.via } } : {}) });
+  });
   app.post('/ui/api/jobs/:id/end-wait', o.operator, async (req) => {
     const { note } = parseWith(endWaitBody, req.body ?? {});
     return o.tenant(req).engine.endWait(parseWith(idParams, req.params).id, note || undefined);

@@ -140,7 +140,7 @@ describe('resuming elsewhere', () => {
     expect(told).toContain('- ccccccc Sand the shed');
     expect(told).toContain('on branch hopper/shed');
     expect(done.parked).toBeUndefined();
-    expect((await a.events('types=job.unparked'))[0]!.data).toEqual({ to: 'queued', elsewhere: true });
+    expect((await a.events('types=job.unparked'))[0]!.data).toEqual({ to: 'queued', elsewhere: true, by: expect.any(String), via: 'ui' });
   });
 
   it('fails the job, saying why, when the checkpoint cannot be restored', async () => {

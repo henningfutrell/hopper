@@ -19,7 +19,7 @@
 import type { ChecksState, Job, OwnPullRequestChecks, UnfinishedPullRequest, WorkPullRequest, WorkState } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import { closingReferences } from '../../domain/cross-references.ts';
-import { RELEASE_BRANCHES } from '../../domain/landing-batches.ts';
+import { BATCH_BRANCH_PREFIX, RELEASE_BRANCHES } from '../../domain/landing-batches.ts';
 import { pullRequestRepo } from '../../domain/pull-requests.ts';
 import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
@@ -174,7 +174,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
     unpushed = pr.url;
     return false;
   };
-  for (const pr of await api.openClosingPullRequests(repo, number)) {
+  for (const pr of await openClosingWork(api, repo, number)) {
     if (counts(pr)) return undefined;
     found.set(pr.url, { ...pr, state: 'open' });
   }
@@ -230,7 +230,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
 export async function ownOpenPullRequests(api: GitHubApi, job: Job, repo: string, number: number): Promise<OpenPullRequest[]> {
   const referencing = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && looksAt(pr, repo, job)
     && (isPartOf(pr, repo, number) || !worksOnAnotherIssue(pr, repo, number)));
-  const closing = await api.openClosingPullRequests(repo, number);
+  const closing = await openClosingWork(api, repo, number);
   const all = [...closing, ...referencing.filter((pr) => !closing.some((c) => c.url === pr.url))];
   return all.filter((pr) => isOwnOrReworked(pr, job) || isUpdatedBy(pr, job));
 }
@@ -302,10 +302,16 @@ export const closesByKeyword = (body: string, repo: string, n: number): boolean 
 
 /**
  * A pull request from a release branch (issue #876): a promotion, `dev` into `beta`, whose body lists the issues it
- * carries. It is no issue's work, whatever its body says.
+ * carries; or from a batch run's branch (`hopper-batch/…`, issue #2132): a batch run of the landing branch into the
+ * tested branch, whose body closes the issues of its job pull requests, or a bisect run or a back-merge. It is no issue's
+ * work, whatever its body says: never followed as a job's pull request, so its close without a merge flags no issue.
  */
 export const fromReleaseBranch = (pr: { headRef?: string }): boolean =>
-  pr.headRef !== undefined && RELEASE_BRANCHES.includes(pr.headRef.toLowerCase());
+  pr.headRef !== undefined && (RELEASE_BRANCHES.includes(pr.headRef.toLowerCase()) || pr.headRef.startsWith(BATCH_BRANCH_PREFIX));
+
+/** The open pull requests whose merge closes issue `n` of `repo` and that are its work: none from a release branch (`fromReleaseBranch`). */
+export const openClosingWork = async (api: GitHubApi, repo: string, n: number): Promise<OpenPullRequest[]> =>
+  (await api.openClosingPullRequests(repo, n)).filter((pr) => !fromReleaseBranch(pr));
 
 /**
  * A pull request that only mentions issue `n` and is not its work (issues #786, #876): one from a release branch
@@ -370,7 +376,7 @@ export async function workState(api: GitHubApi, job: Job): Promise<Omit<WorkStat
   };
   const closer = await api.closingPullRequest(repo, number);
   if (closer) add({ ...closer, isDraft: false, conflicting: false }, 'merged');
-  for (const pr of await api.openClosingPullRequests(repo, number)) add(pr, 'open');
+  for (const pr of await openClosingWork(api, repo, number)) add(pr, 'open');
   for (const pr of await api.referencingPullRequests(repo, number)) if (pr.repo.toLowerCase() === repo.toLowerCase() && !fromReleaseBranch(pr)) add(pr, pr.state);
   for (const n of namedNumbers(issue)) {
     const pr = await pullRequestOrNone(api, repo, n);
@@ -387,7 +393,7 @@ export async function workState(api: GitHubApi, job: Job): Promise<Omit<WorkStat
 export async function ownPullRequestOpen(api: GitHubApi, job: Job): Promise<boolean> {
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return false;
-  return (await api.openClosingPullRequests(repo, number)).some((pr) => isOwnPullRequest(pr, job) || isUpdatedBy(pr, job));
+  return (await openClosingWork(api, repo, number)).some((pr) => isOwnPullRequest(pr, job) || isUpdatedBy(pr, job));
 }
 
 /**

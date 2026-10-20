@@ -74,7 +74,7 @@ export const referenceHint = (plugin: string): string => REFERENCE_HINTS[plugin]
 export const DEFAULT_BOX_IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
 
 /** The tools the hopper adds to a box's image (issue #716): the server's list (src/domain/sandboxes.ts BOX_TOOLS). */
-export const BOX_TOOLS = ['aws', 'helm', 'kubectl', 'terraform'] as const;
+export const BOX_TOOLS = ['aws', 'helm', 'jq', 'kubectl', 'logcli', 'promtool', 'terraform'] as const;
 
 /** A template's tools, with `(waits)` when its tools are not the approved ones; `none` without. */
 export function toolsText(t: { tools?: readonly string[]; approval?: { tools?: readonly string[] } }): string {
@@ -153,13 +153,34 @@ export function sandboxApprovalsText(a: SandboxApprovals | undefined): string {
   return `${policy}A person approves each ${levels.length ? 'other ' : ''}new template and sandbox run.`;
 }
 
-/** A template's assets the vault cannot find (issue #2067), in words, as the server says them: `no cluster staging; known: …`. */
-const unknownText = (t: TemplateView): string | undefined =>
-  t.unknownAssets?.length ? `unknown asset: ${t.unknownAssets.map((u) => `no cluster ${u.cluster}; known: ${u.known.join(', ')}`).join('; ')}` : undefined;
+/** Its reason in words (issue #2123): `no cluster staging; known: …`, or `cluster uat is ambiguous: …` (issue #2168), each unknown asset once. */
+export const unknownReason = (t: TemplateView): string => (t.unknownAssets ?? [])
+  .map((u) => (u.candidates ? `cluster ${u.cluster} is ambiguous: ${u.candidates.join(', ')}` : `no cluster ${u.cluster}; known: ${u.known.join(', ')}`)).join('; ');
 
-/** The templates with an unknown asset (issue #2067), one line each, for Needs you: no approval makes them work. */
-export const unknownAssetLines = (v: VaultView | null): string[] =>
-  (v?.templates ?? []).flatMap((t) => { const u = unknownText(t); return u ? [`template ${t.label ?? t.name}: ${u}`] : []; });
+/** A need's asset with its cluster `from` renamed `to`: a cluster, or the first part of a namespace or an Argo CD app. */
+function pointAsset(a: Asset, from: string, to: string): Asset {
+  if (a.kind === 'cluster') return a.name === from ? { ...a, name: to } : a;
+  if (a.kind !== 'namespace' && a.kind !== 'argocd-app') return a;
+  const [cluster, ...rest] = a.name.split('/');
+  return cluster === from ? { ...a, name: [to, ...rest].join('/') } : a;
+}
+
+/**
+ * The save that points a template at a cluster (issue #2168): each need on cluster `from` names `to`. What it leaves out
+ * (limits, tools, egress, agent credential, probe marks) the save keeps as it was.
+ */
+export const pointedAt = (t: TemplateView, from: string, to: string) => ({
+  action: 'save-template' as const, name: t.name, image: t.image, secrets: t.secrets, profiles: t.profiles.map((p) => ({ ...p, asset: pointAsset(p.asset, from, to) })),
+});
+
+/** A template's assets the vault cannot find (issue #2067), in words, as the server says them: `no cluster staging; known: …`. */
+const unknownText = (t: TemplateView): string | undefined => (t.unknownAssets?.length ? `unknown asset: ${unknownReason(t)}` : undefined);
+
+/** The templates with an unknown asset (issue #2067): what Access requests lists (issue #2123), and Needs you counts in a row of its own, never as an approval (issue #2168). */
+export const unknownAssetTemplates = (v: VaultView | null): TemplateView[] => (v?.templates ?? []).filter((t) => (t.unknownAssets?.length ?? 0) > 0);
+
+/** The templates with an unknown asset (issue #2067), one line each, for Needs you's Unknown clusters row: no approval makes them work. */
+export const unknownAssetLines = (v: VaultView | null): string[] => unknownAssetTemplates(v).map((t) => `template ${t.label ?? t.name}: ${unknownText(t)!}`);
 
 /** What a template's card says of its approval: an unknown asset (issue #2067), approved, or what waits for a person. */
 export function approvalText(t: TemplateView): string {

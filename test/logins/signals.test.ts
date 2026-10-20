@@ -76,4 +76,11 @@ describe('loginSignalIn', () => {
     expect(loginSignalIn('{"error": "expired_token"}\nStarting again.\nToken obtained.')).toBe('completed');
     expect(loginSignalIn('Token obtained.\nLater: {"error": "expired_token"}')).toBe('expired');
   });
+
+  it('reads completed on a helper saying it is authenticated or signed in as an account (issue #2144)', () => {
+    for (const line of ['     Authenticated as user@example.com.', '     Signed in to auth.example.com', '     Signed in as someone']) {
+      expect(loginSignalIn(line), line).toBe('completed');
+    }
+    expect(loginSignalIn('     Not authenticated as anyone yet.')).toBeUndefined();
+  });
 });

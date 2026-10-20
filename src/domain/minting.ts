@@ -122,7 +122,7 @@ export type MintTarget =
 /**
  * A sandbox's Kubernetes token bound to a Secret of its own (issue #1371, design.md "Sandboxes are fresh and leave
  * nothing" part 7): the minting credential that made it, and the Secret in the service account's namespace. When the
- * Secret is deleted, the API server refuses the token at once.
+ * Secret is deleted, the API server refuses the token once its token cache lets it go (10 s by default).
  */
 export interface MintBinding { credential: string; namespace: string; secret: string }
 

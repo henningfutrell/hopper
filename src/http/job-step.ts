@@ -4,11 +4,12 @@
 // `Authorization: Bearer <the job's proxy token>`, honoured only while its job is at work.
 //
 //   GET  /job/step                     the user's Windows hosts, one per line; then the job's approved sandboxes, `box T  template T`
-//   POST /job/step?host=&key=&command=&timeout=&output=...&secret=...
+//   POST /job/step?host=&key=&command=&timeout=&output=...&secret=...[&rerun=1]
 //                                      a Windows step: the inputs as the body (a tar, application/x-tar; empty: none).
 //                                      Kept in the database and run by its saga (issue #1611): 202 at once, its id in
 //                                      `x-hopper-step`; else `no: <reason>`. `key` is the job's for the ask: the same ask
-//                                      sent again is the same step
+//                                      sent again is the same step. `rerun`: the job says the step is safe to run again,
+//                                      so a hopper that stops while it runs runs it again (issue #2117)
 //   POST /job/step?box=&key=&command=&timeout=&output=...[&planId=]
 //                                      a box step (issue #1349): in a need box of the template the job's approved sandbox
 //                                      request names, minted the template's reads, and its changes with `planId`. Kept in
@@ -201,6 +202,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
       if (typeof inputs === 'string') return no(reply, 400, inputs);
       return asked(reply, who.t.windowsSteps.start(who.job, {
         ...(host !== undefined ? { host } : {}), ...(command !== undefined ? { command } : {}), ...(timeout !== undefined ? { timeout } : {}), outputs: all(query.output), secrets: all(query.secret),
+        ...(one(query.rerun) === '1' ? { rerun: true } : {}),
       }, { key, inputs }));
     });
 

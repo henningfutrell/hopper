@@ -51,7 +51,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   with the job's proxy token, fetches and pushes on GitLab with the token of its own user's GitLab account — a push only to a
   branch of the job's own project, never its default or a release branch, its push options (the merge request) as git sent them —;
   it changes no job, question, webhook or setting, only records a push. **A job holds no
-  GitHub or GitLab token** (issues #652, #1448): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
+  GitHub or GitLab token** (issues #652, #1448): no `GH_TOKEN`, no gh config, no ssh agent. A **direct query**'s job (issue #2184,
+  `docs/design.md` "Direct queries") only reads: the GitHub proxy refuses its every write and the git proxy its every push. A box's vault ask (issue #558, `docs/design.md` "The vault"):
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
   sealed to that request; it records only the delivery or refusal. **The vault gives only to a job a person granted it**
   (issue #652, `docs/design.md` "Vault grants"): a box job's item with no **vault grant** is refused and becomes a grant
@@ -81,7 +82,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   elsewhere (issue #921, `docs/design.md` "Checkpoints and resume elsewhere"): `GET /job/checkpoint/patch|session`, with the
   job's proxy token, serves that job its own checkpoint, scrubbed, only while it runs resuming elsewhere; it changes nothing. A running job's
   topology read (issue #1905, `docs/design.md` "The infrastructure topology"): `GET /job/topology`, with the job's proxy token, only while
-  it is at work, serves its user's topology graph as `GET /api/topology` does; it changes and records nothing. A machine's address check (issue #698,
+  it is at work, serves its user's topology graph as `GET /api/topology` does; it changes and records nothing. A running job's
+  park (issue #2167, `docs/design.md` "Parking a proposal or a research report"): `GET`/`POST /job/park`, with the job's proxy token, only
+  while it is at work, lists its user's open proposals and research reports, and parks one whose job waits on it or picks up one a job
+  parked — never a running job, never itself, never an item a person parked —, kept as `job <its id>`, `via` `job`; it decides no item and
+  changes no other job, question, webhook or setting. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
   target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. A GitHub delivery (issue #1079,
   `docs/design.md` "GitHub deliveries"): `POST /github/webhook`, signed with the GitHub webhook secret (HMAC-SHA256, a system

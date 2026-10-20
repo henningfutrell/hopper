@@ -46,8 +46,8 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
   sh "$HOPPER_GH" pr edit N       --repo OWNER/NAME [--title TITLE] [--body TEXT | --body-file FILE]
                                                          (change its title or body: a pull request this job opened,
-                                                         or its work item's)
-  sh "$HOPPER_GH" pr close N      --repo OWNER/NAME      (close it with no merge: the same pull requests only)
+                                                         its work item's, the one it tends, or one its issue names)
+  sh "$HOPPER_GH" pr close N      --repo OWNER/NAME      (close it with no merge: the same, but not one only its issue names)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
   sh "$HOPPER_GH" check log JOB  --repo OWNER/NAME      (a failed check's full log; JOB: the last number of the check's link)
@@ -62,7 +62,7 @@ An issue filed this way says the hopper filed it. A follow-up gets no labels or 
 When no answer comes back to issue create, issue comment or pr create, hopper-gh sends it again by itself: the hopper
 answers the first one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
 With --key KEY (8 to 64 letters, digits, _ or -) you choose the key: the same key from this job, also after it resumed on
-another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the orchestrate skill).
+another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the work skill).
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
 required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open, and gives
 it the job sources' label and your user as assignee, so Intake lists it. When GitHub did not set the assignee, the

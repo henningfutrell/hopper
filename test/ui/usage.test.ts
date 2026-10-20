@@ -2,7 +2,7 @@
 // an account are written. Pure; the view renders what these return.
 import { describe, expect, it } from 'vitest';
 import type { MachineLaneEffect, PartAccount, UsageReading } from '../../src/domain/types.ts';
-import { accountFacts, executorEffectLines, laneEffectText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, shownSource, sourceLine } from '../../ui/src/model/usage.ts';
+import { accountFacts, executorEffectLines, laneEffectText, throttleText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, shownSource, sourceLine } from '../../ui/src/model/usage.ts';
 
 const NOW = Date.parse('2026-10-03T12:00:00Z');
 const r = (over: Partial<UsageReading>): UsageReading => ({ source: 'claude', used: 10, limit: 100, unit: '%', at: '2026-10-03T11:58:00Z', ...over });
@@ -70,5 +70,19 @@ describe('usage model', () => {
     expect(shownSource(sources, undefined)).toBe('work');
     expect(shownSource(sources, 'gone')).toBe('work');
     expect(shownSource([], 'work')).toBeUndefined();
+  });
+});
+
+describe('the window that throttles (issue #2169)', () => {
+  it('names the window and its share: weekly for a week window, the source for a source with one budget', () => {
+    expect(throttleText({ source: 'claude', window: 'week', usedFrac: 0.97 })).toBe('97% weekly');
+    expect(throttleText({ source: 'claude', window: 'session', usedFrac: 0.07 })).toBe('7% session');
+    expect(throttleText({ source: 'claude', window: 'week', usedFrac: 0.97, burning: true })).toBe('97% weekly, in its burn window: hard at 100%');
+    expect(throttleText({ source: 'budget', usedFrac: 0.5 })).toBe('50% budget');
+  });
+
+  it('an executor line names its window', () => {
+    const mixed = m({ executors: [{ executor: 'herdr-claude', usedFrac: 0.97, cap: 1, band: 'soft', throttle: { source: 'claude', window: 'week', usedFrac: 0.97 } }] });
+    expect(executorEffectLines(mixed)).toEqual(['herdr-claude: 97% used (weekly), capped at 1 of 4 lanes (past the soft limit)']);
   });
 });

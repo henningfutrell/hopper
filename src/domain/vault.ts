@@ -3,7 +3,7 @@
 import type { VaultGrantAsk, VaultGrantView } from './vault-grants.ts';
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
-import type { UnknownAsset } from './unknown-assets.ts';
+import type { ShortCluster, UnknownAsset } from './unknown-assets.ts';
 import { checkWait, type ProbeMarks, type ReadOnlyCheck } from './read-only-check.ts';
 
 export * from './read-only-check.ts';
@@ -38,13 +38,14 @@ export const VAULT_REFERENCE_MAX = 500;
  * connection's tokens, each webhook's signing secret, each sign-in realm's secret (issue #658), and remote access's: each
  * provider's credential and the tunnel token the hopper minted with it (issues #880, #968); and the GitHub webhook secret GitHub
  * signs its deliveries with (issue #1079); the GitLab account's personal access token (issue #1448); the cloud link key's
- * private half (issue #467). The hopper keeps no GitHub App private key (issue #1377). */
+ * private half (issue #467), and the key before a rotation until the new one connected (issue #2039). The hopper keeps no GitHub App private key (issue #1377). */
 export type SystemSecretName =
   | 'typesafe-api-key'
   | `remote-access.${'ngrok-authtoken' | 'ngrok-api-key' | 'cloudflare-api-token' | 'cloudflare-tunnel-token'}`
   | 'artifact-content-key'
   | 'github-webhook-secret'
   | 'cloud-link.key'
+  | 'cloud-link.previous-key'
   | `connected-account.${ConnectedAccountKey}.${'access-token' | 'refresh-token'}`
   | 'gitlab-account.access-token'
   | `webhook.${string}.signing-secret`
@@ -336,6 +337,8 @@ export interface TemplateView extends Template {
   askedByJob?: { id: string; title?: string; url?: string };
   /** Its needs' assets the vault cannot find (issue #2067), with the clusters the topology lists; absent: none. */
   unknownAssets?: UnknownAsset[];
+  /** Its needs' short cluster names (issue #2168), each with the one cluster the topology lists that it resolves to; absent: none. */
+  shortClusters?: ShortCluster[];
 }
 
 /** The longest purpose a job gives, and the longest plan (issue #1001). */

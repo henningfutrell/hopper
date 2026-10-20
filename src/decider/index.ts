@@ -36,16 +36,16 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const executorOf = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, j.spec.executor]));
   const pinById = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, pinOf(j)]));
   const states: MachineState[] = machines.map((machine) => {
-    const { usedFrac, cap, band, ignored, burning, executors } = laneEffect(machine, inputs.usage, policy, inputs.at);
+    const { usedFrac, cap, band, throttle, ignored, burning, executors } = laneEffect(machine, inputs.usage, policy, inputs.at);
     for (const r of ignored) reasons.push(`ignored usage reading ${r.source}: limit ${r.limit} is not positive`);
     for (const r of burning) {
-      reasons.push(`${machine.id}: usage window ${r.window} of ${r.source} is in its burn window (resets ${r.resetsAt}, used ${Math.round((r.used / r.limit) * 100)}%): not throttling`);
+      reasons.push(`${machine.id}: usage window ${r.window} of ${r.source} is in its burn window (resets ${r.resetsAt}, used ${Math.round((r.used / r.limit) * 100)}%): its hard limit is 100%`);
     }
     const signedOut = (inputs.signedOut ?? []).filter((t) => t.machineId === machine.id);
     for (const t of signedOut) reasons.push(signedOutNote(t));
     const mine = lanes.filter((l) => l.machineId === machine.id);
     const held = mine.filter((l) => l.state !== 'idle');
-    reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})${ownLimits(machine)}${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
+    reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used${throttle?.window ? ` (${throttle.window})` : ''}, lane cap ${cap} of ${machine.maxLanes} (${band})${ownLimits(machine)}${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
     for (const e of executors.filter((x) => x.cap !== cap || x.band !== band)) {
       reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }

@@ -38,10 +38,17 @@ export function kindRows(view: SkillLibraryView): KindRow[] {
 export const repoRows = (view: SkillLibraryView): { repo: string; choice: WorkSkillChoice }[] =>
   Object.entries(view.workSkills.repos).sort(([a], [b]) => a.localeCompare(b)).map(([repo, choice]) => ({ repo, choice }));
 
+/** The skill `name` names: the built-in skill an alias names (issue #2145), else itself. */
+export const skillNamed = (view: Pick<SkillLibraryView, 'aliases'>, name: string): string => (Object.hasOwn(view.aliases ?? {}, name) ? view.aliases[name]! : name);
+
+/** The other names of skill `name`, as aliases of it (issue #2145). */
+export const aliasesOf = (view: Pick<SkillLibraryView, 'aliases'>, name: string): string[] => Object.entries(view.aliases ?? {}).filter(([, to]) => to === name).map(([alias]) => alias);
+
 /** Each setting that names `name`: `every repository: <kind>`, then `<repo>: <kind>`. The daemon refuses to remove such a skill. */
 export function settingsNaming(view: SkillLibraryView, name: string): string[] {
-  const of = (where: string, choice: WorkSkillChoice) => view.kinds.filter((k) => choice[k] === name).map((k) => `${where}: ${KIND_LABEL[k]}`);
-  const rules = (view.workSkills.rules ?? []).filter((r) => r.skill === name).map((r) => `a skill rule: ${ruleLine(r)}`);
+  const names = (n: string | undefined) => n !== undefined && skillNamed(view, n) === name;
+  const of = (where: string, choice: WorkSkillChoice) => view.kinds.filter((k) => names(choice[k])).map((k) => `${where}: ${KIND_LABEL[k]}`);
+  const rules = (view.workSkills.rules ?? []).filter((r) => names(r.skill)).map((r) => `a skill rule: ${ruleLine(r)}`);
   return [...of('every repository', view.workSkills.kinds), ...repoRows(view).flatMap((r) => of(r.repo, r.choice)), ...rules];
 }
 
@@ -146,7 +153,7 @@ export function skillLoadedLine(d: { skill: string; asset?: string; version?: st
 export function requiresLine(view: SkillLibraryView, skill: Pick<LibrarySkillSummary, 'requires'>): string | undefined {
   if (!skill.requires?.length) return undefined;
   const there = new Set(view.skills.map((s) => s.name));
-  return `requires ${skill.requires.map((n) => (there.has(n) ? n : `${n} (not in the library)`)).join(', ')}`;
+  return `requires ${skill.requires.map((n) => (there.has(skillNamed(view, n)) ? n : `${n} (not in the library)`)).join(', ')}`;
 }
 
 // The daemon's words for the done criteria (src/domain/conditional-skills.ts criteriaLine), copied: the UI imports types only.

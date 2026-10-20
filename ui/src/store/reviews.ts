@@ -1,6 +1,6 @@
-// Review sections in the store (issues #537, #543): GET /api/<section> for each — the open items and the history, with
-// the section's settings and its type (parts, decisions) — read at load, on every (re)connect and after each of its
-// events; and an admin's settings (POST /ui/api/<section>/settings).
+// Review sections in the store (issues #537, #543): GET /api/<section> for each — the open items, the parked ones (issue
+// #2167), and the history, with the section's settings and its type (parts, decisions) — read at load, on every
+// (re)connect and after each of its events and each park and pick up; and an admin's settings (POST /ui/api/<section>/settings).
 import { toast } from 'sonner';
 import { get, post, SessionRejected } from '@/lib/api';
 import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
@@ -12,11 +12,11 @@ type Read = { items: ReviewItemView[]; settings: ReviewSettingsView; type: Revie
 /** An answer without its items, settings or type is refused, never read as none. */
 export async function refreshReviews(kind: ReviewKind): Promise<void> {
   const path = `/api/${REVIEW_UI[kind].section}`;
-  const [open, all] = await Promise.all([get<Read>(`${path}?status=open`), get<Read>(`${path}?status=all&limit=${HANDLED_LIMIT}`)]);
-  if (!Array.isArray(open.items) || !Array.isArray(all.items) || !open.settings || !open.type) throw new Error(`GET ${path}: the answer holds no ${REVIEW_UI[kind].noun}s`);
+  const [open, parked, all] = await Promise.all([get<Read>(`${path}?status=open`), get<Read>(`${path}?status=parked`), get<Read>(`${path}?status=all&limit=${HANDLED_LIMIT}`)]);
+  if (!Array.isArray(open.items) || !Array.isArray(parked.items) || !Array.isArray(all.items) || !open.settings || !open.type) throw new Error(`GET ${path}: the answer holds no ${REVIEW_UI[kind].noun}s`);
   const s = useHopper.getState();
   useHopper.setState({
-    reviews: { ...s.reviews, [kind]: { items: open.items, decided: all.items.filter((p) => p.status !== 'open' && p.status !== 'revising'), settings: open.settings, type: open.type } },
+    reviews: { ...s.reviews, [kind]: { items: open.items, parked: parked.items.filter((p) => p.parked !== undefined), decided: all.items.filter((p) => p.status !== 'open' && p.status !== 'revising'), settings: open.settings, type: open.type } },
   });
 }
 

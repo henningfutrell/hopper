@@ -28,7 +28,7 @@ import { Readable } from 'node:stream';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
-import { isGitLabItem } from '../domain/gitlab-account.ts';
+import { isGitLabItem } from '../domain/gitlab-account.ts'; import { isDirectQuery, LOOK_ONLY } from '../domain/direct-jobs.ts';
 import type { RepoFacts } from './api.ts';
 import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
 import { CONTRIBUTION_OFF } from './policy.ts';
@@ -224,6 +224,7 @@ export function createGitProxy(o: GitProxyOptions) {
         if (push) record('github_proxy.refused', { reason, ...(read?.ok ? { refs: read.commands.map((c) => c.ref) } : {}) });
         return plain && read?.ok ? refusedReport(plain, read.commands, `refused: ${reason}`) : text(403, `refused: ${reason}`);
       };
+      if (push && isDirectQuery(job)) return refuse(LOOK_ONLY); // issue #2184: a direct query's job pushes nothing
       const toOwn = own !== undefined && same(own, at.repo);
       const contribution = side.contribution();
       // The job's fork (issue #429): read only when it can be one — Contribution on, the user's own, no job repository.

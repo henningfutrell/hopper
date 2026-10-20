@@ -14,7 +14,7 @@ import WebSocket from 'ws';
 import { CLOSE, LIMITS, LINK_PATH } from '../../cloud/connections.ts';
 import { SNAPSHOT_MAX_BYTES } from '../../cloud/states.ts';
 import { SESSION_COOKIE } from '../../cloud/server.ts';
-import { challengeNonce, heartbeatMessage, helloMessage } from '../../src/http/cloud-link-hello.ts';
+import { challengeNonce, CLOUD_CONNECTED, heartbeatMessage, helloMessage } from '../../src/http/cloud-link-hello.ts';
 import { unlinkedMessage } from '../../src/http/cloud-link-messages.ts';
 import { PUBLIC, rows, setUp, stopAll, type Set } from './harness.ts';
 
@@ -32,8 +32,9 @@ function key(): Key {
   return { secret: JSON.stringify({ d, x, crv: 'Ed25519', kty: 'OKP' }), publicKey: x };
 }
 
-/** An instance's end of the link: the messages hopper.io sent it after the challenge, and how the connection closed. */
-interface End { ws: WebSocket; next(): Promise<string>; closed: Promise<number>; send(text: string): void }
+/** An instance's end of the link: the messages hopper.io sent it after the challenge and `connected`, whether `connected`
+ * came, and how the connection closed. */
+interface End { ws: WebSocket; next(): Promise<string>; closed: Promise<number>; send(text: string): void; connected(): boolean }
 
 /** Opens the link at `url` and answers the challenge with `hello` (made from the nonce); default the instance's own hello. */
 function connect(url: string, k: Key, o: { account?: string; previous?: Key; hello?: (nonce: string) => string } = {}): Promise<End> {
@@ -41,6 +42,7 @@ function connect(url: string, k: Key, o: { account?: string; previous?: Key; hel
   const queue: string[] = [];
   const waiting: ((t: string) => void)[] = [];
   let challenged = false;
+  let connected = false;
   const closed = new Promise<number>((resolve) => ws.on('close', (code) => resolve(code)));
   return new Promise((resolve, reject) => {
     ws.on('error', reject);
@@ -50,9 +52,11 @@ function connect(url: string, k: Key, o: { account?: string; previous?: Key; hel
         challenged = true;
         const nonce = challengeNonce(text)!;
         ws.send(o.hello ? o.hello(nonce) : helloMessage({ link: { installId: INSTANCE, account: o.account ?? 'ada' }, nonce, ...k, ...(o.previous ? { previous: o.previous } : {}) }));
-        resolve({ ws, closed, send: (t) => ws.send(t), next: () => new Promise((r) => { const t = queue.shift(); if (t !== undefined) r(t); else waiting.push(r); }) });
+        resolve({ ws, closed, send: (t) => ws.send(t), connected: () => connected, next: () => new Promise((r) => { const t = queue.shift(); if (t !== undefined) r(t); else waiting.push(r); }) });
         return;
       }
+      // hopper.io answers an accepted hello `connected`, before anything else.
+      if (!connected && text === CLOUD_CONNECTED) { connected = true; return; }
       const w = waiting.shift();
       if (w) w(text); else queue.push(text);
     });
@@ -117,12 +121,14 @@ describe("the cloud link's connection at hopper.io", () => {
 
     const thief = await connect(url, key());
     expect(await thief.closed).toBe(CLOSE.unknownKey);
+    expect(thief.connected()).toBe(false);
     const forged = await connect(url, key(), { previous: key() });
     expect(await forged.closed).toBe(CLOSE.unknownKey);
 
     const rotated = key();
     const moved = await connect(url, rotated, { previous: k });
     await until(async () => (await instances(s))[0]!.connected === true);
+    await until(() => moved.connected());
     const all = JSON.parse(await rows(s.databaseUrl)) as { r: Record<string, unknown> }[][];
     expect(all[4]![0]!.r.public_key).toBe(rotated.publicKey);
     moved.ws.close();
@@ -183,11 +189,12 @@ describe("the cloud link's connection at hopper.io", () => {
       machines: [{ key: 'm1', online: true, lanesInUse: 0, lanes: 2, executors: ['claude'], takesJobs: true }],
     }));
     await until(async () => (await instances(s))[0]!.state !== undefined);
+    // The instance sends `unlinked` and closes at once: the notice still counts.
     end.send(unlinkedMessage({ installId: INSTANCE, account: 'ada' }));
-    await until(async () => (await instances(s)).length === 0);
     end.ws.close();
     await end.closed;
-    expect(await kinds(s)).toEqual(['instance_registered', 'instance_unlinked']);
+    await until(async () => (await instances(s)).length === 0);
+    expect((await kinds(s)).sort()).toEqual(['instance_disconnected', 'instance_registered', 'instance_unlinked']);
   });
 
   it('a bad hello, a message over a cap or of another type is refused and recorded once', async () => {

@@ -36,11 +36,12 @@ import { limitsText, type TemplateLimits } from '@/model/sandbox-launch';
 import { agentCredentialText } from '@/model/vault-agent-credential';
 import { MasterKeyRotation } from '@/app/master-key';
 import { CheckAgain, GateRows } from './vault-check';
+import { ShortClusters } from './unknown-assets';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null } | { action: 'system-in-backend'; name: string; backend: string; reference: string }
-  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; egress: string[]; limits: TemplateLimits; agentCredential: string | null; probeMarks?: Record<string, string> } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools?: string[]; egress?: string[]; limits?: TemplateLimits; agentCredential?: string | null; probeMarks?: Record<string, string> } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 export type VaultEdit = Edit;
@@ -153,6 +154,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
         <span className={`text-xs ${waiting ? 'text-warn' : 'text-muted-foreground'}`}>{approvalText(t)}</span>
       </div>
       <TemplateRadiusReasons radius={t.radius} />
+      <ShortClusters t={t} can={can} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}</dd>
         <dt className="text-muted-foreground">Tools</dt><dd className="font-mono break-words">{toolsText(t)}</dd>

@@ -366,6 +366,9 @@ function stepLines(f: UnfinishedPullRequest): string[] {
     return [`The checks of your pull request ${f.pullRequest} fail. The job is not done yet.`,
       `Read the failing checks and their logs. Read a check's log through the hopper: ${CHECK_LOG_COMMAND}.`,
       NO_LOG_QUESTION, 'Fix the cause on the branch of the pull request.',
+      // A check that reads the body (issue #2151): the job may edit it; refused, the check is not the job's to fix.
+      `A check can read the title or body of the pull request. To change them: sh "$HOPPER_GH" pr edit ${numberOf(f.pullRequest) || 'N'} --repo ${repoOf(f.pullRequest) || 'OWNER/NAME'} --body-file FILE.`,
+      'If the hopper or GitHub refuses the edit, you cannot fix that check. End the job as failed. Name the check and quote the refusal.',
       'Run the repo\'s checks.', 'Push the branch.'];
   }
   return [`Your pull request ${f.pullRequest} is a draft. A draft is not done.`,

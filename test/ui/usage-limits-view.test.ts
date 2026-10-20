@@ -15,7 +15,7 @@ const usage = {
   readings: [{ source: 'plan', window: 'session', used: 60, limit: 100, unit: '%', at: '2026-10-08T12:00:00.000Z' }],
   sources: [{ name: 'plan' }], limits,
   machines: [
-    { machineId: 'desk', label: 'desk', online: true, maxLanes: 4, usedFrac: 0.6, cap: 4, band: 'free', executors: [] },
+    { machineId: 'desk', label: 'desk', online: true, maxLanes: 4, usedFrac: 0.6, cap: 4, band: 'free', throttle: { source: 'claude', window: 'week', usedFrac: 0.6 }, executors: [] },
     // Issue #1860: a machine with its own usage limits; the user's limits do not move its lane cap.
     { machineId: 'seat', label: 'seat', online: true, maxLanes: 4, usedFrac: 0.6, cap: 1, band: 'soft', executors: [], usageLimits: { soft: 0.5, hard: 0.7 } },
   ],
@@ -109,6 +109,13 @@ describe('the usage limits on the Usage view', () => {
     expect(slider('Hard').getAttribute('aria-valuenow')).toBe('95');
     expect(input('usage-soft-limit').value).toBe('70');
     expect(saveButton()!.disabled).toBe(true);
+  });
+
+  it('usage now names the window that throttles; the graph draws a line per throttling window (issue #2169)', async () => {
+    await boot('admin');
+    expect(text('usage-now-throttle')).toContain('the highest throttling reading: 60% weekly');
+    expect(document.querySelector('[data-throttle="desk"]')?.textContent).toBe('throttled by 60% weekly');
+    expect(document.querySelector('[data-window="session"]')).not.toBeNull();
   });
 
   it('moving a limit moves the band and the lane cap before saving; Save posts the limits', async () => {

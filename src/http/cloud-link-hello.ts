@@ -32,6 +32,9 @@ export const CLOUD_HELLO_SCHEMA = z.strictObject({
 });
 export type CloudHello = z.infer<typeof CLOUD_HELLO_SCHEMA>;
 
+/** hopper.io's answer to a hello it took (issue #2039 part 2): the first message after the hello, before any other. */
+export const CLOUD_CONNECTED = JSON.stringify({ type: 'connected' });
+
 /** The heartbeat, closed: when the instance sent it, nothing else. */
 export const CLOUD_HEARTBEAT_SCHEMA = z.strictObject({ type: z.literal('heartbeat'), sentAt: z.iso.datetime() });
 

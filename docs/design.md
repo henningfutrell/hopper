@@ -69,7 +69,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8), and its kill points for the crash harness (issue #1954) | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); each write that makes something found before it is made again, and a **kill point** after each write (`once.ts`, issues #1589, #1954); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
-| `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
+| `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block, or a direct query's look-only line and hints (issue #2184, `item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/issue-drafts/` | File an issue (issue #471, "File an issue"): one user's drafts and filed issues — the status and why not, a job's context masked, the file-issue run skill's prompt as sent, the draft with its timeout and cancel, the confirm step, the filing on the person's confirmation with no label and no assignee, the events (`service.ts`); the drafter, the user's own `claude` CLI running the run skill (`claude.ts`, `draftIssue` of `src/run-skills/`, composed by the user runtime alone); the request, the draft, the confirm step, the refusal and the note are `src/domain/issue-drafts.ts`, the constraints `src/run-skills/constraints.ts`, the masking Promote to GitHub's (`src/promotions/scan.ts`), the user's GitHub for it `src/users/github-proxy.ts`, the routes `src/http/ui/issue-drafts.ts` | engine, http, store, decider; plugins but in `claude.ts` |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -77,7 +77,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/pending-approvals/` | Pending approvals (issue #2088, "Pending approvals"): what GitHub shows of the waiting runs a connection can approve — the repositories it reaches, those of the intake orgs not archived, their waiting runs and pending deployments — with each connected account's own connection, conditional GETs (`github.ts`, `@octokit/request`, `src/repo-checks/conditional.ts`); one user's read on its schedule, kept in memory, the view (`service.ts`); the rows, the intake orgs and the stale mark are `src/domain/pending-approvals.ts`, the route `src/http/ui/pending-approvals.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`orchestrate`), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`work`, and `orchestrate`, its alias, issue #2145), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
 | `src/drafting/` | drafting on the user's AI CLI (issue #474, "Drafting on the user's AI CLI"): each **draft provider**'s locked-down argv, its answer read, a failure in plain words (not installed, not signed in), the machines it can run on, and the probe's calls and their reading (`providers.ts`, pure); the **draft probe** — before a draft, whether a provider can draft on a machine and the models it lists there (`probe.ts`); one draft run on the machine the user picked — this machine or an ssh target in a fresh dir through `ON_MACHINE`, a client target's claude through its `POST /level` —, with the timeout, the cancel and a device code to the logins (`run.ts`) | engine, http, store, decider |
@@ -93,7 +93,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name as steps, find what a mint cut short made, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`, issue #1609) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154), and where the loop runs while it is held, read by a worker thread through the inspector (`event-loop-held.ts`, `event-loop-held-worker.ts`, issue #1383); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968), the mint's saga kinds (`remote-access-mint.ts`, issue #1609); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`); the cloud link to hopper.io, its agent — the one outbound WebSocket, the pin of hopper.io's key — and its outgoing secret scan (`cloud-link.ts`, `cloud-link-agent.ts`, `cloud-link-scan.ts`, issues #467, #2039) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `src/telemetry/` | OpenTelemetry (issue #1486, "Telemetry"): the SDK started from the launch's `OTEL_*` variables, else from the telemetry setting, off unless one names an exporter (`sdk.ts`, `start.ts`); the setting kept and applied at once (`settings.ts`, "Telemetry settings"); the hopper's tracer and its instruments, made again when the meter provider changes (`instruments.ts`); a span and the latency of every request (`http.ts`); a job's trace built from its events, and its trace context for the job's processes (`jobs.ts`); the steps the hopper does for a job — its worktree, a follow of its pull request, the base merge, a tend, a need box — as spans of the job's trace (`job-steps.ts`, "Telemetry: job steps"); each landing batch run a span, and a deploy span in the trace of each job in it (`deploys.ts`, "Telemetry: a box's own processes and deploys"); the event log as metrics: failures, retries, escalations, hand-offs, sandboxes, landing batches (`outcomes.ts`); each outbox flush and each sync a root span linked to the action that asked for it, and the outbox's batches as metrics (`sources.ts`); what runs now — the sandboxes that run at the same time and the store's open connections —, from the readers the parts that hold them add (`live.ts`, "Telemetry: what runs now"); the log bridge (`logs.ts`); the process's basics (`process.ts`) and the queue's state (`queue.ts`) at each collection; the telemetry summary, kept in memory telemetry on or off, for `GET /api/telemetry` (`summary.ts`, "Telemetry summary"). Imports only `@opentelemetry/*`, `node:` builtins, fastify's types and `domain/` | everything else in `src/` |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `cloud/` | **hopper.io** (issue #463, `docs/cloud-hosting-identity.md`), a service of its own, never the daemon's: its config from the runtime (`config.ts`: the hosted GitHub App's client id and secret, the database, the public URL), its store (`store.ts`: Postgres through pg, its own migrations; the **hopper.io account** by GitHub's numeric user id with its login and avatar, the **hopper.io session** kept hashed, a sign-in under way, the **hopper.io records**, the **hopper.io registrations** and their **registration tombstones**, the **hopper.io machine names**), its **registration requests** (`requests.ts`: the code an owner entered, in memory only), its **instance states** (`states.ts`: each registered instance's last **hopper.io state snapshot**, checked against hopper.io's own copy of its schema, in memory only), its side of the cloud link's registration messages (`link.ts`, transport-free: a request given as `register` to its instance, a registration kept on that instance's `registered` with the key its hello proved, a tombstone answered `unregister` at the hello and its key refused, a snapshot kept as the instance's state), its end of the cloud link's connection (`connections.ts`: the WebSocket at `GET /link` through `ws`, the challenge, the limits, connected now in memory; `hello.ts`: the challenge and the check of the **cloud link hello**, a copy of the instance's schema), its privacy note (`privacy.ts`: each column, why and for how long), its HTTP edge (`server.ts`: GitHub sign-in by the web flow, sign-out, the signed-in account and its records, account deletion after a fresh GitHub sign-in, the privacy note; the sign-in limit per address) and its composition root (`main.ts`, `npm run cloud`) | everything in `src/` but `src/connected-accounts/hopper-app.ts`, `web-flow.ts`, `identity.ts`, `revocation.ts` (the grant deletion) and `src/secrets/runtime.ts`; nothing in `src/` imports `cloud/` (`test/cloud/config.test.ts`) |
@@ -119,18 +119,23 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 same Decision. Algorithm, in order:
 
 1. **Usage fraction per machine.** `usedFrac(m)` = max of `used/limit` over the readings of
-   `m` (`readingsOf`): those whose `machineId` is `m` when any of them throttles — that machine's
+   `m` (`readingsOf`) — every usage window of them, the session, the week and any other one not informational (issue #2169): those whose `machineId` is `m` when any of them throttles — that machine's
    own account (issue #139) — else those whose `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
    model only, issue #18) are skipped. So is a reading whose `resetsAt` is at or before `inputs.at`
-   (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
-   No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
+   (its window reset since it was read). A week window in its **burn window** counts, with 100% as its
+   hard limit ("Usage pacing"). No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`, `policy.softLanes`: the usage limits, "Usage limits" (issue #522)):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
    - between → `min(maxLanes, softLanes)`: the **soft lanes**, a fixed count, default 1 (issue #2091, "Soft lanes")
+
+   The band is taken per reading and the highest one wins (issue #2169): so a burning week window, whose hard limit is
+   100%, still sets the soft band from the soft limit. The reading that sets it, the most used of those in the highest
+   band, is the lane effect's **throttle** (`{ source, window, usedFrac, burning }`), and the machine's reason names its
+   window (`m: 97% used (week), lane cap 1 of 6 (soft)`).
 3. **Router verdict per waiting job** (from `job.advice`), always applied (issue #211):
    - no advice yet → hold `awaiting router advice` (nothing starts before the router has
      spoken)
@@ -204,11 +209,12 @@ stays pure — every time it compares is `inputs.at`.
 
 - **Burn window** (`HOPPER_BURN_WINDOW_HOURS`, default 18; 0: off). The hard limit keeps a reserve
   (5% at 0.95) that is right for most of the week, but the reset throws it away. Within the burn
-  window of a week window's `resetsAt`, that window does not throttle unless it is spent
-  (`used >= limit`): steps 1-2 skip it (`burnPhase`, `src/decider/usage.ts`), and the Decision's
-  reasons name it (`m: usage window week of s is in its burn window …: not throttling`). Session
-  windows still apply. The usage report (`GET /api/usage`) reads the same clock, so a burning window
-  shows as not throttling.
+  window of a week window's `resetsAt`, that window's hard limit is 100% (`burnPhase`,
+  `src/decider/usage.ts`): it stops the machine only when spent (`used >= limit`). It still throttles
+  at the soft limit (issue #2169): the reserve is spent at the soft lanes, not at every lane, which
+  would spend it in an hour and then stop the machine until the reset. The Decision's reasons name it
+  (`m: usage window week of s is in its burn window …: its hard limit is 100%`). Session windows never
+  burn. The usage report (`GET /api/usage`) reads the same clock, and its throttle says `burning`.
 - **Reset-aware placement** (`HOPPER_RESET_AWARE_PLACEMENT`, default `true`). Step 7 picks the
   machine with the most placement pressure: headroom of the binding (most used) week window — to the
   hard limit, to 100% while it burns — per hour left before its reset. An account that resets in 11
@@ -442,7 +448,7 @@ EventSource comes back with Last-Event-ID (issue #1383, "Reading the held event 
 ## Webhooks
 
 Each appended event creates a delivery for every active subscription whose `events`
-contains its type or `*`. Request:
+contains its type or `*`, and for the one its `callback` names (a direct query's, issue #2184, "Direct queries"). Request:
 
 ```
 POST <url>
@@ -2138,7 +2144,13 @@ works from what was last seen, and the tended job follows its pull request no mo
 on GitHub after its tend job failed was rebased again at each move of its base, and shown open. Before each tend the
 source reads whether it ended (`JobSource.endedPullRequests`); ended, no tend starts, the job follows it again at once, and
 that follow records its end (`job.pull_request_closed` or `job.pull_request_merged`) and its labels, as any follow does. A
-read that fails tends it as before. A refusal because a newer job of
+read that fails tends it as before. **A closed work item is tended no more after a tend job** (issue #2127): a tend job that finds the pull
+request has nothing left to merge (its base already holds the same change) closes the work item's issue, or the pull
+request; a rebase is never capped, and a done tend job follows the pull request, so the same tend job started again and
+again, and each tend's Run again reopened the issue. Before each tend of a tend job's pull request the source reads the
+item's issue when the ledger does not hold it closed (`JobSource.issueState`, recorded as `work_item.issue_closed` with
+`via: read`); closed, no tend starts, and the card says why. A closed item's first tend still runs (issue #927: a merge
+recorded that GitHub contradicts leaves the issue closed and the pull request open). A read that fails tends it as before. A refusal because a newer job of
 the item exists is no failure; any other refusal is kept as the source's retry and asked again next sync. No setting turns
 it off: a job repository whose pull requests the hopper follows is one whose jobs it runs.
 
@@ -2282,6 +2294,16 @@ also reads each check's end (`statusCheckRollup.contexts`): a check run that end
 `STARTUP_FAILURE`, or a commit status `ERROR` or `FAILURE`, makes the checks failing at once. It keeps the name and link of each
 (`CheckRun.name`, `detailsUrl`; `StatusContext.context`, `targetUrl`). The lists read the rollup
 only: 100 checks of each of 100 pull requests would cost too much of the rate limit.
+
+**The newest run of each check** (issue #2129, `src/sources/github/newest-runs.ts`). A check can run again on the same head
+commit: a re-run, or a new workflow run that another event starts (an edit of the pull request's body re-plans an
+infrastructure pull request). GitHub's rollup then fails on the older failed run, but GitHub's required checks read only
+the newest run of each check name. So every read of a head commit's checks counts the newest run of each check only
+(newest: the greater id): the read by number and the follow's batched read (`statusCheckRollup.contexts`, with
+`totalCount`, and in the batch only each check's id, name, status and end), the checks fallback and the done criteria's
+check runs over REST, and the GitHub proxy's own read of a pull request the hopper does not follow. A rollup that fails
+with no newest run failed is pending while one runs, else passing. When GitHub gives only some of the contexts (more
+than 100), a newer run can be among the others, so the rollup's state stands. `pr checks` still lists every run.
 
 **Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back
 to be reworked, in place of the manual draft, comment and label edits. A person asks from the card in Pull requests
@@ -2504,6 +2526,8 @@ the list, and nothing tended them). Two ways it fell out, each closed:
   followed for it, and the hopper's merge of it never closes it. A job branch never is a release branch: no job pushes
   to one. Before, a job on an issue that a promotion mentioned ended done with no pull request of its own, and in yolo
   mode the promotion's merge closed the issue.
+  A batch run's branch (`hopper-batch/…`, a batch run, a bisect run or a back-merge) counts as a release branch here
+  (issue #2132, "A batch run is no member's pull request").
 
 **The done-check backfill** (issue #637, `src/failures/backfill.ts`). Failures an earlier done rule left — `not complete:`,
 waiting on a person (its hand-off open, or its record neither run again nor settled), the newest job of its item — are
@@ -4962,6 +4986,17 @@ kept as sagas"):
 - **Never twice.** A step whose `leased_at` is set may have run on the host. The `run` step of a saga that a stop cut short
   finds it so, and ends the step with exit 125 and `STEP_INTERRUPTED` (it may have had its effect: look before you run it
   again), not run again; the `sweep` step then sweeps the host. A step that only waited for its host runs after the stop.
+- **Only a stop says so** (issue #2117). A `run` try that fails on a hopper that stays up is not a stop: the next try of
+  its saga, on that hopper, must not read `leased_at` as one. A step's end that the database did not keep (a lost
+  connection) is held in that hopper's memory (`endedHere`) and kept at the next try; a try that fails before the step
+  runs (the vault did not answer, the step's directory could not be made) ends the step with exit 125 and `the hopper
+  could not run the step: <why>`. Only a try with no such memory — a hopper that stopped, or a saga another hopper took
+  over — ends with `STEP_INTERRUPTED`.
+- **Rerun** (issue #2117). `hopper-step run --rerun` (`rerun=1`) says the step is safe to run again: one that only reads,
+  or does the same each time. A stop that cuts such a step short does not end it: the next `run` try sweeps the host's
+  scratch, counts the run (`runs`, in the step's row), says `STEP_RERUN_NOTE (run N of 3)` in its log, and runs it from
+  the start, with the same host lease. At most `STEP_RUNS_MAX` (3) runs in all; cut short a third time, it ends with
+  `STEP_INTERRUPTED`. A box or need step takes no `--rerun`: it runs in a new sandbox each time, and keeps "never twice".
 - **The job reads it**, from any host, after a restart too: `hopper-step` asks with its key, reads the log until it ends
   (a hopper away for a restart is read again for up to 300 s), then the result and the outputs, as for a need step.
 
@@ -4970,7 +5005,9 @@ refused then is the step's problem, not the ask's answer. The inputs and outputs
 the database: a larger build sends a script that fetches its sources, or brings back less.
 Tests: `test/windows-steps/step-saga.test.ts` (the real database and coordinator, a double at the host: a step run once and
 read from another host; a hopper stopped mid-step — the next start ends it once, with why, sweeps the host and runs the
-step that waited; one step at a time across two hoppers; a sweep the host does not answer keeps the host lease; the job's stop).
+step that waited; one step at a time across two hoppers; a sweep the host does not answer keeps the host lease; the job's stop;
+issue #2117: an end the database did not keep, and a vault that did not answer, on a hopper that stays up, never end as a
+stop; a step asked with rerun runs again after a stop, and at most three times).
 
 **Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (its log is read
 from `/job/step/:id/log`); more than one step at a time on one host; a host reached through a jump host.
@@ -9976,7 +10013,7 @@ default `7d` per `1h`; `POST /ui/api/usage-history/view`, any role: it is the vi
 answers per line (source, machine, usage window):
 - **points**: per graph step (`date_bin`), the highest share of the limit used in it (`used / limit`, so
   every unit plots on one 0-100% axis). The peak, not the mean: a budget is about how close it came.
-- **gaps**: stretches with no sample longer than 3 × the line's usual spacing (median, at least 5 min) —
+- **gaps**: stretches with no sample longer than 3 × the line's usual spacing (at least 5 min) —
   the same 3 intervals after which `polled.ts` calls a reading stale. The UI breaks a line between two
   points only where a gap lies between them; empty steps without a gap (a source reading less often than
   the step) join, so a slow source is not drawn as broken.
@@ -10019,7 +10056,9 @@ knew it); else the source's name (a source that never names its account stays it
 of one account — whichever machine and claude-plan instance read it — makes one line per usage window and
 unit: per graph step the highest share of the limit used, not the sum, because two machines on one plan read
 the same quota. A gap is a stretch where no machine read the account (the spacing is over the account's
-merged samples); a reset is found per source and machine, then named once per account and minute.
+merged samples); its usual spacing is the median spacing of each reader (source and machine), the slowest
+reader's for the line, so two machines that read one account seconds apart do not make every normal wait a gap
+(issue #2135); a reset is found per source and machine, then named once per account and minute.
 `UsageSeries` carries `account` and no `source` or `machineId`; the legend names `<account> · <window>`, never a
 machine. The instance totals sum per account too, so an account on two machines counts once.
 
@@ -10574,8 +10613,10 @@ image per template. Before it, a box ran its template's image as it was, and eve
 box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
 
 - **The catalog** (`BOX_TOOLS`, `src/domain/sandboxes.ts`; the recipes in `src/sandbox/tools.ts`): `aws`, `helm`,
-  `kubectl`, `terraform`. Each is one version, pinned, from the tool's own release (AWS CLI v2 from awscli.amazonaws.com,
-  Helm from get.helm.sh, kubectl from dl.k8s.io, Terraform from releases.hashicorp.com), with its SHA-256 for `amd64` and
+  `jq`, `kubectl`, `logcli`, `promtool`, `terraform` (`jq`, `logcli` and `promtool` since issue #2146, "Observability
+  sandboxes"). Each is one version, pinned, from the tool's own release (AWS CLI v2 from awscli.amazonaws.com,
+  Helm from get.helm.sh, kubectl from dl.k8s.io, Terraform from releases.hashicorp.com; jq, logcli and promtool from
+  their projects' GitHub releases), with its SHA-256 for `amd64` and
   `arm64`. The sums were taken from each project's published sums; the AWS CLI's from the archives, whose signatures were
   checked against the AWS CLI team's key. A new version is a change to that file, reviewed like any other. A tool outside
   the catalog is refused (400) with the ones the hopper adds.
@@ -10754,6 +10795,14 @@ them, and they stay valid until they expire (15 and 10 minutes). They are read c
 needs, which Access allowed. A check that outlasts them (a slow terraform init) sees later probes refused for an expired
 credential: an `error`, and the check fails closed.
 
+**Minted once the image is ready (issue #2112, 2026-10-19).** Reported from a real run: the check of read on an EKS
+cluster failed on `kube.get`, and each write probe was an `error`, not a refusal, while the mint test of the same
+cluster passed. An EKS token works for 15 minutes from its signing, and the check minted it before it pulled the box's
+image and built its tools image, which can take longer: the box then signed in with a token EKS no longer takes
+(`Unauthorized`). `runCheck` (`src/sandbox/check.ts`) now has the image (`boxImage`) first, then mints, then makes the
+box. An image it cannot have fails the check with nothing minted. When each probe is marked `skip` or cannot run (no
+state backend), it has no image. When the vault mints for no need, it has the image but makes no box, as before.
+
 **What stays #715's.** The terraform wrapper, a read-only state backend, `terraform destroy` and `state rm` against the
 workspace's real state, a credential for an `aws-account`, an Argo CD app or a Terraform workspace, and the check on a
 schedule. (Built since, as "A read-only infra box" parts 1 to 6; egress moved to #849.) A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
@@ -10804,13 +10853,38 @@ every probe `not-run`, and the jobs waited for days on a name that never resolve
   again (its `--wait` too) ends its wait with the refusal.
 - **Shown, not counted as an approval.** The vault's read (`GET /api/vault`, `vaultAnswer`) gives each template its
   `unknownAssets`; `hopper template list` adds `unknownAsset` in words; the template's card says `unknown asset: …` in
-  place of its approval; Needs you counts it under Access requests, one line each.
+  place of its approval; Needs you counts it, one line each (in its own row since issue #2168).
 - **Residual risk, stated.** The topology is read every 6 hours and on Discover now: a cluster made since is refused
   until the next read. The refusal says so, and a cluster override for the name (Settings → Clusters) lets it through at
   once. The names it gives a job are the ones `GET /job/topology` already serves it.
 
 Tests: `test/domain/unknown-assets.test.ts`, `test/skills/template-request-unknown.test.ts`,
 `test/ui/unknown-assets.test.ts`, `test/integration/unknown-assets.test.ts` (the real daemon and the operator CLI).
+
+**Short cluster names (issue #2168, 2026-10-19).** Reported from an install: the Access requests badge showed 29 with no
+approval open. Templates named clusters by short names (`uat` for `uat-eks`), each an unknown asset, and the badge added
+the unknown assets to the approvals.
+- **A short name resolves** (`matchCluster`, `src/domain/unknown-assets.ts`, pure). A need's cluster with no minting
+  credential and no cluster override is matched against the clusters the topology lists: its full name first; else the
+  one cluster whose name it starts (`uat` → `uat-eks`); else, when it starts several, it is **ambiguous** — an unknown
+  asset with its `candidates`, never a guess; else no match. A cluster override (the configured alias) wins over it.
+- **Discovery finds it so.** `mintSourceFor` takes the clusters the topology lists (`readKnownClusters`, read at each
+  mint, as the overrides are) and looks for a short name by the full name it resolves to; an ambiguous one is refused
+  with its candidates. A short name only ever finds a cluster for a read: a write needs a minting credential or an
+  override, which names it exactly.
+- **Shown, never counted as an approval.** `GET /api/vault` gives each template its `shortClusters` (`{ cluster, to }`)
+  beside its `unknownAssets`. The Access requests badge and its Needs you row count only what waits for approval
+  (`accessRequestsWaiting`); the templates with an unknown asset have their own Needs you row, **Unknown clusters**.
+- **One click fixes it.** **Point at** (an admin's, on the template card for a resolved short name and on Access
+  requests for each candidate of an ambiguous one) saves the template through `save-template` with each need on that
+  cluster renamed; a changed profile waits for approval again, as any edit of its needs does.
+- **Residual risk, stated.** A short name follows the topology: when a second cluster that it starts appears, it turns
+  ambiguous and its mints are refused until a person points the template at one. A read approved for `cluster/uat` reads
+  the cluster the topology resolves it to; **Point at** writes that name into the template, so the approval names it.
+
+Tests: `test/domain/unknown-assets.test.ts` (no match, ambiguous, a cluster renamed after the template was saved),
+`test/vault/cluster-discovery.test.ts`, `test/ui/unknown-assets.test.ts`, `test/ui/unknown-assets-panel.test.ts`,
+`test/integration/unknown-assets.test.ts`.
 
 **Residual risk, stated.** A probe that writes runs the write for real when the credential allows it (the dry runs do
 not): with a writable credential, `ssm put-parameter` and `iam create-user` make their resource and the cleanup deletes
@@ -11500,7 +11574,7 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   or `ended` (it ended with nothing to tell: the run stops waiting on it).
 - **Login signals** (issue #567, `src/logins/signals.ts`). A herdr job's login ends only on a **login
   signal** the turn shows after its `HOPPER_AUTH_PENDING`: a token obtained, the CLI or Claude saying it is
-  logged in or the authentication went through (`completed`); the code expired (`expired`, at once, as at
+  logged in, authenticated or signed in as or to an account (issue #2144), or the authentication went through (`completed`); the code expired (`expired`, at once, as at
   `expiresAt`, `onExpiry` applies); the user denied it at the provider (`failed`). The protocol line asks the
   job to report a login once per code and, when it goes through, to say so in a line `Logged in.`. Polling output
   (`authorization_pending`, `slow_down`, "waiting for authorization", the same code printed again), Claude
@@ -11529,6 +11603,11 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   its reason cleared). A failed or cancelled login stays as it is. The protocol line asks for it beside `Logged in.`;
   the login signals stay, so a job that does not report still ends its login as before. The route changes no job,
   question, webhook or setting. No polling: the job reports once, when it knows.
+  The tool is named as the job likes (issue #2144): `hopper-login` takes a command of many words quoted or not (a
+  word that starts with `-` too, but `--reason`), and the route finds the login of that tool with its words spaced
+  any way, else the newest whose words hold every word named, a path by its last part (`mcp_auth.py` names
+  `python3 …/mcp_auth.py login`). Before, a helper's command named unquoted was a bad call (exit 2), so the sign-in a
+  person finished never reached the hopper and the card waited until its code expired.
 - **Dismiss** (issue #1110, `POST /ui/api/logins/:id/dismiss`, operator). The fallback when the requester never says:
   a person puts an open login away, whatever its job does. `dismissed` (`auth.dismissed`, `by: user`), its code
   dropped; the run that waited on it reads `ended` and stops waiting, and nothing is typed into a pane (Cancel does
@@ -11551,8 +11630,10 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
   read at each expiry, so a change applies without a restart): `renew` (the default since issue #1016: two codes of a
   job expired before a person saw them, and the job stalled) — at each expiry the hopper asks the job for a new code
-  by itself (`check` answers `new-code` with `expired`; the job is told its code expired, to start the login again and
-  report the new code, `loginExpiredNewCodeNote`), `auth.expired` carries `renewing: true`, and the new code is the
+  by itself (`check` answers `new-code` with `expired`; the job is told its code expired and, first, to say so with
+  `hopper-login` when the login went through after all — the code expires on the hopper's clock, and a sign-in done is
+  never followed by a new code (issue #2144) —, else to start the login again and report the new code,
+  `loginExpiredNewCodeNote`; a login completed before its run read the ask is not asked again), `auth.expired` carries `renewing: true`, and the new code is the
   same login (`auth.pending`, `renewed: true`, so the notifiers post it again), until the login is completed or
   cancelled, or the job's own timeout; a run that cannot ask its tool again (a print-mode run) holds; `hold` (the
   default from issue #698 to #1016) — the job keeps waiting until its own timeout, the card says Expired and offers
@@ -12662,6 +12743,55 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
 
+### Parking a proposal or a research report (issue #2167, 2026-10-19)
+
+A person sets a proposal or a research report aside without acting on it or rejecting it: they park the job that waits
+on it. Parking was already open to that job (it is `waiting_answer`); this adds who parked it and why, takes the item out
+of its section, and keeps the review from moving on while it is parked.
+
+- **Who and why.** `POST /ui/api/jobs/:id/park { reason? }` (`parkBody`, at most 500 characters) and `hopper job park
+  <id> [--reason <text>]`. The person signed in (`actingOf`: `by` their name, `via` `ui`, `cli` or `api`) and the reason
+  are kept in `parked` (`by`, `via`, `reason`, `src/domain/park-ask.ts`) and on `job.parked`. A running job is parked
+  only once its executor stepped aside, maybe by another hopper (issue #1662): the command keeps the ask on the job
+  (`parkAsk`) before it stops the run, and `recordPark` moves it into `parked`. Auto-park and the moves keep no person:
+  their `why` says why. Nothing is written to GitHub: a park is the hopper's own state, and the hopper writes only labels
+  to an issue ("GitHub text is neutral").
+- **Out of its section.** A **parked item** (`parkedItemOf`, `src/domain/review.ts`) is an open or sent-back item whose
+  job is parked on it. `GET /api/<section>` leaves it out of `status=open`, and `status=parked` lists only those, each
+  with `parked: { at, by?, via?, reason? }`; `GET /api/sections` does not count it in its section (Parked counts its job).
+  The UI shows it folded under the section's list (`ui/src/views/parked-items.tsx`: its job, its first part, how long
+  parked, by whom and why, Pick up), and the Parked row of its job says what it waits on.
+- **Nothing moves while it is parked** (`src/review/service.ts`). No reviewer level enters it; a level's reply that comes
+  back after the park is dropped, its call cleared, so the level is asked again later; the end of the levels neither
+  continues with it (auto-continue) nor sends it to a person; a person's decision is refused, 409 `parked` ("pick it up
+  first"), so no follow-on job starts and its job neither ends nor runs.
+- **Pick up puts it back.** `recordUnpark` already returns the job to `waiting_answer` on its open item. After the
+  commit, `ReviewService.resume` starts the review again from the stage it stopped at (`resumeAt`), unless a review of
+  it is still in flight. The item keeps its versions, trail, stage and seen mark.
+- **Persisted state.** No schema change: `parked` and `parkAsk` are fields of the job's JSON body, and the build before
+  ignores them. A park survives a restart and a move to another hopper: it is all in the database.
+- **Its issue closes meanwhile.** As for any job: closed in a way that cancels it (not planned, label removed, gone),
+  its job ends cancelled at the next sync, the sweep cancels the item, and a pick up is refused (409). The item keeps
+  its versions in the history. Closed as completed after it started, the job stays parked, and a pick up puts it back.
+- **A job parks through the `park` skill** (the last part of issue #2167, `src/http/job-park.ts`). A running job lists its
+  user's open proposals and research reports, parked or not (`GET /job/park`), and parks or picks one up (`POST /job/park
+  { act: park | pick-up, item, reason? }`), with its proxy token, only while it is at work. It reaches the same
+  `engine.park` and `engine.requeue` a person's buttons do; who did it is `job <its id>`, `via` `job`, on the job's
+  `parked` and on `job.parked` and `job.unparked` (which now also names who picked a job up, a person or a job). The
+  limits keep a job's power under a person's:
+  - It parks only an item whose job waits on it (`waiting_answer` on that item): never a running job, never itself, never
+    a question. Parking stops nothing that runs; it only holds a decision back.
+  - It picks up only an item a job parked (`parked.via` `job`). A person's park stays until a person picks it up (409),
+    so a job cannot undo a person's act.
+  - It takes no decision: a parked item is still decided only by a person, after a pick up.
+  - Nothing is written to GitHub, as for a person's park.
+  The owner's issue asked for it, and AGENTS.md's list of `/job/*` routes names it, as each such route.
+- **Verification.** `test/integration/park-review-item.test.ts` (a proposal and a research report parked and picked up,
+  the refusals, a restart, a reviewer level in flight, a running job's park with a reason, a long reason refused),
+  `test/integration/park-review-item-closed.test.ts` (its issue closed both ways), `test/ui/park-review-item.test.ts`,
+  `test/integration/job-park.test.ts` (a job lists, parks and picks up; a person's park it cannot pick up; a running job
+  it cannot park; bad tokens and calls refused).
+
 ## Preemption (issue #1525, 2026-10-16)
 
 When a job of higher priority waits and no lane it may use is free, the hopper parks a running job of lower priority and
@@ -12778,10 +12908,11 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
 - **Informational readings never throttle**, whatever the limits: unchanged, the limits apply to the throttle
   fraction of decider step 1 only.
 - **The editor.** A panel across the top of the Usage view: usage now (the highest throttling fraction over online
-  machines) with its band, each online machine's lane cap at the draft (the decider's rule, repeated in the UI's
+  machines) with the window that sets it (its throttle, issue #2169: `97% weekly`) and its band, each online machine's lane cap at the draft (the decider's rule, repeated in the UI's
   model because the UI imports nothing of `src/`), and the graph (`ui/src/charts/usage-limits.tsx`): the last
   day's throttle line — the highest non-informational line of the usage history at each step — over the free,
-  soft and hard bands, the line coloured by the band each stretch of it is in, its last point usage now. Each
+  soft and hard bands, the line coloured by the band each stretch of it is in, its last point usage now, with a thin
+  line per throttling window under it, labelled at its end (`windowLines`, issue #2169). Each
   limit is a dashed rule with a handle: drag it, press on the graph to move the nearer limit there, or use the
   handle's arrow keys (Shift: 5%). A limit moves in whole percents and stops 1% short of the other. Two number
   fields edit the same draft. Nothing is stored until Save. A viewer sees the graph without handles.
@@ -14595,7 +14726,12 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    A job edits a pull request's title or body (`pr edit N [--title T] [--body-file F]`, op `pr.edit`) or closes it with
    no merge (`pr close N`, op `pr.close`) only when it opened that pull request through the proxy (a `github_proxy.done`
    of `pr.create` on its timeline) or the pull request is its **work item**'s, one an earlier job of the item opened
-   (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request).
+   (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
+   or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
+   job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).
+   A job also edits — never closes — a pull request its issue's text names (its **linked pull requests**, read at intake,
+   `source.linkedPulls`; issue #2151: a job told to update another's pull request could push to it, but not fix the
+   declaration in its body that a plan check reads);
    A close is the job's act, as its push is; it never merges, and the follow sees the pull request closed as a person's
    close;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
@@ -15977,6 +16113,8 @@ person's question list as if it needed an answer), or ended failed though it was
   (one more over the cap when none is idle), `wait` cleared, `job.reattached { reason: 'the wait ended in the pane' }`, and the
   runner watches the turn with the wait already taken left out. Its own background poll ending is what wakes Claude: the
   hopper runs no check of its own.
+- **A comment ends it** (issue #2159, "A comment ends the job's own wait"). A trusted account's new comment on its issue or
+  its own pull request, seen by a GitHub watch while it waits, ends the wait; the job is told the comment as untrusted text.
 - **The hopper ends it** (issue #998, "An answer ends the job's own wait"). When an answer the job asked the hopper for
   (a skill request that answered 202) is ready, the hopper ends the wait with it, as a person does below, `by: hopper`.
 - **A person ends it.** `POST /ui/api/jobs/:id/end-wait { note? }` (least role `operator`; 409 unless `waiting_on`): queued
@@ -17641,7 +17779,9 @@ whose origin is trusted or approved (only its job keeps them):
 - **Jev reads them**: Jev's trust check gets them in `source`, and has one more reason, `fork_code` ("it brings in a pull
   request of a fork that no trusted actor wrote"), to lower the job.
 - **No rule reads them**, as the origin acts: the stamp's level still comes from the origin. A rule would decide for every
-  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in.
+  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. One
+  door reads them (issue #2151): a job edits the title or body of a linked pull request (`pr edit`, "Jobs ask the hopper,
+  not GitHub"), as it pushes to its branch; GitHub still decides whether its user may.
 
 Also in this part: the GraphQL read of an issue's edits (issue #662, part 17) read the answer one level too high, so it
 found no edits against GitHub; the fake GitHub hid it. It reads them under `data` now, and an answer with errors throws, so
@@ -18480,7 +18620,8 @@ issue or pull request. The jobs the hopper already has, read as pointed jobs, ar
 already (`src/sources/github/follow.ts`). One exception (issue #435): such a job while its question is posted on its issue
 thread, read as a pointed job on that issue (`pointedJobOf`); its change event carries the job's `jobId`. The service
 follows `pointed_job.created`, `pointed_job.status_changed` and every `question.*` event, so a new pointed job or a new
-thread ask is watched at once and an ended one is dropped, with no restart.
+thread ask is watched at once and an ended one is dropped, with no restart. A job on its own wait is watched too (issue #2159, "A comment ends the job's own wait"): its issue and its own pull
+request.
 
 **A poll** (`src/github-watch/github.ts`). With the user's own GitHub connection (`githubProxy.watches`, as Report a bug
 and the repository checks): `GET /repos/{repo}/issues/{n}` — it answers a pull request too, with its merge — and every
@@ -19606,6 +19747,82 @@ someone outside; the receiver maps the name to its own channel. In the hopper, t
 jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
 the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
 
+## Direct queries (issue #2184, part 1, 2026-10-19)
+
+Requirement: a caller (the first one: Grok Bot) asks the hopper an off-the-cuff question — "where does the otel collector
+run?" — with no GitHub issue. A job that only looks answers it, with the same seats, sandboxes, vault and approval rules as
+any job, and the hopper sends the answer back to a webhook of the caller's.
+
+**A direct query is a direct job with a `query`** (`DirectQuery`, `src/domain/direct-jobs.ts`): the record, the `direct`
+job source, the queue gate, the routing rules, the lane caps, the reads and Run again are the direct job's ("Direct
+jobs"). What a query adds:
+
+- **The request.** `POST /ui/api/direct-queries { requestId, question, callback?, mode?, repos?, clusters?, labels?,
+  executor?, priority? }` (operator; a box action, kind `start a job`, so an API token must be a box token). Behind the
+  hopper's normal sign-in: from outside only through the public URL or remote access while an admin has it on.
+  - `requestId`: the caller's own id. The query's id is its hash (`directQueryId`, `query-<32 hex>`), so the same request id
+    again answers the query kept, `replayed: true`, and makes no record, event or job; with another question or callback,
+    409. A retry of a request whose answer was lost is safe.
+  - `question`: the brief. The title is its first line, at most 120 characters.
+  - `callback`: the name of an active **webhook subscription** (400 when none is named so). See "The callback" below.
+  - `mode`: `look`, the default. `change` is refused (422): a change goes through a direct job or an issue.
+  - `repos`, `clusters`: where to look first. Told to the job as hints; they allow nothing.
+  - `labels`: routing labels beside `direct:query` (`DIRECT_QUERY_LABEL`), which every query's job has, so a routing rule
+    sends queries to the seat or the sandbox box it names.
+- **Look only.** The job's prompt starts with `QUERY_LINE` (`src/direct-jobs/item.ts`): the question and the answer are
+  private; look only; change no code, infrastructure or secret; push nothing, open no pull request, file no issue, write
+  no comment; ask the vault and the sandbox only for reads; no port-forward, proxy or tunnel; when the answer needs a change,
+  end failed and say what a person must file. The rules are enforced where the hopper can enforce them, not only told:
+  - the job's environment has `HOPPER_DIRECT_QUERY` (`DIRECT_QUERY_ENV`); `isDirectQuery` reads it from the job's spec;
+  - the GitHub proxy refuses every op that is no read (`isRead`) for such a job, 403 with `LOOK_ONLY`
+    (`checkRequest`, `ProxyAsker.lookOnly`), recorded as `github_proxy.refused`;
+  - the git proxy refuses every push, at the ref advertisement already (`LOOK_ONLY`);
+  - the record has no `authorizations`, so no vault grant is made at submit, and no `repo`.
+- **Where it stands** (`directQueryState`, from its newest job): `accepted` (no job at work yet), `running`, `waiting` (a
+  question or its own wait: it comes back through Questions, and the Grok Bot notifier names the direct job, as for any
+  direct job), `answered`, `failed` (also a job turned away at the queue gate), `cancelled`.
+- **Reading back.** `GET /api/direct-queries` (newest first) and `GET /api/direct-queries/:requestId`: the direct job's view
+  with `query` and `state`; the answer is `job.result`, the evidence the job's `artifacts`. A caller polls this. To cancel,
+  it cancels the job, `POST /ui/api/jobs/:id/cancel`, as any job.
+- **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
+  artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
+  direct job ("Promote to GitHub").
+
+**The callback.** The events of a query: `direct_query.accepted` (in the submit's transaction, never the question),
+`direct_query.answered` (`answer`, the job's result; `artifacts`, links that need a hopper sign-in; `url`),
+`direct_query.failed` (`error`) and `direct_query.cancelled`, each with `id`, `requestId` and `callback`. The ends are
+appended by the `direct` source's report, once per job and end (`queryEnded`). The webhook dispatcher delivers an event
+whose `callback` names a subscription to that subscription too, whatever events it lists (`matches`,
+`src/webhooks/dispatcher.ts`). So the callback is a webhook delivery: signed with the subscription's own signing secret,
+kept sealed in the vault (`x-hopper-signature`, "Webhooks"), at least once, deduped by `x-hopper-delivery`, retried with
+backoff, kept across a restart, through the outbound guard and into the send log ("Outbound sends").
+
+**Decisions:**
+- **The callback names a webhook subscription, not a URL.** A URL per request would let any API token holder make the
+  hopper post to a host of its choice — an outbound destination nobody approved, and a way out for the answers. A
+  subscription is a person's, made through the UI session, with its secret in the vault and its sends guarded. A caller
+  that needs another URL asks a person to add a subscription.
+- **A webhook delivery, not a saga of its own.** A delivery is already a durable record with a key, attempts, a backoff and
+  a claim that two hosts share ("Sagas: work that survives a stop" asks no more of a single POST). A second outbox for
+  one POST would be one more to keep.
+- **A direct job, not a record of its own.** The record, its job source, its reads and its promotion are the direct job's;
+  a query adds a field to its JSON body, so no migration, and the build before reads the record as a direct job.
+- **`change` is refused, not turned into an issue.** Filing an issue for an agent would make a job of a request nobody
+  trusted ("Trusted origin"); the caller, or a person, submits a direct job or files the issue.
+
+**Residual risk, stated.** A webhook subscription that lists `direct_query.answered` or `*` gets every query's answer, as one
+that lists `job.finished` gets every result. The proxies refuse a query's writes on GitHub; the vault and the sandbox
+refuse writes only as for any job: a write template waits for a person's grant, and the standing read grant gives reads
+only. A person who grants a query's job a write template widens it.
+
+**Not done yet (later parts):** the Direct queries view, a top-level home in the UI (list, state, answer, evidence);
+a question at the human sent to the callback too.
+
+**Verification:** `test/integration/direct-queries.test.ts` (a box-token caller asks, a look-only job answers, the callback
+gets `accepted` and `answered`, signed, with no GitHub call; the same request id replayed and a conflict; a failed query's
+callback; `change`, an unknown callback and a plain API token refused, nothing kept), `test/direct-jobs/direct-query.test.ts`
+(the prompt, the marker, the id, the state, the GitHub proxy's and the git proxy's refusals).
+
 ## Direct jobs: its pull request (issue #1068, 2026-10-16)
 
 Requirement: a direct job that opens a pull request on its repository gets the same care as a job of an issue: the
@@ -20571,7 +20788,7 @@ nothing and worked to its expiry (10 minutes), and an AWS session to its own (15
 - **The sandbox's end deletes it.** A need step releases its sandbox's bindings (`releaseMints`) after its box is burned,
   whatever the outcome — it succeeded, failed, timed out, was cancelled, or its run threw —, and also when a later mint
   of the step is refused or the job drops the step before it runs. The check pass releases a check box's bindings after
-  the box is removed. The minter deletes each Secret (a 404 is no error), the API server refuses the token at once, and
+  the box is removed. The minter deletes each Secret (a 404 is no error), the API server refuses the token within its token cache time (10 s by default, seen by the cloud acceptance test, issue #1956), and
   `vault.unbound` records it. Through the vault's own container (#586), the delete crosses as the op `unbind`: only that
   container holds the minting credential.
 - **Reconcile.** An unbind that fails (the cluster is not reachable) is logged and waits. The reconcile pass
@@ -21859,6 +22076,35 @@ so a close GitHub made with no delivery is recorded (`work_item.issue_closed`, `
 that issue (`settledBy`). A wait that starts on something the ledger holds settled already — its issue closed, its pull
 request merged or closed (`settledAlready`, `src/domain/wait-on.ts`) — ends at once (`wait`, `src/engine/outcome.ts`), as
 the event would have ended it: no event comes for it any more.
+
+## A batch run is no member's pull request (issue #2132, 2026-10-19)
+
+**The problem.** A batch run closed without a merge (red), and its members whose own pull requests had merged into the
+landing branch got `hopper:pr-closed` and a blocked item (`pr_closed`). Intake then offered them again, and an approval
+would redo merged work. Seen on many batches.
+
+**Why.** A batch run's text closes the issues of its job pull requests ("Closes #N", issue #1175), and it targets the
+default branch, so GitHub lists it among the issue's open closing pull requests. A job whose report found no open pull
+request of its own (its pull request merged into the landing branch while it ran) was then answered the batch run, by the
+report (`pullRequestOf`), by the follow's look for one (`openPullRequestOf`), or by reconciling (`unfollowedPullRequests`,
+issue #763). The follow took the batch run's close for the item's pull request closed without a merge.
+
+**A batch run is no issue's work** (`fromReleaseBranch`, `src/sources/github/completion.ts`). A pull request whose head
+starts with `hopper-batch/` is read as a release branch's (issue #876): never an issue's open closing pull request
+(`openClosingWork`, for the report, the follow, the done-check and the job's own pull requests), never a part or a merged
+mention, and never adopted by reconciling. Only a person's or a job's pull request is followed for an item, so a red batch
+run moves no member: it keeps its merged state (`done`, its pull request merged), and Intake says it waits on its batch
+(`waitsOnBatch`, issue #1337) until a later batch run carries it to the tested branch. A member whose own pull request
+closed without a merge is flagged `hopper:pr-closed` as before. A culprit is still `failed` (issue #1175).
+
+**A merge that closes the issue is the whole item** (`mergedPartOf`, `src/sources/github/follow.ts`). When the follow
+finds no open pull request, it takes the newest merged pull request since the job began. One whose text closes the issue
+with a closing keyword now comes first and is followed as the whole item, so it ends `done` with `hopper:done`. Before, it
+was followed as a part (a mention, issue #1891), and the issue was offered again for its next part.
+
+Not taken: a state of its own for "merged, waits for its batch run". The ledger's `done` with `awaitsBatch`, the graph's
+"Merged: waits on its batch run" and Intake's "done: merged into the landing branch; its batch run closes the issue"
+already say it.
 
 ## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
 
@@ -25761,7 +26007,7 @@ the API and the escaped page show it, an empty name clears it; a key not in the 
 name or key, another Origin and no session change nothing; the names stay at a new snapshot and a registration again;
 a removal, an unlink, a move and an account deletion drop them; at most 500 per instance.
 
-## The cloud link's connection (issue #2039, part 1, 2026-10-19)
+## The cloud link's connection (issue #2039, parts 1 and 2, 2026-10-19)
 
 **The problem.** Issue #2039, the install side of "Cloud link (issue #464)": the instance and hopper.io must talk over a
 real connection. The messages, the registration and the state snapshot are built on both sides, transport-free (issue
@@ -25818,13 +26064,65 @@ the instance had no way to prove itself to hopper.io.
   know; closing would make it reconnect in a loop. One record per connection keeps the records small.
 - **`ws`, with no fastify plugin.** The server takes the HTTP upgrade itself, so the limits are its own (R7).
 
-**Left for part 2:** the instance's agent (connect while the link record exists, R8; reconnect with backoff and jitter;
-stop after `4003`; snapshot at connect and on change, at most each 2 s; heartbeat each 30 s; hand each message to
-`receive`; `unlinked` before an unlink closes it; keep the key before a rotation until the new one connects; mint an
-Ed25519 key when the link has none); the pin of hopper.io's key, with TLS (the production pin waits for issue #469 decision
-7); the outgoing secret scan (R4); `machineKey` and `executorPlugin` for the snapshot; the instance's events (R6) in
-`docs/events.md`; Settings → hopper.io shows the connection; the operator CLI's rotate and revoke; the end-to-end test with
-the real daemon and the real `cloud/` server.
+**The change (part 2): the instance's agent** (`src/http/cloud-link-agent.ts`, the `ws` client).
+- **When it connects** (R8): only while the link record exists. With no record, no socket opens. An unlink sends
+  `unlinked`, then closes (`1000`). A rotation or a revoke closes the connection and starts again with the record's key.
+- **The pin** (R4, T1): `HOPPER_IO` in the code names hopper.io's URL (`wss://hopper.io/link`) and the pins of its public
+  key: the base64 SHA-256 of the SPKI of hopper.io's TLS certificate. TLS checks the chain against the system's roots; the
+  pin then checks the key. A key that does not match closes the connection before the hello. The shipped pin list is empty
+  until issue #469 decision 7 says who runs hopper.io, so a real instance connects to nothing (`no-pin`). Tests pin a
+  certificate they make (`test/support/cloud-tls.ts`, a TLS front before `cloud/`).
+- **The hello and `connected`.** The agent answers the challenge with the hello. hopper.io answers a hello it takes with
+  `{ type: 'connected' }` (`cloud/hello.ts` `CONNECTED`), so the instance knows it is connected; a refused hello is closed with
+  a code that says why.
+- **The key before a rotation** (R4): Rotate key keeps the old key as the system secret `cloud-link.previous-key` and the
+  record's `previousKey`, and the hello proves it as `previous`. When the new key connected, the key before is dropped. A
+  second rotation before that keeps the first key before, which hopper.io may still have bound. A link with no key (one
+  migration 52 cleared) gets one when the agent connects.
+- **Revoke** (R4): `POST /ui/api/cloud-link/revoke-key` and `hopper cloud-link revoke-key` drop both keys and close the
+  connection. The record stays, with `keyRevokedAt`, and no key is minted until Rotate key (`hopper cloud-link rotate-key`).
+  hopper.io's revoke (`4003`, after `unregister`) stops the agent until the key changes.
+- **What it sends**: a heartbeat each 30 seconds; the state snapshot only while the link is `registered`, at once, then only
+  when it changed (its `sentAt` aside), checked at most each 2 seconds; the answer of `receive` to each message it takes.
+  The snapshot's `machineKey` is an HMAC-SHA256 under the cloud link key's private half of the user and the machine id, 22
+  characters base64url: opaque and stable while the key stays (R5). `executorPlugin` gives each executor's plugin.
+- **Outgoing scan** (R4, `src/http/cloud-link-scan.ts`): each message, before it is sent, is searched for the patterns
+  `maskSecrets` knows and for the values of the keys the link holds; the public halves the hello names are taken out first.
+  A message that holds one, or is over its cap (1024 bytes; the snapshot 192 KiB), is dropped, `cloud_link.message_dropped`.
+- **Incoming limits** (R7): a frame over 64 KiB closes the connection; under it, `receive` refuses one over 1024 bytes; over
+  120 messages a minute is `cloud_link.message_refused` `too-many` and closes it (`1008`).
+- **Backoff**: a lost or refused connection is tried again after 1 second, doubling, at most 5 minutes, half of it jitter
+  (`retryDelay`). The backoff starts again only after a connection lasted a minute, so two hoppers of one instance that
+  replace each other's connection (`4000`) settle at one swap each 5 minutes.
+- **Events** (R6, `docs/events.md`): `cloud_link.connected`, `cloud_link.disconnected` (with the close code),
+  `cloud_link.connection_refused` (`pin`, `tls`, `http`, `too-many`, `bad-hello`, `unknown-key`, `hello-timeout`; once while
+  the same refusal repeats), `cloud_link.revoked` (`by` `hopper.io`, or the admin), `cloud_link.message_dropped`; and
+  `cloud_link.message_refused` gains `too-many`. A network failure is no event: Settings shows it.
+- **Settings → hopper.io** shows the connection (`GET /api/cloud-link` `connection`, kept in memory): `no-pin`, `no-key`,
+  `connecting`, `connected` since, `waiting` with the problem and the next try, or `revoked`; and a Revoke key button.
+  `hopper cloud-link show` prints the same.
+- **hopper.io** takes a message that came before the connection closed, so `unlinked` followed at once by the close counts.
+
+**Decisions (part 2):**
+- **`connected` from hopper.io**, not a timeout after the hello: the instance can tell a taken hello from a refused one with
+  no guess. It is no action (R1); `receive` still takes only `register` and `unregister`.
+- **The snapshot only while registered** (R5): hopper.io keeps no state of an unregistered instance, so it gets none.
+- **The machine key under the cloud link key**: a rotation changes every machine key, and the names at hopper.io stay under
+  the old keys until the owner names them again. A key of its own would be one more secret to keep.
+- **One refusal record while it repeats**, and no record of a network failure: a hopper.io that is down for a day is not
+  hundreds of events.
+- **No HTTPS proxy** support yet: the agent connects directly. A proxy needs an agent library; it waits for a person who
+  needs it.
+
+**Verification (part 2):** `test/http/cloud-link-agent.test.ts` (a TLS WebSocket server on loopback, and the real `cloud/`
+server behind a TLS front): no record, no connection; no pin, no connection; another pin or no root is refused before the
+hello and recorded once; heartbeats, the snapshot only while registered and only on change, an opaque machine key; a
+message goes to `receive`, too many close the connection; a secret or an oversized snapshot is dropped and recorded; the
+backoff; a rotation moves the registration and drops the key before after the connection; a revoke at hopper.io stops the
+agent until a rotation. `test/integration/cloud-link-connection.test.ts`, the real daemon and the real `cloud/` server: a
+link and the owner's code register it on both sides, its machine shows, a second registration keeps one entry; a removal at
+hopper.io and an unlink on the instance each remove it on the other side and delete nothing; the CLI revokes and rotates.
+`test/http/cloud-link-scan.test.ts`, `test/http/cloud-link-key.test.ts`, `test/ui/cloud-link.test.ts`.
 
 **Verification:** `test/cloud/connection.test.ts` (real Postgres, the real server on loopback, a real WebSocket client that
 answers with the instance's own hello): a code the owner enters reaches the connected instance as `register`, and its answer
@@ -25836,7 +26134,38 @@ recorded once, and a frame over the snapshot's cap closes it; the 11th connectio
 `test/cloud/hello.test.ts`: hopper.io takes the instance's hello; a changed field, another challenge or another key's proof
 is refused; one schema on both sides. `test/http/cloud-link-key.test.ts` (Ed25519), `test/store/migration-52.test.ts`.
 
-## Cloud link (issue #464, 2026-10-17 — a design; hopper.io's end built in issue #2039 part 1)
+## Many instances under one hopper.io account (issue #465, done, 2026-10-19)
+
+**The problem.** Issue #465: one hopper.io account registers many instances and sees the machines of each. Each instance
+stays self-hosted and keeps its own data. Parts 1 to 9 built each item on both sides with no connection. Issue #2039 built
+the connection. This part shows the items end to end, with more than one instance.
+
+**Where each item is.**
+
+| Item of #465 | Where it is built |
+|---|---|
+| 1. Many instances per account, each with a stable id, a name the owner can change, link state and last seen | "The instance's display name", "Instances at hopper.io"; link state: "The cloud link's connection" (`connected` in `GET /api/account/instances`) |
+| 2. Registration from the instance, approved at hopper.io with a short-lived, single-use code | "Registering at hopper.io", "Registration requests at hopper.io" |
+| 3. A registration again makes no second entry | "Instances at hopper.io" (one registration per instance id) |
+| 4. Machines reported over the link, shown under their instance | "The machines the link reports", "Instance states at hopper.io", "Machine names at hopper.io" |
+| 5. Unregistering from either side deletes nothing on the instance | "Unregistering at hopper.io", "The cloud link's messages" |
+| 6. One box under two instances shows once under each; no merge | "Machine names at hopper.io" (one key per instance, no merge) |
+
+**Decisions:**
+- **Machines go by an opaque key, not by their name** (R5). The issue says each instance reports a machine's name. The
+  snapshot carries a key that the instance makes with its cloud link key, and the owner names the machine at hopper.io
+  ("Machine names at hopper.io"). So no machine name leaves the instance.
+- **The open questions stay with issue #469 decision 6**: who registers an instance with many users, one instance seen by
+  more than one account, and a cap of instances per account. The issue gives them to the tracking issue. Until the owner
+  decides, the instance admin registers the instance to one account, one account sees it, and an account has no cap of instances.
+
+**Verification:** `test/integration/cloud-link-many-instances.test.ts`, two real instance daemons and the real `cloud/`
+server on loopback, behind a TLS front with a pinned test key: two instances on one box link to one account and register;
+hopper.io shows both, each connected, each with the box as its own machine under its own key; an instance stopped and
+started again on the same database keeps its instance id and its registration, connects again, and a registration again
+keeps one entry for it. `test/integration/cloud-link-connection.test.ts` shows items 2 and 5 over the connection.
+
+## Cloud link (issue #464, 2026-10-17 — a design; built in issue #2039)
 
 **The problem.** Issue #464: a self-hosted instance links to hopper.io by dialing out. No port opens on the instance's
 host, and it needs no reverse proxy, DNS name or public URL. Today the instance reaches outside its host only through
@@ -25909,19 +26238,10 @@ HTTP request into the instance: the instance serves nothing on it. A remote acti
 - **The key pin ships in the code.** hopper.io's key is not set in Settings: a key a person can change is a key a
   person can be tricked into changing. A new hopper.io key arrives as an update, with a time when both keys are valid.
 
-**Left for the install side** (issue #2039, filed once the hopper.io server existed in `cloud/`; the production pin
-of hopper.io's key waits for issue #469 decision 7). Part 1 built the Ed25519 key, the hello and hopper.io's end ("The cloud
-link's connection"); the rest is its part 2:
-
-- the hello and its schema, and the cloud link key: minting, the system secret that holds it ("The vault's system
-  scope"), rotate and revoke through the UI session and the operator CLI. R4 and the glossary name an X25519 key; X25519
-  agrees keys and cannot sign. That issue picks an Ed25519 key that signs the challenge, or keeps X25519 in a handshake an
-  established library implements, and changes R4 and the glossary in the same change;
-- the agent: connect while the link record exists, close at an unlink after `unlinked`, reconnect, send the snapshot and
-  heartbeat at the rate "The hopper.io state snapshot" names, and hand incoming text to `receive`;
-- the outgoing secret scan, the events, and `machineKey` and `executorPlugin` for the snapshot;
-- the WebSocket client: an established one (Node's own, or `ws`), the one that takes the key pin;
-- Settings → hopper.io shows the connection's state.
+**Built** (issue #2039, "The cloud link's connection"): part 1, the Ed25519 key, the hello and hopper.io's end; part 2, the
+instance's agent, the pin, the outgoing scan, the events, the machine key, revoke and rotate through the UI session and the
+operator CLI, and the connection in Settings → hopper.io. The production pin of hopper.io's key waits for issue #469
+decision 7.
 
 **Verification:** a docs change; no code. The install-side issue's tests must show R1, R4, R5, R6, R7 and R8
 (`docs/hopper-io-security.md` "What each child issue must show").
@@ -29653,3 +29973,148 @@ filter, a second page of repositories, the 304 path, a refused repository (`test
 schedule, the accounts merged, a failed read that keeps the rows before (`test/pending-approvals/service.test.ts`); the
 route on the real daemon (`test/integration/pending-approvals.test.ts`); the page, its empty state and the nav count
 (`test/ui/pending-approvals-view.test.ts`).
+
+## One work skill: work and orchestrate merged (issue #2145, 2026-10-19)
+
+**Problem.** The skill library shipped two built-in skills for one way of working. `work` (intake, existing work, the
+change rules, the pull request) required `orchestrate` (the repository's own copy, the state, the loop, fan-out keys,
+waiting, resume, finish) and sent the job to it partway through. Both covered intake, the task list and the finish, and
+split them differently. A job read two texts and had to join them.
+
+- **One skill** (`src/skill-library/built-in/work/SKILL.md`). One loop from the first read to a ready pull request:
+  intake (the repository's rules and the issue), existing work, the task list, order, where each task runs (in this job
+  or as a sub-task with a fan-out key), the change, verify, wait, resume and finish (the review of the own diff, the pull
+  request body). It keeps all that `orchestrate` had — the repository copy (`sh "$HOPPER_SKILL" work --repo-copy DIR`),
+  where the state is, the fan-out keys, `HOPPER_WAITING`, resume — and `work`'s change rules: the smallest change, tests
+  first, the glossary, small commits, environment skips. It requires no skill. Every code job gets it as its work skill,
+  in full, as before (`DEFAULT_WORK_SKILLS`).
+- **`orchestrate` is a skill alias** (`SKILL_ALIASES`, `skillNameOf`, `src/domain/skill-library.ts`). The built-in
+  `orchestrate` directory is gone; `BUILT_IN_SKILL_NAMES` no longer lists it. Every place that resolves a skill by name
+  resolves an alias first (`builtInOf`, `latestSkill`, `src/skill-library/index.ts`): a `requires: orchestrate` gets
+  `work` beside the skill, under `work-skill/work/`, and `job.work_skill_chosen` names `work`; a work skill setting that
+  names `orchestrate` chooses `work`; a skill rule that names it gives `work` as a conditional skill, and nothing when the
+  work skill is `work` already; `GET /api/skill-library/orchestrate` answers `work`. No skill takes the alias as its name:
+  create, duplicate, import and remove refuse it as they refuse a built-in name.
+- **hopper-skill** (`src/skills/library.ts`, `src/skills/catalog.ts`). The served library skill is `work`; its catalog
+  line says its other name. `sh "$HOPPER_SKILL" orchestrate` still answers, with the work skill's text headed
+  `skill work, version <v>`, and `skill.loaded` records `skill: work`. The job rules' task-list line (`TASKS_LINE`) points
+  at `sh "$HOPPER_SKILL" work`.
+- **The Skills page** (`ui/src/model/skills.ts`, `ui/src/views/skill-library.tsx`). `GET /api/skill-library` answers
+  `aliases`. The work skill's card says "Also named orchestrate"; a skill that requires an alias shows it as in the
+  library; a setting or a rule that names an alias counts for the skill it names ("Chosen for …").
+
+**Decisions.**
+- **`work` keeps the name, `orchestrate` becomes the alias.** `work` is the default work skill of code jobs and the name
+  in every `job.work_skill_chosen` and setting; `orchestrate` is what other skills require and what jobs load by name.
+- **An alias, not a removal.** Settings, skill rules and user skills that name `orchestrate` are the user's persisted
+  state: the alias keeps each of them working with no migration. Settings keep the name as the user wrote it.
+- **Recorded under the skill's own name.** A requirement, a choice or a load records `work`, so the job record names the
+  files it got. A job chosen before this change keeps its kept versions while they exist; a built-in version this build no
+  longer has was chosen again before this change too.
+
+**Verification:** `test/domain/skill-library.test.ts` (the alias table and `skillNameOf`); `test/integration/skill-library.test.ts`
+(the built-in list with no `orchestrate` and the aliases; the work skill delivered in full with nothing beside it; a
+`requires:`, a setting and a skill rule that name `orchestrate` get `work`; the alias refused as a new skill's name);
+`test/integration/orchestrate-skill.test.ts` and `test/integration/orchestrate-fan-out.test.ts` (both names load the work
+skill through the real `hopper-skill`; the repository copy recorded); `test/skills/served-skills.test.ts` (one served
+skill, the merged text holds both skills' parts); `test/ui/skills.test.ts`, `test/ui/skills-view.test.ts` (the alias
+line, the requires line, the settings that name an alias).
+
+## Observability sandboxes (issue #2146, part 1, 2026-10-19)
+
+**The problem.** A job could read a cluster through a sandbox, but not its metrics, logs or dashboards. The box image had
+no `promtool`, `logcli` or `jq`, nothing started a port-forward and ended it with the command, and no skill said how to
+query Prometheus, Loki or Grafana and keep the results as evidence. The cluster side — a role that may port-forward to
+the monitoring services only, and a Grafana Viewer token — is the platform's, on its own issue.
+
+- **The observability tools** (`src/sandbox/tools.ts`). `jq` (jq's static release binary), `logcli` (Loki's release)
+  and `promtool` (from the Prometheus release; the server binary is not kept) join the **box tools**, pinned and checked
+  by their published SHA-256 for `amd64` and `arm64`, as every tool is. The published tools images (`box-tools`) carry
+  every tool, so they carry these too.
+- **The port-forward helper** (`src/sandbox/port-forward-helper.ts`). Every image with `kubectl` has
+  `hopper-port-forward` in `/opt/hopper-tools/bin`, written from base64 as the terraform wrappers are. `hopper-port-forward
+  [-n NS] [--context NAME] TARGET LOCAL[:REMOTE] -- COMMAND` starts `kubectl port-forward --address 127.0.0.1` in the
+  background, waits until kubectl says the local port is forwarded (30 s, `HOPPER_PORT_FORWARD_WAIT_S`), runs the
+  command, and stops the forward when the command ends, on a signal too. Its exit code is the command's; 1 when the forward
+  did not start, with kubectl's words; 2 for a bad call. Nested, it holds more than one forward. A box of a box step or a
+  need step is burned when its command ends, so no forward outlives the step either way.
+- **Tools on request** (`src/skills/template-ask.ts`). `sandbox` and `sandbox-template` take `--tools "TOOL ..."`: box
+  tools beside the ones the needs use (`toolsForNeeds`). A tool outside the catalog is a 400. The template's name hashes
+  `tool:` lines after the other extras, so a request that names none keeps its name. Tools are the hopper's own pinned
+  software and give a box no access, so they change nothing of who approves: the read policy approves a read template
+  with them, as it approves the needs' tools. A template approved for the request is reused when it has at least the tools
+  asked for.
+- **The observability skill** (`src/skills/catalog.ts`, `sh "$HOPPER_SKILL" observability`). Text only: ask for a sandbox
+  with `--tools "jq promtool logcli"` and, for Grafana, `--secrets` with the vault secret of a Viewer token (a person
+  approves it, as every secret); run each query as a box step under `hopper-port-forward`; a PromQL instant and range query
+  (the HTTP API or `promtool query`), a LogQL query (`logcli`), a Grafana search, dashboard and panel query (the token read
+  with `"$HOPPER_SECRET" get` in the command only); keep the JSON and a short `jq` table as evidence, in the pull request,
+  the report or an artifact. It says what a job must not do: no `kubectl exec`, no Secret reads, no change in Grafana, no
+  Alertmanager silence, never print the token; a Forbidden forward is said, not worked around.
+
+**Decisions:**
+- **The guardrails stay where they are enforced.** What a forward reaches is the cluster's RBAC for the box's credential;
+  the Grafana token's role is Viewer. The helper and the skill text are no boundary, and the hopper adds none of its own.
+- **The helper with `kubectl`, not a tool of its own.** It is a few lines of shell that need `kubectl`, so every image that
+  can forward has it, and no template names it.
+- **`--tools` changes no approval.** A tool is software the hopper pins, not access. A secret still needs a person.
+- **Release binaries, not Debian packages.** Every tool is fetched in the fetch stage and copied into the box image alone;
+  a static release binary needs no library of the base image.
+
+Left for part 2: the **observe profile** — a minted credential whose role may port-forward to the monitoring services and
+nothing else (its own IAM role, as `hopper-read` is for a read), so a read need's role stays view-only; read-only check
+probes that `kubectl exec` and a Secret read are refused under it; `--tools` on a need step; and the live check on a
+cluster (a job port-forwards Prometheus and Grafana, runs `up` and a range query, fetches a dashboard, and is refused
+`kubectl exec` and a Secret read).
+
+Tests: `test/sandbox/tools.test.ts` (the three recipes, only promtool kept of the Prometheus release, the helper in an
+image with kubectl only), `test/sandbox/port-forward-helper.test.ts` (the helper with a kubectl of the test's own: the
+command runs once the port is forwarded, its exit code, the forward stopped after it; a forward that fails or is never
+ready runs no command; a bad call), `test/skills/template-request-extras.test.ts` (tools on request: saved, named,
+approved by the read policy, reused, an unknown tool refused), `test/skills/observability.test.ts`.
+
+## A comment ends the job's own wait (issue #2159, 2026-10-19)
+
+**The problem.** A job on its own wait (waiting on a pull request to merge) did not see new comments on its issue. The owner
+commented three times over three hours with a new blocker; nothing reached the job. It waited until a person ran End the wait.
+Nothing watched the issue of a job on its own wait: the GitHub watch (issue #427) followed pointed jobs and jobs on a
+question posted on the thread only, and no wait check reads comments.
+
+- **Watched while it waits** (`src/github-watch/service.ts`, `waitWatchesOf` in `src/domain/comment-wake.ts`). A job on its
+  own wait gets a GitHub watch on its issue, under the job's id (as a thread ask's), and one on its own pull request (the one
+  its source follows), under `<job id>:pr`. `job.waiting` starts them, and its first poll is at once; a poll of a job no longer
+  on its wait drops them. The poll is the watch's own (`GET …/issues/{n}` and its timeline, ETag 304s), on the user's interval
+  (default a minute).
+- **Which comment wakes it** (`wakingComment`). On `github_watch.changed` with comments added, for a job on its own wait,
+  the sync loop reads the item's comments through the job source's thread (`src/sources/comment-wakes.ts`, on the job's report
+  chain). The first comment the watch saw added, made at or after the wait began, by a trusted account — the user's connected
+  account (the job's `source.assignee`) or a maintainer of the repository (`author_association` owner, member or collaborator),
+  the rule of a thread ask's reply (`isTrustedReply`) —, not marked by the hopper, not empty, and not one a job posted through
+  the GitHub proxy (`github_proxy.done` of `issue.comment`, by its link), ends the wait. A comment by anyone else wakes nothing.
+- **Ended** (`SourceHost.wakeOnComment`, `recordCommentWake` in `src/engine/wait.ts`). In one tx, only while the job is on
+  the same wait (`wait.since`): `job.wait_ended { by: hopper, note, comment: <its link> }`, queued again and pinned to its
+  machine, as any wait the hopper ends. The job is told the comment's link and its text between `<<<hopper-untrusted-comment`
+  and `hopper-untrusted-comment>>>` (cut at 4000 characters), as data, not instructions, and to wait again if its wait still
+  holds.
+- **UI.** The job view says "woken by a comment", with the comment's link, until the job waits again; the timeline line of
+  `job.wait_ended` names the link.
+
+**Decisions:**
+- **Trusted is the thread ask's rule**, not intake trust (Access, `intake#can_start_jobs`). A comment that wakes a job
+  starts no job and changes no text the job runs: it is a hint the job weighs as untrusted text. The same rule already lets a
+  reply answer a job's question.
+- **The GitHub watch, not the wait check.** The watch already polls an item on the user's interval with conditional
+  requests, and records comment ids, authors and times, never their text. The text is read only when the watch saw a new
+  comment.
+- **Issue comments only.** A pull request's reviews and review comments wake nothing here: a wait on its review is tested
+  as its reviews (issue #1694 part 3).
+
+**Not built.** A comment made between the wait's start and the first poll of its watch, when the watch had no snapshot
+before, is in that first snapshot and wakes nothing. A comment on a pull request the issue links but the job does not own.
+
+**Persisted state.** No schema change: the watches are rows of `github_watches` (tenant migration 44), and `comment` is an
+optional field of `job.wait_ended`. A build before this one ignores both.
+
+**Verification:** `test/domain/comment-wake.test.ts`, `test/integration/comment-wake.test.ts` (the real daemon over the
+fake herdr: a job on its own wait on a pull request; a stranger's comment on its issue wakes nothing; the owner's comment
+wakes it within one poll, told the comment as untrusted text).

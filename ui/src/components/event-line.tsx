@@ -98,6 +98,8 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'artifact.revised') return revisedDetail(d);
   if (e.type === 'artifact.revision_pinned') return `revision ${String(d.revision)} ${d.pinned === true ? 'pinned' : 'unpinned'}`;
   if (e.type === 'artifact.revision_removed') return `revision ${String(d.revision)} removed by the retention`;
+  // A comment ended the job's own wait (issue #2159): its link.
+  if (e.type === 'job.wait_ended' && typeof d.comment === 'string') return `woken by a comment: ${d.comment}`;
   if (e.type === 'job.fork_resolved') return `fork ${String(d.forkId).slice(0, 8)} ${d.decision === 'accept' ? 'accepted' : 'rejected'}${d.delivered ? ': answered the question' : ''}`;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode', 'assignee']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
   if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;

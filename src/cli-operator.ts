@@ -32,7 +32,7 @@ import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCal
 import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
-import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts';
+import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts'; import { CLOUD_LINK_USAGE, cloudLinkCall } from './cli-operator-cloud-link.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
 import { QUEUE_USAGE, ownWaitOf, queueCall } from './cli-operator-queue.ts';
@@ -43,13 +43,15 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
 
 export const OPERATOR_USAGE = `  hopper job show <id>                               one job, by its id or short id: its state, and why it is held or waits (holdReason, waitReason),
                                                      or, on its own wait, what it waits on (waitsOn, waitsFor, wait)
   hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
   hopper job cancel <id> [--reason <text>]           any job that has not ended ends cancelled, the reason kept on it
+  hopper job park <id> [--reason <text>]             park a running job, or one on a question, a proposal or a research report: it leaves its lane, and keeps its work
+  hopper job pick-up <id>                            pick a parked job up: it waits again where it was parked, or resumes its session
   hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
   hopper job end-wait <id> [--note <text>]           end a job's own wait: it goes on, told the note; a stranded one resumes its session
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
@@ -103,6 +105,7 @@ ${REPORT_USAGE}
 ${SEARCH_USAGE}
 ${LANES_USAGE}
 ${MACHINE_USAGE}
+${CLOUD_LINK_USAGE}
 ${ACCOUNTS_USAGE}
 ${TERMINAL_USAGE}
 ${VAULT_USAGE}
@@ -131,7 +134,7 @@ function jobCall(args: string[]): Call {
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' }, note: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job show|stamp|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
+  if (!id || extra.length > 0) throw usage('job show|stamp|accept|reject|cancel|park|pick-up|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes, note = values.note;
   // End a job's own wait (issue #1779: a stranded one too), as the job's End wait button.
   if (verb === 'end-wait' && notes === undefined && values.reason === undefined) return { role: 'operator', path: `${at}/end-wait`, body: async () => (note === undefined ? {} : { note }) };
@@ -142,8 +145,10 @@ function jobCall(args: string[]): Call {
   if (verb === 'stamp' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}/stamp` };
   if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
   if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
-  if (verb === 'reject' || verb === 'cancel') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
-  if (values.reason !== undefined) throw usage('job reject|cancel <id> --reason <text>');
+  if (verb === 'reject' || verb === 'cancel' || verb === 'park') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
+  if (values.reason !== undefined) throw usage('job reject|cancel|park <id> --reason <text>');
+  // Pick up (issue #2167), as the Parked view's: the re-queue route.
+  if (verb === 'pick-up') return { role: 'operator', path: `${at}/requeue`, body: async () => ({}) };
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
   // Quarantine and its lift (issue #655) too.
   if (['rerun', 'keep-original', 'accept-new-text', 'quarantine', 'unquarantine', 'approve-trust'].includes(verb ?? '')) return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
@@ -154,7 +159,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job show|stamp|accept|reject|cancel|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
+  throw usage('job show|stamp|accept|reject|cancel|park|pick-up|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */
@@ -257,6 +262,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
   if (command === 'machine') return machineCall(args);
+  if (command === 'cloud-link') return cloudLinkCall(args);
   if (command === 'accounts') return accountsCall(args, stdin);
   if (command === 'terminal') return terminalCall(args, stdin);
   if (command === 'token') return tokenCall(args);

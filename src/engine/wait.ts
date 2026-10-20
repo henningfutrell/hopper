@@ -29,17 +29,17 @@ export function waitEndedNote(wait: Pick<JobWait, 'for' | 'strandedAt'> | undefi
 
 /**
  * In the tx: a person, or the hopper, ends the job's wait. It is queued again with the note pending, pinned to its machine (a pending
- * answer pins it, as for an answered question), and its claim types the note into its pane. `job.wait_ended`; `check`: the key of
- * the wait check's condition that ended it (issue #1694).
+ * answer pins it, as for an answered question), and its claim types the note into its pane. `job.wait_ended`; `ended.check`: the key
+ * of the wait check's condition that ended it (issue #1694); `ended.comment`: the link of the comment that woke it (issue #2159).
  */
-export function recordEndWait(c: Pick<EngineContext, 'store'>, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string, check?: string): Job {
+export function recordEndWait(c: Pick<EngineContext, 'store'>, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string, ended: { check?: string; comment?: string } = {}): Job {
   const { store } = c;
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'waiting_on') throw new EngineError('conflict', `job ${id} is ${job.status}: only a job on its own wait can have its wait ended`);
   const pendingAnswer = told ? told(job.wait) : waitEndedNote(job.wait, note, by);
   const next = store.jobs.update(id, { status: 'queued', pendingAnswer, wait: undefined, holdReason: undefined, waitReason: undefined });
-  store.events.append({ type: 'job.wait_ended', jobId: id, data: { by, ...(note ? { note } : {}), ...(check ? { check } : {}) } });
+  store.events.append({ type: 'job.wait_ended', jobId: id, data: { by, ...(note ? { note } : {}), ...(ended.check ? { check: ended.check } : {}), ...(ended.comment ? { comment: ended.comment } : {}) } });
   return next;
 }
 
@@ -110,4 +110,15 @@ export function recordPollSeen(c: EngineContext, id: string, on: WaitOn, answer:
   const typed = c.store.jobs.update(id, { wait: next.wait });
   c.store.events.append({ type: 'job.wait_polled', jobId: id, data: { on } });
   return typed;
+}
+
+/**
+ * In the tx (issue #2159): a trusted account's comment on the job's issue or pull request ends its own wait, while it is
+ * still the wait that began at `since`. The job is told the comment (`told`). The job as it is now; undefined when it is
+ * no longer on that wait.
+ */
+export function recordCommentWake(c: Pick<EngineContext, 'store'>, id: string, since: string, comment: { url: string; author: string }, told: string): Job | undefined {
+  const job = c.store.jobs.get(id);
+  if (job?.status !== 'waiting_on' || job.wait?.since !== since) return undefined;
+  return recordEndWait(c, id, `${comment.author} commented`, 'hopper', () => told, { comment: comment.url });
 }

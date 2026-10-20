@@ -193,8 +193,10 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * that claim reopens the session instead of typing into a pane. `auto` (issue #650): auto-park parked it, `why` says
    * so, and the answer to its question re-queues it with no pick up. `elsewhere` (issue #921): a person picked it up to
    * resume elsewhere — not pinned to its machine, its claim rebuilds its work tree from its checkpoint where it runs.
+   * `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did, and the reason they gave.
+   * `parkAsk`: a running job's park, kept until its executor stepped aside and the park is recorded.
    */
-  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere };
+  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere } & import('./park-ask.ts').ParkAsk; parkAsk?: import('./park-ask.ts').ParkAsk;
   /**
    * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
@@ -286,7 +288,8 @@ export interface JobSourceRef {
   /**
    * Its repository's **visibility** and its **linked pull requests** (issue #655 part 19): the pull requests its text names,
    * who wrote each, whether its head is a fork and whether a trusted actor wrote it, as read when its origin was judged.
-   * Absent as `originActs` is. A record for people and for Jev's trust check: no rule reads them.
+   * Absent as `originActs` is. A record for people and for Jev's trust check: no rule reads them, but the job may edit a
+   * linked pull request's title or body (issue #2151).
    */
   visibility?: RepoVisibility; linkedPulls?: LinkedPullRequest[];
 }
@@ -537,7 +540,7 @@ export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, typ
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
+export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, UsageThrottle, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
 export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
 export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
 export * from './stack-resources.ts'; export * from './telemetry-summary.ts';

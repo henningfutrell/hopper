@@ -18,6 +18,7 @@
 // job's own repository owned by the user, as GitHub says (the broker reads it): the fork is no job repository.
 import { z } from 'zod';
 import { isCommand } from '../domain/comment-command.ts';
+import { LOOK_ONLY } from '../domain/direct-jobs.ts';
 
 export const PROXY_OPS = [
   'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
@@ -98,11 +99,16 @@ export interface ProxyAsker {
   contribution?: boolean;
   /** The login of the job's user's connection, which acts for it: the owner of the job's fork. */
   login?: string;
+  /** A direct query's job (issue #2184): it only reads. */
+  lookOnly?: boolean;
   /** The request's repository when GitHub says it is the job's fork: the user's fork of the job's own repository. */
   fork?: string;
   /** Whether the user can push to the job's own repository, as GitHub says, when read (for `repo.fork`). */
   canPush?: boolean;
-  /** For `pr.edit` and `pr.close` (issue #1734): whether the job opened that pull request, or it is its work item's. */
+  /**
+   * For `pr.edit` and `pr.close` (issue #1734): whether the job opened that pull request, or it is its work item's or the one
+   * it tends; for `pr.edit` also one its issue names to update (issue #2151).
+   */
   ownsPullRequest?: boolean;
 }
 
@@ -132,6 +138,7 @@ export const PR_OWNED: readonly ProxyOp[] = ['pr.ready', 'pr.edit', 'pr.close'];
 
 /** Whether the asker may have the request done; else why not, in words the job can act on. */
 export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositories: readonly string[]): { ok: true } | { ok: false; reason: string } {
+  if (asker.lookOnly && !isRead(req.op)) return { ok: false, reason: LOOK_ONLY };
   const onFork = asker.fork !== undefined && same(asker.fork, req.repo);
   const anywhere = req.op === 'pr.create' || (PR_OWNED.includes(req.op) && asker.ownsPullRequest === true);
   if (!onFork && !READS.includes(req.op) && !anywhere && !jobRepositories.some((r) => same(r, req.repo))) {
@@ -167,7 +174,7 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
   }
   if (req.op === 'issue.comment' && isCommand(req.body)) return { ok: false, reason: JOB_COMMAND };
   if ((req.op === 'pr.edit' || req.op === 'pr.close') && !asker.ownsPullRequest) {
-    return { ok: false, reason: `a job edits or closes only a pull request it opened, or the pull request of its own work item: not ${req.repo}#${req.number}` };
+    return { ok: false, reason: `a job edits or closes only a pull request it opened, the one it tends or its work item's, and edits one its issue names: not ${req.repo}#${req.number}` };
   }
   return { ok: true };
 }

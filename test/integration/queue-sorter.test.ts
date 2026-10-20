@@ -44,6 +44,9 @@ async function queueBehindBlocker(a: TestApp): Promise<{ blocker: Job; older: Jo
 /** Free the lane and return which of the two was claimed first. */
 async function firstClaimed(a: TestApp, blocker: Job, ids: string[]): Promise<string> {
   const token = await a.login();
+  // The manual source offers a cancelled job's item again: a later sync then makes a new 30 s blocker of priority 50,
+  // which outranks the older job and holds the one lane (issue #2135, the cause of #1918 and #2073). Offer it no more.
+  a.source.remove(blocker.source!.key);
   expect((await a.ui(`/ui/api/jobs/${blocker.id}/cancel`, {}, { token })).status).toBe(200);
   // Two jobs run one after the other in the one lane: on a loaded CI runner that takes more than the default 5 s.
   try {

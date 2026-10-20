@@ -2,6 +2,7 @@
 // limits and the soft lanes (issue #2091) may be, how a dragged limit moves, the band and lane cap a usage fraction
 // gets at a draft, and the throttle line drawn under them. Pure: tested from test/ui/usage-limits.test.ts.
 import type { UsageLimitPair, UsageSeries } from '../../../src/domain/types.ts';
+import { windowWord } from './usage.ts';
 import type { GraphPoint } from './usage-history.ts';
 
 export type LimitName = 'soft' | 'hard';
@@ -33,15 +34,18 @@ export function dragLimit(l: UsageLimitPair, which: LimitName, to: number): Usag
     : { ...l, hard: Math.max(v, percent(l.soft + STEP)) };
 }
 
-/** The band a usage fraction is in at these limits (src/decider/usage.ts `laneCap`). */
-export function bandAt(usedFrac: number, l: UsageLimitPair): LimitBand {
+/**
+ * The band a usage fraction is in at these limits (src/decider/usage.ts `laneCap`). `burning`: a week window in its burn
+ * window, whose hard limit is 100% (issue #2169).
+ */
+export function bandAt(usedFrac: number, l: UsageLimitPair, burning = false): LimitBand {
   if (usedFrac < l.soft) return 'free';
-  return usedFrac >= l.hard ? 'hard' : 'soft';
+  return usedFrac >= (burning ? 1 : l.hard) ? 'hard' : 'soft';
 }
 
 /** The lane cap of an online machine at these limits: the decider's rule, which the UI may not import (issue #2091: the soft lanes from soft to hard). */
-export function capAt(maxLanes: number, usedFrac: number, l: UsageLimitPair): number {
-  const band = bandAt(usedFrac, l);
+export function capAt(maxLanes: number, usedFrac: number, l: UsageLimitPair, burning = false): number {
+  const band = bandAt(usedFrac, l, burning);
   if (band === 'free') return maxLanes;
   if (band === 'hard') return 0;
   return Math.min(maxLanes, l.softLanes ?? DEFAULT_SOFT_LANES);
@@ -58,4 +62,22 @@ export function throttleLine(series: readonly UsageSeries[]): GraphPoint[] {
     }
   }
   return [...max].sort(([a], [b]) => a - b).map(([t, v]) => ({ t, v }));
+}
+
+/** One throttling window's line on the graph (issue #2169): its label and its points. */
+export interface WindowLine { label: string; points: GraphPoint[] }
+
+/**
+ * A line per throttling window, so the graph shows which one the throttle line follows. Labelled by its window
+ * (`session`, `weekly`), with its account when two accounts share the window; a source with one budget by its name.
+ */
+export function windowLines(series: readonly UsageSeries[]): WindowLine[] {
+  const shown = series.filter((s) => !s.informational);
+  const name = (s: UsageSeries) => (s.window === undefined ? s.account : windowWord(s.window));
+  const count = new Map<string, number>();
+  for (const s of shown) count.set(name(s), (count.get(name(s)) ?? 0) + 1);
+  return shown.map((s) => ({
+    label: (count.get(name(s)) ?? 0) > 1 ? `${name(s)} · ${s.account}` : name(s),
+    points: s.points.map((p) => ({ t: Date.parse(p.at), v: p.usedFrac })),
+  }));
 }

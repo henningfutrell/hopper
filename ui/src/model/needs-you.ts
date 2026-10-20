@@ -8,11 +8,13 @@
 // Landing (issue #1333) counts the repositories whose landing pass failed the same way on several passes in a row, each with
 // its error: nothing moves to the tested branch until a person restarts the batch or fixes the cause.
 // Machines (issue #1248) counts the online machines that are not ready, each named with why: its job user holds credentials, or it is off-network.
-// Access requests also counts the templates with an unknown asset (issue #2067), each named: a job's need names a cluster the vault cannot find.
+// Unknown clusters (issue #2168) counts the templates with an unknown asset (issue #2067), each named: a job's need names a
+// cluster the vault cannot find, or a short name of several. A row of its own, never in Access requests: that row, and its
+// nav badge, count only what waits for a person's approval, and no approval makes such a template work.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -50,7 +52,8 @@ export interface NeedsYouRow {
 /** Each row's page and words: what it counts, said also when nothing waits, so a person knows the kind is there. */
 const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> = {
   intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval, labelled issues not assigned to you: no job starts until you assign them, and jobs held by their trust stamp' },
-  access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants and box templates that jobs on boxes wait for, and templates whose cluster the vault cannot find' },
+  access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants, box templates and sandbox runs that jobs on boxes wait for you to approve' },
+  'unknown-assets': { label: 'Unknown clusters', href: '#access-requests', what: 'templates that name a cluster the vault cannot find, or a short name of several clusters: point each at a cluster, add a cluster override, or remove it' },
   plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for a person to approve them' },
   questions: { label: 'Questions', href: '#questions', what: 'questions jobs asked you' },
   proposals: { label: 'Proposals', href: '#proposals', what: 'proposals that wait for you to pick a path' },
@@ -69,9 +72,10 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
 export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
   const count = (k: NeedsYouKind): { n: number; high: number; details?: readonly string[] } => {
     if (k === 'intake') return { n: c.intake, high: 0 };
-    if (k === 'access') {
+    if (k === 'access') return { n: c.access, high: 0 };
+    if (k === 'unknown-assets') {
       const unknown = c.unknownAssets ?? [];
-      return { n: c.access + unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };
+      return { n: unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };
     }
     if (k === 'plans') return { n: c.plans, high: 0 };
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };

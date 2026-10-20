@@ -1,10 +1,10 @@
 # The cloud acceptance tests (issue #1956, test/cloud-acceptance/README.md): a session the vault mints, used by the real
 # `aws` CLI, curl's SigV4 and the AWS SDK against a mock AWS (moto) behind the policy-assert proxy, through the hopper's
-# real composition root, and terraform in the read-only box image the hopper builds, and a read-only need box behind the egress proxy
-# (the compose service `egress`, in the hopper's dev image), and a need step whose hopper is killed mid-step (the crash harness). Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
+# real composition root, and terraform in the read-only box image the hopper builds, and a read-only need box behind the egress proxy, with a minted session and an SDK script in it
+# (the compose service `egress`, in the hopper's dev image), need steps that plan and apply a recorded plan, a need step whose hopper is killed mid-step (the crash harness), and kubectl in a need box with a minted token against a kind cluster. Nightly on the default branch (dev), and on a pull request that changes the vault, the sandbox module, the infra
 # plans or the tests themselves: they start containers and take minutes, so `pr / test` leaves them out.
 # Read-only and with no secrets: `pull_request`, never `pull_request_target`. moto, Postgres, the AWS CLI and the box image are public
-# images; nothing reaches a real cloud.
+# images, and kind and kubectl come with the runner; nothing reaches a real cloud.
 name: cloud-acceptance
 
 on:
@@ -48,4 +48,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: docker pull -q docker.io/motoserver/moto:5.1.14 && docker pull -q docker.io/amazon/aws-cli:2.31.18 && docker pull -q ghcr.io/henningfutrell/hopper:dev
+      - run: kind version && kubectl version --client
       - run: npm run test:cloud

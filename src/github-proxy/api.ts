@@ -12,6 +12,7 @@ import { ACCOUNT_CONNECTION, checksLack } from '../sources/github/checks-fallbac
 import { explained, notAccessible, permissionsOfError } from '../sources/github/http/refusal.ts';
 import { fileAssignedIssue } from '../sources/github/http/file-issue.ts';
 import { jobLog } from '../sources/github/http/rest.ts';
+import { newestRuns } from '../sources/github/newest-runs.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/http/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
 import { findFiled, passProxyKillPoint } from './resend.ts';
@@ -215,22 +216,25 @@ async function pullReviews(req: Request, token: string, r: { repo: string; numbe
 const FAILED_RUN = new Set(['failure', 'timed_out', 'startup_failure']);
 
 /**
- * A commit's checks from its check runs (issue #1072): failing once one failed, pending while one runs, none with no run.
+ * A commit's checks from its check runs (issue #1072, `runChecks`): failing once one failed, pending while one runs, none with no run.
  * GitHub refusing them (403, 404: the connection may not read checks, issue #855) is `unknown`, never a failure of the read,
  * and says why and the fix (`checksWhy`, issue #1279).
  */
 async function checksOf(req: Request, headers: Record<string, string>, repo: string, sha: string): Promise<Pick<PullRequestStatus, 'checks' | 'failedChecks' | 'checksWhy'>> {
-  let runs: RestCheckRun[];
   try {
-    runs = ((await req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...splitRepo(repo), ref: sha, per_page: 100, headers })).data as { check_runs?: RestCheckRun[] }).check_runs ?? [];
+    return runChecks(((await req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...splitRepo(repo), ref: sha, per_page: 100, headers })).data as { check_runs?: RestCheckRun[] }).check_runs ?? []);
   } catch (err) {
     if (refusedRead(err)) return { checks: 'unknown', failedChecks: [], checksWhy: checksLack(ACCOUNT_CONNECTION, ['checks']) };
     throw err;
   }
+}
+
+/** A commit's checks from its check runs, the newest run of each check only (issue #2129): a newer run supersedes an older one. */
+export function runChecks(all: RestCheckRun[]): Pick<PullRequestStatus, 'checks' | 'failedChecks'> {
+  const runs = newestRuns(all, (r) => r.name, (r) => r.id);
   const failed = runs.filter((r) => FAILED_RUN.has(r.conclusion ?? ''));
   const failedChecks = failed.map((r) => ({ name: r.name, ...(r.html_url ?? r.details_url ? { url: (r.html_url ?? r.details_url)! } : {}) }));
-  const checks = runs.length === 0 ? 'none' : failed.length > 0 ? 'failing' : runs.some((r) => r.status !== 'completed') ? 'pending' : 'passing';
-  return { checks, failedChecks };
+  return { checks: runs.length === 0 ? 'none' : failed.length > 0 ? 'failing' : runs.some((r) => r.status !== 'completed') ? 'pending' : 'passing', failedChecks };
 }
 
 /** Where a pull request stands, read on GitHub (issue #1072): what `pr status` answers for one the hopper does not know. */

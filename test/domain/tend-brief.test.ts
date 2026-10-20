@@ -1,7 +1,7 @@
 // The tend brief of failing checks (issue #927): it names the checks that failed, and lets the first fix of a row run a
 // flaky check again once before code changes.
 import { describe, expect, it } from 'vitest';
-import { tendBrief } from '../../src/domain/types.ts';
+import { checksRedBrief, tendBrief } from '../../src/domain/types.ts';
 
 const PR = 'https://github.com/owner/repo/pull/7';
 
@@ -29,6 +29,16 @@ describe('the tend brief of failing checks (issue #927)', () => {
     const brief = tendBrief(PR, 'rebase', { failed: [{ name: 'lint' }], rerun: true });
     expect(brief).not.toContain('lint');
     expect(brief).not.toContain('empty commit');
+  });
+});
+
+describe('a check that reads the pull request\'s body (issue #2151)', () => {
+  it('tells the job how to edit the body, and that a refused edit is no check for it to fix: it ends failed with the refusal', () => {
+    for (const brief of [tendBrief(PR, 'fix_checks'), checksRedBrief(PR, {}, true), checksRedBrief(PR, {}, false)]) {
+      expect(brief).toContain('A check can read the title or body of the pull request. To change them: sh "$HOPPER_GH" pr edit 7 --repo owner/repo --body-file FILE.');
+      expect(brief).toContain('If the hopper or GitHub refuses the edit, you cannot fix that check. End the job as failed. Name the check and quote the refusal.');
+    }
+    expect(tendBrief(PR, 'rebase')).not.toContain('pr edit');
   });
 });
 

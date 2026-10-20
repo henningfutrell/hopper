@@ -8,7 +8,7 @@
 // leaves the pull request without it. A request that fails, or an error that names no alias, throws: the cycle asks again.
 import type { BranchPullRequest, OpenPullRequestsIn, PullRequestRef, PullRequestState, PullRequestStates } from '../api.ts';
 import { pullKey } from '../api.ts';
-import { rollupChecks } from '../closer.ts';
+import { rollupChecks, type Rollup } from '../closer.ts';
 import type { Request } from './http.ts';
 import { splitRepo } from './http.ts';
 
@@ -17,12 +17,14 @@ export const PULLS_MAX = 50;
 /** The most repositories in one request of open pull requests: 25 × 100 pull requests. */
 export const OPEN_PULLS_REPOS_MAX = 25;
 
-const PULL = 'state isDraft mergeable createdAt body headRefName headRefOid baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }';
+/** Its head's checks: the rollup's state, and its contexts, so a run a newer run superseded fails nothing (issue #2129). */
+const CONTEXTS = 'contexts(first: 100) { totalCount nodes { __typename ... on CheckRun { databaseId name status conclusion } ... on StatusContext { context state } } }';
+const PULL = `state isDraft mergeable createdAt body headRefName headRefOid baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state ${CONTEXTS} } } } }`;
 const OPEN_PULL = 'url title createdAt isDraft mergeable body headRefName baseRefName';
 
 interface GqlPull {
   state?: string; isDraft?: boolean; mergeable?: string; createdAt?: string; body?: string; headRefName?: string; headRefOid?: string; baseRefName?: string;
-  commits?: { nodes?: ({ commit?: { committedDate?: string; statusCheckRollup?: { state?: string } | null } | null } | null)[] } | null;
+  commits?: { nodes?: ({ commit?: { committedDate?: string; statusCheckRollup?: Rollup | null } | null } | null)[] } | null;
 }
 interface GqlIssue { state?: string; stateReason?: string | null; updatedAt?: string }
 interface GqlOpenPull { url?: string; title?: string; baseRefName?: string; createdAt?: string; isDraft?: boolean; mergeable?: string; body?: string; headRefName?: string }

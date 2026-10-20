@@ -1,6 +1,7 @@
 // hopper.io's end of the cloud link's connection (issue #2039, docs/design.md "The cloud link's connection"): one
 // WebSocket per instance, which the instance opens at LINK_PATH (ws, an established library). hopper.io sends a challenge
-// first; the instance's first message is its hello (cloud/hello.ts), which proves its cloud link key. Then each text frame
+// first; the instance's first message is its hello (cloud/hello.ts), which proves its cloud link key; a hello it takes is
+// answered `connected` (part 2), a hello it refuses is closed with a code that says why. Then each text frame
 // is one message, handed to the transport-free answers (cloud/link.ts): `registration`, `unlinked`, the state snapshot,
 // and the heartbeat, which keeps its last-seen time. hopper.io sends only `register` and `unregister` (R1).
 // Limits (R7): the snapshot's cap per frame (the ws server refuses a larger one), 1024 bytes for any other message, a rate
@@ -10,7 +11,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { challenge, HEARTBEAT_SCHEMA, provedHello, type ProvedHello } from './hello.ts';
+import { challenge, CONNECTED, HEARTBEAT_SCHEMA, provedHello, type ProvedHello } from './hello.ts';
 import { LINK_MESSAGE_MAX_BYTES, type CloudLinkAnswers } from './link.ts';
 import { SNAPSHOT_MAX_BYTES } from './states.ts';
 import type { CloudStore, RecordKind } from './store.ts';
@@ -131,12 +132,14 @@ export function createCloudConnections(o: {
       links.set(proved.installId, link);
       if (before) { before.socket.close(CLOSE.replaced, 'replaced'); await record(link, 'connection_replaced'); }
       await record(link, 'instance_connected');
+      send(socket, CONNECTED);
       send(socket, h.answer);
       send(socket, o.answers.registerMessage({ installId: proved.installId, account: proved.account, now: now() }));
     };
-    /** A message after the hello. */
+    /** A message after the hello. One that came before the close is still taken: the instance sends `unlinked`, then
+     * closes at once (issue #2039 part 2). */
     const message = async (text: string | undefined) => {
-      if (!link || socket.readyState !== socket.OPEN) return;
+      if (!link) return;
       if ((text === undefined || !await take(link, text)) && !link.refusedOnce) {
         link.refusedOnce = true;
         await record(link, 'message_refused');

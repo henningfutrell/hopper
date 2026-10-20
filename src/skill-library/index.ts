@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { releaseOf } from '../client/release.ts';
 import {
   BUILT_IN_SKILL_NAMES, DEFAULT_WORK_SKILLS, DEFAULT_WORK_SKILL_SETTINGS, namedSkills, patchWorkSkills, skillDescription, skillFilesProblem,
-  skillNameProblem, skillRequires, SKILL_FILE, SKILL_MAX_REQUIRED, WORK_KINDS, workKindOf, workSkillFor,
+  skillNameOf, skillNameProblem, skillRequires, SKILL_ALIASES, SKILL_FILE, SKILL_MAX_REQUIRED, WORK_KINDS, workKindOf, workSkillFor,
   type LibrarySkillSummary, type LibrarySkillVersion, type RequiredSkill, type SkillLibraryView, type WorkSkillChosen, type WorkSkillPatch,
   type WorkSkillSettings,
 } from '../domain/skill-library.ts';
@@ -47,11 +47,12 @@ export function builtInSkills(): LibrarySkillVersion[] {
   return builtIns;
 }
 
-const builtInOf = (name: string): LibrarySkillVersion | undefined => builtInSkills().find((s) => s.name === name);
-const isBuiltIn = (name: string): boolean => (BUILT_IN_SKILL_NAMES as readonly string[]).includes(name);
+/** The built-in skill `name` names, by its own name or an alias. */
+export const builtInOf = (name: string): LibrarySkillVersion | undefined => builtInSkills().find((s) => s.name === skillNameOf(name));
+const isBuiltIn = (name: string): boolean => (BUILT_IN_SKILL_NAMES as readonly string[]).includes(skillNameOf(name));
 const withoutFiles = ({ files: _files, ...v }: LibrarySkillVersion): Omit<LibrarySkillVersion, 'files'> => v;
 
-/** A skill's newest version: a built-in one's, else the user's; undefined when there is none, or it was removed. */
+/** A skill's newest version: a built-in one's (by its name or an alias), else the user's; undefined when there is none, or it was removed. */
 export function latestSkill(store: UserStore, name: string): LibrarySkillVersion | undefined {
   return builtInOf(name) ?? store.skillLibrary.versions(name)[0];
 }
@@ -62,7 +63,7 @@ export function skillLibraryView(store: UserStore): SkillLibraryView {
   const summary = (v: LibrarySkillVersion, versions: number): LibrarySkillSummary =>
     ({ name: v.name, builtIn: v.source.kind === 'built-in', description: skillDescription(v.files[SKILL_FILE] ?? ''), latest: withoutFiles(v), versions, requires: skillRequires(v.files[SKILL_FILE] ?? '') });
   const own = store.skillLibrary.latest().map((v) => summary(v, store.skillLibrary.versions(v.name).length));
-  return { skills: [...builtInSkills().map((v) => summary(v, 1)), ...own], workSkills: workSkillSettings(store), defaults: DEFAULT_WORK_SKILLS, kinds: WORK_KINDS };
+  return { skills: [...builtInSkills().map((v) => summary(v, 1)), ...own], workSkills: workSkillSettings(store), defaults: DEFAULT_WORK_SKILLS, kinds: WORK_KINDS, aliases: SKILL_ALIASES };
 }
 
 /** One version of a skill with its files (the newest unless `version` names one), and its versions without files. */
@@ -166,8 +167,8 @@ function chooseConditional(store: UserStore, job: Pick<Job, 'spec' | 'source'>, 
   const signals = { repo: job.source?.repo, labels: job.source?.labels, kind: workKindOf(job.spec) };
   for (const rule of workSkillSettings(store).rules ?? []) {
     const why = ruleMatch(rule, signals);
-    const v = why && rule.skill !== work ? latestSkill(store, rule.skill) : undefined;
-    if (!why || !v) continue;
+    const v = why ? latestSkill(store, rule.skill) : undefined;
+    if (!why || !v || v.name === work) continue;
     const had = out.get(v.name);
     if (had) {
       had.chosen.why = [...new Set([...had.chosen.why, ...why])];
@@ -221,7 +222,8 @@ function requiredOf(store: UserStore, top: LibrarySkillVersion): { skills: Libra
   const missing: string[] = [];
   const seen = new Set([top.name]);
   const queue = skillRequires(top.files[SKILL_FILE] ?? '');
-  for (let name = queue.shift(); name !== undefined; name = queue.shift()) {
+  for (let said = queue.shift(); said !== undefined; said = queue.shift()) {
+    const name = skillNameOf(said);
     if (seen.has(name)) continue;
     seen.add(name);
     const v = skills.length < SKILL_MAX_REQUIRED ? latestSkill(store, name) : undefined;

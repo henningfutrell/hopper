@@ -1,7 +1,7 @@
 // A direct job as its source's item (issue #901): the brief, then the hopper's own context block — the routing labels,
 // what the submitter authorized, who submitted it, the repository it may open a pull request on, and what done means.
 // The job is told its brief and results stay in the hopper: nothing of them goes to GitHub, or anywhere else. Pure.
-import { authorizesVault, DEFAULT_DIRECT_EXECUTOR, DEFAULT_DIRECT_PRIORITY, directKey, type DirectJob } from '../domain/direct-jobs.ts';
+import { authorizesVault, DEFAULT_DIRECT_EXECUTOR, DEFAULT_DIRECT_PRIORITY, DIRECT_QUERY_ENV, directKey, type DirectJob } from '../domain/direct-jobs.ts';
 import type { SourceItem } from '../domain/source-item.ts';
 import { nameWithoutEmail } from '../domain/users.ts';
 
@@ -18,8 +18,35 @@ const DONE_LINE = 'done: when the work of the brief is complete. End with a shor
 
 const list = (xs: string[]): string => (xs.length ? xs.join(', ') : 'none');
 
+/**
+ * Issue #2184: a direct query's job only looks. It is told so before the question; the proxies refuse its writes too
+ * (`LOOK_ONLY`), so the line is what the job knows, not the guard.
+ */
+export const QUERY_LINE = '[hopper direct query] A caller asked this question straight to the hopper. No GitHub issue is behind it. The question and your answer are private: they stay in the hopper, which sends the answer to the caller. Look only: answer the question. Change no code, infrastructure or secret. Push nothing, open no pull request, file no issue and write no comment: the hopper refuses them. Ask the vault and the sandbox only for reads. Reach a service only through what your sandbox gives: no port-forward, proxy or tunnel. When the answer needs a change, do not make it: end failed and say what a person must file as an issue.';
+
+const QUERY_DONE_LINE = 'done: when you can answer. End with the answer, short and plain, then the evidence: where you looked and what you saw. Your last report is the answer: the hopper sends it to the caller. When you cannot answer, end failed and say why.';
+
+/** The prompt of a direct query's job: the question, then what it may use. */
+function queryPrompt(d: DirectJob): string {
+  const q = d.query!;
+  return [
+    QUERY_LINE,
+    '',
+    d.brief,
+    '',
+    '[hopper direct query context]',
+    `direct query: ${d.id} · request: ${q.requestId}`,
+    `look first in: repositories ${list(q.repos ?? [])}; clusters ${list(q.clusters ?? [])}. These are hints, and allow nothing more.`,
+    'vault: not granted — ask only for reads',
+    `asked by: ${nameWithoutEmail(d.submittedBy.person)} (${d.submittedBy.via}) at ${d.submittedAt}`,
+    OUTPUTS_LINE,
+    QUERY_DONE_LINE,
+  ].join('\n');
+}
+
 /** The prompt the job runs: the brief, then the context block. */
 export function directPrompt(d: DirectJob): string {
+  if (d.query) return queryPrompt(d);
   return [
     PRIVATE_LINE,
     '',
@@ -44,7 +71,7 @@ export function directItem(d: DirectJob, url: string): SourceItem {
   const priority = d.priority ?? DEFAULT_DIRECT_PRIORITY;
   return {
     key: directKey(d.id), url, title: d.title, body: d.brief, prompt: directPrompt(d),
-    env: { HOPPER_DIRECT_JOB: d.id, ...(d.repo ? { HOPPER_REPO: d.repo } : {}) },
+    env: { HOPPER_DIRECT_JOB: d.id, ...(d.repo ? { HOPPER_REPO: d.repo } : {}), ...(d.query ? { [DIRECT_QUERY_ENV]: d.id } : {}) },
     author: d.submittedBy.person, priority, priorityReason: d.priority === undefined ? 'default' : 'submitted',
     labels: [...d.labels], ...(d.repo ? { repo: d.repo } : {}),
     executor: d.executor ?? DEFAULT_DIRECT_EXECUTOR,

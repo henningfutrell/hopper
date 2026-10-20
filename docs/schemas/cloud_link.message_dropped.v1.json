@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "message": {
+      "type": "string",
+      "enum": [
+        "hello",
+        "heartbeat",
+        "snapshot",
+        "registration",
+        "unregistration",
+        "refused",
+        "unlinked"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "secret",
+        "too-large"
+      ]
+    }
+  },
+  "required": [
+    "message",
+    "reason"
+  ],
+  "additionalProperties": false
+}

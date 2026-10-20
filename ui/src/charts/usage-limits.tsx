@@ -1,14 +1,15 @@
 // The usage limits graph (issue #522): the throttle line over the last day on a 0-100% axis, laid over the three
 // bands it can sit in — free below the soft limit, soft up to the hard limit, hard above — shaded in their tones.
 // The line takes the tone of the band each stretch of it is in, so moving a limit recolours the past at once; the
-// dot at its end is usage now. Each limit is a dashed rule with a handle on the right: drag it, or press anywhere
+// dot at its end is usage now. A thin line per throttling window (issue #2169) shows which one the throttle line
+// follows, labelled at its end. Each limit is a dashed rule with a handle on the right: drag it, or press anywhere
 // on the graph to move the nearer limit there, or focus it and use the arrow keys (Shift: 5%). d3 does the maths;
 // React draws the SVG.
 import { area, curveMonotoneX, line, scaleLinear, scaleTime } from 'd3';
 import { useId, useRef, useState } from 'react';
 import { COLOR } from '@/components/status';
 import { useSize } from '@/hooks/use-size';
-import { bandAt, dragLimit, type LimitBand, type LimitName } from '@/model/usage-limits';
+import { bandAt, dragLimit, type LimitBand, type LimitName, type WindowLine } from '@/model/usage-limits';
 import type { GraphPoint } from '@/model/usage-history';
 import type { UsageLimitPair } from '@/model/wire';
 
@@ -17,8 +18,10 @@ const BAND_COLOR: Record<LimitBand, string> = { free: COLOR.ok, soft: COLOR.warn
 const LIMIT_LABEL: Record<LimitName, string> = { soft: 'Soft', hard: 'Hard' };
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 
-export function UsageLimitsGraph({ points, now, from, to, limits, onChange, height = 220 }: {
+export function UsageLimitsGraph({ points, windows = [], now, from, to, limits, onChange, height = 220 }: {
   points: readonly GraphPoint[];
+  /** A line per throttling window, drawn thin under the throttle line. */
+  windows?: readonly WindowLine[];
   /** The throttle fraction now, drawn as the line's last point. */
   now: number;
   from: number; to: number;
@@ -93,6 +96,16 @@ export function UsageLimitsGraph({ points, now, from, to, limits, onChange, heig
               <text key={t} x={-6} y={y(t)} dy="0.32em" textAnchor="end" className="num fill-muted-foreground text-[10px]">{Math.round(t * 100)}</text>
             ))}
             <path d={ar(shown) ?? ''} fill={`url(#${CSS.escape(`${id}-fill`)})`} />
+            {windows.map((w) => {
+              const inRange = w.points.filter((p) => p.t >= from && p.t < to);
+              const last = inRange[inRange.length - 1];
+              return last ? (
+                <g key={w.label} data-window={w.label} pointerEvents="none">
+                  <path d={ln(inRange) ?? ''} fill="none" className="stroke-muted-foreground" strokeOpacity={0.6} strokeWidth={1} strokeDasharray="2 3" />
+                  <text x={x(last.t) - 4} y={y(last.v)} dy="-0.4em" textAnchor="end" className="fill-muted-foreground text-[10px]">{w.label}</text>
+                </g>
+              ) : null;
+            })}
             <path d={ln(shown) ?? ''} fill="none" stroke={`url(#${CSS.escape(`${id}-tone`)})`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
             <rect ref={plot} x={0} y={0} width={iw} height={ih} fill="transparent" className={editable ? 'cursor-ns-resize' : undefined}
               onPointerDown={(e) => grab(nearer(valueAt(e.clientY)))(e)} />

@@ -5,6 +5,7 @@
 // the read session's keys in its environment; each command is an exec in it. HOPPER_TEST_BOX_IMAGE names another base.
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { join } from 'node:path';
 import { BOX_IMAGE, boxImage } from '../../../src/sandbox/box-image.ts';
 import { createDockerRuntime } from '../../../src/sandbox/docker.ts';
 import { createPodmanRuntime } from '../../../src/sandbox/podman.ts';
@@ -14,6 +15,7 @@ import { REGION } from './moto.ts';
 
 export const BOX_BASE = process.env.HOPPER_TEST_BOX_IMAGE ?? `${BOX_IMAGE}:box-claude`;
 const CLI = process.env.HOPPER_TEST_CONTAINER_CLI ?? 'docker';
+const ROOT = join(import.meta.dirname, '..', '..', '..');
 /** Where a tools image keeps the real binaries, behind the wrappers (src/sandbox/tools.ts). */
 export const REAL_TERRAFORM = '/opt/hopper-tools/bin/terraform';
 
@@ -69,4 +71,24 @@ export function cli(argv: string[], env: Record<string, string> = {}): Promise<R
       resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr });
     });
   });
+}
+
+/** Where the SDK script is, in a step's inputs (its work directory). */
+export const SDK_SCRIPT = 'sdk.mjs';
+
+/**
+ * The step's inputs that carry the SDK script (box-sdk.ts) bundled with the AWS SDK into one file, `sdk.mjs`, for the
+ * box's node: a tar under `dir`, its path. The box image has no SDK, and a read-only box cannot install one.
+ */
+export async function sdkScriptInputs(dir: string): Promise<string> {
+  const { build } = await import('vite');
+  const out = join(dir, 'sdk');
+  await build({
+    configFile: false, logLevel: 'warn', root: ROOT,
+    build: { ssr: join(import.meta.dirname, 'box-sdk.ts'), outDir: out, emptyOutDir: true, target: 'node24', minify: false, rolldownOptions: { output: { entryFileNames: SDK_SCRIPT, format: 'es', codeSplitting: false } } },
+    ssr: { noExternal: true, target: 'node' },
+  });
+  const tar = join(dir, 'inputs.tar');
+  await new Promise<void>((resolve, reject) => execFile('tar', ['-cf', tar, '-C', out, SDK_SCRIPT], (err) => (err ? reject(err) : resolve())));
+  return tar;
 }

@@ -57,8 +57,9 @@
 // (`tended.baseMoved`), which makes the same step due (`tendRetryAt`), at most `MAX_TEND_RETRIES` in a row. A source that
 // cannot say leaves it to a person, as before. A throw is only logged. A tend starts only on an open pull request (issue
 // #1456): before each, the source says whether it ended on GitHub (`JobSource.endedPullRequests`); ended, the job follows
-// it again at once, and that follow records its end. Strays (issue #1143 part 4, `strays.ts`): in a round
-// of every one, after reconciling, the pull requests no job follows, of items no job works on, get the same housekeeping.
+// it again at once, and that follow records its end. A tend job whose work item's issue is closed is tended no more (issue
+// #2127): before each tend, the source reads it when the ledger does not hold it closed (`JobSource.issueState`).
+// Strays (issue #1143 part 4, `strays.ts`): in a round of every one, after reconciling, the pull requests no job follows, of items no job works on, get the same housekeeping.
 // The census (issue #1176, `census.ts`): after the strays, at most once an hour, the source lists every open pull request of its job repositories that no job
 // names and the ledger does not hold, each with why (`JobSource.censusPullRequests`, `untrackedPullRequests`).
 // The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
@@ -74,7 +75,7 @@ import {
   failedTend, following, followsWhenEnded, inMotion, jobPullRequestRepo, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
-import { pullRequestWaitOf } from '../domain/work-items.ts'; import { followOutcome, traceJobStep } from '../telemetry/job-steps.ts';
+import { pullRequestWaitOf } from '../domain/work-items.ts'; import { heldClosed, issueClosed } from './closed-as-complete.ts'; import { followOutcome, traceJobStep } from '../telemetry/job-steps.ts';
 
 export interface AfterDoneContext {
   store: Pick<UserStore, 'jobs' | 'events' | 'handoffs' | 'workItems'>;
@@ -237,8 +238,9 @@ export function createAfterDone(c: AfterDoneContext) {
   async function tendIfDue(source: JobSource, jobId: string, acting?: ActingPerson): Promise<RerunResult | undefined> {
     const due = tendDue(store.jobs.get(jobId));
     if (!due) return undefined;
-    const ended = await endedBeforeTend(source, jobId, due.url);
-    if (ended) return { ok: false, reason: 'conflict', message: `job ${jobId}'s pull request is not tended: it was ${ended} on GitHub` };
+    // A tend job's work item's issue closed (issue #2127): nothing is left to tend, and the tend's Run again would reopen it.
+    const ended = await endedBeforeTend(source, jobId, due.url) ?? (await issueClosed(store, source, store.jobs.get(jobId)) ? 'issue' : undefined);
+    if (ended) return { ok: false, reason: 'conflict', message: `job ${jobId}'s pull request is not tended: ${ended === 'issue' ? 'its work item\'s issue is closed' : `it was ${ended} on GitHub`}` };
     const checks = due.step === 'fix_checks' && source.checkLogs && due.checks.failed?.length
       ? { ...due.checks, failed: await source.checkLogs(due.checks.failed) } : due.checks;
     const r = await traceJobStep(jobId, 'tend', () => c.tend(jobId, tendBrief(due.url, due.step, checks)), (t) => (t.ok ? 'started' : t.reason), { 'hopper.tend.step': due.step });
@@ -374,7 +376,8 @@ export function createAfterDone(c: AfterDoneContext) {
     // Only a tended job watches its base: the others need no read of their own.
     for (const j of fresh(listed)) if ((j.sourceState?.source as { follow?: string } | undefined)?.follow === 'tended') await watchBase(source, j.id);
     const jobs = fresh(listed);
-    const due = jobs.filter((j) => c.finalReported(j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
+    // A tend job's closed work item is tended no more (issue #2127): one that found nothing left to merge closed it, and a rebase is never capped.
+    const due = jobs.filter((j) => c.finalReported(j) && !heldClosed(store, j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
     const merges = (repo: string, kind?: ChangeKind) => source.mergesOnReady?.(repo, kind) ?? false;
     const held = new Map<string, QueueHead>();
     for (const repo of new Set(due.map((d) => repoOf(get(d.jobId)!)))) {

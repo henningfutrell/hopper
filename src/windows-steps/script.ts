@@ -4,6 +4,7 @@
 // burned after it (issue #1349), with credentials minted for it; and (issue #1007) one step by its needs. Kept
 // in the job's credentials dir beside its proxy token, `hopper-gh` and `hopper-skill`, run as `sh "$HOPPER_STEP"`: POSIX
 // sh, curl, tar and od, nothing else. Its full help is the `windows-step` and `box-step` skills' text.
+import { STEP_RUNS_MAX } from '../domain/windows-steps.ts';
 import { TRACE_HEADER_SH } from '../github-proxy/retry-after.ts';
 
 export const STEP_SCRIPT_VARIABLE = 'HOPPER_STEP';
@@ -32,11 +33,12 @@ No agent, client or work tree runs on Windows. When the work needs Windows (a .N
 tests, a packing step), the hopper runs that one step on a Windows host a person set up, over ssh, in PowerShell, in
 that host's working directory. The step's output streams back here as it runs; then its exit code and its outputs.
 The hopper keeps each step until it ends: a broken connection does not stop it, and a hopper that stops never runs it
-twice (the step then ends with exit ${STEP_NOT_RUN} and says so). Stop hopper-step (a signal) and the step stops.
+twice (the step then ends with exit ${STEP_NOT_RUN} and says so), unless you ask with --rerun. Stop hopper-step (a
+signal) and the step stops.
 
   sh "$HOPPER_STEP" hosts                     the Windows hosts: name, working directory, label, the secrets it gives
   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]...
-                         [--secret NAME]... [--timeout SECONDS] [--into DIR]
+                         [--secret NAME]... [--timeout SECONDS] [--into DIR] [--rerun]
     --command TEXT     PowerShell to run in the host's working directory (at most 4 KiB)
     --script FILE      a PowerShell script of this machine's to run instead (any size)
     --input PATH       a file or directory, relative to the current directory: copied into the host's working
@@ -48,6 +50,9 @@ twice (the step then ends with exit ${STEP_NOT_RUN} and says so). Stop hopper-st
                        it. The first ask of a job with no vault grant is refused, and a person is asked to grant it.
                        Repeat for more.
     --timeout SECONDS  how long the step may run (default 1800, at most 14400): then it is stopped
+    --rerun            the step is safe to run again (it only reads, or does the same each time): when the hopper
+                       stops while the step runs, it runs the step again from the start once it is back, ${STEP_RUNS_MAX} times
+                       in all at the most, and the log says so. Without it, such a step ends with exit ${STEP_NOT_RUN}.
 Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back
 (the reason is on stderr); 2: a bad call.
 
@@ -166,14 +171,14 @@ export const STEP_SCRIPT = `#!/bin/sh
 # approved for (issues #1004, #1349), or in a one-shot need box by its needs (issue #1007), each sandbox burned after its
 # step, with credentials the hopper mints for it. Written by the hopper at each job start.
 #   sh "$HOPPER_STEP" hosts
-#   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR]
+#   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] [--rerun]
 #   sh "$HOPPER_STEP" box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR]
 #   sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]
 # Load the windows-step, box-step or need-step skill for the full help: sh "$HOPPER_SKILL" windows-step
 # Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back; 2: a bad call.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] | box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] [--rerun] | box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
 ${TRACE_HEADER_SH}
 # The job's token, and its trace parent (issue #1486 part 6): the hopper's span for each request is a child of the job's run span.
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
@@ -198,6 +203,7 @@ place=$1; shift
 command=; script=; into=.; q=; wait=${STEP_READY_WAIT_S}; : > "$tmp/inputs"
 while [ $# -gt 0 ]; do
   case $1 in
+    --rerun) [ "$at" = host ] || { echo 'no: --rerun is for a Windows step: a sandbox step runs in a new sandbox each time' >&2; exit 2; }; q="$q&rerun=1" ;;
     --command|--script|--input|--output|--secret|--timeout|--into|--why|--plan|--plan-id|--wait)
       [ $# -ge 2 ] || usage
       case $1 in

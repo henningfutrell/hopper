@@ -12,6 +12,18 @@
     "elsewhere": {
       "type": "boolean",
       "const": true
+    },
+    "by": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api",
+        "job"
+      ]
     }
   },
   "required": [

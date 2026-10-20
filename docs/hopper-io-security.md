@@ -166,8 +166,8 @@ plugins, command-bearing options, the vault, remote access or the cloud link its
   registered instance connects only with it.
 - The instance's admin can rotate it (a new key, the old one revoked after the new one connects) and revoke it, through
   the UI session or the operator CLI. hopper.io moves a registration to a new key only when the hello proves the bound key
-  too (issue #2039 part 1); the instance keeping the old key until then is its part 2. Until then the instance replaces the
-  key at once, and an unlink revokes it by dropping it. The hopper.io account owner revokes it at hopper.io by removing the
+  too (issue #2039 part 1), and the instance keeps the old key until the new one connected (part 2). The instance's revoke
+  drops the key and keeps the link with none until a rotation; an unlink drops it too. The hopper.io account owner revokes it at hopper.io by removing the
   instance, and an account deletion revokes the keys of all its instances. A revoked key connects no more, on either side.
 - Registration takes a one-time code the instance's admin mints (10 minutes, kept hashed, taken once).
 
@@ -209,8 +209,8 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
   its private half the system secret `cloud-link.key` in the instance's vault, sealed under the master key, its public
   half in the link record. It obeys:
   - R4: the private half is a system secret, never answered by a route, in an event or in the record; the instance admin
-    rotates it through the UI session (`POST /ui/api/cloud-link/rotate-key`); an unlink drops it. No operator CLI command
-    and no revocation from hopper.io's side yet: both come with the connection (issue #464).
+    rotates it through the UI session (`POST /ui/api/cloud-link/rotate-key`); an unlink drops it. The operator CLI and the
+    revocations came with the connection (issue #2039, below).
   - R1, R8: nothing uses it yet; it makes no connection.
   - R5: a link writes only the record, the code and this one vault row (`test/http/cloud-link-fixture.test.ts`).
   - R6, on the instance side: `vault.secret_set` (with `rotated`) and `vault.secret_removed`, with who and no value.
@@ -298,15 +298,28 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
     connections per address and per instance, messages per connection, and open connections are capped; a message over a
     cap is refused, not cut. R6: connect, disconnect, a second connection, a refused connection, a rotation and a refused
     message are hopper.io records. R5: it keeps the public half only, and "connected now" in memory only.
-  - Not yet: the instance's agent, its events and outgoing secret scan, and the pin of hopper.io's key (issue #2039
-    part 2); the R6 records of remote actions.
+  - Not yet: the R6 records of remote actions (there are none).
 - **The hello on the instance** (issue #2039 part 1, `src/http/cloud-link-hello.ts`): the closed hello and heartbeat,
   and the Ed25519 cloud link key (migration 52 drops an X25519 key, which no connection used). R4: the hello holds the
   public half and a proof, never the private half.
-- Nothing else. The instance's agent (and so who carries these messages and sends the snapshot from the instance) waits
-  for issue #2039 part 2. The connection's design — its data boundary, no inbound actions, and its transport (one
-  WebSocket over TLS that the instance opens, with hopper.io's key pinned) — is `docs/design.md` "Cloud link" (issue
-  #464) and "The cloud link's connection".
+- **The instance's agent** (issue #2039 part 2, `src/http/cloud-link-agent.ts`, `docs/design.md` "The cloud link's
+  connection"): the one WebSocket the instance opens to hopper.io. It obeys:
+  - R8: it connects only while the link record exists, and closes at an unlink after `unlinked`. With no record, no socket
+    opens (`test/http/cloud-link-agent.test.ts`; `test/integration/cloud-link.test.ts` watches every connection).
+  - T1, R4: TLS with the system's roots and a pin of hopper.io's public key in the code; a key that does not match is closed
+    before the hello. The shipped pin list is empty until #469 decision 7, so a real instance connects to nothing.
+  - R1: hopper.io's messages go to `receive`, which takes only `register` and `unregister`; `connected`, hopper.io's answer
+    to a hello it took, changes nothing.
+  - R4: each outgoing message is scanned for secrets (the patterns the hopper masks, and the values of the keys the link
+    holds) and dropped when it holds one. The key before a rotation is kept until the new key connected; the admin revokes
+    the key through the UI session or `hopper cloud-link revoke-key`, and rotates it with `hopper cloud-link rotate-key`.
+  - R5: the snapshot goes only while the instance is registered, and its machine keys are an HMAC under the cloud link key.
+  - R6, on the instance side: `cloud_link.connected`, `cloud_link.disconnected`, `cloud_link.connection_refused`,
+    `cloud_link.revoked` (with which side), `cloud_link.message_refused` and `cloud_link.message_dropped`.
+  - R7: a message out over its cap is dropped, not cut; in, a frame over 64 KiB closes the connection, one over 1024 bytes
+    is refused, and over 120 a minute closes it. Reconnects back off: 1 second, doubling, at most 5 minutes, with jitter.
+- Nothing else. The connection's design — its data boundary, no inbound actions, and its transport — is `docs/design.md`
+  "Cloud link" (issue #464) and "The cloud link's connection".
 
 ## What each child issue must show
 
@@ -314,7 +327,7 @@ loses nothing (#469 non-goals). The cloud link is off until the instance's admin
 |-------|-----------------------------|
 | #463 GitHub account as the identity at hopper.io | R3, R7 (sign-in limits), T4 |
 | #464 outbound link and what data leaves | R1, R4, R5 (the allow-list), R6, R7, R8, T1, T2 |
-| #465 register instances and machines under one account | R3 (and its tests), R4 (registration code), R6 |
+| #465 register instances and machines under one account | R3 (and its tests), R4 (registration code), R6 . Complete: parts 1 to 9 obey them ("What is built"); the connection is #2039 and obeys the rules of #464 |
 | #466 hosted dashboard | R3, R5 (shows only kept fields), T1 (the dashboard can lie), T3 (escaping) |
 | #467 onboard an existing instance | R4, R5 (no data migration), R8. Complete: parts 1 and 2 obey them ("What is built"); the connection is #464's install side and obeys the rules of #464 |
 | any remote action | R2 |

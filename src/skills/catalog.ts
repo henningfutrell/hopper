@@ -64,6 +64,39 @@ It is JSON: nodes (id, kind, name, account, region, cluster, namespace, aliases,
 sources (each source's key, when it was read last, and why it is stale). Filter it with jq. It is what the hopper found at
 its last read: to read an account or a cluster now, ask for aws-diagnostics or kube-diagnostics.`;
 
+// Issue #2167: a job parks or picks up its user's proposal or research report with its own token (src/http/job-park.ts).
+const PARK_TEXT = `park: set a proposal or a research report aside, and pick it up again. It keeps its state and output.
+
+Your token goes in a header from stdin, never on the command line:
+List the open ones, parked or not: printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS -H @- "$HOPPER_URL/job/park"
+Park one: printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS -H @- -H 'content-type: application/json' -d '{"act":"park","item":"ID","reason":"WHY"}' "$HOPPER_URL/job/park"
+Pick it up: the same, with "act":"pick-up". It waits on a decision again, as before.
+You park only an item whose job waits on it. You pick up only an item a job parked: a person's park stays.
+A parked item gets no review and no decision. A decision is a person's: you never take one.`;
+
+// Issue #2146: how a job reads a cluster's metrics, logs and dashboards in a sandbox: the observability tools, the
+// port-forward helper (src/sandbox/port-forward-helper.ts) and a Grafana Viewer token the template's vault secrets give.
+const OBSERVABILITY_TEXT = `observability: read the live metrics, logs and dashboards of a cluster (Prometheus, Loki, Grafana; Alertmanager and Tempo when it has them). Read only.
+
+1. Ask for a sandbox once. --secrets names the vault secret that holds a Grafana Viewer token; a person approves it:
+   sh "$HOPPER_SKILL" sandbox --why "<why>" --needs "read/cluster/NAME" --tools "jq promtool logcli" [--secrets GRAFANA_TOKEN] --wait
+2. Run each query as a box step, and bring back what it wrote: sh "$HOPPER_STEP" box TEMPLATE --command '<the query>' --output out
+   The cluster is the current kubectl context. Each step gets a new sandbox, which ends with the step.
+3. Forward a port only for the command that needs it. The forward stops when the command ends:
+   hopper-port-forward [-n NAMESPACE] svc/NAME LOCAL[:REMOTE] -- COMMAND
+   Find the service first: kubectl get svc -A -l app.kubernetes.io/name=prometheus (or grafana, loki, alertmanager).
+
+PromQL, instant: mkdir -p out && hopper-port-forward -n monitoring svc/prometheus 9090 -- curl -sSfG http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=up' -o out/up.json
+PromQL, range: curl -sSfG http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=<PromQL>' --data-urlencode "start=$(date -u -d '-1 hour' +%s)" --data-urlencode "end=$(date -u +%s)" --data-urlencode step=60
+  Or: promtool query instant http://127.0.0.1:9090 'up'; promtool query range --start=<RFC 3339> --end=<RFC 3339> --step=1m http://127.0.0.1:9090 '<PromQL>'
+LogQL: logcli --addr=http://127.0.0.1:3100 query --since=1h --limit=200 --output=jsonl '{namespace="NS"} |= "error"' > out/logs.jsonl
+Grafana: read the token only in the command that uses it: curl -sSf -H "Authorization: Bearer $("$HOPPER_SECRET" get GRAFANA_TOKEN)" 'http://127.0.0.1:3000/api/search?query=NAME'
+  A dashboard: /api/dashboards/uid/UID. A panel: take its targets from the dashboard JSON, and run them on its data source with POST /api/ds/query.
+Evidence: keep the JSON, and make a short table of it with jq (jq -r '.data.result[] | [.metric.job, .value[1]] | @tsv' out/up.json). Put both in the pull request or report, or show them as an artifact (sh "$HOPPER_SKILL" artifacts).
+
+Read only: no kubectl exec, no Secret reads, no change in Grafana (no dashboard or alert edits), no silence in Alertmanager. Never print the token.
+If the cluster refuses the forward (Forbidden: pods/portforward or services/proxy), its role does not allow it. Say so; do not look for another credential.`;
+
 export const SKILLS: readonly Skill[] = [
   {
     name: 'github',
@@ -95,13 +128,13 @@ export const SKILLS: readonly Skill[] = [
     name: 'sandbox',
     line: 'a box for the needs (--needs "read/cluster/NAME") or a template (--template NAME)',
     // Issue #1001: --why is required; --plan too when a need changes an asset. The person who approves reads both.
-    text: 'sandbox: sh "$HOPPER_SKILL" sandbox --why "<why the job needs it, one or two sentences>" [--plan "<the commands; for each change, what it changes and whether it can be undone>"] (--needs "<operation>/<kind>/<asset> ..." | --template NAME) [--wait]\nA brief that names a template: give --template NAME. The hopper asks for the sandboxes a brief names before the job starts, so they are often approved already.\nIssue #1875: [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] ask for vault secrets, the hosts its sandboxes may reach and the hopper\'s test image (Python, Playwright with Chromium); with --secrets or --egress, --needs may be left out, and a person always approves it.',
+    text: 'sandbox: sh "$HOPPER_SKILL" sandbox --why "<why the job needs it, one or two sentences>" [--plan "<the commands; for each change, what it changes and whether it can be undone>"] (--needs "<operation>/<kind>/<asset> ..." | --template NAME) [--wait]\nA brief that names a template: give --template NAME. The hopper asks for the sandboxes a brief names before the job starts, so they are often approved already.\nIssue #1875: [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] ask for vault secrets, the hosts its sandboxes may reach and the hopper\'s test image (Python, Playwright with Chromium); with --secrets or --egress, --needs may be left out, and a person always approves it.\nIssue #2146: [--tools "jq promtool logcli"] adds box tools beside the ones the needs use.',
   },
   {
     // Issue #716: the template a job's work needs, made by the hopper (src/skills/template-request.ts answers it).
     name: 'sandbox-template',
     line: 'its template only',
-    text: 'sandbox-template: sh "$HOPPER_SKILL" sandbox-template --why "<why>" [--plan "<the plan>"] --needs "<operation>/<kind>/<asset> ..." [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] [--wait]',
+    text: 'sandbox-template: sh "$HOPPER_SKILL" sandbox-template --why "<why>" [--plan "<the plan>"] --needs "<operation>/<kind>/<asset> ..." [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] [--tools "TOOL ..."] [--wait]',
   },
   {
     // Issue #624: what a job makes for a person to see. Needs no access: the job's own token is enough.
@@ -130,10 +163,22 @@ export const SKILLS: readonly Skill[] = [
     text: NEED_STEP_HELP,
   },
   {
+    // Issue #2146: PromQL, LogQL and Grafana queries in a sandbox; text only, as the sandbox skill gives the access.
+    name: 'observability',
+    line: 'PromQL, LogQL and Grafana queries in a sandbox',
+    text: OBSERVABILITY_TEXT,
+  },
+  {
     // Issue #1905: the user's topology, read with the job's own token (src/http/job-topology.ts).
     name: 'topology',
     line: 'a read-only map of the AWS accounts and clusters',
     text: TOPOLOGY_TEXT,
+  },
+  {
+    // Issue #2167: park and pick up a proposal or research report, with the job's own token (src/http/job-park.ts).
+    name: 'park',
+    line: 'set a proposal or research report aside; pick it up',
+    text: PARK_TEXT,
   },
   {
     // Issue #782: the hopper's help pages, for this version (src/help/book.ts answers it, the page its asset).
@@ -148,7 +193,7 @@ export const SKILLS: readonly Skill[] = [
  * line: the skill library's files (issue #1911), so one text exists.
  */
 export const SERVED_LINES = {
-  orchestrate: 'plan many steps as tasks; fan out sub-tasks; wait; finish',
+  work: 'plan tasks; change; fan out sub-tasks; wait; finish (also: orchestrate)',
 } as const;
 
 /** Every skill's name: the catalog's, then the served library skills (issue #1909). */

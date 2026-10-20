@@ -18,7 +18,7 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Asset, OperationProfile, VaultAccess } from '../domain/access.ts';
 import { CHECK_MINT_ID, expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
 import { mintSourceFor } from '../domain/cluster-discovery.ts';
-import { readClusters } from './clusters.ts';
+import { readClusters, readKnownClusters } from './clusters.ts';
 import { currentCheck, failedProbes, probeMarksProblem, unmintedNeeds, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
 import type { Template } from '../domain/vault.ts';
 import { PROBES } from '../sandbox/probes.ts';
@@ -52,7 +52,7 @@ export interface CheckMintAsk { template: string; check: string; profile: Operat
 /** The minted credential and where it is used, or why there is none. */
 export type CheckMintAnswer = { minted: Minted; reach: MintReach } | { refused: string };
 
-export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'config'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; bindings?: MintBindings }): TemplateChecks {
+export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'config' | 'topology'>, o: { access?: VaultAccess | undefined; mintFrom: MintFrom; bindings?: MintBindings }): TemplateChecks {
   const { vault, events } = store;
   const checkMint = createCheckMinting({ store, ...(o.access ? { access: o.access } : {}), ...(o.bindings ? { bindings: o.bindings } : {}) });
   return {
@@ -105,7 +105,7 @@ export function recheckUnminted(store: Pick<UserStore, 'vault' | 'events'>, mint
   }
 }
 
-function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events' | 'config'>; access?: VaultAccess; bindings?: MintBindings }): (ask: CheckMintAsk, from: MintFrom) => Promise<CheckMintAnswer> {
+function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events' | 'config' | 'topology'>; access?: VaultAccess; bindings?: MintBindings }): (ask: CheckMintAsk, from: MintFrom) => Promise<CheckMintAnswer> {
   const { vault, events } = o.store;
   return async ({ template, check, profile }, from) => {
     const kind = mintKindFor(profile.asset.kind);
@@ -124,12 +124,12 @@ function createCheckMinting(o: { store: Pick<UserStore, 'vault' | 'events' | 'co
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
     const decision = await o.access.decideCheckMint({ template, check, operation: profile.operation, asset: profile.asset });
     if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
-    const clusters = readClusters(o.store.config);
-    const found = mintSourceFor(vault.list(), target, profile.operation, clusters);
+    const clusters = readClusters(o.store.config), known = readKnownClusters(o.store.topology);
+    const found = mintSourceFor(vault.list(), target, profile.operation, clusters, known);
     if (typeof found === 'string') return refuse(found, decision.id);
     // Held and recorded before the minter makes the Secret (issue #1628), as a need step's. A discovered cluster's EKS token binds to nothing.
     if (target.kind === 'kube' && target.bindTo && 'credential' in found) o.bindings?.named(check, { credential: found.credential.name, namespace: target.namespace, secret: target.bindTo });
-    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, profile.operation, clusters), target, CHECK_MINT_ID);
+    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, profile.operation, clusters, known), target, CHECK_MINT_ID);
     if ('refused' in made) return refuse(made.refused, decision.id);
     events.append({
       type: 'vault.check_minted',

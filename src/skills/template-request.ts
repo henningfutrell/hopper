@@ -39,6 +39,7 @@ import { rateTemplate } from '../blast-radius/template.ts';
 import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
 import { clusterOf, unknownAssetText, type UnknownAsset } from '../domain/unknown-assets.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
+import { toolSet } from '../domain/sandboxes.ts';
 import { SKILLS } from './catalog.ts';
 import { needsFromWords } from './needs-in-words.ts';
 import { extrasInWords, extrasKey, extrasOf, forPerson, hasExtras, REQUEST_IMAGES, sameExtras, type AskExtras, type TemplateAsk } from './template-ask.ts';
@@ -133,6 +134,9 @@ function readAsk(u: Pick<TemplateRequestUser, 'image'>, ask: TemplateAsk): ReadA
   return { needs, extras, image: extras.image ? REQUEST_IMAGES[extras.image]! : u.image };
 }
 
+/** The tools a template made for the request adds: its needs', and the ones it names (issue #2146). */
+const toolsOf = (r: ReadAsk): string[] => toolSet([...toolsForNeeds(r.needs), ...(r.extras.tools ?? [])]);
+
 /** Whether a template is what the request asks for: the same needs, and the same extras when it names any. */
 const sameAsk = (t: TemplateView, r: ReadAsk): boolean => sameNeeds(t.profiles, r.needs) && (!hasExtras(r.extras) || sameExtras(t, r.extras, r.image));
 const readOnlyOf = (needs: readonly OperationProfile[]): boolean => needs.length > 0 && needs.every((p) => p.operation === 'read');
@@ -212,7 +216,7 @@ function unknownOf(u: Pick<TemplateRequestUser, 'unknownAssets'>, needs: readonl
     const known = cluster && nearest.get(cluster);
     return keyOf(known ? { ...p, asset: { ...p.asset, name: [known, ...p.asset.name.split('/').slice(1)].join('/') } } : p);
   });
-  return `${unknown.map(unknownAssetText).join('; ')}. The vault finds a cluster by its EKS name in the AWS accounts it mints for, and the topology lists no cluster of that name there. Ask again with a known name, for example --needs "${instead.join(' ')}". For a cluster made since the topology was read, a person runs Discover now on the topology page, or names the cluster in a cluster override on Settings → Clusters.`;
+  return `${unknown.map(unknownAssetText).join('; ')}. The vault finds a cluster by its EKS name in the AWS accounts it mints for, and the topology lists no cluster of that name there, or several that start with it. Ask again with a known name, for example --needs "${instead.join(' ')}". For a cluster made since the topology was read, a person runs Discover now on the topology page, or names the cluster in a cluster override on Settings → Clusters.`;
 }
 
 /** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */
@@ -274,7 +278,7 @@ export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templ
   }
   const approver = automaticApprover(u, needs, extras);
   return {
-    template: name, image: r.image, tools: toolsForNeeds(needs), needs: [...needs.map(inWords), ...extrasInWords(extras)],
+    template: name, image: r.image, tools: toolsOf(r), needs: [...needs.map(inWords), ...extrasInWords(extras)],
     readOnly: readOnlyOf(needs),
     approvedBy: approver ?? 'a person', waits: approver ? [] : outsidePolicy(needs, u.policy(), extras),
     ...(was ? { exists: sameAsk(was, r) ? 'same' as const : 'changed' as const } : {}),
@@ -313,7 +317,7 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
     const missing = await u.imageProblem?.(r.image);
     if (missing) return { status: 400, reason: `${missing}. A box of this template could not start, so the hopper makes no template of it. Ask with another --image, or ask a person to publish it.` };
     const readOnly = readOnlyOf(needs);
-    const saved = await u.save({ name, image: r.image, secrets: extras.secrets, ...(extras.egress.length ? { egress: extras.egress } : {}), profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}),
+    const saved = await u.save({ name, image: r.image, secrets: extras.secrets, ...(extras.egress.length ? { egress: extras.egress } : {}), profiles: needs, tools: toolsOf(r), readOnly, ...(job ? { askedBy: job } : {}),
       ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // Only a template made now is approved with no person (automaticApprover): as it is, then each write, sync or apply

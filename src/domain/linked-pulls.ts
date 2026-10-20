@@ -1,7 +1,8 @@
 // Linked pull requests and the repository's visibility (issue #655 part 19, design.md "Trust stamps"): the rest of where an
 // issue's work came from that a job keeps with its origin acts (part 14). The pull requests its text names — who wrote each,
 // whether its head is a fork, whether a trusted actor wrote it — and whether its repository is public. A record for people
-// and for Jev's trust check: no rule reads it. Pure.
+// and for Jev's trust check: no rule reads it, but a job may edit a linked pull request's title or body (issue #2151,
+// src/users/github-proxy.ts). Pure.
 
 /** A repository's visibility, as GitHub says. */
 export const REPO_VISIBILITIES = ['public', 'private', 'internal'] as const;

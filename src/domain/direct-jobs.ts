@@ -50,6 +50,65 @@ export interface DirectJobInput {
   priority?: number;
   /** Offer its promotion to GitHub once it finished (issue #946): never posted without a person's confirmed preview. */
   promoteWhenDone?: boolean;
+  /** It is a direct query (issue #2184): a question its job answers by looking only. Absent: a direct job of any work. */
+  query?: DirectQuery;
+}
+
+/**
+ * A direct query (issue #2184, design.md "Direct queries"): a question a caller asks the hopper straight, with no GitHub
+ * issue. Its job only looks: it changes no code, infrastructure or secret, and the hopper refuses its GitHub writes and
+ * its pushes. Its answer is the job's result, kept in the hopper, and sent to its callback.
+ */
+export interface DirectQuery {
+  /** The caller's own id of the request: the same id again answers the query kept, and makes nothing new. */
+  requestId: string;
+  /**
+   * The webhook subscription its callback goes to, by name: a person made it through the UI session, with its URL and its
+   * signing secret, kept sealed in the vault. Absent: no callback; the caller reads the query back.
+   */
+  callback?: string;
+  /** Where to look first, in the caller's words: hints for the job, which allow nothing. */
+  repos?: string[];
+  clusters?: string[];
+}
+
+/** What a caller asks (issue #2184): the question, and the query's own fields. */
+export interface DirectQueryInput extends DirectQuery {
+  question: string;
+  /** More routing labels beside `DIRECT_QUERY_LABEL`. */
+  labels?: string[];
+  executor?: string;
+  priority?: number;
+}
+
+/** A direct query as it reads back: its record and its newest job, with where it stands. */
+export type DirectQueryView = DirectJobView & { query: DirectQuery; state: DirectQueryState };
+
+/** The routing label of every direct query's job: a routing rule sends it to the seat or sandbox box it names. */
+export const DIRECT_QUERY_LABEL = 'direct:query';
+/** The job's variable that names its direct query: the GitHub proxy and the git proxy read it as look-only. */
+export const DIRECT_QUERY_ENV = 'HOPPER_DIRECT_QUERY';
+
+/** Why a direct query's job may not write: what the proxies answer when it tries. */
+export const LOOK_ONLY = 'a direct query only looks: it changes nothing on GitHub and pushes nothing. When the question needs a change, end failed and say what a person must file as an issue';
+
+/** Whether the job is a direct query's, so looks only (issue #2184). */
+export const isDirectQuery = (job: Pick<Job, 'spec'>): boolean => {
+  // A job read back partly (a test's, an older row's) may have no spec: it is no direct query's.
+  const env = (job.spec as Partial<Job['spec']> | undefined)?.payload?.env as Record<string, unknown> | undefined;
+  return typeof env?.[DIRECT_QUERY_ENV] === 'string';
+};
+
+/** Where a direct query stands, from its newest job: what a caller polls. */
+export type DirectQueryState = 'accepted' | 'running' | 'waiting' | 'answered' | 'failed' | 'cancelled';
+
+export function directQueryState(job: DirectJobView['job']): DirectQueryState {
+  if (!job) return 'accepted';
+  if (job.status === 'finished') return 'answered';
+  if (job.status === 'failed' || job.status === 'rejected') return 'failed';
+  if (job.status === 'cancelled') return 'cancelled';
+  if (job.questions.length > 0 || job.status === 'waiting_answer' || job.status === 'waiting_on') return 'waiting';
+  return job.status === 'running' || job.status === 'claimed' ? 'running' : 'accepted';
 }
 
 /** A submitted direct job, as kept. */

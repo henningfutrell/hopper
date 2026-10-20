@@ -12,13 +12,13 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Asset } from '../domain/access.ts';
 import { MINT_TEST_ID, expiryOf, mintTarget, roleAccountOf, type MintTarget, type MintTestResult } from '../domain/minting.ts';
 import { mintSourceFor } from '../domain/cluster-discovery.ts';
-import { readClusters } from './clusters.ts';
+import { readClusters, readKnownClusters } from './clusters.ts';
 import { assetOf, mintPassingOver, sourceWithout, usedOf, type MintedFrom, type MintFrom } from './mint.ts';
 
 /** A mint test's answer: what STS said, or why there is none — a bad ask, no minting credential, or STS refused. */
 export type MintTestAnswer = { tested: MintTestResult } | { refused: string; code: 'invalid' | 'not_found' | 'failed' };
 
-export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events' | 'config'> }): (said: string, by: string, from: MintFrom) => Promise<MintTestAnswer> {
+export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events' | 'config' | 'topology'> }): (said: string, by: string, from: MintFrom) => Promise<MintTestAnswer> {
   const { vault, events } = o.store;
   return async (said, by, from) => {
     const asset = assetOf(said);
@@ -31,11 +31,11 @@ export function createMintTest(o: { store: Pick<UserStore, 'vault' | 'events' | 
     if (asset.kind !== 'aws-role' && asset.kind !== 'cluster') return refuse('invalid', `${takes}, not ${asset.kind}/${asset.name}`);
     const target = mintTarget(asset.kind === 'cluster' ? 'kube' : 'aws', { operation: 'read', asset });
     if (typeof target === 'string') return refuse('invalid', target);
-    const clusters = readClusters(o.store.config);
-    const found = mintSourceFor(vault.list(), target, 'read', clusters);
+    const clusters = readClusters(o.store.config), known = readKnownClusters(o.store.topology);
+    const found = mintSourceFor(vault.list(), target, 'read', clusters, known);
     if (typeof found === 'string') return refuse(found.startsWith('no ') ? 'not_found' : 'invalid', found);
     // Issue #1845: a cluster's EKS minting credential whose kubeconfig is gone is passed over, and the answer warns of it.
-    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, 'read', clusters), target, MINT_TEST_ID, true);
+    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, 'read', clusters, known), target, MINT_TEST_ID, true);
     // The answer names the secret the test used (issue #1761), as a tested answer does; a discovery names its accounts.
     const own = 'credential' in source ? source.credential.name : undefined;
     if ('refused' in made) return refuse('failed', own ? `the mint test used ${own}: ${made.refused}` : made.refused, own);

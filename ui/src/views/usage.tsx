@@ -13,8 +13,8 @@ import { ReadingGauge } from '@/components/reading';
 import { StatusBadge, type Tone } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
-import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine } from '@/model/usage';
-import { bandAt, capAt, limitsProblem, throttleLine, type LimitBand } from '@/model/usage-limits';
+import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine, throttleText } from '@/model/usage';
+import { bandAt, capAt, limitsProblem, throttleLine, windowLines, type LimitBand } from '@/model/usage-limits';
 import type { MachineHistory, MachineLaneEffect, MemoryAlert, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
 import { MachinesResourcesPanel } from './machine-resources';
@@ -75,6 +75,7 @@ function LaneEffect({ usage }: { usage: UsageReport }) {
                 {(m.usageLimits ? [m.usageLimits.soft, m.usageLimits.hard] : [soft, hard]).map((x) => <div key={x} className="absolute top-0 h-full w-0.5 bg-background" style={{ left: pct(x) }} />)}
               </div>
               <div className="num text-xs text-muted-foreground">{pct(m.usedFrac)} used · {laneEffectText(m)}</div>
+              {m.throttle && <div className="num text-xs text-muted-foreground" data-throttle={m.machineId}>throttled by {throttleText(m.throttle)}</div>}
               {m.usageLimits && (
                 <div className="num text-xs text-muted-foreground" data-own-limits={m.machineId}>its own usage limits: {ownLimits(m.usageLimits)}</div>
               )}
@@ -155,10 +156,13 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
   const problem = limitsProblem(draft);
   const shown = problem ? { soft: saved.soft, hard: saved.hard, softLanes: saved.softLanes } : draft;
   const online = usage.machines.filter((m) => m.online);
-  const now = online.length ? Math.max(...online.map((m) => m.usedFrac)) : 0;
-  const band = bandAt(now, shown);
+  // The most used online machine, and the window that throttles it (issue #2169).
+  const top = online.reduce<(typeof online)[number] | undefined>((a, b) => (!a || b.usedFrac > a.usedFrac ? b : a), undefined);
+  const now = top?.usedFrac ?? 0;
+  const band = bandAt(now, shown, top?.throttle?.burning);
   const half = (history?.stepMs ?? 0) / 2;
   const points = history ? throttleLine(history.series).map((p) => ({ t: p.t + half, v: p.v })) : [];
+  const windows = history ? windowLines(history.series).map((w) => ({ ...w, points: w.points.map((p) => ({ t: p.t + half, v: p.v })) })) : [];
   const dirty = !same(draft, saved);
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,14 +177,16 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
       <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
         <div>
           <div className="num text-3xl font-semibold tracking-tight" data-slot="usage-now-value">{pct(now)}</div>
-          <div className="text-xs text-muted-foreground">used now, the highest throttling reading</div>
+          <div className="text-xs text-muted-foreground" data-slot="usage-now-throttle">
+            used now, the highest throttling reading{top?.throttle ? `: ${throttleText(top.throttle)}` : ''}
+          </div>
         </div>
         <div className={`text-sm font-medium ${BAND_TEXT[band]}`} data-slot="usage-band">{band}: {bandSays(band, shown.softLanes)}</div>
         {online.length > 0 && (
           <ul className="ml-auto flex flex-wrap gap-1.5" aria-label="Lane cap per machine at these limits">
             {online.map((m) => {
               // A machine with its own usage limits (issue #1860) keeps them whatever the user's are; with no soft lanes of its own, the user's apply.
-              const cap = capAt(m.maxLanes, m.usedFrac, m.usageLimits ? { softLanes: shown.softLanes, ...m.usageLimits } : shown);
+              const cap = capAt(m.maxLanes, m.usedFrac, m.usageLimits ? { softLanes: shown.softLanes, ...m.usageLimits } : shown, m.throttle?.burning);
               return (
                 <li key={m.machineId} data-machine-cap={m.machineId} className="num rounded-md border px-2 py-0.5 text-xs">
                   <span className="text-muted-foreground">{m.label || m.machineId}</span>{' '}
@@ -193,7 +199,7 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
           </ul>
         )}
       </div>
-      <UsageLimitsGraph points={points} now={now} from={history ? Date.parse(history.from) : clock - DAY_MS} to={clock} limits={shown}
+      <UsageLimitsGraph points={points} windows={windows} now={now} from={history ? Date.parse(history.from) : clock - DAY_MS} to={clock} limits={shown}
         {...(canSet ? { onChange: (l: UsageLimitPair) => edit({ ...draft, soft: l.soft, hard: l.hard }) } : {})} />
       <form className="flex flex-wrap items-center gap-x-4 gap-y-2" onSubmit={save}>
         <LimitInput id="usage-soft-limit" label="Soft" value={draft.soft} disabled={!canSet} onChange={(soft) => edit({ ...draft, soft })} />

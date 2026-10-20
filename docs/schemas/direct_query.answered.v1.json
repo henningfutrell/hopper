@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "answer": {},
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "url": {
+      "type": "string"
+    },
+    "callback": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "requestId",
+    "jobId",
+    "answer",
+    "artifacts",
+    "url"
+  ],
+  "additionalProperties": false
+}

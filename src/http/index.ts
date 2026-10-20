@@ -35,7 +35,7 @@ import { jobSkillRoutes } from './job-skill.ts';
 import { jobStepRoutes } from './job-step.ts';
 import { jobStreamRoutes } from './job-stream.ts';
 import { jobCheckpointRoutes } from './job-checkpoint.ts';
-import { jobTopologyRoutes } from './job-topology.ts';
+import { jobTopologyRoutes } from './job-topology.ts'; import { jobParkRoutes } from './job-park.ts';
 import { jobLoginRoutes } from './job-login.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
@@ -96,7 +96,7 @@ export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 export { createGitHubDeliveries, type GitHubDeliveries } from './github-deliveries.ts';
 export { createAllowedHosts } from './allowed-hosts.ts';
 export { createSourceEmailMatch } from './source-email-match.ts'; export { createInfraApplies } from './infra-applies.ts';
-export { createCloudLink } from './cloud-link.ts';
+export { createCloudLink } from './cloud-link.ts'; export { createCloudLinkParts } from './cloud-link-agent.ts';
 export { createDisplayName } from './display-name.ts';
 export { kernelVersion, runsInWsl } from './ui/host-link.ts';
 export type { TailnetSource } from './tailnet.ts';
@@ -287,6 +287,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
   jobInfraPlanRoutes(app, { tenants: o.tenants }); // Infra plans (issue #870), with the same token
   jobTopologyRoutes(app, { tenants: o.tenants }); // the topology (issue #1905), read with the same token
+  jobParkRoutes(app, { tenants: o.tenants }); // park and pick up a proposal or a research report (issue #2167), with the same token
   jobStepRoutes(app, { tenants: o.tenants, skillWaits }); // sandbox steps, Windows (issue #731) and Linux (issue #1007), with the same token
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);

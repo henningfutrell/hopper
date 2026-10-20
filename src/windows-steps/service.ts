@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { WindowsStepHost } from '../domain/ports.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
-import { STEP_OUTPUTS_MAX_BYTES, stepRequestOf, type StepResult, type WindowsHost, type WindowsStep, type WindowsStepRepository } from '../domain/windows-steps.ts';
+import { STEP_OUTPUTS_MAX_BYTES, STEP_RUNS_MAX, stepRequestOf, type StepResult, type WindowsHost, type WindowsStep, type WindowsStepRepository } from '../domain/windows-steps.ts';
 
 /** How long a step's result and outputs are kept for the job to fetch. */
 export const STEP_KEEP_MS = 60 * 60 * 1000;
@@ -24,8 +24,10 @@ const COMMAND_IN_EVENT = 300;
 const HOLD_POLL_MS = 1_000, AT_WORK_MS = 5_000;
 const ID = /^[a-f0-9-]{36}$/;
 
-/** The problem of a step that took its host on a hopper that stopped: it is not run again (issue #1611). */
-export const STEP_INTERRUPTED = 'the hopper stopped while the step ran, and it is not run again: it may have had its effect. Look at what it changed on the host before you run it again';
+/** The problem of a step that took its host on a hopper that stopped: it is not run again (issue #1611), unless it was asked with rerun (issue #2117). */
+export const STEP_INTERRUPTED = 'the hopper stopped while the step ran, and it is not run again: it may have had its effect. Look at what it changed on the host before you run it again. A step that is safe to run again (one that only reads) asks for that with --rerun';
+/** What the log of a step asked with rerun says when it runs again after a stop. */
+export const STEP_RERUN_NOTE = 'the hopper stopped while the step ran; it runs again, as --rerun allows';
 
 export interface WindowsStepsOptions {
   userId: string;
@@ -50,7 +52,7 @@ export interface WindowsStepsOptions {
 }
 
 /** A step's fields as the job sent them. */
-export interface StepFields { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }
+export interface StepFields { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[]; rerun?: boolean }
 
 /** What the job sent with its ask: its key for the ask, and the inputs (a tar; empty: none). */
 export interface StepAsk { key: string; inputs: Buffer }
@@ -90,7 +92,7 @@ export interface WindowsStepLedger {
 /** The Windows steps of a hopper that keeps none (a runtime made with no ledger): no step is ever kept. */
 export const NO_WINDOWS_STEPS: WindowsStepRepository = {
   add: (step) => step, get: () => undefined, sagaIs: () => {}, inputs: () => undefined, appendLog: () => {},
-  log: (_id, from) => ({ text: '', next: from }), end: () => false, outputs: () => undefined, leaseHost: () => false, releaseHost: () => {}, sweep: () => {},
+  log: (_id, from) => ({ text: '', next: from }), end: () => false, outputs: () => undefined, leaseHost: () => false, runAgain: () => {}, releaseHost: () => {}, sweep: () => {},
 };
 
 export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
@@ -111,6 +113,15 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
       step: s.id, host: s.host, exit: result.exit, seconds,
       ...(result.outputsBytes !== undefined ? { outputsBytes: result.outputsBytes } : {}), ...(result.problem ? { problem: result.problem } : {}),
     } });
+  };
+  /**
+   * A step's end that the database did not keep, on this hopper (issue #2117): the next try of its saga keeps it. A
+   * hopper that stays up never ends a step it ran as one a stopped hopper left.
+   */
+  const endedHere = new Map<string, Parameters<typeof finish>>();
+  const end = (...a: Parameters<typeof finish>): void => {
+    try { finish(...a); } catch (e) { endedHere.set(a[0].id, a); throw e; }
+    endedHere.delete(a[0].id);
   };
   const ofJob = (job: Job, id: string): WindowsStep | undefined => {
     if (!ID.test(id)) return undefined;
@@ -170,14 +181,43 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
       clearTimeout(timer);
       clearInterval(watch);
       signal.removeEventListener('abort', onAbort);
-      masked.end();
+      // The log's last chunk is not worth the step's result.
+      try { masked.end(); } catch (e) { o.log(`hopper: the log of step ${s.id} lost its end: ${(e as Error).message}`); }
       for (const k of Object.keys(secrets)) delete secrets[k];
       rmSync(dir, { recursive: true, force: true });
     }
     // Its saga aborted, or its hopper stopping, keeps none: the compensation ends it, or the next try says it was cut short.
     if (signal.aborted) return;
     if (why) result = { ...result, problem: why };
-    finish(s, result, Math.round((now().getTime() - started) / 1000), outputs);
+    end(s, result, Math.round((now().getTime() - started) / 1000), outputs);
+  };
+
+  /** Waits for the step's host lease: whether it has it. A step that cannot run any more ends, saying why. */
+  const takeHost = async (s: WindowsStep, signal: AbortSignal): Promise<boolean> => {
+    let told = false;
+    for (;;) {
+      signal.throwIfAborted();
+      if (!hostOf(s.host)) { finish(s, { exit: 125, problem: `the hopper has no Windows host ${s.host} any more` }, 0); return false; }
+      if (!o.atWork(s.jobId)) { finish(s, { exit: 125, problem: `cancelled: job ${s.jobId} is not at work` }, 0); return false; }
+      if (o.steps.leaseHost(s.id, now().toISOString())) return true;
+      if (!told) { o.steps.appendLog(s.id, `hopper-step: waiting for ${s.host}: another step runs there\n`); told = true; }
+      await sleep(HOLD_POLL_MS, undefined, { signal });
+    }
+  };
+
+  /**
+   * A step that a stopped hopper cut short, with its host lease still held: asked with rerun (issue #2117), it runs again
+   * on a swept host, at most STEP_RUNS_MAX times in all, and its log says so. Whether it runs again; else it ends.
+   */
+  const again = async (s: WindowsStep): Promise<boolean> => {
+    const run = (s.runs ?? 1) + 1, host = hostOf(s.host);
+    if (!s.rerun || run > STEP_RUNS_MAX || !host) { finish(s, { exit: 125, problem: STEP_INTERRUPTED }, 0); return false; }
+    if (!o.atWork(s.jobId)) { finish(s, { exit: 125, problem: `cancelled: job ${s.jobId} is not at work` }, 0); return false; }
+    // Rejects when the host cannot be reached: the saga tries again.
+    await o.host.sweep(host);
+    o.steps.runAgain(s.id);
+    o.steps.appendLog(s.id, `hopper-step: ${STEP_RERUN_NOTE} (run ${run} of ${STEP_RUNS_MAX})\n`);
+    return true;
   };
 
   return {
@@ -198,7 +238,8 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
       if (!o.sagas) return refuse(job, 503, 'this hopper runs no Windows step: it keeps no saga', host.name);
       const step = o.steps.add({
         id: newId(), userId: o.userId, jobId: job.id, key: ask.key, host: host.name, command: request.command,
-        timeoutSeconds: request.timeoutSeconds, outputs: request.outputs, secrets: request.secrets, inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
+        timeoutSeconds: request.timeoutSeconds, outputs: request.outputs, secrets: request.secrets, ...(fields.rerun ? { rerun: true as const } : {}),
+        inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
       }, ask.inputs);
       // Begun at each ask, once per step: an ask whose begin a stop cut short begins it when it is sent again.
       const saga = o.sagas.begin(step.id);
@@ -209,31 +250,34 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
     async run(stepId, signal) {
       const s = o.steps.get(stepId);
       // Swept, or ended: nothing is left to do.
-      if (!s || s.result) return;
-      // It took its host on a hopper that stopped: never a second time. The saga's sweep step sweeps the host.
-      if (s.leasedAt !== undefined) { finish(s, { exit: 125, problem: STEP_INTERRUPTED }, 0); return; }
-      let told = false;
-      for (;;) {
-        signal.throwIfAborted();
-        const host = hostOf(s.host);
-        if (!host) { finish(s, { exit: 125, problem: `the hopper has no Windows host ${s.host} any more` }, 0); return; }
-        if (!o.atWork(s.jobId)) { finish(s, { exit: 125, problem: `cancelled: job ${s.jobId} is not at work` }, 0); return; }
-        if (o.steps.leaseHost(s.id, now().toISOString())) break;
-        if (!told) { o.steps.appendLog(s.id, `hopper-step: waiting for ${s.host}: another step runs there\n`); told = true; }
-        await sleep(HOLD_POLL_MS, undefined, { signal });
-      }
+      if (!s || s.result) { endedHere.delete(stepId); return; }
+      if (s.leasedAt !== undefined) {
+        // Ended on this hopper, and only its end was not kept: kept now.
+        const kept = endedHere.get(s.id);
+        if (kept) { end(...kept); return; }
+        // It took its host on a hopper that stopped: never a second time, unless it was asked with rerun.
+        if (!(await again(s))) return;
+      } else if (!(await takeHost(s, signal))) return;
       const host = hostOf(s.host);
       const outside = host ? notGiven(host, s.secrets) : `the hopper has no Windows host ${s.host} any more`;
-      const refused = (no: string) => { refuse({ id: s.jobId }, 403, no, s.host); finish(s, { exit: 125, problem: no }, 0); };
+      const refused = (no: string) => { refuse({ id: s.jobId }, 403, no, s.host); end(s, { exit: 125, problem: no }, 0); };
       if (!host || outside) { refused(outside!); return; }
-      // Read now, for this try only: no secret is kept in the database or between tries.
-      const secrets: Record<string, string> = {};
-      for (const name of s.secrets) {
-        const r = o.secret ? await o.secret({ name, job: s.jobId, host: s.host }) : { refused: 'the hopper gives no vault secret to a step here' };
-        if ('refused' in r) { refused(`${name}: ${r.refused}`); return; }
-        secrets[name] = r.value;
+      try {
+        // Read now, for this try only: no secret is kept in the database or between tries.
+        const secrets: Record<string, string> = {};
+        for (const name of s.secrets) {
+          const r = o.secret ? await o.secret({ name, job: s.jobId, host: s.host }).catch((e: unknown) => { throw new Error(`${name}: ${(e as Error).message}`); })
+            : { refused: 'the hopper gives no vault secret to a step here' };
+          if ('refused' in r) { refused(`${name}: ${r.refused}`); return; }
+          secrets[name] = r.value;
+        }
+        await runHeld(s, host, secrets, signal);
+      } catch (e) {
+        // A stop or an abort, or an end kept for the next try, is the saga's. Else this hopper, which stays up, says why.
+        if (signal.aborted || endedHere.has(s.id)) throw e;
+        o.log(`hopper: step ${s.id} on ${s.host}: ${(e as Error).message}`);
+        end(s, { exit: 125, problem: `the hopper could not run the step: ${(e as Error).message}` }, 0);
       }
-      await runHeld(s, host, secrets, signal);
     },
 
     async sweepHost(stepId) {

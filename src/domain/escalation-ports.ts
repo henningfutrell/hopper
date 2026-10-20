@@ -102,7 +102,7 @@ export interface ReviewReply {
 
 export type ReviewActionResult =
   | { ok: true; item: ReviewItem }
-  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered' | 'not_switched' | 'bad_selection'; message: string };
+  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered' | 'not_switched' | 'bad_selection' | 'parked'; message: string };
 
 /**
  * Runs one review section's review (issues #537, #543): reviewer levels, lowest first, then a person. Every write is
@@ -115,6 +115,8 @@ export interface ReviewService {
   firstStage(): string;
   /** Start the review of an item's newest version. */
   handle(itemId: string): void;
+  /** Its job was picked up (issue #2167): a review the park stopped at a reviewer level goes on from there. */
+  resume(itemId: string): void;
   /**
    * A person's decision, one the section declares, at any stage: `by` is who. `then` (issue #548): accepting an item
    * whose job is in a switched phase of this kind, what the job does next (thenChoices); refused for any other.

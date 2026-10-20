@@ -54,7 +54,7 @@ import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type PullRequestState, type ReferencingPullRequest } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
-import { isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
+import { closesByKeyword, fromReleaseBranch, isClosedAsCompleted, isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
 import { LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
@@ -133,7 +133,7 @@ function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): 
  */
 async function openPullRequestOf(api: GitHubApi, repo: string, number: number): Promise<{ url: string; part: boolean } | undefined> {
   const newest = <P extends { createdAt: string }>(prs: P[]): P | undefined => [...prs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  const closing = newest(await api.openClosingPullRequests(repo, number));
+  const closing = newest(await openClosingWork(api, repo, number));
   if (closing) return { url: closing.url, part: false };
   const mention = newest((await api.referencingPullRequests(repo, number))
     .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr, repo, number)));
@@ -143,19 +143,21 @@ async function openPullRequestOf(api: GitHubApi, repo: string, number: number): 
 }
 
 /**
- * A pull request of the issue's repository that mentions the issue and merged since the job began: the job's own part
- * ("Part of #N", issue #1231), merged before the job's end was reported, so the report named none; else, a part first, any
- * other that only mentions it (issue #1891: a pull request of several issues, no "Part of #N"), so a job that ended with no
- * pull request is not followed for ever. Followed, it ends as a merged part: the next part is taken, or the issue is done
- * when every part it declares is done.
+ * A pull request of the issue's repository that mentions the issue and merged since the job began: one that closes it
+ * with a closing keyword first (issue #2132: merged into the landing branch, which closes no issue, before the job's end
+ * was reported), followed as the whole item; else the job's own part ("Part of #N", issue #1231), merged before the job's
+ * end was reported, so the report named none; else any other that only mentions it (issue #1891: a pull request of
+ * several issues, no "Part of #N"), so a job that ended with no pull request is not followed for ever. A part or a mention
+ * ends as a merged part: the next part is taken, or the issue is done when every part it declares is done. Never a pull
+ * request from a release branch or a batch run's branch (`fromReleaseBranch`).
  */
-async function mergedPartOf(api: GitHubApi, repo: string, number: number, job: Job): Promise<{ url: string; part: true; mention?: true } | undefined> {
-  const since = Date.parse(job.createdAt);
+async function mergedPartOf(api: GitHubApi, repo: string, number: number, job: Job): Promise<{ url: string; part: boolean; mention?: true } | undefined> {
   const part = (pr: ReferencingPullRequest) => isPartOf(pr, repo, number);
+  const rank = (pr: ReferencingPullRequest) => (part(pr) ? 1 : closesByKeyword(pr.body, repo, number) ? 2 : 0);
   const merged = (await api.referencingPullRequests(repo, number))
-    .filter((pr) => pr.state === 'merged' && (part(pr) || pr.repo.toLowerCase() === repo.toLowerCase()) && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= since)
-    .sort((a, b) => Number(part(b)) - Number(part(a)) || (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
-  return merged && { url: merged.url, part: true, ...(part(merged) ? {} : { mention: true as const }) };
+    .filter((pr) => pr.state === 'merged' && !fromReleaseBranch(pr) && (part(pr) || pr.repo.toLowerCase() === repo.toLowerCase()) && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= Date.parse(job.createdAt))
+    .sort((a, b) => rank(b) - rank(a) || (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''))[0];
+  return merged && (rank(merged) === 2 ? { url: merged.url, part: false } : { url: merged.url, part: true, ...(part(merged) ? {} : { mention: true as const }) });
 }
 
 /** Where the named pull request is now; undefined: none is named, or a part names it no more. */
