@@ -42,6 +42,8 @@ export interface QuestionServiceOptions {
   onDismissed: (q: Question) => void;
   /** Synchronous, called inside the tx that records a person's correction of an auto-answer (issue #632): the job gets it. */
   onCorrected: (q: Question) => void;
+  /** Synchronous, called inside the tx that moves the question to the human stage, once per question (issue #2184). */
+  onToHuman?: (q: Question, answerUrl: string) => void;
   /** Where a level's run reports a login it waits on (issue #476): never an answer, and never a question of its own. */
   logins?: Logins;
   /** Whether the blast-radius gate keeps a machine: a question raised on one is a guard case. */
@@ -161,6 +163,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     const { target: _target, ...toHumanData } = data;
     // Every hold on the answer (issue #679), by name.
     emit(updated, 'question.escalated_to_human', { ...toHumanData, ...(to.holds ? { holds: to.holds } : {}) });
+    o.onToHuman?.(updated, o.answerUrl(updated.id));
     queueMicrotask(() => armHuman(q.id));
   }
 
