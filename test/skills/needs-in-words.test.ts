@@ -35,6 +35,11 @@ describe('needs read from plain words (issue #708)', () => {
     expect(needsFromWords('helm upgrade on cluster lab')).toEqual([{ operation: 'write', asset: { kind: 'cluster', name: 'lab' } }]);
   });
 
+  it('names an observe for a port-forward (issue #2146), and no change', () => {
+    expect(needsFromWords('kubectl port-forward to prometheus in namespace metrics on cluster uat')).toEqual([{ operation: 'observe', asset: { kind: 'namespace', name: 'uat/metrics' } }]);
+    expect(needsFromWords('observe and query the cluster uat')).toEqual([read('cluster', 'uat'), { operation: 'observe', asset: { kind: 'cluster', name: 'uat' } }]);
+  });
+
   it('a change word after not or never makes no change need', () => {
     expect(needsFromWords('get pods on cluster lab, never delete them')).toEqual([read('cluster', 'lab')]);
     expect(needsFromWords('watch the cluster lab but do not restart anything')).toEqual([read('cluster', 'lab')]);
