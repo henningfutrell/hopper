@@ -36,7 +36,6 @@ import { HttpError, parseWith } from './errors.ts';
 import { classifyRequest, peerList, publicOriginOf, type Lan } from './reach.ts';
 import type { Tenants } from './tenants.ts';
 import { holdsTemplate } from '../vault/vault.ts';
-import { RELAY_PATH } from '../sandbox/relay-script.ts';
 
 export interface ClientLinkOptions {
   tenants: Tenants;
@@ -151,9 +150,8 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
   const peers = peerList(o.lan.peers);
   const nonces = nonceCache();
   app.server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const path = (req.url ?? '').split('?')[0];
-    if (path === RELAY_PATH) return; // a job's relay connection (issue #2146): job-relay.ts
     socket.on('error', () => socket.destroy());
+    const path = (req.url ?? '').split('?')[0];
     if (path !== CONNECT_PATH || header(req, 'upgrade').toLowerCase() !== LINK_PROTOCOL) return refuse(socket, 404, `not found: a machine dials in at ${CONNECT_PATH} with Upgrade: ${LINK_PROTOCOL}`);
     const reach = classifyRequest({ host: req.headers.host, peer: req.socket.remoteAddress }, o.port(), o.lan, peers);
     if ('refuse' in reach) {

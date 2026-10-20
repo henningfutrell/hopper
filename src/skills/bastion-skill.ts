@@ -2,8 +2,7 @@
 // "…"`. The job names a template of the user's with an observe on each target's namespace or cluster; its sandbox runs
 // of that template are asked for as a sandbox ask's are (`sandbox --template`), and wait for the same approvals. Once
 // they are approved and the template is ready, the hopper starts the job's bastion, or answers the one it has.
-// `bastion` alone says where the job's bastion stands, and how `hopper-relay` reaches a target (part 2); `bastion stop`
-// stops it.
+// `bastion` alone says where the job's bastion stands; `bastion stop` stops it.
 import type { Job } from '../domain/types.ts';
 import type { SandboxRequestView } from '../domain/sandbox-approvals.ts';
 import { templateWait } from '../domain/sandboxes-before-start.ts';
@@ -43,9 +42,7 @@ export function bastionText(v: BastionView): string {
   }
   return `bastion ${v.id} of template ${v.template} is ${v.state} (box ${v.box}). It forwards to:\n${forwards}\n`
     + `Its kube tokens stay in the box, and the hopper renews them. It ends at ${v.expiresAt} unless it is used before, when this job ends, or with: sh "$HOPPER_SKILL" bastion stop.\n`
-    + `Reach a target from here through the hopper's relay: a local port joined to it while a command runs, for example\n`
-    + `  sh "$HOPPER_RELAY" ${v.targets[0]?.target ?? 'TARGET'} -- sh -c 'curl -s "http://127.0.0.1:$HOPPER_RELAY_PORT/"'\n`
-    + 'Or hold a port of your choice until you stop it: sh "$HOPPER_RELAY" TARGET 19090 &\n';
+    + 'Nothing outside the box reaches the forwards yet: the hopper\'s relay, which joins a job to them, comes in a later part of issue #2146.\n';
 }
 
 export async function bastionAsk<A>(u: BastionUser, job: Job, f: BastionFields, say: BastionSay<A>): Promise<A> {

@@ -47,7 +47,6 @@ describe('the bastion ask (issue #2146)', () => {
     expect(r.text).toContain('bastion b-1 of template observe-uat is running');
     expect(r.text).toContain('uat/monitoring/svc/grafana:80 on 127.0.0.1:20000 in the box');
     expect(r.text).toContain('Its kube tokens stay in the box');
-    expect(r.text).toContain('sh "$HOPPER_RELAY" uat/monitoring/svc/grafana:80 -- sh -c');
     expect(started).toEqual(['observe-uat 1']);
     expect(asked).toEqual([{ about: { purpose: 'read the grafana dashboards', plan: 'a bastion that port-forwards to uat/monitoring/svc/grafana:80' } }]);
   });

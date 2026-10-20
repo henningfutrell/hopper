@@ -277,8 +277,6 @@ describe('Search (issue #945)', () => {
     expect(other.hits[0]).toMatchObject({ type: 'issue', title: 'Rotate the backup keys', url: OTHER });
     expect(other.hits[0]!.highlights.intake?.[0]).toContain('<mark>assigned</mark>');
     outcomes[0] = { key: OTHER, title: 'Rotate the backup keys', repo: 'o/r', reason: 'on the backburner', group: 'backburner', action: 'unbackburner' };
-    // The source's status keeps a copy of its intake from its last sync (with each item's arrival), so a sync reads it.
-    await rt.sources.syncNow('gh');
     rt.store.events.append({ type: 'source.request_opened', data: { source: 'gh', key: OTHER, hash: 'a'.repeat(64), author: 'someone', why: ['not a trusted actor'] } });
     await found(app, 'q=backburner', [OTHER], 'the intake item written again after an intake event');
     expect((await app.api<SuggestAnswer>('GET', '/api/search/suggest?q=rota')).body.suggestions).toEqual([{ type: 'issue', ref: OTHER, title: 'Rotate the backup keys', url: OTHER }]);
