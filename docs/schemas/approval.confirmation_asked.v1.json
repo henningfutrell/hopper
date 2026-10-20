@@ -30,7 +30,8 @@
         "read",
         "write",
         "sync",
-        "apply"
+        "apply",
+        "observe"
       ]
     },
     "asset": {

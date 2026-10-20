@@ -7,9 +7,18 @@ import type { TemplateRadius } from './blast-radius.ts';
 import type { TrustLevel } from './trust-stamp.ts';
 import { backendProblem, type StateBackend } from './state-backend.ts';
 
-/** What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). */
-export const OPERATIONS = ['read', 'write', 'sync', 'apply'] as const;
+/**
+ * What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). Observe
+ * (issue #2146): read a cluster or a namespace and port-forward to its pods, a bastion's credential; it changes no asset,
+ * but a forward reaches every port of a pod, so it is high radius too.
+ */
+export const OPERATIONS = ['read', 'write', 'sync', 'apply', 'observe'] as const;
 export type Operation = (typeof OPERATIONS)[number];
+
+/** The operations that change their asset: only an approved plan mints them (issue #870), and none while infra applies are off. */
+export const CHANGE_OPERATIONS = ['write', 'sync', 'apply'] as const satisfies readonly Operation[];
+/** Whether the profile changes its asset (a write, sync or apply), so its mint needs a plan. Read and observe do not. */
+export const changesAsset = (p: { operation: string }): boolean => (CHANGE_OPERATIONS as readonly string[]).includes(p.operation);
 
 /** What a credential is for: a cluster, a namespace (`<cluster>/<namespace>`), an Argo CD app, a Terraform workspace, an AWS account, an AWS role (`<account>/<role>`). */
 export const ASSET_KINDS = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'] as const;

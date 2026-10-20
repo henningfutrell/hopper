@@ -104,7 +104,7 @@ export const backendText = (p: OperationProfile): string => (p.backend
   : `${p.asset.name}: no state backend, so the read-only check cannot prove a state write is refused`);
 
 /** The hopper's high-radius operations (src/blast-radius/template.ts): a profile of one needs its own explicit approval (issue #584). */
-const HIGH = ['write', 'sync', 'apply'];
+const HIGH = ['write', 'sync', 'apply', 'observe'];
 export const highRadius = (p: OperationProfile): boolean => HIGH.includes(p.operation);
 
 /** The template's profiles that wait for their own explicit approval: approving the template does not approve them. */

@@ -52,7 +52,7 @@ export const sandboxApprovalsBody = z.strictObject({
   rememberWritesHours: z.number().int().min(0).max(REMEMBER_HOURS_MAX).optional(),
   // Issue #1472: the standing read grant.
   standingReadGrant: z.boolean().optional(),
-  forgetWrite: z.strictObject({ operation: z.enum(['write', 'sync', 'apply']), asset: z.strictObject({ kind: z.enum(ASSET_KINDS), name: z.string().max(200) }) }).optional(),
+  forgetWrite: z.strictObject({ operation: z.enum(['write', 'sync', 'apply', 'observe']), asset: z.strictObject({ kind: z.enum(ASSET_KINDS), name: z.string().max(200) }) }).optional(),
   // Issue #2206: revoke one action grant now.
   revokeAction: actionScope.optional(),
 });

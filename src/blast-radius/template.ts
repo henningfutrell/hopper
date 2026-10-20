@@ -1,7 +1,7 @@
 // A template's blast radius (issue #584, design.md "A template's blast radius"), pure. A box's tools decide what it
 // could do (`rate.ts`); its template decides what it may do. Rated from the template's operation profiles — the ones it
 // declares and the ones access holds an approval for — and its credential scope, the vault secrets its boxes may ask
-// for. A read profile is low; a write, sync or apply profile is high, approved or not. A vault secret is a credential
+// for. A read profile is low; a write, sync, apply or observe profile is high, approved or not. A vault secret is a credential
 // whose reach the hopper cannot see: it counts as an unconfirmed reach, by the rules. An egress host (issue #1875) is
 // medium: a place off AWS and the minted clusters where a box can send what it reads.
 import {
@@ -9,10 +9,13 @@ import {
 } from '../domain/types.ts';
 import { prodName, reachLevel } from './rate.ts';
 
-/** The operations that change an asset: a profile of one needs its own explicit approval. */
-const HIGH_OPERATIONS: readonly string[] = ['write', 'sync', 'apply'];
+/**
+ * The operations a profile of needs its own explicit approval: the ones that change an asset, and observe (issue #2146),
+ * whose port-forward reaches every port of a pod.
+ */
+const HIGH_OPERATIONS: readonly string[] = ['write', 'sync', 'apply', 'observe'];
 
-/** Whether a profile is high radius: write, sync or apply. */
+/** Whether a profile is high radius: write, sync, apply or observe. */
 export const highRadius = (p: OperationProfile): boolean => HIGH_OPERATIONS.includes(p.operation);
 
 const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
@@ -38,7 +41,7 @@ export function rateTemplate(scope: TemplateScope, approved: readonly OperationP
   const lines: { level: RadiusLevel; reason: string }[] = [
     ...profiles.map((p) => ({
       level: p.level,
-      reason: `${profileText(p.profile)}: ${p.level === 'high' ? `it changes the asset; ${p.approved ? 'approved' : 'waits for an explicit approval'}` : 'read only'}`,
+      reason: `${profileText(p.profile)}: ${p.level === 'high' ? `${p.profile.operation === 'observe' ? 'it port-forwards to the asset\'s pods' : 'it changes the asset'}; ${p.approved ? 'approved' : 'waits for an explicit approval'}` : 'read only'}`,
     })),
     ...scope.secrets.map((s) => {
       const prod = prodName([s.name, s.scope], rules);

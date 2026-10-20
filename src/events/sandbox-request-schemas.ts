@@ -26,7 +26,7 @@ export const SANDBOX_REQUEST_EVENT_SCHEMAS = {
   'vault.sandbox_declined': strict({ request: z.string(), template: z.string(), reason: z.string(), by: z.string() }),
   'vault.sandbox_started': strict({ request: z.string(), template: z.string(), container: z.string() }),
   'vault.sandbox_failed': strict({ request: z.string(), template: z.string(), reason: z.string() }),
-  'vault.write_forgotten': strict({ operation: z.enum(['write', 'sync', 'apply']), asset: strict({ kind: z.enum(ASSET_KINDS), name: z.string() }), by: z.string() }),
+  'vault.write_forgotten': strict({ operation: z.enum(['write', 'sync', 'apply', 'observe']), asset: strict({ kind: z.enum(ASSET_KINDS), name: z.string() }), by: z.string() }),
   'vault.action_asked': strict({ job: z.string(), ...action, why: z.string().optional() }),
   'vault.action_granted': strict({ job: z.string().optional(), ...action, by: z.string() }),
   'vault.action_declined': strict({ job: z.string(), ...action, reason: z.string().optional(), by: z.string() }),

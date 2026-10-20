@@ -4581,7 +4581,7 @@ Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profi
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `level` | `low` \| `medium` \| `high` | yes |
 | `by` | string | yes |
@@ -4689,7 +4689,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 | field | type | required |
 |---|---|---|
 | `kind` | `aws` \| `kube` | yes |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `template` | string | yes |
 | `machine` | string | yes |
@@ -4817,7 +4817,7 @@ Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-
 | field | type | required |
 |---|---|---|
 | `kind` | `aws` \| `kube` | yes |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `template` | string | yes |
 | `check` | string | yes |
@@ -5226,7 +5226,7 @@ Version 1 (`docs/schemas/vault.write_forgotten.v1.json`). An admin forgot a reme
 
 | field | type | required |
 |---|---|---|
-| `operation` | `write` \| `sync` \| `apply` | yes |
+| `operation` | `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `by` | string | yes |
 
@@ -7243,7 +7243,7 @@ Version 1 (`docs/schemas/approval.confirmation_asked.v1.json`). An API token ask
 | `asker` | string | yes |
 | `plan` | string | no |
 | `template` | string | no |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | no |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | no |
 | `asset` | object | no |
 
 ```json

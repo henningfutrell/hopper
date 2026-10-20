@@ -153,7 +153,7 @@ export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: 
   const [f] = found as [typeof found[number]];
   const where = { credential: f.credential, account: f.account, region: f.cluster.region, searched };
   if (d.role === EKS_READ_ROLE) return { ...await signedFor(o, f.session, f.cluster, f.roleArn, f.sessionName, identify), ...where };
-  // A write signs in as the role its write is granted to: EKS maps that role, and the cluster's access entry decides.
+  // A write signs in as the role its write is granted to, an observe as hopper-observe (issue #2146): EKS maps that role, and the cluster's access entry decides.
   const roleArn = `arn:aws:iam::${f.account}:role/${d.role}`;
   const session = await o.minter.awsSession(f.keys, { roleArn, sessionName: f.sessionName, ...awsReadSession(roleArn), durationSeconds: AWS_SESSION_SECONDS });
   return { ...await signedFor(o, session, f.cluster, roleArn, f.sessionName, identify), ...where };

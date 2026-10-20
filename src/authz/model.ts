@@ -8,6 +8,9 @@ import { transformer } from '@openfga/syntax-transformer';
 import { OPERATIONS } from '../domain/types.ts';
 import { TRUST_MODEL, TRUST_WRITTEN } from './trust-model.ts';
 
+/** The operations every model decides; observe (issue #2146) came later and is apart (`observeGaps`). */
+const MINT_OPERATIONS = OPERATIONS.filter((op) => op !== 'observe');
+
 export const DEFAULT_ACCESS_MODEL = `model
   schema 1.1
 
@@ -41,10 +44,12 @@ type asset
     define grants_write: [operation_profile]
     define grants_sync: [operation_profile]
     define grants_apply: [operation_profile]
+    define grants_observe: [operation_profile]
     define can_read: requester from grants_read
     define can_write: requester from grants_write
     define can_sync: requester from grants_sync
     define can_apply: requester from grants_apply
+    define can_observe: requester from grants_observe
 
 # A public link to an artifact (issue #624): anybody who holds it, while it is live.
 type link
@@ -183,9 +188,13 @@ const WRITTEN: readonly [type: string, relation: string, accepts: string][] = [
   ['template', 'instance_of', 'machine'],
   ['template', 'running', 'job'],
   ['operation_profile', 'approved_for', 'template'],
-  ...OPERATIONS.map((op) => ['asset', `grants_${op}`, 'operation_profile'] as [string, string, string]),
+  ...MINT_OPERATIONS.map((op) => ['asset', `grants_${op}`, 'operation_profile'] as [string, string, string]),
 ];
-const ASKED: readonly [type: string, relation: string][] = OPERATIONS.map((op) => ['asset', `can_${op}`]);
+const ASKED: readonly [type: string, relation: string][] = MINT_OPERATIONS.map((op) => ['asset', `can_${op}`]);
+
+/** What the hopper writes and asks for observe (issue #2146): apart, so a model edited before it still decides every other mint. */
+const OBSERVE_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['asset', 'grants_observe', 'operation_profile']];
+const OBSERVE_ASKED: readonly [type: string, relation: string][] = [['asset', 'can_observe']];
 
 /** What the hopper tells and asks for vault grants (issue #652): apart, so a model edited before them still decides mints. */
 const VAULT_GRANT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['vault_grant', 'owner', 'user']];
@@ -216,6 +225,11 @@ const SHARED_SECRET_ASKED: readonly [type: string, relation: string][] = [['shar
 /** Each relation the hopper needs that the model lacks (`type#relation`) or no longer lets it write (`… accepts type`); empty: none. */
 export function modelGaps(model: ModelJson): string[] {
   return gapsIn(model, WRITTEN, ASKED);
+}
+
+/** What the model lacks for observe (issue #2146); empty: observe is decided. A gap here denies every observe, and no other mint. */
+export function observeGaps(model: ModelJson): string[] {
+  return gapsIn(model, OBSERVE_WRITTEN, OBSERVE_ASKED);
 }
 
 /** What the model lacks for artifacts (issue #624); empty: shares are decided. A gap here denies every share, never a mint. */
