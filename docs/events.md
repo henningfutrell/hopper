@@ -4645,7 +4645,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 
 ## `vault.minted`
 
-Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. `bound` (issue #1371): the Secret a need box's Kubernetes token is bound to; deleting it (`vault.unbound`) ends the token. A mint that names a plan and is no renewal is an apply: the notifiers send it as `infra.plan_applied`, with the watchers of the plan's environments (issue #870 part 4). Never the credential.
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. `bound` (issue #1371): the Secret a need box's Kubernetes token is bound to; deleting it (`vault.unbound`) ends the token. `actions` (issue #2206): the granted AWS actions, each on its resource, a need step's session was narrowed to. A mint that names a plan and is no renewal is an apply: the notifiers send it as `infra.plan_applied`, with the watchers of the plan's environments (issue #870 part 4). Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -4662,6 +4662,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 | `plan` | string | no |
 | `principal` | string | no |
 | `bound` | object | no |
+| `actions` | object[] | no |
 
 ```json
 {
@@ -5276,6 +5277,94 @@ Version 1 (`docs/schemas/vault.grant_denied.v1.json`). A person, or a delegate a
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
   "key": "https://github.com/octo-org/hello/issues/7",
   "by": "cos (delegate of octocat)"
+}
+```
+
+## `vault.action_asked`
+
+Version 1 (`docs/schemas/vault.action_asked.v1.json`). A job's need step named an AWS action its change needs (issue #2206, `--action`), and no action grant covers it: the `role` (`<account>/<role>`), the `action` and its `resource`, and the job's `why`. The step waits; a person grants or declines it on Access requests. Once per job and scope.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `role` | string | yes |
+| `action` | string | yes |
+| `resource` | string | yes |
+| `why` | string | no |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "role": "167028478405/hopper-action",
+  "action": "eks:UpdateNodegroupConfig",
+  "resource": "arn:aws:eks:us-west-1:167028478405:nodegroup/identity-eks/identity-eks-nodes/*",
+  "why": "Scale the node group to 6 nodes"
+}
+```
+
+## `vault.action_granted`
+
+Version 1 (`docs/schemas/vault.action_granted.v1.json`). A person granted an AWS action on a resource for an aws-role (issue #2206): a need step's change on that role is minted narrowed to the reads and the granted actions, and a later ask of the same scope is covered until the time limit of remembered write approvals. `job`: the job whose ask it answered. `by` who granted it.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | no |
+| `role` | string | yes |
+| `action` | string | yes |
+| `resource` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "role": "167028478405/hopper-action",
+  "action": "eks:UpdateNodegroupConfig",
+  "resource": "arn:aws:eks:us-west-1:167028478405:nodegroup/identity-eks/identity-eks-nodes/*",
+  "by": "octocat"
+}
+```
+
+## `vault.action_declined`
+
+Version 1 (`docs/schemas/vault.action_declined.v1.json`). A person declined a job's ask for an AWS action (issue #2206): its step is told no. `reason` when they gave one; `by` who declined it.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `role` | string | yes |
+| `action` | string | yes |
+| `resource` | string | yes |
+| `reason` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "role": "167028478405/hopper-action",
+  "action": "eks:UpdateNodegroupConfig",
+  "resource": "arn:aws:eks:us-west-1:167028478405:nodegroup/identity-eks/identity-eks-nodes/*",
+  "reason": "not now",
+  "by": "octocat"
+}
+```
+
+## `vault.action_revoked`
+
+Version 1 (`docs/schemas/vault.action_revoked.v1.json`). A person revoked an action grant (issue #2206): the next ask of that role, action and resource waits for a person again; a credential minted before keeps its 15 minutes. `by` who revoked it.
+
+| field | type | required |
+|---|---|---|
+| `role` | string | yes |
+| `action` | string | yes |
+| `resource` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "role": "167028478405/hopper-action",
+  "action": "eks:UpdateNodegroupConfig",
+  "resource": "arn:aws:eks:us-west-1:167028478405:nodegroup/identity-eks/identity-eks-nodes/*",
+  "by": "octocat"
 }
 ```
 

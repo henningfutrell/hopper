@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string"
+    },
+    "resource": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "role",
+    "action",
+    "resource",
+    "by"
+  ],
+  "additionalProperties": false
+}
