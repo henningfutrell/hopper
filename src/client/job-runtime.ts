@@ -106,15 +106,23 @@ const SYSTEMD_RUN = [
   'exec "$r" "$@"',
 ].map((l) => l.trim()).join(' ');
 
-// $1 the job id, $2 its scratch dir, $3 the guard, $4 the job's systemd-run, $5 `service` to start the runtime's socket
-// (a pane's job: it lives in the job's scope until the reap stops it). Prints one word: own, none or failed. The user's
-// bus and systemd's private socket are hard links in the runtime dir: podman's rootless network namespace sees a /run of
-// its own, with only the runtime dir in it, and aardvark-dns reaches systemd through them.
+// $1 the job's scratch dir, $2 the guard: the guards podman and docker written in its containers dir. Prints written or
+// failed. A step of its own, typed before the setup (issue #2234): with the guard in it, the setup did not fit a terminal line.
+const GUARDS_SCRIPT = [
+  'c=$1/' + RUNTIME_SUBDIR + ';',
+  `mkdir -p "$c/bin" || { echo failed; exit 0; };`,
+  'for n in podman docker; do { printf "#!/bin/sh\\n%s\\n" "$2" > "$c/bin/$n" && chmod 755 "$c/bin/$n"; } || { echo failed; exit 0; }; done;',
+  'echo written',
+].map((l) => l.trim()).join(' ');
+
+// $1 the job id, $2 its scratch dir, $3 the job's systemd-run, $4 `service` to start the runtime's socket (a pane's job:
+// it lives in the job's scope until the reap stops it), after the guards (GUARDS_SCRIPT). Prints one word: own, none or
+// failed. The user's bus and systemd's private socket are hard links in the runtime dir: podman's rootless network
+// namespace sees a /run of its own, with only the runtime dir in it, and aardvark-dns reaches systemd through them.
 const SETUP_SCRIPT = [
   'i=$1; s=$2; c=$s/' + RUNTIME_SUBDIR + ';',
   CONF_SH,
-  `mkdir -p "$c/bin" || { echo failed; exit 0; };`,
-  'for n in podman docker; do { printf "#!/bin/sh\\n%s\\n" "$3" > "$c/bin/$n" && chmod 755 "$c/bin/$n"; } || { echo failed; exit 0; }; done;',
+  '[ -x "$c/bin/podman" ] && [ -x "$c/bin/docker" ] || { echo failed; exit 0; };',
   HOST_RUNTIME_SH,
   `j=$h/${RUNTIME_PREFIX}$i;`,
   'if command -v podman >/dev/null 2>&1 && [ -d "$h" ] && [ ! -L "$h" ] && [ -w "$h" ] && mkdir -p "$j" && [ ! -L "$j" ] && chmod 700 "$j"; then',
@@ -122,7 +130,7 @@ const SETUP_SCRIPT = [
   '  [ -S "$h/bus" ] && ln -f "$h/bus" "$j/bus" 2>/dev/null;',
   '  [ -S "$h/systemd/private" ] && ln -f "$h/systemd/private" "$j/systemd/private" 2>/dev/null;',
   '  printf "%s\\n" "$s" > "$j/scratch" && conf "$j" "$c" || { echo failed; exit 0; };',
-  '  { printf "#!/bin/sh\\n%s\\n" "$4" > "$c/bin/systemd-run" && chmod 755 "$c/bin/systemd-run"; } || { echo failed; exit 0; };',
+  '  { printf "#!/bin/sh\\n%s\\n" "$3" > "$c/bin/systemd-run" && chmod 755 "$c/bin/systemd-run"; } || { echo failed; exit 0; };',
   '  { printf "export XDG_RUNTIME_DIR=\\"%s\\" CONTAINERS_CONF_OVERRIDE=\\"%s/containers.conf\\" CONTAINERS_STORAGE_CONF=\\"%s/storage.conf\\" DOCKER_HOST=\\"unix://%s/podman/podman.sock\\" KIND_EXPERIMENTAL_PROVIDER=podman\\n" "$j" "$c" "$c" "$j";',
   '    if [ -S "$j/bus" ]; then printf "export DBUS_SESSION_BUS_ADDRESS=\\"unix:path=%s/bus\\"\\n" "$j"; fi; } > "$c/env.sh" || { echo failed; exit 0; };',
   // In the sandbox (job-sandbox.ts) podman cannot start a runtime of its own: there it is a client of the job's socket.
@@ -135,7 +143,7 @@ const SETUP_SCRIPT = [
   'fi;',
   '{ printf "unset CONTAINER_CONNECTION DOCKER_CONTEXT\\n";',
   '  printf "case :\\$PATH: in *:%s/bin:*) ;; *) PATH=\\"%s/bin:\\$PATH\\"; export PATH;; esac\\n" "$c" "$c"; } >> "$c/env.sh" || { echo failed; exit 0; };',
-  'if [ "$how" = own ] && [ "$5" = service ]; then',
+  'if [ "$how" = own ] && [ "$4" = service ]; then',
   '  ( . "$c/env.sh"; nohup "$c/bin/podman" system service --time=0 "unix://$j/podman/podman.sock" </dev/null >/dev/null 2>&1 & );',
   'fi;',
   'echo "$how"',
@@ -155,6 +163,9 @@ export const RUNTIME_MARK = 'hopper-runtime-';
 /** own: the job has a runtime of its own; none: no podman or runtime dir here, the host's socket closed all the same; failed. */
 export type RuntimeOutcome = 'own' | 'none' | 'failed';
 const OUTCOMES: readonly RuntimeOutcome[] = ['own', 'none', 'failed'];
+/** What the guards command prints, followed by its outcome: written or failed. */
+export const GUARDS_MARK = 'hopper-guards-';
+export type GuardsOutcome = 'written' | 'failed';
 
 const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -162,19 +173,39 @@ const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 export const runtimeEnvOf = (scratch: string): string => `${scratch}/${RUNTIME_SUBDIR}/env.sh`;
 
 /**
+ * The command that writes the job's guards, podman and docker, in its scratch dir, then prints its outcome as two words,
+ * so the command's own echo never reads as it. The first of the two steps a pane's shell is given (issue #2234): each one
+ * fits a terminal line.
+ */
+export function guardsCommand(scratch: string): string {
+  return `o=$(sh -c ${shq(GUARDS_SCRIPT)} hopper-guards ${shq(scratch)} ${shq(GUARD)}); printf 'hopper-guards-%s\\n' "\${o:-failed}"`;
+}
+
+/**
  * The command that sets the job's runtime up and puts it in the shell's environment, then prints its outcome as two words,
  * so the command's own echo never reads as it. Any POSIX shell: the script runs in sh, the shell only sources env.sh.
- * `service`: start the runtime's socket too (a pane's job, in its scope).
+ * After the guards command. `service`: start the runtime's socket too (a pane's job, in its scope).
  */
-export function runtimeCommand(jobId: string, scratch: string, service: boolean): string {
+export function setupCommand(jobId: string, scratch: string, service: boolean): string {
   const env = shq(runtimeEnvOf(scratch));
-  return `o=$(sh -c ${shq(SETUP_SCRIPT)} hopper-runtime ${shq(jobId)} ${shq(scratch)} ${shq(GUARD)} ${shq(SYSTEMD_RUN)}${service ? ' service' : ''}); `
+  return `o=$(sh -c ${shq(SETUP_SCRIPT)} hopper-runtime ${shq(jobId)} ${shq(scratch)} ${shq(SYSTEMD_RUN)}${service ? ' service' : ''}); `
     + `[ -r ${env} ] && . ${env}; printf 'hopper-runtime-%s\\n' "\${o:-failed}"`;
 }
 
-/** The argv that runs the setup script outside a shell's own environment, for a test. */
+/** Both steps in one, for a shell that runs a script rather than lines typed into a terminal (a print-agent turn). */
+export const runtimeCommand = (jobId: string, scratch: string, service: boolean): string =>
+  `${guardsCommand(scratch)} >/dev/null; ${setupCommand(jobId, scratch, service)}`;
+
+/** The argv that runs both steps outside a shell's own environment, for a test. */
 export const runtimeSetupArgv = (jobId: string, scratch: string, service: boolean): string[] =>
-  ['sh', '-c', SETUP_SCRIPT, 'hopper-runtime', jobId, scratch, GUARD, SYSTEMD_RUN, ...(service ? ['service'] : [])];
+  ['sh', '-c', `sh -c ${shq(GUARDS_SCRIPT)} hopper-guards ${shq(scratch)} ${shq(GUARD)} >/dev/null; exec sh -c ${shq(SETUP_SCRIPT)} hopper-runtime "$@"`,
+    'hopper-runtime', jobId, scratch, SYSTEMD_RUN, ...(service ? ['service'] : [])];
+
+/** The last guards outcome on the screen, if any. */
+export function guardsOutcome(screen: string): GuardsOutcome | undefined {
+  const last = screen.split('\n').map((l) => l.trim()).filter((l) => l.startsWith(GUARDS_MARK)).at(-1)?.slice(GUARDS_MARK.length);
+  return last === 'written' || last === 'failed' ? last : undefined;
+}
 
 /** The last runtime outcome on the screen, if any. */
 export function runtimeOutcome(screen: string): RuntimeOutcome | undefined {

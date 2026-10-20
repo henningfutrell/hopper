@@ -3,6 +3,7 @@
 // setup that failed fails the job before Claude starts: it would run next to the host's runtime.
 import { describe, expect, it } from 'vitest';
 import { contextFor, jobWith, JOB_ID, setup } from './support.ts';
+import { TERMINAL_LINE_MAX } from '../../src/executors/herdr/client.ts';
 
 const DONE = { output: ['Done.', 'HOPPER_DONE'] };
 
@@ -22,6 +23,16 @@ describe('herdr-claude executor: the job\'s own container runtime (issue #1295)'
     expect(command).toMatch(/ service\); /);
     expect(command).toContain(`/.worktrees/@scratch/${JOB_ID}/containers/env.sh'`);
     expect(progress.some((p) => p.message?.includes('container runtime: the job\'s own'))).toBe(true);
+  });
+
+  it('a shell with no line editor runs it: each command typed into the pane fits a terminal line, the guards before the setup (issue #2234)', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], scopes: true, runtime: 'own' });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'finished' });
+    const typed = herdr.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1]));
+    expect(typed.filter((c) => c.length > TERMINAL_LINE_MAX)).toEqual([]);
+    const guards = typed.findIndex((c) => c.includes(' hopper-guards '));
+    expect(guards).toBeGreaterThan(-1);
+    expect(typed.findIndex((c) => c.includes(' hopper-runtime '))).toBe(guards + 1);
   });
 
   it('a machine with no podman: the job runs, told it has no runtime', async () => {

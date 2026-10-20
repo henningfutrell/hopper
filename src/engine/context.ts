@@ -8,6 +8,7 @@ import type { JobMoveData } from './lost-move.ts';
 import type { JobRunData } from './job-run.ts';
 import type { JobLeases } from './leases.ts';
 import type { ReachHolds } from './reach-holds.ts';
+import type { LaneHealth } from './lane-health.ts';
 import type { WaitReads } from './wait-checks.ts';
 
 export interface EngineOptions {
@@ -132,6 +133,8 @@ export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' 
   leases: JobLeases;
   /** The machines a job's start found out of reach of the hopper (issue #1920): they take no new job for a while. Absent: none is held. */
   reachHolds?: ReachHolds;
+  /** The lanes whose starts failed again and again the same way (issue #2234): they take no new job for a while. Absent: none is out. */
+  laneHealth?: LaneHealth;
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();

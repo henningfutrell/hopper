@@ -1,9 +1,9 @@
-import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, SignedOutTool, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, LaneId, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, SignedOutTool, StartPlan, WaitPlan } from '../domain/types.ts';
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
 import { isWindowsJob, windowsFits } from '../domain/windows-jobs.ts';
-import { roomToElbowIn } from './elbow-in.ts';
+import { roomToElbowIn } from './elbow-in.ts'; import { awayFrom, takeIdle } from './lane-health.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 import { fitting, place, type PlacedCost } from './placement-cost.ts';
@@ -407,7 +407,7 @@ function windowsWait(job: Job, states: MachineState[]): string {
  * to the machine holding the best free priority lane first (issue #535). Of the machines it may go to, one where its expected
  * cost fits goes first, and of those Jev's applied pick of its machine (issue #688).
  */
-export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>, picks?: Record<JobId, PlacementPick>, credentialHeld?: readonly string[]): { start: StartPlan[]; wait: WaitPlan[] } {
+export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>, picks?: Record<JobId, PlacementPick>, credentialHeld?: readonly string[], avoid: Record<JobId, LaneId> = {}): { start: StartPlan[]; wait: WaitPlan[] } {
   const start: StartPlan[] = [];
   const wait: WaitPlan[] = [];
   const critical = policy.pacing?.criticalPriority ?? 0;
@@ -429,12 +429,12 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
       wait.push({ jobId: job.id, reason: waitReason(job, checked, pl) });
       continue;
     }
-    const { options: fit, note: costed } = fitting(able, costs?.[job.id]);
+    const { options: fit, note: costed } = fitting(awayFrom(able, avoid[job.id]), costs?.[job.id]);
     const { options, note: jev } = jevPicked(fit, picks?.[job.id]);
     const pick = (pl && isHigh(job, pl) ? holdingBestFree(options, pl) : undefined) ?? options.reduce((a, b) => better(a, b, job, pl));
     const pressure = pick.executors.get(ex)!.pressure;
     const picked = pickLane(pick.machine.id, pick.machine.maxLanes, pick.slots, pick.freeIdle, job, pl);
-    const lane = picked ? picked.lane : pick.freeIdle.shift();
+    const lane = picked ? picked.lane : takeIdle(pick.freeIdle, avoid[job.id]);
     pick.assigned += 1;
     if (pinOf(job) !== pick.machine.id) pick.unpinned += 1;
     const overCap = (squeezed || elbowed) && pick.occupied + pick.assigned > pick.cap;

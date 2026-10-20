@@ -9,7 +9,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readReap, readSurvey, reapArgv, surveyArgv } from '../../src/client/reap.ts';
-import { runtimeCommand, runtimeOutcome, runtimeSetupArgv } from '../../src/client/job-runtime.ts';
+import { guardsCommand, guardsOutcome, runtimeCommand, runtimeOutcome, runtimeSetupArgv, setupCommand } from '../../src/client/job-runtime.ts';
+import { TERMINAL_LINE_MAX } from '../../src/executors/herdr/client.ts';
 
 const JOB = 'job-1295-abcdef';
 
@@ -114,6 +115,27 @@ describe('a job gets a container runtime of its own (issue #1295)', () => {
   it('a runtime dir the user does not have: no runtime either', () => {
     const r = spawnSync('sh', ['-c', runtimeCommand(JOB, scratch, false)], { encoding: 'utf8', env: env({ XDG_RUNTIME_DIR: join(root, 'missing') }) });
     expect(runtimeOutcome(r.stdout)).toBe('none');
+  });
+});
+
+describe('a pane sets the runtime up in two steps, each one a terminal line keeps (issue #2234)', () => {
+  it('each step fits a terminal line, even with a long work tree', () => {
+    const long = `/home/agent/${'w'.repeat(120)}/.worktrees/@scratch/${'0'.repeat(8)}-0000-0000-0000-000000000000`;
+    expect(guardsCommand(long).length).toBeLessThanOrEqual(TERMINAL_LINE_MAX);
+    expect(setupCommand('00000000-0000-0000-0000-000000000000', long, true).length).toBeLessThanOrEqual(TERMINAL_LINE_MAX);
+  });
+
+  it('the guards step writes podman and docker; the setup step then gives the job its runtime', () => {
+    const guards = spawnSync('sh', ['-c', guardsCommand(scratch)], { encoding: 'utf8', env: env() });
+    expect(guardsOutcome(guards.stdout)).toBe('written');
+    for (const n of ['podman', 'docker']) expect(statSync(join(containers(), 'bin', n)).mode & 0o111).toBe(0o111);
+    const setUp = spawnSync('sh', ['-c', setupCommand(JOB, scratch, false)], { encoding: 'utf8', env: env() });
+    expect(runtimeOutcome(setUp.stdout)).toBe('own');
+  });
+
+  it('the setup step with no guards written fails: the job never runs without them', () => {
+    const r = spawnSync('sh', ['-c', setupCommand(JOB, scratch, false)], { encoding: 'utf8', env: env() });
+    expect(runtimeOutcome(r.stdout)).toBe('failed');
   });
 });
 

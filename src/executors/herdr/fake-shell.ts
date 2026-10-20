@@ -3,6 +3,8 @@
 // (issue #410), and any command ending in a split printf. Pure: the options and whether the shell already
 // runs in the job's scope decide it.
 
+import { TERMINAL_LINE_MAX } from './client.ts';
+
 /** What the shell does with a typed command: the lines it prints, and whether it now runs in the job's scope. */
 export interface ShellSaid { lines: string[]; scoped?: true }
 
@@ -34,6 +36,9 @@ export function echoOf(command: string): string {
 }
 
 export function shellSays(command: string, o: FakeShellOptions, scoped: boolean): ShellSaid {
+  // A shell with no line editor (dash, a box's sh) reads a line the terminal kept: one past its limit is cut, its quotes
+  // left open, and it runs nothing (issue #2234). The fake's shell is that strict, so a command too long fails a test.
+  if (command.length > TERMINAL_LINE_MAX) return { lines: ['> '] };
   // The job's scope (job-scope.ts): with systemd the shell is replaced by one in the scope and prints
   // nothing; without, it says none. Asked where it runs, it says whether that is the scope.
   if (command.includes('exec systemd-run --user --scope')) return o.scopes ? { lines: [], scoped: true } : { lines: ['hopper-scope-none'] };
@@ -42,6 +47,8 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: [`hopper-restore-${o.restore ?? 'restored'}`] };
   // The job's sandbox (src/client/job-sandbox.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-sandbox ')) return { lines: [`hopper-sandbox-${o.sandbox ?? 'none'}`] };
+  // The job's container runtime guards, its first step (issue #2234).
+  if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-guards ')) return { lines: ['hopper-guards-written'] };
   // The job's own container runtime (src/client/job-runtime.ts): its outcome, as two printf words; silent says nothing.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-runtime ')) return { lines: o.runtime === 'silent' ? [] : [`hopper-runtime-${o.runtime ?? 'none'}`] };
   // Sharing dependencies (shared-deps.ts): its outcome.
