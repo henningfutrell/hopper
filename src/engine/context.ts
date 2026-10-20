@@ -54,8 +54,6 @@ export interface EngineOptions {
   linkGraceMs?: number;
   /** A done job whose source finds it not done is asked again after this long, for GitHub's lag, before it fails (issue #637). Default 0: at once. */
   doneRecheckMs?: number;
-  /** A done job whose source cannot be read is read again after this long, then after twice as long, before it fails (issue #2235). Default 5 s. */
-  doneReadRetryMs?: number;
   /** A job waiting on its own command whose pane shows no background work this long is nudged once; this long after, stuck (issue #1037). Default 5 min. */
   ownCommandGraceMs?: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */

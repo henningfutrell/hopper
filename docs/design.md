@@ -2109,13 +2109,6 @@ for an update, the named pull requests and their state. **A miss is asked again*
 (default 60 s): GitHub may list a new pull request, or a new head commit, only some seconds after the push. The failure
 assessor looks a third time before it assesses the failure ("Failure assessment": a done-check miss).
 
-**A read error is no miss** (issue #2235). When the source cannot be read to check the work (a connect timeout, a busy
-service, a rate limit), nothing shows the work incomplete. The runner reads it again after `HOPPER_DONE_READ_RETRY_MS`
-(default 5 s), then after twice as long. When the last read fails too, the job fails with `could not confirm the work is
-complete: <the read error>`. The built-in cause **Done check unread** (`done-check-unread`, transient, decision `retry`)
-matches that text ahead of every other cause, because the read is the hopper's own, not the machine's or the agent's. The
-run again asks the source first whether the work is done there (`DoneAtSource.beforeRun`): then the job ends finished.
-
 **A pull request left in conflict, with failing checks or as a draft** (issues #626, #736) is not done, but the next
 step is fixed, so no person is asked. When a done job is neither complete nor partly done, the runner asks its source for
 the job's own open pull request that one step finishes (`JobSource.unfinishedPullRequest`; for GitHub one that closes the
@@ -3800,7 +3793,6 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_KEEP_PANES` | `false` |
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LINK_GRACE_MS` | `600000` — issue #752: how long a running job is held once its machine's link drops, before it fails ("Link-lost hold") |
-| `HOPPER_DONE_READ_RETRY_MS` | `5000` — issue #2235: a job that ended done whose source cannot be read to check its work is read again after this long, then after twice as long, before it fails (Done check unread); `0`: at once |
 | `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
 | `HOPPER_CHECKS_WAIT_MS` | `60000` — issue #1230: a job whose own pull request's checks were red: how long between looks at those checks while they run again, before the job is sent back to fix them ("Own PR checks red") |
 | `HOPPER_OWN_COMMAND_GRACE_MS` | `300000` — issue #1037: a job waiting on its own background command whose pane shows no background work this long, its agent not gone on, is nudged once; this long after the nudge its wait check ends the wait (issue #1694, "Wait checks") |

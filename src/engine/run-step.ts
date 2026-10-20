@@ -27,26 +27,6 @@ async function execute(executor: Executor | undefined, job: Job, ctx: Parameters
   return executor.resume(ctx, answer);
 }
 
-/** How many times a done job's source is read before the job fails on the read error (issue #2235): the first and two more. */
-const DONE_READ_TRIES = 3;
-
-/**
- * The verdict, read again on a read error (issue #2235): a connect timeout, a busy service or a rate limit is not a miss.
- * After `doneReadRetryMs`, then twice as long; the last read error, or an abort, throws.
- */
-async function readVerdict(c: EngineContext, job: Job, signal: AbortSignal): Promise<Awaited<ReturnType<EngineContext['verdict']>>> {
-  for (let tried = 1; ; tried++) {
-    try {
-      return await c.verdict(job);
-    } catch (e) {
-      if (tried >= DONE_READ_TRIES || signal.aborted) throw e;
-      console.warn(`job ${job.id}: could not read its source to check the work (try ${tried} of ${DONE_READ_TRIES}): ${e instanceof Error ? e.message : String(e)}`);
-      await sleep(c.doneReadRetryMs * 2 ** (tried - 1), undefined, { signal }).catch(() => {});
-      if (signal.aborted) throw e;
-    }
-  }
-}
-
 /**
  * A job that ended done is finished only when its work is complete (issues #171, #187), or partly done — its own pull
  * request ships part of its item (issue #579): otherwise, or when that cannot be told, it fails, and its source never
@@ -56,11 +36,11 @@ async function readVerdict(c: EngineContext, job: Job, signal: AbortSignal): Pro
 async function completeOrFailed(c: EngineContext, job: Job, outcome: ExecutionOutcome, mayContinue: boolean, signal: AbortSignal): Promise<ExecutionOutcome | { finish: UnfinishedPullRequest }> {
   if (outcome.kind !== 'finished') return outcome;
   try {
-    let v = await readVerdict(c, job, signal);
+    let v = await c.verdict(job);
     // A miss is asked again a moment later (issue #637): GitHub may not list a new pull request, or its new head, at once.
     if (!v.done && !('partlyDone' in v) && !(v.finish && mayContinue) && c.doneRecheckMs > 0) {
       await sleep(c.doneRecheckMs, undefined, { signal }).catch(() => {});
-      if (!signal.aborted) v = await readVerdict(c, job, signal);
+      if (!signal.aborted) v = await c.verdict(job);
     }
     if (v.done) return outcome;
     if ('partlyDone' in v) return { ...outcome, partlyDone: v.partlyDone };
