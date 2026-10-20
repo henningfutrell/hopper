@@ -252,18 +252,18 @@ describe('the template a Linux step runs in (issue #1007)', () => {
   it('takes a ready template that declares every need, more too; the one with the fewest profiles first', () => {
     const wide = view('wide', ['read/aws-role/123456789012/readonly', 'read/cluster/lab', 'read/cluster/prod']);
     const narrow = view('narrow', ['read/aws-role/123456789012/readonly', 'read/cluster/lab']);
-    expect(coveringTemplate([wide, narrow], need)?.name).toBe('narrow');
-    expect(coveringTemplate([wide], need)?.name).toBe('wide');
-    expect(coveringTemplate([view('other', ['read/cluster/lab'])], need)).toBeUndefined();
+    expect(coveringTemplate([wide, narrow], need, 'job-1')?.name).toBe('narrow');
+    expect(coveringTemplate([wide], need, 'job-1')?.name).toBe('wide');
+    expect(coveringTemplate([view('other', ['read/cluster/lab'])], need, 'job-1')).toBeUndefined();
   });
 
   it('never one that waits: not approved, its image changed, a profile not approved, or its read-only check not passed', () => {
     const p = ['read/aws-role/123456789012/readonly'];
     const { approval: _a, ...never } = view('never', p);
-    expect(coveringTemplate([never as TemplateView], need)).toBeUndefined();
-    expect(coveringTemplate([view('image', p, { pending: { secrets: [], image: true, egress: [], profiles: [] } })], need)).toBeUndefined();
-    expect(coveringTemplate([view('profile', p, { pending: { secrets: [], image: false, egress: [], profiles: [need[0]] } })], need)).toBeUndefined();
-    expect(coveringTemplate([view('check', p, { readOnly: true })], need)).toBeUndefined();
-    expect(coveringTemplate([view('checked', p, { readOnly: true, check: { version: '2026-10-13T00:00:00Z', state: 'passed', at: '2026-10-13T00:00:00Z', probes: [] } })], need)?.name).toBe('checked');
+    expect(coveringTemplate([never as TemplateView], need, 'job-1')).toBeUndefined();
+    expect(coveringTemplate([view('image', p, { pending: { secrets: [], image: true, egress: [], profiles: [] } })], need, 'job-1')).toBeUndefined();
+    expect(coveringTemplate([view('profile', p, { pending: { secrets: [], image: false, egress: [], profiles: [need[0]] } })], need, 'job-1')).toBeUndefined();
+    expect(coveringTemplate([view('check', p, { readOnly: true })], need, 'job-1')).toBeUndefined();
+    expect(coveringTemplate([view('checked', p, { readOnly: true, check: { version: '2026-10-13T00:00:00Z', state: 'passed', at: '2026-10-13T00:00:00Z', probes: [] } })], need, 'job-1')?.name).toBe('checked');
   });
 });

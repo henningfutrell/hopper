@@ -5,7 +5,7 @@
 // access. Pure.
 import type { OperationProfile } from './types.ts';
 import type { SandboxRequestView } from './sandbox-approvals.ts';
-import type { TemplateView } from './vault.ts';
+import { approvalCovers, type TemplateView } from './vault.ts';
 
 /** A job's ask that waited on a template for a person (issue #2197): kept in memory while the job lives. */
 export interface TemplateWait {
@@ -38,20 +38,24 @@ export interface RunCardView {
 /** The job as a card names it; undefined: the job ended, or the hopper does not know it. */
 export type CardJob = (jobId: string) => { title?: string; url?: string } | undefined;
 
-/** A template waits for a person: never approved, or a new image, tool, egress host, secret or profile waits. */
-export const waitsForPerson = (t: TemplateView): boolean =>
-  !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
+/**
+ * A template waits for a person: never approved, or a new image, tool, egress host, secret or profile waits. For a
+ * job's run (`jobId`, part 3), also when its approval is for other jobs only.
+ */
+export const waitsForPerson = (t: TemplateView, jobId?: string): boolean =>
+  !t.approval || (jobId !== undefined && !approvalCovers(t, jobId)) || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
 
 const HIGH = ['write', 'sync', 'apply'];
 
 /**
  * What approves all a card lists (issue #1001's Approve all listed): the template as it is — its image, tools, egress,
- * secrets and read profiles — when any of that waits, then each write, sync or apply profile, which takes its own approval.
+ * secrets and read profiles — when any of that waits, or (part 3) its approval does not cover the job's run, then each
+ * write, sync or apply profile, which takes its own approval.
  */
-export function approvalsOf(t: TemplateView): { whole: boolean; profiles: OperationProfile[] } {
+export function approvalsOf(t: TemplateView, jobId?: string): { whole: boolean; profiles: OperationProfile[] } {
   const profiles = t.pending.profiles.filter((p) => HIGH.includes(p.operation));
   const reads = t.pending.profiles.length - profiles.length;
-  return { whole: !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || reads > 0, profiles };
+  return { whole: !t.approval || (jobId !== undefined && !approvalCovers(t, jobId)) || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || reads > 0, profiles };
 }
 
 /**
@@ -72,13 +76,13 @@ export function runCards(o: { templates: readonly TemplateView[]; requests: read
     cards.set(key, { ...c, ...(job.title ? { jobTitle: job.title } : {}), ...(job.url ? { jobUrl: job.url } : {}) });
   };
   const about = (x: { purpose?: string; plan?: string }) => ({ ...(x.purpose ? { purpose: x.purpose } : {}), ...(x.plan ? { plan: x.plan } : {}) });
-  const waiting = (name: string): boolean => { const t = byName.get(name); return t !== undefined && waitsForPerson(t); };
+  const waiting = (name: string, jobId: string): boolean => { const t = byName.get(name); return t !== undefined && waitsForPerson(t, jobId); };
   for (const r of o.requests) {
     if (r.state !== 'waiting') continue;
-    add({ jobId: r.jobId, template: r.template, ...about(r), askedAt: r.askedAt, waits: { template: waiting(r.template), run: true }, request: r.id, ...(r.jev ? { jev: r.jev } : {}) });
+    add({ jobId: r.jobId, template: r.template, ...about(r), askedAt: r.askedAt, waits: { template: waiting(r.template, r.jobId), run: true }, request: r.id, ...(r.jev ? { jev: r.jev } : {}) });
   }
-  for (const w of o.waits) if (waiting(w.template)) add({ jobId: w.jobId, template: w.template, ...about(w), askedAt: w.askedAt, waits: { template: true, run: false } });
-  for (const t of o.templates) if (t.askedBy && waitsForPerson(t)) add({ jobId: t.askedBy, template: t.name, ...about(t), askedAt: t.savedAt, waits: { template: true, run: false } });
+  for (const w of o.waits) if (waiting(w.template, w.jobId)) add({ jobId: w.jobId, template: w.template, ...about(w), askedAt: w.askedAt, waits: { template: true, run: false } });
+  for (const t of o.templates) if (t.askedBy && waitsForPerson(t, t.askedBy)) add({ jobId: t.askedBy, template: t.name, ...about(t), askedAt: t.savedAt, waits: { template: true, run: false } });
   return [...cards.values()].sort((a, b) => a.askedAt.localeCompare(b.askedAt));
 }
 

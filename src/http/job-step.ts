@@ -157,14 +157,14 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         const unminted = read.find((p) => mintKindFor(p.asset.kind) === undefined);
         if (unminted) return no(reply, 400, `${unminted.operation}/${unminted.asset.kind}/${unminted.asset.name}: the hopper mints a credential for a step for an aws-role, a cluster or a namespace only: name aws-role/<account>/<role>, cluster/<name> or namespace/<cluster>/<ns>`);
         const steps = who.t.needSteps;
-        let template = steps.covering(read);
+        let template = steps.covering(read, who.job.id);
         if (!template) {
           // No ready template covers the needs: asked for as a template request is — made once, approved only by a person or
           // a policy —, and its wait opens a watch that ends the job's own wait when the answer is ready (issue #998).
           const why = one(query.why), plan = one(query.plan);
           const asked = await o.skillWaits.handle(req.headers.authorization, { name: TEMPLATE_SKILL, needs, ...(why ? { why } : {}), ...(plan ? { plan } : {}) });
           if (asked.status !== 200) return reply.code(asked.status).type('text/plain; charset=utf-8').send(asked.text);
-          template = steps.covering(read);
+          template = steps.covering(read, who.job.id);
           if (!template) return no(reply, 503, 'the template for these needs is ready, but no need box can run it yet: ask again in a minute');
         }
         const brake = braked(who.t, template, needs);

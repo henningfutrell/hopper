@@ -82,7 +82,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   releaseMints: (box) => v.releaseMints(box), reconcileMints: () => v.reconcileMints(),
   saveTemplate: (t, by) => v.saveTemplate(t, by),
   removeTemplate: (name, by) => v.removeTemplate(name, by),
-  approveTemplate: (name, by) => v.approveTemplate(name, by),
+  approveTemplate: (name, by, job) => v.approveTemplate(name, by, job),
   revokeTemplate: (name, by) => v.revokeTemplate(name, by),
   approveProfile: (name, profile, by) => v.approveProfile(name, profile, by),
   scopeOf: (machine) => v.scopeOf(machine), boxRadius: (machine) => v.boxRadius(machine),

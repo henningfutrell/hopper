@@ -279,7 +279,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
       if (r.state === 'waiting') return { status: 202, text: `${waitingText(name, r)}${later}` };
       if (r.state === 'declined') return no(403, declinedText(name, r));
-      if (!templateReady(t)) {
+      if (!templateReady(t, job.id)) {
         user.sandboxWaits?.(name, job, about);
         return { status: 202, text: `waiting: the sandbox runs of template ${name} are approved, but the template waits for a person or for its read-only check on Access requests.${later}` };
       }
