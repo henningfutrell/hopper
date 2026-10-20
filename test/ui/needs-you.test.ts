@@ -112,6 +112,12 @@ describe('Access requests: what waits on a person (issue #897)', () => {
     expect(accessRequestsHigh(view, { j2: { priority: 100 } }, 75)).toBe(1);
     expect(needsYouRows(counts({ access: 3, accessHigh: 1 })).find((r) => r.kind === 'access')).toMatchObject({ n: 3, high: 1 });
   });
+  it('issue #2206: an ask for an AWS action counts once, in the same row, and marks the badge for a high-priority job', () => {
+    const ask = { job: 'j3', role: '1/hopper-action', action: 'eks:UpdateNodegroupConfig', resource: 'arn:aws:eks:us-west-1:1:nodegroup/c/g/*', at: '2026-10-19T02:00:00.000Z' };
+    const view = { secrets: [], backends: [], templates: [], actionAsks: [ask, { ...ask, job: 'j4' }] } as unknown as VaultView;
+    expect(accessRequestsWaiting(view)).toBe(2);
+    expect(accessRequestsHigh(view, { j3: { priority: 100 } }, 75)).toBe(1);
+  });
 });
 
 describe('A template a job saved and waits on (issue #2196; its run card since issue #2197)', () => {

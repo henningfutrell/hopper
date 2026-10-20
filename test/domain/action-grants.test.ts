@@ -5,7 +5,7 @@ import type { OperationProfile } from '../../src/domain/access.ts';
 import {
   ACTION_ROLE, actionNeed, actionSession, actionsOf, granting, liveGrants, revoking, SESSION_POLICY_MAX, ungranted, type ActionGrant,
 } from '../../src/domain/action-grants.ts';
-import { AWS_READ_POLICY } from '../../src/domain/minting.ts';
+import { AWS_READ_POLICY, mintTarget } from '../../src/domain/minting.ts';
 
 const ROLE = `167028478405/${ACTION_ROLE}`;
 const ARN = 'arn:aws:eks:us-west-1:167028478405:nodegroup/identity-eks/identity-eks-nodes/*';
@@ -31,11 +31,11 @@ describe('action grants (issue #2206)', () => {
   });
 
   it('puts the actions on the one change on an aws-role; a change on the action role needs an action', () => {
-    expect(actionNeed([write(ROLE), { operation: 'read', asset: { kind: 'cluster', name: 'lab' } }], [SCALE])).toEqual(write(ROLE));
-    expect(actionNeed([write(ROLE), write('167028478405/deploy')], [SCALE])).toMatch(/exactly one write, sync or apply need/);
-    expect(actionNeed([{ operation: 'read', asset: { kind: 'aws-role', name: ROLE } }], [SCALE])).toMatch(/exactly one/);
-    expect(actionNeed([write(ROLE)], [])).toMatch(/only for the actions a person granted/);
-    expect(actionNeed([write('167028478405/deploy')], [])).toBeUndefined();
+    expect(actionNeed([write(ROLE), { operation: 'read', asset: { kind: 'cluster', name: 'lab' } }], true)).toEqual(write(ROLE));
+    expect(actionNeed([write(ROLE), write('167028478405/deploy')], true)).toMatch(/exactly one write, sync or apply need/);
+    expect(actionNeed([{ operation: 'read', asset: { kind: 'aws-role', name: ROLE } }], true)).toMatch(/exactly one/);
+    expect(actionNeed([write(ROLE)], false)).toMatch(/only for the actions a person granted/);
+    expect(actionNeed([write('167028478405/deploy')], false)).toBeUndefined();
   });
 
   it('covers a later ask of the same role, action and resource until the time limit', () => {
@@ -66,5 +66,13 @@ describe('action grants (issue #2206)', () => {
     ]);
     const long = Array.from({ length: 10 }, (_, i) => ({ action: `eks:UpdateNodegroupConfig${i}`, resource: `${ARN}${'x'.repeat(200)}` }));
     expect(actionSession(roleArn, long)).toMatch(new RegExp(`more than the ${SESSION_POLICY_MAX} STS takes`));
+  });
+
+  it('mints a change on the action role only narrowed to granted actions; a read of it as any read', () => {
+    expect(mintTarget('aws', write(ROLE))).toMatch(/only narrowed to actions a person granted/);
+    expect(mintTarget('aws', write(ROLE), [SCALE])).toMatchObject({ roleArn: `arn:aws:iam::167028478405:role/${ACTION_ROLE}`, policyArns: [AWS_READ_POLICY], policy: expect.stringContaining('eks:UpdateNodegroupConfig') });
+    expect(mintTarget('aws', { operation: 'read', asset: { kind: 'aws-role', name: ROLE } })).toMatchObject({ policyArns: [AWS_READ_POLICY] });
+    expect(mintTarget('aws', { operation: 'read', asset: { kind: 'aws-role', name: ROLE } }, [SCALE])).toMatch(/narrow a change on an aws-role only/);
+    expect(mintTarget('aws', write('167028478405/deploy'))).toMatchObject({ policyArns: [] });
   });
 });
