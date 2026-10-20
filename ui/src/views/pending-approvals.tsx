@@ -1,7 +1,8 @@
 // Pending approvals (issue #2088, design.md "Pending approvals"): its own top-level page in Waiting on you — every GitHub
 // Actions run that waits for a deployment approval the person can give, across the intake orgs, one row per run with its
 // repository, workflow, title, environments, how long it has waited and a link to the run. A stale run (a newer one waits
-// on the same repository and environment) is marked. Read-only: the person approves or rejects on GitHub, never here.
+// on the same repository and environment) is marked, and the mark says so. What could not be read is one collapsed line
+// with its count, each place behind its toggle (issue #2258). Read-only: the person approves or rejects on GitHub, never here.
 // The read is the shared one (store/polled.ts), so the nav count and the page agree.
 import { AlertTriangle, ExternalLink, Rocket } from 'lucide-react';
 import { Empty, Panel } from '@/components/panel';
@@ -17,7 +18,7 @@ function Row({ a, now }: { a: PendingApproval; now: number }) {
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="font-medium break-all">{a.repo}</span>
         <span className="text-muted-foreground">{a.workflow}</span>
-        {a.stale && <span data-slot="pending-approval-stale" className="rounded bg-muted px-1.5 text-[11px] text-muted-foreground" title="A newer run of this repository waits on the same environment">stale</span>}
+        {a.stale && <span data-slot="pending-approval-stale" className="rounded bg-muted px-1.5 text-[11px] text-muted-foreground" title="A newer run of this repository waits on the same environment: that run likely replaces this one">stale: a newer run waits</span>}
         <a href={a.url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline">Open run<ExternalLink className="size-3" /></a>
       </div>
       <div className="break-words">{a.title}</div>
@@ -27,6 +28,13 @@ function Row({ a, now }: { a: PendingApproval; now: number }) {
       </div>
     </li>
   );
+}
+
+/** One line for what could not be read: a repository is `owner/name`, a connected account as a whole has no slash. */
+function notChecked(problems: PendingApprovalsView['problems']): string {
+  const n = problems.length;
+  const what = problems.every((p) => p.where.includes('/')) ? (n === 1 ? 'repository' : 'repositories') : (n === 1 ? 'account or repository' : 'accounts or repositories');
+  return `${n} ${what} could not be checked`;
 }
 
 function Content({ v }: { v: PendingApprovalsView }) {
@@ -46,10 +54,10 @@ function Content({ v }: { v: PendingApprovalsView }) {
         )
         : <ul data-slot="pending-approvals-list" className="divide-y">{v.approvals.map((a) => <Row key={`${a.repo} ${a.runId}`} a={a} now={now} />)}</ul>}
       {v.problems.length > 0 && (
-        <div data-slot="pending-approvals-problems" className="space-y-1 rounded-md border border-warn/40 bg-warn/5 p-3 text-xs">
-          <p className="flex items-center gap-1 font-medium"><AlertTriangle className="size-3.5" />GitHub did not show everything</p>
-          <ul className="space-y-0.5">{v.problems.map((p) => <li key={p.where} className="break-words">{p.where}: {p.error}</li>)}</ul>
-        </div>
+        <details data-slot="pending-approvals-problems" className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer"><AlertTriangle className="mr-1 inline size-3.5 text-warn" />{notChecked(v.problems)}</summary>
+          <ul className="mt-1 space-y-0.5 pl-5">{v.problems.map((p) => <li key={p.where} className="break-words">{p.where}: {p.error}</li>)}</ul>
+        </details>
       )}
       <p data-slot="pending-approvals-orgs" className="text-xs text-muted-foreground">
         {v.orgs.length === 0 ? 'No intake org: choose job repositories in Sources.' : `Intake orgs: ${v.orgs.join(', ')}.`}

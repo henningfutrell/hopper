@@ -1,8 +1,11 @@
 // What the pending approvals read of GitHub (issue #2088, design.md "Pending approvals"), with the person's own GitHub
-// connection: the repositories it reaches (`GET /user/repos`, every page; a GitHub App's user token lists only those the
-// app's installations reach), those of the intake orgs that are not archived, each one's waiting runs
+// connection: the repositories the app's installations on the intake orgs reach (`GET /user/installations`, then each
+// one's `…/repositories`, every page; issue #2258), those not archived — an org the app is not installed on is never read —,
+// each one's waiting runs
 // (`GET …/actions/runs?status=waiting`), and each waiting run's pending deployments (`GET …/runs/{id}/pending_deployments`),
 // which say whether the connection can approve each environment. The GitHub App's Actions (read) permission covers both.
+// A personal access token (issue #1380) goes through no app: GitHub refuses it the installations (403), and the
+// repositories it reaches (`GET /user/repos`) are read in their place.
 // Every GET is conditional (conditional.ts): an answer GitHub says is unchanged is a 304, which costs no call. A
 // repository GitHub refuses is a problem with its reason; the others are read. A refused token (401) is renewed once.
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
@@ -51,14 +54,35 @@ export function createApprovalsGitHub(o: { apiUrl: string } & TokenSource): Appr
       if (wanted.size === 0) return Promise.resolve({ approvals: [], problems: [] });
       return withToken(async (token) => {
         const headers = { authorization: `token ${token}` };
-        const repos: string[] = [];
-        for (let page = 1; page <= MAX_PAGES; page++) {
-          const got = await answers.get<unknown[]>(get, 'GET /user/repos', { per_page: PER_PAGE, page, headers });
-          for (const r of (Array.isArray(got) ? got : []).map(obj)) {
-            const name = typeof r.full_name === 'string' ? r.full_name : '';
-            if (name && r.archived !== true && wanted.has(name.split('/')[0]!.toLowerCase())) repos.push(name);
+        /** Every page of a list, `pick` reads one page's items. */
+        const all = async (route: string, params: Raw, pick: (d: unknown) => unknown): Promise<Raw[]> => {
+          const out: Raw[] = [];
+          for (let page = 1; page <= MAX_PAGES; page++) {
+            const got = pick(await answers.get<unknown>(get, route, { ...params, per_page: PER_PAGE, page, headers }));
+            const items = Array.isArray(got) ? got.map(obj) : [];
+            out.push(...items);
+            if (items.length < PER_PAGE) break;
           }
-          if (!Array.isArray(got) || got.length < PER_PAGE) break;
+          return out;
+        };
+        const ofIntake = (list: Raw[]): string[] => list.flatMap((r) => {
+          const name = typeof r.full_name === 'string' ? r.full_name : '';
+          return name && r.archived !== true && wanted.has(name.split('/')[0]!.toLowerCase()) ? [name] : [];
+        });
+        let installs: Raw[] | undefined;
+        try {
+          installs = await all('GET /user/installations', {}, (d) => obj(d).installations);
+        } catch (err) {
+          if (statusOf(err) !== 403) throw err; // a token no app holds: the repositories it reaches
+        }
+        const repos: string[] = [];
+        if (installs === undefined) repos.push(...ofIntake(await all('GET /user/repos', {}, (d) => d)));
+        else {
+          for (const i of installs) {
+            const login = obj(i.account).login;
+            if (typeof login !== 'string' || !wanted.has(login.toLowerCase())) continue;
+            repos.push(...ofIntake(await all('GET /user/installations/{installation_id}/repositories', { installation_id: i.id }, (d) => obj(d).repositories)));
+          }
         }
         const approvals: Omit<PendingApproval, 'stale'>[] = [];
         const problems: PendingApprovalsProblem[] = [];
