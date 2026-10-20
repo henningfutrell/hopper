@@ -2,11 +2,9 @@
 // a template are approved starts one bastion of it: the vault mints each observe its targets need for the bastion's box
 // (bastion.ts), the box starts through the sandbox module as a need box (its ledger row, its burn, the sweep leaves it
 // while it runs), and the hopper mints the tokens again every few minutes and copies them in. It ends when its TTL
-// passes with no use (an hour; each relay connection renews it, and it never ends while one is open), when its job ends, when the job stops it, when a
+// passes with no use (an hour; the relay's use renews it, part 2), when its job ends, when the job stops it, when a
 // renewal is refused, or when its box ends by itself; then its tokens are released. One bastion a job at a time. Kept
-// in memory: a hopper that stops ends every bastion, and its start's sweep burns the boxes. The relay (part 2): a job's
-// connection to one of its bastion's targets is a byte pipe to a command the hopper starts in the box for it, which
-// connects to that target's forward on 127.0.0.1 there (relayCommand); the connection ends with the bastion.
+// in memory: a hopper that stops ends every bastion, and its start's sweep burns the boxes.
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,10 +12,9 @@ import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
-import type { BoxPipe } from '../domain/sandboxes.ts';
-import type { NeedBox, NeedBoxIo, NeedBoxResult, RunningNeedBox } from './need-box.ts';
+import type { NeedBox, NeedBoxIo, NeedBoxResult, SecretsRenewal } from './need-box.ts';
 import {
-  bastionEnv, bastionTokens, placeTargets, relayCommand, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
+  bastionEnv, bastionTokens, placeTargets, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
 } from './bastion.ts';
 
 /** How often the hopper looks whether a bastion's job is still at work and its TTL has passed. */
@@ -79,13 +76,8 @@ export interface Bastions {
   of(jobId: string): BastionView | undefined;
   /** Stops the job's bastion that runs, `by` the job or a person; undefined: it has none. */
   stop(jobId: string, by: string): BastionView | undefined;
-  /** A use of the job's bastion: its TTL starts again. */
+  /** A use of the job's bastion (the relay, part 2): its TTL starts again. */
   touch(jobId: string): void;
-  /**
-   * A connection to `target` of the job's bastion that runs (the relay, part 2): a byte pipe to 127.0.0.1 at its port in
-   * the box. Its TTL starts again, and it does not expire while a connection is open. A no with its HTTP status.
-   */
-  relay(jobId: string, target: string): Promise<BoxPipe | { status: number; no: string }>;
   /** Stops every bastion and waits for their boxes to go: the hopper stops. */
   stopAll(): Promise<void>;
 }
@@ -95,10 +87,6 @@ interface Live {
   placed: PlacedTarget[];
   observes: OperationProfile[];
   stop: AbortController;
-  /** How to start a command in its box, once it runs: none before, or when its runtime starts none. */
-  pipe?: (cmd: readonly string[]) => Promise<BoxPipe>;
-  /** Its relay connections open now. */
-  open: Set<BoxPipe>;
   why?: { end: BastionEnd; by?: string; problem?: string };
   timers: ReturnType<typeof setInterval>[];
   done: Promise<void>;
@@ -136,7 +124,6 @@ export function createBastions(o: BastionsOptions): Bastions {
   /** Keeps its end: its tokens released, its timers stopped, the end an event on the job's timeline. */
   const ended = async (l: Live, r: NeedBoxResult): Promise<void> => {
     for (const t of l.timers) clearInterval(t);
-    for (const p of l.open) p.destroy();
     rmSync(join(o.dir, l.view.id), { recursive: true, force: true });
     await o.release(l.view.box).catch(() => undefined);
     const why = l.why ?? { end: 'failed' as const, problem: r.problem ?? `its box ended with ${r.exit}` };
@@ -151,9 +138,6 @@ export function createBastions(o: BastionsOptions): Bastions {
     });
     o.log(`hopper: bastion ${view.box} of job ${view.jobId} ended: ${why.end}${why.problem ? `: ${why.problem}` : ''}`);
   };
-
-  /** A use: its TTL starts again. */
-  const used = (l: Live | undefined): void => { if (l && !l.why) l.view.expiresAt = new Date(now().getTime() + ttlMs).toISOString(); };
 
   const viewOf = (jobId: string): BastionView | undefined => {
     const l = live.get(jobId);
@@ -190,13 +174,12 @@ export function createBastions(o: BastionsOptions): Bastions {
           id, jobId: job.id, template: template.name, box, targets: placing.placed.map((t) => ({ target: targetText(t), local: t.local })), state: 'starting',
           startedAt: at.toISOString(), expiresAt: new Date(at.getTime() + ttlMs).toISOString(), log: '',
         },
-        placed: placing.placed, observes: placing.observes, stop: new AbortController(), open: new Set(), timers: [], done: Promise.resolve(),
+        placed: placing.placed, observes: placing.observes, stop: new AbortController(), timers: [], done: Promise.resolve(),
       };
       live.set(job.id, l);
       o.record({ type: 'bastion.started', jobId: job.id, data: { bastion: id, template: template.name, box, targets: asked, expiresAt: l.view.expiresAt } });
-      const renewing = ({ renew, pipe }: RunningNeedBox): void => {
+      const renewing = (renew: SecretsRenewal): void => {
         l.view.state = 'running';
-        if (pipe) l.pipe = pipe;
         l.timers.push(setInterval(() => {
           void mintAll({ template: template.name, box, jobId: job.id }, l.observes).then(async (next) => {
             if (l.why) return;
@@ -207,7 +190,7 @@ export function createBastions(o: BastionsOptions): Bastions {
       };
       l.timers.push(setInterval(() => {
         if (!o.atWork(job.id)) end(l, { end: 'job-ended' });
-        else if (l.open.size === 0 && now().getTime() >= Date.parse(l.view.expiresAt)) end(l, { end: 'expired' });
+        else if (now().getTime() >= Date.parse(l.view.expiresAt)) end(l, { end: 'expired' });
       }, o.checkMs ?? CHECK_MS));
       const t = template;
       mkdirSync(join(o.dir, id), { recursive: true, mode: 0o700 });
@@ -229,26 +212,9 @@ export function createBastions(o: BastionsOptions): Bastions {
       return viewOf(jobId);
     },
 
-    touch: (jobId) => used(live.get(jobId)),
-
-    async relay(jobId, target) {
+    touch(jobId) {
       const l = live.get(jobId);
-      if (!l || l.why) return { status: 404, no: 'this job has no bastion that runs: ask for one with sh "$HOPPER_SKILL" bastion --template NAME --targets "..." --why "..."' };
-      const t = l.placed.find((x) => targetText(x) === target);
-      if (!t) return { status: 404, no: `the job's bastion forwards to ${l.view.targets.map((x) => x.target).join(', ')}; not to ${target}` };
-      if (l.view.state !== 'running') return { status: 409, no: `the job's bastion ${l.view.id} is ${l.view.state}: ask again in a few seconds` };
-      if (!l.pipe) return { status: 503, no: 'the container runtime of the bastion\'s box starts no command in it: no relay reaches it' };
-      let pipe: BoxPipe;
-      try {
-        pipe = await l.pipe(relayCommand(t.local));
-      } catch (e) {
-        return { status: 502, no: `the relay did not reach ${target} in the box: ${e instanceof Error ? e.message : String(e)}` };
-      }
-      if (l.why) { pipe.destroy(); return { status: 404, no: `the job's bastion ${l.view.id} ended` }; }
-      l.open.add(pipe);
-      used(l);
-      pipe.once('close', () => { l.open.delete(pipe); used(l); });
-      return pipe;
+      if (l && !l.why) l.view.expiresAt = new Date(now().getTime() + ttlMs).toISOString();
     },
 
     async stopAll() {

@@ -22,7 +22,7 @@ import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
-import type { BoxPipe, BoxTool, ContainerRuntime, TemplateLimits } from '../domain/sandboxes.ts';
+import type { BoxTool, ContainerRuntime, TemplateLimits } from '../domain/sandboxes.ts';
 import { HOME } from './flags.ts';
 import { boxImage } from './box-image.ts';
 import { boxLimits } from './params.ts';
@@ -235,21 +235,14 @@ const WAIT_GRACE_MS = 5000;
 /** A need box's vault secrets replaced while it runs (issue #2146: a bastion's renewed tokens), each a file as at its start. */
 export type SecretsRenewal = (secrets: Record<string, string>) => Promise<void>;
 
-/**
- * A need box once it runs (issue #2146, a bastion): how to renew its secrets, and a byte pipe to a command started in it
- * (the relay, part 2; absent when its runtime starts none).
- */
-export interface RunningNeedBox { renew: SecretsRenewal; pipe?: (cmd: readonly string[]) => Promise<BoxPipe> }
-
-/** What runs a need box hears and says: its output, its stop, and (issue #2146) the box once it runs. */
-export interface NeedBoxIo { log(chunk: string): void; signal: AbortSignal; pollMs?: number; phases?(p: NeedBoxPhases): void; running?(box: RunningNeedBox): void }
+/** What runs a need box hears and says: its output, its stop, and (issue #2146) how to renew its secrets once it runs. */
+export interface NeedBoxIo { log(chunk: string): void; signal: AbortSignal; pollMs?: number; phases?(p: NeedBoxPhases): void; running?(renew: SecretsRenewal): void }
 
 /**
  * Runs one need box to its end: its output to `log` as it comes, at most every `pollMs`. `signal` stops it (the job's
  * request gone). Never rejects: a failure of its own is `problem`, exit 125. The box and its volume are removed after it.
  * `phases` is given the time of each part once the step ends (issue #1737). `running` is told, once its files are in, how
- * to replace its vault secrets while it runs and how to start a command in it (a box with secrets only): a bastion's
- * renewed tokens and its relay (issue #2146).
+ * to replace its vault secrets while it runs (a box with secrets only): a bastion's renewed tokens (issue #2146).
  */
 export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: NeedBoxIo): Promise<NeedBoxResult> {
   const labels = { [NEED_LABEL]: box.instanceId, [USER_LABEL]: box.userId };
@@ -301,13 +294,9 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: Ne
       await copyIn(id, HOME, ready);
       if (secrets && io.running) {
         const renewal = join(box.dir, 'need-renew.tar');
-        const pipe = runtime.pipe?.bind(runtime);
-        io.running({
-          async renew(next) {
-            writeFileSync(renewal, filesTar(Object.entries(next).map(([name, data]) => ({ name: `${FILES_DIR}/secrets/${name}`, data, mode: 0o600 }))), { mode: 0o600 });
-            try { await copyIn(id, HOME, renewal); } finally { rmSync(renewal, { force: true }); }
-          },
-          ...(pipe ? { pipe: (cmd: readonly string[]) => pipe(id, cmd) } : {}),
+        io.running(async (next) => {
+          writeFileSync(renewal, filesTar(Object.entries(next).map(([name, data]) => ({ name: `${FILES_DIR}/secrets/${name}`, data, mode: 0o600 }))), { mode: 0o600 });
+          try { await copyIn(id, HOME, renewal); } finally { rmSync(renewal, { force: true }); }
         });
       }
     }

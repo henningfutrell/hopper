@@ -8,25 +8,18 @@
 //   Scenario: under YOLO, a job's template with an observe and its bastion start with no person; the bastion's box holds
 //     the forward and its token as a file, never in its environment, the job's answer, or an event; the job stops it,
 //     its box goes, its token's Secret is deleted, and its start and end are on the job's timeline
-//   Scenario (part 2): the job's `hopper-relay` holds a local port joined to a target of its bastion through the hopper's
-//     relay, a command in the box that reaches the forward; a target the bastion does not forward to is refused
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer, type AddressInfo, type Server } from 'node:net';
 import { join } from 'node:path';
-import { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, VaultView } from '../../src/domain/types.ts';
 import { HOME } from '../../src/sandbox/flags.ts';
-import { RELAY_CLIENT, RELAY_SCRIPT } from '../../src/sandbox/relay-script.ts';
 import { MINTED_KUBE_TOKEN } from '../support/fake-mint-apis.ts';
 import { boot, runningJob, skill, stopAll, type Booted } from '../support/read-only-check.ts';
 import { waitFor } from '../support/wait.ts';
 
 const children: ChildProcess[] = [];
-const servers: Server[] = [];
 afterEach(async () => {
-  for (const s of servers.splice(0)) s.close();
   for (const c of children.splice(0)) if (c.exitCode === null) try { process.kill(-c.pid!, 'SIGKILL'); } catch { /* gone */ }
   await stopAll();
 });
@@ -113,74 +106,4 @@ describe('bastions (issue #2146)', () => {
     await waitFor(async () => (await b.a.events()).some((e) => e.type === 'vault.unbound' && (e.data as { box?: string }).box === box.spec.name), { timeoutMs: 10_000 });
     expect(JSON.stringify(await b.a.events())).not.toContain(MINTED_KUBE_TOKEN);
   });
-
-  it('the job\'s hopper-relay joins a local port to a target of its bastion; another target is refused', async () => {
-    const b = await boot([]);
-    bastionBoxes(b);
-    // The forward in the box: a server on this machine's loopback that answers each line.
-    const forward = createServer((c) => {
-      c.on('data', (d: Buffer) => { for (const line of d.toString().split('\n').filter(Boolean)) c.write(`grafana got ${line}\n`); });
-      c.on('error', () => undefined);
-    });
-    servers.push(forward);
-    await new Promise<void>((r) => forward.listen(0, '127.0.0.1', () => r()));
-    const started: { box: string; cmd: readonly string[] }[] = [];
-    // The box's runtime starts the relay's real connect command here, its port the forward's.
-    b.runtime.pipe = async (id, cmd) => {
-      started.push({ box: id, cmd });
-      const child = spawn(cmd[0]!, [...cmd.slice(1, -1), String((forward.address() as AddressInfo).port)]);
-      children.push(child);
-      const d = new Duplex({
-        read() { child.stdout.resume(); },
-        write(chunk: Buffer, _e, done) { child.stdin.write(chunk, done); },
-        final(done) { child.stdin.end(); done(); },
-        destroy(e, done) { child.kill(); done(e); },
-      });
-      child.stdin.on('error', () => undefined);
-      child.stdout.on('data', (x: Buffer) => { if (!d.push(x)) child.stdout.pause(); });
-      child.stdout.on('end', () => d.push(null));
-      return Object.assign(d, { stderr: () => '' });
-    };
-    expect((await b.a.ui('/ui/api/sandbox-approvals', { yolo: true }, { token: b.token })).status).toBe(200);
-    const creds = await runningJob(b.a);
-    writeFileSync(join(creds, 'relay'), RELAY_SCRIPT, { mode: 0o700 });
-    writeFileSync(join(creds, 'relay.mjs'), RELAY_CLIENT, { mode: 0o600 });
-    const made = await skill(b.a, creds, ['sandbox-template', '--why', 'Read the lab dashboards', '--plan', 'port-forward to grafana, read only', '--needs', 'observe/namespace/lab/monitoring']);
-    expect(made.code, made.stdout + made.stderr).toBe(0);
-    const t = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates.find((x) => x.name.startsWith('asked-'))!;
-    const asked = await skill(b.a, creds, ['bastion', '--template', t.name, '--targets', 'lab/monitoring/svc/grafana:3000', '--why', 'Read the lab dashboards']);
-    expect(asked.code, asked.stdout + asked.stderr).toBe(0);
-    await waitFor(async () => (await skill(b.a, creds, ['bastion'])).stdout.includes('is running'), { timeoutMs: 10_000 });
-
-    const client = 'const s = require("node:net").connect(Number(process.env.HOPPER_RELAY_PORT), "127.0.0.1", () => s.write("one\\ntwo\\n")); let o = ""; s.on("data", (d) => { o += d; if (o.split("\\n").length > 2) { process.stdout.write(o); s.destroy(); } });';
-    const used = await relay(b, creds, ['lab/monitoring/svc/grafana:3000', '--', process.execPath, '-e', client]);
-    expect(used.code, used.stderr).toBe(0);
-    expect(used.stdout).toBe('grafana got one\ngrafana got two\n');
-    expect(used.stderr).toMatch(/^hopper-relay: lab\/monitoring\/svc\/grafana:3000 on 127\.0\.0\.1:\d+$/m);
-    const box = [...b.runtime.boxes.values()].find((c) => c.spec.name.startsWith(`hopper-bastion-${t.name}-`))!;
-    // The first connection checks the target; the second is the command's.
-    expect(started).toHaveLength(2);
-    expect(started.every((x) => x.box === box.id && x.cmd.at(-1) === '20000')).toBe(true);
-
-    const other = await relay(b, creds, ['lab/monitoring/svc/loki:3100', '--', 'true']);
-    expect(other).toMatchObject({ code: 1, stdout: '' });
-    expect(other.stderr).toBe('hopper-relay: the job\'s bastion forwards to lab/monitoring/svc/grafana:3000; not to lab/monitoring/svc/loki:3100\n');
-    expect(started).toHaveLength(2);
-
-    writeFileSync(join(creds, 'token'), 'not-a-token\n');
-    const stranger = await relay(b, creds, ['lab/monitoring/svc/grafana:3000', '--', 'true']);
-    expect(stranger).toMatchObject({ code: 1, stderr: 'hopper-relay: the token is not a job\'s of this hopper. A job connects with its own HOPPER_TOKEN_FILE.\n' });
-    expect(started).toHaveLength(2);
-  });
 });
-
-function relay(b: Booted, creds: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const p = spawn('sh', [join(creds, 'relay'), ...args], { env: { PATH: process.env.PATH, HOPPER_URL: b.a.url, HOPPER_TOKEN_FILE: join(creds, 'token') } });
-    children.push(p);
-    let stdout = '', stderr = '';
-    p.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-    p.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-    p.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
-  });
-}

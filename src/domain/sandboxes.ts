@@ -1,6 +1,5 @@
 // Sandbox boxes the hopper launches (issues #603, #708; design.md "Sandbox boxes the hopper launches"): the container
 // runtime port, what a box is created as, the launch parameters a template allows, and the sandbox record.
-import type { Duplex } from 'node:stream';
 
 /**
  * The container runtimes the hopper can drive (issue #708). `remote` is an attached machine's, through its client;
@@ -104,11 +103,6 @@ export interface ContainerRuntime {
   list(labels?: Record<string, string>): Promise<ContainerInfo[]>;
   /** Extract the tar file `tar` (on this machine) into the directory `dir` of the running container, owned by its user. */
   copyIn?(id: string, dir: string, tar: string): Promise<void>;
-  /**
-   * A byte pipe to `cmd` started in the running box (issue #2146, the relay): what is written is its stdin, what is read
-   * its stdout; an end of the writes ends its stdin. Absent: this runtime starts none (one on another machine, Kubernetes).
-   */
-  pipe?(id: string, cmd: readonly string[]): Promise<BoxPipe>;
   /** Every image on the machine, intermediate ones too (issue #1120). Absent: this runtime lists none (one on another machine). */
   listImages?(): Promise<ListedImage[]>;
   /**
@@ -117,9 +111,6 @@ export interface ContainerRuntime {
    */
   removeImage?(id: string): Promise<boolean>;
 }
-
-/** A command's pipe in a box (issue #2146): its stdin and stdout as one stream, and the tail of its stderr. */
-export type BoxPipe = Duplex & { stderr(): string };
 
 /** A runtime that builds images: Podman, Docker, and a client target's through the remote runtime. */
 export type BuildingRuntime = ContainerRuntime & Required<Pick<ContainerRuntime, 'build'>>;
