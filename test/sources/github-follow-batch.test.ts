@@ -55,6 +55,18 @@ describe('a follow after the batch', () => {
     expect(asked(s.gh)).toContain('pullRequest');
   });
 
+  it('its failed check runs again on the same head (issue #2230): pending, and the superseded failure is gone', async () => {
+    const s = waiting();
+    s.gh.setChecks(s.pr.url, 'failing', [{ name: 'verdict' }]);
+    const job = await seenOnce(s);
+    expect(job.sourceState?.source).toMatchObject({ seen: { checks: 'failing' } });
+    s.gh.setChecks(s.pr.url, 'pending');
+    await s.source.readFollowed!([job]);
+    const r = await s.source.follow!(job);
+    expect(r).toMatchObject({ outcome: 'open', state: { seen: { checks: 'pending', pushedAt: AFTER } } });
+    expect((r!.state.seen as PullRequestSeen).failedChecks).toBeUndefined();
+  });
+
   it('a new head or merge conflicts: read from GitHub', async () => {
     const s = waiting();
     const job = await seenOnce(s);

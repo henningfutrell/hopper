@@ -18409,9 +18409,9 @@ for each installation token. An error on one alias fails only that pull request;
 its state from the batch, once, and keeps what it saw (`seen`) with no other read. It reads GitHub as before only when:
 merged or closed; a new head commit, a new base, or merge conflicts that changed or are not computed yet (`UNKNOWN`);
 checks that fail now (the read names the failed checks for the tend); its issue closed as not planned (abandoned); a part
-whose body names the issue no more; or ready while yolo mode merges (a read before the write). Checks a read saw fail on
-the same head stay failing while the batch says pending: the batch reads only the rollup, which stays pending while other
-checks run. A pull request the batch has no answer for is read as before. A person's Merge now and Close PR read and write
+whose body names the issue no more; or ready while yolo mode merges (a read before the write). The batch reads the newest
+run of each check (issue #2129), so a failed check that runs again on the same head is pending, not failing, as GitHub's
+required checks read it (issue #2230). A pull request the batch has no answer for is read as before. A person's Merge now and Close PR read and write
 as before, at once.
 
 **Reconciling** (`src/sources/github/reconcile.ts`) runs only in an `all` round, and reads the open pull requests of every
