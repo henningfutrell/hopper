@@ -12,7 +12,7 @@ import type { Clock, ExecutorRegistry, UserStore } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import { afterCheck, checkEndedNote, checksOutcome, commandOutcome, conditionKey, newCheck, refLabel, reviewOutcome, type CheckOutcome, type WaitCheck, type WaitedChecks, type WaitedReviews } from '../domain/wait-checks.ts';
 import { waitOnLabel } from '../domain/wait-on.ts';
-import { endedNote, NOT_FOUND, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
+import { endedBeforeWait, endedNote, NOT_FOUND, watchKey, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
 import { recordEndWait } from './wait.ts';
 
 /** How long a hopper holds a wait check it tests. */
@@ -79,9 +79,14 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
         if (!ended) return { met: false, result: 'the hopper cannot read the items now' };
         const missing = ended.filter((e) => e.state === NOT_FOUND);
         if (missing.length) return { met: true, note: endedNote(missing) };
+        // Issue #2219: what an outside wait's text names that ended before the wait began does not end it.
+        const before = ended.filter((e) => endedBeforeWait(job, e));
+        const stale = new Set(before.map((e) => watchKey(e.ref)));
+        const refs = cond.refs.filter((r) => !stale.has(watchKey(r)));
+        if (refs.length === 0) return { met: false, result: `ended before the wait began: ${before.map((e) => refLabel(e.ref)).join(', ')}` };
         const keys = new Set(ended.map((e) => `${e.ref.repo.toLowerCase()}#${e.ref.kind === 'issue' ? e.ref.number : e.ref.runId}`));
-        const open = cond.refs.filter((r) => !keys.has(`${r.repo.toLowerCase()}#${r.kind === 'issue' ? r.number : r.runId}`));
-        return open.length === 0 ? { met: true, note: endedNote(ended) } : { met: false, result: `not ended yet: ${open.map(refLabel).join(', ')}` };
+        const open = refs.filter((r) => !keys.has(`${r.repo.toLowerCase()}#${r.kind === 'issue' ? r.number : r.runId}`));
+        return open.length === 0 ? { met: true, note: endedNote(ended.filter((e) => !stale.has(watchKey(e.ref)))) } : { met: false, result: `not ended yet: ${open.map(refLabel).join(', ')}` };
       }
       case 'job_ended': {
         const other = store.jobs.get(cond.jobId);
