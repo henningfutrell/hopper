@@ -150,8 +150,7 @@ export const EVENT_SCHEMAS = {
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
-  'lane.closed': strict({ reason: z.string() }),
-  'lane.unhealthy': strict({ failures: z.number().int().positive(), error: z.string(), since: z.string(), until: z.string() }),
+  'lane.closed': strict({ reason: z.string() }), 'lane.unhealthy': strict({ failures: z.number().int().positive(), error: z.string(), since: z.string(), until: z.string() }),
   'decision.made': strict({
     // v3: no `routerMode` (issue #211). v2: divergences carry `withAdvice` (was withJev).
     decisionId: z.string(), trigger: z.string(),
