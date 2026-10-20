@@ -32,7 +32,9 @@ Every row shows, also when its count is 0. The page says *Nothing waits on you* 
 
 ## Critical jobs
 
-A **critical job** is a job whose priority is at or above the critical priority (100 unless your admin changed `HOPPER_CRITICAL_PRIORITY`). The **Critical jobs** widget shows each critical job under the header, on every page. It stays when you go to another page or reload.
+A **critical job** is a job whose priority is at or above the critical priority (100 unless your admin changed `HOPPER_CRITICAL_PRIORITY`), or a job that a person marked critical. The **Critical jobs** widget shows each critical job under the header, on every page. It stays when you go to another page or reload.
+
+To mark any job critical, whatever its priority, open its job page and select **Mark critical** in the **critical** row. **Clear critical flag** removes the mark. The mark changes only what the widget shows: it does not give the job a lane past the cap.
 
 For each job, the widget shows:
 

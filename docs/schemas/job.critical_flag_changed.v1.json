@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "critical": {
+      "type": "boolean"
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    }
+  },
+  "required": [
+    "critical",
+    "person",
+    "via"
+  ],
+  "additionalProperties": false
+}

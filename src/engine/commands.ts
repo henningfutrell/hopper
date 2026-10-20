@@ -16,6 +16,7 @@ import type { WaitOn } from '../domain/wait-on.ts';
 import { recordNote } from './notes.ts';
 import { acceptNewText, keepOriginal } from './item-snapshots.ts';
 import { recordApproveTrust, recordDeny, recordLiftQuarantine, recordQuarantine } from './quarantine.ts';
+import { recordCriticalFlag } from './critical-flag.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
 
@@ -85,6 +86,8 @@ export interface Commands {
    */
   quarantine(id: string, acting: ActingPerson): Job;
   liftQuarantine(id: string, acting: ActingPerson): Job;
+  /** The critical flag (issue #2203): a person marks a job critical, whatever its priority, or clears it. job.critical_flag_changed. */
+  setCritical(id: string, critical: boolean, acting: ActingPerson): Job;
   /** Issue #655 part 4: a person approves the trust of a job Jev's trust check lowered: `approved`, never more. job.trust_approved. */
   approveTrust(id: string, acting: ActingPerson): Job;
   /** Issue #655 parts 5 and 13: a person, or Jev (`jev`), denied the job's request at gate 2: its trust one level lower, the second deny quarantines it. */
@@ -201,6 +204,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     acceptNewText: (id, acting) => store.tx(() => acceptNewText(c, id, acting)),
     quarantine: (id, acting) => store.tx(() => recordQuarantine(c, id, acting)),
     liftQuarantine: (id, acting) => store.tx(() => recordLiftQuarantine(c, id, acting)),
+    setCritical: (id, critical, acting) => store.tx(() => recordCriticalFlag(c, id, critical, acting)),
     denied: (id, acting) => { const job = store.tx(() => recordDeny(c, id, acting)); if (job) c.trigger('job.trust_lowered'); return job; },
     approveTrust: (id, acting) => { const job = store.tx(() => recordApproveTrust(c, id, acting)); c.trigger('job.trust_approved'); return job; },
 
