@@ -1,7 +1,8 @@
 // Issue #2146 (the bastion path, part 1): the job's bastion ask, `sh "$HOPPER_SKILL" bastion`. It names a template with an
 // observe on each target; the job's sandbox runs of that template wait for the same approvals as a sandbox ask, and the
 // bastion starts only once they are approved and the template is ready. `bastion` alone says where it stands; `bastion
-// stop` stops it. The user's templates, sandbox runs and bastions are doubles.
+// stop` stops it. Part 3: each target is one the template names as a bastion target, approved with it. The user's
+// templates, sandbox runs and bastions are doubles.
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import type { SandboxRequestView } from '../../src/domain/sandbox-approvals.ts';
@@ -11,7 +12,7 @@ import { bastionAsk, type BastionFields, type BastionUser } from '../../src/skil
 
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
 const MONITORING = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } } as const;
-const ready = { name: 'observe-uat', approval: { by: 'Ada', at: 'now' }, pending: { egress: [], profiles: [] }, profiles: [MONITORING] } as unknown as TemplateView;
+const ready = { name: 'observe-uat', approval: { by: 'Ada', at: 'now' }, pending: { egress: [], profiles: [], bastionTargets: [] }, profiles: [MONITORING], bastionTargets: ['uat/monitoring/svc/grafana:80'] } as unknown as TemplateView;
 const VIEW: BastionView = {
   id: 'b-1', jobId: 'job-1', template: 'observe-uat', box: 'hopper-bastion-observe-uat-b1', targets: [{ target: 'uat/monitoring/svc/grafana:80', local: 20000 }],
   state: 'running', startedAt: '2026-10-20T12:00:00.000Z', expiresAt: '2026-10-20T13:00:00.000Z', log: '',
@@ -54,7 +55,7 @@ describe('the bastion ask (issue #2146)', () => {
 
   it('waits while its sandbox runs wait for a person, or the template does; a decline is a no', async () => {
     expect(await ask({ template: 'observe-uat', targets: TARGETS, why: 'w' }, { request: 'waiting' }).answer).toMatchObject({ status: 202, text: expect.stringContaining('wait for a person') });
-    const pending = { ...ready, pending: { egress: [], profiles: [MONITORING] } } as unknown as TemplateView;
+    const pending = { ...ready, pending: { egress: [], profiles: [MONITORING], bastionTargets: [] } } as unknown as TemplateView;
     expect(await ask({ template: 'observe-uat', targets: TARGETS, why: 'w' }, { template: pending }).answer).toMatchObject({ status: 202, text: expect.stringContaining('waits for a person to approve observe on namespace uat/monitoring') });
     expect(await ask({ template: 'observe-uat', targets: TARGETS, why: 'w' }, { request: 'declined' }).answer).toMatchObject({ status: 403 });
   });
@@ -66,6 +67,18 @@ describe('the bastion ask (issue #2146)', () => {
     expect(await ask({ template: 'observe-uat', targets: 'prod/monitoring/svc/grafana:80', why: 'w' }).answer).toMatchObject({ status: 400, text: expect.stringContaining('observe/namespace/prod/monitoring') });
     expect(await ask({ template: 'observe-uat', targets: TARGETS, why: 'w' }, { bastions: null }).answer).toMatchObject({ status: 503 });
     expect(await ask({ asset: 'open' }).answer).toMatchObject({ status: 400 });
+  });
+
+  it('takes only targets the template names as bastion targets; one a person has not approved yet waits (part 3)', async () => {
+    const loki = 'uat/monitoring/svc/loki:3100';
+    const unnamed = await ask({ template: 'observe-uat', targets: loki, why: 'w' }).answer;
+    expect(unnamed).toMatchObject({ status: 400 });
+    expect(unnamed.text).toContain(`template observe-uat names no bastion target ${loki}`);
+    expect(unnamed.text).toContain(`sh "$HOPPER_SKILL" sandbox-template --needs "observe/namespace/uat/monitoring" --targets "${loki}"`);
+    const waiting = { ...ready, bastionTargets: [TARGETS, loki], pending: { egress: [], profiles: [], bastionTargets: [loki] } } as unknown as TemplateView;
+    const r = ask({ template: 'observe-uat', targets: `${TARGETS} ${loki}`, why: 'w' }, { template: waiting });
+    expect(await r.answer).toMatchObject({ status: 202, text: expect.stringContaining(`the bastion target ${loki} of template observe-uat waits for a person to approve it`) });
+    expect(r.started).toEqual([]);
   });
 
   it('says where the job\'s bastion stands, and stops it', async () => {
