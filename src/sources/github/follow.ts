@@ -99,8 +99,8 @@ const pushedAtOf = (pr: { createdAt: string; headCommittedAt?: string }): string
 
 /**
  * What is seen of the open pull request as the batch tells it (issue #985), when nothing changed that a read must confirm;
- * undefined: read it from GitHub. Checks a read saw fail on the same head stay failing while the batch says pending: the
- * batch reads the rollup only, which stays pending while other checks run.
+ * undefined: read it from GitHub. The batch reads the newest run of each check (issue #2129), so its pending is the
+ * checks' own state: a failed check that runs again on the same head is pending, not failing (issue #2230).
  */
 function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): PullRequestSeen | undefined {
   const { repo, number } = job.source as { repo: string; number: number };
@@ -114,12 +114,12 @@ function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): 
   const conflicting = b.mergeable === 'CONFLICTING';
   const pushedAt = pushedAtOf(b);
   if (pushedAt !== before.pushedAt || b.base !== before.base || conflicting !== before.conflicting) return undefined;
-  const failing = b.checks === 'failing' || (before.checks === 'failing' && b.checks === 'pending');
+  const failing = b.checks === 'failing';
   if (failing && before.checks !== 'failing') return undefined;
   // Classified under another rule, or never though its files are known: read, so it is classified again.
   if (before.files && before.change?.rule !== ruleKey(ruleOf(ctx, repo))) return undefined;
   const seen: PullRequestSeen = {
-    draft: b.isDraft, conflicting, checks: failing ? 'failing' : b.checks ?? 'none', openedAt: b.createdAt, pushedAt, ...(b.base ? { base: b.base } : {}),
+    draft: b.isDraft, conflicting, checks: b.checks ?? 'none', openedAt: b.createdAt, pushedAt, ...(b.base ? { base: b.base } : {}),
     ...(!failing && b.checksWhy ? { checksWhy: b.checksWhy } : {}), ...(!failing && b.checksRefused ? { checksRefused: true } : {}),
     ...(b.headRef ? { headRef: b.headRef } : {}), ...(failing && before.failedChecks ? { failedChecks: before.failedChecks } : {}),
     ...(before.commits ? { commits: before.commits } : {}), ...(before.files ? { files: before.files } : {}), ...(before.change ? { change: before.change } : {}),

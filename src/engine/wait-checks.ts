@@ -12,13 +12,13 @@ import type { Clock, ExecutorRegistry, UserStore } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import { afterCheck, checkEndedNote, checksOutcome, commandOutcome, conditionKey, newCheck, refLabel, reviewOutcome, type CheckOutcome, type WaitCheck, type WaitedChecks, type WaitedReviews } from '../domain/wait-checks.ts';
 import { waitOnLabel } from '../domain/wait-on.ts';
-import { endedNote, NOT_FOUND, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
+import { endedBeforeWait, endedNote, NOT_FOUND, watchKey, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
 import { recordEndWait } from './wait.ts';
 
 /** How long a hopper holds a wait check it tests. */
 export const LEASE_MS = 2 * 60_000;
 
-/** The reads a check needs, as the job's source reads them; undefined, it cannot read now: the items of `refs` that ended; a pull request's checks (part 2); its reviews (part 3). */
+/** The reads a check needs, as the job's source reads them; undefined, it cannot read now: the items of `refs` that ended; a pull request's checks (part 2); its reviews (part 3), undefined when the job's source reads no pull request and a throw when the read failed (issue #2210). */
 export interface WaitReads {
   endedWatched(job: Job, refs: WatchedRef[]): Promise<WatchedEnd[] | undefined>;
   pullRequestChecks?(job: Job, repo: string, number: number): Promise<WaitedChecks | undefined>;
@@ -71,6 +71,16 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
     return { met: true, note: `the time you named passed (${iso(nowMs())}); ${outcome.result}` };
   }
 
+  /** A pull request a check reads (issue #2210): what `read` answers, else why not — the job's source reads none, or the read's error. Tried again at the next check. */
+  async function readPull<T>(at: { repo: string; number: number }, read: () => Promise<T | undefined> | undefined): Promise<T | { met: false; result: string }> {
+    const what = `${at.repo}#${at.number}`;
+    try {
+      return (await read()) ?? { met: false, result: `the job's source reads no pull request, so the hopper cannot read ${what}` };
+    } catch (e) {
+      return { met: false, result: `the hopper cannot read ${what} now: ${(e as Error).message}` };
+    }
+  }
+
   async function testCondition(job: Job, check: WaitCheck): Promise<CheckOutcome> {
     const cond = check.condition;
     switch (cond.kind) {
@@ -79,9 +89,14 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
         if (!ended) return { met: false, result: 'the hopper cannot read the items now' };
         const missing = ended.filter((e) => e.state === NOT_FOUND);
         if (missing.length) return { met: true, note: endedNote(missing) };
+        // Issue #2219: what an outside wait's text names that ended before the wait began does not end it.
+        const before = ended.filter((e) => endedBeforeWait(job, e));
+        const stale = new Set(before.map((e) => watchKey(e.ref)));
+        const refs = cond.refs.filter((r) => !stale.has(watchKey(r)));
+        if (refs.length === 0) return { met: false, result: `ended before the wait began: ${before.map((e) => refLabel(e.ref)).join(', ')}` };
         const keys = new Set(ended.map((e) => `${e.ref.repo.toLowerCase()}#${e.ref.kind === 'issue' ? e.ref.number : e.ref.runId}`));
-        const open = cond.refs.filter((r) => !keys.has(`${r.repo.toLowerCase()}#${r.kind === 'issue' ? r.number : r.runId}`));
-        return open.length === 0 ? { met: true, note: endedNote(ended) } : { met: false, result: `not ended yet: ${open.map(refLabel).join(', ')}` };
+        const open = refs.filter((r) => !keys.has(`${r.repo.toLowerCase()}#${r.kind === 'issue' ? r.number : r.runId}`));
+        return open.length === 0 ? { met: true, note: endedNote(ended.filter((e) => !stale.has(watchKey(e.ref)))) } : { met: false, result: `not ended yet: ${open.map(refLabel).join(', ')}` };
       }
       case 'job_ended': {
         const other = store.jobs.get(cond.jobId);
@@ -100,12 +115,12 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
         return commandOutcome(job.wait!, { runs, lost }, nowMs(), c.ownCommandGraceMs);
       }
       case 'pr_checks_ended': {
-        const pr = await c.waitReads?.pullRequestChecks?.(job, cond.repo, cond.number).catch(() => undefined);
-        return pr ? checksOutcome(pr, nowMs()) : { met: false, result: `the hopper cannot read ${cond.repo}#${cond.number} now` };
+        const pr = await readPull(cond, () => c.waitReads?.pullRequestChecks?.(job, cond.repo, cond.number));
+        return 'result' in pr ? pr : checksOutcome(pr, nowMs());
       }
       case 'pr_review_ended': {
-        const pr = await c.waitReads?.pullRequestReviews?.(job, cond.repo, cond.number).catch(() => undefined);
-        return pr ? reviewOutcome(pr, Date.parse(job.wait!.since)) : { met: false, result: `the hopper cannot read ${cond.repo}#${cond.number} now` };
+        const pr = await readPull(cond, () => c.waitReads?.pullRequestReviews?.(job, cond.repo, cond.number));
+        return 'result' in pr ? pr : reviewOutcome(pr, Date.parse(job.wait!.since));
       }
       case 'time_passed':
         return nowMs() >= Date.parse(cond.at) ? { met: true, note: `the time you named passed (${iso(nowMs())})` } : { met: false, result: `it waits until ${cond.at}` };

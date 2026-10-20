@@ -1,4 +1,4 @@
-// The critical job tracker's model (issue #2203): which jobs it tracks — at or above the critical priority, an ended one
+// The critical job tracker's model (issue #2203): which jobs it tracks — at or above the critical priority or flagged, an ended one
 // until it is dismissed —, each wait of a job that is a person's, from the one home that keeps it, the current step in
 // plain words and since when, and the last few actions.
 import { describe, expect, it } from 'vitest';
@@ -22,6 +22,12 @@ describe('isCriticalJob', () => {
     expect(isCriticalJob({ priority: 100 }, null)).toBe(false);
     expect(isCriticalJob({ priority: 100 }, 0)).toBe(false);
   });
+
+  it('is a job with the critical flag a person set, whatever its priority, and also while the critical priority is off', () => {
+    expect(isCriticalJob({ priority: 50, critical: true }, 100)).toBe(true);
+    expect(isCriticalJob({ priority: 50, critical: true }, 0)).toBe(true);
+    expect(isCriticalJob({ priority: 50, critical: true }, null)).toBe(true);
+  });
 });
 
 describe('trackedJobs', () => {
@@ -37,6 +43,10 @@ describe('trackedJobs', () => {
   it('shows a job that has not ended whatever was dismissed, and each job once', () => {
     const j = job('j1');
     expect(trackedJobs([j, j], 100, [trackerKey('j1')]).map((x) => x.id)).toEqual(['j1']);
+  });
+
+  it('tracks a low job with the critical flag', () => {
+    expect(trackedJobs([job('flagged', { priority: 50, critical: true }), job('plain', { priority: 50 })], 100, []).map((j) => j.id)).toEqual(['flagged']);
   });
 });
 

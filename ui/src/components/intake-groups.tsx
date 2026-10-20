@@ -13,6 +13,7 @@
 // the row says the write runs and offers that action no more; a write that failed says why, and offers it again.
 // A blocked item (issue #1891: no pull request to wait on, or its pull request closed without a merge) offers Won't do,
 // which drops it, its label change a write-behind too, and Run again on its job.
+// Each row says when it arrived in Intake (issue #2228): its age, and the time in the viewer's time zone on hover.
 import { Ban, ExternalLink, Flame, Hand, Loader2, RotateCcw, Unlock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ import { RequestCard } from '@/components/request-card';
 import type { IntakeActionKind, IntakeOutcome } from '../../../src/domain/intake.ts';
 import { DECLINED_ROW, INTAKE_GROUP_LABEL, intakeGroups, intakeRef, jobEnded, repoOf } from '@/model/intake';
 import type { IntakeGroupKind } from '@/model/intake';
-import { ago } from '@/model/format';
+import { ago, zonedTime } from '@/model/format';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { actFor, useHopper } from '@/store';
@@ -76,6 +77,12 @@ function Reason({ x }: { x: IntakeOutcome }) {
   return <span data-backburner-since title={b.since} className="text-muted-foreground">on the backburner {ago(b.since, now)}{b.by ? `, by ${b.by}` : ''}</span>;
 }
 
+/** When the hopper first listed the issue (issue #2228): its age, and the time in the viewer's time zone on hover. */
+function Arrived({ at }: { at: string }) {
+  const now = useNow();
+  return <time data-intake-arrived dateTime={at} title={`Arrived in Intake ${zonedTime(at)}`} className="text-muted-foreground">arrived {ago(at, now)}</time>;
+}
+
 /** Moves the focus to the row once its approval or decline goes through: its buttons are gone, and the focus must not be lost. */
 function useFocusOnApproved(key: string) {
   const row = useRef<HTMLLIElement>(null);
@@ -118,6 +125,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
       {asked && state === 'declined' && <span data-declined className="text-muted-foreground">{DECLINED_ROW[declinedAs ?? 'open']} ·</span>}
       <WriteBehindLine running={running} retry={retry} failed={failed} />
       {x.reason === undefined ? <Taken x={x} /> : <Reason x={x} />}
+      {x.arrivedAt !== undefined && <Arrived at={x.arrivedAt} />}
       {offers('assign') && (
         <Button size="xs" variant="outline" title="Assigns the issue to your GitHub account: the next sync takes it" onClick={() => void send('assign', 'Assigning to you')}><Hand />Assign to me</Button>
       )}

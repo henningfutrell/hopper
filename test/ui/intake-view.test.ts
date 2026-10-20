@@ -153,6 +153,21 @@ describe('the backburner is always visible (issue #808)', () => {
     expect(row(view()!, url(5)).querySelector('[data-backburner-since]')).toBeNull();
   });
 
+  it('each row says when it arrived, its age, and the time in the viewer\'s time zone on hover (issue #2228)', async () => {
+    const arrivedAt = '2026-10-11T06:00:00.000Z';
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-11T09:00:00.000Z') });
+    try {
+      await boot('#intake');
+      await vi.waitFor(() => expect(view()).not.toBeNull());
+      await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify({ ...SOURCES[0], detail: { ...DETAIL, intake: DETAIL.intake.map((x) => (x.key === url(3) ? { ...x, arrivedAt } : x)) } }) }); });
+    } finally { vi.useRealTimers(); }
+    const arrived = row(view()!, url(3)).querySelector<HTMLTimeElement>('[data-intake-arrived]')!;
+    expect(arrived.textContent).toBe('arrived 3h ago');
+    expect(arrived.getAttribute('datetime')).toBe(arrivedAt);
+    expect(arrived.getAttribute('title')).toBe(`Arrived in Intake ${new Date(arrivedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'long' })}`);
+    expect(row(view()!, url(9)).querySelector('[data-intake-arrived]')).toBeNull();
+  });
+
   it('the Queue links to the issues on the backburner, with their count', async () => {
     await boot('#queue');
     const link = () => document.querySelector<HTMLAnchorElement>('[data-slot="queue-backburner"]');

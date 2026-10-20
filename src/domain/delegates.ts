@@ -23,6 +23,9 @@ export const DENY_ENTRY_MAX = 100;
 /** The name an approval by a delegate records as `by`: the delegate, and the person it acts for. */
 export const delegateBy = (delegate: string, person: string): string => `${delegate} (delegate of ${person})`;
 
+/** The name an approval through another grant's API token records as `by` (issue #2229): the token's label, and its person. */
+export const apiTokenBy = (label: string, person: string): string => `${label} (API token of ${person})`;
+
 /** The first deny entry one of the names holds, in any case, and that name; undefined: the policy allows them all. */
 export function deniedBy(deny: readonly string[], names: readonly string[]): { entry: string; name: string } | undefined {
   for (const entry of deny) {

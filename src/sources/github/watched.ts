@@ -21,9 +21,12 @@ async function endOf(api: Pick<GitHubApi, 'pullRequest' | 'getIssue' | 'workflow
     return run.status === 'completed' ? { ref, url: run.url, state: run.conclusion ?? 'completed' } : undefined;
   }
   const pr = await api.pullRequest(ref.repo, ref.number);
-  if (pr) return pr.state === 'open' ? undefined : { ref, url: pr.url, state: pr.state };
+  if (pr) {
+    const at = pr.mergedAt ?? pr.closedAt;
+    return pr.state === 'open' ? undefined : { ref, url: pr.url, state: pr.state, ...(at ? { at } : {}) };
+  }
   const issue = await api.getIssue(ref.repo, ref.number);
-  return issue.state === 'closed' ? { ref, url: issue.url, state: 'closed' } : undefined;
+  return issue.state === 'closed' ? { ref, url: issue.url, state: 'closed', ...(issue.closedAt ? { at: issue.closedAt } : {}) } : undefined;
 }
 
 export async function endedWatched(api: Pick<GitHubApi, 'pullRequest' | 'getIssue' | 'workflowRun'>, refs: WatchedRef[]): Promise<WatchedEnd[]> {

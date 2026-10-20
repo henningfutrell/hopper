@@ -32,6 +32,7 @@ import { TOPOLOGY_TABLE } from './topology.ts';
 import { containerTargets } from './migration-container-target.ts';
 import { SKILL_LIBRARY_TABLE } from './skill-library.ts';
 import { originPendingOffered, originPendingStarted } from './migration-origin-pending.ts';
+import { INTAKE_ARRIVAL_TABLE } from './intake-arrivals.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -153,4 +154,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 86: A job made from an item offered with no origin (issue #2113) waits for it as 85's do: the next sync judges its issue
   // or opens its request card. Rows only: the build before reads the flag.
   originPendingOffered,
+  // 87: Intake arrivals (issue #2228): when each source first listed each item. A table only: the build before runs on it,
+  // and never reads it.
+  INTAKE_ARRIVAL_TABLE,
 ];
