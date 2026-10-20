@@ -59,6 +59,8 @@ export interface HasThread { readonly thread?: SourceThread }
 export interface AnswersFromThread {
   /** Settle the open question with the reply's answer, given `by` (`thread:<login>`), as a person's answer: the job resumes. False: it is not open. */
   answerFromThread(questionId: string, answer: string, by: string): boolean;
+  /** A trusted account's comment (issue #2159) ends the job's own wait that began at `since`, the job told `told`. False: it is no longer on that wait. */
+  wakeOnComment(jobId: string, since: string, comment: { url: string; author: string }, told: string): boolean;
 }
 
 /** Associations whose reply answers the question besides the user's own account: people with a say in the repository. */
@@ -97,9 +99,12 @@ const isMarked = (body: string): boolean => body.trimStart().startsWith('<!-- jo
  */
 export function threadReply(comments: readonly ThreadComment[], ask: ThreadAsk, account: string | undefined): ThreadComment | undefined {
   if (ask.state !== 'posted' || ask.commentId === undefined) return undefined;
-  return comments.find((c) => c.id > ask.commentId! && !isMarked(c.body) && c.body.trim() !== ''
-    && ((account !== undefined && same(c.author, account)) || MAINTAINERS.has(c.association ?? '')));
+  return comments.find((c) => c.id > ask.commentId! && isTrustedReply(c, account));
 }
+
+/** A comment of a trusted account (issues #435, #2159): not one the hopper marked, not empty, by the user's account or a maintainer of the repository. */
+export const isTrustedReply = (c: ThreadComment, account: string | undefined): boolean => !isMarked(c.body) && c.body.trim() !== ''
+  && ((account !== undefined && same(c.author, account)) || MAINTAINERS.has(c.association ?? ''));
 
 /**
  * The answer the job resumes with. The user's own reply is theirs, as from the UI; anyone else's is text from the thread,

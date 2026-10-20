@@ -12,6 +12,7 @@ import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { awaitsOrigin } from '../domain/trust-stamp.ts';
 import { appendStamped } from './quarantine.ts';
 import { EngineError } from './errors.ts';
+import { recordCommentWake } from './wait.ts';
 import { changedSince, gateItem, holdForChange, recordSnapshot, refreshEdit, refreshText } from './item-snapshots.ts';
 import { carryNotes } from './notes.ts';
 
@@ -265,6 +266,12 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
 
     // A reply on the issue thread (issue #435): the question settles as a person's answer, and its job resumes.
     answerFromThread: (questionId, answer, by) => c.questions.settleWith(questionId, answer, by, 'a reply on the issue thread') !== undefined,
+    // A trusted account's comment on its issue or pull request (issue #2159): the job's own wait ends, and it is told the comment.
+    wakeOnComment(jobId, since, comment, told) {
+      const woken = store.tx(() => recordCommentWake(c, jobId, since, comment, told)) !== undefined;
+      if (woken) c.trigger('job.wait_ended');
+      return woken;
+    },
 
     finishOperatorLed(jobId) {
       return store.tx(() => {

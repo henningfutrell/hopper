@@ -121,7 +121,7 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
       if (now?.status !== 'waiting_on' || now.wait?.since !== job.wait?.since || !store.waitCheckLeases.holds(job.id, owner)) return false;
       if (outcome.met && !check.repeat) {
         const key = conditionKey(check.condition);
-        recordEndWait(c, job.id, outcome.note, 'hopper', (w) => outcome.told ?? checkEndedNote(w, outcome.note), key);
+        recordEndWait(c, job.id, outcome.note, 'hopper', (w) => outcome.told ?? checkEndedNote(w, outcome.note), { check: key });
         return true;
       }
       const result = outcome.met ? `${outcome.note} before this wait began; the hopper woke the job for it once` : outcome.result;

@@ -7,9 +7,12 @@
 // `github_watch.settings_changed`, and starts the rounds again at once on the new interval.
 // A job the hopper already has is watched too while its question is posted on its issue thread (issue #435): the watch
 // key is the job's id, its change event is on the job's timeline (`jobId`), and the thread pass reads the replies on it.
+// And while it is on its own wait (issue #2159): its issue, under the job's id, and its own pull request; a trusted
+// account's new comment there ends the wait (src/sources/comment-wakes.ts).
 import {
   githubWatchChanges, githubWatchSettingsOf, watched, type GitHubWatch, type GitHubWatchSettings, type GitHubWatchView,
 } from '../domain/github-watch.ts';
+import { waitWatchesOf } from '../domain/comment-wake.ts';
 import { pointedJobOf, type PointedJob } from '../domain/pointed-jobs.ts';
 import { watchesThread } from '../domain/thread-ask.ts';
 import type { UserStore } from '../domain/ports.ts';
@@ -46,8 +49,8 @@ export function createGitHubWatches(o: GitHubWatchesOptions): GitHubWatches {
   /** The jobs on a question posted on their issue thread (issue #435), read as pointed jobs on that issue. */
   const onThread = (): PointedJob[] => o.store.questions.list({ status: ['open'] }).filter(watchesThread)
     .flatMap((q) => { const job = o.store.jobs.get(q.jobId); const p = job?.questionId === q.id ? pointedJobOf(job) : undefined; return p ? [p] : []; });
-  /** Every pointed job watched now: each one that has not ended, and each job on its thread. */
-  const targets = (): PointedJob[] => [...o.store.pointedJobs.list().filter(watched), ...onThread()];
+  /** Every pointed job watched now: each one that has not ended, each job on its thread, and each job on its own wait. */
+  const targets = (): PointedJob[] => [...o.store.pointedJobs.list().filter(watched), ...onThread(), ...o.store.jobs.list({ status: ['waiting_on'] }).flatMap(waitWatchesOf)];
   /** The pointed jobs the schedule holds. */
   let held = new Set<string>();
   let unsubscribe: (() => void) | undefined;
@@ -138,8 +141,9 @@ export function createGitHubWatches(o: GitHubWatchesOptions): GitHubWatches {
     poll,
     start() {
       if (unsubscribe) return;
-      // A question's events start and end a job's thread watch: posted on the thread, then answered, closed, or gone.
-      unsubscribe = o.store.events.subscribe((e) => { if (POINTED_JOB_EVENTS.has(e.type) || e.type.startsWith('question.')) follow(); });
+      // A question's events start and end a job's thread watch: posted on the thread, then answered, closed, or gone. A job's
+      // own wait starts its watches; a poll of a job no longer on its wait drops them.
+      unsubscribe = o.store.events.subscribe((e) => { if (POINTED_JOB_EVENTS.has(e.type) || e.type.startsWith('question.') || e.type === 'job.waiting') follow(); });
       begin();
     },
     async stop() {
