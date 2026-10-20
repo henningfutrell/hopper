@@ -31,5 +31,5 @@ export function installErrorHandling(app: FastifyInstance): void {
     if (status >= 500) req.log.error(err);
     return reply.code(status).send({ error: err.message });
   });
-  app.setNotFoundHandler((req, reply) => reply.code(404).send({ error: `no route ${req.method} ${req.url}` }));
+  app.setNotFoundHandler((req, reply) => reply.code(404).send({ error: `no such route: ${req.method} ${req.url.split('?')[0]}` }));
 }

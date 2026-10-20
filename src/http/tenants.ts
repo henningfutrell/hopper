@@ -182,7 +182,8 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
         }
       }
       // An API token's read: its grant's scopes (issue #881), then Access decide it (a mutation's is decided by its guard).
-      if (session.kind === 'api' && req.method === 'GET' && req.url.startsWith('/api/')) {
+      // A path no route serves gets the not-found answer, never a scope refusal (issue #2229).
+      if (session.kind === 'api' && req.method === 'GET' && req.url.startsWith('/api/') && req.routeOptions.url !== undefined) {
         const outOfScope = grantScopeRefusal(o.grants, session, req.method, req.routeOptions.url);
         if (outOfScope !== undefined) {
           console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
@@ -221,7 +222,7 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
   // scopes to cover that action, or the whole route (the door let the grant through on a part of the route's actions);
   // a limited grant's (issue #892, "Grant limits") must act only on the repositories and job sources it names.
   app.addHook('preHandler', async (req, reply) => {
-    if (req.method !== 'POST' || kinds.get(req) !== 'api') return;
+    if (req.method !== 'POST' || kinds.get(req) !== 'api' || req.routeOptions.url === undefined) return;
     const session = requestSession(req, o.sessions);
     if (!session) return;
     const route = req.routeOptions.url;
