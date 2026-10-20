@@ -149,7 +149,7 @@ export function applyRefusal(profile: OperationProfile, planId: string | undefin
   if (now.getTime() >= Date.parse(plan.expiresAt)) return `plan ${plan.id} is stale: it was made ${plan.createdAt} and could be applied until ${plan.expiresAt}. Plan again`;
   const failed = failedChecks(plan);
   if (failed) return `plan ${plan.id} failed its checks: ${failed}. Fix the code and plan again`;
-  if (!approval) return `plan ${plan.id} is not approved: a person approves it on Infra, then the job asks again`;
+  if (!approval) return `plan ${plan.id} is not approved: a person approves it in Needs you, under Infra plans. Wait with on: infra plan ${plan.id}, then ask again`;
   return undefined;
 }
 

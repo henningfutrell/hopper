@@ -5,7 +5,7 @@
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject;
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
-// the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
+// the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only; the infra plans (issue #2205, cli-operator-infra.ts);
 // API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
 // Report a bug and Your reports (issue #694, cli-operator-report.ts): its context first, then the report; direct jobs (issue #901, cli-operator-direct.ts);
 // search (issue #945, cli-operator-search.ts): the jobs by their words, type-ahead, the index's state and Reindex;
@@ -33,7 +33,7 @@ import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts'; import { CLOUD_LINK_USAGE, cloudLinkCall } from './cli-operator-cloud-link.ts';
-import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
+import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts'; import { INFRA_USAGE, infraCall } from './cli-operator-infra.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
 import { QUEUE_USAGE, ownWaitOf, queueCall } from './cli-operator-queue.ts';
 import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
@@ -43,7 +43,7 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra'] as const;
 
 export const OPERATOR_USAGE = `  hopper job show <id>                               one job, by its id or short id: its state, and why it is held or waits (holdReason, waitReason),
                                                      or, on its own wait, what it waits on (waitsOn, waitsFor, wait)
@@ -109,6 +109,7 @@ ${CLOUD_LINK_USAGE}
 ${ACCOUNTS_USAGE}
 ${TERMINAL_USAGE}
 ${VAULT_USAGE}
+${INFRA_USAGE}
 ${TOKEN_USAGE}
 ${WINDOWS_LINK_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
@@ -268,7 +269,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'token') return tokenCall(args);
   if (command === 'vault') return vaultCall(args, stdin);
   if (command === 'grant') return grantCall(args);
-  if (command === 'template') return templateCall(args);
+  if (command === 'template') return templateCall(args); if (command === 'infra') return infraCall(args);
   if (command === 'sandbox') return sandboxCall(args);
   if (command === 'artifact') return artifactCall(args);
   if (command === 'report') return reportCall(args);

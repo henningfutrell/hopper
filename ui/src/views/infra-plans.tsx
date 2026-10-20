@@ -8,7 +8,7 @@
 // An admin names the environment watchers (part 4): the notifiers name them with each plan, approval and apply.
 import { LogBlock } from '@/components/log-block';
 import { Check } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
@@ -102,9 +102,11 @@ export function Watchers({ watchers, onWatchers }: { watchers: InfraWatchers; on
   );
 }
 
-/** The plans, each with its applies; `onPlan` takes a plan an approval changed. */
-export function PlanList({ plans, applies, onPlan }: { plans: PlanView[]; applies: PlanApply[]; onPlan: (p: PlanView) => void }) {
+/** The plans, each with its applies; `onPlan` takes a plan an approval changed; `picked` (issue #2205): the plan a link named, marked and scrolled to. */
+export function PlanList({ plans, applies, onPlan, picked }: { plans: PlanView[]; applies: PlanApply[]; onPlan: (p: PlanView) => void; picked?: string }) {
   const can = { operate: useCanOperate(), admin: useCanAdmin() };
+  const pickedRef = useRef<HTMLLIElement>(null);
+  useEffect(() => { pickedRef.current?.scrollIntoView?.({ block: 'center' }); }, [picked]);
   const now = useServerNow();
   const [busy, setBusy] = useState(false);
   const approve = async (id: string): Promise<void> => {
@@ -126,7 +128,7 @@ export function PlanList({ plans, applies, onPlan }: { plans: PlanView[]; applie
       const button = <Button size="sm" disabled={busy} onClick={offer.confirm ? undefined : () => void approve(p.id)}><Check />Approve</Button>;
       const mine = applies.filter((a) => a.plan === p.id);
       return (
-        <li key={p.id} data-slot="infra-plan" className="space-y-1 rounded-md border p-3">
+        <li key={p.id} data-slot="infra-plan" ref={p.id === picked ? pickedRef : undefined} data-picked={p.id === picked || undefined} className={`space-y-1 rounded-md border p-3${p.id === picked ? ' border-warn ring-1 ring-warn' : ''}`}>
           {why && <p className="text-sm font-medium break-words">{why.words} <span className={`text-xs font-normal ${LEVEL[why.level]}`}>{why.level} risk</span></p>}
           <p className="text-sm break-words">{planHeadline(p)}</p>
           {why && <ul className="list-disc pl-5 text-xs text-muted-foreground">{why.lines.map((l) => <li key={l} className={l.startsWith('Failed:') ? 'text-destructive' : ''}>{l}</li>)}</ul>}
