@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, SessionRejected } from '@/lib/api';
+import { rereadsVault } from '@/model/vault';
 import type { DomainEvent, VaultView } from '@/model/wire';
 import { useHopper } from './index';
 
@@ -55,9 +56,9 @@ export function loadVault(): Promise<void> {
   return reading;
 }
 
-/** The vault's view, read when first used and again after each vault event. */
+/** The vault's view, read when first used and again after each vault or template event. */
 export function useVault(): VaultView | null {
-  const lastChange = useHopper((s) => s.events.find((e) => e.type.startsWith('vault.'))?.id);
+  const lastChange = useHopper((s) => s.events.find((e) => rereadsVault(e.type))?.id);
   const authed = useHopper((s) => s.authed);
   useEffect(() => { if (authed) void loadVault(); }, [lastChange, authed]);
   return useVaultStore((s) => s.view);

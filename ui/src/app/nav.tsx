@@ -109,6 +109,8 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const total = needsYouTotal(rows);
   const n = (k: (typeof rows)[number]['kind']): number => rows.find((r) => r.kind === k)!.n;
   const access = n('access');
+  // Issue #2196: the templates and sandbox runs a high-priority job waits on mark the entry, as in Needs you.
+  const highOf = (k: (typeof rows)[number]['kind']): number => rows.find((r) => r.kind === k)!.high;
   const plans = n('plans');
   const unmarked = changesUnmarked(useOutOfBand());
   const gaveUp = n('pull-requests');
@@ -125,7 +127,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
       trustHeld > 0 && `${trustHeld} ${trustHeld === 1 ? 'job held by its' : 'jobs held by their'} trust stamp`,
     ].filter(Boolean).join('; ') },
     tagged: { n: tagged, cls: 'bg-warn text-background', title: `${tagged} ${tagged === 1 ? 'item asks' : 'items ask'} for your review, mention you or are assigned to you` },
-    'access-requests': { n: access, cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
+    'access-requests': { n: access, high: highOf('access'), cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
     'pending-approvals': approvals,
     ...sections,
     infra: { n: plans + unmarked, cls: 'bg-warn text-background', title: [plans > 0 && `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for a person to approve`, unmarked > 0 && `${unmarked} out-of-band ${unmarked === 1 ? 'change waits' : 'changes wait'} to be marked`].filter(Boolean).join('; ') },

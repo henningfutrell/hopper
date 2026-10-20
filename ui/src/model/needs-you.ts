@@ -22,6 +22,8 @@ export interface NeedsYouCounts {
   intake: number;
   /** Credential requests, vault grant asks and templates that wait for approval. */
   access: number;
+  /** Of those, the templates and sandbox runs a high-priority job waits on (issue #2196); absent: none. */
+  accessHigh?: number;
   /** The templates with an unknown asset (issue #2067), one line each; absent: none. */
   unknownAssets?: readonly string[];
   /** Infra plans that wait for a person to approve them. */
@@ -72,7 +74,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
 export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
   const count = (k: NeedsYouKind): { n: number; high: number; details?: readonly string[] } => {
     if (k === 'intake') return { n: c.intake, high: 0 };
-    if (k === 'access') return { n: c.access, high: 0 };
+    if (k === 'access') return { n: c.access, high: c.accessHigh ?? 0 };
     if (k === 'unknown-assets') {
       const unknown = c.unknownAssets ?? [];
       return { n: unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };

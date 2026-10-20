@@ -1,7 +1,9 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
 // A secret kept in a vault backend (issue #585) says where: the backend and the reference read there at each use.
-import type { Asset, CredentialRequest, OperationProfile, ProfileAsk, SandboxApprovals, SandboxRequestView, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
+import { jobEnded } from './intake.ts';
+import { isHighJob } from './priority.ts';
+import type { Asset, CredentialRequest, Job, OperationProfile, ProfileAsk, SandboxApprovals, SandboxRequestView, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -128,6 +130,12 @@ export function profileAskOf(asks: readonly ProfileAsk[] | undefined, template: 
   return a ? `${a.asker} asked to approve this through the API at ${a.at}: approve it here to confirm it.` : undefined;
 }
 
+/**
+ * Whether an event changes the vault's view: a vault event, or a template's (issue #2196: a job's template request
+ * records `template.saved`, and Access requests and its badge must show it at once).
+ */
+export const rereadsVault = (type: string): boolean => type.startsWith('vault.') || type.startsWith('template.');
+
 /** A template waits for a person (issue #897, Access requests): never approved, or a new image, egress host, secret or profile waits. */
 export const templateWaits = (t: TemplateView): boolean =>
   !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
@@ -135,9 +143,26 @@ export const templateWaits = (t: TemplateView): boolean =>
 /** The sandbox runs jobs asked for that wait for a person (issue #991). */
 export const sandboxRunsWaiting = (v: VaultView | null): SandboxRequestView[] => (v?.sandboxRequests ?? []).filter((r) => r.state === 'waiting');
 
+/** The jobs the UI holds, by id: enough to say whether one ended and how high its priority is. */
+type JobsById = Readonly<Record<string, Pick<Job, 'status' | 'priority'>>>;
+
+/**
+ * The templates that count as waiting on a person (issue #2196): each that waits for approval, but one a job asked for
+ * only until that job ended. A job the UI does not hold still counts: the hopper keeps no template for a job it forgot.
+ */
+const templatesCounted = (v: VaultView, jobs: JobsById): TemplateView[] =>
+  v.templates.filter((t) => templateWaits(t) && !(t.askedBy && jobEnded(jobs[t.askedBy]?.status)));
+
 /** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, templates and sandbox runs that wait. */
-export const accessRequestsWaiting = (v: VaultView | null): number =>
-  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + v.templates.filter(templateWaits).length + sandboxRunsWaiting(v).length;
+export const accessRequestsWaiting = (v: VaultView | null, jobs: JobsById = {}): number =>
+  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + templatesCounted(v, jobs).length + sandboxRunsWaiting(v).length;
+
+/** Of those, the templates and sandbox runs a high-priority job waits on (issues #535, #2196): the badge marks them. */
+export const accessRequestsHigh = (v: VaultView | null, jobs: JobsById, threshold: number | null): number => {
+  if (v === null) return 0;
+  const high = (id: string | undefined): boolean => id !== undefined && isHighJob(jobs[id], threshold);
+  return templatesCounted(v, jobs).filter((t) => high(t.askedBy)).length + sandboxRunsWaiting(v).filter((r) => high(r.jobId)).length;
+};
 
 /** The auto-approve policy in force (issue #1001): the view answers it in full; absent, the default. */
 export const autoApproveOf = (a: SandboxApprovals | undefined): NonNullable<SandboxApprovals['autoApprove']> => ({ low: true, medium: false, high: false, ...a?.autoApprove });

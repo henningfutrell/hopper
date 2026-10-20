@@ -7,7 +7,7 @@
 // profile, in one confirm, sent side by side (issue #1018). Each card's approval is its own: while it is pending, only
 // that card says so, and then its result; a card can be selected for Approve selected (access-requests.tsx). Each card says
 // what the template is for: its readable name first, why the job asked, the job and its link, the plan, and each need in
-// plain words (sandbox-ask.tsx).
+// plain words (sandbox-ask.tsx). Issue #2196: the templates a high-priority job waits on come first.
 import { Boxes, Check, ShieldAlert } from 'lucide-react';
 import { ApprovalState, SelectBox } from '@/components/approval-state';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,9 @@ import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { approvalText, egressText, explicitApprovals, highRadius, profileAskOf, profileText, templateWaits } from '@/model/vault';
+import { highFirst, isHighJob } from '@/model/priority';
 import type { ProfileAsk, TemplateView, VaultSecret } from '@/model/wire';
+import { useHopper } from '@/store';
 import { approveItems, templateItem, templateKey, toggleSelected, useAccessApprovals } from '@/store/access-approvals';
 import { SandboxAsk } from './sandbox-ask';
 
@@ -73,7 +75,9 @@ function Waiting({ t, asks, secrets, can }: { t: TemplateView; asks?: ProfileAsk
 }
 
 export function TemplateApprovals({ templates, asks, secrets, can }: { templates: TemplateView[]; asks?: ProfileAsk[]; secrets: readonly VaultSecret[]; can: boolean }) {
-  const waiting = templates.filter(templateWaits);
+  const jobs = useHopper((s) => s.jobs);
+  const threshold = useHopper((s) => s.highPriority);
+  const waiting = highFirst(templates.filter(templateWaits), (t) => t.askedBy !== undefined && isHighJob(jobs[t.askedBy], threshold));
   return (
     <div data-access-panel="templates">
       <Panel title="Template approvals" icon={Boxes} count={waiting.length || ''} bodyClassName="space-y-3">
