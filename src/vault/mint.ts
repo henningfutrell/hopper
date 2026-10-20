@@ -15,7 +15,7 @@ import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintDiscovered, mintEks } from './eks.ts';
 import { mintSourceFor, type ClusterDiscovery, type MintSource } from '../domain/cluster-discovery.ts';
-import { readClusters } from './clusters.ts';
+import { readClusters, readKnownClusters } from './clusters.ts';
 import { mintPrincipal } from '../domain/out-of-band.ts';
 import type { UnbindFrom } from './bindings.ts';
 import { appliesRefusal } from '../domain/infra-plans.ts';
@@ -48,7 +48,7 @@ export interface MintedFrom {
 }
 
 export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
-  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'config'>;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'config' | 'topology'>;
   /** The vault's user: Access names a job by its user and id. */
   userId: string;
   access?: VaultAccess;
@@ -95,8 +95,8 @@ export async function mintPassingOver<S extends { name: string }>(
 }
 
 /** The sources `mintPassingOver` mints from in place of a minting credential it passes over: as `mintSourceFor`, without it. */
-export const sourceWithout = <S extends { name: string; mints?: Asset }>(secrets: readonly S[], target: MintTarget, operation: Operation, clusters: readonly ClusterOverride[]) =>
-  (skip: string): MintSource<S> | string => mintSourceFor(secrets.filter((s) => s.name !== skip), target, operation, clusters);
+export const sourceWithout = <S extends { name: string; mints?: Asset }>(secrets: readonly S[], target: MintTarget, operation: Operation, clusters: readonly ClusterOverride[], known: readonly string[] = []) =>
+  (skip: string): MintSource<S> | string => mintSourceFor(secrets.filter((s) => s.name !== skip), target, operation, clusters, known);
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;
 
@@ -149,10 +149,10 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     if (planNo) return refuse(planNo, decision);
     const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
 
-    const clusters = readClusters(o.store.config);
-    const found = mintSourceFor(vault.list(), target, profile.operation, clusters);
+    const clusters = readClusters(o.store.config), known = readKnownClusters(o.store.topology);
+    const found = mintSourceFor(vault.list(), target, profile.operation, clusters, known);
     if (typeof found === 'string') return refuse(found, decision);
-    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, profile.operation, clusters), target, job.id);
+    const { source, made } = await mintPassingOver(from, found, sourceWithout(vault.list(), target, profile.operation, clusters, known), target, job.id);
     if ('refused' in made) return refuse(made.refused, decision);
     const used = usedOf(source, made);
     const out = made.minted;

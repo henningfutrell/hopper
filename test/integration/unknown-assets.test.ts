@@ -4,12 +4,13 @@
 // Feature: an unknown asset
 //   Scenario: a request for an unknown cluster is refused at once, with the known clusters
 //     Given the topology lists the EKS clusters staging-eks and control-plane-eks
-//     When the operator asks for a template of read/cluster/staging
-//     Then the answer is "no cluster staging; known: staging-eks, control-plane-eks", with the needs to ask for
+//     When the operator asks for a template of read/cluster/stage
+//     Then the answer is "no cluster stage; known: staging-eks, control-plane-eks", with the needs to ask for
 //     And no template is saved, so nothing waits
 //     When the operator asks for read/cluster/staging-eks
 //     Then the template is saved
 //   Scenario: a template saved before with an unknown asset shows "unknown asset" in hopper template list
+//   Scenario: a template of a short cluster name (issue #2168) is no unknown asset, and says the cluster it resolves to
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TopologySource } from '../../src/domain/topology.ts';
@@ -59,9 +60,9 @@ const templates = async (a: TestApp) => JSON.parse((await hopper(a, ['template',
 describe('an unknown asset (issue #2067)', () => {
   it('a request for an unknown cluster is refused at once with the known clusters, and nothing waits', async () => {
     const a = await boot();
-    const r = await hopper(a, ['template', 'request', '--needs', 'read/cluster/staging']);
+    const r = await hopper(a, ['template', 'request', '--needs', 'read/cluster/stage']);
     expect(r.code).not.toBe(0);
-    expect(r.err).toContain('no cluster staging; known: staging-eks, control-plane-eks');
+    expect(r.err).toContain('no cluster stage; known: staging-eks, control-plane-eks');
     expect(r.err).toContain('--needs "read/cluster/staging-eks"');
     expect(await templates(a)).toEqual([]);
 
@@ -75,5 +76,13 @@ describe('an unknown asset (issue #2067)', () => {
     const [old] = await templates(a);
     expect(old!.unknownAsset).toBe('unknown asset: no cluster platform; known: staging-eks, control-plane-eks');
     expect(old!.unknownAssets).toEqual([{ asset: { kind: 'cluster', name: 'platform' }, cluster: 'platform', known: ['staging-eks', 'control-plane-eks'] }]);
+  });
+
+  it('a template of a short cluster name is no unknown asset, and names the cluster it resolves to (issue #2168)', async () => {
+    const a = await boot();
+    expect((await hopper(a, ['template', 'save', 'short', '--image', IMAGE, '--profile', 'read/cluster/staging'])).code).toBe(0);
+    const [short] = await templates(a);
+    expect(short!.unknownAssets).toBeUndefined();
+    expect(short!.shortClusters).toEqual([{ cluster: 'staging', to: 'staging-eks' }]);
   });
 });

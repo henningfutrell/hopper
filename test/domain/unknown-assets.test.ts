@@ -33,10 +33,10 @@ describe('an unknown asset (issue #2067)', () => {
   it('is a cluster need the topology does not list, with the known clusters nearest first', () => {
     const u = unknownAssets(needs('read/cluster/stage read/namespace/plat-eks/default'), facts());
     expect(u).toEqual([
-      { asset: { kind: 'cluster', name: 'stage' }, cluster: 'stage', known: ['prod-eks', 'staging-eks', 'control-plane-eks', 'platform-cluster-eks'] },
-      { asset: { kind: 'namespace', name: 'plat-eks/default' }, cluster: 'plat-eks', known: ['prod-eks', 'staging-eks', 'platform-cluster-eks', 'control-plane-eks'] },
+      { asset: { kind: 'cluster', name: 'stage' }, cluster: 'stage', known: ['staging-eks', 'prod-eks', 'control-plane-eks', 'platform-cluster-eks'] },
+      { asset: { kind: 'namespace', name: 'plat-eks/default' }, cluster: 'plat-eks', known: ['prod-eks', 'staging-eks', 'control-plane-eks', 'platform-cluster-eks'] },
     ]);
-    expect(unknownAssetText(u[0]!)).toBe('no cluster stage; known: prod-eks, staging-eks, control-plane-eks, platform-cluster-eks');
+    expect(unknownAssetText(u[0]!)).toBe('no cluster stage; known: staging-eks, prod-eks, control-plane-eks, platform-cluster-eks');
   });
 
   it('is never a cluster the topology lists, nor an asset of another kind', () => {

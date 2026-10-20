@@ -62,14 +62,14 @@ describe('unknown assets on Access requests (issue #2123)', () => {
     expect(await points(false)).toEqual([]);
   });
 
-  it('pointing a template at a cluster saves it with each need on that cluster renamed, the rest as it was', () => {
+  it('pointing a template at a cluster saves it with each need on that cluster renamed; what it leaves out the save keeps', () => {
     const t = template('uat', {
       profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'uat' } }, { operation: 'read', asset: { kind: 'namespace', name: 'uat/web' } },
         { operation: 'sync', asset: { kind: 'argocd-app', name: 'uat/api' } }, { operation: 'read', asset: { kind: 'cluster', name: 'uat-old' } }],
       tools: ['kubectl'], egress: ['a.example:443'], agentCredential: 'ANTHROPIC',
     } as Partial<TemplateView>);
     expect(pointedAt(t, 'uat', 'uat-eks')).toEqual({
-      action: 'save-template', name: 'uat', image: 'img', secrets: [], tools: ['kubectl'], egress: ['a.example:443'], limits: {}, agentCredential: 'ANTHROPIC',
+      action: 'save-template', name: 'uat', image: 'img', secrets: [],
       profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'uat-eks' } }, { operation: 'read', asset: { kind: 'namespace', name: 'uat-eks/web' } },
         { operation: 'sync', asset: { kind: 'argocd-app', name: 'uat-eks/api' } }, { operation: 'read', asset: { kind: 'cluster', name: 'uat-old' } }],
     });

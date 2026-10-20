@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { profileRef } from '../domain/confirmation-asks.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
-import { knownClusters, unknownAssets, type ClusterFacts } from '../domain/unknown-assets.ts';
+import { knownClusters, shortClusters, unknownAssets, type ClusterFacts } from '../domain/unknown-assets.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
 import { BOX_IMAGE, pulledImage } from '../sandbox/box-image.ts';
 import { createImageCheck } from '../sandbox/image-published.ts';
@@ -29,11 +29,11 @@ export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & 
   const view = await vaultView(parts.vault);
   const facts = clusterFacts(parts);
   // Issue #1001: the job that asked for each template, by its title and its issue or pull request. Issue #2067: the
-  // assets of its needs the vault cannot find.
+  // assets of its needs the vault cannot find. Issue #2168: its short cluster names, each with the cluster it resolves to.
   const templates = view.templates.map((t) => {
     const job = t.askedBy ? parts.store.jobs.get(t.askedBy) : undefined;
-    const u = unknownAssets(t.profiles, facts);
-    const shown = u.length ? { ...t, unknownAssets: u } : t;
+    const u = unknownAssets(t.profiles, facts), short = shortClusters(t.profiles, facts);
+    const shown = { ...t, ...(u.length ? { unknownAssets: u } : {}), ...(short.length ? { shortClusters: short } : {}) };
     if (!t.askedBy || !job) return shown;
     const title = job.source?.title ?? job.spec.goal, url = job.source?.url;
     return { ...shown, askedByJob: { id: t.askedBy, ...(title ? { title } : {}), ...(url ? { url } : {}) } };

@@ -142,7 +142,7 @@ describe('a mint for a discovered cluster', () => {
 describe('a mint test of a discovered cluster', () => {
   it('names the account, the role and the minting credential it used', async () => {
     const events: { type: string; data: unknown }[] = [];
-    const test = createMintTest({ store: { vault: { list: () => secrets } as never, config: { read: () => undefined } as never, events: { append: (e: { type: string; data: unknown }) => { events.push(e); } } as never } });
+    const test = createMintTest({ store: { vault: { list: () => secrets } as never, config: { read: () => undefined } as never, topology: { list: () => [] } as never, events: { append: (e: { type: string; data: unknown }) => { events.push(e); } } as never } });
     const r = await test('cluster/uat', 'admin', fromHere(fakeMinter([UAT])));
     expect(r).toEqual({
       tested: {
