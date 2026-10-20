@@ -12,6 +12,7 @@ import type { PlacementPicks } from './lane-calls.ts';
 import type { TrustChecks } from './trust-checks.ts';
 import { KIND_CHECK_PENDING, type KindChecks } from './kind-checks.ts';
 import { CHECK_PENDING } from '../domain/trust-stamp.ts';
+import { avoidLanesOf } from './lane-health.ts';
 import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
 import { preemptionSettings } from './preemption.ts';
@@ -36,6 +37,8 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
     const expectedCosts = expectedOf(waiting, expected);
     const placementPicks = picks.input(waiting);
+    // A rerun of a job that failed for its lane's fault goes to another lane when it can (issue #2234).
+    const avoidLanes = avoidLanesOf(waiting, (id) => c.store.jobs.get(id));
     const credentialHeld = credentialHeldOf(c, machines);
     const sandboxesHeld = c.sandboxesHeld(waiting);
     const preemption = preemptionInput(preemptionSettings(c.store), c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined));
@@ -63,6 +66,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       blastRadius: blastRadius.input(machines),
       ...(expectedCosts ? { expectedCosts } : {}),
       ...(placementPicks ? { placementPicks } : {}),
+      ...(avoidLanes ? { avoidLanes } : {}),
       ...(signedOut.length ? { signedOut } : {}),
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
