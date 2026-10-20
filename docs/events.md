@@ -6763,6 +6763,34 @@ Version 1 (`docs/schemas/direct_query.cancelled.v1.json`). A direct query's job 
 }
 ```
 
+## `direct_query.question_asked`
+
+Version 1 (`docs/schemas/direct_query.question_asked.v1.json`). A direct query's job asked a question that reached a person (issue #2184, part 2): once per question, with its `question.escalated_to_human`. `questionId`, `question` (the text, masked), `answerUrl` (where a person answers it in the UI). The caller answers it with `POST /ui/api/questions/:id/answer`, as a person does in Questions. Delivered to the `callback` subscription too.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `questionId` | string | yes |
+| `question` | string | yes |
+| `answerUrl` | string | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "questionId": "q1",
+  "question": "Which cluster do you mean?",
+  "answerUrl": "https://hopper.example.com/#question-q1",
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
 ## `issue_draft.drafted`
 
 Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an issue with the person's own signed-in AI connection (issue #471): `repo` it is for, the `provider` and the `model` that ran, the run `skill` and its id (`file-issue@<id>`, issue #472), and `findings`: the ids of the draft constraints the draft as written broke (a secret or personal data is masked before the person sees it). Nothing is filed. Never the text.

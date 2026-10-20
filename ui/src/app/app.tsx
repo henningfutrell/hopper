@@ -15,6 +15,7 @@ import { Artifacts } from '@/views/artifacts';
 import { BugReports } from '@/views/bug-reports';
 import { Decisions } from '@/views/decisions';
 import { DirectJobs } from '@/views/direct-jobs';
+import { DirectQueries } from '@/views/direct-queries';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
 import { Infra } from '@/views/infra';
@@ -48,7 +49,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, tagged: Tagged, 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, accounts: Accounts, sources: Sources, machines: Machines, infra: Infra, topology: Topology, skills: Skills, usage: Usage, resources: Resources, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, 'direct-queries': DirectQueries, intake: Intake, tagged: Tagged, 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, accounts: Accounts, sources: Sources, machines: Machines, infra: Infra, topology: Topology, skills: Skills, usage: Usage, resources: Resources, settings: Settings, job: JobView,
 };
 
 function Loading() {
