@@ -174,6 +174,12 @@ describe('the jobs each dependency\'s event wakes (issue #1245, part 2)', () => 
     expect(woken({ type: 'vault.granted', jobId: 'on-job', data: { job: 'on-job', key: 'k', by: 'p' } })!.jobs).toEqual([]);
   });
 
+  it('an action grant given or declined wakes the job whose step asked for it (issue #2206)', () => {
+    const scope = { role: '1/hopper-action', action: 'eks:UpdateNodegroupConfig', resource: 'arn:aws:eks:us-west-1:1:nodegroup/c/g/*' };
+    expect(woken({ type: 'vault.action_granted', jobId: 'on-grant', data: { job: 'on-grant', ...scope, by: 'p' } })).toEqual({ note: `an action grant (eks:UpdateNodegroupConfig on ${scope.resource}) was given`, jobs: ['on-grant'] });
+    expect(woken({ type: 'vault.action_declined', jobId: 'on-grant', data: { job: 'on-grant', ...scope, by: 'p' } })!.jobs).toEqual(['on-grant']);
+  });
+
   it('an approval wakes nothing here: the skill request\'s watch ends the wait with its answer (issue #998)', () => {
     expect(settledBy({ type: 'vault.sandbox_approved', jobId: 'on-sandbox', data: { request: 'r', template: 't', by: 'p' } })).toBeUndefined();
     expect(settledBy({ type: 'vault.approved', data: { template: 't', image: 'i', secrets: [], by: 'p' } })).toBeUndefined();

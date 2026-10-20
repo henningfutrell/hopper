@@ -4,6 +4,7 @@
 // never a second one. A `need-step` saga runs it; its log, its result and its outputs are read from here by the job,
 // from any host, after a restart too.
 import type { OperationProfile } from './access.ts';
+import type { AwsAction } from './action-grants.ts';
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 import type { StepResult } from './windows-steps.ts';
 
@@ -29,6 +30,8 @@ export interface NeedStep {
   outputs: string[];
   /** The approved infra plan the step applies. */
   plan?: string;
+  /** The AWS actions a person granted that the step's one change on an aws-role is narrowed to (issue #2206). */
+  actions?: AwsAction[];
   /** A box step's vault secrets, by name (issue #1875): those its template gives, read for the step after the job's vault grant. */
   secrets?: string[];
   inputsBytes: number;

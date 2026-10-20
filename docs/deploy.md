@@ -1182,6 +1182,26 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   fails. With no backend, the probe is *not run* and the check fails: a state write is not proven refused. No new IAM
   resource is needed: the read role, the deny policy and the bucket are the ones above. A bucket policy that lets the
   role write under the key prefix fails the check, as it should.
+- **The action role** (issue #2206, docs/design.md "Action grants"). When a job's change needs an AWS action that no
+  role it may use allows, it asks a person for exactly that action, and the hopper mints a session of the account's
+  **action role**, `hopper-action`, narrowed to `ReadOnlyAccess` and the granted actions on their resources. A session
+  policy only narrows: the role itself must allow the action. So make the role wide enough for the changes a person may
+  grant (for example `PowerUserAccess`, or your own policy), with a trust policy that lets only the minting identity
+  assume it, and let the minting identity assume it too:
+
+  ```sh
+  aws iam create-role --role-name hopper-action --max-session-duration 3600 \
+    --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<id>:user/hopper-minter"},"Action":"sts:AssumeRole"}]}'
+  aws iam attach-role-policy --role-name hopper-action --policy-arn arn:aws:iam::aws:policy/PowerUserAccess
+  ```
+
+  The hopper never mints a change on `hopper-action` that is not narrowed to granted actions, and each change still needs
+  its approved plan. For an EKS action on a cluster's API (not the AWS API), the cluster's access entry decides, as for
+  any role. With infra applies off, no action is asked and the role is not used for changes.
+  Before a template is made for a change, the hopper asks IAM's policy simulation whether the role allows each action the
+  job names (the **action check**). It asks with a read session of the account's read role `hopper-read`, so that role
+  needs `iam:SimulatePrincipalPolicy` (`ReadOnlyAccess` holds it as `iam:Simulate*`). Without it, the check says "not
+  checked" and refuses nothing.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.

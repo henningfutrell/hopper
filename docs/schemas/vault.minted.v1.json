@@ -84,6 +84,25 @@
         "secret"
       ],
       "additionalProperties": false
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "resource"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

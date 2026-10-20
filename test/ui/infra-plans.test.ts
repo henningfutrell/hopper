@@ -63,6 +63,8 @@ describe('the Infra model', () => {
     const apply: PlanApply = { plan: plan.id, at: '2026-10-12T10:20:00.000Z', operation: 'apply', asset: plan.asset, job: 'j2abcdefgh', expiresAt: '2026-10-12T10:35:00.000Z', renewal: false };
     expect(applyLine(apply)).toBe('apply on aws-role 123456789012/deploy by job j2abcdef, valid until 2026-10-12T10:35:00.000Z');
     expect(applyLine({ ...apply, renewal: true })).toBe('apply on aws-role 123456789012/deploy by job j2abcdef, valid until 2026-10-12T10:35:00.000Z (renewed)');
+    // Issue #2206: an apply narrowed to granted AWS actions names each.
+    expect(applyLine({ ...apply, actions: [{ action: 'eks:UpdateNodegroupConfig', resource: 'arn:aws:eks:us-west-1:123456789012:nodegroup/c/g/*' }] })).toBe('apply on aws-role 123456789012/deploy by job j2abcdef, valid until 2026-10-12T10:35:00.000Z, granted actions: eks:UpdateNodegroupConfig on arn:aws:eks:us-west-1:123456789012:nodegroup/c/g/*');
   });
 });
 
