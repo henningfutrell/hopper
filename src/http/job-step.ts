@@ -182,17 +182,19 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         if (typeof actions === 'string') return no(reply, 400, actions);
         if (need && steps.appliesOff()) return no(reply, 409, `${APPLY_STEP_OFF}. No action grant is asked for`);
         const waits = need ? actionWait(who.t, who.job, need.asset.name, actions, one(query.why)) : undefined;
-        if (waits) return reply.code(waits.status).type('text/plain; charset=utf-8').send(waits.text);
+        if (waits && waits.status !== 202) return reply.code(waits.status).type('text/plain; charset=utf-8').send(waits.text);
         let template = steps.covering(read);
         if (!template) {
           // No ready template covers the needs: asked for as a template request is — made once, approved only by a person or
-          // a policy —, and its wait opens a watch that ends the job's own wait when the answer is ready (issue #998).
+          // a policy —, and its wait opens a watch that ends the job's own wait when the answer is ready (issue #998). Its
+          // actions too (issue #2206, part 2): the action check, so the grant and the template wait for a person at once.
           const why = one(query.why), plan = one(query.plan);
-          const asked = await o.skillWaits.handle(req.headers.authorization, { name: TEMPLATE_SKILL, needs, ...(why ? { why } : {}), ...(plan ? { plan } : {}) });
+          const asked = await o.skillWaits.handle(req.headers.authorization, { name: TEMPLATE_SKILL, needs, ...(why ? { why } : {}), ...(plan ? { plan } : {}), ...(said.length ? { actions: said.join(' ') } : {}) });
           if (asked.status !== 200) return reply.code(asked.status).type('text/plain; charset=utf-8').send(asked.text);
           template = steps.covering(read);
           if (!template) return no(reply, 503, 'the template for these needs is ready, but no need box can run it yet: ask again in a minute');
         }
+        if (waits) return reply.code(waits.status).type('text/plain; charset=utf-8').send(waits.text);
         const brake = braked(who.t, template, needs);
         if (brake) return no(reply, 403, brake);
         // `ready`: only whether a template is ready for the needs (hopper-step asks so while it waits), no step run.

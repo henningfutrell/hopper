@@ -13,7 +13,8 @@
 //                     template approval on. A sandbox request (issue #991, `name` sandbox, `needs`) then asks for a box
 //                     of that template, which starts once a person or skip sandbox approval approves it. Issue #998:
 //                     a 202 with no `wait` opens a watch too, one per job and request; when it is answered and the job
-//                     is on its own wait (HOPPER_WAITING), the hopper ends that wait with the answer.
+//                     is on its own wait (HOPPER_WAITING), the hopper ends that wait with the answer. Issue #2206:
+//                     a template request's `actions` are checked first (src/vault/template-actions.ts).
 import type { FastifyInstance } from 'fastify';
 import type { Access } from '../authz/service.ts';
 import { createSkillBroker, createSkillWaits, SKILL_PATH, type SkillUser, type SkillWaits } from '../skills/index.ts';
@@ -21,6 +22,8 @@ import { requestTemplate } from '../skills/template-request.ts';
 import { mintTarget } from '../domain/minting.ts';
 import type { Tenants } from './tenants.ts';
 import { templateRequestUser } from './vault.ts';
+import { createActionSimulator } from '../vault/action-simulation.ts';
+import { checkTemplateActions } from '../vault/template-actions.ts';
 
 /** A user's side, from their GitHub proxy's (their jobs, the token check, their log) and their vault (a box's template). */
 function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
@@ -50,6 +53,9 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     sandbox: (template, job, about) => parts.sandboxRequests.ask(job.id, template, about),
     sandboxWaits: (template, job, about) => parts.sandboxRequests.waited(job.id, template, about),
     outsideStamp: (profiles, job) => parts.sandboxRequests.outside(job.id, profiles), // issue #655 part 16
+    // Issue #2206, part 2: IAM simulates the role with a read session of hopper-read, minted as topology discovery mints one.
+    actionCheck: (needs, said, job, why) => checkTemplateActions({ store: parts.store, appliesOff: () => parts.needSteps.appliesOff(),
+      simulator: createActionSimulator({ mint: (asset) => parts.vault.mintForDiscovery(asset) }) }, needs, said, job.id, why, new Date()),
   };
 }
 
