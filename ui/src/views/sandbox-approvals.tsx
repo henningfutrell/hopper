@@ -10,6 +10,7 @@
 // will do and its undo, the access it needs (profiles, secrets, egress, image) and the job. Approve approves it all at
 // once (`approve-run`), and the job's step goes on; Decline tells the job no. High-priority jobs' cards come first.
 // Part 3: the approval is for this job only; Allow again, on the card, approves the access for later jobs too.
+// Issue #2206: the job's asks for an AWS action on a role the template changes are on its card; Approve grants them too.
 import { Boxes, Check, Loader2, Rocket, TriangleAlert, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -67,6 +68,7 @@ function grants(t: TemplateView | undefined, c: RunCardView, again: boolean): Re
       {c.waits.template ? (again
         ? <> Allow again: a later job with the same needs runs with no new card, and each change approval is remembered.</>
         : <> For this job only: another job that asks for the same access gets a card of its own.</>) : null}
+      {(c.actions ?? []).map((a) => <span key={`${a.role} ${a.action} ${a.resource}`}> It also grants {a.action} on {a.resource} as aws-role {a.role}: later steps of the same action are covered until the time limit of remembered write approvals.</span>)}
     </>
   );
 }
@@ -108,6 +110,11 @@ export function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCa
           <dt className="text-muted-foreground">Egress</dt><dd className="font-mono break-words">{egressText(t)}</dd>
         </dl>
       )}
+      {c.actions?.length ? (
+        <ul data-slot="run-actions" className="space-y-1 text-xs">{c.actions.map((a) => (
+          <li key={`${a.role} ${a.action} ${a.resource}`} className="break-all">AWS action <span className="font-mono">{a.action}</span> on <span className="font-mono">{a.resource}</span> <span className="text-muted-foreground">as aws-role {a.role}</span></li>
+        ))}</ul>
+      ) : null}
       {c.jev && <p data-slot="sandbox-request-jev" className="text-xs text-warn">{jevText(c.jev)}</p>}
       <p className="text-xs text-muted-foreground">Asked at {c.askedAt}.</p>
       {can ? (

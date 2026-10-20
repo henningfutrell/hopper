@@ -20,6 +20,9 @@
 //     need to ask for on the action role in its place
 //   Scenario: a template request on the action role asks for the grant at once, beside the template
 //   Scenario: a need step with no template yet asks for the template and the grant in one visit; both approved, it runs
+//   The run card (part 3): the job's action asks are on its run card, and one approval grants them with the template
+//   Scenario: one approve-run of the card approves the template and grants the action; the step runs, in the feed
+//   Scenario: one decline-run of the card declines the action too; the step is told no
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -239,8 +242,10 @@ describe('action grants (issue #2206)', () => {
     const r = await skill(b, { name: 'sandbox-template', needs: NEED, actions: SCALE, ...ABOUT });
     expect(r.status, r.text).toBe(202);
     expect(r.text).toContain(`waits: eks:UpdateNodegroupConfig on ${ARN} as aws-role ${SCOPE.role}: a person grants it on Access requests, AWS actions (asked now)`);
+    // The ask is on the job's run card, beside the template, and not a second item of Access requests.
     const v = await vaultOf(b);
-    expect(v.actionAsks).toEqual([expect.objectContaining({ job: b.job, ...SCOPE, why: WHY[1] })]);
+    expect(v.runs).toEqual([expect.objectContaining({ jobId: b.job, actions: [expect.objectContaining({ job: b.job, ...SCOPE, why: WHY[1] })] })]);
+    expect(v.actionAsks).toEqual([]);
     expect(v.templates).toEqual([expect.objectContaining({ askedBy: b.job, profiles: [{ operation: 'apply', asset: { kind: 'aws-role', name: SCOPE.role } }] })]);
     // Asked again: the same ask, not a second one; once granted, the check says so.
     await skill(b, { name: 'sandbox-template', needs: NEED, actions: SCALE, ...ABOUT });
@@ -256,7 +261,7 @@ describe('action grants (issue #2206)', () => {
     const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', ABOUT.plan, '--plan-id', plan.id, '--command', 'aws sts get-caller-identity', '--wait', '60']);
     await run.waiting;
     const v = await vaultOf(b);
-    expect(v.actionAsks).toEqual([expect.objectContaining({ job: b.job, ...SCOPE })]);
+    expect(v.runs?.[0]?.actions).toEqual([expect.objectContaining({ job: b.job, ...SCOPE })]);
     const asked = v.templates.find((t) => t.askedBy === b.job);
     expect(asked, JSON.stringify(v.templates)).toBeDefined();
     const role = { kind: 'aws-role', name: SCOPE.role };
@@ -268,5 +273,53 @@ describe('action grants (issue #2206)', () => {
     const r = await run.end;
     expect(r.code, r.stdout + r.stderr).toBe(0);
     expect(decodeURIComponent(b.sts.seen.at(-1)!.body.replace(/\+/g, ' '))).toContain('"Action":"eks:UpdateNodegroupConfig"');
+  });
+
+  it('the run card: one approve-run approves the template and grants the action; the step runs, and the apply is in the feed', async () => {
+    const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
+    const plan = await approvedPlan(b);
+    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', ABOUT.plan, '--plan-id', plan.id, '--command', 'aws sts get-caller-identity', '--wait', '60']);
+    await run.waiting;
+    const v = await vaultOf(b);
+    expect(v.runs).toHaveLength(1);
+    const card = v.runs![0]!;
+    expect(card).toMatchObject({ jobId: b.job, waits: { template: true }, actions: [expect.objectContaining({ job: b.job, ...SCOPE, why: WHY[1] })] });
+    expect(v.actionAsks).toEqual([]);
+
+    // An agent's API token may not decide a card that asks for an AWS action: a person grants it.
+    const minted = await b.a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'agent', scopes: ['*'], minutes: 10, box: true }, { token: b.session });
+    expect(minted.status, JSON.stringify(minted.body)).toBe(200);
+    const byToken = await fetch(`${b.a.url}/ui/api/sandbox-requests`, { method: 'POST', body: JSON.stringify({ action: 'approve-run', job: b.job, template: card.template }), headers: { authorization: `Bearer ${minted.body.token}`, 'content-type': 'application/json' } });
+    expect(byToken.status, await byToken.clone().text()).toBe(403);
+    expect(await byToken.text()).toContain('a person decides it');
+
+    // One approval of the card: nothing else is approved or granted by hand.
+    const ok = await decide(b, { action: 'approve-run', job: b.job, template: card.template });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.runs).toEqual([]);
+    expect(ok.body.actionGrants).toEqual([expect.objectContaining({ ...SCOPE, expiresAt: expect.any(String) })]);
+    const r = await run.end;
+    expect(r.code, r.stdout + r.stderr).toBe(0);
+    expect(decodeURIComponent(b.sts.seen.at(-1)!.body.replace(/\+/g, ' '))).toContain('"Action":"eks:UpdateNodegroupConfig"');
+    expect((await ofJob(b)).find((e) => e.type === 'vault.action_granted')?.data).toMatchObject({ job: b.job, ...SCOPE });
+    const feed = (await b.a.api<{ applies: PlanApply[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': b.session })).body;
+    expect(feed.applies).toEqual([expect.objectContaining({ plan: plan.id, job: b.job, actions: [{ action: SCOPE.action, resource: ARN }] })]);
+  });
+
+  it('the run card: one decline-run declines the action too; the step is told no and nothing is minted', async () => {
+    const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
+    const plan = await approvedPlan(b);
+    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', ABOUT.plan, '--plan-id', plan.id, '--command', 'true', '--wait', '60']);
+    await run.waiting;
+    const card = (await vaultOf(b)).runs![0]!;
+    expect((await decide(b, { action: 'decline-run', job: b.job, template: card.template, reason: 'scale it in terraform' })).status).toBe(200);
+    const r = await run.end;
+    // A run card's decline is a person's deny at gate 2: the step is told no, and the action's ask is declined too.
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/\bno: /);
+    expect((await ofJob(b)).find((e) => e.type === 'vault.action_declined')?.data).toMatchObject({ job: b.job, ...SCOPE, reason: 'scale it in terraform' });
+    const v = await vaultOf(b);
+    expect([v.runs, v.actionAsks, v.actionGrants]).toEqual([[], [], []]);
+    expect(b.sts.seen.filter((x) => decodeURIComponent(x.body).includes(`RoleArn=arn:aws:iam::${ACCOUNT}:role/hopper-action`))).toHaveLength(0);
   });
 });

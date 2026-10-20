@@ -1,0 +1,1 @@
+- A job that asks for an AWS action and for its sandbox now waits on one card: one Approve gives it both, and one Decline refuses both.
