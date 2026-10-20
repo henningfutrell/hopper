@@ -1,7 +1,7 @@
 // A sandbox's credentials end with it (issue #1371, decision #1394, design.md "Sandboxes are fresh and leave nothing"
 // part 7). Each Kubernetes token minted for a need box or a check box is bound to a Secret of its own (`bindTo`); the
 // sandbox holds that binding until it ends, whatever its outcome, and its release deletes the Secret, so the API server
-// refuses the token at once. Each binding is recorded before the minter makes its Secret (`vault.binding_named`, issue
+// refuses the token once its token cache lets it go (10 s by default; issue #1956). Each binding is recorded before the minter makes its Secret (`vault.binding_named`, issue
 // #1628) and again in its mint's event (`vault.minted`, `vault.check_minted`: `bound`), and each unbind is `vault.unbound`: a binding that a hopper that stopped, or an unbind that failed, left is unbound by the
 // reconcile pass, at start and then periodically. An AWS session and an EKS token are bound to nothing: STS cannot end
 // one session, so each lives to its floor (15 and 14 minutes).

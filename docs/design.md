@@ -20584,7 +20584,7 @@ nothing and worked to its expiry (10 minutes), and an AWS session to its own (15
 - **The sandbox's end deletes it.** A need step releases its sandbox's bindings (`releaseMints`) after its box is burned,
   whatever the outcome — it succeeded, failed, timed out, was cancelled, or its run threw —, and also when a later mint
   of the step is refused or the job drops the step before it runs. The check pass releases a check box's bindings after
-  the box is removed. The minter deletes each Secret (a 404 is no error), the API server refuses the token at once, and
+  the box is removed. The minter deletes each Secret (a 404 is no error), the API server refuses the token within its token cache time (10 s by default, seen by the cloud acceptance test, issue #1956), and
   `vault.unbound` records it. Through the vault's own container (#586), the delete crosses as the op `unbind`: only that
   container holds the minting credential.
 - **Reconcile.** An unbind that fails (the cluster is not reachable) is logged and waits. The reconcile pass

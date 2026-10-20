@@ -15,7 +15,7 @@
 //     And it lists pods, and is forbidden to delete a pod, exec in it, create a Secret or read one
 //     And the cluster's workload is the same as before
 //     When the step's box ended
-//     Then the Secret the token was bound to is gone, and the cluster refuses the same token
+//     Then the Secret the token was bound to is gone, and the cluster refuses the same token (within its token cache's time)
 //     And no need box and no home volume is left at the runtime
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -157,8 +157,12 @@ describe('kubectl in a need box with a minted read token, against a kind cluster
 
     // The step's box ended: the Secret goes, and the cluster refuses the same token.
     await waitFor(async () => ((await bindings()).length === 0 ? true : undefined), { timeoutMs: 60_000, intervalMs: 500, what: 'the binding Secret to be deleted' });
-    const after = await cluster.as(token, ['get', 'pods', '-n', APP_NAMESPACE, '-o', 'name']);
-    expect(after.code).not.toBe(0);
+    // The API server keeps a token it authenticated for a short time (its token cache, 10 s by default), so the refusal
+    // comes within that time after the Secret goes, not on the same instant.
+    const after = await waitFor(async () => {
+      const r = await cluster.as(token, ['get', 'pods', '-n', APP_NAMESPACE, '-o', 'name']);
+      return r.code === 0 ? undefined : r;
+    }, { timeoutMs: 60_000, intervalMs: 1_000, what: 'the cluster to refuse the token' });
     expect(`${after.stdout}${after.stderr}`).toMatch(/Unauthorized/);
     expect(await workload()).toBe(before);
 
