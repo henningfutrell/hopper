@@ -68,7 +68,7 @@ describe('parking a running job', () => {
     expect(types).toContain('job.parked');
     expect(types).not.toContain('job.failed');
     expect(types).not.toContain('job.cancelled');
-    expect((await a.events('types=job.parked'))[0]!.data).toEqual({ from: 'running', machineId: 'local' });
+    expect((await a.events('types=job.parked'))[0]!.data).toEqual({ from: 'running', machineId: 'local', by: 'login code', via: 'ui' });
     expect(running.laneId).toBeDefined();
 
     // The machine takes another job on the freed lane.
