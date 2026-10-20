@@ -254,8 +254,11 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(vault.recordCheck('asked', { version: t.savedAt, state: 'failed', at: t.savedAt, probes: [], problem: 'the check box did not run' })).toBe(true);
     const r = await hopper(a, ['template', 'check', 'asked']);
     expect(r.code, r.err).toBe(0);
-    expect(json<TemplateView[]>(r).find((x) => x.name === 'asked')).toMatchObject({ readOnly: true });
-    expect(json<TemplateView[]>(r).find((x) => x.name === 'asked')!.check).toBeUndefined();
+    // Issue #2226: it says when the check runs, or why it does not: this template's image is not approved yet.
+    expect(json(r)).toEqual({ template: 'asked', check: 'asked for: it does not run until its image is approved (hopper template approve asked)' });
+    expect(vault.view().templates.find((x) => x.name === 'asked')!.check).toBeUndefined();
+    expect((await hopper(a, ['template', 'approve', 'asked'])).code).toBe(0);
+    expect(json(await hopper(a, ['template', 'check', 'asked']))).toEqual({ template: 'asked', check: 'asked for: the next read-only check pass runs it' });
   });
 
   it('shows, sets and clears the read policy; an entry it cannot read is refused', async () => {

@@ -334,7 +334,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
     // onShift: a level's suggested phase shift (issue #548), made when the phase-shift settings allow the level.
-    onDismissed: (q: Question) => engine.onDismissed(q), onCorrected: (q: Question) => engine.onCorrected(q), onShift: (q, suggest, by) => engine.phaseShifts.byLevel(q, suggest, by),
+    // onToHuman: a direct query's question that reaches a person goes to its caller's callback too (issue #2184).
+    onDismissed: (q: Question) => engine.onDismissed(q), onCorrected: (q: Question) => engine.onCorrected(q), onShift: (q, suggest, by) => engine.phaseShifts.byLevel(q, suggest, by), onToHuman: (q, answerUrl) => directJobs.questionAsked(q, answerUrl),
   });
   // Each review section's review (issues #537, #543): the escalation levels its settings name review; the engine ends,
   // moves on or re-queues the job.

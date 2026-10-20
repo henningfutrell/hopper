@@ -1,13 +1,13 @@
 // The UI session's actions on one job: cancel, approve, operator-led, reject, run again, rework (issue #724), park and re-queue
 // (issue #501), end its own wait (issue #483), send it a note (issue #997), dismiss — or many at once (issue #1123) —, mark cleaned up; for a job held because its item changed since
 // the snapshot (issue #662), keep the original text, or accept the new text — the owner only, as Access decides; quarantine
-// a job, and lift it (issue #655). Least role: operator.
+// a job, and lift it (issue #655); set or clear its critical flag (issue #2203). Least role: operator.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import { EngineError } from '../../engine/errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { cancelBody, dismissManyBody, endWaitBody, noteBody, parkBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
+import { cancelBody, criticalBody, dismissManyBody, endWaitBody, noteBody, parkBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
 import type { Access } from '../../authz/service.ts';
 import { signedInOf } from '../tenants.ts';
 import { actingOf } from './sessions.ts';
@@ -88,6 +88,9 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     o.tenant(req).engine.quarantine(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'quarantine a job'))));
   app.post('/ui/api/jobs/:id/unquarantine', o.operator, async (req) =>
     o.tenant(req).engine.liftQuarantine(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'lift a quarantine'))));
+  // The critical flag (issue #2203): a person marks a job critical whatever its priority, or clears it. Who acted is kept.
+  app.post('/ui/api/jobs/:id/critical', o.operator, async (req) => o.tenant(req).engine.setCritical(
+    parseWith(idParams, req.params).id, parseWith(criticalBody, req.body ?? {}).critical, actingOf(signedInTo(req, 'mark a job critical'))));
   // Issue #655 part 4: a person approves the trust of a job Jev's trust check lowered.
   app.post('/ui/api/jobs/:id/approve-trust', o.operator, async (req) =>
     o.tenant(req).engine.approveTrust(parseWith(idParams, req.params).id, actingOf(signedInTo(req, 'approve a job\'s trust'))));

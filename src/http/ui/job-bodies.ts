@@ -8,6 +8,8 @@ import { PARK_REASON_MAX } from '../../domain/park-ask.ts';
 export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
 /** Cancel's optional reason (issue #1460): a person's own words why, kept on job.cancelled as its note, never written to the issue. */
 export const cancelBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() }).strict();
+/** The critical flag (issue #2203): set or cleared. */
+export const criticalBody = z.object({ critical: z.boolean() }).strict();
 /** Park's optional reason (issue #2167): kept on the parked job and on job.parked, never written to the issue. */
 export const parkBody = z.object({ reason: z.string().trim().max(PARK_REASON_MAX, `reason must be at most ${PARK_REASON_MAX} characters`).optional() }).strict();
 /** Reject's optional reason (issue #387): kept on the job and in its timeline, never written to the issue. */

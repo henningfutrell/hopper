@@ -102,7 +102,7 @@ export const asked = async (a: TestApp, token: string): Promise<TemplateView> =>
  */
 export const stepBox = async (a: TestApp, token: string, template: string): Promise<{ status: 200 | 409; body: { error?: string } }> => {
   const t = (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.templates.find((x) => x.name === template);
-  if (t && ready(t)) return { status: 200, body: {} };
+  if (t && ready(t, 'any job')) return { status: 200, body: {} };
   return { status: 409, body: { error: (t && checkWait(t)) ?? `the template ${template} is not approved` } };
 };
 export const vault = (a: TestApp, token: string, body: unknown) => a.ui<{ error: string }>('/ui/api/vault', body, { token });

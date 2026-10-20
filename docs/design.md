@@ -10737,7 +10737,15 @@ replaces them; test with doubles, and state the gap to a real environment.
   `helm.list` refused on secrets, judged before a right refusal passed it — runs again at the next pass, `judgedAgain`,
   so the jobs that wait on it go on): a
   person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
-  check <name>`), which drops the check (`template.check_requested`) so the next pass runs one.
+  check <name>`), which drops the check (`template.check_requested`) so the next pass runs one. The command says when
+  that is, or why it is not yet: a template whose image is not approved waits for the approval (issue #2226).
+- **A check that does not end** (issue #2226). The pass runs one check at a time, so one check that hangs (a pull, a
+  build or a mint that never answers) held every later check, for hours, and the jobs that waited on them. A whole check
+  may take `CHECK_DEADLINE_MS`, 45 minutes (the check box's 30 minutes, and its image and its mints). Then it fails as
+  `transient`, its problem names the step it stopped at (`CheckContext.stepped`), the check box's mints are released, and
+  the pass goes on to the next template; it runs again `CHECK_RETRY_MS` after, with no person. A run that ends late
+  records nothing, and its check box, if any, is no run's: the next pass removes it. A check a stopped hopper left
+  `running` runs again, after the templates with no check, so a check that hangs again holds none of them.
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
   the sandbox flags (`ContainerSpec.script`: `sh -c` in place of the entrypoint, on a terminal, never restarted), on the
   hopper's network, as the image's own non-root user, with a home volume made for it. It carries the label
@@ -14781,9 +14789,15 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
    or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
    job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).
-   A job also edits — never closes — a pull request its issue's text names (its **linked pull requests**, read at intake,
-   `source.linkedPulls`; issue #2151: a job told to update another's pull request could push to it, but not fix the
-   declaration in its body that a plan check reads);
+   A job also edits — never closes — a pull request its issue names (issue #2151: a job told to update another's pull
+   request could push to it, but not fix the declaration in its body that a plan check reads): a name of it in the
+   title or body of the item's approved text (its **item snapshot**; with none, its title), as `linkedRefs` reads names —
+   `#N`, so also `PR #N` and `pull request #N`, `owner/name#N` or its URL —, every name, not only the first 10, and a bare
+   `#N` in code (a fenced block or a code span) names nothing (`namesItem`, `src/domain/linked-pulls.ts`). Issue #2227:
+   the check read only the names the intake read kept (`source.linkedPulls`: the body only, the first 10, none when a
+   read failed), so an issue that named its pull request as "PR #N" in its title could not have it edited. A refusal
+   says the pull request it checked and why: the job did not open it, tend it or own it as its work item's, and for
+   an edit what its issue names (`its issue owner/name#N does not name it`, `… names #N only in code`);
    A close is the job's act, as its push is; it never merges, and the follow sees the pull request closed as a person's
    close;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
@@ -17005,6 +17019,16 @@ opened its pull requests found `HOPPER_GH` empty at its last step and ended fail
 more at its source before it is assessed, whatever its failure says ("Failure assessment", `lookedAgain`): one that
 delivered ends finished.
 
+**A resumed session never goes on with no way to the hopper** (issue #2233, a regression of #1465). A placement that
+fails is tried once more first. A job that reopens in a new pane after the end of its run (a continued job, a parked job)
+has no files of its start left: that end's reap removed its credentials dir. Its start's variables would point at
+nothing, so it fails with `this machine cannot reach the hopper: its way to the hopper was not placed again for the
+resume (<why>)`, never resumed without it. That failure, and a job's own report that `HOPPER_URL` or `HOPPER_GH` is
+missing or that it cannot reach the hopper, is the known cause `no-way-to-hopper` (transient, retry): it runs again as a
+new job, placed afresh. Continue on its hand-off runs a new job too (`continueResumes` false): the session's history
+keeps telling its agent the hopper is out of reach, whatever its new pane holds. The reach check's own text (`cannot
+reach the hopper at <url>`) is not this cause: it is the machine's.
+
 **A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
 machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
 jobs, and its jobs were given a loopback URL it does not reach: each failed at once. Now a fresh start that the reach check
@@ -17817,8 +17841,9 @@ and whether a PR head is a fork") and `repo_visibility`. Fork code is the case t
 "merge the change of #12" runs at `owner`, and #12 can be a stranger's pull request from a fork. So, for each GitHub issue
 whose origin is trusted or approved (only its job keeps them):
 
-- **The names in its text** (`linkedRefs`): `#N`, `owner/name#N`, and the pull request and issue URLs of the issue's own
-  GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself, never a `#` joined to a word.
+- **The names in its text** (`linkedRefs`, its title and body, issue #2227): `#N`, `owner/name#N`, and the pull request and
+  issue URLs of the issue's own GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself,
+  never a `#` joined to a word, never a bare `#N` in code (a log line or a snippet asks nothing of it).
 - **One read per name** (`GitHubApi.linkedItem`, GraphQL `repository { visibility issueOrPullRequest(number) }`, in the
   batched reads of issue #822): its repository's visibility, and the pull request when the name is one — its URL, its
   author, `isCrossRepository` as `fork`. The issue's own read gives its repository's visibility.
@@ -17831,9 +17856,9 @@ whose origin is trusted or approved (only its job keeps them):
 - **Jev reads them**: Jev's trust check gets them in `source`, and has one more reason, `fork_code` ("it brings in a pull
   request of a fork that no trusted actor wrote"), to lower the job.
 - **No rule reads them**, as the origin acts: the stamp's level still comes from the origin. A rule would decide for every
-  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. One
-  door reads them (issue #2151): a job edits the title or body of a linked pull request (`pr edit`, "Jobs ask the hopper,
-  not GitHub"), as it pushes to its branch; GitHub still decides whether its user may.
+  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. A job's
+  `pr edit` (issue #2151, "Jobs ask the hopper, not GitHub") reads the same names, but from the item's approved text at
+  the edit, every one (issue #2227), not from these records; GitHub still decides whether its user may.
 
 Also in this part: the GraphQL read of an issue's edits (issue #662, part 17) read the answer one level too high, so it
 found no edits against GitHub; the fake GitHub hid it. It reads them under `data` now, and an answer with errors throws, so
@@ -19805,7 +19830,7 @@ someone outside; the receiver maps the name to its own channel. In the hopper, t
 jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
 the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
 
-## Direct queries (issue #2184, part 1, 2026-10-19)
+## Direct queries (issue #2184, parts 1 and 2, 2026-10-19)
 
 Requirement: a caller (the first one: Grok Bot) asks the hopper an off-the-cuff question — "where does the otel collector
 run?" — with no GitHub issue. A job that only looks answers it, with the same seats, sandboxes, vault and approval rules as
@@ -19838,18 +19863,29 @@ jobs"). What a query adds:
   - the record has no `authorizations`, so no vault grant is made at submit, and no `repo`.
 - **Where it stands** (`directQueryState`, from its newest job): `accepted` (no job at work yet), `running`, `waiting` (a
   question or its own wait: it comes back through Questions, and the Grok Bot notifier names the direct job, as for any
-  direct job), `answered`, `failed` (also a job turned away at the queue gate), `cancelled`.
+  direct job; a question that reaches a person goes to the callback too, below), `answered`, `failed` (also a job turned
+  away at the queue gate), `cancelled`.
 - **Reading back.** `GET /api/direct-queries` (newest first) and `GET /api/direct-queries/:requestId`: the direct job's view
   with `query` and `state`; the answer is `job.result`, the evidence the job's `artifacts`. A caller polls this. To cancel,
   it cancels the job, `POST /ui/api/jobs/:id/cancel`, as any job.
 - **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
   artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
   direct job ("Promote to GitHub").
+- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, `ui/src/views/direct-queries.tsx`), in the Jobs
+  group beside Direct jobs, not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
+  its callback, its hints, its open questions (a link to Questions), its answer, its error and its evidence (the job's
+  artifacts). An operator asks a question there (a request id the page makes, `ui-<32 hex>`, from
+  `crypto.getRandomValues`: a LAN page over plain HTTP has no `randomUUID`), and cancels a query whose job is not at an
+  end. The Direct jobs view leaves direct queries out (`onlyDirectJobs`): each lives in one place.
 
 **The callback.** The events of a query: `direct_query.accepted` (in the submit's transaction, never the question),
 `direct_query.answered` (`answer`, the job's result; `artifacts`, links that need a hopper sign-in; `url`),
-`direct_query.failed` (`error`) and `direct_query.cancelled`, each with `id`, `requestId` and `callback`. The ends are
-appended by the `direct` source's report, once per job and end (`queryEnded`). The webhook dispatcher delivers an event
+`direct_query.failed` (`error`), `direct_query.cancelled` and `direct_query.question_asked` (part 2: `questionId`, `question`,
+`answerUrl`), each with `id`, `requestId` and `callback`. The ends are
+appended by the `direct` source's report, once per job and end (`queryEnded`). A question is appended when it reaches the
+human stage, once per question, in the transaction of its `question.escalated_to_human` (the question service's
+`onToHuman`, `DirectJobs.questionAsked`); a question a level answers never goes out. The caller answers it with
+`POST /ui/api/questions/:id/answer`, as a person does in Questions: a box action, so its API token is a box token, as for the ask. The webhook dispatcher delivers an event
 whose `callback` names a subscription to that subscription too, whatever events it lists (`matches`,
 `src/webhooks/dispatcher.ts`). So the callback is a webhook delivery: signed with the subscription's own signing secret,
 kept sealed in the vault (`x-hopper-signature`, "Webhooks"), at least once, deduped by `x-hopper-delivery`, retried with
@@ -30269,6 +30305,36 @@ high-priority job's card first, and the Access requests link ("Grok Bot routine 
 `test/sandbox/run-card-notices.test.ts`, `test/plugins/grokbot-run-cards.test.ts`, and `test/integration/need-steps.test.ts`
 (a write need's one notice, on the real daemon).
 
+**Part 3: allow again (2026-10-20).** Before, a run card's approval approved its template for every later job with the
+same needs, and remembered each write for the time limit: one approval for one job was a standing approval for all.
+The issue asks for a run's approval by default, and a choice to allow it again.
+
+- **For this job only, by default.** `approve-run` with no `allowAgain` approves the template for the card's job's runs
+  only: the template's approval names it (`approval.jobs`, `approvalJobs` in `src/domain/vault.ts`), and `vault.approved`
+  carries `jobs`. No write approval is remembered. Another job that asks for the same access finds the template waiting
+  for a person (`approvalCovers`): its ask is a run card of its own, and one approval adds that job to `jobs`.
+- **Allow again** (`allowAgain: true`; the card's **Allow again** switch; `hopper sandbox approve-run --allow-again`):
+  the approval is for every job, as before part 3, and each write, sync or apply approval is remembered.
+- **Where the job is read.** Each place that decides whether a job's step may use a template reads the job:
+  `templateReady(t, jobId)` (a box step, the broker's named sandbox, the sandboxes before the start), `coveringTemplate`
+  (a need step), the template request's reuse and its waits (`waitsOf`, `approvedFor`), the sandbox request's approval
+  by the person who approved the template (`approverOf`), and the run cards (`waitsForPerson`, `approvalsOf`).
+- **No approval is taken away.** An approval for one job of a template already approved for every job, with the same
+  image, tools, egress hosts and secrets, stays for every job: a card for one job never narrows what others had.
+
+**Migration.** `approval.jobs` is a new optional field of the template's JSON body: no schema change. An approval kept
+before has no `jobs`, so it covers every job, as it did: nothing that works today stops. A build before this one reads
+an approval with `jobs` as one for every job: on a downgrade, a run approved for one job is approved for all, as before
+part 3. Waiting templates were turned into run cards in part 1.
+
+**Not built.** A box a person attached as a machine to a template (issue #602) takes jobs by `approvalWait`, which does
+not read `jobs`: a template a job asked for has no such box. An approval for "the same kind of step" apart from the same
+needs: the template is keyed by its needs, so the same needs are the same kind of step.
+
+Tests: `test/domain/run-card-allow-again.test.ts` (the pure rules), `test/integration/need-steps.test.ts` (the real daemon:
+a card's approval names its job and remembers nothing; with allow again it is for every job and remembered),
+`test/ui/sandbox-runs-view.test.ts` (the switch and its post), `test/cli/sandbox-runs.test.ts` (`--allow-again`).
+
 **Residual risk, stated.** One click now approves the template's image, egress hosts, vault secrets and every write the
 card lists. The confirm says each of them, and the card lists them before the click. Each approval is still its own
 event (`vault.approved`, `template.profile_approved`, `vault.sandbox_approved`) that names the person.
@@ -30324,7 +30390,7 @@ starts), `test/ui/infra-plan-needs-you.test.ts` (the count, the lines, the high 
 outside event; Infra and `hopper infra plans` list it; `hopper infra approve` or Approve on Infra wakes the job; a plan not
 recorded ends the wait at once and tells the job why).
 
-## The critical job tracker (issue #2203, part 1, 2026-10-19)
+## The critical job tracker (issue #2203, parts 1 and 2, 2026-10-19)
 
 Owner report, during a production outage: a critical job's template approval had no badge (issue #2196), and a question
 the operator did not see cost minutes. What a critical job waits on must be in front of the person on every page.
@@ -30359,9 +30425,27 @@ number would make two kinds of critical. The widget is sticky in the page, not a
 no toast, and it fits a phone's width. The ended-job dismissal is per browser, as the other notices are: it is a view
 setting, not a decision.
 
-**Left for a later part.** A **critical flag** a person sets on any job, whatever its priority (a route, an event, the
-job's field and the UI's toggle). Until then a job is critical only by its priority.
-
 Tests: `test/ui/critical-jobs.test.ts` (the model), `test/ui/critical-tracker.test.ts` (the whole app in happy-dom: on
 every page and after a reload, live from the stream, each wait's action by its home's route, the dismissal after a
 reload), `test/integration/high-priority.test.ts` (the queue answers the critical priority, and 0 when it is off).
+
+### Part 2: the critical flag (2026-10-20)
+
+- **The flag.** `critical: true` on the job (`src/domain/types.ts`; the job's body is JSON, so no migration). A job with
+  it is a critical job whatever its priority, also while the critical priority is 0 (`isCriticalJob`,
+  `ui/src/model/critical-jobs.ts`).
+- **The route.** `POST /ui/api/jobs/:id/critical` with `{ critical: boolean }`, least role operator, the API's too
+  (`jobs:critical`). The engine (`src/engine/critical-flag.ts`) sets or clears it in one transaction with
+  `job.critical_flag_changed` (`critical`, `person`, `via`). 409 when it marks a job that ended; a clear is taken on any
+  job. The same flag again records nothing.
+- **The toggle.** The job view's **critical** row (`ui/src/views/job-critical.tsx`) says whether the job is critical and
+  why — the flag first, else its priority —, with **Mark critical** (a job that has not ended) or **Clear critical flag**.
+
+**Decided here.** The flag changes only what the tracker shows. The lane over the cap stays a rule of the critical
+priority (help/lanes.md: "a rule of the priority, not a label"), so a person's flag spends no usage past the caps. The
+flag is a mark on one job: a new job of the same item (run again, rework, a fork) does not take it. No box token: the
+flag starts nothing.
+
+Tests: `test/integration/critical-flag.test.ts` (set and clear through the real daemon, with who acted; the same flag
+again, an ended job, an unknown job, no session, a bad body), `test/ui/critical-jobs.test.ts` (a flagged job is
+tracked), `test/ui/job-critical-view.test.ts` (the job view's row and its buttons).

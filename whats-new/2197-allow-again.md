@@ -1,0 +1,1 @@
+- Approving a job's sandbox run now approves it for that job only. Turn on Allow again on the card to let later jobs with the same needs run without asking you.

@@ -9,6 +9,7 @@
 // Issue #2197: one card per run. A job's ask that waits on a template, on its run, or on both, is one card: what the step
 // will do and its undo, the access it needs (profiles, secrets, egress, image) and the job. Approve approves it all at
 // once (`approve-run`), and the job's step goes on; Decline tells the job no. High-priority jobs' cards come first.
+// Part 3: the approval is for this job only; Allow again, on the card, approves the access for later jobs too.
 import { Boxes, Check, Loader2, Rocket, TriangleAlert, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -55,15 +56,17 @@ const STATE_TEXT: Record<SandboxRequestView['state'], string> = {
 const jevText = (jev: NonNullable<RunCardView['jev']>): string =>
   jev.state === 'checking' ? 'Jev checks it now: it approves it, or leaves it to a person.' : `Jev held it for a person${jev.reason ? `: ${jev.reason}` : ''}.`;
 
-/** What one approval of the card gives (issue #2197), in words for its confirm. */
-function grants(t: TemplateView | undefined, c: RunCardView): ReactNode {
+/** What one approval of the card gives (issue #2197), in words for its confirm; `again`: allow again is on (part 3). */
+function grants(t: TemplateView | undefined, c: RunCardView, again: boolean): ReactNode {
   if (!t) return <>The job&apos;s steps run in sandboxes of <span className="font-mono">{c.template}</span>.</>;
   const changes = t.profiles.filter(highRadius), reads = t.profiles.filter((p) => !highRadius(p));
   return (
     <>
       Each step of this job runs in a new sandbox from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null}{t.egress?.length ? <>, reaching <span className="font-mono">{t.egress.join(', ')}</span> through the egress proxy</> : null}, which the hopper destroys after the step.
       {' '}It may ask for <span className="font-mono">{t.secrets.join(', ') || 'no vault secret'}</span>{reads.length ? <>, read <span className="font-mono">{reads.map(profileText).join(', ')}</span></> : null}{changes.length ? <>, and change <span className="font-mono">{changes.map(profileText).join(', ')}</span> (high radius)</> : null}.
-      {c.waits.template ? <> The hopper keeps this access approved for later steps with the same needs.</> : null}
+      {c.waits.template ? (again
+        ? <> Allow again: a later job with the same needs runs with no new card, and each change approval is remembered.</>
+        : <> For this job only: another job that asks for the same access gets a card of its own.</>) : null}
     </>
   );
 }
@@ -72,6 +75,7 @@ function grants(t: TemplateView | undefined, c: RunCardView): ReactNode {
 export function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCardView; template?: TemplateView | undefined; asks?: ProfileAsk[] | undefined; secrets: readonly VaultSecret[]; can: boolean; high?: number | undefined }) {
   const [reason, setReason] = useState('');
   const [declining, setDeclining] = useState(false);
+  const [again, setAgain] = useState(false);
   const key = runKey(c, t);
   const approval = useAccessApprovals((s) => s.items[key]);
   const selected = useAccessApprovals((s) => s.selected.includes(key));
@@ -89,7 +93,7 @@ export function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCa
         <span className={t?.label ? 'font-mono text-xs text-muted-foreground break-all' : 'font-mono text-sm font-medium break-all'}>{c.template}</span>
         {t && <TemplateRadiusBadge radius={t.radius} />}
         {high !== undefined && <HighTag priority={high} />}
-        <span className="text-xs text-warn">waits for a person{t && c.waits.template ? `: ${approvalText(t)}` : ''}</span>
+        <span className="text-xs text-warn">waits for a person{t && c.waits.template ? `: ${approvalText(t, c.jobId)}` : ''}</span>
       </div>
       <SandboxAsk purpose={c.purpose} plan={c.plan} job={{ id: c.jobId, title: c.jobTitle, url: c.jobUrl }} needs={t?.profiles} secrets={secrets} />
       {t && <TemplateRadiusReasons radius={t.radius} />}
@@ -108,9 +112,14 @@ export function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCa
       <p className="text-xs text-muted-foreground">Asked at {c.askedAt}.</p>
       {can ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Confirm title={`Run ${t?.label ?? c.template} for this job?`} action="Approve" onConfirm={() => void approveItems([runItem(c, t)])} description={grants(t, c)}>
+          <Confirm title={`Run ${t?.label ?? c.template} for this job?`} action="Approve" onConfirm={() => void approveItems([runItem(c, t, again)])} description={grants(t, c, again)}>
             <Button size="sm" disabled={pending}><Check />Approve</Button>
           </Confirm>
+          {c.waits.template && (
+            <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" title="Later jobs with the same needs run with no new card">
+              <Switch checked={again} onCheckedChange={setAgain} disabled={pending} aria-label={`Allow again: ${c.template}`} />Allow again
+            </label>
+          )}
           <Input className="h-8 max-w-64 text-sm" placeholder="Why not (the job is told)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={`Why not run ${c.template}`} />
           <Button size="sm" variant="outline" disabled={pending || reason.trim() === ''} onClick={decline}><X />Decline</Button>
           {declining ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" />Declining…</span> : <ApprovalState approval={approval} />}
