@@ -8,7 +8,7 @@ import { createSandboxRequests } from '../../src/sandbox/requests.ts';
 import { BEFORE_START_PURPOSE, sandboxesHeld } from '../../src/users/sandbox-requests.ts';
 import { job as waitingJob } from '../decider/support.ts';
 
-const ready = (name: string): TemplateView => ({ name, profiles: [], approval: { by: 'Ada', at: 'now' }, pending: { egress: [], profiles: [] } }) as unknown as TemplateView;
+const ready = (name: string): TemplateView => ({ name, profiles: [], approval: { by: 'Ada', at: 'now' }, pending: { secrets: [], image: false, egress: [], profiles: [] } }) as unknown as TemplateView;
 const templates = [ready('cluster-role-builder'), ready('web')];
 const BRIEF = 'Mint the role. Work in a box of template `cluster-role-builder`: sh "$HOPPER_STEP" box cluster-role-builder --command "…"';
 
@@ -38,9 +38,9 @@ describe('sandboxes before the start (issue #1471)', () => {
       { jobId: 'j1', template: 'cluster-role-builder', state: 'waiting', purpose: BEFORE_START_PURPOSE },
       { jobId: 'j1', template: 'web', state: 'waiting', purpose: BEFORE_START_PURPOSE },
     ]);
-    // Asked at the next Decision too: the same requests, no new event.
+    // Asked at the next Decision too: the same requests, no new event. Each run waits for a person: a run card (issue #2197).
     expect(sandboxesHeld(s.requests, () => templates, waiting)).toEqual([{ jobId: 'j1', reason }]);
-    expect(s.events.map((e) => e.type)).toEqual(['vault.sandbox_requested', 'vault.sandbox_requested']);
+    expect(s.events.map((e) => e.type)).toEqual(['vault.sandbox_requested', 'vault.run_card_opened', 'vault.sandbox_requested', 'vault.run_card_opened']);
 
     for (const r of s.requests.list()) s.requests.approve(r.id, 'Ada');
     expect(sandboxesHeld(s.requests, () => templates, waiting)).toEqual([]);
