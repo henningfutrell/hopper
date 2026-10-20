@@ -203,7 +203,9 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     pullRequest,
     // A pull request the job opened through the proxy, or its work item's — one an earlier job of the item opened (issue #1734) —,
     // or the one it was started to tend (issue #2127): `job.pull_request_tended` of the job it reruns names it the next job.
-    ownsPullRequest: (job, repo, number) => {
+    // An edit also of one its issue's text names (issue #2151, `linkedPulls`, read at intake): the job was told to update it.
+    ownsPullRequest: (job, repo, number, op) => {
+      if (op === 'pr.edit' && (job.source?.linkedPulls ?? []).some((p) => !p.unread && isPullRequest(p.url, repo, number))) return true;
       const opened = o.store.events.recent(OWNED_READ, ['github_proxy.done'], job.id)
         .some((e) => e.data.op === 'pr.create' && e.data.number === number && typeof e.data.repo === 'string' && e.data.repo.toLowerCase() === repo.toLowerCase());
       const itemPr = job.source ? o.store.workItems.get(job.source.key)?.pullRequest : undefined;

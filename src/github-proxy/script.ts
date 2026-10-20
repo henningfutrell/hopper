@@ -46,8 +46,8 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
   sh "$HOPPER_GH" pr edit N       --repo OWNER/NAME [--title TITLE] [--body TEXT | --body-file FILE]
                                                          (change its title or body: a pull request this job opened,
-                                                         or its work item's)
-  sh "$HOPPER_GH" pr close N      --repo OWNER/NAME      (close it with no merge: the same pull requests only)
+                                                         its work item's, the one it tends, or one its issue names)
+  sh "$HOPPER_GH" pr close N      --repo OWNER/NAME      (close it with no merge: the same, but not one only its issue names)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
   sh "$HOPPER_GH" check log JOB  --repo OWNER/NAME      (a failed check's full log; JOB: the last number of the check's link)
