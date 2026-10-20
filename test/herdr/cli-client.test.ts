@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 
 const BIN = fileURLToPath(new URL('./fake-herdr-bin.mjs', import.meta.url));
+// The timeout for the calls the fake answers late (in 5 s): long enough for Node to start the fake and record its call on
+// a loaded machine, so each call is counted; a shorter one ended a call before the fake recorded it.
+const SLOW_MS = 1500;
 chmodSync(BIN, 0o755);
 
 let dir: string;
@@ -142,26 +145,26 @@ describe('herdr CLI client', () => {
   });
 
   it('times out a call that hangs', async () => {
-    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: 200 });
+    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: SLOW_MS });
     // run() is the adapter's raw runner; every typed method goes through it.
     const err = await h.run(['slow']).catch((e: unknown) => e);
     expect(err).toMatchObject({ code: 'timeout' });
   });
 
   it('asks a read again when herdr answers it too late (issue #1857): a busy server answers the next one', async () => {
-    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: 300 });
+    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: SLOW_MS });
     expect(await h.getAgent('jh-slow-once')).toMatchObject({ status: 'idle', stateChangeSeq: 4 });
     expect(calls().map((c) => c.argv.slice(2))).toEqual([['agent', 'get', 'jh-slow-once'], ['agent', 'get', 'jh-slow-once']]);
   });
 
   it('a read that times out 3 times in a row is a timeout (issue #1857)', async () => {
-    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: 200 });
+    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: SLOW_MS });
     await expect(h.getAgent('jh-slow')).rejects.toMatchObject({ code: 'timeout' });
     expect(calls()).toHaveLength(3);
   });
 
   it('never sends a prompt again on a timeout: it may have reached Claude (issue #1857)', async () => {
-    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: 200 });
+    const h = createHerdrCliClient({ bin: BIN, session: 'jh-test-x', timeoutMs: SLOW_MS });
     await expect(h.prompt('jh-slow', 'go')).rejects.toMatchObject({ code: 'timeout' });
     expect(calls()).toHaveLength(1);
   });
