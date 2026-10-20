@@ -64,6 +64,16 @@ It is JSON: nodes (id, kind, name, account, region, cluster, namespace, aliases,
 sources (each source's key, when it was read last, and why it is stale). Filter it with jq. It is what the hopper found at
 its last read: to read an account or a cluster now, ask for aws-diagnostics or kube-diagnostics.`;
 
+// Issue #2167: a job parks or picks up its user's proposal or research report with its own token (src/http/job-park.ts).
+const PARK_TEXT = `park: set a proposal or a research report aside, and pick it up again. It keeps its state and output.
+
+Your token goes in a header from stdin, never on the command line:
+List the open ones, parked or not: printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS -H @- "$HOPPER_URL/job/park"
+Park one: printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS -H @- -H 'content-type: application/json' -d '{"act":"park","item":"ID","reason":"WHY"}' "$HOPPER_URL/job/park"
+Pick it up: the same, with "act":"pick-up". It waits on a decision again, as before.
+You park only an item whose job waits on it. You pick up only an item a job parked: a person's park stays.
+A parked item gets no review and no decision. A decision is a person's: you never take one.`;
+
 // Issue #2146: how a job reads a cluster's metrics, logs and dashboards in a sandbox: the observability tools, the
 // port-forward helper (src/sandbox/port-forward-helper.ts) and a Grafana Viewer token the template's vault secrets give.
 const OBSERVABILITY_TEXT = `observability: read the live metrics, logs and dashboards of a cluster (Prometheus, Loki, Grafana; Alertmanager and Tempo when it has them). Read only.
@@ -163,6 +173,12 @@ export const SKILLS: readonly Skill[] = [
     name: 'topology',
     line: 'a read-only map of the AWS accounts and clusters',
     text: TOPOLOGY_TEXT,
+  },
+  {
+    // Issue #2167: park and pick up a proposal or research report, with the job's own token (src/http/job-park.ts).
+    name: 'park',
+    line: 'set a proposal or research report aside; pick it up',
+    text: PARK_TEXT,
   },
   {
     // Issue #782: the hopper's help pages, for this version (src/help/book.ts answers it, the page its asset).

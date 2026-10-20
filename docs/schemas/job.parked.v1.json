@@ -27,7 +27,8 @@
       "enum": [
         "ui",
         "cli",
-        "api"
+        "api",
+        "job"
       ]
     },
     "reason": {
