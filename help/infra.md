@@ -25,6 +25,8 @@ Each plan shows what it changes in plain words, its risk (*low* or *high*), its 
 
 Under each plan, each apply shows the operation, the asset, the job that asked, and until when the credential is valid. The hopper never shows the credential.
 
+A job that waits on a plan's approval links to the plan here: the link opens this page with that plan marked. When a person approves the plan, the job goes on by itself. From a terminal, `hopper infra plans` lists the plans that wait, and `hopper infra approve <plan>` approves one.
+
 An admin can turn on **Auto-approve**. Then the hopper approves a low-risk uat plan when the job records it. The plan still shows on this page and on the job's timeline.
 
 ## Applies and drift
