@@ -17971,7 +17971,8 @@ owner's.
 
 - **What it is.** A **delegate approver** is a **grant** ("Grants and refresh tokens") of the preset `delegate-approver`
   (`src/domain/delegates.ts` `DELEGATE_SCOPES`): `vault:read`, `jobs:grant-vault`, `jobs:deny-vault`,
-  `vault:edit.approve-template`, `sandbox-requests:edit.approve`, `sandbox-requests:edit.decline`. A box grant, as a
+  `vault:edit.approve-template`, `sandbox-requests:edit.approve`, `sandbox-requests:edit.decline` (and, since issue #2197,
+  `sandbox-requests:edit.approve-run`, `sandbox-requests:edit.decline-run`: a run card). A box grant, as a
   sandbox request is a box action. A mint that names the preset and any other `scopes` is refused (400): it is approvals
   only, so settings, secrets, `revoke-vault`, the sandbox toggles and the master key are out of its scopes (403). Its name
   is the grant's label, its end the grant's `days`; its role is its minter's, at most. No new kind of token: the grant's

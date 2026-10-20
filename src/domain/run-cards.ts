@@ -58,15 +58,17 @@ export function approvalsOf(t: TemplateView): { whole: boolean; profiles: Operat
  * The run cards, oldest first: each waiting sandbox request of a live job; each ask of a live job that waits on a
  * template for a person; and each waiting template a live job asked for (`askedBy`), so a template that waited before a
  * restart, when the hopper kept no ask, is a card too. One card per job and template. A waiting template no live job
- * waits on is no card: nothing runs when it is approved.
+ * waits on is no card: nothing runs when it is approved. A job's run of the template a person declined is no card: the
+ * job was told no.
  */
 export function runCards(o: { templates: readonly TemplateView[]; requests: readonly SandboxRequestView[]; waits: readonly TemplateWait[]; job: CardJob }): RunCardView[] {
   const byName = new Map(o.templates.map((t) => [t.name, t]));
   const cards = new Map<string, RunCardView>();
+  const declined = new Set(o.requests.filter((r) => r.state === 'declined').map((r) => `${r.jobId} ${r.template}`));
   const add = (c: Omit<RunCardView, 'jobTitle' | 'jobUrl'>): void => {
     const key = `${c.jobId} ${c.template}`;
     const job = o.job(c.jobId);
-    if (cards.has(key) || !job) return;
+    if (cards.has(key) || declined.has(key) || !job) return;
     cards.set(key, { ...c, ...(job.title ? { jobTitle: job.title } : {}), ...(job.url ? { jobUrl: job.url } : {}) });
   };
   const about = (x: { purpose?: string; plan?: string }) => ({ ...(x.purpose ? { purpose: x.purpose } : {}), ...(x.plan ? { plan: x.plan } : {}) });
