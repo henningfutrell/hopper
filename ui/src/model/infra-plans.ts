@@ -4,8 +4,12 @@
 // whether this person may approve it: by its risk (part 3), an operator a low-risk plan in uat only, an admin any other,
 // nobody a plan that failed a check. One line per apply, and the applies and drift timeline: plans, approvals, applies and
 // out-of-band changes, newest first, each with what it touched (issue #1781: the topology links it to its nodes). The environment watchers (part 4) as a person types them: one environment a line.
-import type { InfraWatchers, OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
+import type { InfraWatchers, Job, OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
 import { changeHeadline } from './out-of-band.ts';
+import { isHighJob } from './priority.ts';
+
+/** Where one plan is (issue #2205): Infra, with that plan picked. A job's wait on it links here. */
+export const planHref = (id: string): string => `#infra/${encodeURIComponent(id)}`;
 
 export const planHeadline = (p: Omit<PlanView, 'approval'>): string =>
   `${p.tool}: ${p.target}, applied as ${p.asset.kind} ${p.asset.name}, from ${p.repo} ${p.ref} at ${p.commit.slice(0, 12)}${p.pullRequest !== undefined ? ` (pull request ${p.pullRequest})` : ''}`;
@@ -35,8 +39,18 @@ export function planApprove(p: PlanView, now: number, can: { operate: boolean; a
 }
 
 /** The plans that wait for a person at `now` (issue #897: Needs you, the Infra badge); none for an answer with no plans. */
-export const plansWaiting = (v: { plans?: PlanView[] } | undefined, now: number): number =>
-  Array.isArray(v?.plans) ? v.plans.filter((p) => planState(p, now).kind === 'waiting').length : 0;
+export const plansWaiting = (v: { plans?: PlanView[] } | undefined, now: number): number => waitingPlans(v, now).length;
+
+const waitingPlans = (v: { plans?: PlanView[] } | undefined, now: number): PlanView[] =>
+  (Array.isArray(v?.plans) ? v.plans.filter((p) => planState(p, now).kind === 'waiting') : []);
+
+/** Each plan that waits, one line (issue #2205: Needs you names them): its id, what it changes, and who approves it. */
+export const planWaitingLines = (v: { plans?: PlanView[] } | undefined, now: number): string[] =>
+  waitingPlans(v, now).map((p) => `plan ${p.id.slice(0, 8)}: ${p.summary?.words ?? planHeadline(p)} (${p.summary?.level ?? 'unknown'} risk). Waits for ${p.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'}`);
+
+/** Of the plans that wait, those a high-priority job recorded (issue #2205): the badge marks them, as it marks a high job's run card. */
+export const plansHigh = (v: { plans?: PlanView[] } | undefined, now: number, jobs: Readonly<Record<string, Pick<Job, 'priority'>>>, threshold: number | null): number =>
+  waitingPlans(v, now).filter((p) => isHighJob(jobs[p.job], threshold)).length;
 
 export interface PlanExplainer { words: string; level: 'low' | 'high'; lines: string[] }
 

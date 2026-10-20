@@ -3062,7 +3062,10 @@ and the test event are sent at once, in memory only.
   adds `machineId`, `label`, `since`); `machine.disk_over_budget` and `machine.disk_within_budget` (issue #1203, "Hopper's own
   disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are);
   `work_item.person_asked` (issue #1891, "The item lifecycle": a blocked work item waits on a person; body adds `issueUrl`,
-  `cause`, `waitingOn` in plain words and `pullRequest`; once per block, as the event is).
+  `cause`, `waitingOn` in plain words and `pullRequest`; once per block, as the event is); `vault.run_card_opened` (issue
+  #2197 part 2, "One approval per sandbox run": a new run card; body adds `repo`, `issueNumber`, `priority`, `high`,
+  `template`, `waits`, `purpose` and `accessUrl`, the Access requests view — `NotifierEvents.accessUrl` —; never the
+  template's secrets, profiles or plan; once per card, as the event is).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -23562,8 +23565,8 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   `template` approval, a vault grant, its own command, or an outside event (`what`). It is `wait.on` on the job and `on` on
   `job.waiting`.
 - **Named by the job.** `WAIT_LINE` asks for an `on:` line after `HOPPER_WAITING`: `pr 12 merge`, `o/r#12 checks`,
-  `job <id>`, `issue 45`, `question <id>`, `sandbox approval`, `template approval`, `vault grant`, `own command`,
-  `outside: <what>`. `waitFields` reads it beside `for:` and `until:`. With no `on:` line, `waitOnOf` reads it from `for:` and
+  `job <id>`, `issue 45`, `question <id>`, `sandbox approval`, `template approval`, `infra plan <id>` (issue #2205),
+  `vault grant`, `own command`, `outside: <what>`. `waitFields` reads it beside `for:` and `until:`. With no `on:` line, `waitOnOf` reads it from `for:` and
   `until:` (own command as `namesOwnCommand`; a pull request; an approval; a grant); what reads as none of them is an outside
   event with the `for:` text. So a wait is never recorded without one. A pull request or an issue number written with no
   owner (`PR #95`, `issue 4`) is in the repository the same text names, in a link or in words (`in owner/name`,
@@ -23584,6 +23587,7 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   | an item | `work_item.issue_closed`: its issue, in `repo` or the job's own repository | `<url> was closed` |
   | a question | `question.answered`, `question.closed`, `question.dismissed`, `question.expired` | `question <id> was answered` |
   | a vault grant | `vault.granted`, `vault.grant_denied` for this job | `a vault grant was given` |
+  | an infra plan (issue #2205) | `infra.plan_approved` of that plan | `infra plan <id> was approved by <who>` |
 
   An approval is not woken here: a job asks for one through a skill request, whose watch ends its wait with the answer when
   it is ready (issue #998, `src/skills/waits.ts`), the box started, not only the template approved. A wake on the approval
@@ -30179,7 +30183,19 @@ waits with no card. The decline lowers the job's trust as a sandbox request's de
 **Not built (left for later parts).** An "allow again" choice on the card: today an approval of a card keeps the
 template approved for every later job with the same needs, as before, and a person's write approval is remembered for
 the time limit. An approval for this job only needs a template approval that names its job, read by the need step's
-covering template and the template reuse. A notifier message for each new run card.
+covering template and the template reuse.
+
+**Part 2: a notice per new run card (2026-10-19).** The badge alone did not reach a person who was not looking at the
+UI. Each new run card is one event, `vault.run_card_opened` (`template`, `waits`, `purpose`), on the job's timeline,
+appended by `SandboxRequests` (`src/sandbox/requests.ts`) where the card first appears: a sandbox request that waits for
+a person (after the approvers; when Jev reads it, only once Jev holds it), or an ask that waits on a template for a
+person (`waited`, when the template waits for a person, not only for its read-only check). Once per job and template
+while the hopper runs; a restart forgets which cards were sent, so a job that asks again after a restart sends its card
+again. A waiting template a job asked for before a restart (`askedBy`) is a card with no new notice. The notifiers send
+the event: the Grok Bot routine as `vault.run_card_opened`, with the job's priority and `high`, so the receiver ranks a
+high-priority job's card first, and the Access requests link ("Grok Bot routine webhook"). Tests:
+`test/sandbox/run-card-notices.test.ts`, `test/plugins/grokbot-run-cards.test.ts`, and `test/integration/need-steps.test.ts`
+(a write need's one notice, on the real daemon).
 
 **Residual risk, stated.** One click now approves the template's image, egress hosts, vault secrets and every write the
 card lists. The confirm says each of them, and the card lists them before the click. Each approval is still its own
@@ -30190,6 +30206,51 @@ asked), `test/integration/need-steps.test.ts` (the real daemon and the real `hop
 run card and no template card; one `approve-run` and the step runs in a need box with no other approval; a declined card
 tells the step no), `test/ui/sandbox-runs-view.test.ts` (the cards, one post each; a person's own template card),
 `test/ui/needs-you.test.ts` (the count, high-priority first), `test/cli/sandbox-runs.test.ts`.
+
+## A job waits on an infra plan (issue #2205, 2026-10-19)
+
+Before: a job that waited on a person's approval of an infra plan could only say so as an outside event. The hopper did
+not know the wait was on a plan: nothing linked the job to the plan, nothing woke the job on the approval, and nothing
+checked that the plan was recorded at all. A job once waited on a production plan that no person could find on Infra, in
+Needs you or in the CLI, and the change was made by hand.
+
+- **A wait kind of its own** (`WaitOn` `{ kind: 'plan', planId }`, `src/domain/wait-on.ts`). The job writes
+  `on: infra plan <id>`; the job rules list it with the other kinds (`WAIT_LINE`). A plan id after the word `plan` reads as
+  this kind anywhere in the `on:` line, also in an outside event (`outside: gated: admin approval of infra plan <id>`), and
+  in `for:` and `until:` when there is no `on:` line. A sandbox's plan (issue #1001) has no id, so it never reads as one.
+- **Woken on the approval.** `infra.plan_approved` of that plan settles it (`settledBy`, `SETTLING_EVENT_TYPES`): the job
+  is told `infra plan <id> was approved by <who>`, from the UI, the CLI or auto-approve alike.
+- **Checked as it starts** (`planWaitEnd`, pure; `src/engine/outcome.ts`). The plan is read from the job's user's store,
+  where Infra and Needs you read it. Approved already: the wait ends at once, as the approval would end it. Not recorded,
+  stale, or failed its checks: no person can see or approve it, so the wait ends at once and the job is told why and what
+  to do (record the plan with `POST /job/infra-plans`, or plan again). A job never waits on something nobody acts on.
+- **The job is told where it shows.** `POST /job/infra-plans` answers a plan that waits with where it shows (Needs you,
+  under Infra plans, and `#infra/<id>`) and the wait line to write; the apply gate's refusal of an unapproved plan says the
+  same.
+- **One place the owner sees.** Needs you's Infra plans row, its count and the badge already counted the plans that wait
+  (issue #897). It now names each one (`planWaitingLines`, `ui/src/model/infra-plans.ts`): its short id, its summary, its
+  risk, and who approves it; and it marks the badge for a plan a high-priority job recorded (`plansHigh`), as Access
+  requests marks a high-priority job's run card (issue #2197). The shared read of `GET /api/infra-plans` is read again on
+  each `infra.plan_*` event, so a recorded plan shows at once, not at the next 30-second read.
+- **One click from the job.** A job's wait on a plan links to `#infra/<id>` (`waitOnLinkOf`, `ui/src/model/board.ts`):
+  Infra marks that plan and scrolls to it, with its Approve; a plan not recorded is said so on the page.
+- **The CLI** (`src/cli-operator-infra.ts`): `hopper infra plans` lists the plans that wait (`--all`: every plan, with its
+  state), each with its summary, its risk and who approves it; `hopper infra approve <id>` approves one by its id or the
+  short id the views show, through `POST /ui/api/infra-plans`, so the daemon checks the role by the plan's risk as for a click.
+
+**Why no second mechanism.** The plans keep their one home, Infra, and Needs you keeps one row for them, as issue #2196
+did for templates. No new table, route or migration: the wait is a field of the job, and the approval is the event it
+already was.
+
+**Not built here.** A plan that goes stale while a job waits on it does not end the wait: the job is woken only by the
+approval, a person, or its own poll. The plans of other users are not shown to an admin: each user's Infra lists that
+user's own plans, as before.
+
+Tests: `test/domain/wait-on-plan.test.ts` (the kind read from each way a job writes it, its wake, and how it ends as it
+starts), `test/ui/infra-plan-needs-you.test.ts` (the count, the lines, the high mark, the link),
+`test/integration/infra-plan-wait.test.ts` (the real daemon and CLI: a job waits on a production plan written as a gated
+outside event; Infra and `hopper infra plans` list it; `hopper infra approve` or Approve on Infra wakes the job; a plan not
+recorded ends the wait at once and tells the job why).
 
 ## The critical job tracker (issue #2203, part 1, 2026-10-19)
 

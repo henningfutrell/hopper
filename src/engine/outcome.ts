@@ -7,12 +7,12 @@ import { raisedBy } from '../domain/raised-by.ts';
 import { namesOwnCommand } from '../domain/own-command.ts';
 import { suggestionIn } from '../domain/phase.ts';
 import type { Job, JobLiveness, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
-import { settledAlready, waitOnOf, type WaitAsked } from '../domain/wait-on.ts';
+import { planWaitEnd, settledAlready, waitOnLabel, waitOnOf, type WaitAsked, type WaitOn } from '../domain/wait-on.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { cleanupDue } from './cleanup.ts';
 import { recordReport } from './reviews.ts';
-import { wakeOn } from './wait.ts';
+import { recordEndWait, wakeOn } from './wait.ts';
 
 /** What the caller must do after the commit: clean up a terminal job, or start the answer chain. */
 export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'report'; review: ReviewKind; itemId: string } | { kind: 'wait' };
@@ -59,6 +59,7 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
  * `until:` names its own background command is marked `ownCommand` (issue #1037): it shows as running. `on` (issue #1245): what
  * it waits on, from its `on:` line or what it wrote. What it waits on happened already — its issue closed, its pull request
  * merged or closed, as the work-item ledger holds it (issue #1356) —: its wait ends at once, as that event would end it.
+ * An infra plan's approval (issue #2205) ends at once too: approved already, or never to be approved by anyone (`planWaitEnd`).
  */
 function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId, w: WaitAsked, at: string): Recorded {
   const asked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}), ...(w.on ? { on: maskGitHubTokens(w.on) } : {}) };
@@ -75,7 +76,19 @@ function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId
   // What it waits on happened already (issue #1356): no event comes for it now, so the hopper ends the wait at once.
   const settled = settledAlready(masked.on, job.source?.repo, c.store.workItems);
   if (settled && wakeOn(c, settled).length > 0) setImmediate(() => c.trigger('job.wait_ended'));
+  else if (endPlanWait(c, job.id, masked.on)) setImmediate(() => c.trigger('job.wait_ended'));
   return { kind: 'wait' };
+}
+
+/** In the tx (issue #2205): a wait on an infra plan that is approved already, or that no person can approve, ends now. True when it ended. */
+function endPlanWait(c: EngineContext, jobId: string, on: WaitOn): boolean {
+  if (on.kind !== 'plan') return false;
+  const plan = c.store.infraPlans.get(on.planId);
+  const end = planWaitEnd(on.planId, plan, plan ? c.store.infraPlans.approval(plan.id) : undefined, c.clock.now());
+  if (!end) return false;
+  if ('settled' in end) return wakeOn(c, end.settled).length > 0;
+  recordEndWait(c, jobId, end.told, 'hopper', () => `[hopper] The hopper ended your wait (${waitOnLabel(on)}): ${end.told}.`);
+  return true;
 }
 
 /** Frees a lane whose job no longer runs on it: a draining one closes, any other goes idle. */

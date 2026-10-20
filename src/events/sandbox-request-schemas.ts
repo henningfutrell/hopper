@@ -18,6 +18,8 @@ export const SANDBOX_REQUEST_EVENT_SCHEMAS = {
   }),
   'sandbox.strictness_changed': strict({ from: STRICTNESS, to: STRICTNESS, by: z.string() }),
   'vault.sandbox_requested': strict({ request: z.string(), template: z.string() }),
+  // Issue #2197 part 2: a new run card, one per job and template; the notifiers send it.
+  'vault.run_card_opened': strict({ template: z.string(), waits: strict({ template: z.boolean(), run: z.boolean() }), purpose: z.string().optional() }),
   'vault.sandbox_approved': strict({ request: z.string(), template: z.string(), by: z.string(), radius: level.optional() }),
   'vault.sandbox_declined': strict({ request: z.string(), template: z.string(), reason: z.string(), by: z.string() }),
   'vault.sandbox_started': strict({ request: z.string(), template: z.string(), container: z.string() }),

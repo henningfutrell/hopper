@@ -19,8 +19,8 @@
 //   Scenario: a template a person saved that declares the need and more is used: the step is minted only its need
 //   Scenario: a write need waits for a person; one approval, and the step goes on with no other action; a change with
 //     no approved plan is refused by the apply gate, and nothing is minted
-//   Scenario: a write need is one run card (issue #2197): the template it waits on is no card of its own; one approval
-//     of the run card, and the step goes on with no other approval; a declined card tells the step no
+//   Scenario: a write need is one run card (issue #2197): the template it waits on is no card of its own; one notice of
+//     the card; one approval of the run card, and the step goes on with no other approval; a declined card tells the step no
 //   Scenario: sandbox strictness locked for the template (issue #655 part 8): the need step is refused, saying why
 //   Scenario: a need the vault mints nothing for is refused, saying why; a bad call is refused before anything runs
 import { spawn } from 'node:child_process';
@@ -184,6 +184,8 @@ describe('need steps (issue #1007)', () => {
     expect(templateCards(v.templates, v.runs ?? [])).toEqual([]);
     expect((v.sandboxRequests ?? []).filter((r) => r.state === 'waiting')).toEqual([]);
     expect(t).toMatchObject({ image: expect.any(String), pending: { profiles: [{ operation: 'write' }] } });
+    // The run card's notice (part 2), once, on the job's timeline: the notifiers send it.
+    expect((await ofJob(b, jobId)).filter((e) => e.type === 'vault.run_card_opened').map((e) => e.data)).toEqual([{ template: t!.name, waits: { template: true, run: false }, purpose: WHY[1] }]);
 
     // One approval: the template, its write profile and the run. No other approval; the step goes on by itself.
     const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: t!.name }, { token: b.token });

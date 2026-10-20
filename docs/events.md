@@ -5084,6 +5084,27 @@ Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked 
 }
 ```
 
+## `vault.run_card_opened`
+
+Version 1 (`docs/schemas/vault.run_card_opened.v1.json`). A new **run card** (issue #2197, design.md "One approval per sandbox run"): the job's run of `template`, or its ask that waits on it, waits for a person on Access requests. `waits` says what the one approval approves: the template (its image, tools, egress, secrets or profiles), the run, or both. `purpose`: why the job asks, in its words. One per job and template while the hopper runs; not while Jev reads the run. The notifiers send it (the Grok Bot routine as `vault.run_card_opened`, with the job's priority and the Access requests link). On the job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `template` | string | yes |
+| `waits` | object | yes |
+| `purpose` | string | no |
+
+```json
+{
+  "template": "asked-3f2a9c1d0e4b",
+  "waits": {
+    "template": true,
+    "run": true
+  },
+  "purpose": "Rotate the deploy key of the staging cluster"
+}
+```
+
 ## `vault.sandbox_approved`
 
 Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before, or `Jev` when Jev's sandbox check (issue #655 part 13, the decision point `sandbox-request` active) allowed a run one of those would approve. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.

@@ -11,7 +11,7 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 | Intake | **Intake** | Issues from people who are not trusted actors, waiting for your approval. |
 | Access requests | **Access requests** | Credentials, vault grants, box templates and sandbox runs that wait for your approval. Nothing else. A job's run counts once, on its card, with the template it needs, while the job waits, and stops when the job ends. A high-priority job's card marks the badge and comes first. |
 | Unknown clusters | **Access requests** | Templates that name a cluster the vault cannot find, or a short name of more than one cluster. No approval makes them work, so the Access requests badge does not count them. |
-| Infra plans | **Infra** | Plans of infrastructure changes that wait for a person to approve them. |
+| Infra plans | **Infra** | Plans of infrastructure changes that wait for a person to approve them, one line each: what the plan changes, its risk, and who approves it. A plan of a high-priority job marks the badge. A job that waits on a plan links to that plan on Infra. |
 | Questions | **Questions** | Questions jobs asked you. |
 | Proposals | **Proposals** | Proposals that wait for you to pick a path. |
 | Research | **Research** | Research reports that wait for you to accept or steer them. |

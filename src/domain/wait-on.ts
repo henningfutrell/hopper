@@ -3,9 +3,12 @@
 // HOPPER_WAITING; with none, it is read from its `for:` and `until:`, and what reads as nothing else is an outside event.
 // A job never enters `waiting_on` without one (`waitEntryProblem`, checked where a job is written). The event that settles
 // it wakes the job (`settledBy`, `waitsFor`; engine/wait.ts). The items an item or outside wait names are watched too
-// (issue #1508, watched-items.ts). Pure.
+// (issue #1508, watched-items.ts). An infra plan's approval (issue #2205): the plan must be recorded where Infra and Needs you
+// read it; else, or once nobody can approve it, the wait ends at once and the job is told why (`planWaitEnd`). Pure.
 import type { EventType } from './event-types.ts';
+import { failedChecks, type InfraPlan, type PlanApproval } from './infra-plans.ts';
 import { namesOwnCommand } from './own-command.ts';
+import { nameWithoutEmail } from './users.ts';
 import type { Job } from './types.ts';
 import { endedNote } from './watched-items.ts';
 import type { WorkItem } from './work-items.ts';
@@ -27,6 +30,8 @@ export type WaitOn =
   | { kind: 'question'; questionId: string }
   | { kind: 'approval'; of: 'sandbox' | 'template' }
   | { kind: 'grant' }
+  // Issue #2205: a person's approval of the infra plan of this id.
+  | { kind: 'plan'; planId: string }
   | { kind: 'own_command' }
   | { kind: 'outside'; what: string; why?: OutsideWhy };
 
@@ -74,6 +79,14 @@ function approvalIn(text: string): WaitOn | undefined {
   return undefined;
 }
 
+/** An infra plan named by its id (issue #2205): `infra plan <id>`, `plan <id>`. A sandbox's plan has no id, so it never reads as one. */
+const PLAN_AT = /\bplan\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i;
+
+function planIn(text: string): WaitOn | undefined {
+  const m = PLAN_AT.exec(text);
+  return m ? { kind: 'plan', planId: m[1]!.toLowerCase() } : undefined;
+}
+
 const OUTSIDE_WHY: [RegExp, OutsideWhy][] = [[/^not\s+managed\b\s*[:\-–—]?\s*/i, 'not_managed'], [/^gated\b\s*[:\-–—]?\s*/i, 'gated']];
 
 /** An outside event, with why a person acts when its text starts with it: `not managed: <what>`, `gated: <what>`. */
@@ -88,6 +101,9 @@ function outsideOf(text: string): WaitOn {
 /** An `on:` line, as the job rules say to write it; undefined when it reads as none of them. */
 function onLine(on: string): WaitOn | undefined {
   const s = on.trim();
+  // An infra plan's approval, though the job wrote it as an outside event (issue #2205): the hopper knows where it waits.
+  const plan = planIn(s);
+  if (plan) return plan;
   const outside = /^outside\b:?\s*(.*)$/i.exec(s);
   if (outside) return outsideOf(outside[1] || s);
   if (/^own\s+command\b/i.test(s)) return { kind: 'own_command' };
@@ -110,7 +126,7 @@ export function waitOnOf(w: WaitAsked): WaitOn {
   if (w.on?.trim()) return onLine(w.on) ?? { kind: 'outside', what: w.on.trim() };
   if (namesOwnCommand(w)) return { kind: 'own_command' };
   const text = `${w.for} ${w.until ?? ''}`;
-  return approvalIn(text) ?? (/\bgrant\b/i.test(text) ? { kind: 'grant' } : undefined) ?? pullRequestIn(text) ?? { kind: 'outside', what: w.for };
+  return planIn(text) ?? approvalIn(text) ?? (/\bgrant\b/i.test(text) ? { kind: 'grant' } : undefined) ?? pullRequestIn(text) ?? { kind: 'outside', what: w.for };
 }
 
 const OUTSIDE_WHY_WORDS: Record<OutsideWhy, string> = { not_managed: 'not managed', gated: 'gated' };
@@ -126,6 +142,7 @@ export function waitOnLabel(on: WaitOn): string {
     case 'question': return `a person's answer to question ${on.questionId}`;
     case 'approval': return `${on.of} approval`;
     case 'grant': return 'a vault grant';
+    case 'plan': return `approval of infra plan ${on.planId}`;
     case 'own_command': return 'its own command';
     case 'outside': return `outside (${on.why ? OUTSIDE_WHY_WORDS[on.why] : 'reason not given'}): ${on.what}`;
   }
@@ -143,6 +160,7 @@ export type Settled = { note: string } & (
   | { kind: 'job'; jobId: string }
   | { kind: 'question'; questionId: string }
   | { kind: 'grant'; jobId: string }
+  | { kind: 'plan'; planId: string }
   // Issue #1508: everything the job's wait names ended (watched-items.ts).
   | { kind: 'watched'; jobId: string });
 
@@ -153,7 +171,7 @@ const QUESTION_ENDS: Record<string, string> = { 'question.answered': 'was answer
 /** Every event type `settledBy` reads (issue #1571: the hopper reads them again for a wake a stop lost). */
 export const SETTLING_EVENT_TYPES: readonly EventType[] = [
   'job.pull_request_merged', 'job.pull_request_closed', 'job.waited_pull_request_ended', 'work_item.issue_closed', 'job.waited_items_ended',
-  'vault.granted', 'vault.grant_denied', 'job.finished', 'job.failed', 'job.cancelled',
+  'vault.granted', 'vault.grant_denied', 'infra.plan_approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
 ];
 
@@ -186,6 +204,10 @@ export function settledBy(e: { type: string; jobId?: string; data?: unknown }): 
     }
     case 'vault.granted': case 'vault.grant_denied':
       return e.jobId ? { kind: 'grant', jobId: e.jobId, note: `a vault grant was ${e.type === 'vault.granted' ? 'given' : 'denied'}` } : undefined;
+    case 'infra.plan_approved': {
+      const plan = str('plan');
+      return plan ? { kind: 'plan', planId: plan, note: `infra plan ${plan} was approved by ${nameWithoutEmail(str('by') ?? 'a person')}` } : undefined;
+    }
   }
   if (JOB_ENDS[e.type]) return e.jobId ? { kind: 'job', jobId: e.jobId, note: `job ${e.jobId} ${JOB_ENDS[e.type]}` } : undefined;
   const q = str('questionId');
@@ -203,6 +225,7 @@ export function waitsFor(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, s:
     case 'job': return 'jobId' in s && on.jobId === s.jobId;
     case 'question': return 'questionId' in s && on.questionId === s.questionId;
     case 'grant': return 'jobId' in s && job.id === s.jobId;
+    case 'plan': return 'planId' in s && on.planId === s.planId;
     default: return false;
   }
 }
@@ -254,4 +277,18 @@ export function settledAlready(on: WaitOn, ownRepo: string | undefined, ledger: 
   const url = `https://github.com/${repo}/pull/${on.number}`;
   const state = ledger.byPullRequest(url)?.pullRequestState;
   return state === 'merged' || state === 'closed' ? { kind: 'pull_request', repo, number: on.number, note: `${url} was ${state}` } : undefined;
+}
+
+/**
+ * How a wait on an infra plan ends as it starts (issue #2205), or undefined while a person can approve it: approved already,
+ * it is settled; not recorded, stale, or failed its checks, no person can see or approve it, so the job is told why
+ * (`told`) rather than wait on something nobody acts on. `plan`: the plan of that id, as the job's user's store keeps it.
+ */
+export function planWaitEnd(planId: string, plan: Pick<InfraPlan, 'id' | 'expiresAt' | 'summary'> | undefined, approval: Pick<PlanApproval, 'by'> | undefined, now: Date): { settled: Settled } | { told: string } | undefined {
+  if (!plan) return { told: `no infra plan ${planId} is recorded on this hopper, so no person can see or approve it. Record the plan with POST /job/infra-plans; its answer names the plan's id. Then wait with on: infra plan <that id>` };
+  if (approval) return { settled: { kind: 'plan', planId, note: `infra plan ${planId} was approved by ${nameWithoutEmail(approval.by)}` } };
+  const failed = failedChecks(plan);
+  if (failed) return { told: `infra plan ${planId} failed its checks, so nobody approves it: ${failed}. Fix the code, plan again, and record the new plan` };
+  if (now.getTime() >= Date.parse(plan.expiresAt)) return { told: `infra plan ${planId} is stale since ${plan.expiresAt}, so nobody approves it. Plan again, record the new plan, and wait on it` };
+  return undefined;
 }
