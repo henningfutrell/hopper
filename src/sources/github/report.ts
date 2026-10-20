@@ -24,7 +24,7 @@ import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
-import { isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
+import { isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
 import type { OutboxChange } from '../../domain/github-outbox.ts';
 import type { GitHubOutbox } from './outbox.ts';
@@ -114,7 +114,7 @@ async function pullRequestOf(api: GitHubApi, repo: string, number: number): Prom
   const newest = <P extends { createdAt: string }>(prs: P[]): P | undefined => [...prs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   const ready = <P extends { isDraft: boolean; conflicting: boolean; createdAt: string }>(prs: P[]): P | undefined => newest(prs.filter((pr) => !pr.isDraft && !pr.conflicting));
   const whole = (url: string) => ({ url, part: false });
-  const closing = await api.openClosingPullRequests(repo, number);
+  const closing = await openClosingWork(api, repo, number);
   const closes = ready(closing);
   if (closes) return whole(closes.url);
   const mentions = (await api.referencingPullRequests(repo, number))
