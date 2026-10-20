@@ -67,6 +67,14 @@ describe('run cards (issue #2197)', () => {
     expect(cards.every((c) => c.template === 'w')).toBe(true);
   });
 
+  it('a job\'s run a person declined is no card, though its template still waits', () => {
+    const cards = runCards({
+      templates: [waitingTemplate('t', { askedBy: 'j1' })], requests: [request({ state: 'declined', reason: 'no' })], job: live(['j1']),
+      waits: [{ jobId: 'j1', template: 't', askedAt: '2026-10-19T03:00:00.000Z' }],
+    });
+    expect(cards).toEqual([]);
+  });
+
   it('a template card is left only for a template a person saved, that no run card holds', () => {
     const own = waitingTemplate('own', { savedBy: 'a person' });
     const asked = waitingTemplate('asked', { askedBy: 'gone' });
