@@ -238,7 +238,7 @@ describe('empty states: every page renders when nothing waits (issue #897)', () 
   it('Access requests with nothing waiting shows each panel, with what will show there', async () => {
     await boot('#access-requests', { vault: EMPTY_VAULT });
     await vi.waitFor(() => expect(document.querySelectorAll('[data-access-panel]').length).toBe(5));
-    for (const empty of ['No job asks for a credential', 'No job waits for a vault grant', 'No template waits for approval', 'No sandbox run waits', 'No template names a cluster the vault cannot find']) expect(main().textContent).toContain(empty);
+    for (const empty of ['No job asks for a credential', 'No job waits for a vault grant', 'No template of yours waits for approval', 'No sandbox run waits', 'No template names a cluster the vault cannot find']) expect(main().textContent).toContain(empty);
   });
 
   it('Access requests when the vault cannot be read says so, and still renders', async () => {

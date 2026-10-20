@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { NEEDS_YOU_KINDS, needsYouRows, needsYouTotal, type NeedsYouCounts } from '../../ui/src/model/needs-you.ts';
 import { plansWaiting } from '../../ui/src/model/infra-plans.ts';
 import { checksProblemLines, conflictedPullRequests, gaveUpLines } from '../../ui/src/model/pull-requests.ts';
-import { accessRequestsHigh, accessRequestsWaiting, rereadsVault, templateWaits } from '../../ui/src/model/vault.ts';
+import { accessRequestsHigh, accessRequestsWaiting, ownTemplatesWaiting, rereadsVault, runCardsOf, templateWaits } from '../../ui/src/model/vault.ts';
 import { stuckLandingLines } from '../../ui/src/model/landing-batches.ts';
 import { yoloIndicator } from '../../ui/src/model/yolo-mode.ts';
 import type { Job, LandingBatchesView, PlanView, PullRequestCard, PullRequestsView, TemplateView, VaultView, YoloModeView } from '../../ui/src/model/wire.ts';
@@ -98,31 +98,41 @@ describe('Access requests: what waits on a person (issue #897)', () => {
     expect(accessRequestsWaiting(view)).toBe(4);
     expect(accessRequestsWaiting(null)).toBe(0);
   });
+
+  it('issue #2197: a run card counts once, its template with it; a template a job asked for counts only on its run card', () => {
+    const run = { jobId: 'j1', template: 'asked-1', askedAt: '2026-10-19T02:00:00.000Z', waits: { template: true, run: true }, request: 'q1' };
+    const view = {
+      secrets: [], backends: [], templates: [template({ name: 'asked-1', approval: undefined, askedBy: 'j1' }), template({ name: 'asked-2', approval: undefined, askedBy: 'gone' }), template({ name: 'own', approval: undefined })],
+      sandboxRequests: [{ id: 'q1', jobId: 'j1', template: 'asked-1', state: 'waiting', askedAt: run.askedAt }], runs: [run, { ...run, jobId: 'j2', template: 'asked-9', request: undefined }],
+    } as unknown as VaultView;
+    expect(ownTemplatesWaiting(view).map((t) => t.name)).toEqual(['own']);
+    expect(accessRequestsWaiting(view)).toBe(3);
+    // A high-priority job's card comes first and marks the badge.
+    expect(runCardsOf(view, (id) => id === 'j2').map((c) => c.jobId)).toEqual(['j2', 'j1']);
+    expect(accessRequestsHigh(view, { j2: { status: 'running', priority: 100 } }, 75)).toBe(1);
+    expect(needsYouRows(counts({ access: 3, accessHigh: 1 })).find((r) => r.kind === 'access')).toMatchObject({ n: 3, high: 1 });
+  });
 });
 
-describe('A template a job saved and waits on (issue #2196)', () => {
+describe('A template a job saved and waits on (issue #2196; its run card since issue #2197)', () => {
   const job = (id: string, status: Job['status'], priority = 0): Job => ({ id, status, priority } as unknown as Job);
   const asked = template({ name: 'asked-9bba3422fa25', askedBy: 'j1', pending: { image: true, secrets: [], egress: [], profiles: [{ operation: 'write', asset: { kind: 'aws-account', name: '1' } }] } } as Partial<TemplateView>);
-  const vault = (o: Partial<VaultView> = {}): VaultView => ({ secrets: [], backends: [], templates: [asked], ...o } as unknown as VaultView);
+  const card = { jobId: 'j1', template: asked.name, askedAt: '2026-10-19T01:37:41.000Z', waits: { template: true, run: false } };
+  const vault = (o: Partial<VaultView> = {}): VaultView => ({ secrets: [], backends: [], templates: [asked], runs: [card], ...o } as unknown as VaultView);
 
-  it('counts in Access requests while its job waits, and no longer when the job ended or the template was approved', () => {
-    expect(accessRequestsWaiting(vault(), { j1: job('j1', 'waiting_on') })).toBe(1);
-    expect(accessRequestsWaiting(vault(), { j1: job('j1', 'failed') })).toBe(0);
-    expect(accessRequestsWaiting(vault(), { j1: job('j1', 'finished') })).toBe(0);
-    expect(accessRequestsWaiting(vault({ templates: [template({ name: 'asked-9bba3422fa25', askedBy: 'j1' } as Partial<TemplateView>)] }), { j1: job('j1', 'waiting_on') })).toBe(0);
+  it('counts in Access requests once, on its run card, while its job waits; no longer when the daemon drops the card (the job ended, or the template was approved)', () => {
+    expect(accessRequestsWaiting(vault())).toBe(1);
+    expect(accessRequestsWaiting(vault({ runs: [] }))).toBe(0);
   });
 
-  it('counts a template a person saved, or one whose job the UI does not hold', () => {
-    expect(accessRequestsWaiting(vault({ templates: [template({ approval: undefined })] }), {})).toBe(1);
-    expect(accessRequestsWaiting(vault(), {})).toBe(1);
+  it('counts a template a person saved', () => {
+    expect(accessRequestsWaiting(vault({ templates: [template({ approval: undefined })], runs: [] }))).toBe(1);
   });
 
   it('marks it high priority when its job is, as a sandbox run of a high-priority job', () => {
-    const run = { id: 'r', jobId: 'j2', template: 't', state: 'waiting' };
-    const view = vault({ sandboxRequests: [run] } as unknown as Partial<VaultView>);
+    const view = vault({ runs: [card, { jobId: 'j2', template: 't', askedAt: card.askedAt, request: 'r', waits: { template: false, run: true } }] } as unknown as Partial<VaultView>);
     expect(accessRequestsHigh(view, { j1: job('j1', 'waiting_on', 100), j2: job('j2', 'running', 100) }, 75)).toBe(2);
     expect(accessRequestsHigh(view, { j1: job('j1', 'waiting_on', 50), j2: job('j2', 'running', 50) }, 75)).toBe(0);
-    expect(accessRequestsHigh(view, { j1: job('j1', 'failed', 100) }, 75)).toBe(0);
     expect(accessRequestsHigh(view, { j1: job('j1', 'waiting_on', 100) }, null)).toBe(0);
     expect(accessRequestsHigh(null, {}, 75)).toBe(0);
   });
