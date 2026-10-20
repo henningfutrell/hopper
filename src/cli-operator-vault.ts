@@ -10,6 +10,7 @@ import { MINTS_FOR_KINDS, mintsForProblem } from './domain/minting.ts';
 import type { StateBackend } from './domain/state-backend.ts';
 import { unknownAssetText } from './domain/unknown-assets.ts';
 import { imageApproved, type VaultView } from './domain/vault.ts';
+import { ACTION_USAGE, ACTION_VERBS, actionCall } from './cli-operator-actions.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
 export const VAULT_USAGE = `  hopper vault                                       the vault: its secrets and templates, with what waits for a person; never a value
@@ -61,9 +62,10 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper sandbox decline <request> --reason <text>   decline a sandbox request: the job is told why
   hopper sandbox runs                                the run cards: each job's run that waits for a person, its template with it
   hopper sandbox approve-run <job> <template> [--allow-again]
-                                                     approve a run card once: its template, each profile it lists, and the run;
+                                                     approve a run card once: its template, each profile it lists, the run and its AWS actions;
                                                      for this job only, or with --allow-again for later jobs too
-  hopper sandbox decline-run <job> <template> --reason <text>   decline a run card: the job is told why`;
+  hopper sandbox decline-run <job> <template> --reason <text>   decline a run card: the job is told why
+${ACTION_USAGE}`;
 
 const VAULT_SET = 'vault set <name> [--scope <text>] [--mints <kind>/<name>|none] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
@@ -261,6 +263,8 @@ export function grantCall(args: string[]): Call {
 }
 
 export function sandboxCall(args: string[]): Call {
+  // Issue #2206: a job's asks for an AWS action and the grants.
+  if (ACTION_VERBS.includes(args[0] ?? '')) return actionCall(args);
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, 'allow-again': { type: 'boolean' } } });
   const [verb, ...extra] = positionals;
   if (verb === 'list' && extra.length === 0 && Object.keys(values).length === 0) return { role: 'viewer', path: '/api/sandboxes' };

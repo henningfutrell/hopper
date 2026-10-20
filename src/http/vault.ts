@@ -3,7 +3,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { profileRef } from '../domain/confirmation-asks.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
-import { runCards } from '../domain/run-cards.ts';
+import { looseAsks, runCards } from '../domain/run-cards.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import { knownClusters, shortClusters, unknownAssets, type ClusterFacts } from '../domain/unknown-assets.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
@@ -48,15 +48,16 @@ export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & 
     return a ? [{ template: t.name, ...p, ...a }] : [];
   }));
   const requests = parts.sandboxRequests?.list() ?? [];
-  const runs = runCards({ templates, requests, waits: parts.sandboxRequests?.waits() ?? [], job: (id) => cardJob(parts.store, id) });
+  const actions = actionAsks(parts.store, new Date());
+  const runs = runCards({ templates, requests, waits: parts.sandboxRequests?.waits() ?? [], job: (id) => cardJob(parts.store, id), actionAsks: actions });
   return {
     ...view, templates, readPolicy: parts.store.settings.getReadPolicy()?.assets ?? [], ...(asks.length ? { asks } : {}),
     // Sandboxes jobs start (issue #991): the toggles, and the requests of jobs at work.
     // The auto-approve policy (issue #1001) answered in full, the default where none was set.
     sandboxApprovals: approvalsInFull(parts.store.settings.getSandboxApprovals() ?? NO_SKIPS), sandboxRequests: requests, runs,
     rememberedWrites: rememberedNow(parts.store),
-    // Issue #2206: the asks for an AWS action that wait for a person, and the grants live now.
-    actionAsks: actionAsks(parts.store, new Date()), actionGrants: grantsNow(parts.store, new Date()),
+    // Issue #2206: the asks for an AWS action that wait for a person and no run card holds, and the grants live now.
+    actionAsks: looseAsks(actions, runs), actionGrants: grantsNow(parts.store, new Date()),
   };
 }
 

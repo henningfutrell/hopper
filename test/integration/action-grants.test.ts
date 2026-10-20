@@ -286,6 +286,13 @@ describe('action grants (issue #2206)', () => {
     expect(card).toMatchObject({ jobId: b.job, waits: { template: true }, actions: [expect.objectContaining({ job: b.job, ...SCOPE, why: WHY[1] })] });
     expect(v.actionAsks).toEqual([]);
 
+    // An agent's API token may not decide a card that asks for an AWS action: a person grants it.
+    const minted = await b.a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'agent', scopes: ['*'], minutes: 10, box: true }, { token: b.session });
+    expect(minted.status, JSON.stringify(minted.body)).toBe(200);
+    const byToken = await fetch(`${b.a.url}/ui/api/sandbox-requests`, { method: 'POST', body: JSON.stringify({ action: 'approve-run', job: b.job, template: card.template }), headers: { authorization: `Bearer ${minted.body.token}`, 'content-type': 'application/json' } });
+    expect(byToken.status, await byToken.clone().text()).toBe(403);
+    expect(await byToken.text()).toContain('a person decides it');
+
     // One approval of the card: nothing else is approved or granted by hand.
     const ok = await decide(b, { action: 'approve-run', job: b.job, template: card.template });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
@@ -302,16 +309,17 @@ describe('action grants (issue #2206)', () => {
   it('the run card: one decline-run declines the action too; the step is told no and nothing is minted', async () => {
     const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
     const plan = await approvedPlan(b);
-    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan-id', plan.id, '--command', 'true', '--wait', '60']);
+    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', ABOUT.plan, '--plan-id', plan.id, '--command', 'true', '--wait', '60']);
     await run.waiting;
     const card = (await vaultOf(b)).runs![0]!;
     expect((await decide(b, { action: 'decline-run', job: b.job, template: card.template, reason: 'scale it in terraform' })).status).toBe(200);
     const r = await run.end;
+    // A run card's decline is a person's deny at gate 2: the step is told no, and the action's ask is declined too.
     expect(r.code).not.toBe(0);
-    expect(r.stdout + r.stderr).toContain('scale it in terraform');
+    expect(r.stderr).toMatch(/\bno: /);
     expect((await ofJob(b)).find((e) => e.type === 'vault.action_declined')?.data).toMatchObject({ job: b.job, ...SCOPE, reason: 'scale it in terraform' });
     const v = await vaultOf(b);
     expect([v.runs, v.actionAsks, v.actionGrants]).toEqual([[], [], []]);
-    expect(b.sts.seen.filter((x) => decodeURIComponent(x.body).includes('role/hopper-action'))).toHaveLength(0);
+    expect(b.sts.seen.filter((x) => decodeURIComponent(x.body).includes(`RoleArn=arn:aws:iam::${ACCOUNT}:role/hopper-action`))).toHaveLength(0);
   });
 });
