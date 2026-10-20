@@ -1,9 +1,8 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
 // A secret kept in a vault backend (issue #585) says where: the backend and the reference read there at each use.
-import { jobEnded } from './intake.ts';
-import { isHighJob } from './priority.ts';
-import type { Asset, CredentialRequest, Job, OperationProfile, ProfileAsk, SandboxApprovals, SandboxRequestView, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
+import { highFirst, isHighJob } from './priority.ts';
+import type { Asset, CredentialRequest, Job, OperationProfile, ProfileAsk, RunCardView, SandboxApprovals, SandboxRequestView, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -140,29 +139,37 @@ export const rereadsVault = (type: string): boolean => type.startsWith('vault.')
 export const templateWaits = (t: TemplateView): boolean =>
   !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
 
-/** The sandbox runs jobs asked for that wait for a person (issue #991). */
-export const sandboxRunsWaiting = (v: VaultView | null): SandboxRequestView[] => (v?.sandboxRequests ?? []).filter((r) => r.state === 'waiting');
+/**
+ * The run cards (issue #2197): one per job and template that waits for a person, its template's approval and its run in
+ * one; high-priority jobs first (issue #535), then oldest first, as the daemon answers them.
+ */
+export const runCardsOf = (v: VaultView | null, high: (jobId: string) => boolean = () => false): RunCardView[] =>
+  highFirst(v?.runs ?? [], (c) => high(c.jobId));
 
-/** The jobs the UI holds, by id: enough to say whether one ended and how high its priority is. */
-type JobsById = Readonly<Record<string, Pick<Job, 'status' | 'priority'>>>;
+/** A run card's key: one per job and template. */
+export const runCardKey = (c: Pick<RunCardView, 'jobId' | 'template'>): string => `${c.jobId} ${c.template}`;
 
 /**
- * The templates that count as waiting on a person (issue #2196): each that waits for approval, but one a job asked for
- * only until that job ended. A job the UI does not hold still counts: the hopper keeps no template for a job it forgot.
+ * The templates that wait on a template card of their own (issue #2197): a person's own, that no run card holds. A
+ * template a job asked for waits on its run card, never on a card of its own: the daemon makes that card only while
+ * the job lives (issue #2196).
  */
-const templatesCounted = (v: VaultView, jobs: JobsById): TemplateView[] =>
-  v.templates.filter((t) => templateWaits(t) && !(t.askedBy && jobEnded(jobs[t.askedBy]?.status)));
+export const ownTemplatesWaiting = (v: VaultView | null): TemplateView[] =>
+  (v?.templates ?? []).filter((t) => templateWaits(t) && !t.askedBy && !(v?.runs ?? []).some((r) => r.template === t.name));
 
-/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, templates and sandbox runs that wait. */
-export const accessRequestsWaiting = (v: VaultView | null, jobs: JobsById = {}): number =>
-  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + templatesCounted(v, jobs).length + sandboxRunsWaiting(v).length;
+/** The sandbox runs that no longer wait (issue #991): approved or declined, with who decided. */
+export const sandboxRunsDecided = (v: VaultView | null): SandboxRequestView[] => (v?.sandboxRequests ?? []).filter((r) => r.state !== 'waiting');
 
-/** Of those, the templates and sandbox runs a high-priority job waits on (issues #535, #2196): the badge marks them. */
-export const accessRequestsHigh = (v: VaultView | null, jobs: JobsById, threshold: number | null): number => {
-  if (v === null) return 0;
-  const high = (id: string | undefined): boolean => id !== undefined && isHighJob(jobs[id], threshold);
-  return templatesCounted(v, jobs).filter((t) => high(t.askedBy)).length + sandboxRunsWaiting(v).filter((r) => high(r.jobId)).length;
-};
+/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, a person's own templates and the run cards. */
+export const accessRequestsWaiting = (v: VaultView | null): number =>
+  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + ownTemplatesWaiting(v).length + (v.runs?.length ?? 0);
+
+/** The jobs the UI holds, by id: enough to say how high a job's priority is. */
+type JobsById = Readonly<Record<string, Pick<Job, 'priority'>>>;
+
+/** Of those, the run cards of high-priority jobs (issues #535, #2196, #2197): the badge marks them. */
+export const accessRequestsHigh = (v: VaultView | null, jobs: JobsById, threshold: number | null): number =>
+  (v?.runs ?? []).filter((c) => isHighJob(jobs[c.jobId], threshold)).length;
 
 /** The auto-approve policy in force (issue #1001): the view answers it in full; absent, the default. */
 export const autoApproveOf = (a: SandboxApprovals | undefined): NonNullable<SandboxApprovals['autoApprove']> => ({ low: true, medium: false, high: false, ...a?.autoApprove });

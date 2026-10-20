@@ -109,7 +109,7 @@ describe('Access requests: what waits on a person (issue #897)', () => {
     expect(accessRequestsWaiting(view)).toBe(3);
     // A high-priority job's card comes first and marks the badge.
     expect(runCardsOf(view, (id) => id === 'j2').map((c) => c.jobId)).toEqual(['j2', 'j1']);
-    expect(accessRequestsHigh(view, { j2: { status: 'running', priority: 100 } }, 75)).toBe(1);
+    expect(accessRequestsHigh(view, { j2: { priority: 100 } }, 75)).toBe(1);
     expect(needsYouRows(counts({ access: 3, accessHigh: 1 })).find((r) => r.kind === 'access')).toMatchObject({ n: 3, high: 1 });
   });
 });

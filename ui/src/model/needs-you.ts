@@ -11,6 +11,7 @@
 // Unknown clusters (issue #2168) counts the templates with an unknown asset (issue #2067), each named: a job's need names a
 // cluster the vault cannot find, or a short name of several. A row of its own, never in Access requests: that row, and its
 // nav badge, count only what waits for a person's approval, and no approval makes such a template work.
+// Access requests marks the run cards of high-priority jobs (issue #2197), as the nav badge marks a high-priority question.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
@@ -20,9 +21,9 @@ export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 export interface NeedsYouCounts {
   /** Request cards that wait for approval, and labelled issues not assigned to the user (issue #1614), across the sources. */
   intake: number;
-  /** Credential requests, vault grant asks and templates that wait for approval. */
+  /** Credential requests, vault grant asks, a person's own templates and the run cards that wait for approval. */
   access: number;
-  /** Of those, the templates and sandbox runs a high-priority job waits on (issue #2196); absent: none. */
+  /** Of those, the run cards a high-priority job waits on (issues #2196, #2197); absent: none. */
   accessHigh?: number;
   /** The templates with an unknown asset (issue #2067), one line each; absent: none. */
   unknownAssets?: readonly string[];

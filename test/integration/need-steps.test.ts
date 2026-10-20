@@ -187,7 +187,7 @@ describe('need steps (issue #1007)', () => {
 
     // One approval: the template, its write profile and the run. No other approval; the step goes on by itself.
     const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: t!.name }, { token: b.token });
-    expect(approved.status, approved.text).toBe(200);
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
     expect(approved.body.runs).toEqual([]);
     const r = await run.end;
     expect(r.stderr).toContain('hopper-step: the template is ready; the step runs now');
@@ -208,7 +208,7 @@ describe('need steps (issue #1007)', () => {
     const [card] = (await vaultOf(b)).runs ?? [];
     expect(card).toMatchObject({ jobId, waits: { template: true, run: false } });
     const declined = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'decline-run', job: jobId, template: card!.template, reason: 'not tonight' }, { token: b.token });
-    expect(declined.status, declined.text).toBe(200);
+    expect(declined.status, JSON.stringify(declined.body)).toBe(200);
     expect(declined.body.runs).toEqual([]);
     const r = await run.end;
     // A person's decline is a deny at gate 2 (issue #655 part 5): the job's trust one level lower, so its step is told no.
