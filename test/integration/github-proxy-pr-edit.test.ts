@@ -10,6 +10,10 @@
 //     And each is on the job's timeline (`github_proxy.done`)
 //   Scenario: a job edits the pull request of its own work item, which it did not open
 //   Scenario: a tend job closes the pull request it was started to tend, which is not its work item's (issue #2127)
+//   Scenario: a job edits the pull request its issue names to update, which it did not open (issue #2151)
+//     Given a job whose issue's text names pull request #N, opened by someone else
+//     When it runs `pr edit N --body …`
+//     Then GitHub changes the body; a close of #N stays refused
 //   Scenario: a job asks to edit or close a pull request that is not its own
 //     Then it is refused with the reason, and nothing reaches GitHub
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID, type DomainEvent } from '../../src/domain/types.ts';
+import type { SourceItem } from '../../src/domain/source-item.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -32,7 +37,7 @@ afterEach(async () => {
 
 const json = (r: Run): Record<string, unknown> => JSON.parse(r.stdout) as Record<string, unknown>;
 
-async function start() {
+async function start(item: Partial<SourceItem> = {}) {
   const github = await createFakeGitHub({ clientId: 'gh-client-id' });
   cleanups.push(() => github.close());
   github.tokens.set('test-account-token', 'owner');
@@ -52,7 +57,7 @@ async function start() {
   connectGitHub(app, ['octo/tools']);
   github.issues.push({ repo: 'octo/tools', number: 7, title: 'Make it faster', body: 'Please.', author: 'someone', labels: ['hopper'] });
   const issueUrl = `${github.url}/octo/tools/issues/7`;
-  const job = await app.pull({}, { executor: 'holder', repo: 'octo/tools', number: 7, key: issueUrl, url: issueUrl });
+  const job = await app.pull({}, { executor: 'holder', repo: 'octo/tools', number: 7, key: issueUrl, url: issueUrl, ...item });
   const env = await waitFor(async () => h.held.get(job.id)?.env, { what: 'the job to run' });
   return { app, github, root, job, env };
 }
@@ -112,7 +117,20 @@ describe('a job edits or closes its own pull request (issue #1734)', () => {
     expect(json(close)).toMatchObject({ ok: true, op: 'pr.close', number: n, state: 'closed', merged: false });
     // Only that one: another pull request stays refused.
     const refused = await hopperGh(t.root, t.env, ['pr', 'close', String(other), '--repo', 'octo/tools']);
-    expect(json(refused).error).toBe(`refused: a job edits or closes only a pull request it opened, or the pull request of its own work item: not octo/tools#${other}`);
+    expect(json(refused).error).toBe(`refused: a job edits or closes only a pull request it opened, the one it tends or its work item's, and edits one its issue names: not octo/tools#${other}`);
+  });
+
+  it('edits the body of the pull request its issue names to update, which it did not open; a close stays refused (issue #2151)', async () => {
+    // The issue's text names pull request #8, read at intake (linkedPulls); someone else opens it.
+    const t = await start({ origin: 'trusted', linkedPulls: [{ url: 'https://github.com/octo/tools/pull/8', author: 'someone', fork: false, trusted: false }] });
+    const n = await openElsewhere(t.github, 'someone-elses-change');
+    expect(n).toBe(8);
+    const edit = await hopperGh(t.root, t.env, ['pr', 'edit', String(n), '--repo', 'octo/tools', '--body', 'iac-expected: no-changes']);
+    expect(json(edit)).toMatchObject({ ok: true, op: 'pr.edit', number: n });
+    expect(patches(t.github)[0]).toMatchObject({ body: { body: 'iac-expected: no-changes' } });
+    const close = await hopperGh(t.root, t.env, ['pr', 'close', String(n), '--repo', 'octo/tools']);
+    expect(close.code).toBe(1);
+    expect(patches(t.github)).toHaveLength(1);
   });
 
   it('refuses the pull request a tend job of the item tended, when the job is not that tend job (issue #2127)', async () => {
@@ -132,7 +150,7 @@ describe('a job edits or closes its own pull request (issue #1734)', () => {
     for (const args of [['pr', 'edit', String(n), '--repo', 'octo/tools', '--body', 'x'], ['pr', 'close', String(n), '--repo', 'octo/tools']]) {
       const r = await hopperGh(t.root, t.env, args);
       expect(r.code).toBe(1);
-      expect(json(r).error).toBe(`refused: a job edits or closes only a pull request it opened, or the pull request of its own work item: not octo/tools#${n}`);
+      expect(json(r).error).toBe(`refused: a job edits or closes only a pull request it opened, the one it tends or its work item's, and edits one its issue names: not octo/tools#${n}`);
     }
     const none = await hopperGh(t.root, t.env, ['pr', 'edit', String(n), '--repo', 'octo/tools']);
     expect(json(none).error).toMatch(/pr edit needs --title or --body/);

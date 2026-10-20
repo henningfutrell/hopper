@@ -102,7 +102,10 @@ export interface ProxyAsker {
   fork?: string;
   /** Whether the user can push to the job's own repository, as GitHub says, when read (for `repo.fork`). */
   canPush?: boolean;
-  /** For `pr.edit` and `pr.close` (issue #1734): whether the job opened that pull request, or it is its work item's. */
+  /**
+   * For `pr.edit` and `pr.close` (issue #1734): whether the job opened that pull request, or it is its work item's or the one
+   * it tends; for `pr.edit` also one its issue names to update (issue #2151).
+   */
   ownsPullRequest?: boolean;
 }
 
@@ -167,7 +170,7 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
   }
   if (req.op === 'issue.comment' && isCommand(req.body)) return { ok: false, reason: JOB_COMMAND };
   if ((req.op === 'pr.edit' || req.op === 'pr.close') && !asker.ownsPullRequest) {
-    return { ok: false, reason: `a job edits or closes only a pull request it opened, or the pull request of its own work item: not ${req.repo}#${req.number}` };
+    return { ok: false, reason: `a job edits or closes only a pull request it opened, the one it tends or its work item's, and edits one its issue names: not ${req.repo}#${req.number}` };
   }
   return { ok: true };
 }

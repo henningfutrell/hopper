@@ -14676,6 +14676,9 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
    or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
    job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).
+   A job also edits — never closes — a pull request its issue's text names (its **linked pull requests**, read at intake,
+   `source.linkedPulls`; issue #2151: a job told to update another's pull request could push to it, but not fix the
+   declaration in its body that a plan check reads);
    A close is the job's act, as its push is; it never merges, and the follow sees the pull request closed as a person's
    close;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
@@ -17723,7 +17726,9 @@ whose origin is trusted or approved (only its job keeps them):
 - **Jev reads them**: Jev's trust check gets them in `source`, and has one more reason, `fork_code` ("it brings in a pull
   request of a fork that no trusted actor wrote"), to lower the job.
 - **No rule reads them**, as the origin acts: the stamp's level still comes from the origin. A rule would decide for every
-  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in.
+  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. One
+  door reads them (issue #2151): a job edits the title or body of a linked pull request (`pr edit`, "Jobs ask the hopper,
+  not GitHub"), as it pushes to its branch; GitHub still decides whether its user may.
 
 Also in this part: the GraphQL read of an issue's edits (issue #662, part 17) read the answer one level too high, so it
 found no edits against GitHub; the fake GitHub hid it. It reads them under `data` now, and an answer with errors throws, so

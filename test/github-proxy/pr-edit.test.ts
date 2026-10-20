@@ -22,7 +22,7 @@ describe('a pull request edit or close (issue #1734)', () => {
     expect(checkRequest(close, owns, repos)).toEqual({ ok: true });
     for (const req of [edit, close]) {
       expect(checkRequest(req, { jobId: 'j', repo: 'octo/tools' }, repos))
-        .toEqual({ ok: false, reason: 'a job edits or closes only a pull request it opened, or the pull request of its own work item: not octo/tools#8' });
+        .toEqual({ ok: false, reason: 'a job edits or closes only a pull request it opened, the one it tends or its work item\'s, and edits one its issue names: not octo/tools#8' });
       expect(checkRequest({ ...req, repo: 'else/where' }, owns, repos)).toEqual({ ok: true });
       expect(checkRequest({ ...req, repo: 'else/where' }, { jobId: 'j', repo: 'octo/tools' }, repos)).toMatchObject({ ok: false });
     }
