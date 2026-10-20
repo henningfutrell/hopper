@@ -89,8 +89,11 @@ interface GqlError { type?: string; message?: string; path?: (string | number)[]
 
 const PERMANENT_TYPES = new Set(['NOT_FOUND', 'FORBIDDEN']);
 
-/** A head commit's checks the app may not read (issue #855): it has no Checks and Commit statuses read; the rest of the answer holds. */
-const checksForbidden = (e: GqlError): boolean => e.type === 'FORBIDDEN' && e.path?.at(-1) === 'statusCheckRollup';
+/**
+ * A head commit's checks the app may not read (issue #855): it has no Checks and Commit statuses read; the rest of the answer
+ * holds. Also a part inside the rollup (issue #2210: a check run, its annotations): the rest of the rollup holds.
+ */
+const checksForbidden = (e: GqlError): boolean => e.type === 'FORBIDDEN' && (e.path ?? []).includes('statusCheckRollup');
 
 /**
  * Throws a GitHubApiError for a GraphQL error (NOT_FOUND/FORBIDDEN permanent, the rest transient), but for checks the app

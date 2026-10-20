@@ -27780,6 +27780,24 @@ Part 3 left three items. Each is closed here by a decision. No code changes.
 `src/executors/herdr/monitor.ts` (`timeoutMs`), `src/failures/chain.ts` (`livenessOf`), `src/engine/leases.ts` (`renew`),
 `src/engine/recovery.ts` (`takeOver`). Their tests are those of issues #491, #630 and #1662.
 
+### A pull request read that fails (issue #2210, 2026-10-20)
+
+Report: a job waited on the checks of a pull request of another organization. The checks ended green, but the check said
+only "the hopper cannot read <repo>#<n> now" and never ended the wait. `hopper-gh` read the same pull request (over REST).
+
+- **The cause.** The source reads one pull request over GraphQL with each check run and its annotations
+  (`PULL_REQUEST_QUERY`, issue #927). A FORBIDDEN error inside the rollup — on a check run, or on its annotations — was not
+  the error on `statusCheckRollup` that issue #855 keeps the answer for, so the whole read threw. Now a FORBIDDEN error
+  anywhere under `statusCheckRollup` keeps the answer (`checksForbidden`, `src/sources/github/closer.ts`): the parts GitHub
+  gave hold, and the rollup's state still says the checks. A rollup GitHub refused whole stays `unknown`, and the checks
+  fallback reads it over REST (issue #1244).
+- **The error is said.** The sweeper kept no error: any failed read was "cannot read now". Now the check's result names it
+  (`readPull`, `src/engine/wait-checks.ts`): `the hopper cannot read <repo>#<n> now: <GitHub's error>`, or `the job's source
+  reads no pull request` when the job's source has no such read. The check is tried again, the time between doubling, as
+  before; past its deadline it is overdue once and a stuck item for a person.
+- **A direct job's waits.** The direct source (issue #901) now reads a pull request's checks and review too
+  (`createDirectPullRequests`), with the user's own connection; unconnected, the read fails and says why.
+
 ## A labelled issue not assigned to the user is said (issue #1614, 2026-10-17)
 
 Report: two issues were labelled `hopper` by a trusted author and assigned to nobody. No job started, and for 2 to 4
