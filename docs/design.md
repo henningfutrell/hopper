@@ -19623,7 +19623,8 @@ rendered nothing when empty, so a person could not tell the feature was there.
   plus a pointer to Settings → API tokens for box tokens. A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
   it was never approved or a new image, secret or profile waits. A template a job asked for (`askedBy`) counts in the
   badge and the Needs you row while its job has not ended (issue #2196), and a high-priority job's template or sandbox run
-  marks them (`accessRequestsHigh`) and comes first in its panel. Settings → Vault keeps Revoke, Check again, Edit and
+  marks them (`accessRequestsHigh`) and comes first in its panel. Since issue #2197 both are one **run card** ("One
+  approval per sandbox run"). Settings → Vault keeps Revoke, Check again, Edit and
   Remove, and links a waiting template here. The texts the hopper gives a job or a box for an approval or a grant name
   Access requests.
 - **One vault read.** `useVault` (`ui/src/store/vault.ts`) keeps one copy of `GET /api/vault`, read when first used and
