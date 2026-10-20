@@ -80,7 +80,7 @@ describe('placeCredentials (issues #563, #2040)', () => {
     const failed = placeCredentials(engine, job, MACHINE, shell({ fails: 'the machine did not answer' }), SCRATCH, false, () => {});
     await expect(failed).rejects.toThrow(/cannot reach the hopper: .*not placed again.*the machine did not answer/);
     await expect(failed).rejects.not.toBeInstanceOf(Unreached);
-    const message = await failed.catch((e: Error) => e.message);
+    const message = await failed.then(() => '', (e: Error) => e.message);
     expect(matchCause(message, 'sig', [])?.id).toBe(NO_WAY_TO_HOPPER);
   });
 
