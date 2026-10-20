@@ -248,6 +248,7 @@
         "vault.sandbox_approvals_set",
         "sandbox.strictness_changed",
         "vault.sandbox_requested",
+        "vault.run_card_opened",
         "vault.sandbox_approved",
         "vault.sandbox_declined",
         "vault.sandbox_started",

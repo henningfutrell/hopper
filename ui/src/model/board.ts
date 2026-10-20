@@ -4,6 +4,7 @@
 import { highFirst, isHighJob } from './priority.ts';
 import { raisedByOf, raisedName } from './questions.ts';
 import { jobHref } from './job.ts';
+import { planHref } from './infra-plans.ts';
 import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineLaneEffect, MachineView, WaitCheck, WaitOn, WorkItemState } from './wire.ts';
 
 /** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Waiting on, Running, Ended). */
@@ -75,6 +76,8 @@ export function waitOnLinkOf(on: WaitOn | undefined, ownRepo: string | undefined
     case 'question': return { label: `a person's answer to question ${on.questionId}`, href: `#question-${encodeURIComponent(on.questionId)}` };
     case 'approval': return { label: `${on.of} approval` };
     case 'grant': return { label: 'a vault grant' };
+    // Issue #2205: the plan on Infra, picked, with its Approve.
+    case 'plan': return { label: `approval of infra plan ${on.planId.slice(0, 8)}`, href: planHref(on.planId) };
     case 'own_command': return { label: 'its own command' };
     case 'outside': return { label: `outside (${on.why ? OUTSIDE_WHY[on.why] : 'reason not given'}): ${on.what}` };
   }

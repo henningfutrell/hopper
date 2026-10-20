@@ -48,7 +48,7 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     // Issue #991: a box of that template for the job, started once a person or skip sandbox approval approves it.
     template: (name) => parts.vault.view().templates.find((t) => t.name === name),
     sandbox: (template, job, about) => parts.sandboxRequests.ask(job.id, template, about),
-    sandboxWaits: (template, job) => parts.sandboxRequests.waited(job.id, template),
+    sandboxWaits: (template, job, about) => parts.sandboxRequests.waited(job.id, template, about),
     outsideStamp: (profiles, job) => parts.sandboxRequests.outside(job.id, profiles), // issue #655 part 16
   };
 }

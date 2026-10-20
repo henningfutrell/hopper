@@ -11,6 +11,9 @@
 // Unknown clusters (issue #2168) counts the templates with an unknown asset (issue #2067), each named: a job's need names a
 // cluster the vault cannot find, or a short name of several. A row of its own, never in Access requests: that row, and its
 // nav badge, count only what waits for a person's approval, and no approval makes such a template work.
+// Access requests marks the run cards of high-priority jobs (issue #2197), as the nav badge marks a high-priority question.
+// Infra plans names each plan that waits, and marks those a high-priority job recorded (issue #2205): a job that waits on a
+// plan's approval links to it on Infra, where a person approves it.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
@@ -20,12 +23,18 @@ export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 export interface NeedsYouCounts {
   /** Request cards that wait for approval, and labelled issues not assigned to the user (issue #1614), across the sources. */
   intake: number;
-  /** Credential requests, vault grant asks and templates that wait for approval. */
+  /** Credential requests, vault grant asks, a person's own templates and the run cards that wait for approval. */
   access: number;
+  /** Of those, the run cards a high-priority job waits on (issues #2196, #2197); absent: none. */
+  accessHigh?: number;
   /** The templates with an unknown asset (issue #2067), one line each; absent: none. */
   unknownAssets?: readonly string[];
   /** Infra plans that wait for a person to approve them. */
   plans: number;
+  /** Of those, the ones a high-priority job recorded (issue #2205); absent: none. */
+  plansHigh?: number;
+  /** One line per plan that waits (issue #2205); absent: none. */
+  planLines?: readonly string[];
   /** The machines whose agent tool is signed in as nobody (issue #1128), one line each. */
   signedOut: readonly string[];
   /** The online machines that are not ready (issue #1248), one line each, with why. */
@@ -72,12 +81,12 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
 export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
   const count = (k: NeedsYouKind): { n: number; high: number; details?: readonly string[] } => {
     if (k === 'intake') return { n: c.intake, high: 0 };
-    if (k === 'access') return { n: c.access, high: 0 };
+    if (k === 'access') return { n: c.access, high: c.accessHigh ?? 0 };
     if (k === 'unknown-assets') {
       const unknown = c.unknownAssets ?? [];
       return { n: unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };
     }
-    if (k === 'plans') return { n: c.plans, high: 0 };
+    if (k === 'plans') return { n: c.plans, high: c.plansHigh ?? 0, ...(c.planLines?.length ? { details: c.planLines } : {}) };
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
     if (k === 'checks') return { n: c.checksUnread.length, high: 0, ...(c.checksUnread.length ? { details: c.checksUnread } : {}) };
     if (k === 'accounts') return { n: c.signedOut.length, high: 0, ...(c.signedOut.length ? { details: c.signedOut } : {}) };

@@ -3,6 +3,8 @@
 // Sandbox runs: a run a job asked for waits with its job and template; Approve posts it after the confirm; Decline posts
 // the reason; the approved runs are listed with who approved them; the nav badge counts the run that waits.
 // Settings → Vault, Sandbox approvals: the toggles post what changed, and YOLO posts both.
+// Issue #2197: one card per run. A template a job asked for waits on that job's run card, never on a card of its own;
+// Approve posts one approve-run, Decline one decline-run. A template card is left for a person's own template.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +25,13 @@ const HIGH = {
 };
 const MINTS = { id: 's1', name: 'AWS_UAT2', scope: 'gss-uat2 account', mints: { kind: 'aws-account', name: '123456789012' }, setBy: 'Ada', createdAt: '2026-10-01T00:00:00.000Z', changedBy: 'Ada', changedAt: '2026-10-01T00:00:00.000Z' };
 const REMEMBERED = { ...WRITE, by: 'Ada', at: '2026-10-13T08:00:00.000Z', expiresAt: '2026-10-20T08:00:00.000Z' };
-const VIEW = { secrets: [MINTS], templates: [HIGH], sandboxRequests: [WAITING, WAITING_2, RUNNING], sandboxApprovals: { skipTemplateApproval: false, skipSandboxApproval: false }, rememberedWrites: [REMEMBERED] };
+// A person's own template that waits: its template card stays.
+const OWN = { ...HIGH, name: 'own-deploy', savedBy: 'Ada', askedBy: undefined, askedByJob: undefined, purpose: undefined, plan: undefined, label: undefined };
+// The run cards the daemon answers: the two waiting requests, and the job that waits on the template it asked for.
+const card = (r: typeof WAITING) => ({ jobId: r.jobId, jobTitle: r.jobTitle, jobUrl: r.jobUrl, template: r.template, purpose: r.purpose, plan: r.plan, askedAt: r.askedAt, waits: { template: false, run: true }, request: r.id, ...('jev' in r ? { jev: r.jev } : {}) });
+const HIGH_CARD = { jobId: HIGH.askedBy, jobTitle: 'Give X a role', jobUrl: 'https://github.com/acme/infra/issues/7', template: HIGH.name, purpose: HIGH.purpose, plan: HIGH.plan, askedAt: HIGH.savedAt, waits: { template: true, run: false } };
+const RUNS = [HIGH_CARD, card(WAITING), card(WAITING_2)];
+const VIEW = { secrets: [MINTS], templates: [HIGH, OWN], sandboxRequests: [WAITING, WAITING_2, RUNNING], runs: RUNS, sandboxApprovals: { skipTemplateApproval: false, skipSandboxApproval: false }, rememberedWrites: [REMEMBERED] };
 
 interface Call { path: string; method: string; body?: Record<string, unknown> }
 
@@ -45,7 +53,7 @@ function fakeDaemon(o: { hold?: boolean; holdVault?: boolean; refuse?: string } 
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ path, method: init.method ?? 'GET', ...(body ? { body } : {}) });
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'github', name: 'alice', instanceAdmin: true }, signIn: { local: true, origin: location.origin, realms: [] } });
-    if (path === '/ui/api/sandbox-requests' && body?.id === o.refuse) return json(409, { error: `sandbox request ${o.refuse} is starting, not waiting` });
+    if (path === '/ui/api/sandbox-requests' && body?.template !== undefined && body.template === o.refuse) return json(409, { error: `no run card of template ${o.refuse}` });
     if (path === '/ui/api/sandbox-requests' && o.hold) { await held; return json(200, VIEW); }
     if (path === '/ui/api/vault' && o.holdVault) { await held; return json(200, VIEW); }
     if (path === '/ui/api/sandbox-requests' || path === '/ui/api/sandbox-approvals' || path === '/ui/api/vault') return json(200, VIEW);
@@ -83,6 +91,7 @@ async function boot(hash: string, ready: () => unknown, o: { hold?: boolean; hol
 
 const runs = (): HTMLElement | null => document.querySelector('[data-access-panel="sandbox-runs"]');
 const approvals = (): HTMLElement | null => document.querySelector('[data-slot="sandbox-approvals"]');
+const runCard = (job: string, template: string): HTMLElement => document.querySelector<HTMLElement>(`[data-run-card="${job} ${template}"]`)!;
 const buttonIn = (el: ParentNode, text: string): HTMLButtonElement => [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)! as HTMLButtonElement;
 
 async function type(input: HTMLInputElement, value: string): Promise<void> {
@@ -105,22 +114,25 @@ describe('Access requests: sandbox runs (issue #991)', () => {
     expect(panel.textContent).toContain('asked-3f2a9c1d0e4b');
     expect(panel.textContent).toContain('Check the AWS bill');
     expect(panel.textContent).toContain('approved: each step runs in a sandbox of its own, approved by skip sandbox approval');
+    // Issue #2197: the template a job asked for is on its run card only; the run card comes first, its approval is one post.
+    expect(document.querySelector(`[data-template-approval="${HIGH.name}"]`)).toBeNull();
+    expect(panel.querySelectorAll('[data-run-card]')).toHaveLength(3);
     await act(async () => { buttonIn(panel, 'Approve').click(); });
     const confirm = () => [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent?.trim() === 'Approve');
     await vi.waitFor(() => expect(confirm()).toBeDefined());
     await act(async () => { confirm()!.click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')).toBeDefined());
-    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'approve', id: 'q1' });
+    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'approve-run', job: HIGH.askedBy, template: HIGH.name });
   });
 
   it('Decline needs a reason, then posts it', async () => {
     const daemon = await boot('#access-requests', runs);
-    const panel = runs()!;
-    expect(buttonIn(panel, 'Decline').disabled).toBe(true);
-    await type(panel.querySelector<HTMLInputElement>('input[placeholder="Why not (the job is told)"]')!, 'use the lab account');
-    await act(async () => { buttonIn(runs()!, 'Decline').click(); });
+    const c = runCard(WAITING.jobId, WAITING.template);
+    expect(buttonIn(c, 'Decline').disabled).toBe(true);
+    await type(c.querySelector<HTMLInputElement>('input[placeholder="Why not (the job is told)"]')!, 'use the lab account');
+    await act(async () => { buttonIn(runCard(WAITING.jobId, WAITING.template), 'Decline').click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')).toBeDefined());
-    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'decline', id: 'q1', reason: 'use the lab account' });
+    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'decline-run', job: WAITING.jobId, template: WAITING.template, reason: 'use the lab account' });
   });
 });
 
@@ -143,40 +155,42 @@ const confirmed = async (): Promise<void> => {
   await vi.waitFor(() => expect(confirm()).toBeDefined());
   await act(async () => { confirm()!.click(); });
 };
-const card = (id: string): HTMLElement => document.querySelector<HTMLElement>(`[data-sandbox-request="${id}"]`)!;
+const requestCard = (id: string): HTMLElement => document.querySelector<HTMLElement>(`[data-sandbox-request="${id}"]`)!;
 
 describe('approvals that do not block each other (issue #1001)', () => {
   it('while one approval is pending, the other cards stay clickable, and only that card shows its progress', async () => {
     const daemon = await boot('#access-requests', runs, { hold: true });
-    await act(async () => { buttonIn(card('q1'), 'Approve').click(); });
+    await act(async () => { buttonIn(requestCard('q1'), 'Approve').click(); });
     await confirmed();
-    await vi.waitFor(() => expect(card('q1').textContent).toContain('Approving…'));
-    expect(buttonIn(card('q3'), 'Approve').disabled).toBe(false);
-    expect(card('q3').textContent).not.toContain('Approving…');
-    await act(async () => { buttonIn(card('q3'), 'Approve').click(); });
+    await vi.waitFor(() => expect(requestCard('q1').textContent).toContain('Approving…'));
+    expect(buttonIn(requestCard('q3'), 'Approve').disabled).toBe(false);
+    expect(requestCard('q3').textContent).not.toContain('Approving…');
+    await act(async () => { buttonIn(requestCard('q3'), 'Approve').click(); });
     await confirmed();
     await vi.waitFor(() => expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests')).toHaveLength(2));
-    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests').map((x) => x.body)).toEqual([{ action: 'approve', id: 'q1' }, { action: 'approve', id: 'q3' }]);
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests').map((x) => x.body)).toEqual([
+      { action: 'approve-run', job: WAITING.jobId, template: WAITING.template }, { action: 'approve-run', job: WAITING_2.jobId, template: WAITING_2.template },
+    ]);
     await act(async () => { daemon.release(); });
   });
 
-  it('a high-radius template shows one Approve all listed action that approves the template and each listed profile', async () => {
-    const daemon = await boot('#access-requests', () => document.querySelector(`[data-template-approval="${HIGH.name}"]`));
-    const t = document.querySelector<HTMLElement>(`[data-template-approval="${HIGH.name}"]`)!;
+  it('a person\'s own high-radius template shows one Approve all listed action that approves the template and each listed profile', async () => {
+    const daemon = await boot('#access-requests', () => document.querySelector(`[data-template-approval="${OWN.name}"]`));
+    const t = document.querySelector<HTMLElement>(`[data-template-approval="${OWN.name}"]`)!;
     const labels = [...t.querySelectorAll('button')].map((b) => b.textContent?.trim());
     expect(labels).toEqual(['Approve all listed']);
     await act(async () => { buttonIn(t, 'Approve all listed').click(); });
     await confirmed();
     await vi.waitFor(() => expect(daemon.calls.filter((x) => x.path === '/ui/api/vault')).toHaveLength(2));
     expect(daemon.calls.filter((x) => x.path === '/ui/api/vault').map((x) => x.body)).toEqual([
-      { action: 'approve-template', name: HIGH.name },
-      { action: 'approve-profile', name: HIGH.name, ...WRITE },
+      { action: 'approve-template', name: OWN.name },
+      { action: 'approve-profile', name: OWN.name, ...WRITE },
     ]);
   });
 });
 
 describe('approve several at once (issue #1018)', () => {
-  const template = (): HTMLElement => document.querySelector<HTMLElement>(`[data-template-approval="${HIGH.name}"]`)!;
+  const template = (): HTMLElement => document.querySelector<HTMLElement>(`[data-template-approval="${OWN.name}"]`)!;
   const select = async (el: HTMLElement): Promise<void> => { await act(async () => { el.querySelector<HTMLInputElement>('input[type="checkbox"][data-slot="select"]')!.click(); }); };
   const bar = (): HTMLElement => document.querySelector<HTMLElement>('[data-slot="approve-selected"]')!;
 
@@ -191,36 +205,38 @@ describe('approve several at once (issue #1018)', () => {
   it('one Approve selected sends every selected approval at once; each card shows its own progress, then its result', async () => {
     const daemon = await boot('#access-requests', runs, { hold: true, holdVault: true });
     expect(buttonIn(bar(), 'Approve selected').disabled).toBe(true);
-    await select(card('q1'));
-    await select(card('q3'));
+    await select(requestCard('q1'));
+    await select(requestCard('q3'));
     await select(template());
     await act(async () => { buttonIn(bar(), 'Approve selected (3)').click(); });
     await confirmed();
     // Every approval is on the wire while none has answered.
     await vi.waitFor(() => expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests' || x.path === '/ui/api/vault')).toHaveLength(4));
-    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests').map((x) => x.body)).toEqual([{ action: 'approve', id: 'q1' }, { action: 'approve', id: 'q3' }]);
-    expect(daemon.calls.filter((x) => x.path === '/ui/api/vault').map((x) => x.body)).toEqual([
-      { action: 'approve-template', name: HIGH.name },
-      { action: 'approve-profile', name: HIGH.name, ...WRITE },
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests').map((x) => x.body)).toEqual([
+      { action: 'approve-run', job: WAITING.jobId, template: WAITING.template }, { action: 'approve-run', job: WAITING_2.jobId, template: WAITING_2.template },
     ]);
-    for (const el of [card('q1'), card('q3'), template()]) expect(el.textContent).toContain('Approving…');
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/vault').map((x) => x.body)).toEqual([
+      { action: 'approve-template', name: OWN.name },
+      { action: 'approve-profile', name: OWN.name, ...WRITE },
+    ]);
+    for (const el of [requestCard('q1'), requestCard('q3'), template()]) expect(el.textContent).toContain('Approving…');
     await act(async () => { daemon.release(); });
-    await vi.waitFor(() => expect(card('q1').textContent).toContain('Approved'));
-    expect(card('q3').textContent).toContain('Approved');
+    await vi.waitFor(() => expect(requestCard('q1').textContent).toContain('Approved'));
+    expect(requestCard('q3').textContent).toContain('Approved');
     expect(template().textContent).toContain('Approved');
     expect(bar().textContent).toContain('3 approved');
   });
 
   it('a failure on one does not stop the rest: the others are approved, and the one that failed says why', async () => {
-    const daemon = await boot('#access-requests', runs, { refuse: 'q1' });
+    const daemon = await boot('#access-requests', runs, { refuse: WAITING.template });
     await act(async () => { buttonIn(bar(), 'Select all waiting').click(); });
-    await act(async () => { buttonIn(bar(), 'Approve selected (3)').click(); });
+    await act(async () => { buttonIn(bar(), 'Approve selected (4)').click(); });
     await confirmed();
-    await vi.waitFor(() => expect(card('q1').textContent).toContain('sandbox request q1 is starting, not waiting'));
-    await vi.waitFor(() => expect(card('q3').textContent).toContain('Approved'));
+    await vi.waitFor(() => expect(requestCard('q1').textContent).toContain(`no run card of template ${WAITING.template}`));
+    await vi.waitFor(() => expect(requestCard('q3').textContent).toContain('Approved'));
     expect(template().textContent).toContain('Approved');
-    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests' || x.path === '/ui/api/vault')).toHaveLength(4);
-    expect(bar().textContent).toContain('2 approved, 1 failed');
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests' || x.path === '/ui/api/vault')).toHaveLength(5);
+    expect(bar().textContent).toContain('3 approved, 1 failed');
   });
 });
 
@@ -249,9 +265,9 @@ describe('Settings → Vault: the standing read grant (issue #1472)', () => {
 });
 
 describe('cards that say what the sandbox is for (issue #1001)', () => {
-  it('a template card shows why, the job with its link, the plan, each asset in plain words and a readable name first', async () => {
-    await boot('#access-requests', () => document.querySelector(`[data-template-approval="${HIGH.name}"]`));
-    const t = document.querySelector<HTMLElement>(`[data-template-approval="${HIGH.name}"]`)!;
+  it('the run card of a template a job asked for shows why, the job with its link, the plan, each asset in plain words, the access and a readable name first', async () => {
+    await boot('#access-requests', () => document.querySelector(`[data-run-card="${HIGH.askedBy} ${HIGH.name}"]`));
+    const t = runCard(HIGH.askedBy, HIGH.name);
     expect(t.querySelector('[data-slot="template-label"]')!.textContent).toBe('create-the-cluster-role-for-x');
     expect(t.textContent).toContain(HIGH.name);
     expect(t.querySelector('[data-slot="why"]')!.textContent).toContain('Create the cluster role for X in identity namespace');
@@ -260,11 +276,12 @@ describe('cards that say what the sandbox is for (issue #1001)', () => {
     expect(t.querySelector('[data-slot="job"]')!.textContent).toContain('Give X a role');
     expect(t.querySelector('[data-slot="plan"]')!.textContent).toContain('Undo: kubectl delete clusterrole x-reader.');
     expect(t.querySelector('[data-slot="needs"]')!.textContent).toContain('write on aws-account 123456789012 (AWS_UAT2: gss-uat2 account): changes it');
+    expect(t.querySelector('[data-slot="run-access"]')!.textContent).toContain(HIGH.image);
   });
 
   it('a run card shows why, the job with its link, and the plan', async () => {
     await boot('#access-requests', runs);
-    const c = card('q1');
+    const c = runCard(WAITING.jobId, WAITING.template);
     expect(c.querySelector('[data-slot="why"]')!.textContent).toContain('Read the bill of the UAT account');
     expect(c.querySelector<HTMLAnchorElement>('[data-slot="job"] a[href^="https://"]')!.href).toBe('https://github.com/acme/infra/issues/7');
     expect(c.querySelector('[data-slot="plan"]')!.textContent).toContain('aws ce get-cost-and-usage');
@@ -292,7 +309,7 @@ describe('Settings → Vault: remembered write approvals (issue #1001)', () => {
 describe('Jev\'s sandbox check on a waiting run (issue #655 part 13)', () => {
   it('a run Jev held says so, with why; one Jev did not check says nothing of Jev', async () => {
     await boot('#access-requests', runs);
-    expect(card('q3').querySelector('[data-slot="sandbox-request-jev"]')?.textContent).toBe('Jev held it for a person: the job reaches a target it has no reason to know.');
-    expect(card('q1').querySelector('[data-slot="sandbox-request-jev"]')).toBeNull();
+    expect(requestCard('q3').querySelector('[data-slot="sandbox-request-jev"]')?.textContent).toBe('Jev held it for a person: the job reaches a target it has no reason to know.');
+    expect(requestCard('q1').querySelector('[data-slot="sandbox-request-jev"]')).toBeNull();
   });
 });

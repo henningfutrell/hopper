@@ -608,7 +608,7 @@ export { isUpdateChannel, UPDATE_CHANNELS, type ClusterInstall, type InstallInfo
 
 export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, furtherAccount, isConnectedAccountKey, providerOfKey, type AppInstallation, type AppInstallationsRead, type AppInstallationsReadRepository, type ConnectedAccountKey, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
 export * from './vault.ts';
-export type { SandboxApprovals, SandboxRequestState, SandboxRequestView } from './sandbox-approvals.ts';
+export type { SandboxApprovals, SandboxRequestState, SandboxRequestView } from './sandbox-approvals.ts'; export type { RunCardView, TemplateWait } from './run-cards.ts';
 export type { RememberedWrite, RememberedWriteView } from './remembered-writes.ts';
 export * from './minting.ts';
 export * from './master-key.ts';

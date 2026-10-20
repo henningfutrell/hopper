@@ -181,7 +181,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.revoked': { template: 'kube', by: 'Ada' },
   'vault.read_policy_set': { assets: ['cluster/lab', 'aws-account/*'], by: 'Ada' },
   'sandbox.strictness_changed': { from: { default: 'standard', radius: {}, templates: {} }, to: { default: 'standard', radius: { high: 'strict' }, templates: { 'aws-prod': 'locked' } }, by: 'Ada' }, 'vault.sandbox_approvals_set': { skipTemplateApproval: true, skipSandboxApproval: true, autoApprove: { low: true, medium: false, high: false }, by: 'Ada' },
-  'vault.sandbox_requested': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b' },
+  'vault.sandbox_requested': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b' }, 'vault.run_card_opened': { template: 'asked-3f2a9c1d0e4b', waits: { template: true, run: true }, purpose: 'Rotate the deploy key of the staging cluster' },
   'vault.sandbox_approved': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', by: 'skip sandbox approval' },
   'vault.sandbox_declined': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', reason: 'not this week', by: 'Ada' },
   'vault.sandbox_started': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', container: 'hopper-sandbox-asked-3f2a9c1d0e4b-1' },

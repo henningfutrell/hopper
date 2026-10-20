@@ -87,6 +87,8 @@ export const waitOn = z.discriminatedUnion('kind', [
   strict({ kind: z.literal('question'), questionId: z.string() }),
   strict({ kind: z.literal('approval'), of: z.enum(['sandbox', 'template']) }),
   strict({ kind: z.literal('grant') }),
+  // Additive (issue #2205): a person's approval of an infra plan.
+  strict({ kind: z.literal('plan'), planId: z.string() }),
   strict({ kind: z.literal('own_command') }),
   // Additive (issue #1510): why a person acts; absent, the job did not say.
   strict({ kind: z.literal('outside'), what: z.string(), why: z.enum(['not_managed', 'gated']).optional() }),

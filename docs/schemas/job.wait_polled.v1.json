@@ -130,6 +130,23 @@
           "properties": {
             "kind": {
               "type": "string",
+              "const": "plan"
+            },
+            "planId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "planId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
               "const": "own_command"
             }
           },

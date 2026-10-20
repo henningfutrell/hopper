@@ -19,6 +19,8 @@
 //   Scenario: a template a person saved that declares the need and more is used: the step is minted only its need
 //   Scenario: a write need waits for a person; one approval, and the step goes on with no other action; a change with
 //     no approved plan is refused by the apply gate, and nothing is minted
+//   Scenario: a write need is one run card (issue #2197): the template it waits on is no card of its own; one notice of
+//     the card; one approval of the run card, and the step goes on with no other approval; a declined card tells the step no
 //   Scenario: sandbox strictness locked for the template (issue #655 part 8): the need step is refused, saying why
 //   Scenario: a need the vault mints nothing for is refused, saying why; a bad call is refused before anything runs
 import { spawn } from 'node:child_process';
@@ -26,6 +28,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, TemplateView, VaultView } from '../../src/domain/types.ts';
+import { templateCards } from '../../src/domain/run-cards.ts';
 import { NEED_LABEL } from '../../src/sandbox/need-box.ts';
 import { STEP_SCRIPT } from '../../src/windows-steps/script.ts';
 import { MINTED_AWS } from '../support/fake-mint-apis.ts';
@@ -69,7 +72,8 @@ function step(b: Booted, creds: string, args: string[]): { waiting: Promise<void
   return { waiting, end };
 }
 
-const templates = async (b: Booted): Promise<TemplateView[]> => (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates;
+const vaultOf = async (b: Booted): Promise<VaultView> => (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body;
+const templates = async (b: Booted): Promise<TemplateView[]> => (await vaultOf(b)).templates;
 const ofJob = async (b: Booted, jobId: string): Promise<DomainEvent[]> => (await b.a.events()).filter((e) => e.jobId === jobId);
 const stepBoxes = (b: Booted) => [...b.runtime.ran.values()].filter((s) => s.labels[NEED_LABEL] !== undefined);
 
@@ -163,6 +167,57 @@ describe('need steps (issue #1007)', () => {
     expect(events.find((e) => e.type === 'vault.mint_refused')?.data).toMatchObject({ machine: expect.stringMatching(/^hopper-need-/), template: t!.name, job: jobId });
     expect(events.find((e) => e.type === 'step.refused')?.data).toMatchObject({ reason: expect.stringContaining('no apply without a plan') });
     expect(events.filter((e) => e.type === 'vault.minted')).toHaveLength(0);
+  });
+
+  it('a write need is one run card (issue #2197); its one approval starts the step with no other approval in between', async () => {
+    const b = await bootSteps([`aws-role/${ACCOUNT}/*`]);
+    const { creds, jobId } = await stepJob(b);
+    const write = `write/aws-role/${ACCOUNT}/deploy`;
+    const plan = 'aws ssm put-parameter --name /x (undo: delete it)';
+    const run = step(b, creds, ['need', write, ...WHY, '--plan', plan, '--command', 'aws ssm put-parameter --name /x', '--wait', '60']);
+    await run.waiting;
+
+    // Exactly one card waits for a person: the run card, with the job, its words and the access it needs.
+    const v = await vaultOf(b);
+    const [t] = v.templates.filter((x) => x.name.startsWith('asked-'));
+    expect(v.runs).toEqual([expect.objectContaining({ jobId, template: t!.name, purpose: WHY[1], plan, waits: { template: true, run: false } })]);
+    expect(templateCards(v.templates, v.runs ?? [])).toEqual([]);
+    expect((v.sandboxRequests ?? []).filter((r) => r.state === 'waiting')).toEqual([]);
+    expect(t).toMatchObject({ image: expect.any(String), pending: { profiles: [{ operation: 'write' }] } });
+    // The run card's notice (part 2), once, on the job's timeline: the notifiers send it.
+    expect((await ofJob(b, jobId)).filter((e) => e.type === 'vault.run_card_opened').map((e) => e.data)).toEqual([{ template: t!.name, waits: { template: true, run: false }, purpose: WHY[1] }]);
+
+    // One approval: the template, its write profile and the run. No other approval; the step goes on by itself.
+    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: t!.name }, { token: b.token });
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body.runs).toEqual([]);
+    const r = await run.end;
+    expect(r.stderr).toContain('hopper-step: the template is ready; the step runs now');
+    // The step ran in a need box; with no approved infra plan the apply gate refuses the write there, as it should.
+    expect(r.stdout + r.stderr).toContain(`${write}: no apply without a plan`);
+    const events = await ofJob(b, jobId);
+    expect(events.find((e) => e.type === 'vault.mint_refused')?.data).toMatchObject({ machine: expect.stringMatching(/^hopper-need-/), template: t!.name, job: jobId });
+    const after = await vaultOf(b);
+    expect(after.templates.find((x) => x.name === t!.name)).toMatchObject({ approval: { by: expect.any(String) }, pending: { profiles: [] } });
+  });
+
+  it('a declined run card tells the waiting step no (issue #2197)', async () => {
+    const b = await bootSteps([]);
+    const { creds, jobId } = await stepJob(b);
+    const write = `write/aws-role/${ACCOUNT}/deploy`;
+    const run = step(b, creds, ['need', write, ...WHY, '--plan', 'put a parameter (undo: delete it)', '--command', 'true', '--wait', '60']);
+    await run.waiting;
+    const [card] = (await vaultOf(b)).runs ?? [];
+    expect(card).toMatchObject({ jobId, waits: { template: true, run: false } });
+    const declined = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'decline-run', job: jobId, template: card!.template, reason: 'not tonight' }, { token: b.token });
+    expect(declined.status, JSON.stringify(declined.body)).toBe(200);
+    expect(declined.body.runs).toEqual([]);
+    const r = await run.end;
+    // A person's decline is a deny at gate 2 (issue #655 part 5): the job's trust one level lower, so its step is told no.
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('no: ');
+    expect(stepBoxes(b)).toHaveLength(0);
+    expect((await ofJob(b, jobId)).find((e) => e.type === 'vault.sandbox_declined')?.data).toMatchObject({ template: card!.template, reason: 'not tonight' });
   });
 
   it('a need the vault mints nothing for is refused, saying why; a bad call is refused before anything runs', async () => {

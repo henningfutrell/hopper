@@ -7,14 +7,17 @@
 // Issue #1018: an admin selects template and sandbox run cards, or all that wait, and one Approve selected approves
 // them all, side by side; each card shows its own progress and result, and the bar counts what was approved and failed.
 // Issue #1138: an admin mints a delegate approver here, an agent that approves what waits for them, and revokes it here.
+// Issue #2197: one card per sandbox run, first: a template a job asked for is approved on its run card, not on its own.
 import { CheckCheck, Ticket } from 'lucide-react';
 import { useEffect } from 'react';
 import { Confirm } from '@/components/confirm';
 import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
-import { sandboxRunsWaiting, templateWaits, unknownAssetTemplates } from '@/model/vault';
+import { isHighJob } from '@/model/priority';
+import { ownTemplatesWaiting, runCardsOf, unknownAssetTemplates } from '@/model/vault';
 import type { VaultView } from '@/model/wire';
 import { approveItems, batchText, forgetEndedItems, runItem, selectOnly, templateItem, useAccessApprovals } from '@/store/access-approvals';
+import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 import { sendVault, useVault, useVaultStore } from '@/store/vault';
 import { AskedFor } from './vault-requests';
@@ -24,11 +27,15 @@ import { SandboxRuns } from './sandbox-approvals';
 import { UnknownAssets } from './unknown-assets';
 import { DelegateApprovers } from './delegate-approvers';
 
-/** The template and sandbox run cards that wait: each one Approve selected can approve. */
-const waitingItems = (view: VaultView | null) => [...(view?.templates ?? []).filter(templateWaits).map(templateItem), ...sandboxRunsWaiting(view).map(runItem)];
+/** The run cards and a person's own template cards that wait: each one Approve selected can approve. */
+const waitingItems = (view: VaultView | null, high: (jobId: string) => boolean) => [
+  ...runCardsOf(view, high).map((c) => runItem(c, view?.templates.find((t) => t.name === c.template))), ...ownTemplatesWaiting(view).map(templateItem),
+];
 
 function ApproveSelected({ view }: { view: VaultView | null }) {
-  const all = waitingItems(view);
+  const jobs = useHopper((s) => s.jobs);
+  const threshold = useHopper((s) => s.highPriority);
+  const all = waitingItems(view, (id) => isHighJob(jobs[id], threshold));
   const chosen = useAccessApprovals((s) => s.selected);
   const last = useAccessApprovals((s) => s.last);
   const picked = all.filter((i) => chosen.includes(i.key));
@@ -37,7 +44,7 @@ function ApproveSelected({ view }: { view: VaultView | null }) {
       <Button size="sm" variant="outline" disabled={all.length === 0} onClick={() => selectOnly(all.map((i) => i.key))}>Select all waiting</Button>
       {picked.length > 0 && <Button size="sm" variant="ghost" onClick={() => selectOnly([])}>Clear</Button>}
       <Confirm title={`Approve ${picked.length} selected?`} action="Approve selected" onConfirm={() => void approveItems(picked)}
-        description={<>Each selected template is approved as it is, with each write, sync or apply profile its card lists, and each selected sandbox run starts its box. Each approval goes at once, on its own: one that fails stops no other.</>}>
+        description={<>Each selected run is approved with the access its card lists, and its job&apos;s steps run. Each selected template is approved as it is, with each write, sync or apply profile its card lists. Each approval goes at once, on its own: one that fails stops no other.</>}>
         <Button size="sm" disabled={picked.length === 0}><CheckCheck />{picked.length ? `Approve selected (${picked.length})` : 'Approve selected'}</Button>
       </Confirm>
       {last && <span className={last.failed ? 'text-xs text-bad' : 'text-xs text-ok'}>{batchText(last)}</span>}
@@ -59,8 +66,9 @@ export function AccessRequests() {
       <VaultGrants view={view} />
       {/* Issue #1001: each template and run card decides on its own; one pending blocks no other. Issue #1018: or several at once. */}
       {can && <ApproveSelected view={view} />}
-      <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} secrets={view?.secrets ?? []} can={can} />
+      {/* Issue #2197: one card per run, its template's approval with it; a template card only for a person's own template. */}
       <SandboxRuns view={view} can={can} />
+      <TemplateApprovals waiting={ownTemplatesWaiting(view)} {...(view?.asks ? { asks: view.asks } : {})} secrets={view?.secrets ?? []} can={can} />
       <UnknownAssets templates={unknownAssetTemplates(view)} can={can} />
       {can && <DelegateApprovers />}
       <Panel title="Box tokens" icon={Ticket}>

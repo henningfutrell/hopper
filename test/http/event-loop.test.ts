@@ -207,8 +207,9 @@ describe('the health port (issue #1383)', () => {
     return JSON.parse(execFileSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 10_000 })) as { status: number; body: string };
   };
 
+  // The ask starts a node process while this loop is held: under load that alone can take longer than a short heldMs.
   it('answers the instance\'s health while the loop runs, and says how long it is held while it is', async () => {
-    const held = watchHeld({ heldMs: 300, checkMs: 50, log: false, health: { port: 0, version: '9.9.9' } })!;
+    const held = watchHeld({ heldMs: 2_000, checkMs: 50, log: false, health: { port: 0, version: '9.9.9' } })!;
     helds.push(held);
     const port = (await held.healthPort())!;
     expect(port).toBeGreaterThan(0);
@@ -218,15 +219,15 @@ describe('the health port (issue #1383)', () => {
     expect(JSON.parse(fresh.body)).toMatchObject({ ok: true, version: '9.9.9' });
     expect(JSON.parse(fresh.body).eventLoopHeldMs).toBeUndefined();
     held.beat();
-    const stuck = ask(port, { afterMs: 700 });
+    const stuck = ask(port, { afterMs: 2_500 });
     expect(stuck.status).toBe(503);
     const body = JSON.parse(stuck.body) as { ok: boolean; version: string; uptimeS: number; eventLoopHeldMs: number };
     expect(body).toMatchObject({ ok: false, version: '9.9.9' });
-    expect(body.eventLoopHeldMs).toBeGreaterThanOrEqual(300);
+    expect(body.eventLoopHeldMs).toBeGreaterThanOrEqual(2_000);
   });
 
   it('answers only its health, and only on a loopback host', async () => {
-    const held = watchHeld({ heldMs: 300, checkMs: 50, log: false, health: { port: 0, version: '9.9.9' } })!;
+    const held = watchHeld({ heldMs: 10_000, checkMs: 50, log: false, health: { port: 0, version: '9.9.9' } })!;
     helds.push(held);
     const port = (await held.healthPort())!;
     held.beat();

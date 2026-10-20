@@ -34,7 +34,7 @@ export interface SandboxLauncher {
 }
 
 /** A job not ended: waiting to start (issue #1471), starting, or at work. */
-const LIVE = ['queued', 'held', 'claimed', 'running', 'waiting_answer', 'waiting_on'];
+export const LIVE: readonly string[] = ['queued', 'held', 'claimed', 'running', 'waiting_answer', 'waiting_on'];
 
 /** Why the hopper asked for a sandbox before the job started (issue #1471), for the person who approves it. */
 export const BEFORE_START_PURPOSE = 'The job\'s brief names this template. The hopper asks for its sandbox runs before the job starts, so the job does not stop mid-run.';

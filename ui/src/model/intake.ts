@@ -4,7 +4,7 @@
 // passed intake (issue #1035): their state is job progress, on Jobs, and Intake only counts them. A request a person
 // declined (issue #1035) waits for nobody: Intake counts it apart.
 import type { IntakeOutcome, NotTakenGroup } from '../../../src/domain/intake.ts';
-import type { DeclineChoice, IntakeDeclineDefaults, JobStatus, SourceStatus } from './wire';
+import type { DeclineChoice, IntakeDeclineDefaults, JobStatus, SourceStatus } from './wire.ts';
 
 /** The decline choices (issue #1710), in the order the confirm step lists them. */
 export const DECLINE_CHOICES: readonly DeclineChoice[] = ['close', 'open'];
