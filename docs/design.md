@@ -12773,11 +12773,24 @@ of its section, and keeps the review from moving on while it is parked.
 - **Its issue closes meanwhile.** As for any job: closed in a way that cancels it (not planned, label removed, gone),
   its job ends cancelled at the next sync, the sweep cancels the item, and a pick up is refused (409). The item keeps
   its versions in the history. Closed as completed after it started, the job stays parked, and a pick up puts it back.
-- **Not here.** A job of the hopper parking a job through a skill: a `/job/*` route that changes a job is outside the
-  repo law ("No route creates or changes a job … except through the UI session"); it waits on an owner decision.
+- **A job parks through the `park` skill** (the last part of issue #2167, `src/http/job-park.ts`). A running job lists its
+  user's open proposals and research reports, parked or not (`GET /job/park`), and parks or picks one up (`POST /job/park
+  { act: park | pick-up, item, reason? }`), with its proxy token, only while it is at work. It reaches the same
+  `engine.park` and `engine.requeue` a person's buttons do; who did it is `job <its id>`, `via` `job`, on the job's
+  `parked` and on `job.parked` and `job.unparked` (which now also names who picked a job up, a person or a job). The
+  limits keep a job's power under a person's:
+  - It parks only an item whose job waits on it (`waiting_answer` on that item): never a running job, never itself, never
+    a question. Parking stops nothing that runs; it only holds a decision back.
+  - It picks up only an item a job parked (`parked.via` `job`). A person's park stays until a person picks it up (409),
+    so a job cannot undo a person's act.
+  - It takes no decision: a parked item is still decided only by a person, after a pick up.
+  - Nothing is written to GitHub, as for a person's park.
+  The owner's issue asked for it, and AGENTS.md's list of `/job/*` routes names it, as each such route.
 - **Verification.** `test/integration/park-review-item.test.ts` (a proposal and a research report parked and picked up,
   the refusals, a restart, a reviewer level in flight, a running job's park with a reason, a long reason refused),
-  `test/integration/park-review-item-closed.test.ts` (its issue closed both ways), `test/ui/park-review-item.test.ts`.
+  `test/integration/park-review-item-closed.test.ts` (its issue closed both ways), `test/ui/park-review-item.test.ts`,
+  `test/integration/job-park.test.ts` (a job lists, parks and picks up; a person's park it cannot pick up; a running job
+  it cannot park; bad tokens and calls refused).
 
 ## Preemption (issue #1525, 2026-10-16)
 

@@ -57,7 +57,10 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     const s = signedInOf(req), acting = s ? actingOf(s) : undefined;
     return o.tenant(req).engine.park(parseWith(idParams, req.params).id, { ...(acting ? { by: acting.person, via: acting.via } : {}), ...(reason ? { reason } : {}) });
   });
-  app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, parseWith(requeueBody, req.body ?? {})));
+  app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => {
+    const s = signedInOf(req), acting = s ? actingOf(s) : undefined;
+    return o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, { ...parseWith(requeueBody, req.body ?? {}), ...(acting ? { who: { by: acting.person, via: acting.via } } : {}) });
+  });
   app.post('/ui/api/jobs/:id/end-wait', o.operator, async (req) => {
     const { note } = parseWith(endWaitBody, req.body ?? {});
     return o.tenant(req).engine.endWait(parseWith(idParams, req.params).id, note || undefined);

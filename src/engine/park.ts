@@ -110,12 +110,14 @@ export function elsewhereBrief(job: Job, answer: string): string {
  * open, back to waiting on it (the caller re-arms the question after the commit). One with no agent session only with
  * `freshSession`, the person's confirmation that it starts a fresh one (issue #530).
  */
-export function recordUnpark(c: EngineContext, id: string, freshSession = false, elsewhere = false): Job {
+export function recordUnpark(c: EngineContext, id: string, freshSession = false, elsewhere = false, who?: ParkAsk): Job {
   const { store } = c;
+  // Who picked it up (issue #2167), on its `job.unparked`: a person, or a running job through the park skill.
+  const by = parkAskOf({ ...(who?.by ? { by: who.by } : {}), ...(who?.via ? { via: who.via } : {}) });
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'parked') throw new EngineError('conflict', `job ${id} is ${job.status}: only a parked job can be re-queued`);
-  if (elsewhere) return recordElsewhere(c, job);
+  if (elsewhere) return recordElsewhere(c, job, by);
   // Never a fresh start the person did not agree to (issue #530).
   if (startsFresh(job) && !freshSession) {
     throw new EngineError('conflict', `job ${id} has no agent session to resume: re-queued, it starts a fresh session in its kept work tree, told its question and answer; confirm with freshSession`);
@@ -123,17 +125,17 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
   const q = job.questionId ? store.questions.get(job.questionId) : undefined;
   if (q?.status === 'open' && job.pendingAnswer === undefined) {
     const next = store.jobs.update(id, { status: 'waiting_answer' });
-    store.events.append({ type: 'job.unparked', jobId: id, questionId: q.id, data: { to: 'waiting_answer' } });
+    store.events.append({ type: 'job.unparked', jobId: id, questionId: q.id, data: { to: 'waiting_answer', ...by } });
     return next;
   }
   // Its proposal or research report still in review (issues #537, #543): it waits on it again.
   if (openItemOf(c, job) && job.pendingAnswer === undefined) {
     const next = store.jobs.update(id, { status: 'waiting_answer' });
-    store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'waiting_answer' } });
+    store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'waiting_answer', ...by } });
     return next;
   }
   const next = store.jobs.update(id, { status: 'queued', pendingAnswer: job.pendingAnswer ?? PARKED_RESUME, holdReason: undefined, waitReason: undefined });
-  store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'queued' } });
+  store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'queued', ...by } });
   return next;
 }
 
@@ -142,7 +144,7 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
  * an answer pending. Its question, or its proposal or research report, must be answered first: the claim resumes the
  * agent with the answer, never to wait on it again on another machine.
  */
-function recordElsewhere(c: EngineContext, job: Job): Job {
+function recordElsewhere(c: EngineContext, job: Job, by: ParkAsk): Job {
   const { store } = c;
   const refused = elsewhereRefusal(job);
   if (refused) throw new EngineError('conflict', refused);
@@ -154,6 +156,6 @@ function recordElsewhere(c: EngineContext, job: Job): Job {
     status: 'queued', pendingAnswer: job.pendingAnswer ?? PARKED_RESUME, holdReason: undefined, waitReason: undefined, resumeOn: undefined,
     parked: { ...job.parked!, elsewhere: { at: nowIso(c), checkpointAt: job.checkpoint!.at, ...(job.resumeOn ? { from: job.resumeOn } : {}) } },
   });
-  store.events.append({ type: 'job.unparked', jobId: job.id, data: { to: 'queued', elsewhere: true } });
+  store.events.append({ type: 'job.unparked', jobId: job.id, data: { to: 'queued', elsewhere: true, ...by } });
   return next;
 }

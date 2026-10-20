@@ -83,6 +83,12 @@ Proposals and research are sections of their own, beside questions. The menu lis
 - An open item whose job ended or was cancelled is cancelled with it.
 - Webhooks get `proposal.*` and `research.*` events.
 
+### Parked items
+
+- **Park** on a card sets the item aside. It leaves its section and waits under **Parked**, with who parked it and why. It gets no review and no decision until you pick it up.
+- **Pick up** puts it back where it was, at the same version and stage.
+- A running job can also park an item, or pick it up, with the `park` skill. A job parks only an item whose job waits on it. It never takes a decision. It picks up only an item a job parked: an item you parked stays parked until you pick it up.
+
 ## Phase shifts
 
 Sometimes a job's question cannot be answered until someone looks into it. A phase shift sends that part to research or a proposal. A job's **phase** is work, research or proposal. When it is not work, a small tag beside the job's title says `research`, `proposal`, or `fork: research` for a forked one.

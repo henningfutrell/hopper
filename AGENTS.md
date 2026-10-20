@@ -81,7 +81,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   elsewhere (issue #921, `docs/design.md` "Checkpoints and resume elsewhere"): `GET /job/checkpoint/patch|session`, with the
   job's proxy token, serves that job its own checkpoint, scrubbed, only while it runs resuming elsewhere; it changes nothing. A running job's
   topology read (issue #1905, `docs/design.md` "The infrastructure topology"): `GET /job/topology`, with the job's proxy token, only while
-  it is at work, serves its user's topology graph as `GET /api/topology` does; it changes and records nothing. A machine's address check (issue #698,
+  it is at work, serves its user's topology graph as `GET /api/topology` does; it changes and records nothing. A running job's
+  park (issue #2167, `docs/design.md` "Parking a proposal or a research report"): `GET`/`POST /job/park`, with the job's proxy token, only
+  while it is at work, lists its user's open proposals and research reports, and parks one whose job waits on it or picks up one a job
+  parked — never a running job, never itself, never an item a person parked —, kept as `job <its id>`, `via` `job`; it decides no item and
+  changes no other job, question, webhook or setting. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
   target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. A GitHub delivery (issue #1079,
   `docs/design.md` "GitHub deliveries"): `POST /github/webhook`, signed with the GitHub webhook secret (HMAC-SHA256, a system
