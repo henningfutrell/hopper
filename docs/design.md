@@ -119,18 +119,23 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 same Decision. Algorithm, in order:
 
 1. **Usage fraction per machine.** `usedFrac(m)` = max of `used/limit` over the readings of
-   `m` (`readingsOf`): those whose `machineId` is `m` when any of them throttles — that machine's
+   `m` (`readingsOf`) — every usage window of them, the session, the week and any other one not informational (issue #2169): those whose `machineId` is `m` when any of them throttles — that machine's
    own account (issue #139) — else those whose `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
    model only, issue #18) are skipped. So is a reading whose `resetsAt` is at or before `inputs.at`
-   (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
-   No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
+   (its window reset since it was read). A week window in its **burn window** counts, with 100% as its
+   hard limit ("Usage pacing"). No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`, `policy.softLanes`: the usage limits, "Usage limits" (issue #522)):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
    - between → `min(maxLanes, softLanes)`: the **soft lanes**, a fixed count, default 1 (issue #2091, "Soft lanes")
+
+   The band is taken per reading and the highest one wins (issue #2169): so a burning week window, whose hard limit is
+   100%, still sets the soft band from the soft limit. The reading that sets it, the most used of those in the highest
+   band, is the lane effect's **throttle** (`{ source, window, usedFrac, burning }`), and the machine's reason names its
+   window (`m: 97% used (week), lane cap 1 of 6 (soft)`).
 3. **Router verdict per waiting job** (from `job.advice`), always applied (issue #211):
    - no advice yet → hold `awaiting router advice` (nothing starts before the router has
      spoken)
@@ -204,11 +209,12 @@ stays pure — every time it compares is `inputs.at`.
 
 - **Burn window** (`HOPPER_BURN_WINDOW_HOURS`, default 18; 0: off). The hard limit keeps a reserve
   (5% at 0.95) that is right for most of the week, but the reset throws it away. Within the burn
-  window of a week window's `resetsAt`, that window does not throttle unless it is spent
-  (`used >= limit`): steps 1-2 skip it (`burnPhase`, `src/decider/usage.ts`), and the Decision's
-  reasons name it (`m: usage window week of s is in its burn window …: not throttling`). Session
-  windows still apply. The usage report (`GET /api/usage`) reads the same clock, so a burning window
-  shows as not throttling.
+  window of a week window's `resetsAt`, that window's hard limit is 100% (`burnPhase`,
+  `src/decider/usage.ts`): it stops the machine only when spent (`used >= limit`). It still throttles
+  at the soft limit (issue #2169): the reserve is spent at the soft lanes, not at every lane, which
+  would spend it in an hour and then stop the machine until the reset. The Decision's reasons name it
+  (`m: usage window week of s is in its burn window …: its hard limit is 100%`). Session windows never
+  burn. The usage report (`GET /api/usage`) reads the same clock, and its throttle says `burning`.
 - **Reset-aware placement** (`HOPPER_RESET_AWARE_PLACEMENT`, default `true`). Step 7 picks the
   machine with the most placement pressure: headroom of the binding (most used) week window — to the
   hard limit, to 100% while it burns — per hour left before its reset. An account that resets in 11
@@ -12881,10 +12887,11 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
 - **Informational readings never throttle**, whatever the limits: unchanged, the limits apply to the throttle
   fraction of decider step 1 only.
 - **The editor.** A panel across the top of the Usage view: usage now (the highest throttling fraction over online
-  machines) with its band, each online machine's lane cap at the draft (the decider's rule, repeated in the UI's
+  machines) with the window that sets it (its throttle, issue #2169: `97% weekly`) and its band, each online machine's lane cap at the draft (the decider's rule, repeated in the UI's
   model because the UI imports nothing of `src/`), and the graph (`ui/src/charts/usage-limits.tsx`): the last
   day's throttle line — the highest non-informational line of the usage history at each step — over the free,
-  soft and hard bands, the line coloured by the band each stretch of it is in, its last point usage now. Each
+  soft and hard bands, the line coloured by the band each stretch of it is in, its last point usage now, with a thin
+  line per throttling window under it, labelled at its end (`windowLines`, issue #2169). Each
   limit is a dashed rule with a handle: drag it, press on the graph to move the nearer limit there, or use the
   handle's arrow keys (Shift: 5%). A limit moves in whole percents and stops 1% short of the other. Two number
   fields edit the same draft. Nothing is stored until Save. A viewer sees the graph without handles.

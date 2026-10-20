@@ -14,10 +14,11 @@ const paced = (over: Partial<typeof pacing>) => ({ ...policy, pacing: { ...pacin
 const burning = paced({ burnWindowMs: 18 * H });
 
 describe('burn window (issue #373)', () => {
-  it('a week window inside its burn window and not spent stops throttling: the job starts', () => {
-    const d = decide(inputs({ usage: [week(96, 10)], waiting: [job('a')], policy: burning }), 'd1');
+  it('a week window inside its burn window and not spent keeps the soft lanes: its hard limit is 100% (issue #2169)', () => {
+    const d = decide(inputs({ usage: [week(96, 10)], waiting: [job('a'), job('b')], policy: burning }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['a']);
-    expect(d.reasons.join('\n')).toContain('local: usage window week of fake is in its burn window');
+    expect(d.reasons.join('\n')).toContain('local: usage window week of fake is in its burn window (resets');
+    expect(d.reasons.join('\n')).toContain('its hard limit is 100%');
   });
 
   it('without a burn window the same reading stops the machine', () => {
@@ -52,9 +53,9 @@ describe('burn window (issue #373)', () => {
     expect(d.start.map((s) => s.jobId)).toEqual(['a']);
   });
 
-  it('the lane effect reads the clock: a burning window shows as not throttling', () => {
+  it('the lane effect reads the clock: a burning window shows in the soft band, not at hard', () => {
     const effect = laneEffect(machine(), [week(96, 10)], burning, NOW);
-    expect(effect).toMatchObject({ cap: 4, band: 'free' });
+    expect(effect).toMatchObject({ cap: 1, band: 'soft', throttle: { window: 'week', burning: true } });
     expect(laneEffect(machine(), [week(96, 10)], burning, inHours(-20))).toMatchObject({ cap: 0, band: 'hard' });
   });
 });

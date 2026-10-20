@@ -75,8 +75,12 @@ describe('claude-plan through the composition root', () => {
     expect(report.limits).toEqual({ soft: 0.7, hard: 0.95, softLanes: 1, defaults: { soft: 0.7, hard: 0.95, softLanes: 1 }, set: false });
     // The machine's lanes stay open for its other executor; the scripted executor's jobs are capped at the soft lanes, 1.
     expect(report.machines).toEqual([{
-      machineId: 'local', label: expect.any(String), online: true, maxLanes: 4, usedFrac: 0, cap: 4, band: 'free',
-      executors: [{ executor: 'test', usedFrac: 0, cap: 4, band: 'free' }, { executor: 'scripted', usedFrac: 0.8, cap: 1, band: 'soft' }],
+      machineId: 'local', label: expect.any(String), online: true, maxLanes: 4, usedFrac: 0, cap: 4, band: 'free', throttle: { source: 'fake', usedFrac: 0 },
+      executors: [
+        { executor: 'test', usedFrac: 0, cap: 4, band: 'free', throttle: { source: 'fake', usedFrac: 0 } },
+        // The session is the throttle (issue #2169): it is the most used of the windows in the highest band.
+        { executor: 'scripted', usedFrac: 0.8, cap: 1, band: 'soft', throttle: { source: 'claude', window: 'session', usedFrac: 0.8 } },
+      ],
     }]);
 
     const jobs: Job[] = [];

@@ -1,6 +1,6 @@
 // The Usage view's model (design.md "Usage and accounts (issue #18)"): how a usage reading, a usage
 // source, a machine's lane effect and an account are written. `now` is passed in: pure.
-import type { MachineLaneEffect, PartAccount, UsageReading, UsageSourceReport } from '../../../src/domain/types.ts';
+import type { MachineLaneEffect, PartAccount, UsageReading, UsageSourceReport, UsageThrottle } from '../../../src/domain/types.ts';
 import { ago } from './format.ts';
 
 /** A reading's window (`session`, `week (Fable)`), else its source's name (a source with one budget). */
@@ -42,6 +42,13 @@ export function laneEffectText(m: Pick<MachineLaneEffect, 'band' | 'cap' | 'maxL
   }
 }
 
+/** A usage window in words: `weekly` for a week window (`week`, `week (Fable)` → `weekly (Fable)`), else as named. */
+export const windowWord = (window: string): string => window.replace(/^week(?!ly)/i, 'weekly');
+
+/** The window that throttles (issue #2169): `97% weekly`; a burning week window says its hard limit is 100%. */
+export const throttleText = (t: UsageThrottle): string =>
+  `${Math.round(t.usedFrac * 100)}% ${t.window === undefined ? t.source : windowWord(t.window)}${t.burning ? ', in its burn window: hard at 100%' : ''}`;
+
 /**
  * One line per executor whose budget limits it apart from its machine (issue #140): a machine runs
  * several agent frameworks, and one framework's budget leaves the others' jobs alone.
@@ -49,7 +56,7 @@ export function laneEffectText(m: Pick<MachineLaneEffect, 'band' | 'cap' | 'maxL
 export function executorEffectLines(m: MachineLaneEffect): string[] {
   return m.executors
     .filter((e) => e.cap !== m.cap || e.band !== m.band)
-    .map((e) => `${e.executor}: ${Math.round(e.usedFrac * 100)}% used, ${laneEffectText({ band: e.band, cap: e.cap, maxLanes: m.maxLanes })}`);
+    .map((e) => `${e.executor}: ${Math.round(e.usedFrac * 100)}% used${e.throttle?.window ? ` (${windowWord(e.throttle.window)})` : ''}, ${laneEffectText({ band: e.band, cap: e.cap, maxLanes: m.maxLanes })}`);
 }
 
 const SERVICES: Record<string, string> = { claude: 'Claude', github: 'GitHub' };

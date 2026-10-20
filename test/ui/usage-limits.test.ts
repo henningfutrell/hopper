@@ -5,7 +5,7 @@
 // number from 0; from soft to hard the lane cap is the soft lanes (1 when none), at most the machine's lanes.
 import { describe, expect, it } from 'vitest';
 import type { UsageSeries } from '../../src/domain/types.ts';
-import { bandAt, capAt, dragLimit, limitsProblem, throttleLine } from '../../ui/src/model/usage-limits.ts';
+import { bandAt, capAt, dragLimit, limitsProblem, throttleLine, windowLines } from '../../ui/src/model/usage-limits.ts';
 
 const L = { soft: 0.7, hard: 0.95 };
 
@@ -58,5 +58,20 @@ describe('usage limits model', () => {
       { t: Date.parse('2026-10-08T02:00:00.000Z'), v: 0.6 },
       { t: Date.parse('2026-10-08T03:00:00.000Z'), v: 0.1 },
     ]);
+  });
+
+  it('a line per throttling window (issue #2169): labelled by its window, informational ones left out', () => {
+    const s = (window: string | undefined, account: string, informational = false): UsageSeries =>
+      ({ account, ...(window ? { window } : {}), informational, unit: '%', gaps: [], resets: [], points: [{ at: '2026-10-08T01:00:00.000Z', usedFrac: 0.5 }] });
+    expect(windowLines([s('session', 'a'), s('week', 'a'), s('week (Fable)', 'a', true)]).map((l) => l.label)).toEqual(['session', 'weekly']);
+    expect(windowLines([s('week', 'a')])[0]!.points).toEqual([{ t: Date.parse('2026-10-08T01:00:00.000Z'), v: 0.5 }]);
+    // Two accounts with the same window: the account tells them apart; a source with one budget: its name.
+    expect(windowLines([s('week', 'a'), s('week', 'b'), s(undefined, 'budget')]).map((l) => l.label)).toEqual(['weekly · a', 'weekly · b', 'budget']);
+  });
+
+  it('a burning week window reaches the hard band only when spent', () => {
+    expect(bandAt(0.97, { ...L, hard: 0.95 }, true)).toBe('soft');
+    expect(bandAt(1, L, true)).toBe('hard');
+    expect(capAt(4, 0.97, L, true)).toBe(1);
   });
 });
