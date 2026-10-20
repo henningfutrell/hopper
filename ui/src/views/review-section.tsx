@@ -193,8 +193,7 @@ function Decide({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type: 
   );
 }
 
-/** One review item's card: also in the critical job tracker (issue #2203). */
-export function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type: ReviewSectionView }) {
+function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type: ReviewSectionView }) {
   const ui = REVIEW_UI[kind];
   const job = useJobIndex().get(p.jobId);
   const role = useHopper((s) => s.user?.role);

@@ -47,8 +47,6 @@ export interface HopperState {
   presort: PreSort | null;
   /** The high-priority threshold /api/queue answered (issue #535); null until read: nothing is tagged. */
   highPriority: number | null;
-  /** The critical priority /api/queue answered (issue #2203): the critical job tracker shows the jobs at or above it; null until read, 0: off. */
-  criticalPriority: number | null;
   /** GET /api/priority-lanes (issue #535): the settings, the lanes chosen, every lane's reliability; null until read. */
   priorityLanes: PriorityLanesView | null;
   blastRadius: BlastRadiusView | null; // GET /api/blast-radius (issue #542); null until read
@@ -101,7 +99,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], effectivePriority: {}, locked: [], items: null, inFlight: null, gate: null, presort: null, highPriority: null, criticalPriority: null, priorityLanes: null, blastRadius: null, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], effectivePriority: {}, locked: [], items: null, inFlight: null, gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
   decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   recorded: { usage: 0, machine: 0 },
@@ -113,14 +111,13 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
 /** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
-const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'effectivePriority' | 'locked' | 'items' | 'inFlight' | 'gate' | 'presort' | 'highPriority' | 'criticalPriority'> => ({
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'effectivePriority' | 'locked' | 'items' | 'inFlight' | 'gate' | 'presort' | 'highPriority'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...(q.waitingOn ?? []), ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
   effectivePriority: q.effectivePriority ?? {},
   locked: q.locked, items: q.items ?? null, inFlight: q.inFlight ?? null,
   gate: q.gate, presort: q.presort,
   highPriority: typeof q.highPriority === 'number' ? q.highPriority : null,
-  criticalPriority: typeof q.criticalPriority === 'number' ? q.criticalPriority : null,
 });
 
 export async function refreshHealth() { set({ health: await get<Health>('/api/health') }); }

@@ -86,8 +86,6 @@ export interface Queue {
   presort: PreSort;
   /** The high-priority threshold (issue #535): a job at or above it is tagged and listed first. */
   highPriority: number;
-  /** The critical priority (issue #2203): a job at or above it is a critical job, tracked on every page; 0: off. Absent from an older daemon. */
-  criticalPriority?: number;
   /** Each waiting job's effective priority (issue #1776): its priority with any boost. Absent from an older daemon. */
   effectivePriority?: Record<string, number>;
 }
