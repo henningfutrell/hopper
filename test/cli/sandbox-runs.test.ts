@@ -12,6 +12,8 @@ describe('hopper sandbox runs (issue #2197)', () => {
     const approve = sandboxCall(['approve-run', 'j1', 'asked-1']);
     expect(approve).toMatchObject({ role: 'admin', path: '/ui/api/sandbox-requests' });
     expect(await approve.body!(undefined as never)).toEqual({ action: 'approve-run', job: 'j1', template: 'asked-1' });
+    // Part 3: --allow-again approves the access for later jobs too.
+    expect(await sandboxCall(['approve-run', 'j1', 'asked-1', '--allow-again']).body!(undefined as never)).toEqual({ action: 'approve-run', job: 'j1', template: 'asked-1', allowAgain: true });
     expect(await sandboxCall(['decline-run', 'j1', 'asked-1', '--reason', 'not now']).body!(undefined as never)).toEqual({ action: 'decline-run', job: 'j1', template: 'asked-1', reason: 'not now' });
   });
 
@@ -19,5 +21,6 @@ describe('hopper sandbox runs (issue #2197)', () => {
     expect(() => sandboxCall(['approve-run', 'j1'])).toThrow(/usage: hopper sandbox list/);
     expect(() => sandboxCall(['decline-run', 'j1', 'asked-1'])).toThrow(/usage: hopper sandbox list/);
     expect(() => sandboxCall(['approve-run', 'j1', 'asked-1', '--reason', 'x'])).toThrow(/usage: hopper sandbox list/);
+    expect(() => sandboxCall(['decline-run', 'j1', 'asked-1', '--reason', 'x', '--allow-again'])).toThrow(/usage: hopper sandbox list/);
   });
 });

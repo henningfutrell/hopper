@@ -21,6 +21,7 @@
 //     no approved plan is refused by the apply gate, and nothing is minted
 //   Scenario: a write need is one run card (issue #2197): the template it waits on is no card of its own; one notice of
 //     the card; one approval of the run card, and the step goes on with no other approval; a declined card tells the step no
+//   Scenario: the run card's approval is for its job only (part 3); with allow again it is for every job, and remembered
 //   Scenario: sandbox strictness locked for the template (issue #655 part 8): the need step is refused, saying why
 //   Scenario: a need the vault mints nothing for is refused, saying why; a bad call is refused before anything runs
 import { spawn } from 'node:child_process';
@@ -197,8 +198,26 @@ describe('need steps (issue #1007)', () => {
     expect(r.stdout + r.stderr).toContain(`${write}: no apply without a plan`);
     const events = await ofJob(b, jobId);
     expect(events.find((e) => e.type === 'vault.mint_refused')?.data).toMatchObject({ machine: expect.stringMatching(/^hopper-need-/), template: t!.name, job: jobId });
+    // Part 3: with no allow again, the approval is for this job's runs only, and no write approval is remembered.
     const after = await vaultOf(b);
-    expect(after.templates.find((x) => x.name === t!.name)).toMatchObject({ approval: { by: expect.any(String) }, pending: { profiles: [] } });
+    expect(after.templates.find((x) => x.name === t!.name)).toMatchObject({ approval: { by: expect.any(String), jobs: [jobId] }, pending: { profiles: [] } });
+    expect(events.find((e) => e.type === 'vault.approved')?.data).toMatchObject({ template: t!.name, jobs: [jobId] });
+    expect(after.rememberedWrites ?? []).toEqual([]);
+  });
+
+  it('allow again on a run card (issue #2197 part 3): the approval is for every job, and the write approval is remembered', async () => {
+    const b = await bootSteps([]);
+    const { creds, jobId } = await stepJob(b);
+    const run = step(b, creds, ['need', `write/aws-role/${ACCOUNT}/deploy`, ...WHY, '--plan', 'put a parameter (undo: delete it)', '--command', 'true', '--wait', '60']);
+    await run.waiting;
+    const [card] = (await vaultOf(b)).runs ?? [];
+    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: card!.template, allowAgain: true }, { token: b.token });
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect((await run.end).stderr).toContain('hopper-step: the template is ready; the step runs now');
+    const t = approved.body.templates.find((x) => x.name === card!.template)!;
+    expect(t.approval).toMatchObject({ by: expect.any(String) });
+    expect(t.approval!.jobs).toBeUndefined();
+    expect(approved.body.rememberedWrites).toEqual([expect.objectContaining({ operation: 'write', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` } })]);
   });
 
   it('a declined run card tells the waiting step no (issue #2197)', async () => {
