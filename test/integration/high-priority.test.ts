@@ -1,7 +1,7 @@
 // Issue #535: a high-priority job is tagged and first wherever it waits, through the real daemon, store and HTTP
 // server. Its question and login sort first and carry its priority in the API and in their events (webhooks send
 // events as they are); its failure and hand-off carry it too; a label change follows everywhere at the next sync,
-// a started job's too, without a restart.
+// a started job's too, without a restart. The queue answers the critical priority too (issue #2203).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FailuresView, Job, LoginView, Question } from '../../src/domain/types.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -102,5 +102,17 @@ describe('high priority, everywhere', () => {
   it('the queue answers the high-priority threshold, so every list of jobs tags them alike', async () => {
     const a = await start();
     expect((await a.api('GET', '/api/queue')).body.highPriority).toBe(75);
+  });
+
+  it('the queue answers the critical priority, so the critical job tracker shows the same jobs (issue #2203)', async () => {
+    const a = await start();
+    expect((await a.api('GET', '/api/queue')).body.criticalPriority).toBe(100);
+  });
+
+  it('the queue answers 0 for the critical priority when HOPPER_CRITICAL_PRIORITY turns it off', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    t = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_CRITICAL_PRIORITY: '0' }, plugins: { machines: lanes(1) }, seams: { levels: [] } });
+    expect((await t.api('GET', '/api/queue')).body.criticalPriority).toBe(0);
   });
 });

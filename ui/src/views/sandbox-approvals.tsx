@@ -68,7 +68,8 @@ function grants(t: TemplateView | undefined, c: RunCardView): ReactNode {
   );
 }
 
-function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCardView; template?: TemplateView | undefined; asks?: ProfileAsk[] | undefined; secrets: readonly VaultSecret[]; can: boolean; high?: number | undefined }) {
+/** One run card: also in the critical job tracker (issue #2203). */
+export function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCardView; template?: TemplateView | undefined; asks?: ProfileAsk[] | undefined; secrets: readonly VaultSecret[]; can: boolean; high?: number | undefined }) {
   const [reason, setReason] = useState('');
   const [declining, setDeclining] = useState(false);
   const key = runKey(c, t);
