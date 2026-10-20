@@ -174,8 +174,7 @@ function Resolve({ h }: { h: HandoffView }) {
   );
 }
 
-/** One hand-off: also in the critical job tracker (issue #2203). */
-export function HandoffRow({ h }: { h: HandoffView }) {
+function HandoffRow({ h }: { h: HandoffView }) {
   const canAct = useCanOperate();
   const canAdmin = useCanAdmin();
   const now = useNow();

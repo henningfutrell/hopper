@@ -1,7 +1,6 @@
 // The page: nothing until the session is read, then the landing page logged out (issue #213), or the
 // shell — header, navigation, the current view — signed in. Loads once, then lives on SSE. Another hopper at this
-// address (issue #1295): its notice alone, in place of all of it. The critical job tracker (issue #2203) sits over every
-// view, so it stays through navigation.
+// address (issue #1295): its notice alone, in place of all of it.
 import { AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,7 +38,6 @@ import { Settings } from '@/views/settings';
 import { Sources } from '@/views/sources';
 import { Usage } from '@/views/usage';
 import { Accounts } from '@/views/accounts';
-import { CriticalTracker } from './critical-tracker';
 import { Header } from './header';
 import { Landing } from './landing';
 import { StackNotices } from './drift';
@@ -79,7 +77,6 @@ function Shell() {
           <StackNotices />
           <WindowsLinkNotice />
           <UpdateNotice />
-          {loaded && <CriticalTracker />}
           {loadError && (
             <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">
               <AlertTriangle className="size-4" />Could not load from the daemon: {loadError}

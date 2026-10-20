@@ -36,7 +36,7 @@ function RerunButton({ job }: { job: Job }) {
  * Issue #542: a job held at the blast-radius gate runs on a gated machine only once a person lets it through. An admin
  * does, after a confirmation that says what it widens; anyone else sees the hold and no button.
  */
-export function GatePassButton({ job }: { job: Job }) {
+function GatePassButton({ job }: { job: Job }) {
   const admin = useCanAdmin();
   const machines = useHopper((s) => s.machines);
   if (!admin || !heldAtGate(job)) return null;
