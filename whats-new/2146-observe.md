@@ -1,0 +1,1 @@
+- Access can now approve observing a cluster or a namespace: reading it and opening a connection to its pods, for a job's long-lived sandbox that reaches the monitoring services.

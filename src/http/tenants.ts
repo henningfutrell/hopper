@@ -45,6 +45,7 @@ import type { UserMachineLink } from '../users/runtime.ts';
 import type { UserGitHubProxy } from '../users/github-proxy.ts';
 import type { WindowsSteps } from '../windows-steps/index.ts';
 import type { NeedSteps } from '../sandbox/need-steps.ts';
+import type { Bastions } from '../sandbox/bastions.ts';
 import type { SandboxRequests } from '../sandbox/requests.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
@@ -110,6 +111,8 @@ export interface TenantParts {
   windowsSteps: WindowsSteps;
   /** need steps (issue #1007): their jobs' steps in need boxes of a template that covers their needs. */
   needSteps: NeedSteps;
+  /** Bastions (issue #2146): each job's one need box that outlives a step, forwarding to its targets. */
+  bastions: Bastions;
   /** Direct jobs (issue #901): jobs a person submits straight to the hopper, with no GitHub issue. */
   directJobs: DirectJobs;
   /** Search (issue #945): the user's index and the permission-checked search. */

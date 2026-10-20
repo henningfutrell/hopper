@@ -232,6 +232,9 @@ export function observeGaps(model: ModelJson): string[] {
   return gapsIn(model, OBSERVE_WRITTEN, OBSERVE_ASKED);
 }
 
+/** The tuples OpenFGA takes under a model with these observe gaps: none of observe's grants when it lacks them (issue #2146). */
+export const observeKept = <T extends { relation: string }>(tuples: T[], gaps: readonly string[]): T[] => (gaps.length === 0 ? tuples : tuples.filter((t) => t.relation !== 'grants_observe'));
+
 /** What the model lacks for artifacts (issue #624); empty: shares are decided. A gap here denies every share, never a mint. */
 export function artifactGaps(model: ModelJson): string[] {
   return gapsIn(model, ARTIFACT_WRITTEN, ARTIFACT_ASKED);

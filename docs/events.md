@@ -4915,6 +4915,53 @@ Version 1 (`docs/schemas/vault.unbound.v1.json`). A sandbox ended, and the Secre
 }
 ```
 
+## `bastion.started`
+
+Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (issue #2146, design.md "Bastions"): one need box of `template` that holds `kubectl port-forward` to each of `targets` (`<cluster>/<namespace>/<kind>/<name>:<port>`) on 127.0.0.1 inside it, its kube tokens minted for its observe profiles (each a `vault.minted` with `box` as its machine) and minted again while it runs. It ends at `expiresAt` unless it is used before. Never a token.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `template` | string | yes |
+| `box` | string | yes |
+| `targets` | string[] | yes |
+| `expiresAt` | string | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "template": "observe-uat",
+  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "targets": [
+    "uat/monitoring/svc/prometheus-server:9090"
+  ],
+  "expiresAt": "2026-10-20T13:00:00.000Z"
+}
+```
+
+## `bastion.ended`
+
+Version 1 (`docs/schemas/bastion.ended.v1.json`). A bastion ended (issue #2146): `reason` `stopped` (by the job, a person or the hopper, `by`), `expired` (its TTL passed with no use), `job-ended`, or `failed` (a renewal was refused, or its box ended by itself: `problem`). Its tokens are released and its box burned.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `template` | string | yes |
+| `box` | string | yes |
+| `reason` | `stopped` \| `expired` \| `job-ended` \| `failed` | yes |
+| `by` | string | no |
+| `problem` | string | no |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "template": "observe-uat",
+  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "reason": "stopped",
+  "by": "job"
+}
+```
+
 ## `vault.credential_asked`
 
 Version 1 (`docs/schemas/vault.credential_asked.v1.json`). A job on a box loaded a skill whose credential its template does not give (issue #583), and the hopper asked a person for one: a credential request. The skill, the template, the machine, the job, and what the job said it needs it for. Once per job and request.

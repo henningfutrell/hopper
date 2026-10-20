@@ -21,6 +21,7 @@ import { withActionLines, type TemplateActionsAnswer } from '../vault/template-a
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
 import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
+import { BASTION_SKILL, bastionAsk, type BastionUser } from './bastion-skill.ts';
 import { isServedSkill, repoCopyOf, servedSkill, servedText } from './library.ts';
 
 /** What a job refused for its trust can do (issue #655 part 16): nothing it asks raises its trust. */
@@ -30,7 +31,7 @@ const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the min
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
 /** One user's side: their jobs, the check of a token, their event log, and what a box of theirs may be given. */
-export interface SkillUser {
+export interface SkillUser extends Pick<BastionUser, 'bastions'> {
   id: string;
   holds(parts: ProxyTokenParts): boolean;
   job(jobId: string): Job | undefined;
@@ -178,6 +179,12 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       return { status: 200, text: `${text}\n` };
     }
     if (name === SANDBOX_SKILL) return sandbox();
+    // Issue #2146: the job's bastion, after the same approvals as its sandbox runs.
+    if (name === BASTION_SKILL) {
+      return bastionAsk(user, job, { asset: said, template: field(body, 'template'), targets: field(body, 'targets'), why }, {
+        no, loaded: (text) => { record('skill.loaded'); return { status: 200, text }; }, waiting: (text) => ({ status: 202, text }), waitingText, declinedText,
+      });
+    }
     if (name === 'help') {
       const h = helpForAgent(said);
       if ('no' in h) return no(404, h.no);

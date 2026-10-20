@@ -232,12 +232,19 @@ export const NO_SECRET_COPY = 'a step with vault secrets runs only in a need box
 /** How long past the step's time limit the runtime's own wait may take: the hopper's timer ends the step first. */
 const WAIT_GRACE_MS = 5000;
 
+/** A need box's vault secrets replaced while it runs (issue #2146: a bastion's renewed tokens), each a file as at its start. */
+export type SecretsRenewal = (secrets: Record<string, string>) => Promise<void>;
+
+/** What runs a need box hears and says: its output, its stop, and (issue #2146) how to renew its secrets once it runs. */
+export interface NeedBoxIo { log(chunk: string): void; signal: AbortSignal; pollMs?: number; phases?(p: NeedBoxPhases): void; running?(renew: SecretsRenewal): void }
+
 /**
  * Runs one need box to its end: its output to `log` as it comes, at most every `pollMs`. `signal` stops it (the job's
  * request gone). Never rejects: a failure of its own is `problem`, exit 125. The box and its volume are removed after it.
- * `phases` is given the time of each part once the step ends (issue #1737).
+ * `phases` is given the time of each part once the step ends (issue #1737). `running` is told, once its files are in, how
+ * to replace its vault secrets while it runs (a box with secrets only): a bastion's renewed tokens (issue #2146).
  */
-export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number; phases?(p: NeedBoxPhases): void }): Promise<NeedBoxResult> {
+export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: NeedBoxIo): Promise<NeedBoxResult> {
   const labels = { [NEED_LABEL]: box.instanceId, [USER_LABEL]: box.userId };
   const volume = `${box.name}-home`;
   let id = '';
@@ -285,6 +292,13 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { 
       if (files.inputs && inputsBytes > 0) await copyIn(id, `${HOME}/work`, files.inputs);
       writeFileSync(ready, filesTar([{ name: `${FILES_DIR}/.ready`, data: '', mode: 0o600 }]), { mode: 0o600 });
       await copyIn(id, HOME, ready);
+      if (secrets && io.running) {
+        const renewal = join(box.dir, 'need-renew.tar');
+        io.running(async (next) => {
+          writeFileSync(renewal, filesTar(Object.entries(next).map(([name, data]) => ({ name: `${FILES_DIR}/secrets/${name}`, data, mode: 0o600 }))), { mode: 0o600 });
+          try { await copyIn(id, HOME, renewal); } finally { rmSync(renewal, { force: true }); }
+        });
+      }
     }
     lap('start');
     let ended = false;

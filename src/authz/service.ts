@@ -14,7 +14,7 @@ import {
   profileProblem, type RadiusRules,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, observeGaps, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, trustGaps, vaultGrantGaps, type ModelJson } from './model.ts';
+import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, observeGaps, observeKept, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, trustGaps, vaultGrantGaps, type ModelJson } from './model.ts';
 import { belowMinimum, gateTuples, holderTuples, minTrusts, setMinTrust, trustedPath, trustTuples } from './trust.ts';
 import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, gitlabIntakeActorCheck, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject, keyedByEmail } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
@@ -78,8 +78,7 @@ export function createAccess(o: AccessOptions): Access {
     let memo: { dsl: string; gaps: string[] } | undefined;
     return (dsl) => (memo?.dsl === dsl ? memo : (memo = { dsl, gaps: gapsIn(compileAccessModel(dsl)) })).gaps;
   };
-  const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps), itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps);
-  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), gitlabIntakeGapsOf = gapsMemo(gitlabIntakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps), machineTerminalGapsOf = gapsMemo(machineTerminalGaps), trustGapsOf = gapsMemo(trustGaps), observeGapsOf = gapsMemo(observeGaps);
+  const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps), itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps), sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), gitlabIntakeGapsOf = gapsMemo(gitlabIntakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps), machineTerminalGapsOf = gapsMemo(machineTerminalGaps), trustGapsOf = gapsMemo(trustGaps), observeGapsOf = gapsMemo(observeGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -108,10 +107,7 @@ export function createAccess(o: AccessOptions): Access {
   /** Each live job's trust and each profile's gate (issue #655, part 15), when the model has what they need; else none. */
   const liveTrustTuples = (): RelationshipTuple[] => (trustGapsOf(model().dsl).length === 0 ? [...trustTuples(o.requesters()), ...gateTuples(o.repo.liveTuples())] : []);
   /** The approvals as kept, but each grant of observe (issue #2146) while the model lacks it: OpenFGA would refuse it, and every mint with it. */
-  const liveApprovalTuples = (): RelationshipTuple[] => {
-    const all = o.repo.liveTuples().map(plain);
-    return observeGapsOf(model().dsl).length === 0 ? all : all.filter((t) => t.relation !== 'grants_observe');
-  };
+  const liveApprovalTuples = (): RelationshipTuple[] => observeKept(o.repo.liveTuples().map(plain), observeGapsOf(model().dsl));
   /** Tuples as OpenFGA is given them: a person by their email (issue #1380). Asked once per use, so a user who takes an email is moved at the next. */
   const emailKeyed = (): ((t: RelationshipTuple) => RelationshipTuple) => keyedByEmail(o.emails?.() ?? new Map());
   /** Who is live and what is shared, as written: a check asks OpenFGA only once it holds both as they are now. */
@@ -176,10 +172,8 @@ export function createAccess(o: AccessOptions): Access {
     if (liveKey() !== pushedRequesters) dirty = true;
     if (dirty) { await running; await sync(); }
     if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
-    const pushed = pushedModel()!;
-    const noObserve = r.operation === 'observe' ? observeGapsOf(model().dsl) : [];
-    if (noObserve.length > 0) return { allowed: false, modelId: pushed.modelId, reason: `the access model lacks what observe needs: ${noObserve.join(', ')}: add it in Settings → Access` };
-    const profile = { operation: r.operation, asset: r.asset }, key = emailKeyed();
+    const pushed = pushedModel()!, noObserve = r.operation === 'observe' ? observeGapsOf(model().dsl) : [];
+    const profile = { operation: r.operation, asset: r.asset }, key = emailKeyed(); if (noObserve.length > 0) return { allowed: false, modelId: pushed.modelId, reason: `the access model lacks what observe needs: ${noObserve.join(', ')}: add it in Settings → Access` };
     try {
       const allowed = await server.check(pushed.storeId, pushed.modelId, key({ subject, relation: `can_${r.operation}`, object: assetObject(r.asset) }), contextual.map(key));
       if (!allowed) return { allowed, modelId: pushed.modelId, reason: `${who} is not approved to ${r.operation} on ${describeAsset(r.asset)}` };

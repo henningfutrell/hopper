@@ -241,6 +241,8 @@
         "vault.check_mint_refused",
         "vault.binding_named",
         "vault.unbound",
+        "bastion.started",
+        "bastion.ended",
         "vault.credential_asked",
         "vault.credential_given",
         "vault.agent_credential_given",
