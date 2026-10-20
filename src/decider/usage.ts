@@ -1,11 +1,13 @@
 import { DEFAULT_SOFT_LANES } from '../domain/decider-policy.ts';
-import type { DeciderPolicy, ExecutorLaneEffect, MachineSnapshot, UsageReading } from '../domain/types.ts';
+import type { DeciderPolicy, ExecutorLaneEffect, MachineSnapshot, UsageReading, UsageThrottle } from '../domain/types.ts';
 
 export interface MachineUsage {
   usedFrac: number;
+  /** The readings that throttle, each with its fraction; `burning`: a week window in its burn window. */
+  counted: { reading: UsageReading; usedFrac: number; burning: boolean }[];
   /** Readings skipped because their limit is not positive. */
   ignored: UsageReading[];
-  /** Week windows skipped because they are in their burn window (issue #373). */
+  /** Week windows in their burn window (issue #373): their hard limit is 100% (issue #2169). */
   burning: UsageReading[];
 }
 
@@ -28,7 +30,7 @@ const isWeek = (r: UsageReading): boolean => /^week/i.test(r.window ?? '');
 /**
  * Where a reading stands against its reset at `at` (issue #373): `reset` — its window has reset since
  * it was read, so it says nothing now; `burn` — a week window, not spent, within `burnWindowMs` of its
- * reset: what is left would be lost at the reset, so it does not throttle; else `keep`.
+ * reset: what is left would be lost at the reset, so its hard limit is 100% (issue #2169); else `keep`.
  */
 export function burnPhase(r: UsageReading, at: string, burnWindowMs = 0): 'keep' | 'burn' | 'reset' {
   if (r.resetsAt === undefined) return 'keep';
@@ -42,18 +44,20 @@ const applicableTo = (machineId: string, readings: UsageReading[], executor: str
   readingsOf(machineId, readings.filter((r) => limits(r, executor))).filter((r) => !r.informational);
 
 /**
- * Step 1: max of used/limit over the readings of the machine — and, given an executor, that limit
- * its jobs; without one, only the readings that limit every job. The machine's own readings win
- * per executor (`readingsOf`). Informational readings never apply, nor does a reading whose window
- * reset since it was read or one in its burn window (`burnPhase`, at the decision's clock `at`).
+ * Step 1: max of used/limit over every usage window of the machine (issue #2169: the session, the week, any other
+ * not informational) — and, given an executor, that limit its jobs; without one, only the readings that limit every
+ * job. The machine's own readings win per executor (`readingsOf`). Informational readings never apply, nor does a
+ * reading whose window reset since it was read (`burnPhase`, at the decision's clock `at`). A week window in its burn
+ * window counts, with 100% as its hard limit (`laneCap`).
  */
 export function machineUsage(machineId: string, readings: UsageReading[], at: string, p: DeciderPolicy, executor?: string): MachineUsage {
-  const applicable = applicableTo(machineId, readings, executor);
-  const burning = applicable.filter((r) => burnPhase(r, at, p.pacing?.burnWindowMs) === 'burn');
-  const kept = applicable.filter((r) => burnPhase(r, at, p.pacing?.burnWindowMs) === 'keep');
-  const ignored = kept.filter((r) => r.limit <= 0);
-  const fracs = kept.filter((r) => r.limit > 0).map((r) => r.used / r.limit);
-  return { usedFrac: fracs.length === 0 ? 0 : Math.max(...fracs), ignored, burning };
+  const live = applicableTo(machineId, readings, executor)
+    .map((r) => ({ r, phase: burnPhase(r, at, p.pacing?.burnWindowMs) }))
+    .filter((x) => x.phase !== 'reset');
+  const ignored = live.filter((x) => x.r.limit <= 0).map((x) => x.r);
+  const counted = live.filter((x) => x.r.limit > 0).map((x) => ({ reading: x.r, usedFrac: x.r.used / x.r.limit, burning: x.phase === 'burn' }));
+  const burning = counted.filter((c) => c.burning).map((c) => c.reading);
+  return { usedFrac: counted.length === 0 ? 0 : Math.max(...counted.map((c) => c.usedFrac)), counted, ignored, burning };
 }
 
 /**
@@ -76,6 +80,8 @@ export type CapBand = 'offline' | 'free' | 'soft' | 'hard';
 export interface LaneCap {
   cap: number;
   band: CapBand;
+  /** The usage window that sets the band (issue #2169); absent: no reading throttles. */
+  throttle?: UsageThrottle;
 }
 
 /**
@@ -87,16 +93,36 @@ export const machinePolicy = (m: Pick<MachineSnapshot, 'usageLimits'>, p: Decide
     ? { ...p, softLimit: m.usageLimits.soft, hardLimit: m.usageLimits.hard, ...(m.usageLimits.softLanes === undefined ? {} : { softLanes: m.usageLimits.softLanes }) }
     : p);
 
+const BAND_RANK: Record<CapBand, number> = { offline: 0, free: 1, soft: 2, hard: 3 };
+
+/** A reading's band at `p`: a burning week window reaches hard only when spent (issue #2169). */
+function bandOf(c: MachineUsage['counted'][number], p: DeciderPolicy): Exclude<CapBand, 'offline'> {
+  if (c.usedFrac < p.softLimit) return 'free';
+  return c.usedFrac >= (c.burning ? 1 : p.hardLimit) ? 'hard' : 'soft';
+}
+
+const throttleOf = (c: MachineUsage['counted'][number]): UsageThrottle => ({
+  source: c.reading.source, ...(c.reading.window === undefined ? {} : { window: c.reading.window }),
+  usedFrac: c.usedFrac, ...(c.burning ? { burning: true as const } : {}),
+});
+
 /**
  * Step 2: the most lanes the machine may run, by its own usage limits when it has them (`machinePolicy`): every lane below
- * the soft limit, the soft lanes (at most maxLanes) from it to the hard limit, none at the hard limit (issue #2091).
+ * the soft limit, the soft lanes (at most maxLanes) from it to the hard limit, none at the hard limit (issue #2091). The
+ * band is the highest of its readings' bands; its throttle is the reading that sets it, the most used of those (issue #2169).
  */
-export function laneCap(m: MachineSnapshot, usedFrac: number, policy: DeciderPolicy): LaneCap {
+export function laneCap(m: MachineSnapshot, usage: Pick<MachineUsage, 'counted'>, policy: DeciderPolicy): LaneCap {
   if (!m.online) return { cap: 0, band: 'offline' };
   const p = machinePolicy(m, policy);
-  if (usedFrac < p.softLimit) return { cap: m.maxLanes, band: 'free' };
-  if (usedFrac >= p.hardLimit) return { cap: 0, band: 'hard' };
-  return { cap: Math.min(m.maxLanes, p.softLanes ?? DEFAULT_SOFT_LANES), band: 'soft' };
+  const top = usage.counted
+    .map((c) => ({ c, band: bandOf(c, p) }))
+    .reduce<{ c: MachineUsage['counted'][number]; band: Exclude<CapBand, 'offline'> } | undefined>(
+      (a, b) => (!a || BAND_RANK[b.band] > BAND_RANK[a.band] || (b.band === a.band && b.c.usedFrac > a.c.usedFrac) ? b : a), undefined);
+  const band = top?.band ?? 'free';
+  const throttle = top ? { throttle: throttleOf(top.c) } : {};
+  if (band === 'free') return { cap: m.maxLanes, band, ...throttle };
+  if (band === 'hard') return { cap: 0, band, ...throttle };
+  return { cap: Math.min(m.maxLanes, p.softLanes ?? DEFAULT_SOFT_LANES), band, ...throttle };
 }
 
 export interface LaneEffect extends LaneCap {
@@ -114,14 +140,15 @@ export interface LaneEffect extends LaneCap {
  */
 export function laneEffect(m: MachineSnapshot, readings: UsageReading[], p: DeciderPolicy, at: string): LaneEffect {
   const executors = m.executors.map((executor): ExecutorLaneEffect => {
-    const { usedFrac } = machineUsage(m.id, readings, at, p, executor);
-    return { executor, usedFrac, ...laneCap(m, usedFrac, p) };
+    const usage = machineUsage(m.id, readings, at, p, executor);
+    return { executor, usedFrac: usage.usedFrac, ...laneCap(m, usage, p) };
   });
   const each = [undefined, ...m.executors].map((e) => machineUsage(m.id, readings, at, p, e));
   const ignored = [...new Set(each.flatMap((u) => u.ignored))];
   const burning = [...new Set(each.flatMap((u) => u.burning))];
   const least = executors.reduce<ExecutorLaneEffect | undefined>((a, b) => (!a || b.cap > a.cap || (b.cap === a.cap && b.usedFrac < a.usedFrac) ? b : a), undefined);
-  if (least) return { usedFrac: least.usedFrac, cap: least.cap, band: least.band, ignored, burning, executors };
-  const { usedFrac } = each[0]!;
-  return { usedFrac, ...laneCap(m, usedFrac, p), ignored, burning, executors };
+  if (least) {
+    return { usedFrac: least.usedFrac, cap: least.cap, band: least.band, ...(least.throttle ? { throttle: least.throttle } : {}), ignored, burning, executors };
+  }
+  return { usedFrac: each[0]!.usedFrac, ...laneCap(m, each[0]!, p), ignored, burning, executors };
 }

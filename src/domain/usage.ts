@@ -89,6 +89,18 @@ export interface UsageSourceReport extends UsageSourceState {
   name: string;
 }
 
+/**
+ * The usage window that sets a lane effect's band (issue #2169): the most used of the readings in the highest band.
+ * `burning`: a week window in its burn window, whose hard limit is 100% (issue #373).
+ */
+export interface UsageThrottle {
+  source: string;
+  /** As the reading names it (`session`, `week`); absent: the source's one budget. */
+  window?: string;
+  usedFrac: number;
+  burning?: true;
+}
+
 /** What usage does to the jobs of one executor on a machine: the readings that limit that executor. */
 export interface ExecutorLaneEffect {
   executor: string;
@@ -96,6 +108,8 @@ export interface ExecutorLaneEffect {
   /** The most lanes its jobs may hold there. */
   cap: number;
   band: 'offline' | 'free' | 'soft' | 'hard';
+  /** The window that sets the band; absent: no reading throttles. */
+  throttle?: UsageThrottle;
 }
 
 /**
@@ -113,6 +127,8 @@ export interface MachineLaneEffect {
   /** The lane cap: maxLanes below the soft limit, the soft lanes (at most maxLanes) from it to the hard limit, 0 at the hard limit or offline. */
   cap: number;
   band: 'offline' | 'free' | 'soft' | 'hard';
+  /** The window that sets the band (issue #2169); absent: no reading throttles. */
+  throttle?: UsageThrottle;
   /** Per executor the machine runs, in its order. */
   executors: ExecutorLaneEffect[];
   /** The machine's own usage limits (issue #1860): the user's usage limits do not change its lane cap. Absent: the user's apply. */

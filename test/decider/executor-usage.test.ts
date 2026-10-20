@@ -76,10 +76,10 @@ describe('usage per executor', () => {
   it('the lane effect: the machine\'s cap is its least constrained executor\'s; each executor\'s own effect beside it', () => {
     const effect = laneEffect(mixed, [claudeAt(82.5), reading(10, 100, { executors: ['codex'] })], policy, NOW);
     expect(effect).toEqual({
-      usedFrac: 0.1, cap: 4, band: 'free', ignored: [], burning: [],
+      usedFrac: 0.1, cap: 4, band: 'free', throttle: { source: 'fake', usedFrac: 0.1 }, ignored: [], burning: [],
       executors: [
-        { executor: 'claude', usedFrac: 0.825, cap: 1, band: 'soft' },
-        { executor: 'codex', usedFrac: 0.1, cap: 4, band: 'free' },
+        { executor: 'claude', usedFrac: 0.825, cap: 1, band: 'soft', throttle: { source: 'claude', usedFrac: 0.825 } },
+        { executor: 'codex', usedFrac: 0.1, cap: 4, band: 'free', throttle: { source: 'fake', usedFrac: 0.1 } },
       ],
     });
   });

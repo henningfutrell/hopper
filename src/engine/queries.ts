@@ -118,9 +118,9 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
         sources: getUsageSources(),
         limits: usageLimitsOf(c),
         machines: machines.map((m) => {
-          // At the clock, as the decider reads it: a week window in its burn window shows as not throttling (issue #373).
-          const { usedFrac, cap, band, executors } = laneEffect(m, readings, policy, c.clock.now().toISOString());
-          return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, executors, ...(m.usageLimits ? { usageLimits: { ...m.usageLimits } } : {}) };
+          // At the clock, as the decider reads it: a week window in its burn window throttles up to 100% (issues #373, #2169).
+          const { usedFrac, cap, band, throttle, executors } = laneEffect(m, readings, policy, c.clock.now().toISOString());
+          return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, ...(throttle ? { throttle } : {}), executors, ...(m.usageLimits ? { usageLimits: { ...m.usageLimits } } : {}) };
         }),
       };
     },
