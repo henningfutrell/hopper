@@ -35,6 +35,7 @@ import { JobNotes } from './job-notes';
 import { JobTerminal } from './job-terminal';
 import { JobTranscript } from './job-transcript';
 import { JobTrust } from './job-trust';
+import { JobCritical } from './job-critical';
 import { BomGraph, BomTable, JobHeader, useJobBom, WaitingPinned } from './job-bom';
 
 type Read = { state: 'reading' } | { state: 'found'; job: Job } | { state: 'none' };
@@ -136,6 +137,7 @@ export function JobView() {
               <Fact label="held"><span data-slot="job-hold-reason" className="text-warn">{heldAtGate(read.job) ? gateHoldText(read.job.holdReason, machines) : read.job.holdReason}</span></Fact>
             )}
             <JobTrust job={read.job} />
+            <JobCritical job={read.job} />
             {read.job.laneId && <Fact label="lane">{laneName(read.job.laneId, machines)}</Fact>}
             <Fact label={`${forge} as`}><span data-slot="job-acting-as" className={acting.kind === 'acted' ? 'font-mono' : 'text-muted-foreground'}>{actingText(acting, forge)}</span></Fact>
             <Fact label="created">{read.job.createdAt}</Fact>

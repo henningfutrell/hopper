@@ -1405,6 +1405,24 @@ Version 1 (`docs/schemas/job.trust_approved.v1.json`). A person, or an agent wit
 }
 ```
 
+## `job.critical_flag_changed`
+
+Version 1 (`docs/schemas/job.critical_flag_changed.v1.json`). A person, or an agent over the API, set (`critical` true) or cleared the job's critical flag (issue #2203, `POST /ui/api/jobs/:id/critical`): a job with the flag is a critical job whatever its priority, so the critical job tracker shows it on every page. The lane over the cap stays a rule of the critical priority. `person` and `via` say who acted.
+
+| field | type | required |
+|---|---|---|
+| `critical` | boolean | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "critical": true,
+  "person": "ada",
+  "via": "ui"
+}
+```
+
 ## `intake.stamped`
 
 Version 1 (`docs/schemas/intake.stamped.v1.json`). The job store signed the job's trust stamp from where its work came (issue #655 part 11, design.md "Trust stamps"): at its making (`by` `intake`, or `job` for a job a job made), for a new spec (`respecify`), at the backfill of a job made before stamps (`backfill`), or when a sync judged its origin later (`intake`, or `person` when a quarantine stays). `level` and `reasons`: as on the stamp; `was`: a quarantined job's level before it. `from`: the level its stamp verified at before, when it had one. `spec`: the SHA-256 of the spec the stamp covers, as canonical JSON. The MAC is never in it. A job with no stamp (no stamp key, or a parent whose stamp does not verify) has none.
@@ -4517,7 +4535,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`. `jobs` (issue #2197 part 3): a run card approved with no allow again approves those jobs' runs only; absent, every job's.
 
 | field | type | required |
 |---|---|---|
@@ -4527,6 +4545,7 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
 | `egress` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
+| `jobs` | string[] | no |
 
 ```json
 {
@@ -6799,6 +6818,34 @@ Version 1 (`docs/schemas/direct_query.cancelled.v1.json`). A direct query's job 
   "id": "query-5f1c",
   "requestId": "r-42",
   "jobId": "j1",
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.question_asked`
+
+Version 1 (`docs/schemas/direct_query.question_asked.v1.json`). A direct query's job asked a question that reached a person (issue #2184, part 2): once per question, with its `question.escalated_to_human`. `questionId`, `question` (the text, masked), `answerUrl` (where a person answers it in the UI). The caller answers it with `POST /ui/api/questions/:id/answer`, as a person does in Questions. Delivered to the `callback` subscription too.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `questionId` | string | yes |
+| `question` | string | yes |
+| `answerUrl` | string | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "questionId": "q1",
+  "question": "Which cluster do you mean?",
+  "answerUrl": "https://hopper.example.com/#question-q1",
   "url": "https://hopper.example.com/#direct-queries/query-5f1c",
   "callback": "grok-bot"
 }

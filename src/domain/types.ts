@@ -149,8 +149,11 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * `kindCheck`: Jev's kind check (issue #655, src/domain/kind-check.ts, the point `intake-kind` active), made before its first start.
    */
   originPending?: true; stamp?: import('./trust-stamp.ts').TrustStamp; kindCheck?: import('./kind-check.ts').KindCheck;
-  /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
-  userRank?: number;
+  /**
+   * `userRank`: the job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest.
+   * `critical`: the critical flag (issue #2203): a person marked the job critical, whatever its priority, so the critical job tracker shows it.
+   */
+  userRank?: number; critical?: true;
   laneId?: LaneId;
   /** Its task count (issue #794): done of total, as it last reported it. None before it has a task list. */
   tasks?: TaskCount;
@@ -288,8 +291,8 @@ export interface JobSourceRef {
   /**
    * Its repository's **visibility** and its **linked pull requests** (issue #655 part 19): the pull requests its text names,
    * who wrote each, whether its head is a fork and whether a trusted actor wrote it, as read when its origin was judged.
-   * Absent as `originActs` is. A record for people and for Jev's trust check: no rule reads them, but the job may edit a
-   * linked pull request's title or body (issue #2151).
+   * Absent as `originActs` is. A record for people and for Jev's trust check: no rule reads them (a job's pr edit reads its
+   * item's approved text, issue #2227).
    */
   visibility?: RepoVisibility; linkedPulls?: LinkedPullRequest[];
 }

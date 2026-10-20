@@ -10,7 +10,7 @@ import { HANDOFF_WAIT } from '../domain/work-items.ts';
 import { blockedStuck } from '../domain/item-lifecycle.ts';
 import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews, type Sessions } from './kept-work.ts';
-import { knownCauses } from './causes.ts';
+import { knownCauses, matchCause, NO_WAY_TO_HOPPER } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
 import { live, liveWhy } from './continued.ts';
 import { profileOf } from './profile.ts';
@@ -124,14 +124,16 @@ export function resolvableOf(id: string, h: Handoff | undefined, action: Handoff
  * Whether a person may resolve a hand-off each way now, and why not (issue #551): one that runs its item again
  * (Continue, I fixed it) only while it is the newest job of its item and nothing runs it again already; Done by hand
  * and Won't do while it is open, and those only while its source takes its item back (`takesBack`, issue #1010).
- * `resumable`: whether its job's own agent session can resume — then Continue resumes it, else it runs a new job. Its
+ * `resumable`: whether its job's own agent session can resume — then Continue resumes it, else it runs a new job, as for a
+ * failure with no way to the hopper (issue #2233). Its
  * card (issue #621) says what happened and the resolution to take, one the hopper takes now (`takenCard`).
  */
 export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Handoff, resumable: (job: Job) => boolean, takesBack: TakesBack): HandoffView {
   const record = h.recordId ? store.failures.get(h.recordId) : undefined;
   const job = store.jobs.get(h.jobId);
   const learn = record ? { signature: record.signature, ...(record.causeName ? { causeName: record.causeName } : {}) } : {};
-  const continueResumes = job !== undefined && resumable(job);
+  // A session with no way to the hopper (issue #2233) keeps telling its agent the hopper is out of reach: Continue runs a new job.
+  const continueResumes = job !== undefined && resumable(job) && (record?.causeId ?? matchCause(h.error, '', [])?.id) !== NO_WAY_TO_HOPPER;
   const card = handoffCard(h, continueResumes);
   if (h.status === 'closed') {
     const closed = no(h.resolution ? `already resolved: ${RESOLUTION_TEXT[h.resolution.action]}` : 'already closed');

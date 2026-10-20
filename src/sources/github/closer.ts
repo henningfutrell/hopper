@@ -50,7 +50,7 @@ export const REFERENCING_PULL_REQUESTS_QUERY = `query($owner: String!, $name: St
 
 export const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issueOrPullRequest(number: $number) {
-    __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt ${HEAD_COMMIT_CHECKS} }
+    __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt closedAt ${HEAD_COMMIT_CHECKS} }
   } }
 }`;
 
@@ -75,7 +75,7 @@ interface Referenced {
   baseRefName?: string;
   body?: string;
 }
-interface Numbered extends Referenced { __typename?: string; mergedAt?: string | null }
+interface Numbered extends Referenced { __typename?: string; mergedAt?: string | null; closedAt?: string | null }
 interface Source extends Referenced { __typename?: string; body?: string; mergedAt?: string | null; repository?: { nameWithOwner?: string } }
 const PR_STATES: Record<string, ReferencingPullRequest['state']> = { OPEN: 'open', CLOSED: 'closed', MERGED: 'merged' };
 interface GqlResponse {
@@ -201,7 +201,7 @@ export function pullRequestFrom(body: unknown, what: string): NumberedPullReques
   if (n?.__typename !== 'PullRequest' || !n.url || !n.createdAt || !state) return undefined;
   return {
     url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', state,
-    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...headOf(n, r2.checksUnknown),
+    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...(n.closedAt ? { closedAt: n.closedAt } : {}), ...headOf(n, r2.checksUnknown),
   };
 }
 

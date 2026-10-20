@@ -345,7 +345,7 @@ export const EVENT_SCHEMAS = {
   'template.checked': strict({ template: z.string(), state: z.enum(['passed', 'failed']), failed: z.array(z.string()), problem: z.string().optional(), artifact: z.string().optional() }),
   'template.check_requested': strict({ template: z.string(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
-  'vault.approved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), egress: z.array(z.string()).optional(), secrets: z.array(z.string()), by: z.string() }),
+  'vault.approved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), egress: z.array(z.string()).optional(), secrets: z.array(z.string()), by: z.string(), jobs: z.array(z.string()).optional() }),
   'vault.revoked': strict({ template: z.string(), by: z.string() }), 'vault.read_policy_set': strict({ assets: z.array(z.string()), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),

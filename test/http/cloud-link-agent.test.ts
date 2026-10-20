@@ -250,6 +250,8 @@ describe('the cloud link\'s agent', () => {
     await waitFor(() => io.hellos() === 1);
     io.last().terminate();
     await waitFor(() => io.hellos() === 2, { what: 'the agent connects again' });
+    // hopper.io answers the hello after it counts it: the agent records the connection only when that answer comes.
+    await waitFor(() => types(i).length === 4, { what: 'the agent records the connection again' });
     expect(types(i)).toEqual(['cloud_link.linked', 'cloud_link.connected', 'cloud_link.disconnected', 'cloud_link.connected']);
   });
 });

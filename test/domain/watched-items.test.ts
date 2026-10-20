@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { settledBy, waitOnOf, waitsFor, type WaitOn } from '../../src/domain/wait-on.ts';
-import { endedNote, paneCarriesWait, watchedItems, watchedOf, watchKey, type WatchedEnd } from '../../src/domain/watched-items.ts';
+import { endedBeforeWait, endedNote, paneCarriesWait, watchedItems, watchedOf, watchKey, type WatchedEnd } from '../../src/domain/watched-items.ts';
 
 const NOT_FOUND_NOTE = (url: string) => `${url} cannot be read: no such repository or item, or the hopper has no access to it, so the wait never ends on it; check the owner and name you wrote`;
 const since = '2026-10-16T21:00:00.000Z';
@@ -109,6 +109,18 @@ describe('waking on what it watches (issue #1508)', () => {
     expect(waitsFor(waiting('a', { for: 'x', on: { kind: 'outside', what: 'identity#199' } }), s!)).toBe(true);
     expect(waitsFor(waiting('b', { for: 'x', on: { kind: 'outside', what: 'identity#199' } }), s!)).toBe(false);
     expect(waitsFor({ ...waiting('a', { for: 'x', on: { kind: 'outside', what: 'identity#199' } }), status: 'queued' }, s!)).toBe(false);
+  });
+
+  it('an outside wait: an item that ended before the wait began is not its event (issue #2219); a wait on an item still ends on it', () => {
+    const pr = { ref: { kind: 'issue', repo: 'acme/gitops', number: 431 }, url: 'https://github.com/acme/gitops/pull/431', state: 'closed' } as const;
+    const outside = waiting('a', { for: 'the gitops apply', on: { kind: 'outside', what: 'the apply after gitops#431', why: 'gated' } });
+    expect(endedBeforeWait(outside, { ...pr, at: '2026-10-16T20:59:59.000Z' })).toBe(true);
+    expect(endedBeforeWait(outside, { ...pr, at: since })).toBe(false);
+    expect(endedBeforeWait(outside, pr)).toBe(false);
+    expect(endedBeforeWait(outside, undefined)).toBe(false);
+    expect(endedBeforeWait(waiting('b', { for: 'gitops#431' }), { ...pr, at: '2026-10-16T20:00:00.000Z' })).toBe(true);
+    expect(endedBeforeWait(waiting('c', { for: 'x', on: { kind: 'item', repo: 'acme/gitops', number: 431 } }), { ...pr, at: '2026-10-16T20:00:00.000Z' })).toBe(false);
+    expect(endedBeforeWait(outside, { ...pr, state: 'not_found', at: '2026-10-16T20:00:00.000Z' })).toBe(false);
   });
 });
 

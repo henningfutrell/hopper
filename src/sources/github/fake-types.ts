@@ -73,8 +73,8 @@ export interface FakeGitHub extends GitHubApi {
   markReady(url: string): void;
   /** Merge an open pull request (at `at`, default now): one that closes its issue closes it. */
   mergePullRequest(url: string, at?: string): void;
-  /** Close an open pull request without a merge. */
-  closePullRequest(url: string): void;
+  /** Close an open pull request without a merge, at `at` (default now). */
+  closePullRequest(url: string, at?: string): void;
   /** The merge of a pull request (opened at createdAt) closes the issue; no open one is left. */
   closeByPullRequest(repo: string, number: number, pr: { createdAt: string; mergedAt: string }): ClosingPullRequest;
   deleteIssue(repo: string, number: number): void;

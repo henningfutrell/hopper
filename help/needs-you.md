@@ -32,7 +32,9 @@ Every row shows, also when its count is 0. The page says *Nothing waits on you* 
 
 ## Critical jobs
 
-A **critical job** is a job whose priority is at or above the critical priority (100 unless your admin changed `HOPPER_CRITICAL_PRIORITY`). The **Critical jobs** widget shows each critical job under the header, on every page. It stays when you go to another page or reload.
+A **critical job** is a job whose priority is at or above the critical priority (100 unless your admin changed `HOPPER_CRITICAL_PRIORITY`), or a job that a person marked critical. The **Critical jobs** widget shows each critical job under the header, on every page. It stays when you go to another page or reload.
+
+To mark any job critical, whatever its priority, open its job page and select **Mark critical** in the **critical** row. **Clear critical flag** removes the mark. The mark changes only what the widget shows: it does not give the job a lane past the cap.
 
 For each job, the widget shows:
 
@@ -107,13 +109,24 @@ Each new review request records the event `source.review_requested`. Your webhoo
 |---|---|
 | **Asked for** | A job needs a credential the vault does not give. Give one, or decline with a reason. |
 | **Vault grants** | A job on a box asked the vault with no grant. Select **Grant**, or **Deny**: then that job asks no more. Granted items show here, with who granted them and when, and **Revoke**. |
-| **Sandbox runs** | One card for each job's run that waits for you. The card shows why the job asks, the job and its link, its plan and how to undo it, each need in plain words, and the access it needs: the image, the vault secrets and the egress hosts. Select **Approve** once: the hopper approves the access and the run together, and the job's step goes on with no other approval. Or write why not and select **Decline**: the job is told why. Cards of high-priority jobs show first. Runs that were approved or declined show below. A run of a blast radius the auto-approve policy holds, or whose every change you approved before (a remembered write approval), does not wait here. Skip this step with **Skip sandbox approval** on Settings → Vault. Each card's approval is its own: you can approve several cards in a row. |
+| **Sandbox runs** | One card for each job's run that waits for you. The card shows why the job asks, the job and its link, its plan and how to undo it, each need in plain words, and the access it needs: the image, the vault secrets and the egress hosts. Select **Approve** once: the hopper approves the access and the run together, and the job's step goes on with no other approval. The approval is for this job only: another job that asks for the same access gets a card of its own. To let later jobs with the same needs run with no new card, turn on **Allow again** on the card before you approve. Then the hopper also remembers each change you approved. Or write why not and select **Decline**: the job is told why. Cards of high-priority jobs show first. Runs that were approved or declined show below. A run of a blast radius the auto-approve policy holds, or whose every change you approved before (a remembered write approval), does not wait here. Skip this step with **Skip sandbox approval** on Settings → Vault. Each card's approval is its own: you can approve several cards in a row. |
 | **Template approvals** | A template you or another person saved is new, or has a new image, secret or profile. Select **Approve**. When the card lists a write, sync or apply profile, select **Approve all listed** to approve the template and each profile. A template a job asks for has no card here: you approve it on the job's card in **Sandbox runs**. |
 | **Unknown assets** | A template names a cluster that the vault cannot find: no AWS source of the topology lists it, and it has no minting credential or cluster override. No approval makes it work. Select **Add a cluster override** to name the cluster, or **Edit its needs on Settings → Vault** to change it to a known cluster, or select **Remove**. The card lists the known clusters, nearest first. A short name that is the start of more than one cluster (`uat` for `uat-eks` and `uat-gke`) is ambiguous: the card lists the clusters, and **Point at** a cluster changes the template to name it. These templates are not access requests: the Access requests badge does not count them, and Needs you counts them in its **Unknown clusters** row. |
 
 To approve several at once, select the box on each sandbox run or template card, or select **Select all waiting**. Then select **Approve selected**. Each approval goes on its own, at the same time. Each card shows **Approving…**, then **Approved**, or why it was not approved. One that fails does not stop the others.
 
 The page also links to **Settings → API tokens**, where you mint a box token for an agent that approves or merges through the API.
+
+### Access requests over the API
+
+An agent with an API token reads and decides the same requests. A token of the scope `*` (no limits) can do all of this. A token with other scopes needs the scope in each step.
+
+1. `GET /api/vault` lists what waits: `grantAsks` (vault grant asks), `requests` (credentials asked for) and `sandboxRequests` (sandbox runs). Scope: `vault:read`.
+2. `POST /ui/api/jobs/<job id>/grant-vault` grants a job the vault. `POST /ui/api/jobs/<job id>/deny-vault` denies its ask. Scopes: `jobs:grant-vault`, `jobs:deny-vault`.
+3. `POST /ui/api/vault` with `{ "action": "give-credential", … }` or `{ "action": "decline-credential", "request": "<id>", "reason": "<text>" }` answers a credential request. Scope: `vault:edit`.
+4. `POST /ui/api/sandbox-requests` with `{ "action": "approve-run", "job": "<job id>", "template": "<name>" }` approves a job's run card. `decline-run` with a `reason` declines it. Scope: `sandbox-requests:edit`.
+
+Each decision is recorded as a decision in the UI is: the same event, and the card shows who decided. A decision through an API token shows the token's name and yours, for example "granted by cos-key (API token of you)". A path that is no route gets `404` and "no such route". A route that the token's scopes do not cover gets `403`, and the answer names the scope it needs. See [API tokens](api-tokens.md).
 
 ### Delegate approvers
 
@@ -147,7 +160,7 @@ Every count comes from the same reads the UI makes, with the same scopes:
 | Count | Read |
 |---|---|
 | Intake | `GET /api/sources`: the intake items with `action: "approve"`. |
-| Access requests | `GET /api/vault`: `requests`, `grantAsks`, `runs` (the run cards), and the templates with `pending` items or no `approval` that no job asked for (no `askedBy`) and no run card names. A run card is decided with `POST /ui/api/sandbox-requests` `approve-run` or `decline-run` (`job`, `template`), or `hopper sandbox approve-run <job> <template>`. |
+| Access requests | `GET /api/vault`: `requests`, `grantAsks`, `runs` (the run cards), and the templates with `pending` items or no `approval` that no job asked for (no `askedBy`) and no run card names. A run card is decided with `POST /ui/api/sandbox-requests` `approve-run` or `decline-run` (`job`, `template`), or `hopper sandbox approve-run <job> <template>`. Add `allowAgain: true` (`--allow-again`) to approve the access for later jobs too. |
 | Unknown clusters | `GET /api/vault`: the templates with `unknownAssets`. |
 | Infra plans | `GET /api/infra-plans`: the plans with no `approval`, no failed check (`summary.failed`), and an `expiresAt` still to come. |
 | Pull requests | `GET /api/pull-requests`: the cards with `state: "open"` and `mergeable: "conflicts"`. |

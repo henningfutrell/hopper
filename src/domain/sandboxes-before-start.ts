@@ -5,13 +5,26 @@
 // step of a template it was told to use has no approval. Pure.
 import { checkWait } from './read-only-check.ts';
 import type { SandboxRequestView } from './sandbox-approvals.ts';
-import type { TemplateView } from './vault.ts';
+import { approvalCovers, type TemplateView } from './vault.ts';
 
 /** The start of the hold reason of a job whose named sandboxes are not approved and ready yet. */
 export const SANDBOXES_HOLD = 'awaiting its sandboxes';
 
-/** Whether a step may run in a box of the template now: approved, its image approved, every profile approved, its check passed. */
-export const templateReady = (t: TemplateView): boolean => t.approval !== undefined && !t.pending.image && t.pending.egress.length === 0 && t.pending.profiles.length === 0 && checkWait(t) === undefined;
+/**
+ * Why no step of the job may run in a box of the template now (issue #2236: the job is told which), or undefined when one
+ * may: approved for the job's runs (issue #2197 part 3), its image approved, every profile approved, its check passed.
+ */
+export function templateWait(t: TemplateView, jobId: string): string | undefined {
+  if (t.approval === undefined) return `template ${t.name} waits for a person to approve it on Access requests`;
+  if (!approvalCovers(t, jobId)) return `template ${t.name} is approved for other jobs' runs only: it waits for a person to approve it for this job on Access requests`;
+  if (t.pending.image) return `the image of template ${t.name} changed since it was approved: it waits for a person on Access requests`;
+  if (t.pending.egress.length > 0) return `template ${t.name} names an egress host not approved: ${t.pending.egress.join(', ')}`;
+  if (t.pending.profiles.length > 0) return `template ${t.name} waits for a person to approve ${t.pending.profiles.map((p) => `${p.operation} on ${p.asset.kind} ${p.asset.name}`).join(', ')} on Access requests`;
+  return checkWait(t);
+}
+
+/** Whether a step of the job may run in a box of the template now: `templateWait` gives no reason. */
+export const templateReady = (t: TemplateView, jobId: string): boolean => templateWait(t, jobId) === undefined;
 
 const escaped = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -31,7 +44,7 @@ export function namedTemplates(text: string, names: readonly string[]): string[]
 export function sandboxesHold(requests: readonly SandboxRequestView[], templates: readonly TemplateView[]): string | undefined {
   const waiting = requests.filter((r) => r.state === 'waiting' && r.jev?.state !== 'checking').map((r) => r.template);
   const checking = requests.filter((r) => r.state === 'waiting' && r.jev?.state === 'checking').map((r) => r.template);
-  const notReady = requests.filter((r) => r.state === 'approved' && !templates.some((t) => t.name === r.template && templateReady(t))).map((r) => r.template);
+  const notReady = requests.filter((r) => r.state === 'approved' && !templates.some((t) => t.name === r.template && templateReady(t, r.jobId))).map((r) => r.template);
   const why = [
     ...(waiting.length ? [`the sandbox runs of template ${waiting.join(', ')} wait for a person on Access requests`] : []),
     ...(checking.length ? [`Jev checks the sandbox runs of template ${checking.join(', ')}`] : []),
