@@ -4,7 +4,8 @@
 // runs, its current step and its last actions; it updates live from the event stream; each wait that is a person's is
 // acted on in the widget, by the route of its one home (the run card's, the vault grant's, the question's, the job's own
 // wait's, a hold's); a job that needs a person turns the widget red; an ended one stays until it is dismissed, and the
-// dismissal holds after a reload.
+// dismissal holds after a reload. Compact (issue #2261): one row per job until a person opens it, the ended ones folded
+// behind their count.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -79,6 +80,8 @@ const card = (id: string) => tracker()?.querySelector<HTMLElement>(`[data-slot="
 const wait = (id: string, kind: string) => card(id)?.querySelector<HTMLElement>(`[data-slot="critical-wait"][data-wait="${kind}"]`) ?? null;
 const button = (label: string, within: ParentNode = document) => [...within.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
 const click = (b: HTMLElement | undefined) => act(async () => { b!.click(); });
+/** Opens a job's row: its detail shows only when a person opens it (issue #2261). */
+const expand = (id: string) => click(card(id)!.querySelector<HTMLElement>('[data-slot="critical-row"]')!);
 const navigate = (hash: string) => act(async () => { window.location.hash = hash; window.dispatchEvent(new HashChangeEvent('hashchange')); });
 
 afterEach(async () => {
@@ -99,6 +102,10 @@ describe('the critical job tracker', () => {
     await vi.waitFor(() => expect(card('crit')).not.toBeNull());
     expect(card('plain')).toBeNull();
     expect(card('crit')!.textContent).toContain('Fix crit');
+    // Collapsed by default: one row, the title once, no detail.
+    expect(card('crit')!.textContent!.split('Fix crit').length).toBe(2);
+    expect(card('crit')!.querySelector('[data-slot="critical-where"]')).toBeNull();
+    await expand('crit');
     await vi.waitFor(() => expect(card('crit')!.querySelector('[data-slot="critical-where"]')!.textContent).toContain('sandbox kubectl-diag'));
     expect(card('crit')!.querySelector('[data-slot="critical-where"]')!.textContent).toContain('laptop');
     expect(card('crit')!.querySelector('[data-slot="critical-actions"]')).not.toBeNull();
@@ -129,12 +136,20 @@ describe('the critical job tracker', () => {
       events: [],
     };
     await boot('#machines');
-    await vi.waitFor(() => expect(wait('box', 'run')).not.toBeNull());
+    await vi.waitFor(() => expect(card('box')).not.toBeNull());
     expect(tracker()!.dataset.needsPerson).toBe('true');
+    // The collapsed row has the first wait's action: Continue ends the job's own wait from the row.
+    expect(wait('waits', 'wait')).toBeNull();
+    await click(button('Continue', card('waits')!));
+    await vi.waitFor(() => expect(posts.map((p) => p.path)).toContain('/ui/api/jobs/waits/end-wait'));
+    posts.length = 0;
+    // An action that opens a card opens the row with that card in place.
+    await click(button('Approve', card('box')!));
+    expect(wait('box', 'run')!.querySelector('[data-slot="critical-wait-card"]')).not.toBeNull();
+    for (const id of ['waits', 'asks', 'held']) await expand(id);
     expect(card('waits')!.querySelector('[data-slot="critical-step"]')!.textContent).toContain('waits for nodes to go Ready');
 
     // The run card: its own card opens in the widget, and its Approve approves the run, as Access requests does.
-    await click(button('Approve', wait('box', 'run')!));
     await click(button('Approve', wait('box', 'run')!.querySelector('[data-run-card]')!));
     await click(button('Approve', document.querySelector('[role="alertdialog"]')!));
     await vi.waitFor(() => expect(posts).toContainEqual({ path: '/ui/api/sandbox-requests', body: { action: 'approve-run', job: 'box', template: 'kubectl-diag' } }));
@@ -162,6 +177,10 @@ describe('the critical job tracker', () => {
   it('keeps an ended job until a person dismisses it, and the dismissal holds after a reload', async () => {
     daemon = { queue: { ...EMPTY_QUEUE, ended: [job('done', { status: 'finished', finishedAt: at })], running: [job('live')] }, questions: [], vault: VAULT, events: [] };
     await boot('#dashboard');
+    await vi.waitFor(() => expect(card('live')).not.toBeNull());
+    // An ended job folds behind its count: the panel shows the jobs that need attention.
+    expect(card('done')).toBeNull();
+    await click(button('1 ended', tracker()!));
     await vi.waitFor(() => expect(card('done')).not.toBeNull());
     // A job that has not ended has no Dismiss: it shows until it ends.
     expect(card('live')!.querySelector('button[aria-label="Dismiss"]')).toBeNull();
@@ -170,5 +189,6 @@ describe('the critical job tracker', () => {
     await boot('#dashboard', true);
     await vi.waitFor(() => expect(card('live')).not.toBeNull());
     expect(card('done')).toBeNull();
+    expect(button('1 ended', tracker()!)).toBeUndefined();
   });
 });
