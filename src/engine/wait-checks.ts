@@ -18,7 +18,7 @@ import { recordEndWait } from './wait.ts';
 /** How long a hopper holds a wait check it tests. */
 export const LEASE_MS = 2 * 60_000;
 
-/** The reads a check needs, as the job's source reads them; undefined, it cannot read now: the items of `refs` that ended; a pull request's checks (part 2); its reviews (part 3). */
+/** The reads a check needs, as the job's source reads them; undefined, it cannot read now: the items of `refs` that ended; a pull request's checks (part 2); its reviews (part 3), undefined when the job's source reads no pull request and a throw when the read failed (issue #2210). */
 export interface WaitReads {
   endedWatched(job: Job, refs: WatchedRef[]): Promise<WatchedEnd[] | undefined>;
   pullRequestChecks?(job: Job, repo: string, number: number): Promise<WaitedChecks | undefined>;
@@ -71,6 +71,16 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
     return { met: true, note: `the time you named passed (${iso(nowMs())}); ${outcome.result}` };
   }
 
+  /** A pull request a check reads (issue #2210): what `read` answers, else why not — the job's source reads none, or the read's error. Tried again at the next check. */
+  async function readPull<T>(at: { repo: string; number: number }, read: () => Promise<T | undefined> | undefined): Promise<T | { met: false; result: string }> {
+    const what = `${at.repo}#${at.number}`;
+    try {
+      return (await read()) ?? { met: false, result: `the job's source reads no pull request, so the hopper cannot read ${what}` };
+    } catch (e) {
+      return { met: false, result: `the hopper cannot read ${what} now: ${(e as Error).message}` };
+    }
+  }
+
   async function testCondition(job: Job, check: WaitCheck): Promise<CheckOutcome> {
     const cond = check.condition;
     switch (cond.kind) {
@@ -100,12 +110,12 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
         return commandOutcome(job.wait!, { runs, lost }, nowMs(), c.ownCommandGraceMs);
       }
       case 'pr_checks_ended': {
-        const pr = await c.waitReads?.pullRequestChecks?.(job, cond.repo, cond.number).catch(() => undefined);
-        return pr ? checksOutcome(pr, nowMs()) : { met: false, result: `the hopper cannot read ${cond.repo}#${cond.number} now` };
+        const pr = await readPull(cond, () => c.waitReads?.pullRequestChecks?.(job, cond.repo, cond.number));
+        return 'result' in pr ? pr : checksOutcome(pr, nowMs());
       }
       case 'pr_review_ended': {
-        const pr = await c.waitReads?.pullRequestReviews?.(job, cond.repo, cond.number).catch(() => undefined);
-        return pr ? reviewOutcome(pr, Date.parse(job.wait!.since)) : { met: false, result: `the hopper cannot read ${cond.repo}#${cond.number} now` };
+        const pr = await readPull(cond, () => c.waitReads?.pullRequestReviews?.(job, cond.repo, cond.number));
+        return 'result' in pr ? pr : reviewOutcome(pr, Date.parse(job.wait!.since));
       }
       case 'time_passed':
         return nowMs() >= Date.parse(cond.at) ? { met: true, note: `the time you named passed (${iso(nowMs())})` } : { met: false, result: `it waits until ${cond.at}` };

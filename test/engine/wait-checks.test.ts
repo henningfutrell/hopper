@@ -287,6 +287,37 @@ describe('a wait check (issue #1694)', () => {
     expect(r.asked).toEqual([]);
   });
 
+  it('a pull request read that fails: the check says GitHub\'s error, and asks again later (issue #2210)', async () => {
+    const url = testDatabaseUrl();
+    let fail = true;
+    const a = hopper(url, { ...reads(), async pullRequestChecks(_job, repo, number) {
+      if (fail) throw new Error(`pull request ${repo}#${number}: Resource not accessible by integration`);
+      return { url: `https://github.com/${repo}/pull/${number}`, state: 'open', checks: 'passing' };
+    } });
+    const job = waitingJob(a.store, { for: 'the checks of PR 8', on: { kind: 'pull_request', number: 8, about: 'checks' } });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({
+      result: 'the hopper cannot read octo/tools#8 now: pull request octo/tools#8: Resource not accessible by integration', nextCheckAt: new Date(now + FIRST_CHECK_MS).toISOString(),
+    });
+
+    fail = false;
+    now += FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(ended(a.store, job.id)[0]!.data).toMatchObject({ note: 'the checks of https://github.com/octo/tools/pull/8 passed' });
+  });
+
+  it('a job whose source reads no pull request: the check says so (issue #2210)', async () => {
+    const url = testDatabaseUrl();
+    const a = hopper(url, { ...reads(), async pullRequestChecks() { return undefined; }, async pullRequestReviews() { return undefined; } });
+    const checks = waitingJob(a.store, { for: 'the checks of PR 8', on: { kind: 'pull_request', number: 8, about: 'checks' } });
+    await a.checks.run();
+    now = T0 + FIRST_CHECK_MS;
+    await a.checks.run();
+    expect(a.store.jobs.get(checks.id)!.wait!.check).toMatchObject({ result: 'the job\'s source reads no pull request, so the hopper cannot read octo/tools#8' });
+  });
+
   it('a wait on a pull request\'s review: not met with no review since it began, then ended by a new review (part 3)', async () => {
     const url = testDatabaseUrl();
     const r = reads();

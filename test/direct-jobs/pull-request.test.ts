@@ -32,6 +32,7 @@ const job = (id: string, over: Partial<Job> = {}): Job => ({
 const follower: DirectPullRequests = {
   follow: async () => undefined, mergesOnReady: () => true, tendStarted: async () => undefined, checkLogs: async (f) => [...f],
   endedPullRequests: async () => [], endedWatched: async () => [],
+  waitedChecks: async (repo, number) => ({ url: `https://github.com/${repo}/pull/${number}`, state: 'open' }), waitedReviews: async (repo, number) => ({ url: `https://github.com/${repo}/pull/${number}`, state: 'open' }),
 };
 
 function source(events: DomainEvent[], jobs: Job[], pullRequests: DirectPullRequests | null = follower) {
