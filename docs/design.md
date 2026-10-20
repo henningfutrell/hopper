@@ -30133,3 +30133,59 @@ optional field of `job.wait_ended`. A build before this one ignores both.
 **Verification:** `test/domain/comment-wake.test.ts`, `test/integration/comment-wake.test.ts` (the real daemon over the
 fake herdr: a job on its own wait on a pull request; a stranger's comment on its issue wakes nothing; the owner's comment
 wakes it within one poll, told the comment as untrusted text).
+
+## One approval per sandbox run (issue #2197, part 1, 2026-10-19)
+
+Seen on a hopper: an urgent job asked for a write step during a production outage. Its template waited for a person
+on Access requests, Template approvals, apart from Sandbox runs, and the person looked for a run to approve for about 15
+minutes. For one-off work, approving the template and approving its run are one decision.
+
+- **The run card** (`runCards`, `src/domain/run-cards.ts`, pure; `GET /api/vault` `runs`). One card per job and template
+  that waits for a person: the job's waiting **sandbox request**; an ask of the job that waits on a template for a
+  person — `sandbox`, `sandbox-template`, a **need step**, and a named `--template` whose template waits
+  (`SandboxRequests.waited`, kept in memory with the job's `--why` and `--plan` while the job lives); and a waiting
+  template a live job asked for (`askedBy`). It names the job, why it asks, its plan (with each change's undo, as
+  issue #1001 asks of a write), when it asked, and what waits: the template, the run, or both. A run a person declined is
+  no card. A waiting template no live job waits on is no card: nothing runs when it is approved.
+- **One approval** (`POST /ui/api/sandbox-requests` `approve-run`, `job` and `template`; `hopper sandbox approve-run`).
+  The daemon approves the template as it is when any of it waits (`approveTemplate`: its image, tools, egress hosts, vault
+  secrets and read profiles), each write, sync or apply profile it lists (`approveProfile`, remembered as a person's
+  approval is, "Fewer sandbox approvals, part 2"), and the job's waiting run. The job's wait ends on these events as
+  before, and its step goes on with no other approval. An API token's `approve-run` of a card that lists a write, sync or
+  apply profile is asked of a person (202), as its `approve-profile` is (issue #909). A delegate approver (issue #1138)
+  may decide a card as it may a template or a run.
+- **One decline** (`decline-run`, `job`, `template`, `reason`). It declines the job's waiting run, or, when the job did not
+  ask for its run yet, a run made declined now (`vault.sandbox_declined`), so the job's ask that waits on the template is
+  told no (`sandboxWaits` answers the declined run, and the broker answers 403). A person's deny at gate 2, as `decline`.
+- **No template card for a job's template** (`ui/src/views/sandbox-approvals.tsx`, `template-approvals.tsx`). Access
+  requests shows Sandbox runs first, one card each, with the access the run needs — profiles in plain words, vault
+  secrets, egress hosts, the image and its tools —, the template's blast radius, and Approve and Decline. Template
+  approvals keeps only a template a person saved (no `askedBy`) that no run card holds. Approve selected selects run
+  cards and those template cards.
+- **The badge.** The Access requests badge, and its row in Needs you, count each run card once and a person's own
+  waiting templates, so a job that waits on a write template raises the badge by one. A run card of a high-priority job
+  (issue #535) comes first and marks the badge as a high-priority question does. Issue #2196 raises the badge for a job
+  waiting on a template; that wait is now a run card, counted in the same row.
+
+**Migration.** No stored format changes: the template's `askedBy`, `purpose` and `plan` are kept already, so a template
+that waited before this build, of a job still live, is a run card at once. An approved template keeps working as before.
+
+**Decided here.** The template stays the hopper's cache of the access, by the same name (`asked-<hash>`), so the same
+needs find it again, and an approval still covers a later ask of the same needs. A run card is keyed by job and template,
+not by request: a need step and a template request make no sandbox request, and keying by the request would leave their
+waits with no card. The decline lowers the job's trust as a sandbox request's decline does.
+
+**Not built (left for later parts).** An "allow again" choice on the card: today an approval of a card keeps the
+template approved for every later job with the same needs, as before, and a person's write approval is remembered for
+the time limit. An approval for this job only needs a template approval that names its job, read by the need step's
+covering template and the template reuse. A notifier message for each new run card.
+
+**Residual risk, stated.** One click now approves the template's image, egress hosts, vault secrets and every write the
+card lists. The confirm says each of them, and the card lists them before the click. Each approval is still its own
+event (`vault.approved`, `template.profile_approved`, `vault.sandbox_approved`) that names the person.
+
+Tests: `test/domain/run-cards.test.ts`, `test/sandbox/requests.test.ts` (the kept asks; a decline before the run is
+asked), `test/integration/need-steps.test.ts` (the real daemon and the real `hopper-step`: a write need makes exactly one
+run card and no template card; one `approve-run` and the step runs in a need box with no other approval; a declined card
+tells the step no), `test/ui/sandbox-runs-view.test.ts` (the cards, one post each; a person's own template card),
+`test/ui/needs-you.test.ts` (the count, high-priority first), `test/cli/sandbox-runs.test.ts`.
