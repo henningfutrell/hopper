@@ -5,12 +5,15 @@
 // one home opened under it — the question's, the run card's, the review item's, the hand-off's, the login's, the
 // credential request's —, the same card on the same entry, so acting here or there clears both. A job that needs a person
 // turns the widget red and pulses, and notifies the browser once per new wait when the person allowed notifications.
-// Expanded, a job shows its whole timeline and links to its job page. An ended job stays until a person dismisses it.
+// Compact (issue #2261): one row per job — its title once, its state, for how long, its first wait's action —, opened in
+// place by a click to show the rest, its last two actions with no title; the ended jobs folded behind their count; the
+// panel a few rows high while no row is open. Its timeline links to its job page. An ended job stays until a person
+// dismisses it.
 import { Bell, ChevronRight, ExternalLink, Play, ShieldCheck, Siren, X } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
-import { EventText, eventLineText } from '@/components/event-line';
-import { JobTitle, Since } from '@/components/job';
+import { detailOf } from '@/components/event-line';
+import { Since } from '@/components/job';
 import { JobTimeline } from '@/components/job-timeline';
 import { Dot, StatusBadge } from '@/components/status';
 import { TextChangeCard } from '@/components/text-change';
@@ -21,7 +24,8 @@ import { get, post, SessionRejected } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { laneName } from '@/model/board';
 import { hasEnded, trackerKey, waitKey, waitText, type TrackerWait } from '@/model/critical-jobs';
-import { jobHref } from '@/model/job';
+import { clock } from '@/model/format';
+import { goalOf, issueRef, jobHref } from '@/model/job';
 import type { DomainEvent, Job, JobBom, VaultView } from '@/model/wire';
 import { act, useHopper } from '@/store';
 import { useAttentionNotices, useCriticalJobs, type TrackedJob } from '@/store/critical-jobs';
@@ -73,27 +77,30 @@ function HomeCard({ job, w }: { job: Job; w: TrackerWait }) {
   }
 }
 
-/** One wait: what it is, and its action in place. */
-function WaitRow({ job, w }: { job: Job; w: TrackerWait }) {
+/** A wait's quick action, a button or a link in place; none for a wait whose action opens its card. */
+function QuickAction({ job, w }: { job: Job; w: TrackerWait }) {
   const operate = useCanOperate();
-  const [open, setOpen] = useState(false);
   const text = waitText(w);
-  const quick = (() => {
-    switch (w.kind) {
-      case 'grant': return operate && <Button size="xs" onClick={() => void grantVault(job.id)}><ShieldCheck />Grant</Button>;
-      case 'gate': return <GatePassButton job={job} />;
-      case 'hold': return operate && <Button size="xs" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><ShieldCheck />Approve</Button>;
-      case 'wait': return operate && <Button size="xs" title="What it waits for has happened: it goes on in its pane, told so." onClick={() => act(`/ui/api/jobs/${job.id}/end-wait`, {}, 'Wait ended')}><Play />Continue</Button>;
-      case 'accept': return <a href="#queue" className="text-xs text-warn hover:underline">{text.act} →</a>;
-      case 'origin': return <a href="#intake" className="text-xs text-warn hover:underline">{text.act} →</a>;
-      default: return null;
-    }
-  })();
+  switch (w.kind) {
+    case 'grant': return operate && <Button size="xs" onClick={() => void grantVault(job.id)}><ShieldCheck />Grant</Button>;
+    case 'gate': return <GatePassButton job={job} />;
+    case 'hold': return operate && <Button size="xs" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><ShieldCheck />Approve</Button>;
+    case 'wait': return operate && <Button size="xs" title="What it waits for has happened: it goes on in its pane, told so." onClick={() => act(`/ui/api/jobs/${job.id}/end-wait`, {}, 'Wait ended')}><Play />Continue</Button>;
+    case 'accept': return <a href="#queue" className="text-xs text-warn hover:underline">{text.act} →</a>;
+    case 'origin': return <a href="#intake" className="text-xs text-warn hover:underline">{text.act} →</a>;
+    default: return null;
+  }
+}
+
+/** One wait: what it is, and its action in place. `opened`: its card shows from the start. */
+function WaitRow({ job, w, opened = false }: { job: Job; w: TrackerWait; opened?: boolean }) {
+  const [open, setOpen] = useState(opened);
+  const text = waitText(w);
   return (
     <li data-slot="critical-wait" data-wait={w.kind} className="space-y-2 rounded-md border border-bad/40 bg-bad/5 px-2 py-1.5">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{text.what}</span>
-        {quick}
+        <QuickAction job={job} w={w} />
         {OPENS.has(w.kind) && (
           <Button size="xs" variant={open ? 'outline' : 'default'} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Close' : text.act}</Button>
         )}
@@ -123,42 +130,64 @@ function Timeline({ job }: { job: Job }) {
   return <JobTimeline job={job} events={events} nameOf={nameOf} machines={machines} statusOf={(id) => jobs[id]?.status} readEvents={readEventsOf} />;
 }
 
+/** One of the job's own events in plain words, with no title: the row names the job. */
+const actionText = (e: DomainEvent): string => {
+  const detail = detailOf(e);
+  return detail ? `${e.type} — ${detail}` : e.type;
+};
+
+function ActionLine({ e }: { e: DomainEvent }) {
+  return <li className="truncate"><span className="num text-muted-foreground/80" title={e.at}>{clock(e.at)}</span> {actionText(e)}</li>;
+}
+
 function TrackedRow({ t }: { t: TrackedJob }) {
   const { job, waits } = t;
   const machines = useHopper((s) => s.machines);
-  const nameOf = useJobName();
+  const [open, setOpen] = useState(false);
+  const [opened, setOpened] = useState<string | undefined>();
   const ended = hasEnded(job);
   const needs = waits.length > 0;
+  const first = waits[0];
+  const ref = issueRef(job);
   return (
-    <li data-slot="critical-job" data-job-id={job.id} data-needs-person={needs} className={cn('space-y-1.5 px-3 py-2', needs && 'bg-bad/5')}>
-      <div className="flex items-start gap-2">
-        <Dot tone={needs ? 'bad' : ended ? 'muted' : 'busy'} pulse={needs} className="mt-1.5" />
-        <JobTitle job={job} className="flex-1" />
-        <StatusBadge status={job.status} />
+    <li data-slot="critical-job" data-job-id={job.id} data-needs-person={needs} data-expanded={open} className={cn('px-3 py-1', needs && 'bg-bad/5')}>
+      <div className="flex min-h-7 items-center gap-2">
+        <button type="button" data-slot="critical-row" aria-expanded={open} title={`${goalOf(job)}\njob ${job.id}`}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => { setOpen(!open); setOpened(undefined); }}>
+          <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} aria-hidden />
+          <Dot tone={needs ? 'bad' : ended ? 'muted' : 'busy'} pulse={needs} />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{goalOf(job)}</span>
+          <StatusBadge status={job.status} />
+          <Since iso={t.step.since} className="w-10 shrink-0 text-right text-xs text-muted-foreground" />
+        </button>
+        {first && !open && (OPENS.has(first.kind)
+          ? <Button size="xs" onClick={() => { setOpen(true); setOpened(waitKey(job.id, first)); }}>{waitText(first).act}</Button>
+          : <QuickAction job={job} w={first} />)}
         {ended && (
           <Button size="icon-xs" variant="ghost" aria-label="Dismiss" title="Dismiss: it no longer shows here" onClick={() => dismissNotice(trackerKey(job.id))}><X /></Button>
         )}
       </div>
-      <div data-slot="critical-where" className="flex flex-wrap gap-x-3 pl-4 text-xs text-muted-foreground">
-        <span>{job.laneId ? laneName(job.laneId, machines) : 'no lane'}</span>
-        {t.sandboxes.length > 0 && <span>sandbox {t.sandboxes.join(', ')}</span>}
-      </div>
-      <div data-slot="critical-step" className="pl-4 text-sm [overflow-wrap:anywhere]">{t.step.text} <span className="text-xs text-muted-foreground">· for <Since iso={t.step.since} /></span></div>
-      {t.actions.length > 0 && (
-        <ul data-slot="critical-actions" className="space-y-0.5 pl-4 text-xs text-muted-foreground">
-          {t.actions.map((e) => <li key={e.seq} className="truncate"><EventText e={e} nameOf={nameOf} machines={machines} /></li>)}
-        </ul>
-      )}
-      {needs && <ul data-slot="critical-waits" className="space-y-1.5 pl-4">{waits.map((w) => <WaitRow key={waitKey(job.id, w)} job={job} w={w} />)}</ul>}
-      <Collapsible>
-        <div className="flex items-center gap-3 pl-4 text-xs">
-          <CollapsibleTrigger className="group flex items-center gap-1 text-muted-foreground hover:text-foreground">
-            <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />Timeline
-          </CollapsibleTrigger>
-          <a href={jobHref(job.id)} className="flex items-center gap-1 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Job page<ExternalLink className="size-3" /></a>
+      {open && (
+        <div className="space-y-1.5 pt-1 pb-1 pl-6">
+          <div data-slot="critical-where" className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+            {ref && <span className="font-mono">{ref}</span>}
+            <span>{job.laneId ? laneName(job.laneId, machines) : 'no lane'}</span>
+            {t.sandboxes.length > 0 && <span>sandbox {t.sandboxes.join(', ')}</span>}
+          </div>
+          <div data-slot="critical-step" className="text-sm [overflow-wrap:anywhere]">{t.step.text}</div>
+          {t.actions.length > 0 && <ul data-slot="critical-actions" className="space-y-0.5 text-xs text-muted-foreground">{t.actions.map((e) => <ActionLine key={e.seq} e={e} />)}</ul>}
+          {needs && <ul data-slot="critical-waits" className="space-y-1.5">{waits.map((w) => <WaitRow key={waitKey(job.id, w)} job={job} w={w} opened={opened === waitKey(job.id, w)} />)}</ul>}
+          <Collapsible>
+            <div className="flex items-center gap-3 text-xs">
+              <CollapsibleTrigger className="group flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />Timeline
+              </CollapsibleTrigger>
+              <a href={jobHref(job.id)} className="flex items-center gap-1 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Job page<ExternalLink className="size-3" /></a>
+            </div>
+            <CollapsibleContent className="pt-2"><Timeline job={job} /></CollapsibleContent>
+          </Collapsible>
         </div>
-        <CollapsibleContent className="pt-2 pl-4"><Timeline job={job} /></CollapsibleContent>
-      </Collapsible>
+      )}
     </li>
   );
 }
@@ -174,23 +203,30 @@ function NotifyButton() {
 }
 
 export function CriticalTracker() {
-  const machines = useHopper((s) => s.machines);
-  const nameOf = useJobName();
-  const describe = useCallback((e: DomainEvent) => eventLineText(e, nameOf, machines), [nameOf, machines]);
-  const tracked = useCriticalJobs(describe);
+  const tracked = useCriticalJobs(actionText);
   useAttentionNotices(tracked);
+  const [showEnded, setShowEnded] = useState(false);
   if (!tracked.length) return null;
   const needs = tracked.filter((t) => t.waits.length > 0).length;
+  const live = tracked.filter((t) => !hasEnded(t.job));
+  const ended = tracked.length - live.length;
+  const shown = showEnded ? tracked : live;
   return (
     <section data-slot="critical-tracker" data-needs-person={needs > 0} aria-label="Critical jobs"
-      className={cn('sticky top-14 z-20 max-h-[50dvh] overflow-y-auto overscroll-contain rounded-lg border bg-background shadow-md', needs ? 'border-bad ring-2 ring-bad/40' : 'border-warn/50')}>
-      <div className={cn('sticky top-0 z-10 flex items-center gap-2 border-b bg-background px-3 py-1.5 text-sm font-medium', needs && 'text-bad')}>
+      className={cn('sticky top-14 z-20 max-h-[min(50dvh,14rem)] overflow-y-auto overscroll-contain rounded-lg border bg-background shadow-md has-[[data-expanded=true]]:max-h-[50dvh]', needs ? 'border-bad ring-2 ring-bad/40' : 'border-warn/50')}>
+      <div className={cn('sticky top-0 z-10 flex items-center gap-2 border-b bg-background px-3 py-1 text-sm font-medium', needs && 'text-bad')}>
         <Siren className={cn('size-4', needs && 'animate-pulse')} aria-hidden />
         Critical jobs <span className="num text-xs text-muted-foreground">{tracked.length}</span>
         {needs > 0 && <span data-slot="critical-needs" className="animate-pulse text-xs">{needs === 1 ? '1 needs you' : `${needs} need you`}</span>}
-        <span className="ml-auto"><NotifyButton /></span>
+        <span className="ml-auto flex items-center gap-1">
+          {ended > 0 && (
+            <Button size="xs" variant="ghost" aria-pressed={showEnded} title={showEnded ? 'Hide the ended jobs' : 'Show the ended jobs'}
+              onClick={() => setShowEnded(!showEnded)}>{`${ended} ended`}</Button>
+          )}
+          <NotifyButton />
+        </span>
       </div>
-      <ul className="divide-y">{tracked.map((t) => <TrackedRow key={t.job.id} t={t} />)}</ul>
+      {shown.length > 0 && <ul className="divide-y">{shown.map((t) => <TrackedRow key={t.job.id} t={t} />)}</ul>}
     </section>
   );
 }
