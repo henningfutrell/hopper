@@ -34,7 +34,7 @@ export function useCriticalJobs(describe: (e: DomainEvent) => string): TrackedJo
     job,
     waits: waitsOf(job, { questions, vault, reviews, failures, logins }),
     step: currentStep(job, events, describe, job.questionId ? questions.find((q) => q.id === job.questionId) : undefined),
-    actions: lastActions(events, job.id),
+    actions: lastActions(events, job.id, 2),
     sandboxes: sandboxesOf(job, vault),
   })), [jobs, locked, critical, questions, reviews, failures, logins, events, vault, dismissed, describe]);
 }
