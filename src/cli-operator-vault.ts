@@ -60,7 +60,9 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper sandbox approve <request>                   approve a sandbox request: the job's box steps run, each in a sandbox
   hopper sandbox decline <request> --reason <text>   decline a sandbox request: the job is told why
   hopper sandbox runs                                the run cards: each job's run that waits for a person, its template with it
-  hopper sandbox approve-run <job> <template>        approve a run card once: its template, each profile it lists, and the run
+  hopper sandbox approve-run <job> <template> [--allow-again]
+                                                     approve a run card once: its template, each profile it lists, and the run;
+                                                     for this job only, or with --allow-again for later jobs too
   hopper sandbox decline-run <job> <template> --reason <text>   decline a run card: the job is told why`;
 
 const VAULT_SET = 'vault set <name> [--scope <text>] [--mints <kind>/<name>|none] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
@@ -71,7 +73,7 @@ const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]...
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const GRANT_VERBS = 'grant [list] | approve <job> | deny <job>';
-const SANDBOX_VERBS = 'sandbox list | requests | approve <request> | decline <request> --reason <text> | runs | approve-run <job> <template> | decline-run <job> <template> --reason <text>';
+const SANDBOX_VERBS = 'sandbox list | requests | approve <request> | decline <request> --reason <text> | runs | approve-run <job> <template> [--allow-again] | decline-run <job> <template> --reason <text>';
 
 const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault', body: async () => body });
 
@@ -253,7 +255,7 @@ export function grantCall(args: string[]): Call {
 }
 
 export function sandboxCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, 'allow-again': { type: 'boolean' } } });
   const [verb, ...extra] = positionals;
   if (verb === 'list' && extra.length === 0 && Object.keys(values).length === 0) return { role: 'viewer', path: '/api/sandboxes' };
   // A sandbox request (issues #991, #1138): what jobs asked for, approved or declined as on Access requests.
@@ -261,11 +263,12 @@ export function sandboxCall(args: string[]): Call {
   // A run card (issue #2197): one job's run that waits for a person, its template's approval with it, decided once.
   if (verb === 'runs' && extra.length === 0 && Object.keys(values).length === 0) return { role: 'viewer', path: '/api/vault', pick: (v) => (v as VaultView).runs ?? [] };
   if (verb === 'approve-run' || verb === 'decline-run') {
-    const { reason, ...other } = values;
+    // Part 3: --allow-again approves the access for later jobs too; with none, for this job's runs only.
+    const { reason, 'allow-again': again, ...other } = values;
     const [job, template, ...more] = extra;
-    if (!job || !template || more.length > 0 || Object.keys(other).length > 0 || (verb === 'approve-run') !== (reason === undefined)) throw usage(SANDBOX_VERBS);
+    if (!job || !template || more.length > 0 || Object.keys(other).length > 0 || (verb === 'approve-run') !== (reason === undefined) || (again && verb !== 'approve-run')) throw usage(SANDBOX_VERBS);
     const runs = (v: unknown) => (v as VaultView).runs ?? [];
-    return { role: 'admin', path: '/ui/api/sandbox-requests', pick: runs, body: async () => (verb === 'approve-run' ? { action: verb, job, template } : { action: verb, job, template, reason }) };
+    return { role: 'admin', path: '/ui/api/sandbox-requests', pick: runs, body: async () => (verb === 'approve-run' ? { action: verb, job, template, ...(again ? { allowAgain: true } : {}) } : { action: verb, job, template, reason }) };
   }
   if (verb === 'approve' || verb === 'decline') {
     const { reason, ...other } = values;

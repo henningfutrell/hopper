@@ -30269,6 +30269,36 @@ high-priority job's card first, and the Access requests link ("Grok Bot routine 
 `test/sandbox/run-card-notices.test.ts`, `test/plugins/grokbot-run-cards.test.ts`, and `test/integration/need-steps.test.ts`
 (a write need's one notice, on the real daemon).
 
+**Part 3: allow again (2026-10-20).** Before, a run card's approval approved its template for every later job with the
+same needs, and remembered each write for the time limit: one approval for one job was a standing approval for all.
+The issue asks for a run's approval by default, and a choice to allow it again.
+
+- **For this job only, by default.** `approve-run` with no `allowAgain` approves the template for the card's job's runs
+  only: the template's approval names it (`approval.jobs`, `approvalJobs` in `src/domain/vault.ts`), and `vault.approved`
+  carries `jobs`. No write approval is remembered. Another job that asks for the same access finds the template waiting
+  for a person (`approvalCovers`): its ask is a run card of its own, and one approval adds that job to `jobs`.
+- **Allow again** (`allowAgain: true`; the card's **Allow again** switch; `hopper sandbox approve-run --allow-again`):
+  the approval is for every job, as before part 3, and each write, sync or apply approval is remembered.
+- **Where the job is read.** Each place that decides whether a job's step may use a template reads the job:
+  `templateReady(t, jobId)` (a box step, the broker's named sandbox, the sandboxes before the start), `coveringTemplate`
+  (a need step), the template request's reuse and its waits (`waitsOf`, `approvedFor`), the sandbox request's approval
+  by the person who approved the template (`approverOf`), and the run cards (`waitsForPerson`, `approvalsOf`).
+- **No approval is taken away.** An approval for one job of a template already approved for every job, with the same
+  image, tools, egress hosts and secrets, stays for every job: a card for one job never narrows what others had.
+
+**Migration.** `approval.jobs` is a new optional field of the template's JSON body: no schema change. An approval kept
+before has no `jobs`, so it covers every job, as it did: nothing that works today stops. A build before this one reads
+an approval with `jobs` as one for every job: on a downgrade, a run approved for one job is approved for all, as before
+part 3. Waiting templates were turned into run cards in part 1.
+
+**Not built.** A box a person attached as a machine to a template (issue #602) takes jobs by `approvalWait`, which does
+not read `jobs`: a template a job asked for has no such box. An approval for "the same kind of step" apart from the same
+needs: the template is keyed by its needs, so the same needs are the same kind of step.
+
+Tests: `test/domain/run-card-allow-again.test.ts` (the pure rules), `test/integration/need-steps.test.ts` (the real daemon:
+a card's approval names its job and remembers nothing; with allow again it is for every job and remembered),
+`test/ui/sandbox-runs-view.test.ts` (the switch and its post), `test/cli/sandbox-runs.test.ts` (`--allow-again`).
+
 **Residual risk, stated.** One click now approves the template's image, egress hosts, vault secrets and every write the
 card lists. The confirm says each of them, and the card lists them before the click. Each approval is still its own
 event (`vault.approved`, `template.profile_approved`, `vault.sandbox_approved`) that names the person.

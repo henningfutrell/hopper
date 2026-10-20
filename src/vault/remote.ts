@@ -117,7 +117,7 @@ export function remoteVault(o: {
     releaseMints: (box) => o.local.releaseMints(box, unbindFrom), reconcileMints: () => o.local.reconcileMints(unbindFrom),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
-    approveTemplate: (name, by) => o.local.approveTemplate(name, by),
+    approveTemplate: (name, by, job) => o.local.approveTemplate(name, by, job),
     revokeTemplate: (name, by) => o.local.revokeTemplate(name, by),
     approveProfile: (name, profile, by) => o.local.approveProfile(name, profile, by),
     scopeOf: (machine) => o.local.scopeOf(machine),

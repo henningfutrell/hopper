@@ -4515,7 +4515,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`. `jobs` (issue #2197 part 3): a run card approved with no allow again approves those jobs' runs only; absent, every job's.
 
 | field | type | required |
 |---|---|---|
@@ -4525,6 +4525,7 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
 | `egress` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
+| `jobs` | string[] | no |
 
 ```json
 {

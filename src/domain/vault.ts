@@ -301,9 +301,21 @@ export interface Template {
   check?: ReadOnlyCheck;
   savedBy: string;
   savedAt: string;
-  /** The last approval: the image (and its tools) and scope a person approved, who and when. Absent: never approved. */
-  approval?: { image: string; tools?: BoxTool[]; egress?: string[]; secrets: string[]; by: string; at: string };
+  /**
+   * The last approval: the image (and its tools) and scope a person approved, who and when. Absent: never approved.
+   * `jobs` (issue #2197 part 3): the jobs whose runs it approves, when a run card was approved with no allow again;
+   * another job that asks for the same access gets a run card of its own. Absent: every job (allow again, and every
+   * approval made before).
+   */
+  approval?: { image: string; tools?: BoxTool[]; egress?: string[]; secrets: string[]; by: string; at: string; jobs?: string[] };
 }
+
+/**
+ * Whether the template's approval covers a run of the job (issue #2197 part 3): it is approved, for every job or for
+ * this one. `jobId` undefined (no job asks): only an approval for every job covers it.
+ */
+export const approvalCovers = (t: Template, jobId: string | undefined): boolean =>
+  t.approval !== undefined && (t.approval.jobs === undefined || (jobId !== undefined && t.approval.jobs.includes(jobId)));
 
 /** An egress host (issue #1875): a lowercase DNS name or IPv4 address, `:`, and a port from 1 to 65535. */
 const EGRESS_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*:([1-9][0-9]{0,4})$/;
@@ -319,6 +331,19 @@ export function egressHostProblem(host: string): string | undefined {
 
 /** The template's egress hosts that wait for a person (issue #1875): each not in its last approval; all of them when never approved. */
 export const egressPending = (t: Template): string[] => (t.egress ?? []).filter((h) => !(t.approval?.egress ?? []).includes(h));
+
+/**
+ * The jobs a new approval of the template approves (issue #2197 part 3), `job`'s runs only or (undefined) every job's.
+ * With no job (allow again, a person's own approval): every job. For one job: that job and those the last approval
+ * named; but a last approval for every job of the same image, tools, egress hosts and secrets stays for every job, so
+ * approving a card for one job never takes from other jobs what they had.
+ */
+export function approvalJobs(t: Template, job: string | undefined): string[] | undefined {
+  if (job === undefined) return undefined;
+  const a = t.approval;
+  if (a && a.jobs === undefined && imageApproved(t) && egressPending(t).length === 0 && t.secrets.every((s) => a.secrets.includes(s))) return undefined;
+  return [...new Set([...(a?.jobs ?? []), job])];
+}
 
 /** Whether the template runs what was approved: the image, with the same tools (issue #716). False when never approved. */
 export function imageApproved(t: Template): boolean {
