@@ -1,7 +1,8 @@
 // Issue #2197: one approval card per sandbox run. A job's ask that waits on a template, on its sandbox run, or on both,
 // is one run card; a person never approves a template a job asked for on a card of its own.
 import { describe, expect, it } from 'vitest';
-import { approvalsOf, runCards, templateCards, waitsForPerson } from '../../src/domain/run-cards.ts';
+import type { ActionAskView } from '../../src/domain/action-grants.ts';
+import { approvalsOf, looseAsks, runCards, templateCards, waitsForPerson } from '../../src/domain/run-cards.ts';
 import type { SandboxRequestView } from '../../src/domain/sandbox-approvals.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
 
@@ -90,5 +91,20 @@ describe('run cards (issue #2197)', () => {
     expect(waitsForPerson(onlyWrite)).toBe(true);
     expect(waitsForPerson(template('t'))).toBe(false);
     expect(waitsForPerson(template('t', { pending: { secrets: [], image: false, egress: ['h:443'], profiles: [] } }))).toBe(true);
+  });
+
+  it('a job\'s AWS action asks on a role its card\'s template changes are on the card (issue #2206); others stay loose', () => {
+    const ask = (o: Partial<ActionAskView>): ActionAskView => ({ job: 'j1', role: '123456789012/deploy', action: 'eks:UpdateNodegroupConfig', resource: 'arn:aws:eks:us-west-1:123456789012:nodegroup/c/n/*', at: '2026-10-19T02:00:00.000Z', ...o });
+    const onCard = ask({}), otherRole = ask({ role: '123456789012/other' }), otherJob = ask({ job: 'j2' });
+    const cards = runCards({
+      templates: [waitingTemplate('t')], requests: [], job: live(['j1', 'j2']), actionAsks: [onCard, otherRole, otherJob],
+      waits: [{ jobId: 'j1', template: 't', askedAt: '2026-10-19T03:00:00.000Z' }],
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.actions).toEqual([onCard]);
+    expect(looseAsks([onCard, otherRole, otherJob], cards)).toEqual([otherRole, otherJob]);
+    // A card with no ask has no actions field.
+    const plain = runCards({ templates: [waitingTemplate('t')], requests: [], job: live(['j1']), waits: [{ jobId: 'j1', template: 't', askedAt: '2026-10-19T03:00:00.000Z' }] });
+    expect(plain[0]).not.toHaveProperty('actions');
   });
 });

@@ -150,7 +150,7 @@ export const EVENT_SCHEMAS = {
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
-  'lane.closed': strict({ reason: z.string() }),
+  'lane.closed': strict({ reason: z.string() }), 'lane.unhealthy': strict({ failures: z.number().int().positive(), error: z.string(), since: z.string(), until: z.string() }),
   'decision.made': strict({
     // v3: no `routerMode` (issue #211). v2: divergences carry `withAdvice` (was withJev).
     decisionId: z.string(), trigger: z.string(),
@@ -352,7 +352,7 @@ export const EVENT_SCHEMAS = {
   // A launch's agent credential (issue #708, part 10): given to a box at its launch, before it runs a job. Never the value.
   'vault.agent_credential_given': strict({ name: z.string(), template: z.string(), box: z.string(), backend: z.string().optional() }), 'vault.pod_credential_given': strict({ name: z.string(), pod: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
-  'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean(), plan: z.string().optional(), principal: z.string().optional(), bound: strict({ namespace: z.string(), secret: z.string() }).optional() }),
+  'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean(), plan: z.string().optional(), principal: z.string().optional(), bound: strict({ namespace: z.string(), secret: z.string() }).optional(), actions: z.array(strict({ action: z.string(), resource: z.string() })).optional() }),
   'vault.mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(), }),
   // A read-only check's mints (issue #797): for the check box of a template, which runs no job. Never a credential.
   'vault.check_minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), check: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), bound: strict({ namespace: z.string(), secret: z.string() }).optional() }),

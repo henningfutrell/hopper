@@ -31,10 +31,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
+import { actionNeed, type AwsAction } from '../domain/action-grants.ts';
 import { APPLY_STEP_OFF } from '../domain/infra-plans.ts';
 import { mintKindFor, type Minted, type MintReach } from '../domain/minting.ts';
 import type { NeedStep, NeedStepRepository } from '../domain/need-steps.ts';
-import { templateReady as ready } from '../domain/sandboxes-before-start.ts';
+import { templateReady as ready, templateWait } from '../domain/sandboxes-before-start.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import { isSharedSecret, type TemplateView } from '../domain/vault.ts';
 import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
@@ -68,7 +69,7 @@ export interface NeedStepsOptions {
   /** The user's templates now, as the vault shows them. */
   templates(): TemplateView[];
   /** The vault's mint for one need of the need box `step` (src/vault/need-mint.ts, given by the composition root); `plan`: the approved plan a change applies. */
-  mint(ask: { template: string; step: string; job: string; profile: OperationProfile; plan?: string }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
+  mint(ask: { template: string; step: string; job: string; profile: OperationProfile; plan?: string; actions?: AwsAction[] }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
   /** The saved plan file of an infra plan, as the hopper keeps it (src/infra-plans/service.ts); undefined: none. */
   planFile(id: string): Buffer | undefined;
   /** Runs the need box (the sandbox module's `needStep`), `run` naming its job and step for the ledger; absent: this hopper runs no need box. */
@@ -100,7 +101,7 @@ export interface NeedStepsOptions {
 export interface NeedStepAsk { key: string; inputs: Buffer }
 
 /** A Linux step's fields as the job sent them, its needs read already, and the template that covers them. */
-export interface NeedStepFields { template: TemplateView; needs: OperationProfile[]; command?: string; timeout?: string; outputs: string[]; plan?: string; secrets?: readonly string[] }
+export interface NeedStepFields { template: TemplateView; needs: OperationProfile[]; command?: string; timeout?: string; outputs: string[]; plan?: string; secrets?: readonly string[]; actions?: AwsAction[] }
 
 /** A box step's fields as the job sent them (issue #1349): the template it names, and the templates of its approved sandbox requests. */
 export interface BoxStepFields { box: string; approved: readonly string[]; command?: string; timeout?: string; outputs: string[]; plan?: string; secrets: readonly string[] }
@@ -118,6 +119,8 @@ export type NeedStepState = { running: true } | { result: StepResult; outputs?: 
 export interface NeedSteps {
   /** The template ready for the job's step that covers the needs; undefined: none yet. */
   covering(needs: readonly OperationProfile[], jobId: string): TemplateView | undefined;
+  /** Whether infra applies are off now (issue #1722): then no step that changes infrastructure runs, and no action grant is asked (issue #2206). */
+  appliesOff(): boolean;
   /**
    * Check `fields` for `job`, keep the step and begin its saga: the step's id, or a no with its HTTP status. A no is a
    * `step.refused` event. The same key again answers the same step.
@@ -196,7 +199,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       id, userId: o.userId, jobId: job.id, key: ask.key, box: `hopper-need-${t.name}-${id.slice(0, 8)}`,
       template: { name: t.name, image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.egress?.length ? { egress: t.egress } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
       needs, command: request.command, timeoutSeconds: request.timeoutSeconds, outputs: request.outputs,
-      ...(fields.plan ? { plan: fields.plan } : {}), ...(fields.secrets?.length ? { secrets: [...fields.secrets] } : {}), inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
+      ...(fields.plan ? { plan: fields.plan } : {}), ...(fields.actions?.length ? { actions: fields.actions } : {}), ...(fields.secrets?.length ? { secrets: [...fields.secrets] } : {}), inputsBytes: ask.inputs.length, createdAt: now().toISOString(),
     }, ask.inputs);
     // Begun at each ask, once per step: an ask whose begin a stop cut short begins it when it is sent again.
     const saga = o.sagas.begin(step.id);
@@ -217,8 +220,11 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     if (!o.run) throw new Error('this hopper runs no sandbox step');
     // Minted now, for this try only: no credential is kept in the database or between tries.
     const credentials: NeedCredential[] = [];
+    // Issue #2206: the one change on an aws-role the granted actions narrow.
+    const narrowed = s.actions?.length ? actionNeed(s.needs, true) : undefined;
     for (const profile of s.needs) {
-      const r = await o.mint({ template: s.template.name, step: s.box, job: s.jobId, profile, ...(s.plan ? { plan: s.plan } : {}) });
+      const actions = typeof narrowed === 'object' && keyOf(narrowed) === keyOf(profile) ? s.actions : undefined;
+      const r = await o.mint({ template: s.template.name, step: s.box, job: s.jobId, profile, ...(s.plan ? { plan: s.plan } : {}), ...(actions ? { actions } : {}) });
       if ('refused' in r) {
         await release(s.box);
         const no = `${keyOf(profile)}: ${r.refused}`;
@@ -292,7 +298,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
   };
 
   return {
-    covering: (needs, jobId) => coveringTemplate(o.templates(), needs, jobId),
+    covering: (needs, jobId) => coveringTemplate(o.templates(), needs, jobId), appliesOff: () => o.applies?.() === false,
     sweep,
     start,
     run,
@@ -306,7 +312,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       }
       if (fields.secrets.length > 0) return refuse(job, 400, 'a box step takes no --secret: its sandbox gets what its template gives, its vault secrets too', box);
       const t = o.templates().find((x) => x.name === box);
-      if (!t || !ready(t, job.id)) return refuse(job, 409, `template ${box} is not ready now: ${t ? 'something of it waits for a person or for its read-only check' : 'it is not there any more'}`, box);
+      const waits = t ? templateWait(t, job.id) : 'it is not there any more';
+      if (!t || waits) return refuse(job, 409, `template ${box} is not ready now: ${waits}`, box);
       return start(job, {
         // Its vault secrets: those the template gives a box's job, but a shared secret and the agent credential (a box's sign-in).
         template: t, needs: boxNeeds(t, fields.plan), outputs: fields.outputs, secrets: t.gives.filter((n) => !isSharedSecret(n) && n !== t.agentCredential),

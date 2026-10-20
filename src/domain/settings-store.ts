@@ -83,6 +83,9 @@ export interface UserSettingsRepository {
   /** A person's write, sync and apply approvals, remembered per asset and access (issue #1001); none at first. Ended ones included: liveWrites reads them. */
   getRememberedWrites(): RememberedWrite[];
   setRememberedWrites(list: readonly RememberedWrite[]): void;
+  /** A person's action grants (issue #2206): an AWS action on a resource for an aws-role; none at first. Ended ones included: liveGrants reads them. */
+  getActionGrants(): import('./action-grants.ts').ActionGrant[];
+  setActionGrants(list: readonly import('./action-grants.ts').ActionGrant[]): void;
   /** Sandbox strictness, brake 2 (issue #655 part 8); undefined: never set, so standard everywhere. */
   getSandboxStrictness(): import('./sandbox-strictness.ts').SandboxStrictness | undefined;
   setSandboxStrictness(settings: import('./sandbox-strictness.ts').SandboxStrictness): void;

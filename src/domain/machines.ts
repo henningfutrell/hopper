@@ -1,7 +1,7 @@
 // Attached machines and attaching one from the UI (design.md "Attached machines", "Machines from
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
-import type { ActionVia, MachineSnapshot } from './types.ts';
+import type { ActionVia, LaneId, MachineSnapshot } from './types.ts';
 import type { UsageLimitPair } from './usage.ts';
 // A Windows host (issue #731) is reached over ssh as an ssh target is, but runs only steps: src/domain/windows-steps.ts.
 export type { WindowsHost, WindowsHostsView } from './windows-steps.ts';
@@ -49,6 +49,16 @@ export type MachineDrains = Readonly<Record<string, MachineDrain>>;
  * undrains it: no new job is placed on it; the jobs on it run to their end. Kept across restarts. Any machine.
  */
 export interface MachineDrained { drained?: MachineDrain }
+
+/**
+ * An unhealthy lane (issue #2234, src/engine/lane-health.ts): the last `failures` starts on it failed with the same start
+ * error, `error` the last of them, out since `since`. No new job is placed on it until `until`; then one is, and a start
+ * that fails the same way puts it out again at once. Kept in memory: a restart forgets it.
+ */
+export interface UnhealthyLane { laneId: LaneId; failures: number; error: string; since: string; until: string }
+
+/** A machine's unhealthy lanes, as its snapshot (`MachineSnapshot`) carries them (issue #2234). Absent: none. */
+export interface MachineLaneHealth { unhealthyLanes?: UnhealthyLane[] }
 
 /** The machines with the drained ones marked (issue #1511). A drain of a machine not listed marks nothing. */
 export const withDrains = <M extends { id: string }>(machines: readonly M[], drains: MachineDrains): (M & MachineDrained)[] =>

@@ -8,6 +8,7 @@ import { elbowsInAs } from '../domain/elbow-in.ts';
 import { laneEffect, machinePolicy, placementPressure } from './usage.ts';
 import { signedOutNote } from './signed-out.ts';
 import { preempt } from './preempt.ts';
+import { numberNewLanes, outAt, outReason, withoutOut } from './lane-health.ts';
 
 /** A machine's own usage limits (issue #1860) and soft lanes (issue #2091), as its usage reason names them; nothing when the user's apply. */
 const ownLimits = (m: MachineSnapshot): string =>
@@ -26,7 +27,9 @@ export const ORIGIN_PENDING = 'queued before trusted origins: held until its iss
 
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
-  const { policy, machines, lanes } = inputs;
+  const { policy, lanes } = inputs;
+  // Its unhealthy lanes take no new job (issue #2234): a machine counts as one lane fewer for each out.
+  const machines = inputs.machines.map((m) => withoutOut(m, lanes, inputs.at));
   const reasons: string[] = [];
 
   const onQuestion = [...inputs.waiting, ...inputs.running].filter((j) => j.status === 'waiting_answer');
@@ -55,7 +58,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       problems: (inputs.problems ?? []).filter((b) => b.machineId === undefined || b.machineId === machine.id),
       // A lane whose job is unknown counts as unpinned: the reserve stays free (issue #372).
       unpinned: held.filter((l) => l.jobId === undefined || pinById.get(l.jobId) !== machine.id).length,
-      freeIdle: mine.filter((l) => l.state === 'idle').sort((a, b) => a.id.localeCompare(b.id)),
+      freeIdle: mine.filter((l) => l.state === 'idle' && !outAt(machine, inputs.at).some((o) => o.laneId === l.id)).sort((a, b) => a.id.localeCompare(b.id)),
       slots: laneSlots(machine.id, lanes, inputs.priorityLanes),
       ...(inputs.blastRadius?.gated.some((g) => g.machineId === machine.id) ? { gate: inputs.blastRadius } : {}),
       ...(signedOut.length ? { signedOut } : {}),
@@ -121,7 +124,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
   const ordered = order(candidates, inputs.queueOrder?.jobIds);
-  const placed = assign(ordered, states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks, inputs.credentialHeld);
+  const assigned = assign(ordered, states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks, inputs.credentialHeld, inputs.avoidLanes);
+  const placed = { ...assigned, start: numberNewLanes(assigned.start, machines, lanes, inputs.at, inputs.avoidLanes) };
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
   const elbowing = new Set(inputs.running.filter((j) => elbowsInAs(j) !== undefined).map((j) => j.id));
 
@@ -129,7 +133,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const plans = states.map((s) => {
     const unassigned = (idleByMachine.get(s.machine.id) ?? []).filter((l) => !taken.has(l.id));
     const plan = planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs, priorityOf, elbowing);
-    const idle = idleReason(s, hold, placed.wait);
+    const reason = idleReason(s, hold, placed.wait);
+    const idle = reason === undefined || reason.startsWith('no lanes') ? outReason(s.machine, inputs.at) ?? reason : reason;
     return idle === undefined ? plan : { ...plan, idle };
   });
   const listed = new Set(machines.map((m) => m.id));

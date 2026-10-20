@@ -86,9 +86,10 @@ describe('the sweeps remove leaked sandbox homes (issue #1371)', () => {
     await run.started;
     const [home] = [...r.volumes];
     expect(home).toMatch(/^hopper-check-asked-0123456789ab-.*-home$/);
-    // A second pass sweeps while the first one's check runs.
+    // A second pass sweeps while the first one's check runs. It ends when that check does (issue #2236): its sweep is done first.
     due.now = false;
-    await pass();
+    void pass();
+    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(r.volumes.has(home!)).toBe(true);
     run.release();
     await first;

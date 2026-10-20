@@ -3,12 +3,14 @@
 
 import type { ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { tail } from './monitor.ts';
-import { RUNTIME_MARK, runtimeCommand, runtimeOutcome } from '../../client/job-runtime.ts';
+import { GUARDS_MARK, RUNTIME_MARK, guardsCommand, guardsOutcome, runtimeOutcome, setupCommand } from '../../client/job-runtime.ts';
 import { SANDBOX_MARK, sandboxCommand, sandboxOutcome } from '../../client/job-sandbox.ts';
 import { jobScratchOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen } from './pane-wait.ts';
 import type { PaneState, StartDeps, StartTimedOut } from './start.ts';
 
+/** How long writing the job's guards may take (issue #2234): two files. */
+const GUARDS_WAIT_MS = 30000;
 /** How long setting up the job's own container runtime may take (issue #1295): it writes a few files and starts its socket. */
 const RUNTIME_WAIT_MS = 60000;
 /** How long setting up the job's sandbox may take (issue #1295): a trial run of bubblewrap, and two scripts written. */
@@ -22,7 +24,14 @@ const SANDBOX_WAIT_MS = 30000;
  * run next to the host's runtime. Null when done, else the failure.
  */
 export async function enterRuntime(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | StartTimedOut | null> {
-  await d.herdr.runInPane(s.paneId, runtimeCommand(ctx.job.id, jobScratchOf(s.cwd, ctx.job.id), true));
+  const scratch = jobScratchOf(s.cwd, ctx.job.id);
+  // Two steps, each one line a terminal keeps (issue #2234): the guards first, then the setup once the shell read them.
+  await d.herdr.runInPane(s.paneId, guardsCommand(scratch));
+  const guards = await awaitOnScreen(d, ctx, s.paneId, GUARDS_MARK, guardsOutcome, GUARDS_WAIT_MS);
+  if (ctx.signal.aborted) return null;
+  if (guards.found === 'failed') return { kind: 'failed', error: `the job's own container runtime could not be set up on ${ctx.machine.id}: ${tail(guards.screen, 10)}` };
+  if (!guards.found) return { startTimedOut: `pane ${s.paneId} never wrote the job's container runtime guards within ${GUARDS_WAIT_MS} ms: ${tail(guards.screen, 10)}` };
+  await d.herdr.runInPane(s.paneId, setupCommand(ctx.job.id, scratch, true));
   const { found, screen } = await awaitOnScreen(d, ctx, s.paneId, RUNTIME_MARK, runtimeOutcome, RUNTIME_WAIT_MS);
   if (ctx.signal.aborted) return null;
   if (found === 'own') ctx.progress('container runtime: the job\'s own (podman), apart from the host\'s');

@@ -18,6 +18,13 @@ export interface AgentInfo {
 
 export type ReadSource = 'visible' | 'recent' | 'recent-unwrapped';
 
+/**
+ * The longest command a pane's shell is given (issue #2234): a terminal keeps at most 4095 characters of a line it has not
+ * handed on yet (Linux's N_TTY_BUF_SIZE, less the newline). A shell with a line editor (bash, zsh) takes more, one with none
+ * (dash, the `sh` herdr starts where SHELL is unset, as in a sandbox box) runs a cut line, its quotes left open.
+ */
+export const TERMINAL_LINE_MAX = 4095;
+
 /** A pane of the herdr session (issue #1128, the machine's terminal): what `herdr pane list` says of it, no path. */
 export interface HerdrPane {
   paneId: string;
@@ -69,7 +76,10 @@ export interface HerdrClient extends MachineShell {
   sendKeys(paneId: string, keys: string[]): Promise<void>;
   /** Write raw text to the pane (e.g. an escape sequence herdr has no key name for). */
   sendText(paneId: string, text: string): Promise<void>;
-  /** Type a shell command into the pane's shell (`herdr pane run`); does not wait for it, and a shell not at its prompt yet may drop it. */
+  /**
+   * Type a shell command into the pane's shell (`herdr pane run`); does not wait for it, and a shell not at its prompt yet
+   * may drop it. At most TERMINAL_LINE_MAX characters: a shell with no line editor runs only what the terminal kept.
+   */
   runInPane(paneId: string, command: string): Promise<void>;
   /** True once the pane's recent output holds `text`; false when `timeoutMs` passes first. */
   waitOutput(paneId: string, text: string, timeoutMs: number): Promise<boolean>;

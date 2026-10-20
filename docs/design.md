@@ -85,7 +85,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
-| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`), the action grants and the asks of jobs for an AWS action (`action-grants.ts`, issue #2206, pure in `src/domain/action-grants.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the **kill points** a test of the crash harness ends the process at, off in a deploy (`kill-points.ts`, issue #1954, "The crash harness"); the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
@@ -884,7 +884,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
   without a scope; a shell that never answers within 60000 ms fails the job, pane closed.
 - **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
-  below). After the scope, the pane's shell runs the runtime command: the job gets a podman of its own — its runtime dir
+  below). After the scope, the pane's shell runs the runtime command, in two steps that each fit a terminal line (issue
+  #2234, "Unhealthy lanes" below): the guards first (`hopper-guards-written`), then the setup: the job gets a podman of its own — its runtime dir
   `<the user's runtime dir>/hopper-runtime-<job id>`, its storage `<scratch dir>/containers/storage`, its socket
   `<runtime dir>/podman/podman.sock`, started in the scope — as the shell's environment (`<scratch dir>/containers/env.sh`),
   with guards named `podman` and `docker` first on its PATH. It prints `hopper-runtime-own`; with no podman or no runtime
@@ -10729,7 +10730,7 @@ replaces them; test with doubles, and state the gap to a real environment.
   (`approvalWait`, as for an approval); a job's template request answers 202. A save makes the check stale, so a changed
   image, tool or profile is checked again.
 - **When it runs.** The check pass (`createCheckPass`, `src/sandbox/check.ts`) runs with the reconcile pass, every 10 s
-  and at start, one check at a time. A template is due when it takes a check, its image (and tools) are approved, and its
+  and at start, up to `CHECKS_AT_ONCE` (3) checks at once (issue #2236). A template is due when it takes a check, its image (and tools) are approved, and its
   version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself
   (issue #1468: but one that failed only on a network error — each mint refusal, or the check box's start, said
   `ECONNRESET`, `ETIMEDOUT`, a timeout and the like — is `transient`, says so, and runs again `CHECK_RETRY_MS`, 5 minutes,
@@ -10746,6 +10747,15 @@ replaces them; test with doubles, and state the gap to a real environment.
   the pass goes on to the next template; it runs again `CHECK_RETRY_MS` after, with no person. A run that ends late
   records nothing, and its check box, if any, is no run's: the next pass removes it. A check a stopped hopper left
   `running` runs again, after the templates with no check, so a check that hangs again holds none of them.
+- **A check holds only its own template** (issue #2236). A template the read policy approved got no check for hours, as
+  the pass waited for a check that did not end. Now each tick runs a pass of its own, which starts the check of each due
+  template that is not checked now, up to `CHECKS_AT_ONCE` at once; a pass ends when every check that runs now has, and
+  no tick waits for it. A due check that cannot start now is held, with the reason, in the hopper's memory
+  (`CheckTemplates.held`, the vault's `holdCheck`; never stored): as many checks run, or no place can run it (no runtime
+  beside the hopper, and no machine of the user dialled in with one). The template's view carries it (`checkHeld`), so
+  its wait says why (`checkWait`: "it has not run on this version yet: <reason>"), and a check that runs says since
+  when. `sandbox --needs`, `sandbox-template`, `hopper-step need` and `hopper-step box` give that text; a box step of a
+  template not ready says what it waits for (`templateWait`, `src/domain/sandboxes-before-start.ts`).
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
   the sandbox flags (`ContainerSpec.script`: `sh -c` in place of the entrypoint, on a terminal, never restarted), on the
   hopper's network, as the image's own non-root user, with a home volume made for it. It carries the label
@@ -29694,8 +29704,10 @@ Two places a secret leaks to that no table or file shows:
   segment the server wrote since then (`pg_read_binary_file` on `pg_wal/`), one place per segment. Reading the WAL needs
   a superuser or `pg_read_server_files`: the test's Postgres container has one. Given a database where the role has
   neither, `walMark` says so and the scan reads no WAL (the planted test is then skipped). The WAL is the whole server's,
-  so it holds other tests' writes too; their canaries are their own. A value Postgres compressed (TOAST, over 2 kB) or
-  one split by a WAL page header is not found.
+  so it holds other tests' writes too; their canaries are their own. A record runs on over a WAL page's end after the
+  next page's header, so `walPlaces` reads whole pages and drops each header, and a segment's place starts with the
+  end of the segment before: a value at a page's or a segment's end is found (issue #2236). A value Postgres compressed
+  (TOAST, over 2 kB) is not found.
 - **Spawned tools.** `recordSpawns` (`test/support/spawn-recorder.ts`) records the file, argv and environment of each
   child the test's process starts: an async child at `ChildProcess.prototype.spawn`, with the environment it really
   gets; a sync one at the `node:child_process` exports, made live for ES modules by `syncBuiltinESMExports`. A child of a
@@ -30449,3 +30461,154 @@ flag starts nothing.
 Tests: `test/integration/critical-flag.test.ts` (set and clear through the real daemon, with who acted; the same flag
 again, an ended job, an unknown job, no session, a bad body), `test/ui/critical-jobs.test.ts` (a flagged job is
 tracked), `test/ui/job-critical-view.test.ts` (the job view's row and its buttons).
+
+## Action grants (issue #2206, part 1, 2026-10-19)
+
+Seen on a hopper: during a production outage a job was told to scale a managed node group. No role the vault mints for
+could call `eks:UpdateNodegroupConfig`, so the job handed the command back to a person, who ran it by hand, and
+production went out of step with the infrastructure code.
+
+**Mechanism decided here.** A session policy only narrows what a role may do: the hopper cannot give a session an action
+its role does not allow, and it never changes IAM (the hopper never changes the cluster or the account's identities). So
+an operator makes one wide role per account, the **action role** `hopper-action` (`ACTION_ROLE`, `src/domain/minting.ts`),
+and the hopper mints it only narrowed to the actions a person granted. `docs/deploy.md` "The action role" says how to make it.
+
+- **The ask.** A need step names each action its one change on an aws-role needs: `sh "$HOPPER_STEP" need
+  "apply/aws-role/<account>/hopper-action" --action "eks:UpdateNodegroupConfig=<ARN>" --plan-id <id> …` (at most 10;
+  `actionsOf`: an IAM action with no wildcard, an ARN in the role's account or of no account). `actionNeed`: the actions
+  go to the step's only write, sync or apply need on an aws-role; a change on the action role with no `--action` is
+  refused. Each action no live grant covers is a `vault.action_asked` once per job and scope, and the route answers 202
+  `waiting: a person grants <action> on <resource> as aws-role <role>`; `hopper-step` asks again by itself, as for a
+  template that waits, and a job that ends its turn waits `on: vault grant`, which `vault.action_granted` and
+  `vault.action_declined` settle (`settledBy`). The ask is read from the event log (`actionAsks`, `src/vault/action-grants.ts`:
+  of a job at work, not declined, not covered now), so a restart keeps it and no state is kept in memory.
+- **Infra applies off** (issue #1722): the route refuses the step with `APPLY_STEP_OFF` before any ask, so no action
+  grant is asked for a change that cannot be minted.
+- **The grant.** On Access requests, panel **AWS actions** (`ui/src/views/action-grants.tsx`): each ask names the
+  action, the resource, the role, the job and why, with **Grant** and **Decline**; it counts in the Access requests badge
+  and the Needs you row, and marks the badge for a high-priority job, as a run card does. `POST /ui/api/sandbox-requests`
+  `grant-action` / `decline-action` (`job`, `grant`: `role`, `action`, `resource`), admin and a box action, as the route
+  is. Only a waiting ask is decided (404 else). A grant is kept in the user's settings (`actionGrants`, no migration:
+  absent reads as none) and covers a later ask of the same role, action and resource — the one-approval carry-over of
+  issue #1001 — until the time limit of remembered write approvals (`rememberWritesHours`, `liveGrants`). `revokeAction`
+  on `POST /ui/api/sandbox-approvals` revokes it (`vault.action_revoked`). The vault's view answers `actionAsks` and
+  `actionGrants`.
+- **The mint** (`mintTarget` with the actions, `src/vault/need-mint.ts`). The step keeps its actions (`NeedStep.actions`,
+  in its JSON body: no migration), and its narrowed need is minted with `ReadOnlyAccess` and an inline session policy that
+  allows each granted action on its resource and denies assuming any other role (`actionSession`, at most the 2048
+  characters STS takes). Each grant is read again at each mint, so a revoke or the time limit bites at the next one. The
+  rest is unchanged: Access and the template's approval, the apply gate (a current approved plan, issue #870), and
+  `vault.minted`, which now names `actions`.
+- **The record.** The apply is in the Infra changes feed as every plan-bound apply is (`GET /api/infra-plans`
+  `applies`, issue #896), with the granted actions (`PlanApply.actions`); the out-of-band rule (issue #871) reads the
+  minted principal as a plan-bound apply credential, as before.
+
+**Decided here.** An API token or a delegate approver cannot grant or decline an action (403): granting a wide role's
+action is a person's act, as the confirmation asks of issue #909 make an API token's write approval. The grant is per role,
+action and resource, not per job, so an outage's second step needs no second click; its end is the remembered-write time
+limit, so an admin who sets it to 1 hour has a person decide almost each time.
+
+**The action check (part 2, 2026-10-20).** A missing permission shows when the job asks for its template, not partway
+through its work. `sh "$HOPPER_SKILL" sandbox-template --needs "apply/aws-role/<account>/<role>" --actions
+"<service:Action>=<ARN> ..."` names the actions the change does (`ASKED` keeps `actions`, so a watch asks again with
+them). Before the template is made, `checkTemplateActions` (`src/vault/template-actions.ts`) gives each action a verdict
+(`actionChecks`, `src/domain/action-check.ts`, pure):
+
+- **ready** — the role allows it (IAM's policy simulation), and on the action role a person granted it;
+- **waits** (`grant`) — on the action role, no live grant covers it: it is asked of a person now (`askActions`, the same
+  `vault.action_asked`), so the grant waits on Access requests beside the template;
+- **cannot** (`role-denies`) — the role does not allow it. No grant helps, as a session policy only narrows. The request
+  is refused (409) before a template is made, with the need to ask for in its place (the action role, `--action`), or,
+  on the action role itself, the operator's change to make;
+- **not checked** (`unchecked`) — IAM could not simulate it; the line says why, and nothing is refused for it.
+
+The simulation is the port `ActionSimulator`: `iam:SimulatePrincipalPolicy` (`src/vault/action-simulation.ts`,
+@aws-sdk/client-iam) of the role's ARN, one call per action on its resource, with a read session of the account's read
+role `hopper-read`, minted as topology discovery mints one (`mintForDiscovery`: no job or template takes part, so Access
+is not asked, and `vault.discovery_minted` records it). It reads the role's own policies: a service control policy or a
+resource policy can still refuse the call when it runs. A need step with `--action` and no template yet passes its actions
+to the template request, so the template and the grant wait for a person in the same visit, not one after the other.
+`--actions` on `sandbox` is refused: a box step's change is not narrowed to granted actions. With infra applies off, the
+check refuses as the step does, and asks for nothing.
+
+**Part 3: the action on the run card (2026-10-20).** In part 2 the template and the grant waited in the same visit, but
+on two cards: the job's run card and an ask under AWS actions. A person approved one and still waited on the other.
+
+- **On the card** (`runCards`, `actionAsks`, `src/domain/run-cards.ts`). A job's ask for an AWS action is on the job's
+  run card when the card's template changes that aws-role (a write, sync or apply profile of `<account>/<role>`), as
+  `actions` (the role, the action, the resource and the job's words). The vault's view lists it there only:
+  `actionAsks` holds the asks no run card holds (`looseAsks`), so the badge counts the card once. An ask of a job with no
+  run card (its template is approved) stays under AWS actions, as in part 1.
+- **One approval** (`approve-run`). It grants each action on the card first (`vault.action_granted`, as `grant-action`),
+  then approves the template, its profiles and the run as before, so the step that wakes on the template's approval
+  finds its grant. **One decline** (`decline-run`) declines each action too (`vault.action_declined`, with the reason).
+- **A person's act.** An API token or a delegate approver may decide no card with an action (403), as it may not
+  `grant-action`. The confirm says what the approval also grants.
+- **The operator CLI** (`src/cli-operator-actions.ts`): `hopper sandbox actions` (the asks, those on run cards first,
+  and the grants), `grant-action <job> <account>/<role> <service:Action>=<ARN>`, `decline-action … [--reason <text>]` and
+  `revoke-action <account>/<role> <service:Action>=<ARN>`. Each is the UI's own post.
+- **The deploy guide** has the action role in Terraform beside the `aws iam` commands.
+
+**Decided here.** A grant from a card is the same standing grant as `grant-action`: it covers later asks of the same
+scope until the time limit of remembered write approvals, with or without Allow again. The issue's intake asked for that
+carry-over (issue #1001), and a grant is kept by scope, not by job. Allow again still decides only the template.
+
+**Migration.** None: the asks are read from the event log, and `actions` is a new field of the view only.
+
+**Residual risk, stated.** The action role is wide in IAM; only the hopper's minting narrows it. A person who holds the
+minting credential can assume it unnarrowed, as with any role it can assume. A resource ARN with a wildcard (`nodegroup/<cluster>/<group>/*`)
+is granted as written: the card shows it whole before the click.
+
+Tests: `test/domain/action-grants.test.ts` (the actions read, the need they go to, a grant's cover and time limit, the
+session policy and its size, the action role never minted wider), `test/integration/action-grants.test.ts` (the real
+daemon and the real `hopper-step`: an action outside the role asked once and shown on Access requests; one grant and the
+step runs in its need box, STS asked for the action role with `ReadOnlyAccess` and the action on its resource; `vault.minted`
+names the plan and the action; the apply in the Infra changes feed; the same action again at once; a decline tells the step
+no; infra applies off asks nothing; a bare change on the action role refused), `test/ui/action-grants-view.test.ts`,
+`test/ui/needs-you.test.ts` (the count), `test/ui/infra-plans.test.ts` (the apply's words), `test/domain/wait-on.test.ts`
+(the wake), `test/domain/action-check.test.ts` (the verdicts and their words), `test/vault/action-simulation.test.ts`
+(one simulation per action, of the role, with the read session; a refusal says why), and in
+`test/integration/action-grants.test.ts` the action check (IAM answered on loopback beside STS: an action the role does
+not allow refuses the template request before a template is made; on the action role the grant is asked at once; a need
+step with no template asks for both in one visit, and runs once both are approved). Part 3: `test/domain/run-cards.test.ts`
+(an ask on the card of its job and role; the others stay loose), `test/integration/action-grants.test.ts` (one
+`approve-run` approves the template and grants the action, the step runs and its apply is in the feed; an API token may
+not; one `decline-run` declines the action too), `test/ui/sandbox-runs-view.test.ts` (the action on the card and in its
+confirm), `test/cli/sandbox-actions.test.ts`.
+
+## Unhealthy lanes (issue #2234, 2026-10-20)
+
+**What happened.** The hopper's sandbox box `hopper-sandbox-claude` failed every job it took for two hours, 11 of 11,
+each with `claude did not start in 3 attempts: pane … never set up the job's container runtime within 60000 ms`. The
+failure assessor classed each as a start race and reran it, and each rerun went to the same lane again.
+
+**The cause.** A box starts herdr from its entrypoint with no `SHELL` in its environment, so herdr's panes run `sh`, which
+in the box image (Debian bookworm) is dash. Dash has no line editor: it reads what the terminal hands on, and a terminal
+in canonical mode keeps at most 4095 characters of a line (Linux's `N_TTY_BUF_SIZE` less the newline). The runtime
+command (issue #1295) was one line of 5.9 KB, its guards written into it. Dash got a cut line with an open quote, sat at
+its continuation prompt, and printed no outcome: the 60 s wait passed every time. A machine whose panes run bash or zsh
+reads the line through its line editor and never met the limit. Reproduced with herdr and a shell with no line editor:
+the line ends at a `>` prompt; the same line in bash prints `hopper-runtime-own`.
+
+**The fix.** `TERMINAL_LINE_MAX` (`src/executors/herdr/client.ts`) is the longest command typed into a pane. The runtime
+is set up in two steps (`guardsCommand`, then `setupCommand`, `src/client/job-runtime.ts`), the second typed once the
+first printed its outcome, so the terminal never holds both. The fake herdr's shell runs nothing longer than a terminal
+line, so a command that grows too long fails a test instead of a lane.
+
+**Unhealthy lanes** (`src/engine/lane-health.ts`, `src/decider/lane-health.ts`). A lane whose last 3 starts failed with
+the same start error — its lane's fault (`isLaneFault`), the same first 120 characters of its normalised text (the pane's
+screen after them differs from job to job) — is unhealthy for 30 minutes. Its machine carries it (`unhealthyLanes`, kept
+in memory as reach holds are), and the Decision counts the machine as one lane fewer for each lane out that holds no
+job, places no new job on it, and numbers a new lane there past it; the machine's idle reason names it. Machines shows a
+badge, the lane, its failed starts, when it is tried again and its last error. `lane.unhealthy` records each time a lane
+goes out. When the 30 minutes pass, one job is placed there: a start that fails the same way puts the lane out again at
+once, one that gets under way (or fails for its own reason) makes it healthy. A person's cancel counts neither way.
+
+**A rerun avoids the lane.** For a waiting rerun of a job that failed for its lane's fault, the Decision's inputs name
+that lane (`avoidLanes`). The job goes to another machine when one may take it — a start failure is most often the
+machine's, as here —, else to another idle or new lane of that machine, and to that lane only when there is no other: it
+is a preference, never a hold.
+
+**Verification.** `test/client/job-runtime.test.ts` (each step fits a line, the steps run for real),
+`test/herdr/executor-runtime.test.ts` (every typed command fits, the guards before the setup),
+`test/engine/lane-health.test.ts`, `test/decider/unhealthy-lanes.test.ts`, `test/ui/machine-unhealthy-lanes.test.ts`.

@@ -155,7 +155,11 @@ const NETWORK_ERROR = /\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|EPIP
 export const onlyNetworkErrors = (reasons: readonly string[]): boolean => reasons.length > 0 && reasons.every((r) => NETWORK_ERROR.test(r));
 
 /** Whether a template must pass a read-only check: one a job asked for with read needs only. */
-export interface CheckedTemplate { name: string; savedAt: string; readOnly?: boolean; check?: ReadOnlyCheck }
+export interface CheckedTemplate {
+  name: string; savedAt: string; readOnly?: boolean; check?: ReadOnlyCheck;
+  /** Why its due check does not start now (issue #2236): kept in the hopper's memory by the check pass, never stored. */
+  checkHeld?: string;
+}
 
 /** The marked probes of a check, in words: `<id> on <asset> (<mark>)`. */
 export const markedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => p.mark).map((p) => `${p.id} on ${p.asset} (${p.mark})`);
@@ -188,8 +192,8 @@ export function checkWait(t: CheckedTemplate): string | undefined {
   const c = currentCheck(t);
   if (c?.state === 'passed') return undefined;
   const wait = `waiting for the read-only check of ${t.name}`;
-  if (!c) return `${wait}: it has not run on this version yet`;
-  if (c.state === 'running') return `${wait}: it runs now`;
+  if (!c) return `${wait}: it has not run on this version yet${t.checkHeld ? `: ${t.checkHeld}` : ''}`;
+  if (c.state === 'running') return `${wait}: it runs now, since ${c.at}`;
   const failed = [...failedProbes(c), ...(c.problem ? [c.problem] : [])];
   if (c.transient) return `${wait}: it failed on a network error (${failed.join('; ')}). The hopper runs it again in a few minutes`;
   if (unmintedNeeds(t).length > 0) return `${wait}: it failed (${failed.join('; ')}). The hopper runs it again in an hour, or when a minting credential for its account or cluster is set. A person runs it again in Settings → Vault, or with hopper template check ${t.name}`;

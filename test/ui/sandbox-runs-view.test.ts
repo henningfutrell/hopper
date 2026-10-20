@@ -5,6 +5,7 @@
 // Settings → Vault, Sandbox approvals: the toggles post what changed, and YOLO posts both.
 // Issue #2197: one card per run. A template a job asked for waits on that job's run card, never on a card of its own;
 // Approve posts one approve-run, Decline one decline-run. A template card is left for a person's own template.
+// Issue #2206: a job's asks for an AWS action are on its run card, and its Approve grants them too.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +30,8 @@ const REMEMBERED = { ...WRITE, by: 'Ada', at: '2026-10-13T08:00:00.000Z', expire
 const OWN = { ...HIGH, name: 'own-deploy', savedBy: 'Ada', askedBy: undefined, askedByJob: undefined, purpose: undefined, plan: undefined, label: undefined };
 // The run cards the daemon answers: the two waiting requests, and the job that waits on the template it asked for.
 const card = (r: typeof WAITING) => ({ jobId: r.jobId, jobTitle: r.jobTitle, jobUrl: r.jobUrl, template: r.template, purpose: r.purpose, plan: r.plan, askedAt: r.askedAt, waits: { template: false, run: true }, request: r.id, ...('jev' in r ? { jev: r.jev } : {}) });
-const HIGH_CARD = { jobId: HIGH.askedBy, jobTitle: 'Give X a role', jobUrl: 'https://github.com/acme/infra/issues/7', template: HIGH.name, purpose: HIGH.purpose, plan: HIGH.plan, askedAt: HIGH.savedAt, waits: { template: true, run: false } };
+const ACTION_ASK = { job: HIGH.askedBy, role: '123456789012/hopper-action', action: 'eks:UpdateNodegroupConfig', resource: 'arn:aws:eks:us-west-1:123456789012:nodegroup/identity-eks/identity-eks-nodes/*', at: HIGH.savedAt, why: 'Scale the node group' };
+const HIGH_CARD = { jobId: HIGH.askedBy, jobTitle: 'Give X a role', jobUrl: 'https://github.com/acme/infra/issues/7', template: HIGH.name, purpose: HIGH.purpose, plan: HIGH.plan, askedAt: HIGH.savedAt, waits: { template: true, run: false }, actions: [ACTION_ASK] };
 const RUNS = [HIGH_CARD, card(WAITING), card(WAITING_2)];
 const VIEW = { secrets: [MINTS], templates: [HIGH, OWN], sandboxRequests: [WAITING, WAITING_2, RUNNING], runs: RUNS, sandboxApprovals: { skipTemplateApproval: false, skipSandboxApproval: false }, rememberedWrites: [REMEMBERED] };
 
@@ -137,6 +139,7 @@ describe('Access requests: sandbox runs (issue #991)', () => {
     const confirm = () => [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent?.trim() === 'Approve');
     await vi.waitFor(() => expect(confirm()).toBeDefined());
     expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('Allow again: a later job with the same needs runs with no new card');
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain(`It also grants ${ACTION_ASK.action} on ${ACTION_ASK.resource} as aws-role ${ACTION_ASK.role}`);
     await act(async () => { confirm()!.click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')).toBeDefined());
     expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'approve-run', job: HIGH.askedBy, template: HIGH.name, allowAgain: true });
@@ -294,6 +297,11 @@ describe('cards that say what the sandbox is for (issue #1001)', () => {
     expect(t.querySelector('[data-slot="plan"]')!.textContent).toContain('Undo: kubectl delete clusterrole x-reader.');
     expect(t.querySelector('[data-slot="needs"]')!.textContent).toContain('write on aws-account 123456789012 (AWS_UAT2: gss-uat2 account): changes it');
     expect(t.querySelector('[data-slot="run-access"]')!.textContent).toContain(HIGH.image);
+    // Issue #2206: the AWS action the job asks for, with its role and resource, on the card.
+    const actions = t.querySelector('[data-slot="run-actions"]')!.textContent;
+    expect(actions).toContain(ACTION_ASK.action);
+    expect(actions).toContain(ACTION_ASK.resource);
+    expect(actions).toContain(`as aws-role ${ACTION_ASK.role}`);
   });
 
   it('a run card shows why, the job with its link, and the plan', async () => {

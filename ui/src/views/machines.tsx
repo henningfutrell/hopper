@@ -49,6 +49,8 @@ import { DiskBudgetPanel } from './disk-budget';
 import { SandboxPlaygroundPanel } from './sandbox-playground';
 import { MachineTerminal } from './machine-terminal';
 import { MachineDrainButton, MachineDrainNotice } from './machine-drain';
+import { UnhealthyLanesNotice } from './machine-lane-health';
+import { unhealthyLaneLines } from '@/model/lane-health';
 import { MachineLeftovers } from './machine-leftovers';
 
 const REFRESH_MS = 15000;
@@ -119,7 +121,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.leaving && <StatusBadge status="leaving" tone="warn" />}{m.drained && <StatusBadge status="drained" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<CredentialBadge m={m} />{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.leaving && <StatusBadge status="leaving" tone="warn" />}{m.drained && <StatusBadge status="drained" tone="warn" />}{unhealthyLaneLines(m, now).length > 0 && <StatusBadge status="unhealthy lane" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<CredentialBadge m={m} />{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
@@ -163,6 +165,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
       <MachineDrainNotice m={m} now={now} />
+      <UnhealthyLanesNotice m={m} now={now} />
       <CredentialCheck m={m} authed={ctx.authed} busy={ctx.busy} />
       <MachineLeftovers m={m} canAct={ctx.authed && operator} />
       {m.resources?.windowsLink && <WindowsLinkProblem link={m.resources.windowsLink} />}

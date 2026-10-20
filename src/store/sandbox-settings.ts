@@ -1,14 +1,15 @@
 // A user's settings for the templates and sandboxes their jobs ask for: the read policy (issue #716, "Templates on
 // request"), the sandbox approval toggles (issue #991, "Sandboxes jobs start"), the auto-approve policy and the remembered write
-// approvals (issue #1001), and sandbox strictness (issue #655 part 8, brake 2). Part of the user's settings
+// approvals (issue #1001), the action grants (issue #2206), and sandbox strictness (issue #655 part 8, brake 2). Part of the user's settings
 // repository (settings.ts).
 import { RADIUS_LEVELS, type RadiusLevel } from '../domain/blast-radius.ts';
 import type { UserSettingsRepository } from '../domain/ports.ts';
+import type { ActionGrant } from '../domain/action-grants.ts';
 import type { RememberedWrite } from '../domain/remembered-writes.ts';
 import { DEFAULT_AUTO_APPROVE, type AutoApprove } from '../domain/sandbox-approvals.ts';
 import type { SandboxStrictness } from '../domain/sandbox-strictness.ts';
 
-type SandboxSettings = Pick<UserSettingsRepository, 'getReadPolicy' | 'setReadPolicy' | 'getSandboxApprovals' | 'setSandboxApprovals' | 'getRememberedWrites' | 'setRememberedWrites' | 'getSandboxStrictness' | 'setSandboxStrictness'>;
+type SandboxSettings = Pick<UserSettingsRepository, 'getReadPolicy' | 'setReadPolicy' | 'getSandboxApprovals' | 'setSandboxApprovals' | 'getRememberedWrites' | 'setRememberedWrites' | 'getActionGrants' | 'setActionGrants' | 'getSandboxStrictness' | 'setSandboxStrictness'>;
 
 export function sandboxSettings(read: (key: string) => string | undefined, write: (key: string, value: string) => void): SandboxSettings {
   return {
@@ -46,6 +47,13 @@ export function sandboxSettings(read: (key: string) => string | undefined, write
     },
     setRememberedWrites(list) {
       write('rememberedWrites', JSON.stringify(list));
+    },
+    getActionGrants() {
+      const text = read('actionGrants');
+      return text === undefined ? [] : (JSON.parse(text) as ActionGrant[]);
+    },
+    setActionGrants(list) {
+      write('actionGrants', JSON.stringify(list));
     },
     getSandboxStrictness() {
       const text = read('sandboxStrictness');

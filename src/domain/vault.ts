@@ -199,6 +199,10 @@ export interface VaultView {
   runs?: RunCardView[];
   /** A person's write, sync and apply approvals the hopper remembers now (issue #1001), each with its end. */
   rememberedWrites?: RememberedWriteView[];
+  /** Asks of jobs at work for an AWS action no grant covers (issue #2206): a person grants or declines each. */
+  actionAsks?: import('./action-grants.ts').ActionAskView[];
+  /** The action grants live now (issue #2206), each with its end. */
+  actionGrants?: import('./action-grants.ts').ActionGrantView[];
   /** Jobs on boxes that asked the vault with no vault grant (issue #652): a person grants them the vault, or not. */
   grantAsks?: VaultGrantAsk[];
   /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when; what each covers and how it was made (issue #1124). */
@@ -366,6 +370,8 @@ export interface TemplateView extends Template {
   label?: string;
   /** The job that asked for it (issue #1001): its title and its issue or pull request, while the hopper knows the job. */
   askedByJob?: { id: string; title?: string; url?: string };
+  /** Why its due read-only check does not start now (issue #2236), from the hopper's memory; absent: nothing holds it. */
+  checkHeld?: string;
   /** Its needs' assets the vault cannot find (issue #2067), with the clusters the topology lists; absent: none. */
   unknownAssets?: UnknownAsset[];
   /** Its needs' short cluster names (issue #2168), each with the one cluster the topology lists that it resolves to; absent: none. */
