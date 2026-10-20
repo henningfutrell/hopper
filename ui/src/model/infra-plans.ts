@@ -70,7 +70,9 @@ export const askedLine = (a: NonNullable<PlanView['asked']>): string =>
 
 /** One apply: the operation, the asset, the job that asked, and until when the credential is valid. */
 export const applyLine = (a: PlanApply): string =>
-  `${a.operation} on ${a.asset.kind} ${a.asset.name} by job ${a.job.slice(0, 8)}, valid until ${a.expiresAt}${a.renewal ? ' (renewed)' : ''}`;
+  `${a.operation} on ${a.asset.kind} ${a.asset.name} by job ${a.job.slice(0, 8)}, valid until ${a.expiresAt}${a.renewal ? ' (renewed)' : ''}`
+  // Issue #2206: the granted AWS actions the apply's session was narrowed to.
+  + (a.actions?.length ? `, granted actions: ${a.actions.map((x) => `${x.action} on ${x.resource}`).join('; ')}` : '');
 
 /** What an entry touched (issue #1781): a plan's or an apply's asset, or an out-of-band change's target. */
 export type TimelineSubject = { asset: PlanApply['asset'] } | { target: string };

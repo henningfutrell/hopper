@@ -171,7 +171,7 @@ const QUESTION_ENDS: Record<string, string> = { 'question.answered': 'was answer
 /** Every event type `settledBy` reads (issue #1571: the hopper reads them again for a wake a stop lost). */
 export const SETTLING_EVENT_TYPES: readonly EventType[] = [
   'job.pull_request_merged', 'job.pull_request_closed', 'job.waited_pull_request_ended', 'work_item.issue_closed', 'job.waited_items_ended',
-  'vault.granted', 'vault.grant_denied', 'infra.plan_approved', 'job.finished', 'job.failed', 'job.cancelled',
+  'vault.granted', 'vault.grant_denied', 'vault.action_granted', 'vault.action_declined', 'infra.plan_approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
 ];
 
@@ -208,6 +208,9 @@ export function settledBy(e: { type: string; jobId?: string; data?: unknown }): 
       const plan = str('plan');
       return plan ? { kind: 'plan', planId: plan, note: `infra plan ${plan} was approved by ${nameWithoutEmail(str('by') ?? 'a person')}` } : undefined;
     }
+    // Issue #2206: an action grant a job's need step asked for.
+    case 'vault.action_granted': case 'vault.action_declined':
+      return e.jobId ? { kind: 'grant', jobId: e.jobId, note: `an action grant (${str('action')} on ${str('resource')}) was ${e.type === 'vault.action_granted' ? 'given' : 'declined'}` } : undefined;
   }
   if (JOB_ENDS[e.type]) return e.jobId ? { kind: 'job', jobId: e.jobId, note: `job ${e.jobId} ${JOB_ENDS[e.type]}` } : undefined;
   const q = str('questionId');

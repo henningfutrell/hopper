@@ -4,6 +4,7 @@
 // burned after it (issue #1349), with credentials minted for it; and (issue #1007) one step by its needs. Kept
 // in the job's credentials dir beside its proxy token, `hopper-gh` and `hopper-skill`, run as `sh "$HOPPER_STEP"`: POSIX
 // sh, curl, tar and od, nothing else. Its full help is the `windows-step` and `box-step` skills' text.
+import { ACTION_ROLE } from '../domain/action-grants.ts';
 import { STEP_RUNS_MAX } from '../domain/windows-steps.ts';
 import { TRACE_HEADER_SH } from '../github-proxy/retry-after.ts';
 
@@ -126,7 +127,7 @@ cluster, name what it needs: the hopper runs that one command in a one-shot need
 with a short-lived credential it mints for that command only, in its environment. No box to ask for first. The output streams back here as it runs; then the exit code
 and the outputs. This job stays on this machine and goes on with its work.
 
-  sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE)
+  sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] [--action ACTION=ARN]... (--command TEXT | --script FILE)
                          [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]
     NEEDS              what the command needs, as <operation>/<kind>/<asset>, split by spaces:
                        read/aws-role/123456789012/readonly, read/cluster/NAME, read/namespace/CLUSTER/NS,
@@ -135,6 +136,10 @@ and the outputs. This job stays on this machine and goes on with its work.
     --plan TEXT        for a need that changes an asset: what the command does, and whether it can be undone
     --plan-id ID       for a need that changes an asset: the id of the approved infra plan the change applies. Its
                        saved plan file is in the box: terraform apply there applies it (no file to name)
+    --action ACTION=ARN  for the one change on an aws-role: an AWS action it needs that the role's own access does not
+                       give, and the resource it acts on (eks:UpdateNodegroupConfig=arn:aws:eks:…:nodegroup/C/G/*).
+                       A person grants each once, on Access requests; the session then reads, and does only the
+                       granted actions. Use the account's ${ACTION_ROLE} role for it. Repeat for more (at most 10).
     --command TEXT     sh to run in the need box's work directory (at most 4 KiB). The tools are there: aws, kubectl,
                        helm, terraform, as the needs ask.
     --script FILE      a script of this machine's to run instead (with sh)
@@ -149,8 +154,10 @@ Exit: the command's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, s
 
 The first ask for a set of needs makes a template for them. Reads the user's policy holds are approved at once; a change
 waits for a person's approval. While it waits, hopper-step asks again by itself and runs the command when it is ready.
-When --wait runs out first, end your turn with HOPPER_WAITING (for: the sandbox template): the hopper ends your wait
-when it is ready. Then run the same command again. The same needs use the same template, never a second one.
+When --wait runs out first, end your turn with HOPPER_WAITING (for: the sandbox template; on: vault grant when it waits
+on an action grant): the hopper ends your wait when it is ready. Then run the same command again. An action a person
+granted stays granted for later steps of the same role, action and resource. When infra applies are off, no action is
+asked: the change goes through CI. The same needs use the same template, never a second one.
 In the box: one AWS role is the AWS CLI's default; each AWS role is also a profile named <account>-<role>. Each cluster
 or namespace is a kubectl context named for it (a namespace: <cluster>-<ns>), the first one current.
 A step is on this job's timeline: its box, needs, command, exit code and time. Never print a credential.
@@ -163,7 +170,9 @@ Example: who am I in an account, read only.
 Example: list the pods of a namespace, and bring a report back.
   sh "$HOPPER_STEP" need "read/namespace/lab/web" --why "Find the pod that restarts" --command "kubectl get pods -o wide > pods.txt" --output pods.txt
 Example: apply an approved terraform plan (record it first: POST /job/infra-plans, with the saved plan file).
-  sh "$HOPPER_STEP" need "apply/aws-role/123456789012/deploy" --why "Add the rule the plan holds" --plan-id PLAN_ID --input infra --command "cd infra && terraform init -input=false && terraform apply -auto-approve"`;
+  sh "$HOPPER_STEP" need "apply/aws-role/123456789012/deploy" --why "Add the rule the plan holds" --plan-id PLAN_ID --input infra --command "cd infra && terraform init -input=false && terraform apply -auto-approve"
+Example: an action the deploy role cannot do, as the plan applies it (a person grants it once).
+  sh "$HOPPER_STEP" need "apply/aws-role/123456789012/${ACTION_ROLE}" --action "eks:UpdateNodegroupConfig=arn:aws:eks:us-west-1:123456789012:nodegroup/prod/nodes/*" --why "Scale the node group to 6 nodes" --plan-id PLAN_ID --input infra --command "cd infra && terraform init -input=false && terraform apply -auto-approve"`;
 
 /** The script. The token goes to curl on stdin, never on a command line; every value in a URL is percent-encoded. */
 export const STEP_SCRIPT = `#!/bin/sh
@@ -173,12 +182,12 @@ export const STEP_SCRIPT = `#!/bin/sh
 #   sh "$HOPPER_STEP" hosts
 #   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] [--rerun]
 #   sh "$HOPPER_STEP" box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR]
-#   sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]
+#   sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] [--action ACTION=ARN]... (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]
 # Load the windows-step, box-step or need-step skill for the full help: sh "$HOPPER_SKILL" windows-step
 # Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back; 2: a bad call.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] [--rerun] | box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] [--rerun] | box TEMPLATE (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--plan-id ID] [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] [--action ACTION=ARN]... (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
 ${TRACE_HEADER_SH}
 # The job's token, and its trace parent (issue #1486 part 6): the hopper's span for each request is a child of the job's run span.
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
@@ -204,7 +213,7 @@ command=; script=; into=.; q=; wait=${STEP_READY_WAIT_S}; : > "$tmp/inputs"
 while [ $# -gt 0 ]; do
   case $1 in
     --rerun) [ "$at" = host ] || { echo 'no: --rerun is for a Windows step: a sandbox step runs in a new sandbox each time' >&2; exit 2; }; q="$q&rerun=1" ;;
-    --command|--script|--input|--output|--secret|--timeout|--into|--why|--plan|--plan-id|--wait)
+    --command|--script|--input|--output|--secret|--timeout|--into|--why|--plan|--plan-id|--action|--wait)
       [ $# -ge 2 ] || usage
       case $1 in
         --command) command=$2 ;;
@@ -217,6 +226,7 @@ while [ $# -gt 0 ]; do
         --why) needonly --why; q="$q&why=$(enc "$2")" ;;
         --plan) needonly --plan; q="$q&plan=$(enc "$2")" ;;
         --plan-id) if [ "$at" = host ]; then needonly --plan-id; fi; q="$q&planId=$(enc "$2")" ;;
+        --action) needonly --action; q="$q&action=$(enc "$2")" ;;
         --wait) needonly --wait; wait=$2 ;;
       esac
       shift ;;
@@ -246,7 +256,7 @@ if [ "$at" = needs ]; then
     [ "$code" = 202 ] || { cat "$tmp/ready" >&2; exit ${STEP_NOT_RUN}; }
     [ -n "$told" ] || { sed 's/^/hopper-step: /' "$tmp/ready" >&2; told=1; }
     if [ "$(date +%s)" -ge "$end" ]; then
-      echo "hopper-step: still waiting after $wait s. End your turn with HOPPER_WAITING (for: the sandbox template for $place): the hopper ends your wait when it is ready. Then run this again." >&2
+      echo "hopper-step: still waiting after $wait s. End your turn with HOPPER_WAITING (for: the sandbox template for $place, or the action grant the hopper named; on: vault grant for an action grant): the hopper ends your wait when it is ready. Then run this again." >&2
       exit ${STEP_NOT_RUN}
     fi
     sleep "\${HOPPER_STEP_POLL_S:-${STEP_READY_POLL_S}}"

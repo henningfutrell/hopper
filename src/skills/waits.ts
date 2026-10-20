@@ -24,12 +24,15 @@ const VAULT_CHANGES: readonly EventType[] = [
   'vault.credential_given', 'vault.credential_declined', 'vault.approved', 'vault.secret_set', 'vault.secret_removed', 'template.profile_approved', 'template.checked',
   // A sandbox request (issue #991): approved, declined, its box started or not.
   'vault.sandbox_approved', 'vault.sandbox_declined', 'vault.sandbox_started', 'vault.sandbox_failed',
+  // An action grant (issue #2206, part 2): a template request's action check waits for it.
+  'vault.action_granted', 'vault.action_declined',
 ];
 /**
  * The fields of a request that are asked again; `wait` and `timeout` are the watch's. Issue #1966: a template request's
- * vault secrets, egress hosts and image too, or a request with them and no need is asked again with no need, and refused.
+ * vault secrets, egress hosts and image too, or a request with them and no need is asked again with no need, and refused. Issue #2206:
+ * its AWS actions, so the action check is asked again.
  */
-const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs', 'template', 'secrets', 'egress', 'image', 'tools'];
+const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs', 'template', 'secrets', 'egress', 'image', 'tools', 'actions'];
 
 /** One user's side: their job stream, and their event log to hear the vault's changes on. */
 export interface WaitUser {
