@@ -90,8 +90,8 @@ export interface PlanView extends Omit<InfraPlan, 'text'> {
 /** A plan as the repository keeps it: who may approve it is read from its summary each time, never kept. */
 export type KeptPlanView = Omit<PlanView, 'approver'>;
 
-/** An apply (issue #896): a credential the vault minted for an approved plan, from its `vault.minted` event. Never the credential. */
-export interface PlanApply { plan: string; at: string; operation: string; asset: Asset; job: string; expiresAt: string; renewal: boolean }
+/** An apply (issue #896): a credential the vault minted for an approved plan, from its `vault.minted` event, with the granted AWS actions it was narrowed to (issue #2206). Never the credential. */
+export interface PlanApply { plan: string; at: string; operation: string; asset: Asset; job: string; expiresAt: string; renewal: boolean; actions?: { action: string; resource: string }[] }
 
 export interface InfraPlanRepository {
   add(plan: InfraPlan, file?: Buffer): void;

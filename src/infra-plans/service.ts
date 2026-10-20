@@ -123,8 +123,8 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
       const ids = new Set(listed.map((p) => p.id));
       const since = listed.reduce((min, p) => (p.createdAt < min ? p.createdAt : min), listed[0]!.createdAt);
       return o.store.events.between(['vault.minted'], since).flatMap((e): PlanApply[] => {
-        const d = e.data as { plan?: string; operation: string; asset: PlanApply['asset']; job: string; expiresAt: string; renewal?: boolean };
-        return d.plan && ids.has(d.plan) ? [{ plan: d.plan, at: e.at, operation: d.operation, asset: d.asset, job: d.job, expiresAt: d.expiresAt, renewal: d.renewal === true }] : [];
+        const d = e.data as { plan?: string; operation: string; asset: PlanApply['asset']; job: string; expiresAt: string; renewal?: boolean; actions?: PlanApply['actions'] };
+        return d.plan && ids.has(d.plan) ? [{ plan: d.plan, at: e.at, operation: d.operation, asset: d.asset, job: d.job, expiresAt: d.expiresAt, renewal: d.renewal === true, ...(d.actions?.length ? { actions: d.actions } : {}) }] : [];
       }).reverse();
     },
     approval: (id) => plans.approval(id),
