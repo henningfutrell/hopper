@@ -54,10 +54,17 @@ function execApi(api: string, box: string): Promise<ExecApi> {
     const m = new RegExp(`^${api}/exec/exec(\\d+)/start$`).exec(req.url ?? '');
     const e = m ? execs[Number(m[1]) - 1] : undefined;
     if (!e || req.headers.upgrade !== 'tcp') { sock.end('HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n'); return; }
-    // Node's server reads the start's own JSON body before the upgrade, as the runtimes do: what follows is stdin.
+    // The runtimes read the start's own JSON body (its content-length) before they hijack: what follows is stdin. Node 24
+    // gives that body in the upgrade's head or on the socket; a later Node gives it as the request's data. Skip it either way.
+    let body = Number(req.headers['content-length'] ?? 0);
+    req.on('data', (d: Buffer) => { body -= d.length; });
     sock.write('HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.multiplexed-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n');
     const child = spawn(e.cmd[0]!, e.cmd.slice(1), { stdio: 'pipe' });
-    const toStdin = (d: Buffer): void => { child.stdin.write(d); };
+    const toStdin = (d: Buffer): void => {
+      const skip = Math.max(0, Math.min(body, d.length));
+      body -= skip;
+      if (d.length > skip) child.stdin.write(d.subarray(skip));
+    };
     if (head.length) toStdin(head);
     sock.on('data', toStdin);
     sock.on('end', () => child.stdin.end());
