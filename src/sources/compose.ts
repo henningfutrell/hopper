@@ -7,7 +7,7 @@ import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } 
 import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, furtherAccount, mergesOnReady, providerOfKey, type ChangeRule, type ConnectedAccountKey } from '../domain/types.ts';
 import type { DirectPullRequests } from '../domain/direct-jobs.ts';
 import { endedPullRequests, tendStartedOn } from './github/follow.ts';
-import { endedWatched } from './github/watched.ts';
+import { endedWatched, waitedChecks, waitedReviews } from './github/watched.ts';
 import { followDirectPullRequest } from './github/direct-follow.ts';
 import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
@@ -284,5 +284,8 @@ export function createDirectPullRequests(o: {
     // A direct job's waits (issue #1721): no other source lists it, so the direct source reads them. Unconnected, none ended.
     endedPullRequests: async (pulls) => (connected() ? endedPullRequests(api, pulls) : []),
     endedWatched: async (refs) => (connected() ? endedWatched(api, refs) : []),
+    // A direct job's wait on a pull request's checks or review (issue #2210); unconnected, the read fails and says why.
+    waitedChecks: async (repo, number) => { if (!connected()) throw new SourceError(notConnected(provider), false); return waitedChecks(api, repo, number); },
+    waitedReviews: async (repo, number) => { if (!connected()) throw new SourceError(notConnected(provider), false); return waitedReviews(api, repo, number); },
   };
 }

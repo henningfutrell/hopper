@@ -101,6 +101,8 @@ export interface NumberedPullRequest extends OpenPullRequest {
   state: 'open' | 'closed' | 'merged';
   /** When it was merged; absent unless merged. */
   mergedAt?: string;
+  /** When it was closed, merged or not (issue #2219); absent while open. */
+  closedAt?: string;
 }
 
 /** An open pull request of a repository, with its branch (issue #637) and its body (issue #763: the issue it closes). */

@@ -86,6 +86,28 @@ describe('shrunkFiles (issue #1096)', () => {
       .toEqual([{ path: 'grown.md', from: 1000, to: 12, against: 'head' }]);
   });
 
+  it('a file the pull request added is its own: a rebase may rename, empty or remove it (issue #2225)', () => {
+    expect(shrunkFiles([
+      { path: 'docs/adrs/ADR-0019-dashboard.md', head: 98, pushed: undefined },
+      { path: 'docs/adrs/ADR-0020-dashboard.md', pushed: 98 },
+      { path: 'src/own.ts', head: 400, pushed: 0 },
+      { path: 'src/cut.ts', head: 400, pushed: 10 },
+    ], P)).toEqual([]);
+  });
+
+  it('a file on the base branch is still judged beside the pull request\'s added ones (issue #2225)', () => {
+    expect(shrunkFiles([
+      { path: 'docs/adrs/ADR-0019-dashboard.md', head: 98, pushed: undefined },
+      { path: 'docs/adrs/README.md', start: 40, head: 41, base: 42, pushed: 0 },
+      { path: 'docs/adrs/ADR-0019-kotlin.md', base: 120, pushed: undefined },
+      { path: 'docs/glossary.md', start: 780, head: 781, base: 781, pushed: 100 },
+    ], P)).toEqual([
+      { path: 'docs/adrs/README.md', from: 42, to: 0, against: 'base' },
+      { path: 'docs/adrs/ADR-0019-kotlin.md', from: 120, to: 0, against: 'base' },
+      { path: 'docs/glossary.md', from: 781, to: 100, against: 'base' },
+    ]);
+  });
+
   it('the percent is the guard\'s', () => {
     const f = [{ path: 'a.md', start: 100, head: 100, base: 100, pushed: 70 }];
     expect(shrunkFiles(f, 50)).toEqual([]);

@@ -149,8 +149,11 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * `kindCheck`: Jev's kind check (issue #655, src/domain/kind-check.ts, the point `intake-kind` active), made before its first start.
    */
   originPending?: true; stamp?: import('./trust-stamp.ts').TrustStamp; kindCheck?: import('./kind-check.ts').KindCheck;
-  /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
-  userRank?: number;
+  /**
+   * `userRank`: the job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest.
+   * `critical`: the critical flag (issue #2203): a person marked the job critical, whatever its priority, so the critical job tracker shows it.
+   */
+  userRank?: number; critical?: true;
   laneId?: LaneId;
   /** Its task count (issue #794): done of total, as it last reported it. None before it has a task list. */
   tasks?: TaskCount;

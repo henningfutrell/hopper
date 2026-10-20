@@ -6,7 +6,8 @@
 // resolution once emptied docs/design.md and docs/glossary.md, its checks passed, and yolo mode would have merged it.
 // Each file is compared with the base branch as the push brings it in, and with the branch's head before the push; a file
 // the base branch itself removed or shrank is the base branch's change, not the push's. The job is refused with the files
-// named, so it redoes the resolution; a job whose last push the guard refused does not end done. Pure.
+// named, so it redoes the resolution; a job whose last push the guard refused does not end done. A file the branch added
+// is its own, not judged (issue #2225). Pure.
 import type { DomainEvent, Job } from './types.ts';
 import type { Verdict } from './pull-requests.ts';
 
@@ -40,6 +41,9 @@ export function shrunkFiles(files: readonly PushFileLines[], percent: number): S
   const out: ShrunkFile[] = [];
   const gone = (n: number | undefined) => n === undefined || n === 0;
   for (const f of files) {
+    // A file the branch added, and the base branch does not have, is the pull request's own (issue #2225): a rebase may
+    // rename it (a new number, when the base branch took the old one), empty or remove it.
+    if (f.start === undefined && f.base === undefined) continue;
     if (loses(f.start, f.head, percent)) {
       // The branch's own change empties or removes it: what the pull request means to do.
       if (gone(f.head)) continue;

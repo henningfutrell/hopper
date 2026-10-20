@@ -3,7 +3,7 @@
 // the text names it with an owner too, issue #2066; `issue N` in its own repository, a link), a workflow run (`<repo> run N`,
 // `workflow run N`, a link). At each sync of the job's source each one is read (`JobSource.endedWatched`); once every one a
 // wait names ended — closed, merged, the run completed —, the job wakes (`job.waited_items_ended`), though it ended before
-// the watch began. A wait the hopper watches no way, and only a background poll in its pane can end, is the pane's
+// the watch began; but not an outside wait for one that ended before the wait began (`endedBeforeWait`, issue #2219). A wait the hopper watches no way, and only a background poll in its pane can end, is the pane's
 // (`paneCarriesWait`): it wakes when that pane is lost. Pure.
 import type { Job } from './types.ts';
 
@@ -18,9 +18,10 @@ export const NOT_FOUND = 'not_found';
 
 /**
  * A watched thing seen ended: an issue `closed`, a pull request `merged` or `closed`, a run completed with its conclusion; or
- * one that does not exist, `not_found`.
+ * one that does not exist, `not_found`. `at` (issue #2219): when it ended, when the source says (an issue's close, a pull
+ * request's merge or close).
  */
-export interface WatchedEnd { ref: WatchedRef; url: string; state: string }
+export interface WatchedEnd { ref: WatchedRef; url: string; state: string; at?: string }
 
 /** A watched thing, and the jobs whose waits name it. */
 export interface Watched { ref: WatchedRef; jobIds: string[] }
@@ -80,6 +81,17 @@ export function watchedOf(job: WaitingJob): WatchedRef[] {
   }
   if (on && on.kind !== 'outside') return [];
   return refsIn([w.for, w.until ?? '', on?.what ?? ''].join('\n'), own).filter(notOwn);
+}
+
+/**
+ * Whether `end` came before `job`'s wait on an outside event (or one with nothing recorded) began (issue #2219): an item its
+ * text names that had ended already is what the job knew, not the event it waits for, so it does not end the wait. A wait on
+ * an item still ends on one that ended before (issue #1356), and an item that does not exist is still said at once.
+ */
+export function endedBeforeWait(job: Pick<Job, 'wait'>, end: Pick<WatchedEnd, 'state' | 'at'> | undefined): boolean {
+  const w = job.wait;
+  if (!w || !end?.at || end.state === NOT_FOUND || (w.on && w.on.kind !== 'outside')) return false;
+  return Date.parse(end.at) < Date.parse(w.since);
 }
 
 /** The things all `jobs`' waits watch, each once, with the jobs that watch it. */

@@ -1,9 +1,9 @@
 // Delegate approvers at the approval routes (issue #1138, design.md "Delegate approvers"): who an approval records, and
 // the approver policy. A request whose API token is a delegate approver's records `by` as the delegate and the person it
-// acts for; the routes ask `refuseDenied` before they approve, so what the policy names stays the owner's. Its scopes,
+// acts for, another API token's as its label and its person (issue #2229); the routes ask `refuseDenied` before they approve, so what the policy names stays the owner's. Its scopes,
 // checked at the door (./api-tokens.ts), already keep it to the approval routes.
-import { delegateBy, deniedBy, type DelegatePolicy } from '../../domain/delegates.ts';
-import type { Identity } from '../../domain/types.ts';
+import { apiTokenBy, delegateBy, deniedBy, type DelegatePolicy } from '../../domain/delegates.ts';
+import type { Identity, SessionKind } from '../../domain/types.ts';
 import { HttpError } from '../errors.ts';
 import type { ApiGrants } from './api-grants.ts';
 import { personOf } from './sessions.ts';
@@ -17,8 +17,12 @@ export function delegateOf(grants: Pick<ApiGrants, 'live'>, s: { identity: Ident
   return g?.delegate ? { name: g.label, person: personOf(s), deny: g.delegate.deny } : undefined;
 }
 
-/** Who an approval records: a delegate and the person it acts for, else the person. */
-export const approverOf = (d: Delegate | undefined, s: { identity: Identity; email?: string }): string => (d ? delegateBy(d.name, d.person) : personOf(s));
+/**
+ * Who an approval records: a delegate and the person it acts for; another API token's label and its person (issue #2229),
+ * so an approval an agent made shows as that agent's key; else the person.
+ */
+export const approverOf = (d: Delegate | undefined, s: { identity: Identity; email?: string; kind?: SessionKind; label?: string }): string =>
+  d ? delegateBy(d.name, d.person) : s.kind === 'api' && s.label ? apiTokenBy(s.label, personOf(s)) : personOf(s);
 
 /** 403 when the delegate's approver policy names one of what the approval touches; a person's approval passes. */
 export function refuseDenied(d: Delegate | undefined, names: readonly (string | undefined)[], doing: string): void {
