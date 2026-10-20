@@ -161,9 +161,7 @@ describe('the cloud link\'s agent', () => {
     expect(pinned.events.filter((e) => e.type === 'cloud_link.connection_refused')).toEqual([
       { type: 'cloud_link.connection_refused', data: expect.objectContaining({ reason: 'pin' }) },
     ]);
-    // The fast retries go on: between two attempts the agent waits again, so read its status while it waits.
-    const waiting = await waitFor(() => { const s = pinned.agent.status(); return s.state === 'waiting' ? s : undefined; }, { what: 'the agent waiting' });
-    expect(waiting).toMatchObject({ state: 'waiting', retryAt: expect.any(String), problem: expect.stringContaining('pin') });
+    expect(pinned.agent.status()).toMatchObject({ state: 'waiting', retryAt: expect.any(String), problem: expect.stringContaining('pin') });
 
     const { ca: _ca, ...noRoot } = io.target;
     const unknown = instance(noRoot);

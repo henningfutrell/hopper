@@ -3,7 +3,7 @@
 // request on —, with no GitHub issue behind it. The list reads each direct job back, newest first, with its job's state,
 // its open questions (answered in Questions), its result, its error and its artifacts. The brief and the results stay in
 // the hopper until a person promotes them to GitHub (issue #946, direct-job-promotion.tsx); one offered for promotion is
-// pinned at the top. A direct query (issue #2184) is left out: it has a view of its own (direct-queries.tsx). The form only for an operator or admin: the daemon refuses the rest. Read when shown, and every 15 s.
+// pinned at the top. The form only for an operator or admin: the daemon refuses the rest. Read when shown, and every 15 s.
 import { LogBlock } from '@/components/log-block';
 import { Send, Zap } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -17,7 +17,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { usePoll } from '@/hooks/use-poll';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import { directDraftProblem, directJobRequest, directJobState, emptyDirectDraft, offeredFirst, resultText, submittedLine, type DirectJobDraft } from '@/model/direct-jobs';
-import { onlyDirectJobs } from '@/model/direct-queries';
 import type { DirectJobView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanOperate } from '@/store/selectors';
@@ -130,7 +129,7 @@ export function DirectJobs() {
   const [list, setList] = useState<DirectJobView[] | null>(null);
   const load = useCallback(async () => {
     const v = await get<{ directJobs: DirectJobView[] }>('/api/direct-jobs');
-    if (Array.isArray(v?.directJobs)) setList(onlyDirectJobs(v.directJobs));
+    if (Array.isArray(v?.directJobs)) setList(v.directJobs);
   }, []);
   usePoll(load, POLL_MS);
   return (
