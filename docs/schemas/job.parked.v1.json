@@ -18,6 +18,20 @@
     },
     "why": {
       "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    },
+    "reason": {
+      "type": "string"
     }
   },
   "required": [

@@ -12700,6 +12700,42 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
 
+### Parking a proposal or a research report (issue #2167, 2026-10-19)
+
+A person sets a proposal or a research report aside without acting on it or rejecting it: they park the job that waits
+on it. Parking was already open to that job (it is `waiting_answer`); this adds who parked it and why, takes the item out
+of its section, and keeps the review from moving on while it is parked.
+
+- **Who and why.** `POST /ui/api/jobs/:id/park { reason? }` (`parkBody`, at most 500 characters) and `hopper job park
+  <id> [--reason <text>]`. The person signed in (`actingOf`: `by` their name, `via` `ui`, `cli` or `api`) and the reason
+  are kept in `parked` (`by`, `via`, `reason`, `src/domain/park-ask.ts`) and on `job.parked`. A running job is parked
+  only once its executor stepped aside, maybe by another hopper (issue #1662): the command keeps the ask on the job
+  (`parkAsk`) before it stops the run, and `recordPark` moves it into `parked`. Auto-park and the moves keep no person:
+  their `why` says why. Nothing is written to GitHub: a park is the hopper's own state, and the hopper writes only labels
+  to an issue ("GitHub text is neutral").
+- **Out of its section.** A **parked item** (`parkedItemOf`, `src/domain/review.ts`) is an open or sent-back item whose
+  job is parked on it. `GET /api/<section>` leaves it out of `status=open`, and `status=parked` lists only those, each
+  with `parked: { at, by?, via?, reason? }`; `GET /api/sections` does not count it in its section (Parked counts its job).
+  The UI shows it folded under the section's list (`ui/src/views/parked-items.tsx`: its job, its first part, how long
+  parked, by whom and why, Pick up), and the Parked row of its job says what it waits on.
+- **Nothing moves while it is parked** (`src/review/service.ts`). No reviewer level enters it; a level's reply that comes
+  back after the park is dropped, its call cleared, so the level is asked again later; the end of the levels neither
+  continues with it (auto-continue) nor sends it to a person; a person's decision is refused, 409 `parked` ("pick it up
+  first"), so no follow-on job starts and its job neither ends nor runs.
+- **Pick up puts it back.** `recordUnpark` already returns the job to `waiting_answer` on its open item. After the
+  commit, `ReviewService.resume` starts the review again from the stage it stopped at (`resumeAt`), unless a review of
+  it is still in flight. The item keeps its versions, trail, stage and seen mark.
+- **Persisted state.** No schema change: `parked` and `parkAsk` are fields of the job's JSON body, and the build before
+  ignores them. A park survives a restart and a move to another hopper: it is all in the database.
+- **Its issue closes meanwhile.** As for any job: closed in a way that cancels it (not planned, label removed, gone),
+  its job ends cancelled at the next sync, the sweep cancels the item, and a pick up is refused (409). The item keeps
+  its versions in the history. Closed as completed after it started, the job stays parked, and a pick up puts it back.
+- **Not here.** A job of the hopper parking a job through a skill: a `/job/*` route that changes a job is outside the
+  repo law ("No route creates or changes a job … except through the UI session"); it waits on an owner decision.
+- **Verification.** `test/integration/park-review-item.test.ts` (a proposal and a research report parked and picked up,
+  the refusals, a restart, a reviewer level in flight, a running job's park with a reason, a long reason refused),
+  `test/integration/park-review-item-closed.test.ts` (its issue closed both ways), `test/ui/park-review-item.test.ts`.
+
 ## Preemption (issue #1525, 2026-10-16)
 
 When a job of higher priority waits and no lane it may use is free, the hopper parks a running job of lower priority and

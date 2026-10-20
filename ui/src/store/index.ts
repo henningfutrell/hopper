@@ -324,6 +324,8 @@ export function onDomainEvent(e: DomainEvent) {
   for (const k of REVIEW_KINDS) if (e.type.startsWith(`${REVIEW_UI[k].prefix}.`)) refreshReviewsSoon(k);
   if (FAILURE_EVENTS.has(e.type)) refreshFailuresSoon();
   // A job's priority changed (a label): its question, login and hand-off are tagged and sorted by it (issue #535).
+  // A park or a pick up moves a job's proposal or research report out of its section, or back (issue #2167).
+  if (e.type === 'job.parked' || e.type === 'job.unparked') for (const k of REVIEW_KINDS) refreshReviewsSoon(k);
   if (e.type === 'job.reprioritized') { refreshQuestionsSoon(); for (const k of REVIEW_KINDS) refreshReviewsSoon(k); refreshLoginsSoon(); refreshFailuresSoon(); }
   if (e.type.startsWith('priority_lanes.') && s.priorityLanes) refreshPriorityLanesSoon();
   if (e.type === 'priority_lanes.settings_changed') refreshQuestionsSoon();

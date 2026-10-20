@@ -5,7 +5,8 @@
 // in one step. A question asked on its issue thread (issue #435) says so, with Post on the issue while it is held for review. A job auto-park parked (issue #650) says why, and its answer alone picks it up: its box only answers. Pick up (`POST /ui/api/jobs/:id/requeue`) and Cancel act on the row; a viewer reads only. A job picked
 // up with its question still open waits on it again, and the question is back in Questions. A job with a checkpoint
 // (issue #921) says when it was taken, and Resume elsewhere, confirmed, picks it up on any machine from it; with its
-// question open, the answer comes first. The answer box is the one question form (issue #1169).
+// question open, the answer comes first. The answer box is the one question form (issue #1169). A row says who parked the
+// job and why (issue #2167), and, for a job parked on a proposal or research report, that item's first line.
 import { ChevronRight, CirclePause, MoveRight, Play } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,9 @@ import { answerPicksUp } from '@/model/auto-park';
 import { goalOf } from '@/model/job';
 import { firstLine } from '@/model/questions';
 import { CardText, InlineMarkdown } from '@/components/markdown';
-import type { Job, QuestionView } from '@/model/wire';
+import type { Job, QuestionView, ReviewKind } from '@/model/wire';
+import { REVIEW_UI, reviewKindOfJob } from '@/model/reviews';
+import { ParkedBy } from '@/views/parked-items';
 import { act, actFor, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
 import { CancelButton, PickUpButton } from '@/views/dashboard/lanes';
@@ -85,8 +88,20 @@ function ResumeElsewhereButton({ job, waits }: { job: Job; waits: boolean }) {
   );
 }
 
+/** The proposal or research report the job is parked on (issue #2167), with its first part, if it has one. */
+function useParkedItem(job: Job): { kind: ReviewKind; headline: string } | undefined {
+  const kind = reviewKindOfJob(job);
+  const review = useHopper((s) => (kind ? s.reviews[kind] : undefined));
+  const p = review?.parked.find((x) => x.jobId === job.id);
+  if (!kind || !p) return undefined;
+  const v = p.versions.at(-1)!;
+  const first = review?.type?.parts[0]?.[0];
+  return { kind, headline: (first && v.sections[first]) || v.text };
+}
+
 function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
   const machines = useHopper((s) => s.machines);
+  const item = useParkedItem(job);
   const canOperate = useCanOperate();
   const [open, setOpen] = useState(false);
   const answered = job.pendingAnswer !== undefined && job.parked?.from === 'waiting_answer';
@@ -113,6 +128,8 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
         {answered && <StatusBadge status="answered" tone="ok" title="Answered: picked up, it resumes with the answer." />}
       </div>
       {job.parked?.why && <div data-slot="parked-why" className="pl-8 text-xs text-muted-foreground">{job.parked.why}</div>}
+      <ParkedBy parked={job.parked} className="pl-8 text-xs text-muted-foreground" />
+      {item && <div data-slot="item-line" className="truncate pl-8 text-xs" title={item.headline}>waits on its {REVIEW_UI[item.kind].noun}: <InlineMarkdown text={firstLine(item.headline)} /></div>}
       {q && <ThreadState q={q} className="pl-8" />}
       {q && !open && <div data-slot="question-line" className="truncate pl-8 text-xs text-question" title={q.text}><InlineMarkdown text={firstLine(q.text)} /></div>}
       {q && open && (

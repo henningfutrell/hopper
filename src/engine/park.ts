@@ -8,6 +8,7 @@
 // that holds its agent session may instead be picked up to resume elsewhere (issue #921): not pinned to its machine,
 // its claim rebuilds its work tree from the checkpoint wherever it runs, and the agent is told so (`elsewhereBrief`).
 import type { Job, LaneId } from '../domain/types.ts';
+import { parkAskOf, type ParkAsk } from '../domain/park-ask.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { releaseLane } from './outcome.ts';
@@ -46,18 +47,20 @@ export function freshStartBrief(c: Pick<EngineContext, 'store'>, job: Job, answe
 
 /**
  * Inside a tx: the job parked from `from`, its lane (if any) freed. Its question, if open, stays open. `why`: auto-park
- * parked it (issue #650), and this says why.
+ * parked it (issue #650), and this says why. `ask` (issue #2167): who parked it and why; a running job's comes from its
+ * `parkAsk`, kept when the person asked.
  */
-export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waiting_answer', laneId?: LaneId, why?: string): Job {
+export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waiting_answer', laneId?: LaneId, why?: string, ask?: ParkAsk): Job {
   const { store } = c;
   const at = nowIso(c);
   const lane = laneId ? store.lanes.list().find((l) => l.id === laneId) : undefined;
   const machineId = lane?.machineId ?? job.resumeOn ?? job.spec.machineId;
+  const by = why ? {} : parkAskOf(ask ?? store.jobs.get(job.id)?.parkAsk);
   const parked = store.jobs.update(job.id, {
-    status: 'parked', laneId: undefined, parked: { at, from, ...(why ? { auto: true as const, why } : {}) }, ...(machineId ? { resumeOn: machineId } : {}),
-    holdReason: undefined, waitReason: undefined,
+    status: 'parked', laneId: undefined, parked: { at, from, ...(why ? { auto: true as const, why } : {}), ...by }, ...(machineId ? { resumeOn: machineId } : {}),
+    holdReason: undefined, waitReason: undefined, parkAsk: undefined,
   });
-  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}) } });
+  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}), ...by } });
   releaseLane(c, lane, at);
   return parked;
 }

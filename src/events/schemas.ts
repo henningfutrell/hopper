@@ -136,7 +136,7 @@ export const EVENT_SCHEMAS = {
   'job.failed': strict({ error: z.string(), ...priority }),
   'job.cancelled': strict({ reason: z.string(), note: z.string().optional() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
-  'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional() }),
+  'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional(), by: z.string().optional(), via: z.enum(ACTION_VIAS).optional(), reason: z.string().optional() }),
   // `elsewhere` (issue #921, additive): picked up to resume on another machine from its checkpoint. `job.checkpointed`
   // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
   'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
