@@ -1,10 +1,13 @@
-// A job's way to the hopper placed on its machine (issues #563, #695, #2040). A job that ran on its machine before (its
-// agent session is known) keeps the variables its start gave it when its files cannot be placed again: a resume or a
-// turn never takes HOPPER_GH and git's way to GitHub away from a job mid-work. Fakes only at the machine shell's seam.
+// A job's way to the hopper placed on its machine (issues #563, #695, #2040, #2233). A placement that fails is tried once
+// more. A job that ran on its machine before (its agent session is known) keeps the variables its start gave it when its
+// files cannot be placed again: a turn never takes HOPPER_GH and git's way to GitHub away from a job mid-work. A job that
+// reopens after its end reaped its credentials dir (a continued or a parked job) has no files left to keep: it fails,
+// and never resumes without its way to the hopper. Fakes only at the machine shell's seam.
 import { describe, expect, it } from 'vitest';
 import type { JobProxyCredentials, MachineShell } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { placeCredentials, Unreached } from '../../src/engine/credentials.ts';
+import { matchCause, NO_WAY_TO_HOPPER } from '../../src/failures/causes.ts';
 
 const MACHINE = { id: 'seat-1' } as MachineSnapshot;
 const SCRATCH = '/work/.worktrees/@scratch/job-1';
@@ -16,9 +19,10 @@ const PROXY: JobProxyCredentials = {
 };
 const VARIABLES = { HOPPER_GH: `${SCRATCH}/credentials/hopper-gh`, HOPPER_PROXY_TOKEN: `${SCRATCH}/credentials/proxy-token`, HOPPER_URL: 'http://127.0.0.1:1', GIT_CONFIG_COUNT: '1' };
 
-/** A machine shell whose reach check answers `reach` and whose credential writes fail with `fails`, when set. */
-const shell = (o: { reach?: () => Promise<string | undefined>; fails?: string } = {}): MachineShell & { kept: string[] } => {
+/** A machine shell whose reach check answers `reach` and whose credential writes fail with `fails`, when set (`times`: only that many times). */
+const shell = (o: { reach?: () => Promise<string | undefined>; fails?: string; times?: number } = {}): MachineShell & { kept: string[] } => {
   const kept: string[] = [];
+  let failed = 0;
   return {
     kept,
     async reap() { return { kept: [] }; },
@@ -26,7 +30,7 @@ const shell = (o: { reach?: () => Promise<string | undefined>; fails?: string } 
     async discover() { throw new Error('not asked'); },
     reach: o.reach ?? (async () => undefined),
     async keepCredential(_jobId, dir, file) {
-      if (o.fails) throw new Error(o.fails);
+      if (o.fails && (o.times === undefined || failed < o.times)) { failed++; throw new Error(o.fails); }
       kept.push(`${dir}/${file}`);
     },
   };
@@ -34,6 +38,8 @@ const shell = (o: { reach?: () => Promise<string | undefined>; fails?: string } 
 const engine = { jobProxy: () => PROXY };
 const fresh = { id: 'job-1' } as Job;
 const started = { id: 'job-1', agentSession: 'session-1' } as Job;
+const continued = { ...started, continued: { at: '2026-10-20T15:13:00.000Z', handoffId: 'h-1' } } as Job;
+const parked = { ...started, parked: { at: '2026-10-20T15:13:00.000Z' } } as Job;
 
 describe('placeCredentials (issues #563, #2040)', () => {
   it('keeps the files on the machine and gives the variables that point there', async () => {
@@ -59,6 +65,23 @@ describe('placeCredentials (issues #563, #2040)', () => {
     const notes: string[] = [];
     expect(await placeCredentials(engine, fresh, MACHINE, shell({ fails: 'not there' }), SCRATCH, false, (l) => notes.push(l))).toEqual({});
     expect(notes).toEqual([expect.stringMatching(/runs without the hopper's GitHub proxy: not there/)]);
+  });
+
+  it('a placement that fails is tried once more: its files kept, its variables given', async () => {
+    const notes: string[] = [];
+    const s = shell({ fails: 'the connection dropped', times: 1 });
+    expect(await placeCredentials(engine, continued, MACHINE, s, SCRATCH, false, (l) => notes.push(l))).toEqual(VARIABLES);
+    expect(s.kept).toEqual([`${SCRATCH}/credentials/hopper-gh`, `${SCRATCH}/credentials/proxy-token`]);
+    expect(notes).toEqual([]);
+  });
+
+  // Issue #2233: the end of its run reaped the credentials dir, so the variables of its start would point at nothing.
+  it.each([['continued', continued], ['parked', parked]])('a %s job whose files cannot be placed again fails, never resumed without its way to the hopper', async (_kind, job) => {
+    const failed = placeCredentials(engine, job, MACHINE, shell({ fails: 'the machine did not answer' }), SCRATCH, false, () => {});
+    await expect(failed).rejects.toThrow(/cannot reach the hopper: .*not placed again.*the machine did not answer/);
+    await expect(failed).rejects.not.toBeInstanceOf(Unreached);
+    const message = await failed.catch((e: Error) => e.message);
+    expect(matchCause(message, 'sig', [])?.id).toBe(NO_WAY_TO_HOPPER);
   });
 
   it('a machine that cannot reach the hopper throws, whether the job ran there before or not', async () => {
