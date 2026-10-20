@@ -24,7 +24,7 @@ import { ALL, permissionMatrix, type MatrixColumn, type MatrixFilter, type Matri
 import type { AccessView, Approval, AssetKind, Operation } from '@/model/wire';
 
 const POLL_MS = 10_000;
-const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
+const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply', 'observe'];
 const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
 const ROW_VIEWS: [MatrixRows, string][] = [['requesters', 'Templates, boxes and users'], ['jobs', 'Jobs']];
 

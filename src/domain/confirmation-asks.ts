@@ -24,7 +24,7 @@ export interface AskedBy { asker: string; at: string }
 /** A plan needs a person unless its summary says low risk: a plan with no summary is not known to be low. */
 export const planNeedsPerson = (plan: Pick<InfraPlan, 'summary'>): boolean => plan.summary?.level !== 'low';
 
-/** A profile needs a person unless it only reads: a write credential is a person's to approve. */
+/** A profile needs a person unless it only reads: a write credential, or an observe's port-forward (issue #2146), is a person's to approve. */
 export const profileNeedsPerson = (p: Pick<OperationProfile, 'operation'>): boolean => p.operation !== 'read';
 
 export const profileRef = (template: string, p: OperationProfile): string => `${template}:${p.operation}/${p.asset.kind}/${p.asset.name}`;

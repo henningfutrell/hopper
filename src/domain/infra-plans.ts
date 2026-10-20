@@ -3,7 +3,7 @@
 // artifacts, and never changed once kept. The vault mints a credential that can change infrastructure (any operation but
 // `read`) only for an apply that names a plan of the same asset, made at the commit its branch is at now, not stale, and
 // approved by a person. The types, the limits, the checks and the repository port. Pure.
-import { profileProblem, type Asset, type OperationProfile } from './access.ts';
+import { changesAsset, profileProblem, type Asset, type OperationProfile } from './access.ts';
 import type { PlanRisk, PlanSummary } from './infra-plan-summary.ts';
 import { roleAllows, type UiRole } from './sign-in.ts';
 import { profileInWords } from './minting.ts';
@@ -138,10 +138,10 @@ const sameAsset = (a: Asset, b: Asset): boolean => a.kind === b.kind && a.name =
 
 /**
  * Why the vault mints no credential for `profile` on `planId`, before the head is read; or undefined. A read needs no
- * plan. Any other operation needs one: kept, of the same asset, not stale, approved.
+ * plan, and an observe (issue #2146) changes no asset either. A change needs one: kept, of the same asset, not stale, approved.
  */
 export function applyRefusal(profile: OperationProfile, planId: string | undefined, plan: InfraPlan | undefined, approval: PlanApproval | undefined, now: Date): string | undefined {
-  if (profile.operation === 'read') return undefined;
+  if (!changesAsset(profile)) return undefined;
   const plan_again = 'Record a plan (POST /job/infra-plans), have a person approve it, then ask with --plan <id>';
   if (planId === undefined) return `no apply without a plan: ${profileInWords(profile)} changes infrastructure, and the ask names no plan. ${plan_again}`;
   if (!plan) return `no plan ${planId}: ${plan_again}`;
@@ -154,11 +154,11 @@ export function applyRefusal(profile: OperationProfile, planId: string | undefin
 }
 
 /**
- * Why the vault mints nothing for `profile` while **infra applies** are off (issue #1722), or undefined: on, or a read.
+ * Why the vault mints nothing for `profile` while **infra applies** are off (issue #1722), or undefined: on, or no change.
  * Off, the hopper is read-only on infrastructure: no write, sync or apply is minted, plan or not, and no step applies.
  */
 export function appliesRefusal(profile: OperationProfile, on: boolean): string | undefined {
-  if (on || profile.operation === 'read') return undefined;
+  if (on || !changesAsset(profile)) return undefined;
   return `infra applies are off on this hopper: it mints no credential for ${profileInWords(profile)}. ${THROUGH_CI}. Ask for read only`;
 }
 const THROUGH_CI = 'An infrastructure change goes through CI: push it to the infrastructure repository, and its pipeline applies it after its environment approval';
