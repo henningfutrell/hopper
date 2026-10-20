@@ -18,7 +18,7 @@ const week = (used: number, resetInHours = 60) => claude('week', used, { resetsA
 const fable = (used: number) => claude('week (Fable)', used, { resetsAt: inHours(60), informational: true });
 
 describe('the throttle reads every throttling window (issue #2169)', () => {
-  it('session 7% and week 97%: the soft band, the soft lanes only, and the week is the cause', () => {
+  it('session 7% and week 97%: the soft band, the soft lanes only, and the week is the throttle', () => {
     const effect = laneEffect(six, [session(7), week(97), fable(2)], limits, NOW);
     expect(effect).toMatchObject({ usedFrac: 0.97, cap: 1, band: 'soft', throttle: { source: 'claude', window: 'week', usedFrac: 0.97 } });
     expect(effect.executors[0]).toMatchObject({ executor: 'claude', usedFrac: 0.97, cap: 1, band: 'soft', throttle: { window: 'week' } });
@@ -34,7 +34,7 @@ describe('the throttle reads every throttling window (issue #2169)', () => {
     expect(laneEffect(six, [session(10), week(20), fable(100)], limits, NOW)).toMatchObject({ usedFrac: 0.2, cap: 6, band: 'free', throttle: { window: 'week' } });
   });
 
-  it('the session is the cause when it is the highest', () => {
+  it('the session is the throttle when it is the highest', () => {
     expect(laneEffect(six, [session(80), week(30)], limits, NOW)).toMatchObject({ cap: 1, band: 'soft', throttle: { window: 'session', usedFrac: 0.8 } });
   });
 
