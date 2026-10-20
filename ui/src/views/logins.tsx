@@ -81,7 +81,8 @@ function outcome(l: LoginView, phase: LoginPhase, settings: LoginSettings): stri
   }
 }
 
-function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: LoginSettings }) {
+/** One login's card: also in the critical job tracker (issue #2203). */
+export function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: LoginSettings }) {
   const phase = phaseOf(l, now, settings);
   const canAct = useCanOperate();
   const role = useHopper((s) => s.user?.role);

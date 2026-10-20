@@ -30240,3 +30240,45 @@ starts), `test/ui/infra-plan-needs-you.test.ts` (the count, the lines, the high 
 `test/integration/infra-plan-wait.test.ts` (the real daemon and CLI: a job waits on a production plan written as a gated
 outside event; Infra and `hopper infra plans` list it; `hopper infra approve` or Approve on Infra wakes the job; a plan not
 recorded ends the wait at once and tells the job why).
+
+## The critical job tracker (issue #2203, part 1, 2026-10-19)
+
+Owner report, during a production outage: a critical job's template approval had no badge (issue #2196), and a question
+the operator did not see cost minutes. What a critical job waits on must be in front of the person on every page.
+
+**As built:**
+- **Critical job.** A job whose live priority is at or above the **critical priority** (`HOPPER_CRITICAL_PRIORITY`,
+  default 100; 0: off) — the same threshold the decider uses for one lane over the cap (issue #373). `GET /api/queue`
+  answers it as `criticalPriority` (`src/engine/queries.ts`), so the UI and the decider name the same jobs.
+- **The widget.** `ui/src/app/critical-tracker.tsx`, mounted by the shell above every view (`ui/src/app/app.tsx`), sticky
+  under the header: it stays through navigation, and a reload shows it again from the store. It renders nothing while no
+  critical job is tracked. The model is pure (`ui/src/model/critical-jobs.ts`); the rows come from the store
+  (`ui/src/store/critical-jobs.ts`) and live on SSE as every view: the widget reads nothing of its own but a job's
+  parts list when its timeline opens.
+- **Each job.** Its title and issue, its status, its lane and the sandboxes it runs on (its approved sandbox requests), its
+  current step in plain words and how long it has been in it (`currentStep`: what it waits on, why it is held, else its
+  newest event as the event log says it), and its last four actions.
+- **Waits, acted on in place.** Each wait that is a person's (`waitsOf`) is read from its one home and acted on there:
+  a question, a run card, a vault grant ask, a credential request, an open proposal or research report, an open hand-off,
+  a pending login, a changed item text, a hold for a person, the blast-radius gate, its own wait (Continue: `end-wait`).
+  A quick act is a button that posts the route its page posts; any other opens the card of its home under the wait —
+  `QuestionCard`, the run card, `ItemCard`, `HandoffRow`, `LoginCard`, `RequestItem`, `TextChangeCard`, exported from
+  their views for this. So there is no copy: acting in the widget or on its page clears both, and Needs you counts it
+  once (issue #897). The queue gate and an origin not judged stay links (`Accept in Queue`, `Approve in Intake`): they
+  have no action of one job.
+- **Attention.** A job with a wait is marked red with a pulsing dot, and the widget's border turns red. With browser
+  notifications allowed (the widget's Notify me), each new wait notifies once per page load (`waitKey`).
+- **Ended jobs.** An ended critical job stays until a person dismisses it; the dismissal is kept per browser with the
+  dismissed notices (`critical:<job id>`, `ui/src/model/dismissed.ts`). A job that has not ended has no Dismiss.
+
+**Decided here.** "Critical" is the critical priority, not a new threshold: the glossary already names it, and a second
+number would make two kinds of critical. The widget is sticky in the page, not a floating box: it covers no content and
+no toast, and it fits a phone's width. The ended-job dismissal is per browser, as the other notices are: it is a view
+setting, not a decision.
+
+**Left for a later part.** A **critical flag** a person sets on any job, whatever its priority (a route, an event, the
+job's field and the UI's toggle). Until then a job is critical only by its priority.
+
+Tests: `test/ui/critical-jobs.test.ts` (the model), `test/ui/critical-tracker.test.ts` (the whole app in happy-dom: on
+every page and after a reload, live from the stream, each wait's action by its home's route, the dismissal after a
+reload), `test/integration/high-priority.test.ts` (the queue answers the critical priority, and 0 when it is off).
