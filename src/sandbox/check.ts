@@ -18,6 +18,9 @@
 // Issue #1736: a check that failed only on probes the catalog passes now (helm list refused on secrets, on a view role)
 // runs again at the next pass, with no person (`judgedAgain`).
 // Issue #1779: a failed check keeps the read needs the vault minted nothing for (`unminted`), not on a network error.
+// Issue #2226: a check that does not end in `CHECK_DEADLINE_MS` (a pull, a build or a mint that hangs) fails as transient,
+// saying the step it stopped at, and the pass goes on: one check that hangs never holds every later check. A check a
+// stopped hopper left `running` runs again, after the templates with no check.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ProbeRun, ReadOnlyCheck, Unminted } from '../domain/read-only-check.ts';
@@ -33,8 +36,10 @@ import { boxLimits } from './params.ts';
 
 export { CHECK_LABEL };
 
-/** How long a whole check may run. */
+/** How long a check box may run. */
 export const CHECK_MS = 30 * 60_000;
+/** How long a whole check may take, its image and its mints with its box (issue #2226): then it fails, and the pass goes on. */
+export const CHECK_DEADLINE_MS = CHECK_MS + 15 * 60_000;
 /** How often a passed check runs again (issue #715). */
 export const CHECK_EVERY_MS = 24 * 60 * 60_000;
 /** How soon a check that failed only on a network error runs again (issue #1468). */
@@ -65,6 +70,8 @@ export interface CheckContext {
   probes: ProbeCatalog;
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
+  /** Told each step the check comes to, in words (issue #2226): a check that does not end says where it stopped. */
+  stepped?(what: string): void;
 }
 
 /** Where a check runs: the machine, its runtime, the network a check box joins there, and its egress (issue #849). */
@@ -76,6 +83,8 @@ export interface CheckPassContext extends Omit<CheckContext, 'runtime' | 'networ
   local?: ContainerRuntime;
   /** Where a check of the user's template runs now; undefined: nowhere, and the template waits. */
   place(userId: string): Promise<CheckPlace | undefined>;
+  /** How long a whole check may take (issue #2226); `CHECK_DEADLINE_MS` when absent. */
+  checkMs?: number;
 }
 
 /**
@@ -200,12 +209,14 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   let boxed: { image: string; user: string } | undefined;
   if (runs.some((r) => r.notRun === undefined && r.mark !== 'skip')) {
     try {
+      c.stepped?.('pulling or building the box image');
       boxed = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
       return ended('failed', [], `the check box did not run: ${why}`, onlyNetworkErrors([why]));
     }
   }
+  c.stepped?.('minting the read credentials');
   const given = await credentialsFor(c, userId, t, name, needs);
   ({ unminted } = given);
   // Issue #873: a probe of a need with no credential is not run, and says why; the probes of the other needs still run.
@@ -229,6 +240,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   let madeHome = false;
   try {
     const { image, user } = boxed;
+    c.stepped?.('starting the check box');
     if (!(await c.runtime.createVolume(volume, labels))) throw staleHome(volume);
     madeHome = true;
     // Issue #849: behind the egress proxy, which holds the hosts of its credentials before the box starts.
@@ -236,7 +248,9 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
     const env = { ...checkEnv(given.credentials), ...(c.egress ? c.egress.env : {}) };
     id = await c.runtime.create({ name, image, network: c.egress?.network ?? c.network, volume, labels, user, env, limits: boxLimits(t.limits), script: checkScript(checked, given.credentials) });
     await c.runtime.start(id);
+    c.stepped?.('running the probes');
     const exit = await c.runtime.wait(id, CHECK_MS);
+    c.stepped?.('reading the probe results');
     const probes = readResults(checked, await c.runtime.logs(id));
     // Every probe passed, each need had its credential and the script ended well, or it failed: a script cut short is no pass.
     const passed = exit === 0 && given.missing.size === 0 && probes.every((p) => p.passed);
@@ -266,11 +280,14 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
     }
     await sweepHomes(runtime, { [CHECK_LABEL]: c.instanceId }, holds);
   };
+  const limit = c.checkMs ?? CHECK_DEADLINE_MS;
   return async () => {
     if (c.local) await sweep(c.local);
     const swept = new Set<string>();
-    for (const { userId, template: t } of templates.templates()) {
-      if (!dueForCheck(t, c.clock.now()) && !judgedAgain(t, c.probes)) continue;
+    const due = templates.templates().filter(({ template: t }) => dueForCheck(t, c.clock.now()) || judgedAgain(t, c.probes));
+    // Issue #2226: a check a stopped hopper left `running` goes last, so a check that hangs again holds no template with none.
+    const left = (t: Template): boolean => currentCheck(t)?.state === 'running';
+    for (const { userId, template: t } of [...due.filter((x) => !left(x.template)), ...due.filter((x) => left(x.template))]) {
       const at = await c.place(userId);
       if (!at) continue;
       const key = `${userId}\0${at.machine}`;
@@ -280,10 +297,23 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
       }
       const name = `hopper-check-${t.name}-${Date.now().toString(36)}${(n++).toString(36)}`;
       holds.add(name);
+      let late: Promise<unknown> | undefined;
       try {
         // A scheduled check (issue #715) leaves the passed one in place while it runs: the template's boxes go on.
         if (currentCheck(t)?.state !== 'passed') await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
-        const check = await runCheck({ ...c, runtime: at.runtime, network: at.network, ...(at.egress ? { egress: at.egress } : {}) }, userId, t, name);
+        let step = 'starting';
+        const checking = runCheck({ ...c, runtime: at.runtime, network: at.network, ...(at.egress ? { egress: at.egress } : {}), stepped: (what) => { step = what; } }, userId, t, name);
+        let timer: NodeJS.Timeout | undefined;
+        const overdue = new Promise<ReadOnlyCheck>((resolve) => {
+          timer = setTimeout(() => { late = checking.catch(() => {}); resolve({
+            version: t.savedAt, state: 'failed', at: c.clock.now().toISOString(), probes: [], transient: true,
+            problem: `the check did not end in ${Math.round(limit / 60_000)} min: it stopped at ${step}`,
+          }); }, limit);
+          timer.unref();
+        });
+        const check = await Promise.race([checking, overdue]).finally(() => clearTimeout(timer));
+        // A check that did not end is left behind: its box, if it ever starts, is no run's, and the next pass removes it.
+        if (late) c.logger.warn(`hopper: the read-only check of template ${t.name} ${check.problem}; it runs again in ${CHECK_RETRY_MS / 60_000} min`);
         // A report that cannot be kept never changes the check: it is kept with no artifact, and the log says why.
         const artifact = await templates.report(userId, t, check).catch((e: unknown) => {
           c.logger.warn(`hopper: the read-only check of template ${t.name} ${check.state}, but its report was not kept: ${e instanceof Error ? e.message : String(e)}`);
@@ -292,8 +322,10 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
         await templates.record(userId, t.name, artifact ? { ...check, artifact } : check);
         c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}${at.runtime === c.local ? '' : ` on ${at.machine}`}`);
       } finally {
-        // The check box is removed by now, or never started: its credentials end with it (issue #1371).
+        // The check box is removed by now, or never started: its credentials end with it (issue #1371). A check that did not
+        // end (issue #2226) releases them now, and again when its run ends, as it may mint after this.
         await templates.release?.(userId, name).catch(() => {});
+        void late?.then(() => templates.release?.(userId, name)).catch(() => {});
         holds.delete(name);
       }
     }

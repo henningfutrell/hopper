@@ -9,7 +9,7 @@ import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type Operation
 import { MINTS_FOR_KINDS, mintsForProblem } from './domain/minting.ts';
 import type { StateBackend } from './domain/state-backend.ts';
 import { unknownAssetText } from './domain/unknown-assets.ts';
-import type { VaultView } from './domain/vault.ts';
+import { imageApproved, type VaultView } from './domain/vault.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
 export const VAULT_USAGE = `  hopper vault                                       the vault: its secrets and templates, with what waits for a person; never a value
@@ -170,6 +170,12 @@ const templatesOf = (v: unknown) => (v as VaultView).templates;
 /** The templates as `hopper template list` shows them: one with an unknown asset (issue #2067) says so in words. */
 const templatesListed = (v: unknown) => templatesOf(v).map((t) => (t.unknownAssets?.length ? { ...t, unknownAsset: `unknown asset: ${t.unknownAssets.map(unknownAssetText).join('; ')}` } : t));
 const readPolicyOf = (v: unknown) => (v as VaultView).readPolicy ?? [];
+/** What `hopper template check` says (issue #2226): when the check it asked for runs, or why it does not run yet. */
+const checkAsked = (name: string) => (v: unknown) => {
+  const t = templatesOf(v).find((x) => x.name === name);
+  const when = !t ? 'the template is gone' : imageApproved(t) ? 'the next read-only check pass runs it' : `it does not run until its image is approved (hopper template approve ${name})`;
+  return { template: name, check: `asked for: ${when}` };
+};
 
 /** One `--mark <probe>=<mark>` (issue #916): the probe and its mark, `none` to drop it. The vault checks the probe and the mark. */
 function markOf(s: string): [string, string] {
@@ -236,7 +242,7 @@ export function templateCall(args: string[]): Call {
   if (!name || flags) throw usage(TEMPLATE_VERBS);
   if (verb === 'approve-profile' && rest.length === 1) return { ...edit({ action: 'approve-profile', name, ...profileOf(rest[0]!) }), pick: templatesOf };
   const action = { approve: 'approve-template', revoke: 'revoke-template', remove: 'remove-template', check: 'check-template' }[verb as string];
-  if (action && rest.length === 0) return { ...edit({ action, name }), pick: templatesOf };
+  if (action && rest.length === 0) return { ...edit({ action, name }), pick: verb === 'check' ? checkAsked(name) : templatesOf };
   throw usage(TEMPLATE_VERBS);
 }
 

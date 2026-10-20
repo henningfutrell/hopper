@@ -10737,7 +10737,15 @@ replaces them; test with doubles, and state the gap to a real environment.
   `helm.list` refused on secrets, judged before a right refusal passed it — runs again at the next pass, `judgedAgain`,
   so the jobs that wait on it go on): a
   person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
-  check <name>`), which drops the check (`template.check_requested`) so the next pass runs one.
+  check <name>`), which drops the check (`template.check_requested`) so the next pass runs one. The command says when
+  that is, or why it is not yet: a template whose image is not approved waits for the approval (issue #2226).
+- **A check that does not end** (issue #2226). The pass runs one check at a time, so one check that hangs (a pull, a
+  build or a mint that never answers) held every later check, for hours, and the jobs that waited on them. A whole check
+  may take `CHECK_DEADLINE_MS`, 45 minutes (the check box's 30 minutes, and its image and its mints). Then it fails as
+  `transient`, its problem names the step it stopped at (`CheckContext.stepped`), the check box's mints are released, and
+  the pass goes on to the next template; it runs again `CHECK_RETRY_MS` after, with no person. A run that ends late
+  records nothing, and its check box, if any, is no run's: the next pass removes it. A check a stopped hopper left
+  `running` runs again, after the templates with no check, so a check that hangs again holds none of them.
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
   the sandbox flags (`ContainerSpec.script`: `sh -c` in place of the entrypoint, on a terminal, never restarted), on the
   hopper's network, as the image's own non-root user, with a home volume made for it. It carries the label
