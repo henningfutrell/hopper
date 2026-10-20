@@ -69,7 +69,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8), and its kill points for the crash harness (issue #1954) | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); each write that makes something found before it is made again, and a **kill point** after each write (`once.ts`, issues #1589, #1954); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
-| `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
+| `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block, or a direct query's look-only line and hints (issue #2184, `item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/issue-drafts/` | File an issue (issue #471, "File an issue"): one user's drafts and filed issues — the status and why not, a job's context masked, the file-issue run skill's prompt as sent, the draft with its timeout and cancel, the confirm step, the filing on the person's confirmation with no label and no assignee, the events (`service.ts`); the drafter, the user's own `claude` CLI running the run skill (`claude.ts`, `draftIssue` of `src/run-skills/`, composed by the user runtime alone); the request, the draft, the confirm step, the refusal and the note are `src/domain/issue-drafts.ts`, the constraints `src/run-skills/constraints.ts`, the masking Promote to GitHub's (`src/promotions/scan.ts`), the user's GitHub for it `src/users/github-proxy.ts`, the routes `src/http/ui/issue-drafts.ts` | engine, http, store, decider; plugins but in `claude.ts` |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -448,7 +448,7 @@ EventSource comes back with Last-Event-ID (issue #1383, "Reading the held event 
 ## Webhooks
 
 Each appended event creates a delivery for every active subscription whose `events`
-contains its type or `*`. Request:
+contains its type or `*`, and for the one its `callback` names (a direct query's, issue #2184, "Direct queries"). Request:
 
 ```
 POST <url>
@@ -19746,6 +19746,82 @@ own: the hopper holds no address of a person (no mail, no chat id), and a notifi
 someone outside; the receiver maps the name to its own channel. In the hopper, the submitter reads the job back in Direct
 jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
 the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
+
+## Direct queries (issue #2184, part 1, 2026-10-19)
+
+Requirement: a caller (the first one: Grok Bot) asks the hopper an off-the-cuff question — "where does the otel collector
+run?" — with no GitHub issue. A job that only looks answers it, with the same seats, sandboxes, vault and approval rules as
+any job, and the hopper sends the answer back to a webhook of the caller's.
+
+**A direct query is a direct job with a `query`** (`DirectQuery`, `src/domain/direct-jobs.ts`): the record, the `direct`
+job source, the queue gate, the routing rules, the lane caps, the reads and Run again are the direct job's ("Direct
+jobs"). What a query adds:
+
+- **The request.** `POST /ui/api/direct-queries { requestId, question, callback?, mode?, repos?, clusters?, labels?,
+  executor?, priority? }` (operator; a box action, kind `start a job`, so an API token must be a box token). Behind the
+  hopper's normal sign-in: from outside only through the public URL or remote access while an admin has it on.
+  - `requestId`: the caller's own id. The query's id is its hash (`directQueryId`, `query-<32 hex>`), so the same request id
+    again answers the query kept, `replayed: true`, and makes no record, event or job; with another question or callback,
+    409. A retry of a request whose answer was lost is safe.
+  - `question`: the brief. The title is its first line, at most 120 characters.
+  - `callback`: the name of an active **webhook subscription** (400 when none is named so). See "The callback" below.
+  - `mode`: `look`, the default. `change` is refused (422): a change goes through a direct job or an issue.
+  - `repos`, `clusters`: where to look first. Told to the job as hints; they allow nothing.
+  - `labels`: routing labels beside `direct:query` (`DIRECT_QUERY_LABEL`), which every query's job has, so a routing rule
+    sends queries to the seat or the sandbox box it names.
+- **Look only.** The job's prompt starts with `QUERY_LINE` (`src/direct-jobs/item.ts`): the question and the answer are
+  private; look only; change no code, infrastructure or secret; push nothing, open no pull request, file no issue, write
+  no comment; ask the vault and the sandbox only for reads; no port-forward, proxy or tunnel; when the answer needs a change,
+  end failed and say what a person must file. The rules are enforced where the hopper can enforce them, not only told:
+  - the job's environment has `HOPPER_DIRECT_QUERY` (`DIRECT_QUERY_ENV`); `isDirectQuery` reads it from the job's spec;
+  - the GitHub proxy refuses every op that is no read (`isRead`) for such a job, 403 with `LOOK_ONLY`
+    (`checkRequest`, `ProxyAsker.lookOnly`), recorded as `github_proxy.refused`;
+  - the git proxy refuses every push, at the ref advertisement already (`LOOK_ONLY`);
+  - the record has no `authorizations`, so no vault grant is made at submit, and no `repo`.
+- **Where it stands** (`directQueryState`, from its newest job): `accepted` (no job at work yet), `running`, `waiting` (a
+  question or its own wait: it comes back through Questions, and the Grok Bot notifier names the direct job, as for any
+  direct job), `answered`, `failed` (also a job turned away at the queue gate), `cancelled`.
+- **Reading back.** `GET /api/direct-queries` (newest first) and `GET /api/direct-queries/:requestId`: the direct job's view
+  with `query` and `state`; the answer is `job.result`, the evidence the job's `artifacts`. A caller polls this. To cancel,
+  it cancels the job, `POST /ui/api/jobs/:id/cancel`, as any job.
+- **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
+  artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
+  direct job ("Promote to GitHub").
+
+**The callback.** The events of a query: `direct_query.accepted` (in the submit's transaction, never the question),
+`direct_query.answered` (`answer`, the job's result; `artifacts`, links that need a hopper sign-in; `url`),
+`direct_query.failed` (`error`) and `direct_query.cancelled`, each with `id`, `requestId` and `callback`. The ends are
+appended by the `direct` source's report, once per job and end (`queryEnded`). The webhook dispatcher delivers an event
+whose `callback` names a subscription to that subscription too, whatever events it lists (`matches`,
+`src/webhooks/dispatcher.ts`). So the callback is a webhook delivery: signed with the subscription's own signing secret,
+kept sealed in the vault (`x-hopper-signature`, "Webhooks"), at least once, deduped by `x-hopper-delivery`, retried with
+backoff, kept across a restart, through the outbound guard and into the send log ("Outbound sends").
+
+**Decisions:**
+- **The callback names a webhook subscription, not a URL.** A URL per request would let any API token holder make the
+  hopper post to a host of its choice — an outbound destination nobody approved, and a way out for the answers. A
+  subscription is a person's, made through the UI session, with its secret in the vault and its sends guarded. A caller
+  that needs another URL asks a person to add a subscription.
+- **A webhook delivery, not a saga of its own.** A delivery is already a durable record with a key, attempts, a backoff and
+  a claim that two hosts share ("Sagas: work that survives a stop" asks no more of a single POST). A second outbox for
+  one POST would be one more to keep.
+- **A direct job, not a record of its own.** The record, its job source, its reads and its promotion are the direct job's;
+  a query adds a field to its JSON body, so no migration, and the build before reads the record as a direct job.
+- **`change` is refused, not turned into an issue.** Filing an issue for an agent would make a job of a request nobody
+  trusted ("Trusted origin"); the caller, or a person, submits a direct job or files the issue.
+
+**Residual risk, stated.** A webhook subscription that lists `direct_query.answered` or `*` gets every query's answer, as one
+that lists `job.finished` gets every result. The proxies refuse a query's writes on GitHub; the vault and the sandbox
+refuse writes only as for any job: a write template waits for a person's grant, and the standing read grant gives reads
+only. A person who grants a query's job a write template widens it.
+
+**Not done yet (later parts):** the Direct queries view, a top-level home in the UI (list, state, answer, evidence);
+a question at the human sent to the callback too.
+
+**Verification:** `test/integration/direct-queries.test.ts` (a box-token caller asks, a look-only job answers, the callback
+gets `accepted` and `answered`, signed, with no GitHub call; the same request id replayed and a conflict; a failed query's
+callback; `change`, an unknown callback and a plain API token refused, nothing kept), `test/direct-jobs/direct-query.test.ts`
+(the prompt, the marker, the id, the state, the GitHub proxy's and the git proxy's refusals).
 
 ## Direct jobs: its pull request (issue #1068, 2026-10-16)
 

@@ -6669,6 +6669,100 @@ Version 1 (`docs/schemas/direct_job.promotion_revoked.v1.json`). A person revoke
 }
 ```
 
+## `direct_query.accepted`
+
+Version 1 (`docs/schemas/direct_query.accepted.v1.json`). A caller asked a direct query (issue #2184): `id` the query, `requestId` the caller's own id of it, `by` who and `via` the way, `callback` the webhook subscription its callback goes to. Its job is queued in the same transaction (`job.queued`, source `direct`). Never the question: it stays on the record. Delivered to the `callback` subscription too, whatever events it lists.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `by` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "by": "octocat",
+  "via": "api",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.answered`
+
+Version 1 (`docs/schemas/direct_query.answered.v1.json`). A direct query's job finished (issue #2184): `answer` its result, `artifacts` its evidence kept in the hopper (links need a hopper sign-in), `url` the query in the hopper. Delivered to the `callback` subscription too, whatever events it lists: that delivery is the callback.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `answer` | any | yes |
+| `artifacts` | object[] | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "answer": "The collector runs as the otel-collector deployment in the observability namespace.",
+  "artifacts": [],
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.failed`
+
+Version 1 (`docs/schemas/direct_query.failed.v1.json`). A direct query's job failed or was turned away (issue #2184): `error` why — for a question whose answer needs a change, what a person must file as an issue. Delivered to the `callback` subscription too.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `error` | string | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "error": "the answer needs a change: file an issue",
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
+## `direct_query.cancelled`
+
+Version 1 (`docs/schemas/direct_query.cancelled.v1.json`). A direct query's job was cancelled (issue #2184). Delivered to the `callback` subscription too.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `requestId` | string | yes |
+| `jobId` | string | yes |
+| `url` | string | yes |
+| `callback` | string | no |
+
+```json
+{
+  "id": "query-5f1c",
+  "requestId": "r-42",
+  "jobId": "j1",
+  "url": "https://hopper.example.com/#direct-queries/query-5f1c",
+  "callback": "grok-bot"
+}
+```
+
 ## `issue_draft.drafted`
 
 Version 1 (`docs/schemas/issue_draft.drafted.v1.json`). File an issue drafted an issue with the person's own signed-in AI connection (issue #471): `repo` it is for, the `provider` and the `model` that ran, the run `skill` and its id (`file-issue@<id>`, issue #472), and `findings`: the ids of the draft constraints the draft as written broke (a secret or personal data is masked before the person sees it). Nothing is filed. Never the text.

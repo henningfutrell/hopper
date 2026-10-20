@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "callback": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "requestId",
+    "jobId",
+    "url"
+  ],
+  "additionalProperties": false
+}

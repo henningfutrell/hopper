@@ -18,6 +18,7 @@
 // job's own repository owned by the user, as GitHub says (the broker reads it): the fork is no job repository.
 import { z } from 'zod';
 import { isCommand } from '../domain/comment-command.ts';
+import { LOOK_ONLY } from '../domain/direct-jobs.ts';
 
 export const PROXY_OPS = [
   'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
@@ -98,6 +99,8 @@ export interface ProxyAsker {
   contribution?: boolean;
   /** The login of the job's user's connection, which acts for it: the owner of the job's fork. */
   login?: string;
+  /** A direct query's job (issue #2184): it only reads. */
+  lookOnly?: boolean;
   /** The request's repository when GitHub says it is the job's fork: the user's fork of the job's own repository. */
   fork?: string;
   /** Whether the user can push to the job's own repository, as GitHub says, when read (for `repo.fork`). */
@@ -135,6 +138,7 @@ export const PR_OWNED: readonly ProxyOp[] = ['pr.ready', 'pr.edit', 'pr.close'];
 
 /** Whether the asker may have the request done; else why not, in words the job can act on. */
 export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositories: readonly string[]): { ok: true } | { ok: false; reason: string } {
+  if (asker.lookOnly && !isRead(req.op)) return { ok: false, reason: LOOK_ONLY };
   const onFork = asker.fork !== undefined && same(asker.fork, req.repo);
   const anywhere = req.op === 'pr.create' || (PR_OWNED.includes(req.op) && asker.ownsPullRequest === true);
   if (!onFork && !READS.includes(req.op) && !anywhere && !jobRepositories.some((r) => same(r, req.repo))) {
