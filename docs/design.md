@@ -30536,8 +30536,29 @@ to the template request, so the template and the grant wait for a person in the 
 `--actions` on `sandbox` is refused: a box step's change is not narrowed to granted actions. With infra applies off, the
 check refuses as the step does, and asks for nothing.
 
-**Not built (left for later parts).** The action on the job's run card, so that one click approves both the template and
-the action; `hopper sandbox` commands for the grants; the deploy guide's Terraform for the action role.
+**Part 3: the action on the run card (2026-10-20).** In part 2 the template and the grant waited in the same visit, but
+on two cards: the job's run card and an ask under AWS actions. A person approved one and still waited on the other.
+
+- **On the card** (`runCards`, `actionAsks`, `src/domain/run-cards.ts`). A job's ask for an AWS action is on the job's
+  run card when the card's template changes that aws-role (a write, sync or apply profile of `<account>/<role>`), as
+  `actions` (the role, the action, the resource and the job's words). The vault's view lists it there only:
+  `actionAsks` holds the asks no run card holds (`looseAsks`), so the badge counts the card once. An ask of a job with no
+  run card (its template is approved) stays under AWS actions, as in part 1.
+- **One approval** (`approve-run`). It grants each action on the card first (`vault.action_granted`, as `grant-action`),
+  then approves the template, its profiles and the run as before, so the step that wakes on the template's approval
+  finds its grant. **One decline** (`decline-run`) declines each action too (`vault.action_declined`, with the reason).
+- **A person's act.** An API token or a delegate approver may decide no card with an action (403), as it may not
+  `grant-action`. The confirm says what the approval also grants.
+- **The operator CLI** (`src/cli-operator-actions.ts`): `hopper sandbox actions` (the asks, those on run cards first,
+  and the grants), `grant-action <job> <account>/<role> <service:Action>=<ARN>`, `decline-action … [--reason <text>]` and
+  `revoke-action <account>/<role> <service:Action>=<ARN>`. Each is the UI's own post.
+- **The deploy guide** has the action role in Terraform beside the `aws iam` commands.
+
+**Decided here.** A grant from a card is the same standing grant as `grant-action`: it covers later asks of the same
+scope until the time limit of remembered write approvals, with or without Allow again. The issue's intake asked for that
+carry-over (issue #1001), and a grant is kept by scope, not by job. Allow again still decides only the template.
+
+**Migration.** None: the asks are read from the event log, and `actions` is a new field of the view only.
 
 **Residual risk, stated.** The action role is wide in IAM; only the hopper's minting narrows it. A person who holds the
 minting credential can assume it unnarrowed, as with any role it can assume. A resource ARN with a wildcard (`nodegroup/<cluster>/<group>/*`)
@@ -30554,4 +30575,8 @@ no; infra applies off asks nothing; a bare change on the action role refused), `
 (one simulation per action, of the role, with the read session; a refusal says why), and in
 `test/integration/action-grants.test.ts` the action check (IAM answered on loopback beside STS: an action the role does
 not allow refuses the template request before a template is made; on the action role the grant is asked at once; a need
-step with no template asks for both in one visit, and runs once both are approved).
+step with no template asks for both in one visit, and runs once both are approved). Part 3: `test/domain/run-cards.test.ts`
+(an ask on the card of its job and role; the others stay loose), `test/integration/action-grants.test.ts` (one
+`approve-run` approves the template and grants the action, the step runs and its apply is in the feed; an API token may
+not; one `decline-run` declines the action too), `test/ui/sandbox-runs-view.test.ts` (the action on the card and in its
+confirm), `test/cli/sandbox-actions.test.ts`.

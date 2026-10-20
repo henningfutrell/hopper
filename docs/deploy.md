@@ -1195,6 +1195,27 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   aws iam attach-role-policy --role-name hopper-action --policy-arn arn:aws:iam::aws:policy/PowerUserAccess
   ```
 
+  Or, to keep the role in your infrastructure code, the same in Terraform:
+
+  ```hcl
+  resource "aws_iam_role" "hopper_action" {
+    name                 = "hopper-action"
+    max_session_duration = 3600
+    assume_role_policy = jsonencode({
+      Version   = "2012-10-17"
+      Statement = [{ Effect = "Allow", Principal = { AWS = "arn:aws:iam::<id>:user/hopper-minter" }, Action = "sts:AssumeRole" }]
+    })
+  }
+
+  resource "aws_iam_role_policy_attachment" "hopper_action" {
+    role       = aws_iam_role.hopper_action.name
+    policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
+  }
+  ```
+
+  The minting identity needs `sts:AssumeRole` on `arn:aws:iam::<id>:role/hopper-action` in its own policy too, as it has
+  on `hopper-read`.
+
   The hopper never mints a change on `hopper-action` that is not narrowed to granted actions, and each change still needs
   its approved plan. For an EKS action on a cluster's API (not the AWS API), the cluster's access entry decides, as for
   any role. With infra applies off, no action is asked and the role is not used for changes.
