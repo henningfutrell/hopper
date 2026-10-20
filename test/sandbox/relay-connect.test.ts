@@ -50,6 +50,9 @@ function run(port: number, path: string, input: string, o: { keepOpen?: boolean 
   let out = '', err = '';
   child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
   child.stderr.on('data', (d: Buffer) => { err += d.toString(); });
+  // A command that ends before it reads its stdin (no tool in the image) closes the pipe: the write then fails with
+  // EPIPE, which is no part of what the case checks.
+  child.stdin.on('error', () => undefined);
   child.stdin.write(input);
   if (!o.keepOpen) child.stdin.end();
   return new Promise((resolve) => child.on('close', (code) => { child.stdin.destroy(); resolve({ code, out, err }); }));
