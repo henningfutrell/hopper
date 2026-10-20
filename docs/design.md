@@ -884,7 +884,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
   without a scope; a shell that never answers within 60000 ms fails the job, pane closed.
 - **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
-  below). After the scope, the pane's shell runs the runtime command: the job gets a podman of its own — its runtime dir
+  below). After the scope, the pane's shell runs the runtime command, in two steps that each fit a terminal line (issue
+  #2234, "Unhealthy lanes" below): the guards first (`hopper-guards-written`), then the setup: the job gets a podman of its own — its runtime dir
   `<the user's runtime dir>/hopper-runtime-<job id>`, its storage `<scratch dir>/containers/storage`, its socket
   `<runtime dir>/podman/podman.sock`, started in the scope — as the shell's environment (`<scratch dir>/containers/env.sh`),
   with guards named `podman` and `docker` first on its PATH. It prints `hopper-runtime-own`; with no podman or no runtime
@@ -30619,3 +30620,40 @@ names the plan and the action; the apply in the Infra changes feed; the same act
 no; infra applies off asks nothing; a bare change on the action role refused), `test/ui/action-grants-view.test.ts`,
 `test/ui/needs-you.test.ts` (the count), `test/ui/infra-plans.test.ts` (the apply's words), `test/domain/wait-on.test.ts`
 (the wake).
+
+## Unhealthy lanes (issue #2234, 2026-10-20)
+
+**What happened.** The hopper's sandbox box `hopper-sandbox-claude` failed every job it took for two hours, 11 of 11,
+each with `claude did not start in 3 attempts: pane … never set up the job's container runtime within 60000 ms`. The
+failure assessor classed each as a start race and reran it, and each rerun went to the same lane again.
+
+**The cause.** A box starts herdr from its entrypoint with no `SHELL` in its environment, so herdr's panes run `sh`, which
+in the box image (Debian bookworm) is dash. Dash has no line editor: it reads what the terminal hands on, and a terminal
+in canonical mode keeps at most 4095 characters of a line (Linux's `N_TTY_BUF_SIZE` less the newline). The runtime
+command (issue #1295) was one line of 5.9 KB, its guards written into it. Dash got a cut line with an open quote, sat at
+its continuation prompt, and printed no outcome: the 60 s wait passed every time. A machine whose panes run bash or zsh
+reads the line through its line editor and never met the limit. Reproduced with herdr and a shell with no line editor:
+the line ends at a `>` prompt; the same line in bash prints `hopper-runtime-own`.
+
+**The fix.** `TERMINAL_LINE_MAX` (`src/executors/herdr/client.ts`) is the longest command typed into a pane. The runtime
+is set up in two steps (`guardsCommand`, then `setupCommand`, `src/client/job-runtime.ts`), the second typed once the
+first printed its outcome, so the terminal never holds both. The fake herdr's shell runs nothing longer than a terminal
+line, so a command that grows too long fails a test instead of a lane.
+
+**Unhealthy lanes** (`src/engine/lane-health.ts`, `src/decider/lane-health.ts`). A lane whose last 3 starts failed with
+the same start error — its lane's fault (`isLaneFault`), the same first 120 characters of its normalised text (the pane's
+screen after them differs from job to job) — is unhealthy for 30 minutes. Its machine carries it (`unhealthyLanes`, kept
+in memory as reach holds are), and the Decision counts the machine as one lane fewer for each lane out that holds no
+job, places no new job on it, and numbers a new lane there past it; the machine's idle reason names it. Machines shows a
+badge, the lane, its failed starts, when it is tried again and its last error. `lane.unhealthy` records each time a lane
+goes out. When the 30 minutes pass, one job is placed there: a start that fails the same way puts the lane out again at
+once, one that gets under way (or fails for its own reason) makes it healthy. A person's cancel counts neither way.
+
+**A rerun avoids the lane.** For a waiting rerun of a job that failed for its lane's fault, the Decision's inputs name
+that lane (`avoidLanes`). The job goes to another machine when one may take it — a start failure is most often the
+machine's, as here —, else to another idle or new lane of that machine, and to that lane only when there is no other: it
+is a preference, never a hold.
+
+**Verification.** `test/client/job-runtime.test.ts` (each step fits a line, the steps run for real),
+`test/herdr/executor-runtime.test.ts` (every typed command fits, the guards before the setup),
+`test/engine/lane-health.test.ts`, `test/decider/unhealthy-lanes.test.ts`, `test/ui/machine-unhealthy-lanes.test.ts`.

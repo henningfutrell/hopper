@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLeaving } from './machines.ts';
+import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
@@ -329,8 +329,8 @@ export interface Lane {
   idleSince?: string; pastCap?: true;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials, leaving and drained: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving`, `MachineDrained` (src/domain/machines.ts). */
-export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving, MachineDrained {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials, leaving, drained and unhealthy lanes: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving`, `MachineDrained`, `MachineLaneHealth` (src/domain/machines.ts). */
+export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving, MachineDrained, MachineLaneHealth {
   id: MachineId;
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
@@ -415,8 +415,11 @@ export interface DecisionInputs {
    * the sandboxes their prompt names hold (src/domain/sandboxes-before-start.ts), with why. Absent: none. `stampHeld`
    * (issue #655): the waiting jobs whose trust stamp is missing, does not verify, or is below the dispatch minimum, with why. Absent: none.
    */
-  /** Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it. */
-  preemption?: import('./preemption.ts').PreemptionInput; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
+  /**
+   * Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it.
+   * `avoidLanes` (issue #2234): for a rerun of a job that failed for its lane's fault, that lane; it goes elsewhere when it can. Absent: none.
+   */
+  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 

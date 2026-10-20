@@ -37,6 +37,7 @@
         "job.respecified",
         "lane.opened",
         "lane.closed",
+        "lane.unhealthy",
         "decision.made",
         "question.asked",
         "question.escalated",

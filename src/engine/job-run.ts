@@ -316,6 +316,7 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       // Its machine lost (issue #1569): it resumes there in its kept work tree, or elsewhere from its checkpoint, when it can.
       if (d.lost && outcome.kind === 'failed' && !cancel && moveLost(c, job.id, d.laneId, d.lost, d.lostWhy ?? outcome.error)) return {};
       const recorded = recordOutcome(c, job, d.laneId, outcome, cancel, await machineOf(c, d.laneId));
+      if (!cancel) laneEnded(c, d.laneId, outcome.kind === 'failed' ? outcome.error : undefined);
       if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
       else if (recorded.kind === 'report') c.reviews[recorded.review].handle(recorded.itemId);
       // Its own wait (issue #483) keeps its pane: nothing to clean up.
@@ -323,6 +324,14 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       return {};
     },
   };
+}
+
+/** A run on `laneId` ended (issue #2234): its lane's health counts it, and a lane it put out is recorded, `lane.unhealthy`. */
+function laneEnded(c: EngineContext, laneId: LaneId, error: string | undefined): void {
+  const out = c.laneHealth?.ended(laneId, error);
+  if (!out) return;
+  const machineId = laneId.slice(0, laneId.lastIndexOf('/lane-'));
+  c.store.tx(() => c.store.events.append({ type: 'lane.unhealthy', laneId, machineId, data: { failures: out.failures, error: maskGitHubTokens(out.error), since: out.since, until: out.until } }));
 }
 
 /** The result a pane step's `open` stands for when it opened the pane: no outcome yet. */

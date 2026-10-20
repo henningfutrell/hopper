@@ -322,6 +322,26 @@ Version 1 (`docs/schemas/lane.closed.v1.json`). A lane closed (decision reason, 
 }
 ```
 
+## `lane.unhealthy`
+
+Version 1 (`docs/schemas/lane.unhealthy.v1.json`). A lane is unhealthy (issue #2234): its last `failures` starts failed with the same start error, `error` the last; it takes no new job until `until`.
+
+| field | type | required |
+|---|---|---|
+| `failures` | integer | yes |
+| `error` | string | yes |
+| `since` | string | yes |
+| `until` | string | yes |
+
+```json
+{
+  "failures": 3,
+  "error": "claude did not start in 3 attempts: pane w1:p3 never set up the job's container runtime within 60000 ms",
+  "since": "2026-10-20T13:10:00.000Z",
+  "until": "2026-10-20T13:52:00.000Z"
+}
+```
+
 ## `decision.made`
 
 Version 3 (`docs/schemas/decision.made.v3.json`). The engine recorded a Decision.
