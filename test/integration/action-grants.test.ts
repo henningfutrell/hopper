@@ -28,7 +28,7 @@ import { createFakeAuthorizationServer } from '../support/fake-authorization-ser
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
-import { fakeSts, MINTED_AWS, type FakeApi } from '../support/fake-mint-apis.ts';
+import { fakeSts, MINTED_AWS, MINTED_KUBE_TOKEN, type FakeApi } from '../support/fake-mint-apis.ts';
 import { connectGitHub } from '../support/github-account.ts';
 
 const ACCOUNT = '123456789012';
@@ -63,7 +63,7 @@ async function boot(): Promise<Booted> {
   cleanups.push(() => github.close());
   github.tokens.set('test-account-token', 'owner');
   github.heads = { 'octo/infra@issue-1': A };
-  const cloud = createFakeCloudTools('read-only', { awsSessionToken: MINTED_AWS.SessionToken });
+  const cloud = createFakeCloudTools('read-only', { awsSessionToken: MINTED_AWS.SessionToken, kubeToken: MINTED_KUBE_TOKEN });
   cleanups.push(cloud.cleanup);
   const runtime = createFakeContainerRuntime();
   runtime.runScript = (spec) => cloud.runScript({ ...spec, env: { ...spec.env, HOME: mkdtempSync(join(cloud.dir, 'home-')) } });

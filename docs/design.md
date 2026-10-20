@@ -85,7 +85,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2). The infrastructure topology (issue #1781, "The infrastructure topology"): a read-only check's report of its topology sources kept and the graph joined (`topology.ts`), the model, the checks and the join pure in `src/domain/topology.ts`, what AWS and Kubernetes answer as nodes and links in `src/domain/topology-discover.ts`; its rows through the `TopologyRepository` port (tenant migration 80, `src/store/topology.ts`); its routes `src/http/ui/topology.ts`; topology discovery (part 3): the run and its saga `topology-discovery.ts`, its pure half `src/domain/topology-discovery.ts`, the reads of AWS and Kubernetes behind the `TopologyReader` port `topology-reader.ts`, its mints `src/vault/discovery-mint.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
-| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`), the action grants and the asks of jobs for an AWS action (`action-grants.ts`, issue #2206, pure in `src/domain/action-grants.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the **kill points** a test of the crash harness ends the process at, off in a deploy (`kill-points.ts`, issue #1954, "The crash harness"); the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
@@ -30240,3 +30240,67 @@ starts), `test/ui/infra-plan-needs-you.test.ts` (the count, the lines, the high 
 `test/integration/infra-plan-wait.test.ts` (the real daemon and CLI: a job waits on a production plan written as a gated
 outside event; Infra and `hopper infra plans` list it; `hopper infra approve` or Approve on Infra wakes the job; a plan not
 recorded ends the wait at once and tells the job why).
+
+## Action grants (issue #2206, part 1, 2026-10-19)
+
+Seen on a hopper: during a production outage a job was told to scale a managed node group. No role the vault mints for
+could call `eks:UpdateNodegroupConfig`, so the job handed the command back to a person, who ran it by hand, and
+production went out of step with the infrastructure code.
+
+**Mechanism decided here.** A session policy only narrows what a role may do: the hopper cannot give a session an action
+its role does not allow, and it never changes IAM (the hopper never changes the cluster or the account's identities). So
+an operator makes one wide role per account, the **action role** `hopper-action` (`ACTION_ROLE`, `src/domain/minting.ts`),
+and the hopper mints it only narrowed to the actions a person granted. `docs/deploy.md` "The action role" says how to make it.
+
+- **The ask.** A need step names each action its one change on an aws-role needs: `sh "$HOPPER_STEP" need
+  "apply/aws-role/<account>/hopper-action" --action "eks:UpdateNodegroupConfig=<ARN>" --plan-id <id> …` (at most 10;
+  `actionsOf`: an IAM action with no wildcard, an ARN in the role's account or of no account). `actionNeed`: the actions
+  go to the step's only write, sync or apply need on an aws-role; a change on the action role with no `--action` is
+  refused. Each action no live grant covers is a `vault.action_asked` once per job and scope, and the route answers 202
+  `waiting: a person grants <action> on <resource> as aws-role <role>`; `hopper-step` asks again by itself, as for a
+  template that waits, and a job that ends its turn waits `on: vault grant`, which `vault.action_granted` and
+  `vault.action_declined` settle (`settledBy`). The ask is read from the event log (`actionAsks`, `src/vault/action-grants.ts`:
+  of a job at work, not declined, not covered now), so a restart keeps it and no state is kept in memory.
+- **Infra applies off** (issue #1722): the route refuses the step with `APPLY_STEP_OFF` before any ask, so no action
+  grant is asked for a change that cannot be minted.
+- **The grant.** On Access requests, panel **AWS actions** (`ui/src/views/action-grants.tsx`): each ask names the
+  action, the resource, the role, the job and why, with **Grant** and **Decline**; it counts in the Access requests badge
+  and the Needs you row, and marks the badge for a high-priority job, as a run card does. `POST /ui/api/sandbox-requests`
+  `grant-action` / `decline-action` (`job`, `grant`: `role`, `action`, `resource`), admin and a box action, as the route
+  is. Only a waiting ask is decided (404 else). A grant is kept in the user's settings (`actionGrants`, no migration:
+  absent reads as none) and covers a later ask of the same role, action and resource — the one-approval carry-over of
+  issue #1001 — until the time limit of remembered write approvals (`rememberWritesHours`, `liveGrants`). `revokeAction`
+  on `POST /ui/api/sandbox-approvals` revokes it (`vault.action_revoked`). The vault's view answers `actionAsks` and
+  `actionGrants`.
+- **The mint** (`mintTarget` with the actions, `src/vault/need-mint.ts`). The step keeps its actions (`NeedStep.actions`,
+  in its JSON body: no migration), and its narrowed need is minted with `ReadOnlyAccess` and an inline session policy that
+  allows each granted action on its resource and denies assuming any other role (`actionSession`, at most the 2048
+  characters STS takes). Each grant is read again at each mint, so a revoke or the time limit bites at the next one. The
+  rest is unchanged: Access and the template's approval, the apply gate (a current approved plan, issue #870), and
+  `vault.minted`, which now names `actions`.
+- **The record.** The apply is in the Infra changes feed as every plan-bound apply is (`GET /api/infra-plans`
+  `applies`, issue #896), with the granted actions (`PlanApply.actions`); the out-of-band rule (issue #871) reads the
+  minted principal as a plan-bound apply credential, as before.
+
+**Decided here.** An API token or a delegate approver cannot grant or decline an action (403): granting a wide role's
+action is a person's act, as the confirmation asks of issue #909 make an API token's write approval. The grant is per role,
+action and resource, not per job, so an outage's second step needs no second click; its end is the remembered-write time
+limit, so an admin who sets it to 1 hour has a person decide almost each time.
+
+**Not built (left for later parts).** The template check before a job starts that says which actions the minted role
+cannot do (IAM policy simulation at the read-only check); the action on the job's run card, so a step that waits on both
+its template and an action is one approval; `hopper sandbox` commands for the grants; the deploy guide's Terraform for
+the action role.
+
+**Residual risk, stated.** The action role is wide in IAM; only the hopper's minting narrows it. A person who holds the
+minting credential can assume it unnarrowed, as with any role it can assume. A resource ARN with a wildcard (`nodegroup/<cluster>/<group>/*`)
+is granted as written: the card shows it whole before the click.
+
+Tests: `test/domain/action-grants.test.ts` (the actions read, the need they go to, a grant's cover and time limit, the
+session policy and its size, the action role never minted wider), `test/integration/action-grants.test.ts` (the real
+daemon and the real `hopper-step`: an action outside the role asked once and shown on Access requests; one grant and the
+step runs in its need box, STS asked for the action role with `ReadOnlyAccess` and the action on its resource; `vault.minted`
+names the plan and the action; the apply in the Infra changes feed; the same action again at once; a decline tells the step
+no; infra applies off asks nothing; a bare change on the action role refused), `test/ui/action-grants-view.test.ts`,
+`test/ui/needs-you.test.ts` (the count), `test/ui/infra-plans.test.ts` (the apply's words), `test/domain/wait-on.test.ts`
+(the wake).
