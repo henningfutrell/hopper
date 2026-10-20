@@ -201,7 +201,7 @@ describe('need steps (issue #1007)', () => {
     // Part 3: with no allow again, the approval is for this job's runs only, and no write approval is remembered.
     const after = await vaultOf(b);
     expect(after.templates.find((x) => x.name === t!.name)).toMatchObject({ approval: { by: expect.any(String), jobs: [jobId] }, pending: { profiles: [] } });
-    expect(events.find((e) => e.type === 'vault.approved')?.data).toMatchObject({ template: t!.name, jobs: [jobId] });
+    expect((await b.a.events()).find((e) => e.type === 'vault.approved')?.data).toMatchObject({ template: t!.name, jobs: [jobId] });
     expect(after.rememberedWrites ?? []).toEqual([]);
   });
 
