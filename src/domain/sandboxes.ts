@@ -53,7 +53,7 @@ export interface ListedImage { id: string; tags: string[]; createdAt: number; la
  * The tools the hopper adds to a box's image (issue #716, item 2): each from its own release, pinned, checked by its
  * SHA-256 (src/sandbox/tools.ts). A template names the ones its boxes get; a launch gets them, or names fewer.
  */
-export const BOX_TOOLS = ['aws', 'helm', 'kubectl', 'terraform'] as const;
+export const BOX_TOOLS = ['aws', 'helm', 'jq', 'kubectl', 'logcli', 'promtool', 'terraform'] as const;
 export type BoxTool = (typeof BOX_TOOLS)[number];
 
 /** Why these tools cannot be added: the first the hopper does not know. Undefined: they can. */
