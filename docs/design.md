@@ -14781,9 +14781,15 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
    or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
    job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).
-   A job also edits — never closes — a pull request its issue's text names (its **linked pull requests**, read at intake,
-   `source.linkedPulls`; issue #2151: a job told to update another's pull request could push to it, but not fix the
-   declaration in its body that a plan check reads);
+   A job also edits — never closes — a pull request its issue names (issue #2151: a job told to update another's pull
+   request could push to it, but not fix the declaration in its body that a plan check reads): a name of it in the
+   title or body of the item's approved text (its **item snapshot**; with none, its title), as `linkedRefs` reads names —
+   `#N`, so also `PR #N` and `pull request #N`, `owner/name#N` or its URL —, every name, not only the first 10, and a bare
+   `#N` in code (a fenced block or a code span) names nothing (`namesItem`, `src/domain/linked-pulls.ts`). Issue #2227:
+   the check read only the names the intake read kept (`source.linkedPulls`: the body only, the first 10, none when a
+   read failed), so an issue that named its pull request as "PR #N" in its title could not have it edited. A refusal
+   says the pull request it checked and why: the job did not open it, tend it or own it as its work item's, and for
+   an edit what its issue names (`its issue owner/name#N does not name it`, `… names #N only in code`);
    A close is the job's act, as its push is; it never merges, and the follow sees the pull request closed as a person's
    close;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
@@ -17827,8 +17833,9 @@ and whether a PR head is a fork") and `repo_visibility`. Fork code is the case t
 "merge the change of #12" runs at `owner`, and #12 can be a stranger's pull request from a fork. So, for each GitHub issue
 whose origin is trusted or approved (only its job keeps them):
 
-- **The names in its text** (`linkedRefs`): `#N`, `owner/name#N`, and the pull request and issue URLs of the issue's own
-  GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself, never a `#` joined to a word.
+- **The names in its text** (`linkedRefs`, its title and body, issue #2227): `#N`, `owner/name#N`, and the pull request and
+  issue URLs of the issue's own GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself,
+  never a `#` joined to a word, never a bare `#N` in code (a log line or a snippet asks nothing of it).
 - **One read per name** (`GitHubApi.linkedItem`, GraphQL `repository { visibility issueOrPullRequest(number) }`, in the
   batched reads of issue #822): its repository's visibility, and the pull request when the name is one — its URL, its
   author, `isCrossRepository` as `fork`. The issue's own read gives its repository's visibility.
@@ -17841,9 +17848,9 @@ whose origin is trusted or approved (only its job keeps them):
 - **Jev reads them**: Jev's trust check gets them in `source`, and has one more reason, `fork_code` ("it brings in a pull
   request of a fork that no trusted actor wrote"), to lower the job.
 - **No rule reads them**, as the origin acts: the stamp's level still comes from the origin. A rule would decide for every
-  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. One
-  door reads them (issue #2151): a job edits the title or body of a linked pull request (`pr edit`, "Jobs ask the hopper,
-  not GitHub"), as it pushes to its branch; GitHub still decides whether its user may.
+  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. A job's
+  `pr edit` (issue #2151, "Jobs ask the hopper, not GitHub") reads the same names, but from the item's approved text at
+  the edit, every one (issue #2227), not from these records; GitHub still decides whether its user may.
 
 Also in this part: the GraphQL read of an issue's edits (issue #662, part 17) read the answer one level too high, so it
 found no edits against GitHub; the fake GitHub hid it. It reads them under `data` now, and an answer with errors throws, so

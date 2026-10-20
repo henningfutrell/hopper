@@ -56,9 +56,10 @@ export interface ProxyUser {
   pullRequest?(repo: string, number: number): KnownPullRequest;
   /**
    * Whether `job` may ask `op` of pull request `number` of `repo`: it opened it, it is the job's work item's (issue #1734)
-   * or the one it tends (issue #2127), or, for `pr.edit` only, its issue names it to update (issue #2151). Absent: none.
+   * or the one it tends (issue #2127), or, for `pr.edit` only, its issue names it (issues #2151, #2227); else why not.
+   * Absent: none.
    */
-  ownsPullRequest?(job: Job, repo: string, number: number, op: ProxyOp): boolean;
+  ownsPullRequest?(job: Job, repo: string, number: number, op: ProxyOp): true | string;
   /** The first answer to the job's request with resend key `key` (issue #1607); undefined: none yet. Absent: none is kept. */
   replay?(jobId: string, key: string): ProxyReplay | undefined;
   /** When the job's request with resend key `key` was first sent, with no answer recorded (issue #1959 part 2); undefined: never. */
@@ -209,7 +210,8 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
           return { status: 502, body: { error: (e as Error).message, requestId } };
         }
       }
-      const owns = PR_OWNED.includes(req.op) && 'number' in req ? { ownsPullRequest: user.ownsPullRequest?.(job, req.repo, req.number, req.op) === true } : {};
+      const owned = PR_OWNED.includes(req.op) && 'number' in req ? user.ownsPullRequest?.(job, req.repo, req.number, req.op) ?? false : undefined;
+      const owns = owned === undefined ? {} : { ownsPullRequest: owned === true, ...(typeof owned === 'string' ? { notOwned: owned } : {}) };
       const asker: ProxyAsker = {
         jobId: job.id, contribution, ...(login ? { login } : {}), ...facts, ...owns, ...(isDirectQuery(job) ? { lookOnly: true } : {}),
         ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),

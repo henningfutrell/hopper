@@ -18,7 +18,7 @@ import {
 import type { CommentCommand } from '../../domain/comment-command.ts';
 import type { IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
-import { linkedRefs, type LinkedItem, type LinkedPullRequest, type RepoVisibility } from '../../domain/linked-pulls.ts';
+import { issueText, linkedRefs, type LinkedItem, type LinkedPullRequest, type RepoVisibility } from '../../domain/linked-pulls.ts';
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
 import { DONE_OPEN } from './discover.ts';
 
@@ -126,7 +126,7 @@ export async function linksOf(api: GitHubApi, trust: IntakeTrust, issues: GitHub
   if (!api.linkedItem || issues.length === 0) return links;
   const reader = { linkedItem: api.linkedItem.bind(api) };
   const read = await Promise.all(issues.map(async (i) => {
-    const refs = linkedRefs(i, i.body);
+    const refs = linkedRefs(i, issueText(i));
     const [own, ...items] = await Promise.all([readItem(reader, i.repo, i.number), ...refs.map((r) => readItem(reader, r.repo, r.number))]);
     return { i, own, items: refs.map((r, k) => ({ ref: r, item: items[k] })) };
   }));
