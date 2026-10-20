@@ -6,7 +6,7 @@
 // timeline. The audit (`vault.minted`) carries Access's decision id beside each mint. The minting credential is opened
 // (or read in its vault backend) in memory, for the one call, and never leaves the hopper.
 import type { Clock, UserStore } from '../domain/ports.ts';
-import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type Operation, type OperationProfile, type VaultAccess } from '../domain/access.ts';
+import { ASSET_KINDS, changesAsset, profileProblem, type Asset, type AssetKind, type MintDecision, type Operation, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import type { ClusterOverride } from '../domain/clusters.ts';
 import { expiryOf, mintTarget, profileInWords, type CallerIdentity, type ClusterIdentity, type Minted, type MintKind, type MintReach, type MintTarget } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
@@ -144,10 +144,10 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     // Access takes the template from who the job is now (issue #581): the box it runs on, joined as its template.
     const decision = await o.access.decideMint({ requester: { kind: 'job', userId: o.userId, jobId: job.id }, operation: profile.operation, asset });
     if (!decision.allowed) return refuse(denied(machine.template, profile, decision), decision);
-    // No apply without a plan (issue #870): every operation but read changes infrastructure.
-    const planNo = o.plans ? await o.plans.gate(profile, ask.plan) : profile.operation === 'read' ? undefined : 'no apply without a plan: this hopper keeps no plans';
+    // No apply without a plan (issue #870): a write, sync or apply changes infrastructure; a read or an observe does not.
+    const planNo = o.plans ? await o.plans.gate(profile, ask.plan) : changesAsset(profile) ? 'no apply without a plan: this hopper keeps no plans' : undefined;
     if (planNo) return refuse(planNo, decision);
-    const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
+    const plan = changesAsset(profile) && ask.plan ? { plan: ask.plan } : {};
 
     const clusters = readClusters(o.store.config), known = readKnownClusters(o.store.topology);
     const found = mintSourceFor(vault.list(), target, profile.operation, clusters, known);

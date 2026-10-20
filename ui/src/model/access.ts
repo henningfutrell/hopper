@@ -3,7 +3,7 @@
 // requester by its kind and name. Pure.
 import type { Requester, RelationshipTuple } from './wire.ts';
 
-const OPERATION_WORD = /^grants_(read|write|sync|apply)$/;
+const OPERATION_WORD = /^grants_(read|write|sync|apply|observe)$/;
 
 /** `operation_profile:read/cluster/x` → `read on cluster x`; `asset:cluster/x` → `cluster x`; `template:t` → `template t`. */
 function objectText(object: string): string {

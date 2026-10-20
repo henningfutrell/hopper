@@ -30,7 +30,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { OperationProfile } from '../domain/access.ts';
+import { changesAsset, type OperationProfile } from '../domain/access.ts';
 import { actionNeed, type AwsAction } from '../domain/action-grants.ts';
 import { APPLY_STEP_OFF } from '../domain/infra-plans.ts';
 import { mintKindFor, type Minted, type MintReach } from '../domain/minting.ts';
@@ -108,10 +108,13 @@ export interface BoxStepFields { box: string; approved: readonly string[]; comma
 
 /**
  * What a box step of the template is minted (issue #1349): each profile the vault mints for a step — an aws-role, a
- * cluster or a namespace —, its reads only, and every one with an approved plan to apply.
+ * cluster or a namespace —, its reads only, and every one with an approved plan to apply; never an observe (issue #2146).
  */
 export const boxNeeds = (t: TemplateView, plan: string | undefined): OperationProfile[] =>
-  t.profiles.filter((p) => mintKindFor(p.asset.kind) !== undefined && (plan !== undefined || p.operation === 'read'));
+  t.profiles.filter((p) => mintKindFor(p.asset.kind) !== undefined && p.operation !== 'observe' && (plan !== undefined || p.operation === 'read'));
+
+/** Why a step takes no observe need (issue #2146): its port-forward is a bastion's, which outlives a step. */
+export const OBSERVE_NO_STEP = 'observe is minted for a bastion only, never for a step: ask for a bastion with sh "$HOPPER_SKILL" bastion';
 
 /** Where a step of a job stands: it runs, or it ended with its result and its outputs. */
 export type NeedStepState = { running: true } | { result: StepResult; outputs?: Buffer };
@@ -192,7 +195,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     if (!fields.command || fields.command.trim() === '') return refuse(job, 400, 'give the command to run (sh): --command TEXT or --script FILE');
     const request = stepRequestOf({ host: t.name, command: fields.command, ...(fields.timeout !== undefined ? { timeout: fields.timeout } : {}), outputs: fields.outputs });
     if ('problem' in request) return refuse(job, 400, request.problem);
-    if (o.applies?.() === false && (fields.plan !== undefined || needs.some((p) => p.operation !== 'read'))) return refuse(job, 409, APPLY_STEP_OFF);
+    if (needs.some((p) => p.operation === 'observe')) return refuse(job, 400, OBSERVE_NO_STEP);
+    if (o.applies?.() === false && (fields.plan !== undefined || needs.some(changesAsset))) return refuse(job, 409, APPLY_STEP_OFF);
     if (!o.run || !o.sagas) return refuse(job, 503, 'this hopper runs no sandbox step: it is given no container runtime (docs/deploy.md "Sandboxes the hopper starts")');
     const id = newId();
     const step = o.steps.add({

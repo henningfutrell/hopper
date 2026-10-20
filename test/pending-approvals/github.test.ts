@@ -2,9 +2,14 @@
 // answer with an ETag, and a 304 to an If-None-Match that still matches.
 //
 // Feature: Pending approvals read across the intake orgs
-//   Scenario: discovery across more than one org
-//     Given repositories of two intake orgs, an archived one, and one of an owner that is no intake org
-//     Then each waiting run of the intake orgs' repositories that are not archived is read, and only those
+//   Scenario: discovery across more than one org, only where the app is installed (issue #2258)
+//     Given installations of the app on two intake orgs and on an owner that is no intake org, an archived repository,
+//       and an intake org the app is not installed on, whose repositories the user's list holds
+//     Then each waiting run of the installed intake orgs' repositories that are not archived is read, and only those
+//     And the intake org with no installation is never read and is no problem
+//   Scenario: a personal access token, which no installation holds
+//     Given GitHub refuses the installations' list (403)
+//     Then the repositories the token reaches are read in their place
 //   Scenario: only what the connection can approve
 //     Given a waiting run whose environments someone else approves
 //     Then it is no pending approval
@@ -27,24 +32,33 @@ const repo = (full: string, archived = false): Repo => ({ full_name: full, owner
 const run = (id: number, name: string, title: string) => ({ id, name, display_title: title, html_url: `https://github.example/runs/${id}`, created_at: '2026-10-08T10:00:00Z' });
 const env = (name: string, can: boolean) => ({ environment: { name }, current_user_can_approve: can, wait_timer_started_at: '2026-10-08T10:05:00Z' });
 
-/** 100 repositories of an owner that is no intake org fill the first page of `GET /user/repos`: the read goes on to the second. */
-const FILLER = Array.from({ length: 100 }, (_, i) => repo(`someone/r${i}`));
-const REPOS = [...FILLER, repo('Acme/gss'), repo('acme/iac'), repo('acme/old', true), repo('platform-co/platform')];
+/** 100 archived repositories fill the first page of the Acme installation's repositories: the read goes on to the second. */
+const FILLER = Array.from({ length: 100 }, (_, i) => repo(`Acme/r${i}`, true));
+/** Each installation of the app, with the repositories it reaches; `bigcorp` is an intake org the app is not installed on. */
+const INSTALLED: Record<number, { login: string; repos: Repo[] }> = {
+  1: { login: 'Acme', repos: [...FILLER, repo('Acme/gss'), repo('acme/iac'), repo('acme/old', true)] },
+  2: { login: 'platform-co', repos: [repo('platform-co/platform')] },
+  3: { login: 'someone', repos: [repo('someone/r0')] },
+};
+/** What `GET /user/repos` lists: every repository the user reaches, also those of an org the app is not installed on. */
+const REPOS = [...Object.values(INSTALLED).flatMap((i) => i.repos), repo('bigcorp/agentic-hub'), repo('bigcorp/central-logging')];
 const RUNS: Record<string, unknown[]> = {
   'Acme/gss': [run(11, 'promote', 'Promote build 11')],
   'acme/iac': [run(21, 'terraform', 'Apply uat'), run(22, 'terraform', 'Apply audit')],
   'acme/old': [run(31, 'promote', 'never read')],
   'platform-co/platform': [run(41, 'promote', 'Promote build 41')],
   'someone/r0': [run(51, 'promote', 'never read')],
+  'bigcorp/agentic-hub': [run(61, 'promote', 'Promote build 61')],
 };
 const DEPLOYMENTS: Record<number, unknown[]> = {
   11: [env('production-approval', true)], 21: [env('iac-apply-uat', true)], 22: [env('audit', false)],
-  41: [env('production-approval', true)],
+  41: [env('production-approval', true)], 61: [env('production-approval', true)],
 };
 
 interface Seen { url: string; headers: IncomingHttpHeaders; status: number }
 
-async function github(o: { refuse?: string } = {}): Promise<{ url: string; seen: Seen[] }> {
+/** `refuse`: a repository whose runs GitHub refuses; `noApp`: the token is no app's, so GitHub refuses the installations' list. */
+async function github(o: { refuse?: string; noApp?: boolean } = {}): Promise<{ url: string; seen: Seen[] }> {
   const seen: Seen[] = [];
   server = createServer((req, res) => {
     const url = new URL(req.url ?? '', 'http://x');
@@ -56,10 +70,21 @@ async function github(o: { refuse?: string } = {}): Promise<{ url: string; seen:
       res.writeHead(status, { 'content-type': 'application/json', ...(status === 200 ? { etag } : {}) });
       res.end(text);
     };
-    if (url.pathname === '/user/repos') {
-      const page = Number(url.searchParams.get('page') ?? '1'), per = Number(url.searchParams.get('per_page') ?? '30');
-      return send(200, REPOS.slice((page - 1) * per, page * per));
+    const page = Number(url.searchParams.get('page') ?? '1'), per = Number(url.searchParams.get('per_page') ?? '30');
+    const slice = <T>(all: T[]): T[] => all.slice((page - 1) * per, page * per);
+    if (url.pathname === '/user/repos') return send(200, slice(REPOS));
+    if (url.pathname === '/user/installations') {
+      if (o.noApp) return send(403, { message: 'You must authenticate with an access token authorized to a GitHub App in order to list installations' });
+      const all = Object.entries(INSTALLED).map(([id, i]) => ({ id: Number(id), account: { login: i.login } }));
+      return send(200, { total_count: all.length, installations: slice(all) });
     }
+    const installed = /^\/user\/installations\/(\d+)\/repositories$/.exec(url.pathname);
+    if (installed) {
+      const all = INSTALLED[Number(installed[1])]?.repos ?? [];
+      return send(200, { total_count: all.length, repositories: slice(all) });
+    }
+    // Outside the app's installations GitHub refuses the runs, as for an org the app is not installed on.
+    if (url.pathname.startsWith('/repos/bigcorp/') && !o.noApp) return send(403, { message: 'Resource not accessible by integration' });
     const m = /^\/repos\/([^/]+)\/([^/]+)\/actions\/runs(?:\/(\d+)\/pending_deployments)?$/.exec(url.pathname);
     if (m) {
       const full = `${m[1]}/${m[2]}`;
@@ -78,9 +103,9 @@ async function github(o: { refuse?: string } = {}): Promise<{ url: string; seen:
 const reader = (apiUrl: string) => createApprovalsGitHub({ apiUrl, token: async () => 'token-1', renew: async () => 'token-1' });
 
 describe('the pending approvals read (issue #2088)', () => {
-  it('reads every waiting run of the intake orgs\' repositories that are not archived, and only what the connection can approve', async () => {
+  it('reads every waiting run of the installed intake orgs\' repositories that are not archived, and only what the connection can approve', async () => {
     const gh = await github();
-    const read = await reader(gh.url).waiting(['acme', 'platform-co'], conditionalAnswers());
+    const read = await reader(gh.url).waiting(['acme', 'bigcorp', 'platform-co'], conditionalAnswers());
     expect(read.problems).toEqual([]);
     expect(read.approvals.map((a) => [a.repo, a.runId, a.environments]).sort()).toEqual([
       ['Acme/gss', 11, ['production-approval']], ['acme/iac', 21, ['iac-apply-uat']], ['platform-co/platform', 41, ['production-approval']],
@@ -90,8 +115,10 @@ describe('the pending approvals read (issue #2088)', () => {
       waitingSince: '2026-10-08T10:05:00Z', url: 'https://github.example/runs/11',
     });
     const asked = gh.seen.map((s) => s.url);
-    expect(asked).toContain('/user/repos?per_page=100&page=2');
-    expect(asked.some((u) => u.startsWith('/repos/acme/old/') || u.startsWith('/repos/someone/'))).toBe(false);
+    expect(asked).toContain('/user/installations/1/repositories?per_page=100&page=2');
+    expect(asked.some((u) => u.startsWith('/user/repos'))).toBe(false);
+    expect(asked.some((u) => u.startsWith('/user/installations/3/'))).toBe(false);
+    expect(asked.some((u) => u.startsWith('/repos/acme/old/') || u.startsWith('/repos/someone/') || u.startsWith('/repos/bigcorp/'))).toBe(false);
     expect(asked).toContain('/repos/Acme/gss/actions/runs?status=waiting&per_page=100');
     expect(gh.seen.every((s) => s.headers.authorization === 'token token-1')).toBe(true);
   });
@@ -114,6 +141,14 @@ describe('the pending approvals read (issue #2088)', () => {
     expect(read.approvals.map((a) => a.runId).sort()).toEqual([11, 41]);
     expect(read.problems).toEqual([{ where: 'acme/iac', error: expect.stringContaining('GitHub answered 403') }]);
     expect(read.problems[0]!.error).toContain('Resource not accessible by integration');
+  });
+
+  it('a token no installation holds (a personal access token): the repositories it reaches are read in their place', async () => {
+    const gh = await github({ noApp: true });
+    const read = await reader(gh.url).waiting(['acme', 'bigcorp', 'platform-co'], conditionalAnswers());
+    expect(read.problems).toEqual([]);
+    expect(read.approvals.map((a) => a.runId).sort()).toEqual([11, 21, 41, 61]);
+    expect(gh.seen.map((s) => s.url)).toContain('/user/repos?per_page=100&page=2');
   });
 
   it('no intake org reads nothing', async () => {

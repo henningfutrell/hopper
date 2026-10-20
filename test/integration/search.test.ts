@@ -280,7 +280,7 @@ describe('Search (issue #945)', () => {
     rt.store.events.append({ type: 'source.request_opened', data: { source: 'gh', key: OTHER, hash: 'a'.repeat(64), author: 'someone', why: ['not a trusted actor'] } });
     await found(app, 'q=backburner', [OTHER], 'the intake item written again after an intake event');
     expect((await app.api<SuggestAnswer>('GET', '/api/search/suggest?q=rota')).body.suggestions).toEqual([{ type: 'issue', ref: OTHER, title: 'Rotate the backup keys', url: OTHER }]);
-  });
+  }, 60_000); // A job run and eight index waits: about 8 s alone, past 15 s on a loaded CI shard (issue #2268).
 
   it('answers an agent with an API token on the same routes, as it answers the UI and the CLI (part 4: the CoS)', async () => {
     const { app } = await start();

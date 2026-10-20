@@ -99,6 +99,20 @@ describe('GitHub issue → job → issue', () => {
     expect(bodies(gh, issue.number)).toEqual([]);
   });
 
+  it('a completion check that cannot read GitHub once reads it again: a connect timeout does not fail the job (issue #2235)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 300 }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'running');
+    const now = new Date().toISOString();
+    gh.closeByPullRequest(REPO, issue.number, { createdAt: now, mergedAt: now });
+    gh.failNext('closingPullRequest', new GitHubApiError('Connect Timeout Error (attempted address: api.github.com:443, timeout: 10000ms)', false));
+    await a.waitForStatus(job.id, 'finished');
+    expect(await a.events('types=job.failed')).toEqual([]);
+  });
+
   it('a job that ends done with its work not complete ends failed: no hopper:done, the issue stays open (issue #171)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
@@ -125,16 +139,17 @@ describe('GitHub issue → job → issue', () => {
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
   });
 
-  it('when GitHub cannot say whether the work is complete, the job is not recorded done (issue #171)', async () => {
+  it('when GitHub cannot say whether the work is complete, also after its reads again, the job is not recorded done (issues #171, #2235)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 300 }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     await a.waitForStatus(job.id, 'running');
-    gh.failNext('closingPullRequest', new GitHubApiError('gh: timeout', false));
+    for (let i = 0; i < 4; i++) gh.failNext('closingPullRequest', new GitHubApiError('gh: timeout', false));
     const failed = await a.waitForStatus(job.id, 'failed');
     expect(failed.error).toBe('could not confirm the work is complete: gh: timeout');
+    expect(gh.calls.filter((c) => c.method === 'closingPullRequest').length).toBeGreaterThanOrEqual(4);
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect(gh.issue(REPO, issue.number).state).toBe('open');
   });

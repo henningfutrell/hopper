@@ -226,7 +226,7 @@ function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | 
   return [
     ...(extras && forPerson(extras) ? ['a vault secret or an egress host is approved by a person only'] : []),
     ...needs.filter((p) => p.operation === 'read' && !inReadPolicy(policy, p.asset)).map((p) => `the read policy does not hold ${inWords(p)}`),
-    ...needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} changes the asset`),
+    ...needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} ${p.operation === 'observe' ? 'port-forwards to the asset\'s pods' : 'changes the asset'}`),
   ];
 }
 

@@ -19,7 +19,7 @@ import { BackendsInput } from './vault-state-backend';
 import { ProbeMarksInput } from './vault-probe-marks';
 import type { Send } from './vault';
 
-const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
+const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply', 'observe'];
 const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
 export const sameProfile = (a: OperationProfile, b: OperationProfile) => profileText(a) === profileText(b);
 

@@ -20,7 +20,7 @@ import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { burnLaunched, type Problems } from './burn-launched.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
-import { NO_SECRET_COPY, phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
+import { NO_SECRET_COPY, phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxIo, type NeedBoxResult } from './need-box.ts';
 import { BOX_LABEL, sweepHomes, USER_LABEL } from './owned.ts';
 import { trace } from '@opentelemetry/api';
 import { liveReader, type LivePoint } from '../telemetry/live.ts';
@@ -102,7 +102,7 @@ export interface Sandboxes {
    * #1349). Never rejects: no place to run it, or a failure of its own, is `problem`. `offline`: the box joins no network
    * (a container target's command, issue #865).
    */
-  needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'> & { offline?: true }, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }, run: NeedRun): Promise<NeedBoxResult>;
+  needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'> & { offline?: true }, io: Omit<NeedBoxIo, 'phases'>, run: NeedRun): Promise<NeedBoxResult>;
   /**
    * Why no step can run for the user now (issue #865: a container target is offline while it is so); undefined: one can.
    * `offline`: a step whose box joins no network, which a Kubernetes pod cannot be.

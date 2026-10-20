@@ -24,7 +24,7 @@ import type { AccessDecisionRecord, AccessStatus, AccessView, Approval, MinTrust
 import { MIN_LEVELS, MinTrustPanel } from './min-trust';
 
 const POLL_MS = 10_000;
-const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
+const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply', 'observe'];
 const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
 
 const profileText = (a: Pick<Approval, 'profile'>) => `${a.profile.operation} on ${a.profile.asset.kind} ${a.profile.asset.name}`;

@@ -49,7 +49,7 @@ export type CardJob = (jobId: string) => { title?: string; url?: string } | unde
 export const waitsForPerson = (t: TemplateView, jobId?: string): boolean =>
   !t.approval || (jobId !== undefined && !approvalCovers(t, jobId)) || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
 
-const HIGH = ['write', 'sync', 'apply'];
+const HIGH = ['write', 'sync', 'apply', 'observe'];
 
 /**
  * What approves all a card lists (issue #1001's Approve all listed): the template as it is — its image, tools, egress,

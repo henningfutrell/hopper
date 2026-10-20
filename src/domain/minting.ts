@@ -156,11 +156,13 @@ export const MINT_BINDING_LABEL = 'io.hopper.mint';
  * a read session under the read-only policy and the deny policy (issue #715). Kubernetes: a `namespace` (`<cluster>/<ns>`) or a `cluster` asset gets a
  * token for the service account `hopper-<operation>` in that namespace (or `hopper` for a cluster); its RBAC is the
  * cluster's. An `argocd-app` (`<cluster>/<app>`, issue #959) takes sync only: `hopper-sync` in Argo CD's namespace.
+ * Observe (issue #2146) is a cluster's or a namespace's only: `hopper-observe`, whose RBAC adds port-forward to view.
  */
 export function mintTarget(kind: MintKind, p: OperationProfile, actions?: readonly AwsAction[]): MintTarget | string {
   const { kind: assetKind, name } = p.asset;
   if (actions?.length && (kind !== 'aws' || p.operation === 'read')) return `granted actions narrow a change on an aws-role only, not ${p.operation} on ${assetKind}/${name}`;
   if (kind === 'aws') {
+    if (p.operation === 'observe') return `observe is minted for a cluster or a namespace only, not ${assetKind}/${name}: it port-forwards to their pods`;
     const [account, role, ...rest] = name.split('/');
     if (assetKind !== 'aws-role' || !account || !role || rest.length) return `an aws credential is minted for an aws-role (aws-role/<account>/<role>), not ${assetKind}/${name}`;
     const roleArn = `arn:aws:iam::${account}:role/${role}`;

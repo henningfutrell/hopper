@@ -2,7 +2,8 @@
 // "kubectl get pods in namespace web on cluster lab" — and the hopper reads the needs of a template request from them.
 // The reader is a fixed set of words, not a model: the same words always give the same needs, and nothing a person
 // writes can talk it into more. It names each asset the words name (a kind word, then the name), and for each asset
-// the operations the words say: a read for a read word, apply, sync, or write only where a word says that change. A
+// the operations the words say: a read for a read word, apply, sync, or write only where a word says that change, and
+// observe for a port-forward (issue #2146). A
 // change word just after "not" or "never" says no change. Words it cannot read are refused with what to write; the
 // preview shows the needs it read before anything is made, and a change still waits for a person. Pure.
 import { ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
@@ -16,6 +17,8 @@ const OPERATION_WORDS: Record<Operation, string[]> = {
     'uncordon', 'label', 'annotate', 'exec', 'kill', 'reboot', 'migrate', 'provision', 'taint', 'untaint', 'rename', 'move', 'fix', 'add'],
   sync: ['sync'],
   apply: ['apply', 'deploy'],
+  // Issue #2146: `port-forward` counts by its part `forward`.
+  observe: ['observe', 'portforward', 'forward'],
 };
 const NOT = new Set(['not', 'never', 'no', 'without', 'nor', "don't", 'dont', 'cannot', "can't", "doesn't", "mustn't"]);
 /** The words a kind word names its asset with. */

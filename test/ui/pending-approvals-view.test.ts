@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Pending approvals in the UI (issue #2088): the page against a fake of GET /api/pending-approvals — one row per waiting
 // run with its repository, workflow, title, environments, how long it waited and its link, a stale one marked —, its empty
-// state, which says what would show there, and the count on its nav entry, rendered inside the whole app.
+// state, which says what would show there, and the count on its nav entry, rendered inside the whole app. What could not be
+// read is one collapsed line with its count, each place behind its toggle (issue #2258).
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +14,10 @@ const VIEW: PendingApprovalsView = {
     { repo: 'acme/gss', runId: 9, workflow: 'promote', title: 'Promote build 9', environments: ['production-approval'], waitingSince: '2026-10-19T09:00:00Z', url: 'https://github.com/acme/gss/actions/runs/9', stale: false },
     { repo: 'acme/gss', runId: 5, workflow: 'promote', title: 'Promote build 5', environments: ['production-approval'], waitingSince: '2026-10-08T10:00:00Z', url: 'https://github.com/acme/gss/actions/runs/5', stale: true },
   ],
-  problems: [{ where: 'platform-co/infra', error: 'GitHub answered 403 to platform-co/infra: Resource not accessible by integration' }],
+  problems: [
+    { where: 'platform-co/infra', error: 'GitHub answered 403 to platform-co/infra: Resource not accessible by integration' },
+    { where: 'platform-co/web', error: 'GitHub answered 502 to platform-co/web: Bad Gateway' },
+  ],
 };
 const EMPTY: PendingApprovalsView = { orgs: ['acme'], checkedAt: '2026-10-19T12:00:00.000Z', approvals: [], problems: [] };
 
@@ -81,15 +85,32 @@ describe('the Pending approvals page', () => {
     const link = first.querySelector('a[href="https://github.com/acme/gss/actions/runs/9"]')!;
     expect(link.getAttribute('target')).toBe('_blank');
     expect(first.querySelector('[data-slot="pending-approval-stale"]')).toBeNull();
-    expect(rows[1]!.querySelector('[data-slot="pending-approval-stale"]')?.textContent).toMatch(/stale/i);
+    const stale = rows[1]!.querySelector('[data-slot="pending-approval-stale"]')!;
+    expect(stale.textContent).toMatch(/stale/i);
+    expect(stale.textContent).toMatch(/newer run/i);
+    expect(stale.getAttribute('title')).toMatch(/newer run of this repository waits on the same environment/i);
   });
 
-  it('says the orgs it reads, when, and each problem; it offers no approve or reject', async () => {
+  it('says the orgs it reads, when, and what could not be read as one collapsed line with its count; it offers no approve or reject', async () => {
     await bootView(VIEW);
     const page = document.getElementById('root')!;
     expect(page.querySelector('[data-slot="pending-approvals-orgs"]')?.textContent).toContain('acme, platform-co');
-    expect(page.querySelector('[data-slot="pending-approvals-problems"]')?.textContent).toContain('platform-co/infra');
+    const problems = page.querySelector<HTMLDetailsElement>('details[data-slot="pending-approvals-problems"]')!;
+    expect(problems.open).toBe(false);
+    expect(problems.querySelector('summary')?.textContent).toBe('2 repositories could not be checked');
+    expect(problems.querySelectorAll('li')).toHaveLength(2);
+    expect(problems.querySelector('li')?.textContent).toContain('platform-co/infra');
     expect([...page.querySelectorAll('button')].map((b) => b.textContent ?? '').filter((t) => /approve|reject/i.test(t))).toEqual([]);
+  });
+
+  it('a connected account that could not be read counts as one place, not a repository', async () => {
+    await bootView({ ...EMPTY, problems: [{ where: 'github', error: 'GitHub is not connected' }] });
+    expect(document.querySelector('[data-slot="pending-approvals-problems"] summary')?.textContent).toBe('1 account or repository could not be checked');
+  });
+
+  it('nothing missing shows no problems line', async () => {
+    await bootView(EMPTY);
+    expect(document.querySelector('[data-slot="pending-approvals-problems"]')).toBeNull();
   });
 
   it('empty: says nothing waits, and what would show here', async () => {

@@ -64,7 +64,7 @@ export function askOf(v: unknown): VaultAsk | string {
   if (typeof b.token !== 'string' || !JOB_TOKEN.test(b.token)) return 'token must be the job\'s proxy token (HOPPER_TOKEN_FILE)';
   if (b.mint === undefined) return isSecretName(b.name) ? { name: b.name, token: b.token } : 'name must be a vault secret\'s name';
   if (!(MINT_FORMS as readonly unknown[]).includes(b.mint)) return `mint must be one of ${MINT_FORMS.join(', ')}`;
-  if (typeof b.operation !== 'string' || !OPERATION.test(b.operation)) return 'operation must be an operation: read, write, sync or apply';
+  if (typeof b.operation !== 'string' || !OPERATION.test(b.operation)) return 'operation must be an operation: read, write, sync, apply or observe';
   if (typeof b.asset !== 'string' || !ASSET.test(b.asset)) return 'asset must be KIND/NAME, as cluster/prod or namespace/prod/web';
   if (b.plan !== undefined && (typeof b.plan !== 'string' || !PLAN.test(b.plan))) return 'plan must be a plan\'s id';
   return { mint: b.mint as MintForm, operation: b.operation, asset: b.asset, ...(typeof b.plan === 'string' ? { plan: b.plan } : {}), token: b.token };

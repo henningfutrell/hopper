@@ -4581,7 +4581,7 @@ Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profi
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `level` | `low` \| `medium` \| `high` | yes |
 | `by` | string | yes |
@@ -4689,7 +4689,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 | field | type | required |
 |---|---|---|
 | `kind` | `aws` \| `kube` | yes |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `template` | string | yes |
 | `machine` | string | yes |
@@ -4817,7 +4817,7 @@ Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-
 | field | type | required |
 |---|---|---|
 | `kind` | `aws` \| `kube` | yes |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `template` | string | yes |
 | `check` | string | yes |
@@ -4912,6 +4912,53 @@ Version 1 (`docs/schemas/vault.unbound.v1.json`). A sandbox ended, and the Secre
   "credential": "KUBE_LAB",
   "namespace": "web",
   "secret": "hopper-mint-0b1c2d3e-0000-4000-8000-000000000004"
+}
+```
+
+## `bastion.started`
+
+Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (issue #2146, design.md "Bastions"): one need box of `template` that holds `kubectl port-forward` to each of `targets` (`<cluster>/<namespace>/<kind>/<name>:<port>`) on 127.0.0.1 inside it, its kube tokens minted for its observe profiles (each a `vault.minted` with `box` as its machine) and minted again while it runs. It ends at `expiresAt` unless it is used before. Never a token.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `template` | string | yes |
+| `box` | string | yes |
+| `targets` | string[] | yes |
+| `expiresAt` | string | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "template": "observe-uat",
+  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "targets": [
+    "uat/monitoring/svc/prometheus-server:9090"
+  ],
+  "expiresAt": "2026-10-20T13:00:00.000Z"
+}
+```
+
+## `bastion.ended`
+
+Version 1 (`docs/schemas/bastion.ended.v1.json`). A bastion ended (issue #2146): `reason` `stopped` (by the job, a person or the hopper, `by`), `expired` (its TTL passed with no use), `job-ended`, or `failed` (a renewal was refused, or its box ended by itself: `problem`). Its tokens are released and its box burned.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `template` | string | yes |
+| `box` | string | yes |
+| `reason` | `stopped` \| `expired` \| `job-ended` \| `failed` | yes |
+| `by` | string | no |
+| `problem` | string | no |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "template": "observe-uat",
+  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "reason": "stopped",
+  "by": "job"
 }
 ```
 
@@ -5226,7 +5273,7 @@ Version 1 (`docs/schemas/vault.write_forgotten.v1.json`). An admin forgot a reme
 
 | field | type | required |
 |---|---|---|
-| `operation` | `write` \| `sync` \| `apply` | yes |
+| `operation` | `write` \| `sync` \| `apply` \| `observe` | yes |
 | `asset` | object | yes |
 | `by` | string | yes |
 
@@ -7243,7 +7290,7 @@ Version 1 (`docs/schemas/approval.confirmation_asked.v1.json`). An API token ask
 | `asker` | string | yes |
 | `plan` | string | no |
 | `template` | string | no |
-| `operation` | `read` \| `write` \| `sync` \| `apply` | no |
+| `operation` | `read` \| `write` \| `sync` \| `apply` \| `observe` | no |
 | `asset` | object | no |
 
 ```json

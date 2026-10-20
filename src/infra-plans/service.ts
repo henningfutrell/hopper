@@ -7,7 +7,7 @@
 // name for each plan, approval and apply, by the plan's environments; an admin names them. A plan's read credential (part
 // 5): the one a plan names is one the vault minted for its job.
 import { createHash, randomUUID } from 'node:crypto';
-import type { Asset, OperationProfile } from '../domain/access.ts';
+import { changesAsset, type Asset, type OperationProfile } from '../domain/access.ts';
 import { changesOf } from '../domain/infra-plan-changes.ts';
 import { summarize } from '../domain/infra-plan-summary.ts';
 import {
@@ -163,7 +163,7 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
     async gate(profile, planId) {
       const plan = planId !== undefined && PLAN_ID.test(planId) ? plans.get(planId) : undefined;
       const no = applyRefusal(profile, planId, plan, plan ? plans.approval(plan.id) : undefined, o.clock.now());
-      if (no || profile.operation === 'read' || !plan) return no;
+      if (no || !changesAsset(profile) || !plan) return no;
       let head: string;
       try {
         head = await o.head(plan.repo, plan.ref);

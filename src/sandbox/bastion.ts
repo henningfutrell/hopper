@@ -1,0 +1,129 @@
+// A bastion (issue #2146, design.md "Bastions"): the one sandbox that outlives a step. A job names its targets — a
+// service, a pod or a deployment and one port, in a namespace of a cluster — and the hopper starts one need box of a
+// template approved for an **observe** on each target's namespace or cluster. The box holds `kubectl port-forward` to
+// each target on 127.0.0.1 inside it, a local port each, and starts a forward again when it ends (a pod that restarted).
+// Its kube tokens are files the hopper renews while it runs (the kubeconfig's `tokenFile`, which kubectl reads again
+// within a minute); they never go to the job. Nothing reaches the forwards yet but the box itself: the hopper's relay
+// (part 2) joins a job to them. Pure.
+import type { OperationProfile } from '../domain/access.ts';
+import type { Minted, MintReach } from '../domain/minting.ts';
+import { credentialName } from './need-box.ts';
+
+/** How long a bastion lives with no use: its TTL, renewed while it is in use (the relay, part 2). */
+export const BASTION_TTL_MS = 60 * 60_000;
+/** The most a bastion lives, in use or not: its need box's time limit. */
+export const BASTION_MAX_MS = 12 * 60 * 60_000;
+/** How often the hopper mints a bastion's tokens again: well within a token's 10 minutes (an EKS token's 14). */
+export const BASTION_RENEW_MS = 5 * 60_000;
+/** The most targets one bastion forwards to. */
+export const BASTION_TARGETS_MAX = 8;
+/** The first target's port on 127.0.0.1 in the box; the next target takes the next port. */
+export const BASTION_FIRST_PORT = 20000;
+
+/** What a forward may name, as `kubectl port-forward` takes it. */
+export const TARGET_KINDS = ['svc', 'pod', 'deploy'] as const;
+export type TargetKind = (typeof TARGET_KINDS)[number];
+
+/** One target: `<cluster>/<namespace>/<kind>/<name>:<port>`. */
+export interface BastionTarget { cluster: string; namespace: string; kind: TargetKind; name: string; port: number }
+/** A target in its bastion: the kubeconfig context of its observe, and its port on 127.0.0.1 in the box. */
+export interface PlacedTarget extends BastionTarget { context: string; local: number }
+
+/** A Kubernetes name: a DNS label or subdomain. A cluster's name as the hopper names it. */
+const KUBE_NAME = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/;
+const CLUSTER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
+const TARGET = /^([^/\s]+)\/([^/\s]+)\/([^/\s]+)\/([^/:\s]+):(\d{1,5})$/;
+const SAY = 'a target is <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>, for example uat/monitoring/svc/prometheus-server:9090';
+
+export const targetText = (t: BastionTarget): string => `${t.cluster}/${t.namespace}/${t.kind}/${t.name}:${t.port}`;
+
+/** The targets a job names, space-separated; or why they cannot be read. The same target twice is one. */
+export function parseTargets(text: string | undefined): BastionTarget[] | string {
+  const words = [...new Set((text ?? '').split(/\s+/).filter((w) => w !== ''))];
+  if (words.length === 0) return `name the targets with --targets: ${SAY}`;
+  if (words.length > BASTION_TARGETS_MAX) return `a bastion forwards to at most ${BASTION_TARGETS_MAX} targets, not ${words.length}`;
+  const targets: BastionTarget[] = [];
+  for (const w of words) {
+    const m = TARGET.exec(w);
+    if (!m) return `${w}: ${SAY}`;
+    const [, cluster, namespace, kind, name, port] = m as unknown as [string, string, string, string, string, string];
+    if (!CLUSTER.test(cluster)) return `${w}: ${cluster} is no cluster name: letters, digits, _ and -`;
+    if (!KUBE_NAME.test(namespace) || namespace.includes('.')) return `${w}: ${namespace} is no namespace name`;
+    if (!(TARGET_KINDS as readonly string[]).includes(kind)) return `${w}: forward to ${TARGET_KINDS.join(', ')} only, not ${kind}`;
+    if (!KUBE_NAME.test(name)) return `${w}: ${name} is no Kubernetes name`;
+    const n = Number(port);
+    if (n < 1 || n > 65535) return `${w}: the port is 1 to 65535`;
+    targets.push({ cluster, namespace, kind: kind as TargetKind, name, port: n });
+  }
+  return targets;
+}
+
+/** The observe of `profiles` that reaches the target: one on its namespace first, else one on its cluster. */
+export function observeOf(t: BastionTarget, profiles: readonly OperationProfile[]): OperationProfile | undefined {
+  const observes = profiles.filter((p) => p.operation === 'observe');
+  return observes.find((p) => p.asset.kind === 'namespace' && p.asset.name === `${t.cluster}/${t.namespace}`)
+    ?? observes.find((p) => p.asset.kind === 'cluster' && p.asset.name === t.cluster);
+}
+
+/** Each target with its context and port, and the observes they need, each once; or why a target is out of reach. */
+export function placeTargets(targets: readonly BastionTarget[], profiles: readonly OperationProfile[]): { placed: PlacedTarget[]; observes: OperationProfile[] } | string {
+  const out = targets.filter((t) => !observeOf(t, profiles));
+  if (out.length) {
+    return `the template has no observe on ${out.map((t) => `${t.cluster}/${t.namespace}`).join(', ')}: ask for a template with ${[...new Set(out.map((t) => `observe/namespace/${t.cluster}/${t.namespace}`))].join(' ')}`;
+  }
+  const observes: OperationProfile[] = [];
+  const placed = targets.map((t, i) => {
+    const p = observeOf(t, profiles)!;
+    if (!observes.includes(p)) observes.push(p);
+    return { ...t, context: credentialName(p), local: BASTION_FIRST_PORT + i };
+  });
+  return { placed, observes };
+}
+
+/** The vault secret file of a context's token in the box: `$HOME/.hopper-need/secrets/<name>`. */
+export const tokenName = (context: string): string => `kube-${context}`;
+
+/** One observe's minted token and where it is used. */
+export interface BastionCredential { profile: OperationProfile; minted: Extract<Minted, { kind: 'kube' }>; reach: Extract<MintReach, { kind: 'kube' }> }
+
+/** Each context's token, as the box takes its vault secrets: at its start, and again at each renewal. */
+export const bastionTokens = (credentials: readonly BastionCredential[]): Record<string, string> =>
+  Object.fromEntries(credentials.map((c) => [tokenName(credentialName(c.profile)), c.minted.token]));
+
+/**
+ * The kubeconfig: one context for each observe, its user's token a file (`tokenFile`, relative to the kubeconfig in
+ * `$HOME/.kube`), so a renewed token is read with no new kubeconfig.
+ */
+export function bastionKubeconfig(credentials: readonly BastionCredential[]): string {
+  const named = credentials.map((c) => ({ name: credentialName(c.profile), c }));
+  return JSON.stringify({
+    apiVersion: 'v1', kind: 'Config', 'current-context': named[0]?.name ?? '',
+    clusters: named.map(({ name, c }) => ({ name, cluster: { server: c.reach.server, ...(c.reach.certificateAuthorityData ? { 'certificate-authority-data': c.reach.certificateAuthorityData } : {}) } })),
+    users: named.map(({ name }) => ({ name, user: { tokenFile: `../.hopper-need/secrets/${tokenName(name)}` } })),
+    contexts: named.map(({ name }) => ({ name, context: { cluster: name, user: name } })),
+  });
+}
+
+/** The bastion's need box environment: its command, no outputs, and the kubeconfig the box's script writes. */
+export const bastionEnv = (placed: readonly PlacedTarget[], credentials: readonly BastionCredential[]): Record<string, string> =>
+  ({ HOPPER_STEP_COMMAND: bastionCommand(placed), HOPPER_STEP_OUTPUTS: '', HOPPER_STEP_KUBECONFIG: bastionKubeconfig(credentials) });
+
+/**
+ * The bastion's command: a forward to each target on 127.0.0.1, each in a loop that starts it again 2 s after it ends,
+ * its lines marked with its target; then it waits. It ends only when the hopper stops its box.
+ */
+export function bastionCommand(placed: readonly PlacedTarget[]): string {
+  const lines = placed.map((t) => `forward '${t.context}' '${t.namespace}' '${t.kind}/${t.name}' ${t.local} ${t.port} '${targetText(t)}' &`);
+  return [
+    'forward() {',
+    '  while :; do',
+    '    kubectl --context "$1" --namespace "$2" port-forward --address 127.0.0.1 "$3" "$4:$5" 2>&1 | while IFS= read -r line; do echo "[$6] $line"; done',
+    '    echo "[$6] the forward ended: it starts again in 2 s"',
+    '    sleep 2',
+    '  done',
+    '}',
+    ...lines,
+    `echo "hopper-bastion: forwarding ${placed.length} target${placed.length === 1 ? '' : 's'}"`,
+    'wait',
+  ].join('\n');
+}

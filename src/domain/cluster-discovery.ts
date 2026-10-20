@@ -4,6 +4,7 @@
 // (`DescribeCluster`); the cluster's one account signs the EKS token with that session. No vault secret names the
 // cluster: it holds no secret. A write on a cluster is no discovery's: it needs a minting credential of its own, which
 // names the role its write is granted to, or a cluster override (the config record `clusters`) that names the write role.
+// An observe (issue #2146) signs in as the account's role `hopper-observe`.
 // An override also renames the cluster for EKS (an alias), and limits the account and the region discovery looks in.
 // With no override, a short name (issue #2168) is found by the one cluster the topology lists that it is a prefix of. Pure.
 import type { Asset, Operation } from './access.ts';
@@ -13,6 +14,8 @@ import { matchCluster } from './unknown-assets.ts';
 
 /** The role a discovered cluster's token signs in as, in each account: EKS maps it to view access. */
 export const EKS_READ_ROLE = 'hopper-read';
+/** The role an observe on a discovered cluster signs in as (issue #2146): view access and port-forward, as the cluster's RBAC gives it. */
+export const EKS_OBSERVE_ROLE = 'hopper-observe';
 
 /**
  * A cluster to find: its EKS name, the role its token signs in as, and the AWS minting credentials (with their accounts)
@@ -42,7 +45,7 @@ export function mintSourceFor<S extends { name: string; mints?: Asset }>(
   const all = [...new Set(secrets.flatMap((s) => (s.mints?.kind === 'aws-account' ? [s.mints.name] : [])))];
   const accounts = override?.account ? all.filter((a) => a === override.account) : all;
   if (!accounts.length) return override?.account ? `${own}, and no minting credential mints for aws-account ${override.account}, the one account its cluster override names` : `${own}, or one for an aws-account that has the cluster`;
-  const role = operation === 'read' ? EKS_READ_ROLE : override?.writeRole;
+  const role = operation === 'read' ? EKS_READ_ROLE : operation === 'observe' ? EKS_OBSERVE_ROLE : override?.writeRole;
   if (!role) return `${own}: the vault finds a cluster in the AWS accounts for a read only, and ${operation} needs the role its write is granted to (writeRole in the cluster's override on Settings → Clusters)`;
   const match = override ? undefined : matchCluster(mintsFor.name, known);
   if (match?.kind === 'ambiguous') return `${own}: cluster ${mintsFor.name} is ambiguous: ${match.candidates.join(', ')}. Name one of them, or name it in a cluster override on Settings → Clusters`;
