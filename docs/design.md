@@ -17998,7 +17998,8 @@ owner's.
 - **Audit.** An approval by a delegate records `by` as `<label> (delegate of <person>)` in its event (`vault.granted`,
   `vault.grant_denied`, `vault.approved`, `vault.sandbox_approved`, `vault.sandbox_declined`), on the vault grant and on the
   template's approval, so Access requests shows it on the card, with the time. A notifier or webhook subscribed to those
-  events tells the owner.
+  events tells the owner. An approval through another grant's API token (a `*` key, issue #2229) records `by` as
+  `<label> (API token of <person>)` the same way, so a key's decisions are told apart from the person's own.
 - **The CLI, headless.** `hopper grant [list] | approve <job> | deny <job>`, `hopper sandbox requests | approve <id> |
   decline <id> --reason <text>`, `hopper template approve <name>`. With `HOPPER_REFRESH_TOKEN_FILE` set the operator CLI
   opens no database (`runOperatorActionWithGrant`, `src/cli-operator.ts`): it trades the refresh token in that file at

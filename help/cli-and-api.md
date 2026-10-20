@@ -135,7 +135,7 @@ Every action of the UI is a `POST /ui/api/*` route, so every action is also an A
 | 400 | The request is malformed. |
 | 401 | No session or token, or the token is unknown, revoked or expired. |
 | 403 | Refused: the role is too low, the Origin is wrong, the body is not JSON, or the access service said no. |
-| 404 | Nothing by that id. |
+| 404 | Nothing by that id, or no such route. |
 | 409 | Not possible now. |
 | 503 | The access service (OpenFGA) cannot be asked. |
 

@@ -98,7 +98,7 @@ describe('GET /docs/openapi.json', () => {
         method, path: path.replace(/\{[^}]+\}/g, 'x'), headers: { host: new URL(a.url).host, 'content-type': 'application/json' },
         ...(method === 'POST' ? { body: '{}' } : {}),
       });
-      expect(res.text, `${method} ${path}`).not.toMatch(/no route/);
+      expect(res.text, `${method} ${path}`).not.toMatch(/no such route/);
     }
   });
 });
