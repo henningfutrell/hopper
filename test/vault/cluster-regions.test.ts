@@ -106,7 +106,7 @@ describe('a discovery in every region (issue #1845)', () => {
 });
 
 const store = (secrets: VaultSecret[], events: { type: string; data: unknown }[] = []) => ({
-  vault: { list: () => secrets } as never, config: { read: () => undefined } as never, events: { append: (e: { type: string; data: unknown }) => { events.push(e); } } as never,
+  vault: { list: () => secrets } as never, config: { read: () => undefined } as never, topology: { list: () => [] } as never, events: { append: (e: { type: string; data: unknown }) => { events.push(e); } } as never,
 });
 
 describe('a mint test of a cluster found in another region (issue #1845)', () => {

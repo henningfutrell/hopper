@@ -10839,13 +10839,38 @@ every probe `not-run`, and the jobs waited for days on a name that never resolve
   again (its `--wait` too) ends its wait with the refusal.
 - **Shown, not counted as an approval.** The vault's read (`GET /api/vault`, `vaultAnswer`) gives each template its
   `unknownAssets`; `hopper template list` adds `unknownAsset` in words; the template's card says `unknown asset: …` in
-  place of its approval; Needs you counts it under Access requests, one line each.
+  place of its approval; Needs you counts it, one line each (in its own row since issue #2168).
 - **Residual risk, stated.** The topology is read every 6 hours and on Discover now: a cluster made since is refused
   until the next read. The refusal says so, and a cluster override for the name (Settings → Clusters) lets it through at
   once. The names it gives a job are the ones `GET /job/topology` already serves it.
 
 Tests: `test/domain/unknown-assets.test.ts`, `test/skills/template-request-unknown.test.ts`,
 `test/ui/unknown-assets.test.ts`, `test/integration/unknown-assets.test.ts` (the real daemon and the operator CLI).
+
+**Short cluster names (issue #2168, 2026-10-19).** Reported from an install: the Access requests badge showed 29 with no
+approval open. Templates named clusters by short names (`uat` for `uat-eks`), each an unknown asset, and the badge added
+the unknown assets to the approvals.
+- **A short name resolves** (`matchCluster`, `src/domain/unknown-assets.ts`, pure). A need's cluster with no minting
+  credential and no cluster override is matched against the clusters the topology lists: its full name first; else the
+  one cluster whose name it starts (`uat` → `uat-eks`); else, when it starts several, it is **ambiguous** — an unknown
+  asset with its `candidates`, never a guess; else no match. A cluster override (the configured alias) wins over it.
+- **Discovery finds it so.** `mintSourceFor` takes the clusters the topology lists (`readKnownClusters`, read at each
+  mint, as the overrides are) and looks for a short name by the full name it resolves to; an ambiguous one is refused
+  with its candidates. A short name only ever finds a cluster for a read: a write needs a minting credential or an
+  override, which names it exactly.
+- **Shown, never counted as an approval.** `GET /api/vault` gives each template its `shortClusters` (`{ cluster, to }`)
+  beside its `unknownAssets`. The Access requests badge and its Needs you row count only what waits for approval
+  (`accessRequestsWaiting`); the templates with an unknown asset have their own Needs you row, **Unknown clusters**.
+- **One click fixes it.** **Point at** (an admin's, on the template card for a resolved short name and on Access
+  requests for each candidate of an ambiguous one) saves the template through `save-template` with each need on that
+  cluster renamed; a changed profile waits for approval again, as any edit of its needs does.
+- **Residual risk, stated.** A short name follows the topology: when a second cluster that it starts appears, it turns
+  ambiguous and its mints are refused until a person points the template at one. A read approved for `cluster/uat` reads
+  the cluster the topology resolves it to; **Point at** writes that name into the template, so the approval names it.
+
+Tests: `test/domain/unknown-assets.test.ts` (no match, ambiguous, a cluster renamed after the template was saved),
+`test/vault/cluster-discovery.test.ts`, `test/ui/unknown-assets.test.ts`, `test/ui/unknown-assets-panel.test.ts`,
+`test/integration/unknown-assets.test.ts`.
 
 **Residual risk, stated.** A probe that writes runs the write for real when the credential allows it (the dry runs do
 not): with a writable credential, `ssm put-parameter` and `iam create-user` make their resource and the cleanup deletes

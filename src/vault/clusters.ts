@@ -3,9 +3,14 @@
 // without a restart. A config record, not a vault secret: a cluster holds no secret.
 import type { ConfigRecords } from '../domain/ports.ts';
 import { CLUSTERS, clustersOf, clustersProblem, type ClusterOverride, type ClustersView } from '../domain/clusters.ts';
+import type { TopologySource } from '../domain/topology.ts';
+import { knownClusters } from '../domain/unknown-assets.ts';
 
 /** The overrides now; none while the record is missing. */
 export const readClusters = (config: Pick<ConfigRecords, 'read'>): ClusterOverride[] => clustersOf(config.read(CLUSTERS));
+
+/** The clusters the topology lists now (issue #2168): a mint finds a short cluster name by them. */
+export const readKnownClusters = (topology: { list(): readonly Pick<TopologySource, 'source' | 'lastGood'>[] }): string[] => knownClusters(topology.list());
 
 export function clustersView(config: ConfigRecords): ClustersView {
   return { clusters: readClusters(config), version: config.version(CLUSTERS) };

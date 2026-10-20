@@ -216,7 +216,7 @@ function unknownOf(u: Pick<TemplateRequestUser, 'unknownAssets'>, needs: readonl
     const known = cluster && nearest.get(cluster);
     return keyOf(known ? { ...p, asset: { ...p.asset, name: [known, ...p.asset.name.split('/').slice(1)].join('/') } } : p);
   });
-  return `${unknown.map(unknownAssetText).join('; ')}. The vault finds a cluster by its EKS name in the AWS accounts it mints for, and the topology lists no cluster of that name there. Ask again with a known name, for example --needs "${instead.join(' ')}". For a cluster made since the topology was read, a person runs Discover now on the topology page, or names the cluster in a cluster override on Settings → Clusters.`;
+  return `${unknown.map(unknownAssetText).join('; ')}. The vault finds a cluster by its EKS name in the AWS accounts it mints for, and the topology lists no cluster of that name there, or several that start with it. Ask again with a known name, for example --needs "${instead.join(' ')}". For a cluster made since the topology was read, a person runs Discover now on the topology page, or names the cluster in a cluster override on Settings → Clusters.`;
 }
 
 /** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */

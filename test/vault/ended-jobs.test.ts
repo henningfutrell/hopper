@@ -39,7 +39,7 @@ describe('the vault forgets ended jobs (issue #1402)', () => {
     const minted = new Map<string, Set<string>>();
     const credential = { id: 'c1', name: 'cluster-lab', mints: { kind: 'cluster', name: 'lab' } };
     const store = {
-      events: { append: () => undefined }, jobs: { get: (id: string) => jobs.get(id) }, tx: <T>(f: () => T) => f(), config: { read: () => undefined },
+      events: { append: () => undefined }, jobs: { get: (id: string) => jobs.get(id) }, tx: <T>(f: () => T) => f(), config: { read: () => undefined }, topology: { list: () => [] },
       vault: { list: () => [credential], get: () => credential, replace: () => undefined, sealed: () => undefined, template: () => undefined },
     };
     const mint = createMinting({

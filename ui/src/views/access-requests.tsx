@@ -1,8 +1,9 @@
 // Access requests (issue #897): the one home of what jobs on boxes wait on a person for — the credentials they asked for
 // (Asked for, issue #583), the vault grants they wait for (issue #652), the templates that wait for approval (issues
 // #558, #584), and the sandbox runs jobs asked for (issue #991). Always rendered: each panel says what will show there when nothing waits. Settings → Vault keeps the
-// configuration. Its nav badge, and its row in Needs you, count what waits (accessRequestsWaiting) and the templates with
-// an unknown asset (unknownAssetTemplates), and each one counted shows here (issue #2123).
+// configuration. Its nav badge, and its row in Needs you, count what waits for approval (accessRequestsWaiting) and nothing
+// else (issue #2168). The templates with an unknown asset (unknownAssetTemplates) show here too (issue #2123), counted in
+// Needs you's Unknown clusters row, never as an approval.
 // Issue #1018: an admin selects template and sandbox run cards, or all that wait, and one Approve selected approves
 // them all, side by side; each card shows its own progress and result, and the bar counts what was approved and failed.
 // Issue #1138: an admin mints a delegate approver here, an agent that approves what waits for them, and revokes it here.

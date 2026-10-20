@@ -21,14 +21,14 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#failures', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#failures', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
     const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], stuckLanding: ['o/c: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
-    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, failures: 4, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, sorting: 3 });
+    expect(n).toEqual({ intake: 2, access: 1, 'unknown-assets': 0, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, failures: 4, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, sorting: 3 });
     expect(needsYouTotal(rows)).toEqual({ n: 20, high: 3 });
   });
 
