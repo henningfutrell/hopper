@@ -59,8 +59,21 @@ export const fakeKubeApi = (o: { forbid?: boolean } = {}): Promise<FakeApi> => {
   });
 };
 
-/** STS: AssumeRole answered, in the query protocol's XML. */
-export const fakeSts = (account: string): Promise<FakeApi> => fakeServer(() => ({
+/**
+ * STS: AssumeRole answered, in the query protocol's XML. With `iamAllows` (issue #2206, part 2), it is IAM too: a
+ * SimulatePrincipalPolicy answers `allowed` for each action named there, else `implicitDeny`.
+ */
+export const fakeSts = (account: string, o: { iamAllows?: string[] } = {}): Promise<FakeApi> => fakeServer((r) => (o.iamAllows && r.body.includes('Action=SimulatePrincipalPolicy') ? simulated(r.body, o.iamAllows) : {
   status: 200, type: 'text/xml',
   body: `<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>${MINTED_AWS.AccessKeyId}</AccessKeyId><SecretAccessKey>${MINTED_AWS.SecretAccessKey}</SecretAccessKey><SessionToken>${MINTED_AWS.SessionToken}</SessionToken><Expiration>${EXPIRES}</Expiration></Credentials><AssumedRoleUser><Arn>arn:aws:sts::${account}:assumed-role/readonly/hopper</Arn><AssumedRoleId>AROA:hopper</AssumedRoleId></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>r1</RequestId></ResponseMetadata></AssumeRoleResponse>`,
 }));
+
+/** IAM's SimulatePrincipalPolicy answer for the one action the request names. */
+function simulated(body: string, allows: readonly string[]): { status: number; type: string; body: string } {
+  const q = new URLSearchParams(body), action = q.get('ActionNames.member.1') ?? '', resource = q.get('ResourceArns.member.1') ?? '*';
+  const decision = allows.includes(action) ? 'allowed' : 'implicitDeny';
+  return {
+    status: 200, type: 'text/xml',
+    body: `<SimulatePrincipalPolicyResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><SimulatePrincipalPolicyResult><IsTruncated>false</IsTruncated><EvaluationResults><member><EvalActionName>${action}</EvalActionName><EvalResourceName>${resource}</EvalResourceName><EvalDecision>${decision}</EvalDecision></member></EvaluationResults></SimulatePrincipalPolicyResult><ResponseMetadata><RequestId>r2</RequestId></ResponseMetadata></SimulatePrincipalPolicyResponse>`,
+  };
+}
