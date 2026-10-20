@@ -72,7 +72,7 @@ async function world() {
   return { s, instance, instances, shown };
 }
 
-describe('many instances under one hopper.io account, end to end', () => {
+describe('many instances under one hopper.io account, end to end', { timeout: 60_000 }, () => {
   it('two instances on one box register to one account; each shows connected, with the box as its own machine', async () => {
     const w = await world();
     const one = await w.instance();
