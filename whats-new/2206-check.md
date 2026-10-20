@@ -1,0 +1,1 @@
+- When a job asks for what it needs to change AWS, it now learns at once which actions its role cannot do, and asks you for the grant before the work starts, not partway through it.

@@ -11,14 +11,29 @@ const cause = (c: Omit<BuiltinCause, 'builtin'>): BuiltinCause => ({ ...c, built
 export const OWN_PR_CHECKS_RED = 'own-pr-checks-red';
 /** The cause of a job whose own pull request has merge conflicts or is a draft (issue #1265): the hopper sends it back to finish it. */
 export const OWN_PR_UNFINISHED = 'own-pr-unfinished';
+/** The cause of a job whose session has no way to the hopper (issue #2233): it runs again as a new job, never in that session. */
+export const NO_WAY_TO_HOPPER = 'no-way-to-hopper';
 /** The cause of a job whose conditional skills' done criteria are not met (issue #1924): the hopper sends it back to rework. */
 export const DONE_CRITERIA_UNMET = 'done-criteria-unmet';
 
 export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
+  // First (issue #2235): the read error it names is the hopper's own read of the source, never the machine's or the agent's.
+  cause({
+    id: 'done-check-unread', name: 'Done check unread', cls: 'transient', decision: 'retry', scope: 'machine',
+    description: 'The job said it was done, but the hopper could not read its source to check the work, also after it tried again with backoff (a connect timeout, a busy service, a rate limit). Nothing showed the work incomplete. Before it runs again, its source is asked whether the work is done there: then it ends finished.',
+    pattern: /could not confirm the work is complete/i,
+  }),
   cause({
     id: 'socket-path-too-long', name: 'Socket path too long', cls: 'shared', decision: 'redirect', scope: 'machine',
     description: 'A Unix socket path under the job\'s TMPDIR is longer than the system allows: every job with the same TMPDIR on that machine crashes the same way.',
     pattern: /socket path (is )?too long|path too long for (a )?unix (domain )?socket|ENAMETOOLONG/i,
+  }),
+  // Before Login expired, whose words a job's text may quote (issue #2233). Not the reach check's own text ("cannot reach
+  // the hopper at <url>"): that is the machine's, and stays Machine offline when the machine refused it.
+  cause({
+    id: NO_WAY_TO_HOPPER, name: 'No way to the hopper', cls: 'transient', decision: 'retry', scope: 'machine',
+    description: 'The job\'s session has no way to the hopper: HOPPER_URL, HOPPER_GH or its credentials dir is missing, so it cannot push, ask the hopper or run steps. That session cannot go on: the job runs again as a new job, its way to the hopper placed afresh, and Continue on its hand-off runs a new job too.',
+    pattern: /cannot reach the hopper(?! at )|\bHOPPER_(?:URL|GH)\b[^\n]{0,80}?\b(?:missing|not set|unset|empty)\b/i,
   }),
   cause({
     id: 'login-expired', name: 'Login expired', cls: 'shared', decision: 'hold', scope: 'executor',
@@ -96,7 +111,7 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
   cause({
     id: 'not-complete', name: 'Not complete', cls: 'job', decision: 'person', scope: 'machine',
     description: 'The job said it was done, but its source, asked twice a minute apart, found its item open and no pull request that closes or references it ready for review (not a draft, no merge conflicts) or merged. A pull request waiting for its merge is never this: it is done. Looked at once more before it is assessed; then Jev may pick run it again. Its own job\'s: it never groups or holds other jobs.',
-    pattern: /^not complete:|could not confirm the work is complete/i,
+    pattern: /^not complete:/i,
   }),
 ];
 

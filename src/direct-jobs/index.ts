@@ -17,7 +17,7 @@ import { staleArtifacts } from '../domain/promotions.ts';
 import { tendOf } from '../domain/pull-requests.ts';
 import type { JobSource, SourceHost, SourceReport } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
-import type { Job } from '../domain/types.ts';
+import type { Job, Question } from '../domain/types.ts';
 import { directItem } from './item.ts';
 
 export { directItem, directPrompt, PRIVATE_LINE, QUERY_LINE } from './item.ts';
@@ -42,6 +42,11 @@ export interface DirectJobs {
   queries(): DirectQueryView[];
   /** A direct query by its request id. */
   query(requestId: string): DirectQueryView | undefined;
+  /**
+   * Issue #2184: inside the tx that moves a question to the human stage. A direct query's question goes to its caller
+   * too: `direct_query.question_asked`, delivered to its callback. A question of any other job: nothing.
+   */
+  questionAsked(q: Question, answerUrl: string): void;
 }
 
 /** A direct query's id: its request id's hash, so the same request id names the same query (issue #2184). */
@@ -161,6 +166,16 @@ export function createDirectJobs(o: {
         }, by, id);
         store.events.append({ type: 'direct_query.accepted', ...(made.job ? { jobId: made.job.id } : {}), data: { id, requestId: input.requestId, by: by.person, via: by.via, ...(input.callback ? { callback: input.callback } : {}) } });
         return { directQuery: queryView(view(store.directJobs.get(id)!))!, ...(made.job ? { job: made.job } : {}) };
+      });
+    },
+    questionAsked(q, answerUrl) {
+      const job = store.jobs.get(q.jobId);
+      const id = job && isDirectQuery(job) ? idOf(job) : undefined;
+      const d = id === undefined ? undefined : store.directJobs.get(id);
+      if (!job || !d?.query) return;
+      store.events.append({
+        type: 'direct_query.question_asked', jobId: job.id, questionId: q.id,
+        data: { id: d.id, requestId: d.query.requestId, jobId: job.id, questionId: q.id, question: q.text, answerUrl, url: o.url(d.id), ...(d.query.callback ? { callback: d.query.callback } : {}) },
       });
     },
     queries: () => store.directJobs.list().map(view).flatMap((v) => queryView(v) ?? []),

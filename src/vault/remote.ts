@@ -29,7 +29,7 @@ export function remoteVault(o: {
   local: VaultService;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
-}): Omit<Vault, 'need' | 'give' | 'decline'> {
+}): Omit<Vault, 'need' | 'give' | 'decline' | 'holdCheck'> {
   /** The vault container's answer, or why there is none. */
   async function call<T>(op: VaultOp, body: Record<string, unknown>): Promise<{ result: T } | { problem: string }> {
     const key = o.secret(VAULT_KEY_VARIABLE);
@@ -117,7 +117,7 @@ export function remoteVault(o: {
     releaseMints: (box) => o.local.releaseMints(box, unbindFrom), reconcileMints: () => o.local.reconcileMints(unbindFrom),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
-    approveTemplate: (name, by) => o.local.approveTemplate(name, by),
+    approveTemplate: (name, by, job) => o.local.approveTemplate(name, by, job),
     revokeTemplate: (name, by) => o.local.revokeTemplate(name, by),
     approveProfile: (name, profile, by) => o.local.approveProfile(name, profile, by),
     scopeOf: (machine) => o.local.scopeOf(machine),

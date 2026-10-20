@@ -2108,6 +2108,13 @@ for an update, the named pull requests and their state. **A miss is asked again*
 (default 60 s): GitHub may list a new pull request, or a new head commit, only some seconds after the push. The failure
 assessor looks a third time before it assesses the failure ("Failure assessment": a done-check miss).
 
+**A read error is no miss** (issue #2235). When the source cannot be read to check the work (a connect timeout, a busy
+service, a rate limit), nothing shows the work incomplete. The runner reads it again after `HOPPER_DONE_READ_RETRY_MS`
+(default 5 s), then after twice as long. When the last read fails too, the job fails with `could not confirm the work is
+complete: <the read error>`. The built-in cause **Done check unread** (`done-check-unread`, transient, decision `retry`)
+matches that text ahead of every other cause, because the read is the hopper's own, not the machine's or the agent's. The
+run again asks the source first whether the work is done there (`DoneAtSource.beforeRun`): then the job ends finished.
+
 **A pull request left in conflict, with failing checks or as a draft** (issues #626, #736) is not done, but the next
 step is fixed, so no person is asked. When a done job is neither complete nor partly done, the runner asks its source for
 the job's own open pull request that one step finishes (`JobSource.unfinishedPullRequest`; for GitHub one that closes the
@@ -3792,6 +3799,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_KEEP_PANES` | `false` |
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LINK_GRACE_MS` | `600000` — issue #752: how long a running job is held once its machine's link drops, before it fails ("Link-lost hold") |
+| `HOPPER_DONE_READ_RETRY_MS` | `5000` — issue #2235: a job that ended done whose source cannot be read to check its work is read again after this long, then after twice as long, before it fails (Done check unread); `0`: at once |
 | `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
 | `HOPPER_CHECKS_WAIT_MS` | `60000` — issue #1230: a job whose own pull request's checks were red: how long between looks at those checks while they run again, before the job is sent back to fix them ("Own PR checks red") |
 | `HOPPER_OWN_COMMAND_GRACE_MS` | `300000` — issue #1037: a job waiting on its own background command whose pane shows no background work this long, its agent not gone on, is nudged once; this long after the nudge its wait check ends the wait (issue #1694, "Wait checks") |
@@ -10729,7 +10737,7 @@ replaces them; test with doubles, and state the gap to a real environment.
   (`approvalWait`, as for an approval); a job's template request answers 202. A save makes the check stale, so a changed
   image, tool or profile is checked again.
 - **When it runs.** The check pass (`createCheckPass`, `src/sandbox/check.ts`) runs with the reconcile pass, every 10 s
-  and at start, one check at a time. A template is due when it takes a check, its image (and tools) are approved, and its
+  and at start, up to `CHECKS_AT_ONCE` (3) checks at once (issue #2236). A template is due when it takes a check, its image (and tools) are approved, and its
   version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself
   (issue #1468: but one that failed only on a network error — each mint refusal, or the check box's start, said
   `ECONNRESET`, `ETIMEDOUT`, a timeout and the like — is `transient`, says so, and runs again `CHECK_RETRY_MS`, 5 minutes,
@@ -10737,7 +10745,24 @@ replaces them; test with doubles, and state the gap to a real environment.
   `helm.list` refused on secrets, judged before a right refusal passed it — runs again at the next pass, `judgedAgain`,
   so the jobs that wait on it go on): a
   person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
-  check <name>`), which drops the check (`template.check_requested`) so the next pass runs one.
+  check <name>`), which drops the check (`template.check_requested`) so the next pass runs one. The command says when
+  that is, or why it is not yet: a template whose image is not approved waits for the approval (issue #2226).
+- **A check that does not end** (issue #2226). The pass runs one check at a time, so one check that hangs (a pull, a
+  build or a mint that never answers) held every later check, for hours, and the jobs that waited on them. A whole check
+  may take `CHECK_DEADLINE_MS`, 45 minutes (the check box's 30 minutes, and its image and its mints). Then it fails as
+  `transient`, its problem names the step it stopped at (`CheckContext.stepped`), the check box's mints are released, and
+  the pass goes on to the next template; it runs again `CHECK_RETRY_MS` after, with no person. A run that ends late
+  records nothing, and its check box, if any, is no run's: the next pass removes it. A check a stopped hopper left
+  `running` runs again, after the templates with no check, so a check that hangs again holds none of them.
+- **A check holds only its own template** (issue #2236). A template the read policy approved got no check for hours, as
+  the pass waited for a check that did not end. Now each tick runs a pass of its own, which starts the check of each due
+  template that is not checked now, up to `CHECKS_AT_ONCE` at once; a pass ends when every check that runs now has, and
+  no tick waits for it. A due check that cannot start now is held, with the reason, in the hopper's memory
+  (`CheckTemplates.held`, the vault's `holdCheck`; never stored): as many checks run, or no place can run it (no runtime
+  beside the hopper, and no machine of the user dialled in with one). The template's view carries it (`checkHeld`), so
+  its wait says why (`checkWait`: "it has not run on this version yet: <reason>"), and a check that runs says since
+  when. `sandbox --needs`, `sandbox-template`, `hopper-step need` and `hopper-step box` give that text; a box step of a
+  template not ready says what it waits for (`templateWait`, `src/domain/sandboxes-before-start.ts`).
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
   the sandbox flags (`ContainerSpec.script`: `sh -c` in place of the entrypoint, on a terminal, never restarted), on the
   hopper's network, as the image's own non-root user, with a home volume made for it. It carries the label
@@ -14781,9 +14806,15 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
    or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
    job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).
-   A job also edits — never closes — a pull request its issue's text names (its **linked pull requests**, read at intake,
-   `source.linkedPulls`; issue #2151: a job told to update another's pull request could push to it, but not fix the
-   declaration in its body that a plan check reads);
+   A job also edits — never closes — a pull request its issue names (issue #2151: a job told to update another's pull
+   request could push to it, but not fix the declaration in its body that a plan check reads): a name of it in the
+   title or body of the item's approved text (its **item snapshot**; with none, its title), as `linkedRefs` reads names —
+   `#N`, so also `PR #N` and `pull request #N`, `owner/name#N` or its URL —, every name, not only the first 10, and a bare
+   `#N` in code (a fenced block or a code span) names nothing (`namesItem`, `src/domain/linked-pulls.ts`). Issue #2227:
+   the check read only the names the intake read kept (`source.linkedPulls`: the body only, the first 10, none when a
+   read failed), so an issue that named its pull request as "PR #N" in its title could not have it edited. A refusal
+   says the pull request it checked and why: the job did not open it, tend it or own it as its work item's, and for
+   an edit what its issue names (`its issue owner/name#N does not name it`, `… names #N only in code`);
    A close is the job's act, as its push is; it never merges, and the follow sees the pull request closed as a person's
    close;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
@@ -17005,6 +17036,16 @@ opened its pull requests found `HOPPER_GH` empty at its last step and ended fail
 more at its source before it is assessed, whatever its failure says ("Failure assessment", `lookedAgain`): one that
 delivered ends finished.
 
+**A resumed session never goes on with no way to the hopper** (issue #2233, a regression of #1465). A placement that
+fails is tried once more first. A job that reopens in a new pane after the end of its run (a continued job, a parked job)
+has no files of its start left: that end's reap removed its credentials dir. Its start's variables would point at
+nothing, so it fails with `this machine cannot reach the hopper: its way to the hopper was not placed again for the
+resume (<why>)`, never resumed without it. That failure, and a job's own report that `HOPPER_URL` or `HOPPER_GH` is
+missing or that it cannot reach the hopper, is the known cause `no-way-to-hopper` (transient, retry): it runs again as a
+new job, placed afresh. Continue on its hand-off runs a new job too (`continueResumes` false): the session's history
+keeps telling its agent the hopper is out of reach, whatever its new pane holds. The reach check's own text (`cannot
+reach the hopper at <url>`) is not this cause: it is the machine's.
+
 **A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
 machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
 jobs, and its jobs were given a loopback URL it does not reach: each failed at once. Now a fresh start that the reach check
@@ -17817,8 +17858,9 @@ and whether a PR head is a fork") and `repo_visibility`. Fork code is the case t
 "merge the change of #12" runs at `owner`, and #12 can be a stranger's pull request from a fork. So, for each GitHub issue
 whose origin is trusted or approved (only its job keeps them):
 
-- **The names in its text** (`linkedRefs`): `#N`, `owner/name#N`, and the pull request and issue URLs of the issue's own
-  GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself, never a `#` joined to a word.
+- **The names in its text** (`linkedRefs`, its title and body, issue #2227): `#N`, `owner/name#N`, and the pull request and
+  issue URLs of the issue's own GitHub host, each once, in their order, at most 10 (`LINKED_MAX`); never the issue itself,
+  never a `#` joined to a word, never a bare `#N` in code (a log line or a snippet asks nothing of it).
 - **One read per name** (`GitHubApi.linkedItem`, GraphQL `repository { visibility issueOrPullRequest(number) }`, in the
   batched reads of issue #822): its repository's visibility, and the pull request when the name is one — its URL, its
   author, `isCrossRepository` as `fork`. The issue's own read gives its repository's visibility.
@@ -17831,9 +17873,9 @@ whose origin is trusted or approved (only its job keeps them):
 - **Jev reads them**: Jev's trust check gets them in `source`, and has one more reason, `fork_code` ("it brings in a pull
   request of a fork that no trusted actor wrote"), to lower the job.
 - **No rule reads them**, as the origin acts: the stamp's level still comes from the origin. A rule would decide for every
-  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. One
-  door reads them (issue #2151): a job edits the title or body of a linked pull request (`pr edit`, "Jobs ask the hopper,
-  not GitHub"), as it pushes to its branch; GitHub still decides whether its user may.
+  issue that names any pull request, and most do so for good reasons; Jev and a person read the text the name is in. A job's
+  `pr edit` (issue #2151, "Jobs ask the hopper, not GitHub") reads the same names, but from the item's approved text at
+  the edit, every one (issue #2227), not from these records; GitHub still decides whether its user may.
 
 Also in this part: the GraphQL read of an issue's edits (issue #662, part 17) read the answer one level too high, so it
 found no edits against GitHub; the fake GitHub hid it. It reads them under `data` now, and an answer with errors throws, so
@@ -19805,7 +19847,7 @@ someone outside; the receiver maps the name to its own channel. In the hopper, t
 jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
 the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
 
-## Direct queries (issue #2184, part 1, 2026-10-19)
+## Direct queries (issue #2184, parts 1 and 2, 2026-10-19)
 
 Requirement: a caller (the first one: Grok Bot) asks the hopper an off-the-cuff question — "where does the otel collector
 run?" — with no GitHub issue. A job that only looks answers it, with the same seats, sandboxes, vault and approval rules as
@@ -19838,18 +19880,29 @@ jobs"). What a query adds:
   - the record has no `authorizations`, so no vault grant is made at submit, and no `repo`.
 - **Where it stands** (`directQueryState`, from its newest job): `accepted` (no job at work yet), `running`, `waiting` (a
   question or its own wait: it comes back through Questions, and the Grok Bot notifier names the direct job, as for any
-  direct job), `answered`, `failed` (also a job turned away at the queue gate), `cancelled`.
+  direct job; a question that reaches a person goes to the callback too, below), `answered`, `failed` (also a job turned
+  away at the queue gate), `cancelled`.
 - **Reading back.** `GET /api/direct-queries` (newest first) and `GET /api/direct-queries/:requestId`: the direct job's view
   with `query` and `state`; the answer is `job.result`, the evidence the job's `artifacts`. A caller polls this. To cancel,
   it cancels the job, `POST /ui/api/jobs/:id/cancel`, as any job.
 - **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
   artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
   direct job ("Promote to GitHub").
+- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, `ui/src/views/direct-queries.tsx`), in the Jobs
+  group beside Direct jobs, not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
+  its callback, its hints, its open questions (a link to Questions), its answer, its error and its evidence (the job's
+  artifacts). An operator asks a question there (a request id the page makes, `ui-<32 hex>`, from
+  `crypto.getRandomValues`: a LAN page over plain HTTP has no `randomUUID`), and cancels a query whose job is not at an
+  end. The Direct jobs view leaves direct queries out (`onlyDirectJobs`): each lives in one place.
 
 **The callback.** The events of a query: `direct_query.accepted` (in the submit's transaction, never the question),
 `direct_query.answered` (`answer`, the job's result; `artifacts`, links that need a hopper sign-in; `url`),
-`direct_query.failed` (`error`) and `direct_query.cancelled`, each with `id`, `requestId` and `callback`. The ends are
-appended by the `direct` source's report, once per job and end (`queryEnded`). The webhook dispatcher delivers an event
+`direct_query.failed` (`error`), `direct_query.cancelled` and `direct_query.question_asked` (part 2: `questionId`, `question`,
+`answerUrl`), each with `id`, `requestId` and `callback`. The ends are
+appended by the `direct` source's report, once per job and end (`queryEnded`). A question is appended when it reaches the
+human stage, once per question, in the transaction of its `question.escalated_to_human` (the question service's
+`onToHuman`, `DirectJobs.questionAsked`); a question a level answers never goes out. The caller answers it with
+`POST /ui/api/questions/:id/answer`, as a person does in Questions: a box action, so its API token is a box token, as for the ask. The webhook dispatcher delivers an event
 whose `callback` names a subscription to that subscription too, whatever events it lists (`matches`,
 `src/webhooks/dispatcher.ts`). So the callback is a webhook delivery: signed with the subscription's own signing secret,
 kept sealed in the vault (`x-hopper-signature`, "Webhooks"), at least once, deduped by `x-hopper-delivery`, retried with
@@ -30269,6 +30322,36 @@ high-priority job's card first, and the Access requests link ("Grok Bot routine 
 `test/sandbox/run-card-notices.test.ts`, `test/plugins/grokbot-run-cards.test.ts`, and `test/integration/need-steps.test.ts`
 (a write need's one notice, on the real daemon).
 
+**Part 3: allow again (2026-10-20).** Before, a run card's approval approved its template for every later job with the
+same needs, and remembered each write for the time limit: one approval for one job was a standing approval for all.
+The issue asks for a run's approval by default, and a choice to allow it again.
+
+- **For this job only, by default.** `approve-run` with no `allowAgain` approves the template for the card's job's runs
+  only: the template's approval names it (`approval.jobs`, `approvalJobs` in `src/domain/vault.ts`), and `vault.approved`
+  carries `jobs`. No write approval is remembered. Another job that asks for the same access finds the template waiting
+  for a person (`approvalCovers`): its ask is a run card of its own, and one approval adds that job to `jobs`.
+- **Allow again** (`allowAgain: true`; the card's **Allow again** switch; `hopper sandbox approve-run --allow-again`):
+  the approval is for every job, as before part 3, and each write, sync or apply approval is remembered.
+- **Where the job is read.** Each place that decides whether a job's step may use a template reads the job:
+  `templateReady(t, jobId)` (a box step, the broker's named sandbox, the sandboxes before the start), `coveringTemplate`
+  (a need step), the template request's reuse and its waits (`waitsOf`, `approvedFor`), the sandbox request's approval
+  by the person who approved the template (`approverOf`), and the run cards (`waitsForPerson`, `approvalsOf`).
+- **No approval is taken away.** An approval for one job of a template already approved for every job, with the same
+  image, tools, egress hosts and secrets, stays for every job: a card for one job never narrows what others had.
+
+**Migration.** `approval.jobs` is a new optional field of the template's JSON body: no schema change. An approval kept
+before has no `jobs`, so it covers every job, as it did: nothing that works today stops. A build before this one reads
+an approval with `jobs` as one for every job: on a downgrade, a run approved for one job is approved for all, as before
+part 3. Waiting templates were turned into run cards in part 1.
+
+**Not built.** A box a person attached as a machine to a template (issue #602) takes jobs by `approvalWait`, which does
+not read `jobs`: a template a job asked for has no such box. An approval for "the same kind of step" apart from the same
+needs: the template is keyed by its needs, so the same needs are the same kind of step.
+
+Tests: `test/domain/run-card-allow-again.test.ts` (the pure rules), `test/integration/need-steps.test.ts` (the real daemon:
+a card's approval names its job and remembers nothing; with allow again it is for every job and remembered),
+`test/ui/sandbox-runs-view.test.ts` (the switch and its post), `test/cli/sandbox-runs.test.ts` (`--allow-again`).
+
 **Residual risk, stated.** One click now approves the template's image, egress hosts, vault secrets and every write the
 card lists. The confirm says each of them, and the card lists them before the click. Each approval is still its own
 event (`vault.approved`, `template.profile_approved`, `vault.sandbox_approved`) that names the person.
@@ -30383,6 +30466,95 @@ flag starts nothing.
 Tests: `test/integration/critical-flag.test.ts` (set and clear through the real daemon, with who acted; the same flag
 again, an ended job, an unknown job, no session, a bad body), `test/ui/critical-jobs.test.ts` (a flagged job is
 tracked), `test/ui/job-critical-view.test.ts` (the job view's row and its buttons).
+
+## Action grants (issue #2206, part 1, 2026-10-19)
+
+Seen on a hopper: during a production outage a job was told to scale a managed node group. No role the vault mints for
+could call `eks:UpdateNodegroupConfig`, so the job handed the command back to a person, who ran it by hand, and
+production went out of step with the infrastructure code.
+
+**Mechanism decided here.** A session policy only narrows what a role may do: the hopper cannot give a session an action
+its role does not allow, and it never changes IAM (the hopper never changes the cluster or the account's identities). So
+an operator makes one wide role per account, the **action role** `hopper-action` (`ACTION_ROLE`, `src/domain/minting.ts`),
+and the hopper mints it only narrowed to the actions a person granted. `docs/deploy.md` "The action role" says how to make it.
+
+- **The ask.** A need step names each action its one change on an aws-role needs: `sh "$HOPPER_STEP" need
+  "apply/aws-role/<account>/hopper-action" --action "eks:UpdateNodegroupConfig=<ARN>" --plan-id <id> …` (at most 10;
+  `actionsOf`: an IAM action with no wildcard, an ARN in the role's account or of no account). `actionNeed`: the actions
+  go to the step's only write, sync or apply need on an aws-role; a change on the action role with no `--action` is
+  refused. Each action no live grant covers is a `vault.action_asked` once per job and scope, and the route answers 202
+  `waiting: a person grants <action> on <resource> as aws-role <role>`; `hopper-step` asks again by itself, as for a
+  template that waits, and a job that ends its turn waits `on: vault grant`, which `vault.action_granted` and
+  `vault.action_declined` settle (`settledBy`). The ask is read from the event log (`actionAsks`, `src/vault/action-grants.ts`:
+  of a job at work, not declined, not covered now), so a restart keeps it and no state is kept in memory.
+- **Infra applies off** (issue #1722): the route refuses the step with `APPLY_STEP_OFF` before any ask, so no action
+  grant is asked for a change that cannot be minted.
+- **The grant.** On Access requests, panel **AWS actions** (`ui/src/views/action-grants.tsx`): each ask names the
+  action, the resource, the role, the job and why, with **Grant** and **Decline**; it counts in the Access requests badge
+  and the Needs you row, and marks the badge for a high-priority job, as a run card does. `POST /ui/api/sandbox-requests`
+  `grant-action` / `decline-action` (`job`, `grant`: `role`, `action`, `resource`), admin and a box action, as the route
+  is. Only a waiting ask is decided (404 else). A grant is kept in the user's settings (`actionGrants`, no migration:
+  absent reads as none) and covers a later ask of the same role, action and resource — the one-approval carry-over of
+  issue #1001 — until the time limit of remembered write approvals (`rememberWritesHours`, `liveGrants`). `revokeAction`
+  on `POST /ui/api/sandbox-approvals` revokes it (`vault.action_revoked`). The vault's view answers `actionAsks` and
+  `actionGrants`.
+- **The mint** (`mintTarget` with the actions, `src/vault/need-mint.ts`). The step keeps its actions (`NeedStep.actions`,
+  in its JSON body: no migration), and its narrowed need is minted with `ReadOnlyAccess` and an inline session policy that
+  allows each granted action on its resource and denies assuming any other role (`actionSession`, at most the 2048
+  characters STS takes). Each grant is read again at each mint, so a revoke or the time limit bites at the next one. The
+  rest is unchanged: Access and the template's approval, the apply gate (a current approved plan, issue #870), and
+  `vault.minted`, which now names `actions`.
+- **The record.** The apply is in the Infra changes feed as every plan-bound apply is (`GET /api/infra-plans`
+  `applies`, issue #896), with the granted actions (`PlanApply.actions`); the out-of-band rule (issue #871) reads the
+  minted principal as a plan-bound apply credential, as before.
+
+**Decided here.** An API token or a delegate approver cannot grant or decline an action (403): granting a wide role's
+action is a person's act, as the confirmation asks of issue #909 make an API token's write approval. The grant is per role,
+action and resource, not per job, so an outage's second step needs no second click; its end is the remembered-write time
+limit, so an admin who sets it to 1 hour has a person decide almost each time.
+
+**The action check (part 2, 2026-10-20).** A missing permission shows when the job asks for its template, not partway
+through its work. `sh "$HOPPER_SKILL" sandbox-template --needs "apply/aws-role/<account>/<role>" --actions
+"<service:Action>=<ARN> ..."` names the actions the change does (`ASKED` keeps `actions`, so a watch asks again with
+them). Before the template is made, `checkTemplateActions` (`src/vault/template-actions.ts`) gives each action a verdict
+(`actionChecks`, `src/domain/action-check.ts`, pure):
+
+- **ready** — the role allows it (IAM's policy simulation), and on the action role a person granted it;
+- **waits** (`grant`) — on the action role, no live grant covers it: it is asked of a person now (`askActions`, the same
+  `vault.action_asked`), so the grant waits on Access requests beside the template;
+- **cannot** (`role-denies`) — the role does not allow it. No grant helps, as a session policy only narrows. The request
+  is refused (409) before a template is made, with the need to ask for in its place (the action role, `--action`), or,
+  on the action role itself, the operator's change to make;
+- **not checked** (`unchecked`) — IAM could not simulate it; the line says why, and nothing is refused for it.
+
+The simulation is the port `ActionSimulator`: `iam:SimulatePrincipalPolicy` (`src/vault/action-simulation.ts`,
+@aws-sdk/client-iam) of the role's ARN, one call per action on its resource, with a read session of the account's read
+role `hopper-read`, minted as topology discovery mints one (`mintForDiscovery`: no job or template takes part, so Access
+is not asked, and `vault.discovery_minted` records it). It reads the role's own policies: a service control policy or a
+resource policy can still refuse the call when it runs. A need step with `--action` and no template yet passes its actions
+to the template request, so the template and the grant wait for a person in the same visit, not one after the other.
+`--actions` on `sandbox` is refused: a box step's change is not narrowed to granted actions. With infra applies off, the
+check refuses as the step does, and asks for nothing.
+
+**Not built (left for later parts).** The action on the job's run card, so that one click approves both the template and
+the action; `hopper sandbox` commands for the grants; the deploy guide's Terraform for the action role.
+
+**Residual risk, stated.** The action role is wide in IAM; only the hopper's minting narrows it. A person who holds the
+minting credential can assume it unnarrowed, as with any role it can assume. A resource ARN with a wildcard (`nodegroup/<cluster>/<group>/*`)
+is granted as written: the card shows it whole before the click.
+
+Tests: `test/domain/action-grants.test.ts` (the actions read, the need they go to, a grant's cover and time limit, the
+session policy and its size, the action role never minted wider), `test/integration/action-grants.test.ts` (the real
+daemon and the real `hopper-step`: an action outside the role asked once and shown on Access requests; one grant and the
+step runs in its need box, STS asked for the action role with `ReadOnlyAccess` and the action on its resource; `vault.minted`
+names the plan and the action; the apply in the Infra changes feed; the same action again at once; a decline tells the step
+no; infra applies off asks nothing; a bare change on the action role refused), `test/ui/action-grants-view.test.ts`,
+`test/ui/needs-you.test.ts` (the count), `test/ui/infra-plans.test.ts` (the apply's words), `test/domain/wait-on.test.ts`
+(the wake), `test/domain/action-check.test.ts` (the verdicts and their words), `test/vault/action-simulation.test.ts`
+(one simulation per action, of the role, with the read session; a refusal says why), and in
+`test/integration/action-grants.test.ts` the action check (IAM answered on loopback beside STS: an action the role does
+not allow refuses the template request before a template is made; on the action role the grant is asked at once; a need
+step with no template asks for both in one visit, and runs once both are approved).
 
 ## Action grants (issue #2206, part 1, 2026-10-19)
 

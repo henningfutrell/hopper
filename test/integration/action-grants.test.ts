@@ -15,6 +15,11 @@
 //   Scenario: a declined action tells the step no; nothing is minted
 //   Scenario: with infra applies off, no action grant is asked: the step is refused and says the change goes through CI
 //   Scenario: a change on the action role with no --action is refused before anything is asked
+//   The action check (part 2): IAM's policy simulation is answered on loopback beside STS
+//   Scenario: a template request names an action its role does not allow: refused before a template is made, with the
+//     need to ask for on the action role in its place
+//   Scenario: a template request on the action role asks for the grant at once, beside the template
+//   Scenario: a need step with no template yet asks for the template and the grant in one visit; both approved, it runs
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -54,10 +59,10 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-async function boot(): Promise<Booted> {
+async function boot(o: { template?: false; iamAllows?: string[] } = {}): Promise<Booted> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const sts = await fakeSts(ACCOUNT);
+  const sts = await fakeSts(ACCOUNT, o.iamAllows ? { iamAllows: o.iamAllows } : {});
   cleanups.push(sts.close);
   const github = await createFakeGitHub({ clientId: 'gh-client-id' });
   cleanups.push(() => github.close());
@@ -78,9 +83,11 @@ async function boot(): Promise<Booted> {
   const edit = async (body: Record<string, unknown>) => { const r = await a.ui('/ui/api/vault', body, { token: session }); expect(r.status, JSON.stringify(r.body)).toBe(200); };
   await edit({ action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: 'minting-secret', Region: 'us-west-1', Endpoint: sts.url }) });
   const role = { kind: 'aws-role', name: SCOPE.role };
-  await edit({ action: 'save-template', name: 'act', image: 'ghcr.io/henningfutrell/hopper:box-claude', secrets: [], profiles: [{ operation: 'apply', asset: role }] });
-  await edit({ action: 'approve-template', name: 'act' });
-  await edit({ action: 'approve-profile', name: 'act', operation: 'apply', asset: role });
+  if (o.template !== false) {
+    await edit({ action: 'save-template', name: 'act', image: 'ghcr.io/henningfutrell/hopper:box-claude', secrets: [], profiles: [{ operation: 'apply', asset: role }] });
+    await edit({ action: 'approve-template', name: 'act' });
+    await edit({ action: 'approve-profile', name: 'act', operation: 'apply', asset: role });
+  }
   const pulled = await a.pull({ op: 'sleep', ms: 60000 });
   await a.waitForStatus(pulled.id, 'running', 10000);
   const creds = mkdtempSync(join(cloud.dir, 'job-'));
@@ -119,6 +126,14 @@ const WHY = ['--why', 'Scale the node group to 6 nodes'];
 const vaultOf = async (b: Booted): Promise<VaultView> => (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.session })).body;
 const ofJob = async (b: Booted): Promise<DomainEvent[]> => (await b.a.events()).filter((e) => e.jobId === b.job);
 const decide = (b: Booted, body: Record<string, unknown>) => b.a.ui<VaultView>('/ui/api/sandbox-requests', body, { token: b.session });
+
+/** The job asks the skill broker, as hopper-skill does: a form, with its proxy token. */
+async function skill(b: Booted, fields: Record<string, string>): Promise<{ status: number; text: string }> {
+  const res = await fetch(`${b.a.url}/job/skill`, { method: 'POST', body: new URLSearchParams(fields), headers: { authorization: `Bearer ${tokenOf(b.a, b.job)}` } });
+  return { status: res.status, text: await res.text() };
+}
+const simulations = (b: Booted): string[] => b.sts.seen.map((r) => decodeURIComponent(r.body)).filter((x) => x.includes('Action=SimulatePrincipalPolicy'));
+const ABOUT = { why: WHY[1]!, plan: 'terraform apply of the approved plan: desired size 3 to 6, undone by a plan back to 3' };
 
 describe('action grants (issue #2206)', () => {
   it('waits for a person to grant the exact action; one grant, and the step runs narrowed to it; the apply is in the Infra changes feed', async () => {
@@ -199,5 +214,59 @@ describe('action grants (issue #2206)', () => {
     expect(wild.stdout + wild.stderr).toContain('no wildcard');
     expect((await vaultOf(b)).actionAsks).toEqual([]);
     expect(b.sts.seen).toHaveLength(0);
+  });
+
+  it('the action check: an action the role does not allow refuses the template request before a template is made', async () => {
+    const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
+    const deploy = `apply/aws-role/${ACCOUNT}/deploy`;
+    const r = await skill(b, { name: 'sandbox-template', needs: deploy, actions: `eks:TagResource=${ARN} ${SCALE}`, ...ABOUT });
+    expect(r.status, r.text).toBe(409);
+    expect(r.text).toContain(`ready: eks:UpdateNodegroupConfig on ${ARN} as aws-role ${ACCOUNT}/deploy: the role allows it`);
+    expect(r.text).toContain(`cannot: eks:TagResource on ${ARN} as aws-role ${ACCOUNT}/deploy: the role does not allow it (IAM policy simulation). Ask for apply/aws-role/${ACCOUNT}/hopper-action with --action eks:TagResource=${ARN} in its place`);
+    // IAM simulated the role itself, once per action, with a read session of hopper-read.
+    expect(simulations(b)).toEqual([
+      expect.stringContaining(`PolicySourceArn=arn:aws:iam::${ACCOUNT}:role/deploy`),
+      expect.stringContaining(`PolicySourceArn=arn:aws:iam::${ACCOUNT}:role/deploy`),
+    ]);
+    expect(decodeURIComponent(b.sts.seen[0]!.body)).toContain(`RoleArn=arn:aws:iam::${ACCOUNT}:role/hopper-read`);
+    const v = await vaultOf(b);
+    expect(v.templates).toEqual([]);
+    expect(v.actionAsks).toEqual([]);
+  });
+
+  it('the action check: a template request on the action role asks for the grant at once, beside the template', async () => {
+    const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
+    const r = await skill(b, { name: 'sandbox-template', needs: NEED, actions: SCALE, ...ABOUT });
+    expect(r.status, r.text).toBe(202);
+    expect(r.text).toContain(`waits: eks:UpdateNodegroupConfig on ${ARN} as aws-role ${SCOPE.role}: a person grants it on Access requests, AWS actions (asked now)`);
+    const v = await vaultOf(b);
+    expect(v.actionAsks).toEqual([expect.objectContaining({ job: b.job, ...SCOPE, why: WHY[1] })]);
+    expect(v.templates).toEqual([expect.objectContaining({ askedBy: b.job, profiles: [{ operation: 'apply', asset: { kind: 'aws-role', name: SCOPE.role } }] })]);
+    // Asked again: the same ask, not a second one; once granted, the check says so.
+    await skill(b, { name: 'sandbox-template', needs: NEED, actions: SCALE, ...ABOUT });
+    expect((await ofJob(b)).filter((e) => e.type === 'vault.action_asked')).toHaveLength(1);
+    expect((await decide(b, { action: 'grant-action', job: b.job, grant: SCOPE })).status).toBe(200);
+    const after = await skill(b, { name: 'sandbox-template', needs: NEED, actions: SCALE, ...ABOUT });
+    expect(after.text).toContain(`ready: eks:UpdateNodegroupConfig on ${ARN} as aws-role ${SCOPE.role}: a person granted it`);
+  });
+
+  it('a need step with no template yet asks for the template and the grant in one visit; both approved, it runs', async () => {
+    const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
+    const plan = await approvedPlan(b);
+    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', ABOUT.plan, '--plan-id', plan.id, '--command', 'aws sts get-caller-identity', '--wait', '60']);
+    await run.waiting;
+    const v = await vaultOf(b);
+    expect(v.actionAsks).toEqual([expect.objectContaining({ job: b.job, ...SCOPE })]);
+    const asked = v.templates.find((t) => t.askedBy === b.job);
+    expect(asked, JSON.stringify(v.templates)).toBeDefined();
+    const role = { kind: 'aws-role', name: SCOPE.role };
+    expect((await decide(b, { action: 'grant-action', job: b.job, grant: SCOPE })).status).toBe(200);
+    for (const body of [{ action: 'approve-template', name: asked!.name }, { action: 'approve-profile', name: asked!.name, operation: 'apply', asset: role }]) {
+      const ok = await b.a.ui('/ui/api/vault', body, { token: b.session });
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    }
+    const r = await run.end;
+    expect(r.code, r.stdout + r.stderr).toBe(0);
+    expect(decodeURIComponent(b.sts.seen.at(-1)!.body.replace(/\+/g, ' '))).toContain('"Action":"eks:UpdateNodegroupConfig"');
   });
 });

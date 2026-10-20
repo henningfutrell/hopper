@@ -33,6 +33,8 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --image NAME       for sandbox and sandbox-template: one of the hopper's box images, box or test (issue #1875)
 #     --tools TEXT       for sandbox and sandbox-template: box tools beside the ones its needs use (issue #2146)
 #                        A request with --secrets or --egress needs no --needs, and a person always approves it.
+#     --actions TEXT     for sandbox-template: the AWS actions its one change on an aws-role does, each
+#                        <service:Action>=<resource ARN>; the hopper says which the minted session cannot do (issue #2206)
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
 #                        the hopper pushes it on the job stream (issue #613)
 #     --timeout SECONDS  how long --wait waits (the hopper's default: an hour)
@@ -42,7 +44,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #      4: --wait reached its deadline with no answer.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--tools TEXT] [--wait [--timeout SECONDS]] [--repo-copy DIR]]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--tools TEXT] [--actions TEXT] [--wait [--timeout SECONDS]] [--repo-copy DIR]]' >&2; exit 2; }
 ${TRACE_HEADER_SH}
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
@@ -63,6 +65,7 @@ for a in "$@"; do
     --egress) opt=egress ;;
     --image) opt=image ;;
     --tools) opt=tools ;;
+    --actions) opt=actions ;;
     --timeout) opt=timeout ;;
     --repo-copy) opt=copy ;;
     -*) usage ;;

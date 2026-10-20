@@ -291,8 +291,8 @@ export interface JobSourceRef {
   /**
    * Its repository's **visibility** and its **linked pull requests** (issue #655 part 19): the pull requests its text names,
    * who wrote each, whether its head is a fork and whether a trusted actor wrote it, as read when its origin was judged.
-   * Absent as `originActs` is. A record for people and for Jev's trust check: no rule reads them, but the job may edit a
-   * linked pull request's title or body (issue #2151).
+   * Absent as `originActs` is. A record for people and for Jev's trust check: no rule reads them (a job's pr edit reads its
+   * item's approved text, issue #2227).
    */
   visibility?: RepoVisibility; linkedPulls?: LinkedPullRequest[];
 }

@@ -35,7 +35,7 @@ import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake, type SandboxStrictness } from '../domain/sandbox-strictness.ts';
 import { waitsForPerson, type TemplateWait } from '../domain/run-cards.ts';
 import type { NewEvent, OperationProfile } from '../domain/types.ts';
-import type { TemplateView } from '../domain/vault.ts';
+import { approvalCovers, type TemplateView } from '../domain/vault.ts';
 
 export interface SandboxRequestsOptions {
   record(event: NewEvent): void;
@@ -125,7 +125,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     opened.add(key);
     o.record({ type: 'vault.run_card_opened', jobId, data: { template, waits, ...(purpose ? { purpose } : {}) } });
   };
-  const templateWaits = (name: string): boolean => { const t = o.template(name); return t !== undefined && waitsForPerson(t); };
+  const templateWaits = (name: string, jobId: string): boolean => { const t = o.template(name); return t !== undefined && waitsForPerson(t, jobId); };
   const event = (r: SandboxRequestView, type: NewEvent['type'], data: Record<string, unknown> = {}): void => {
     o.record({ type, jobId: r.jobId, data: { request: r.id, template: r.template, ...data } });
   };
@@ -173,7 +173,8 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     if (autoApproves(o.approvals(), t.radius?.level)) return { by: AUTO_APPROVER, radius: t.radius.level };
     if (o.remembered && rememberedCovers({ secrets: t.secrets ?? [], profiles: t.profiles ?? [] }, o.remembered(), readApprovedWithoutPerson(o.policy?.(), o.approvals()))) return { by: REMEMBERED_APPROVER };
     const person = t.approval?.by;
-    const forJob = t.askedBy === jobId || waitedOn.has(`${jobId} ${template}`);
+    // Issue #2197 part 3: and only when that approval covers the job's runs.
+    const forJob = (t.askedBy === jobId || waitedOn.has(`${jobId} ${template}`)) && approvalCovers(t, jobId);
     return person && !NO_PERSON.includes(person) && forJob ? { by: templateApprovalBy(person) } : undefined;
   };
 
@@ -206,7 +207,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     } else if (v.verdict === 'allow' && approverOf(r.jobId, r.template)) approve(r, JEV_APPROVER, approver.radius ? { radius: approver.radius } : {});
     else {
       r.jev = { state: 'held', ...(v.verdict === 'hold' ? { reason: sandboxCheckText(v.reason) } : {}) };
-      open(r.jobId, r.template, { template: templateWaits(r.template), run: true }, r.purpose);
+      open(r.jobId, r.template, { template: templateWaits(r.template, r.jobId), run: true }, r.purpose);
     }
   };
 
@@ -242,7 +243,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       } else if (approver) {
         approve(r, approver.by, approver.radius ? { radius: approver.radius } : {});
         if (m === 'shadow') void check(r, approver, true);
-      } else open(jobId, template, { template: templateWaits(template), run: true }, about?.purpose);
+      } else open(jobId, template, { template: templateWaits(template, jobId), run: true }, about?.purpose);
       return { ...r };
     },
     waited(jobId, template, about) {
@@ -251,7 +252,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
         waitedOn.set(key, { jobId, template, ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}), askedAt: o.clock.now().toISOString() });
       }
       const declined = [...requests.values()].find((r) => r.jobId === jobId && r.template === template && r.state === 'declined');
-      if (!declined && templateWaits(template)) open(jobId, template, { template: true, run: false }, waitedOn.get(key)!.purpose);
+      if (!declined && templateWaits(template, jobId)) open(jobId, template, { template: true, run: false }, waitedOn.get(key)!.purpose);
       return declined ? { ...declined } : undefined;
     },
     waits() {

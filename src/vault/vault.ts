@@ -48,6 +48,8 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
   give(id: string, g: Give, by: string): Promise<VaultResult>;
   /** A person declines a request: each job that waits on it is told why. */
   decline(id: string, reason: string, by: string): VaultResult;
+  /** The check pass says why a template's due read-only check does not start now, or undefined once it starts (issue #2236). */
+  holdCheck(name: string, why: string | undefined): void;
   /** The shared secrets (issue #718): the hopper's admin sets and removes them. Absent: this hopper keeps none. */
   shared?: Pick<SharedSecrets, 'set' | 'remove'>;
   /** A person grants a job's item the vault (issue #652, src/vault/grants.ts), after Access: its jobs then get what their box's template gives. */
@@ -60,15 +62,24 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
 
 /**
  * The credential requests (issue #583, src/vault/requests.ts) over a vault, wherever it runs: kept in the hopper's memory,
- * shown in the vault's view; a credential given is set through the vault itself.
+ * shown in the vault's view; a credential given is set through the vault itself. And the check holds (issue #2236).
  */
-export function withCredentialRequests(v: Omit<Vault, 'need' | 'give' | 'decline'>, o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>; clock: Clock; idGen: () => string }): Vault {
+export function withCredentialRequests(v: Omit<Vault, 'need' | 'give' | 'decline' | 'holdCheck'>, o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>; clock: Clock; idGen: () => string }): Vault {
   const requests = createCredentialRequests({ ...o, set: (s, by) => v.set(s, by) });
-  return { ...v, view: () => ({ ...v.view(), requests: requests.list() }), need: requests.need, give: requests.give, decline: requests.decline };
+  // Why each template's due read-only check does not start now (issue #2236): kept in memory too, on the template's view.
+  const held = new Map<string, string>();
+  const view = (): VaultView => {
+    const at = v.view();
+    return { ...at, requests: requests.list(), templates: at.templates.map((t) => (held.has(t.name) ? { ...t, checkHeld: held.get(t.name)! } : t)) };
+  };
+  return {
+    ...v, view, need: requests.need, give: requests.give, decline: requests.decline,
+    holdCheck: (name, why) => { if (why) held.set(name, why); else held.delete(name); },
+  };
 }
 
 /** The vault in the hopper's own process. */
-export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decline'> => ({
+export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decline' | 'holdCheck'> => ({
   view: () => v.view(),
   status: async () => v.view().problem,
   set: async (s, by) => v.set(s, by),
@@ -82,7 +93,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   releaseMints: (box) => v.releaseMints(box), reconcileMints: () => v.reconcileMints(),
   saveTemplate: (t, by) => v.saveTemplate(t, by),
   removeTemplate: (name, by) => v.removeTemplate(name, by),
-  approveTemplate: (name, by) => v.approveTemplate(name, by),
+  approveTemplate: (name, by, job) => v.approveTemplate(name, by, job),
   revokeTemplate: (name, by) => v.revokeTemplate(name, by),
   approveProfile: (name, profile, by) => v.approveProfile(name, profile, by),
   scopeOf: (machine) => v.scopeOf(machine), boxRadius: (machine) => v.boxRadius(machine),

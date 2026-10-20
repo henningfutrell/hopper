@@ -17,6 +17,7 @@ import { nameWithoutEmail } from '../domain/users.ts';
 import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
 import { needsOf, SANDBOX_SKILL, TEMPLATE_SKILL, type AskAbout, type TemplateAnswer } from './template-request.ts';
 import { askOf, type TemplateAsk } from './template-ask.ts';
+import { withActionLines, type TemplateActionsAnswer } from '../vault/template-actions.ts';
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
 import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
@@ -53,6 +54,8 @@ export interface SkillUser {
   sandboxWaits?(template: string, job: Job, about?: AskAbout): SandboxRequestView | undefined;
   /** Why needs are outside the job's trust stamp (issue #655 part 16): asked before a template is made for them. Absent: inside. */
   outsideStamp?(profiles: readonly OperationProfile[], job: Job): string | undefined;
+  /** The action check (issue #2206, part 2) of the AWS actions a template request's change names (`--actions`). Absent: this hopper checks none. */
+  actionCheck?(needs: readonly OperationProfile[], said: readonly string[], job: Job, why?: string): Promise<TemplateActionsAnswer>;
 }
 
 /** A vault secret a box may be given, as its metadata says (issue #583: the skill a person gave it for, the kind, their words). */
@@ -156,17 +159,23 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     const needs = name === TEMPLATE_SKILL || name === SANDBOX_SKILL ? needsOf(field(body, 'needs')) : undefined;
     const outside = needs === undefined || typeof needs === 'string' ? undefined : user.outsideStamp?.(needs, job);
     if (outside) return no(403, `${MIN_TRUST_DECLINER} refuses these needs: ${outside}. ${MIN_TRUST_ADVICE}`);
+    // Issue #2206, part 2: the AWS actions the change names, checked before the template is made.
+    const actions = field(body, 'actions')?.split(/\s+/) ?? [];
+    if (actions.length > 0 && name === SANDBOX_SKILL) return no(400, `--actions is for ${TEMPLATE_SKILL} and need steps: a box step's change is not narrowed to granted actions, so run the change as a need step`);
+    const acts = actions.length > 0 && Array.isArray(needs) ? await user.actionCheck?.(needs, actions, job, why) : undefined;
+    if (acts && 'no' in acts) return no(acts.no.status, acts.no.reason);
     if (name === TEMPLATE_SKILL) {
       const t = await user.requestTemplate(askOf((k) => field(body, k)), job, about);
       if ('reason' in t) return no(t.status, t.reason);
-      if (t.status === 202) {
+      const text = acts ? withActionLines(t.text, acts) : t.text;
+      if (t.status === 202 || acts?.waits) {
         // Issue #2197: the ask is a run card; a person who declined it declined the job's run of the template.
-        const declined = user.sandboxWaits?.(t.template, job, about);
+        const declined = t.status === 202 ? user.sandboxWaits?.(t.template, job, about) : undefined;
         if (declined) return no(403, declinedText(t.template, declined));
-        return { status: 202, text: `${t.text} Add --wait to have the hopper tell you when it is ready.\n` };
+        return { status: 202, text: `${text} Add --wait to have the hopper tell you when it is ready.\n` };
       }
       record('skill.loaded');
-      return { status: 200, text: `${t.text}\n` };
+      return { status: 200, text: `${text}\n` };
     }
     if (name === SANDBOX_SKILL) return sandbox();
     if (name === 'help') {
@@ -279,7 +288,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
       if (r.state === 'waiting') return { status: 202, text: `${waitingText(name, r)}${later}` };
       if (r.state === 'declined') return no(403, declinedText(name, r));
-      if (!templateReady(t)) {
+      if (!templateReady(t, job.id)) {
         user.sandboxWaits?.(name, job, about);
         return { status: 202, text: `waiting: the sandbox runs of template ${name} are approved, but the template waits for a person or for its read-only check on Access requests.${later}` };
       }

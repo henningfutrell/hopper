@@ -22,7 +22,7 @@ import { createMintTest, type MintTestAnswer } from './mint-test.ts'; import { c
 import { systemReadRefusal } from './system-read.ts';
 import { stepDelivery, type StepDelivery } from './step-delivery.ts'; import { deliveredValues, type Delivered } from './delivered.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
-import { egressHostProblem, givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
+import { approvalJobs, egressHostProblem, givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
@@ -52,8 +52,8 @@ export interface VaultService extends TemplateChecks, AgentCredentials, StepDeli
   saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; egress?: readonly string[]; readOnly?: boolean; askedBy?: string; purpose?: string; plan?: string; agentCredential?: string | null; probeMarks?: Readonly<Record<string, string>> }, by: string): Promise<VaultResult>;
   /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
-  /** A person approves a template as it is now: its image, its whole scope, and every read profile; never a write, sync or apply profile. */
-  approveTemplate(name: string, by: string): Promise<VaultResult>;
+  /** A person approves a template as it is now: image, scope, read profiles, never a change; `job`: its runs only (issue #2197 part 3, `approvalJobs`). */
+  approveTemplate(name: string, by: string, job?: string): Promise<VaultResult>;
   /**
    * A person revokes a template's approval (issue #602): its boxes take no new job and are given nothing until a person
    * approves it again; every approval access holds for it is revoked with it.
@@ -303,15 +303,15 @@ export function createVaultService(o: {
       return { ok: true } as const;
     },
 
-    async approveTemplate(name, by) {
+    async approveTemplate(name, by, job) {
       const t = vault.template(name);
       if (!t) return fail('not_found', `no template ${name}`);
       const low = viewOf(t).pending.profiles.filter((p) => !highRadius(p));
       if (low.length && !o.access) return noAccess();
       o.store.tx(() => {
-        const tools = { ...(t.tools?.length ? { tools: [...t.tools] } : {}), ...(t.egress?.length ? { egress: [...t.egress] } : {}) };
-        vault.saveTemplate({ ...t, approval: { image: t.image, ...tools, secrets: [...t.secrets], by, at: o.clock.now().toISOString() } });
-        events.append({ type: 'vault.approved', data: { template: name, image: t.image, ...tools, secrets: t.secrets, by } });
+        const jobs = approvalJobs(t, job), tools = { ...(t.tools?.length ? { tools: [...t.tools] } : {}), ...(t.egress?.length ? { egress: [...t.egress] } : {}) };
+        vault.saveTemplate({ ...t, approval: { image: t.image, ...tools, secrets: [...t.secrets], by, at: o.clock.now().toISOString(), ...(jobs ? { jobs } : {}) } });
+        events.append({ type: 'vault.approved', data: { template: name, image: t.image, ...tools, secrets: t.secrets, by, ...(jobs ? { jobs } : {}) } });
       });
       for (const p of low) await approveIn(t, p, by);
       return { ok: true } as const;
