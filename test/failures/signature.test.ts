@@ -85,6 +85,7 @@ describe('matchCause', () => {
       expect(c.description.length, c.id).toBeGreaterThan(0);
       // A timed-out job at work, one whose own pull request's checks are red (issue #1230), and one whose own pull request has
       // merge conflicts or is a draft (issue #1265), and one whose done criteria are not met (issue #1924), go on in their session.
+      // One with no way to the hopper (issue #2233) runs again as a new job: retry.
       if (c.cls === 'transient') expect(['timed-out', 'own-pr-checks-red', 'own-pr-unfinished', 'done-criteria-unmet'].includes(c.id) ? 'continue' : 'retry').toBe(c.decision);
       if (c.cls === 'shared') expect(['hold', 'redirect']).toContain(c.decision);
       if (c.cls === 'job') expect(c.decision).toBe('person');

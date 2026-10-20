@@ -49,6 +49,21 @@ describe('assess', () => {
     expect(a.problem).toEqual({ kind: 'open', title: 'Herdr outdated on desk', scope: { machineId: 'desk' }, general: false, decision: 'redirect', causeId: 'herdr-outdated' });
   });
 
+  // Issue #2233: a session with no way to the hopper cannot go on; a new job is placed afresh.
+  it.each([
+    'this machine cannot reach the hopper: HOPPER_URL and the hopper helper variables are missing',
+    'HOPPER_GH and HOPPER_URL are not set in the resumed session.',
+    'herdr: this machine cannot reach the hopper: its way to the hopper was not placed again for the resume (the machine did not answer)',
+  ])('a job with no way to the hopper runs again as a new job: %s', (error) => {
+    const a = assess(input(error));
+    expect(a).toMatchObject({ cls: 'transient', decision: 'retry', auto: true });
+    expect(a.reasons.join(' ')).toMatch(/No way to the hopper/);
+  });
+
+  it('a machine the reach check finds offline is still Machine offline, not No way to the hopper', () => {
+    expect(matchCause('this machine cannot reach the hopper at http://127.0.0.1:1: connect ECONNREFUSED', 'sig', [])?.id).toBe('machine-offline');
+  });
+
   it('a known shared cause opens a problem scoped to the machine, redirected when the job may go elsewhere', () => {
     const a = assess(input('write: ENOSPC: no space left on device'));
     expect(a).toMatchObject({ cls: 'shared', decision: 'redirect', auto: true });

@@ -17005,6 +17005,16 @@ opened its pull requests found `HOPPER_GH` empty at its last step and ended fail
 more at its source before it is assessed, whatever its failure says ("Failure assessment", `lookedAgain`): one that
 delivered ends finished.
 
+**A resumed session never goes on with no way to the hopper** (issue #2233, a regression of #1465). A placement that
+fails is tried once more first. A job that reopens in a new pane after the end of its run (a continued job, a parked job)
+has no files of its start left: that end's reap removed its credentials dir. Its start's variables would point at
+nothing, so it fails with `this machine cannot reach the hopper: its way to the hopper was not placed again for the
+resume (<why>)`, never resumed without it. That failure, and a job's own report that `HOPPER_URL` or `HOPPER_GH` is
+missing or that it cannot reach the hopper, is the known cause `no-way-to-hopper` (transient, retry): it runs again as a
+new job, placed afresh. Continue on its hand-off runs a new job too (`continueResumes` false): the session's history
+keeps telling its agent the hopper is out of reach, whatever its new pane holds. The reach check's own text (`cannot
+reach the hopper at <url>`) is not this cause: it is the machine's.
+
 **A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
 machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
 jobs, and its jobs were given a loopback URL it does not reach: each failed at once. Now a fresh start that the reach check

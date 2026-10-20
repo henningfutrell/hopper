@@ -5,7 +5,9 @@
 // GitHub for it (issue #652; until then a job of a connected account held that account's token, kept and renewed here).
 // Before that, the machine checks that it reaches the hopper at that URL (issue #695): a job that cannot fails at once,
 // saying why and what to do, never mid-job. A job that ran there before (its agent session known) keeps the variables
-// its start gave it when its files cannot be placed again (issue #2040): a resume never takes its way to the hopper away.
+// its start gave it when its files cannot be placed again (issue #2040): a turn never takes its way to the hopper away. A
+// placement that fails is tried once more first, and a job that reopens after the end of its run reaped its credentials dir
+// (a continued or a parked job, issue #2233) has no files left to keep: it fails, never resumed with no way to the hopper.
 import type { JobProxyCredentials, MachineShell } from '../domain/ports.ts';
 import type { Job, MachineSnapshot } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
@@ -26,7 +28,8 @@ const pathsUnder = (dir: string, paths: Record<string, string>): Record<string, 
  * The variables a job runs with: its proxy files kept under `scratch` on its machine first. `note` says why a job runs
  * without the GitHub proxy: its machine reaches no hopper URL, or its connection keeps no files — or, for a job that ran
  * there before, that it keeps the files its start placed (issue #2040). Throws when the machine
- * cannot reach the hopper at the URL the job would be given (issue #695): `Unreached`, with the reason (job-run.ts `place`).
+ * cannot reach the hopper at the URL the job would be given (issue #695): `Unreached`, with the reason (job-run.ts `place`);
+ * and when a job that reopens after its credentials dir was reaped cannot have its files placed again (issue #2233).
  */
 export async function placeCredentials(
   c: Pick<EngineContext, 'jobProxy'>, job: Job, machine: MachineSnapshot, shell: MachineShell | undefined, scratch: string, make: boolean,
@@ -36,16 +39,23 @@ export async function placeCredentials(
   if (!proxy || !shell) return {};
   const dir = credentialsDirOf(scratch);
   const env = { ...pathsUnder(dir, proxy.paths), ...proxy.vars };
+  const placed = async (): Promise<string | undefined> => {
+    const unreached = await shell.reach(proxy.url);
+    if (!unreached) for (const [file, content] of Object.entries(proxy.files)) await shell.keepCredential(job.id, dir, file, content, make);
+    return unreached;
+  };
   let unreached: string | undefined;
   try {
-    unreached = await shell.reach(proxy.url);
-    if (!unreached) for (const [file, content] of Object.entries(proxy.files)) await shell.keepCredential(job.id, dir, file, content, make);
+    // A connection that dropped for a moment (issue #2233): tried once more.
+    unreached = await placed().catch(placed);
   } catch (e) {
+    const why = (e as Error).message;
     if (job.agentSession === undefined) {
-      note(`it runs without the hopper's GitHub proxy: ${(e as Error).message}`);
+      note(`it runs without the hopper's GitHub proxy: ${why}`);
       return {};
     }
-    note(`its files were not placed again (${(e as Error).message}): it keeps the hopper's GitHub proxy its start placed`);
+    if (job.continued || job.parked) throw new Error(`this machine cannot reach the hopper: its way to the hopper was not placed again for the resume (${why}): the end of its run removed the files its start placed`, { cause: e });
+    note(`its files were not placed again (${why}): it keeps the hopper's GitHub proxy its start placed`);
     return env;
   }
   if (unreached) throw new Unreached(`${unreached}. ${REACH_ACTION}`);
