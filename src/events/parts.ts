@@ -191,7 +191,6 @@ export const pointedJobEvents = {
   'direct_job.promotion_revoked': strict({ id: z.string(), repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), by: z.string() }),
   'direct_query.accepted': strict({ id: z.string(), requestId: z.string(), by: z.string(), via: z.enum(ACTION_VIAS), callback: z.string().optional() }), 'direct_query.answered': strict({ id: z.string(), requestId: z.string(), jobId: z.string(), answer: z.unknown(), artifacts: z.array(strict({ id: z.string(), title: z.string(), url: z.string() })), url: z.string(), callback: z.string().optional() }),
   'direct_query.failed': strict({ id: z.string(), requestId: z.string(), jobId: z.string(), error: z.string(), url: z.string(), callback: z.string().optional() }), 'direct_query.cancelled': strict({ id: z.string(), requestId: z.string(), jobId: z.string(), url: z.string(), callback: z.string().optional() }),
-  'direct_query.question_asked': strict({ id: z.string(), requestId: z.string(), jobId: z.string(), questionId: z.string(), question: z.string(), answerUrl: z.string(), url: z.string(), callback: z.string().optional() }),
 };
 
 // GitHub watches (issue #427, src/github-watch/): what changed on a watched item at one poll, and the interval changed.

@@ -19755,7 +19755,7 @@ someone outside; the receiver maps the name to its own channel. In the hopper, t
 jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
 the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
 
-## Direct queries (issue #2184, parts 1 and 2, 2026-10-19)
+## Direct queries (issue #2184, part 1, 2026-10-19)
 
 Requirement: a caller (the first one: Grok Bot) asks the hopper an off-the-cuff question — "where does the otel collector
 run?" — with no GitHub issue. A job that only looks answers it, with the same seats, sandboxes, vault and approval rules as
@@ -19788,29 +19788,18 @@ jobs"). What a query adds:
   - the record has no `authorizations`, so no vault grant is made at submit, and no `repo`.
 - **Where it stands** (`directQueryState`, from its newest job): `accepted` (no job at work yet), `running`, `waiting` (a
   question or its own wait: it comes back through Questions, and the Grok Bot notifier names the direct job, as for any
-  direct job; a question that reaches a person goes to the callback too, below), `answered`, `failed` (also a job turned
-  away at the queue gate), `cancelled`.
+  direct job), `answered`, `failed` (also a job turned away at the queue gate), `cancelled`.
 - **Reading back.** `GET /api/direct-queries` (newest first) and `GET /api/direct-queries/:requestId`: the direct job's view
   with `query` and `state`; the answer is `job.result`, the evidence the job's `artifacts`. A caller polls this. To cancel,
   it cancels the job, `POST /ui/api/jobs/:id/cancel`, as any job.
 - **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
   artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
   direct job ("Promote to GitHub").
-- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, `ui/src/views/direct-queries.tsx`), in the Jobs
-  group beside Direct jobs, not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
-  its callback, its hints, its open questions (a link to Questions), its answer, its error and its evidence (the job's
-  artifacts). An operator asks a question there (a request id the page makes, `ui-<32 hex>`, from
-  `crypto.getRandomValues`: a LAN page over plain HTTP has no `randomUUID`), and cancels a query whose job is not at an
-  end. The Direct jobs view leaves direct queries out (`onlyDirectJobs`): each lives in one place.
 
 **The callback.** The events of a query: `direct_query.accepted` (in the submit's transaction, never the question),
 `direct_query.answered` (`answer`, the job's result; `artifacts`, links that need a hopper sign-in; `url`),
-`direct_query.failed` (`error`), `direct_query.cancelled` and `direct_query.question_asked` (part 2: `questionId`, `question`,
-`answerUrl`), each with `id`, `requestId` and `callback`. The ends are
-appended by the `direct` source's report, once per job and end (`queryEnded`). A question is appended when it reaches the
-human stage, once per question, in the transaction of its `question.escalated_to_human` (the question service's
-`onToHuman`, `DirectJobs.questionAsked`); a question a level answers never goes out. The caller answers it with
-`POST /ui/api/questions/:id/answer`, as a person does in Questions: a box action, so its API token is a box token, as for the ask. The webhook dispatcher delivers an event
+`direct_query.failed` (`error`) and `direct_query.cancelled`, each with `id`, `requestId` and `callback`. The ends are
+appended by the `direct` source's report, once per job and end (`queryEnded`). The webhook dispatcher delivers an event
 whose `callback` names a subscription to that subscription too, whatever events it lists (`matches`,
 `src/webhooks/dispatcher.ts`). So the callback is a webhook delivery: signed with the subscription's own signing secret,
 kept sealed in the vault (`x-hopper-signature`, "Webhooks"), at least once, deduped by `x-hopper-delivery`, retried with

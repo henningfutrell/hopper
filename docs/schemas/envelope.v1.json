@@ -325,7 +325,6 @@
         "direct_query.answered",
         "direct_query.failed",
         "direct_query.cancelled",
-        "direct_query.question_asked",
         "issue_draft.drafted",
         "issue_draft.filed",
         "infra.plan_recorded",

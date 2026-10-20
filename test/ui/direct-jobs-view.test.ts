@@ -129,12 +129,6 @@ describe('Direct jobs', () => {
     expect(document.body.textContent).toContain('No direct jobs yet');
   });
 
-  it('leaves the direct queries out: they have a view of their own (issue #2184)', async () => {
-    await render('operator', [D1, { ...D0, id: 'query-1', title: 'Where does the collector run?', query: { requestId: 'r-1' }, state: 'answered' }]);
-    expect(rows()).toHaveLength(1);
-    expect(document.body.textContent).not.toContain('Where does the collector run?');
-  });
-
   it('pins a direct job offered for promotion at the top; a person previews it, edits it, confirms the public repository and posts it', async () => {
     await render('operator', [D1, D3]);
     expect(rows()[0]!.textContent).toContain('Why was a sign-in locked?');
