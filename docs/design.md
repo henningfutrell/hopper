@@ -10228,6 +10228,32 @@ runs again, its hand-off is resolved (`handoff wont-do` ends it with no more wor
 
 Tests: `test/integration/operator-cli.test.ts`.
 
+## Request cards from the operator CLI (issue #2220, 2026-10-20)
+
+A script or an assistant that takes in safe work at night could not approve a **request card**: Approve and Decline
+were only the Intake page's, `POST /ui/api/sources/:name/intake` with the text's hash. A card a job filed waits for a
+person even with **auto-approval** on, so it waited all night. They are now operator CLI commands, on the same footing
+as issue #374's.
+
+- **Commands** (`src/cli-operator-intake.ts`):
+  - `hopper intake list` (a viewer's): the open request cards of each source's last sync (`GET /api/sources`,
+    narrowed): `source`, `key`, `title`, `repo`, `hash`, `author`, `why` (why it is a request), and `reopened` for a
+    **reopened card**.
+  - `hopper intake approve <key>` and `hopper intake decline <key> --close|--open` (an operator's): the card is found by
+    its key in that list (`--source <name>` picks one when two sources list it), and the UI's own route is posted
+    with the hash of the text the last sync read, or the hash `--hash` names (the one a script read with `list`).
+    Decline names its **decline choice** always: a script says which.
+- **One path.** The route, its hash check, Access (`item#can_accept_text`), the box action check and the events
+  (`source.request_approved`, `source.request_declined`, `via: cli`; `via: api` for a grant) are the click's. A key
+  the daemon did not do (the text changed, or it is no card now) is in the answer's `failed`, and the exit code is 2.
+- **`--as <person>`** names who decided, as the CLI session's identity name, so the event's `person` is theirs. It is
+  a name only: the session's role and user stay the CLI's. With `HOPPER_REFRESH_TOKEN_FILE` it is refused: the grant
+  already names who acts. A grant needs `sources:intake` (the presets `agent-intake` and `agent-approvals`), else 403.
+
+**Not built.** An auto-approval rule for cards a job of a trusted item filed: a follow-up, off by default when built.
+
+Tests: `test/integration/operator-cli-intake.test.ts`.
+
 ## The vault and sandbox boxes from the operator CLI (issue #716, part 1, 2026-10-10)
 
 **Superseded (issue #1349, "Sandboxes are burned after each step").** The hopper launches no box that joins as a machine: Add machine → A sandbox box, `POST /ui/api/machines/sandbox`, `hopper sandbox launch`, the reconcile pass, the start check and the launch scope are removed. Kept as the record of what was built.
