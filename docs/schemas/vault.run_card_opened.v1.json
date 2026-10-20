@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "template": {
+      "type": "string"
+    },
+    "waits": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "boolean"
+        },
+        "run": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "template",
+        "run"
+      ],
+      "additionalProperties": false
+    },
+    "purpose": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "template",
+    "waits"
+  ],
+  "additionalProperties": false
+}

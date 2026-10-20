@@ -165,3 +165,17 @@ export function loginPayload(e: DomainEvent, job: Job | undefined, now: Date, lo
     ...(loginsUrl ? { loginsUrl } : {}),
   };
 }
+
+/**
+ * A new run card (issue #2197 part 2): a job's sandbox run, or its ask that waits on a template, waits for one approval
+ * of a person. The job and why it asks, what the approval approves (`waits`), the job's priority and whether it is high
+ * (so the receiver ranks it), and the Access requests link. Never the template's secrets, profiles or plan.
+ */
+export function runCardPayload(e: DomainEvent, job: Job | undefined, highPriority: number | undefined, accessUrl: string | undefined): Record<string, unknown> {
+  const d = e.data as { template: string; waits: { template: boolean; run: boolean }; purpose?: string };
+  return {
+    ...base(e.type, e.at, job, e.jobId), repo: job?.source?.repo ?? null, issueNumber: job?.source?.number ?? null, priority: job?.priority ?? null,
+    high: job && highPriority !== undefined ? job.priority >= highPriority : null,
+    template: d.template, waits: d.waits, ...(d.purpose ? { purpose: d.purpose } : {}), ...(accessUrl ? { accessUrl } : {}),
+  };
+}
