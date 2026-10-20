@@ -22,6 +22,7 @@ import { useCanAdmin } from '@/store/selectors';
 import { sendVault, useVault, useVaultStore } from '@/store/vault';
 import { AskedFor } from './vault-requests';
 import { VaultGrants } from './vault-grants';
+import { ActionGrants } from './action-grants';
 import { TemplateApprovals } from './template-approvals';
 import { SandboxRuns } from './sandbox-approvals';
 import { UnknownAssets } from './unknown-assets';
@@ -64,6 +65,8 @@ export function AccessRequests() {
       {!view && error && <p role="alert" className="text-sm text-bad break-words">Could not read the vault: {error}</p>}
       <AskedFor requests={view?.requests ?? []} can={can} busy={busy} send={sendVault} />
       <VaultGrants view={view} />
+      {/* Issue #2206: an AWS action a job's step needs that the role's own access does not give. */}
+      <ActionGrants view={view} can={can} />
       {/* Issue #1001: each template and run card decides on its own; one pending blocks no other. Issue #1018: or several at once. */}
       {can && <ApproveSelected view={view} />}
       {/* Issue #2197: one card per run, its template's approval with it; a template card only for a person's own template. */}

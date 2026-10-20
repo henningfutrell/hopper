@@ -4,6 +4,7 @@
 // asset. The minting credential never leaves the hopper. The types every part shares, the rules that map an operation
 // profile to what is minted, and the port the minting adapters sit behind. Pure.
 import type { Asset, AssetKind, Operation, OperationProfile } from './access.ts';
+import type { AwsAction } from './action-grants.ts';
 
 /** What the vault mints: an AWS role session (`aws`) or a Kubernetes service account token (`kube`). Also the helper's form. */
 export const MINT_KINDS = ['aws', 'kube'] as const;
@@ -51,6 +52,27 @@ export const awsReadDenyPolicy = (roleArn: string): string => JSON.stringify({
 });
 /** The session policies a read session of `roleArn` gets: `ReadOnlyAccess`, and the deny policy beside it. */
 export const awsReadSession = (roleArn: string): { policyArns: string[]; policy: string } => ({ policyArns: [AWS_READ_POLICY], policy: awsReadDenyPolicy(roleArn) });
+
+/** The role an operator makes for granted actions (issue #2206): a change on it is minted only narrowed to them. */
+export const ACTION_ROLE = 'hopper-action';
+/** The most characters of inline session policy STS takes. */
+export const SESSION_POLICY_MAX = 2048;
+
+/**
+ * The session policies of a step's change on `roleArn` narrowed to granted `actions`: `ReadOnlyAccess`, and an inline
+ * policy that allows each action on its resource and denies assuming any other role; or why STS would refuse it.
+ */
+export function actionSession(roleArn: string, actions: readonly AwsAction[]): { policyArns: string[]; policy: string } | string {
+  const policy = JSON.stringify({
+    Version: '2012-10-17',
+    Statement: [
+      ...actions.map((a, i) => ({ Sid: `HopperGranted${i}`, Effect: 'Allow', Action: a.action, Resource: a.resource })),
+      { Sid: 'HopperGrantedNoOtherRole', Effect: 'Deny', Action: ['sts:AssumeRole', 'sts:AssumeRoleWithSAML', 'sts:AssumeRoleWithWebIdentity'], NotResource: roleArn },
+    ],
+  });
+  if (policy.length > SESSION_POLICY_MAX) return `the session policy for these actions is ${policy.length} characters, more than the ${SESSION_POLICY_MAX} STS takes: name fewer actions in one step`;
+  return { policyArns: [AWS_READ_POLICY], policy };
+}
 
 /** Where a token for a whole cluster is minted: the service accounts `hopper-<operation>` live in this namespace. */
 export const KUBE_CLUSTER_NAMESPACE = 'hopper';
@@ -135,14 +157,18 @@ export const MINT_BINDING_LABEL = 'io.hopper.mint';
  * token for the service account `hopper-<operation>` in that namespace (or `hopper` for a cluster); its RBAC is the
  * cluster's. An `argocd-app` (`<cluster>/<app>`, issue #959) takes sync only: `hopper-sync` in Argo CD's namespace.
  */
-export function mintTarget(kind: MintKind, p: OperationProfile): MintTarget | string {
+export function mintTarget(kind: MintKind, p: OperationProfile, actions?: readonly AwsAction[]): MintTarget | string {
   const { kind: assetKind, name } = p.asset;
+  if (actions?.length && (kind !== 'aws' || p.operation === 'read')) return `granted actions narrow a change on an aws-role only, not ${p.operation} on ${assetKind}/${name}`;
   if (kind === 'aws') {
     const [account, role, ...rest] = name.split('/');
     if (assetKind !== 'aws-role' || !account || !role || rest.length) return `an aws credential is minted for an aws-role (aws-role/<account>/<role>), not ${assetKind}/${name}`;
     const roleArn = `arn:aws:iam::${account}:role/${role}`;
-    const read = p.operation === 'read' ? awsReadSession(roleArn) : { policyArns: [] };
-    return { kind, mintsFor: { kind: 'aws-account', name: account }, roleArn, ...read, durationSeconds: AWS_SESSION_SECONDS };
+    // Issue #2206: a change narrowed to the granted actions; the action role is never minted wider.
+    if (role === ACTION_ROLE && p.operation !== 'read' && !actions?.length) return `the vault mints ${p.operation} on aws-role ${name} only narrowed to actions a person granted: a need step names each with --action`;
+    const session = p.operation === 'read' ? awsReadSession(roleArn) : actions?.length ? actionSession(roleArn, actions) : { policyArns: [] };
+    if (typeof session === 'string') return session;
+    return { kind, mintsFor: { kind: 'aws-account', name: account }, roleArn, ...session, durationSeconds: AWS_SESSION_SECONDS };
   }
   const serviceAccount = `hopper-${p.operation}`;
   if (assetKind === 'argocd-app') {

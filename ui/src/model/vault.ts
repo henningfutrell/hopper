@@ -160,16 +160,16 @@ export const ownTemplatesWaiting = (v: VaultView | null): TemplateView[] =>
 /** The sandbox runs that no longer wait (issue #991): approved or declined, with who decided. */
 export const sandboxRunsDecided = (v: VaultView | null): SandboxRequestView[] => (v?.sandboxRequests ?? []).filter((r) => r.state !== 'waiting');
 
-/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, a person's own templates and the run cards. */
+/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, a person's own templates, the run cards and the asks for an AWS action (issue #2206). */
 export const accessRequestsWaiting = (v: VaultView | null): number =>
-  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + ownTemplatesWaiting(v).length + (v.runs?.length ?? 0);
+  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + ownTemplatesWaiting(v).length + (v.runs?.length ?? 0) + (v.actionAsks?.length ?? 0);
 
 /** The jobs the UI holds, by id: enough to say how high a job's priority is. */
 type JobsById = Readonly<Record<string, Pick<Job, 'priority'>>>;
 
-/** Of those, the run cards of high-priority jobs (issues #535, #2196, #2197): the badge marks them. */
+/** Of those, the run cards and the action asks of high-priority jobs (issues #535, #2196, #2197, #2206): the badge marks them. */
 export const accessRequestsHigh = (v: VaultView | null, jobs: JobsById, threshold: number | null): number =>
-  (v?.runs ?? []).filter((c) => isHighJob(jobs[c.jobId], threshold)).length;
+  (v?.runs ?? []).filter((c) => isHighJob(jobs[c.jobId], threshold)).length + (v?.actionAsks ?? []).filter((a) => isHighJob(jobs[a.job], threshold)).length;
 
 /** The auto-approve policy in force (issue #1001): the view answers it in full; absent, the default. */
 export const autoApproveOf = (a: SandboxApprovals | undefined): NonNullable<SandboxApprovals['autoApprove']> => ({ low: true, medium: false, high: false, ...a?.autoApprove });

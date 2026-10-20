@@ -21,7 +21,10 @@
 //                                      the needs, its credentials minted for it. No such template yet: it is asked for as
 //                                      `sandbox-template` asks (`why`, `plan`), and 202 `waiting: …` while it waits for a
 //                                      person or its check; the wait opens a watch that ends the job's own wait (issue #998).
-//                                      With `ready`: 200 `ready: …` once a template covers the needs, and no step runs
+//                                      With `ready`: 200 `ready: …` once a template covers the needs, and no step runs.
+//                                      `action=<service:Action>=<ARN>` (issue #2206): an AWS action the one change on
+//                                      an aws-role needs; one no action grant covers is asked of a person, and 202
+//                                      `waiting: …` until a person grants it
 //   GET  /job/step/:id/log?from=N      a step's log from character N; where the next read starts in
 //                                      `x-hopper-step-log-next`, and `x-hopper-step-state` running or ended (then the log
 //                                      is whole)
@@ -42,6 +45,8 @@ import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { jobBrake } from '../domain/intake-strictness.ts';
+import { actionInWords, actionNeed, actionsOf, type AwsAction } from '../domain/action-grants.ts';
+import { APPLY_STEP_OFF } from '../domain/infra-plans.ts';
 import { mintKindFor } from '../domain/minting.ts';
 import { NEED_STEP_KEY } from '../domain/need-steps.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake, sandboxBrakeText } from '../domain/sandbox-strictness.ts';
@@ -55,6 +60,7 @@ import type { SkillWaits } from '../skills/index.ts';
 import { needsOf, TEMPLATE_SKILL } from '../skills/template-request.ts';
 import { STEP_HEADER, STEP_PATH, type StepState } from '../windows-steps/index.ts';
 import type { TenantParts, Tenants } from './tenants.ts';
+import { askActions } from '../vault/action-grants.ts';
 
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 const BEARER = /^Bearer\s+(\S+)$/i;
@@ -122,6 +128,18 @@ function braked(t: TenantParts, template: TemplateView, needs: string): string |
   return b ? `${sandboxBrakeText(b)}: a person approves each run of the template ${template.name}, and a need step has no approval of its own. ${ASK_SANDBOX(needs)}` : undefined;
 }
 
+/**
+ * Whether the step waits on an action grant (issue #2206): each action no grant covers is asked of a person once, and
+ * 202 says so; one a person declined is a 403. Undefined: every action is granted.
+ */
+function actionWait(t: TenantParts, job: Job, role: string, actions: readonly AwsAction[], why: string | undefined): { status: number; text: string } | undefined {
+  const a = askActions(t.store, job.id, role, actions, why, new Date());
+  if ('granted' in a) return undefined;
+  if ('declined' in a) return { status: 403, text: `no: ${a.declined}\n` };
+  const words = a.waiting.map((x) => actionInWords({ ...x, role })).join('; ');
+  return { status: 202, text: `waiting: a person grants ${words}, on Access requests. hopper-step asks again by itself; else end your turn with HOPPER_WAITING (on: vault grant): the hopper ends your wait when it is granted\n` };
+}
+
 /** `skillWaits`: a Linux step's template is asked for through them (issue #1007), so a wait for it ends the job's own wait. */
 export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skillWaits: SkillWaits }): void {
   void app.register(async (scope) => {
@@ -157,6 +175,14 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         const unminted = read.find((p) => mintKindFor(p.asset.kind) === undefined);
         if (unminted) return no(reply, 400, `${unminted.operation}/${unminted.asset.kind}/${unminted.asset.name}: the hopper mints a credential for a step for an aws-role, a cluster or a namespace only: name aws-role/<account>/<role>, cluster/<name> or namespace/<cluster>/<ns>`);
         const steps = who.t.needSteps;
+        // Issue #2206: the actions the step's one change on an aws-role needs, each granted by a person once.
+        const said = all(query.action), need = actionNeed(read, said.length > 0);
+        if (typeof need === 'string') return no(reply, 400, need);
+        const actions = need ? actionsOf(said, need.asset.name) : [];
+        if (typeof actions === 'string') return no(reply, 400, actions);
+        if (need && steps.appliesOff()) return no(reply, 409, `${APPLY_STEP_OFF}. No action grant is asked for`);
+        const waits = need ? actionWait(who.t, who.job, need.asset.name, actions, one(query.why)) : undefined;
+        if (waits) return reply.code(waits.status).type('text/plain; charset=utf-8').send(waits.text);
         let template = steps.covering(read);
         if (!template) {
           // No ready template covers the needs: asked for as a template request is — made once, approved only by a person or
@@ -178,6 +204,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         return asked(reply, steps.start(who.job, {
           template, needs: read, outputs: all(query.output),
           ...(command !== undefined ? { command } : {}), ...(timeout !== undefined ? { timeout } : {}), ...(planId !== undefined ? { plan: planId } : {}),
+          ...(actions.length ? { actions } : {}),
         }, { key, inputs }));
       }
       const host = one(query.host);

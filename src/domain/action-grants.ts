@@ -6,14 +6,11 @@
 // role may do, so the role must allow the action. The **action role** `hopper-action` is the role an operator makes for
 // this: wide in IAM, and minted by the hopper only so narrowed. Pure.
 import type { Asset, OperationProfile } from './access.ts';
-import { AWS_READ_POLICY } from './minting.ts';
+import { ACTION_ROLE } from './minting.ts';
 
-/** The role an operator makes for granted actions: a change on it is minted only with `--action`, so only narrowed. */
-export const ACTION_ROLE = 'hopper-action';
+export { ACTION_ROLE, actionSession, SESSION_POLICY_MAX } from './minting.ts';
 /** The most actions one step names. */
 export const ACTIONS_MAX = 10;
-/** The most characters of inline session policy STS takes. */
-export const SESSION_POLICY_MAX = 2048;
 
 /** One AWS action on one resource, as IAM names them: `eks:UpdateNodegroupConfig` on an ARN. */
 export interface AwsAction { action: string; resource: string }
@@ -57,13 +54,13 @@ export function actionsOf(said: readonly string[], role: string): AwsAction[] | 
 }
 
 /**
- * The one need the actions are for: the step's only change on an aws-role; or why the step is refused. A change on the
+ * The one need a step's actions are for (`withActions`: it names some): the step's only change on an aws-role; or why the step is refused. A change on the
  * action role with no action is refused too: the hopper mints it only narrowed to granted actions.
  */
-export function actionNeed(needs: readonly OperationProfile[], actions: readonly AwsAction[]): OperationProfile | undefined | string {
+export function actionNeed(needs: readonly OperationProfile[], withActions: boolean): OperationProfile | undefined | string {
   const changes = needs.filter((p) => p.asset.kind === 'aws-role' && p.operation !== 'read');
   const bare = changes.find((p) => p.asset.name.split('/')[1] === ACTION_ROLE);
-  if (actions.length === 0) return bare ? `${bare.operation}/aws-role/${bare.asset.name}: the hopper mints a change on ${ACTION_ROLE} only for the actions a person granted: name each with --action <service:Action>=<resource ARN>` : undefined;
+  if (!withActions) return bare ? `${bare.operation}/aws-role/${bare.asset.name}: the hopper mints a change on ${ACTION_ROLE} only for the actions a person granted: name each with --action <service:Action>=<resource ARN>` : undefined;
   if (changes.length !== 1) return '--action names what one change on an aws-role does: name exactly one write, sync or apply need on an aws-role with it';
   return changes[0];
 }
@@ -91,22 +88,6 @@ export const revoking = (list: readonly ActionGrant[], g: AwsAction & { role: st
 /** The actions of `role` that no live grant covers. */
 export const ungranted = (live: readonly ActionGrant[], role: string, actions: readonly AwsAction[]): AwsAction[] =>
   actions.filter((a) => !live.some((g) => same(g, { ...a, role })));
-
-/**
- * The session policies of a step's change on `roleArn` narrowed to granted `actions`: `ReadOnlyAccess`, and an inline
- * policy that allows each action on its resource and denies assuming any other role; or why STS would refuse it.
- */
-export function actionSession(roleArn: string, actions: readonly AwsAction[]): { policyArns: string[]; policy: string } | string {
-  const policy = JSON.stringify({
-    Version: '2012-10-17',
-    Statement: [
-      ...actions.map((a, i) => ({ Sid: `HopperGranted${i}`, Effect: 'Allow', Action: a.action, Resource: a.resource })),
-      { Sid: 'HopperGrantedNoOtherRole', Effect: 'Deny', Action: ['sts:AssumeRole', 'sts:AssumeRoleWithSAML', 'sts:AssumeRoleWithWebIdentity'], NotResource: roleArn },
-    ],
-  });
-  if (policy.length > SESSION_POLICY_MAX) return `the session policy for these actions is ${policy.length} characters, more than the ${SESSION_POLICY_MAX} STS takes: name fewer actions in one step`;
-  return { policyArns: [AWS_READ_POLICY], policy };
-}
 
 /** An action in words, for a card and a refusal: `eks:UpdateNodegroupConfig on <ARN> as aws-role <account>/<role>`. */
 export const actionInWords = (a: AwsAction & { role: string }): string => `${a.action} on ${a.resource} as aws-role ${a.role}`;

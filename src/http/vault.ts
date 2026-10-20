@@ -14,6 +14,7 @@ import type { TenantParts } from './tenants.ts';
 import { shownAsks } from './ui/confirmation-asks.ts';
 import { readClusters } from '../vault/clusters.ts';
 import { vaultView } from '../vault/vault.ts';
+import { actionAsks, grantsNow } from '../vault/action-grants.ts';
 import { LIVE } from '../users/sandbox-requests.ts';
 
 /**
@@ -25,8 +26,8 @@ const clusterFacts = (parts: Pick<TenantParts, 'vault' | 'store'>): ClusterFacts
 
 /**
  * What `GET /api/vault` and each vault edit answer: the vault's view, the user's read policy (issue #716), the
- * waiting profiles an API token asked to approve (issue #909), the sandbox approvals and requests (issue #991), and the
- * run cards (issue #2197).
+ * waiting profiles an API token asked to approve (issue #909), the sandbox approvals and requests (issue #991), the
+ * run cards (issue #2197), and the asks and grants of AWS actions (issue #2206).
  */
 export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & Partial<Pick<TenantParts, 'sandboxRequests'>>): Promise<VaultView> {
   const view = await vaultView(parts.vault);
@@ -54,6 +55,8 @@ export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & 
     // The auto-approve policy (issue #1001) answered in full, the default where none was set.
     sandboxApprovals: approvalsInFull(parts.store.settings.getSandboxApprovals() ?? NO_SKIPS), sandboxRequests: requests, runs,
     rememberedWrites: rememberedNow(parts.store),
+    // Issue #2206: the asks for an AWS action that wait for a person, and the grants live now.
+    actionAsks: actionAsks(parts.store, new Date()), actionGrants: grantsNow(parts.store, new Date()),
   };
 }
 
