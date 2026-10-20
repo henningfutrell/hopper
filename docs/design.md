@@ -30079,14 +30079,20 @@ approve is not one.
 **Where it reads.** The **intake orgs** of a connected account are the owners of its job repositories. For each connected
 account, with its own connection:
 
-1. `GET /user/repos`, every page (100 a page). A GitHub App's user token lists only the repositories the app's
-   installations reach, so this is "everywhere the hopper's access reaches". The read keeps those of the intake orgs that
-   are not archived.
+1. `GET /user/installations`, then `GET /user/installations/{id}/repositories` for each installation on an intake org,
+   every page (100 a page), with the user's own token of the app (never the app's private key). The read keeps the
+   repositories that are not archived. An intake org the app is not installed on is never read and is no problem
+   (issue #2258): `GET /user/repos` listed its repositories too, and GitHub refused each one's runs ("Resource not
+   accessible by integration"), one problem line per repository. A personal access token (issue #1380) goes through no
+   app: GitHub refuses it the installations (403), and the read keeps the intake orgs' repositories of
+   `GET /user/repos` in their place.
 2. `GET /repos/{o}/{r}/actions/runs?status=waiting` for each of them, six at a time (the shared rate limiter paces them).
 3. `GET /repos/{o}/{r}/actions/runs/{id}/pending_deployments` for each waiting run.
 
 The GitHub App's **Actions: read** permission (issue #993) covers 2 and 3. A repository GitHub refuses (no Actions
-permission there, for example) is a **problem** with GitHub's reason; the other repositories are read. A refused token
+permission there, for example) is a **problem** with GitHub's reason; the other repositories are read. The page shows the
+problems as one collapsed line with their count ("2 repositories could not be checked"), each with its reason behind the
+toggle, never one line per repository (issue #2258). A refused token
 (401) is renewed once and the read made again. A run two accounts reach is one row.
 
 **Cost.** Every GET is conditional (`src/repo-checks/conditional.ts`): it carries the ETag of the answer kept from the read
@@ -30101,7 +30107,7 @@ last read and never reads GitHub.
 **A row.** One per run: the repository, the workflow, the run's title (else the workflow's name), the environments it
 waits on that the user can approve, waiting since (the earliest `wait_timer_started_at` of those, else when the run was
 made), and the run's link. **Stale**: a newer waiting run of the same repository waits on each of its environments (an
-older promote candidate). Run ids grow with each run, so the newest is the highest id. Fresh rows first, the longest
+older promote candidate). Its mark reads "stale: a newer run waits", so it says what it means. Run ids grow with each run, so the newest is the highest id. Fresh rows first, the longest
 waiting first, then the stale ones.
 
 **The page.** Pending approvals is its own nav entry in Waiting on you, after Access requests. Its badge counts every
@@ -30116,8 +30122,9 @@ page's own nav entry); listing each org's repositories with `GET /orgs/{org}/rep
 reach through the app, and needs another call for an owner that is a user).
 
 Tested: the rows, the intake orgs and the stale mark (`test/domain/pending-approvals.test.ts`); the read against a
-loopback GitHub — two intake orgs, an archived repository and another owner's left out, the `current_user_can_approve`
-filter, a second page of repositories, the 304 path, a refused repository (`test/pending-approvals/github.test.ts`); the
+loopback GitHub — two intake orgs, an archived repository and another owner's left out, an intake org with no
+installation never read (issue #2258), a personal access token's `GET /user/repos`, the `current_user_can_approve`
+filter, a second page of an installation's repositories, the 304 path, a refused repository (`test/pending-approvals/github.test.ts`); the
 schedule, the accounts merged, a failed read that keeps the rows before (`test/pending-approvals/service.test.ts`); the
 route on the real daemon (`test/integration/pending-approvals.test.ts`); the page, its empty state and the nav count
 (`test/ui/pending-approvals-view.test.ts`).
