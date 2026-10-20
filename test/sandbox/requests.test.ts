@@ -131,6 +131,39 @@ describe('runs approved with no separate run approval (issue #1001)', () => {
   });
 });
 
+describe('the asks that wait on a template, as run cards (issue #2197)', () => {
+  it('keeps each job\'s first ask with its words; forgets it when the job ends', () => {
+    const s = setup();
+    expect(s.requests.waited('job-1', T.name, { purpose: 'Why', plan: 'Plan (undo: none)' })).toBeUndefined();
+    s.requests.waited('job-1', T.name, { purpose: 'Asked again' });
+    s.requests.waited('job-2', T.name);
+    expect(s.requests.waits()).toEqual([
+      { jobId: 'job-1', template: T.name, purpose: 'Why', plan: 'Plan (undo: none)', askedAt: '2026-10-13T10:00:00.000Z' },
+      { jobId: 'job-2', template: T.name, askedAt: '2026-10-13T10:00:00.000Z' },
+    ]);
+    s.live.delete('job-1');
+    expect(s.requests.waits().map((w) => w.jobId)).toEqual(['job-2']);
+  });
+
+  it('a person declines a run not yet asked: the job\'s wait is told no, and its later ask is declined', () => {
+    const s = setup();
+    s.requests.waited('job-1', T.name, { purpose: 'Why' });
+    expect(s.requests.declineRun('job-1', T.name, 'not now', 'Ada')).toEqual({ ok: true });
+    expect(s.requests.waited('job-1', T.name)).toMatchObject({ state: 'declined', reason: 'not now', declinedBy: 'Ada', purpose: 'Why' });
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ state: 'declined' });
+    expect(s.types()).toEqual(['vault.sandbox_declined']);
+    expect(s.requests.declineRun('job-1', T.name, 'again', 'Ada')).toMatchObject({ ok: false, code: 'conflict' });
+    expect(s.requests.declineRun('job-2', T.name, 'x', 'Ada')).toMatchObject({ ok: false, code: 'not_found' });
+  });
+
+  it('a person declines a waiting run by its job and template', () => {
+    const s = setup();
+    const r = s.requests.ask('job-1', T.name);
+    expect(s.requests.declineRun('job-1', T.name, 'no', 'Ada')).toEqual({ ok: true });
+    expect(s.requests.list().find((x) => x.id === r.id)).toMatchObject({ state: 'declined', reason: 'no' });
+  });
+});
+
 describe('a remembered write approval and the purpose of a run (issue #1001)', () => {
   const WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } } as const;
   const HIGH = { name: 'asked-w', secrets: [], profiles: [WRITE], radius: { level: 'high', reasons: [] }, approval: { by: 'Ada' }, askedBy: 'job-1' } as unknown as TemplateView;

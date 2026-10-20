@@ -6,19 +6,26 @@
 // clickable; the box starts in the background. Settings → Vault also sets the auto-approve policy, per blast radius level.
 // Issue #1018: a card's Approve goes through the Access requests approvals (store/access-approvals.ts), the same as
 // Approve selected, so the card shows its own progress and result whichever started it.
+// Issue #2197: one card per run. A job's ask that waits on a template, on its run, or on both, is one card: what the step
+// will do and its undo, the access it needs (profiles, secrets, egress, image) and the job. Approve approves it all at
+// once (`approve-run`), and the job's step goes on; Decline tells the job no. High-priority jobs' cards come first.
 import { Boxes, Check, Loader2, Rocket, TriangleAlert, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { ApprovalState, SelectBox } from '@/components/approval-state';
 import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
-import { TemplateRadiusBadge } from '@/components/template-radius';
+import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { post, RoleRefused, SessionRejected } from '@/lib/api';
-import { autoApproveOf, profileText, rememberedKey, sandboxApprovalsText, sandboxRunsWaiting } from '@/model/vault';
-import type { SandboxApprovals as Approvals, RememberedWriteView, SandboxRequestView, TemplateView, VaultSecret, VaultView } from '@/model/wire';
+import { HighTag } from '@/components/priority';
+import { isHighJob } from '@/model/priority';
+import {
+  approvalText, autoApproveOf, egressText, explicitApprovals, highRadius, profileAskOf, profileText, rememberedKey, runCardKey, runCardsOf, sandboxApprovalsText, sandboxRunsDecided,
+} from '@/model/vault';
+import type { SandboxApprovals as Approvals, ProfileAsk, RememberedWriteView, RunCardView, SandboxRequestView, TemplateView, VaultSecret, VaultView } from '@/model/wire';
 import { SandboxAsk } from './sandbox-ask';
 import { useHopper } from '@/store';
 import { approveItems, runItem, runKey, toggleSelected, useAccessApprovals } from '@/store/access-approvals';
@@ -45,39 +52,65 @@ const STATE_TEXT: Record<SandboxRequestView['state'], string> = {
 };
 
 /** Jev's sandbox-request check on a waiting request (issue #655 part 13): it checks it now, or held it for a person, with why. */
-const jevText = (jev: NonNullable<SandboxRequestView['jev']>): string =>
+const jevText = (jev: NonNullable<RunCardView['jev']>): string =>
   jev.state === 'checking' ? 'Jev checks it now: it approves it, or leaves it to a person.' : `Jev held it for a person${jev.reason ? `: ${jev.reason}` : ''}.`;
 
-function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; template?: TemplateView | undefined; secrets: readonly VaultSecret[]; can: boolean }) {
+/** What one approval of the card gives (issue #2197), in words for its confirm. */
+function grants(t: TemplateView | undefined, c: RunCardView): ReactNode {
+  if (!t) return <>The job&apos;s steps run in sandboxes of <span className="font-mono">{c.template}</span>.</>;
+  const changes = t.profiles.filter(highRadius), reads = t.profiles.filter((p) => !highRadius(p));
+  return (
+    <>
+      Each step of this job runs in a new sandbox from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null}{t.egress?.length ? <>, reaching <span className="font-mono">{t.egress.join(', ')}</span> through the egress proxy</> : null}, which the hopper destroys after the step.
+      {' '}It may ask for <span className="font-mono">{t.secrets.join(', ') || 'no vault secret'}</span>{reads.length ? <>, read <span className="font-mono">{reads.map(profileText).join(', ')}</span></> : null}{changes.length ? <>, and change <span className="font-mono">{changes.map(profileText).join(', ')}</span> (high radius)</> : null}.
+      {c.waits.template ? <> The hopper keeps this access approved for later steps with the same needs.</> : null}
+    </>
+  );
+}
+
+function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCardView; template?: TemplateView | undefined; asks?: ProfileAsk[] | undefined; secrets: readonly VaultSecret[]; can: boolean; high?: number | undefined }) {
   const [reason, setReason] = useState('');
   const [declining, setDeclining] = useState(false);
-  const approval = useAccessApprovals((s) => s.items[runKey(r)]);
-  const selected = useAccessApprovals((s) => s.selected.includes(runKey(r)));
+  const key = runKey(c, t);
+  const approval = useAccessApprovals((s) => s.items[key]);
+  const selected = useAccessApprovals((s) => s.selected.includes(key));
   const pending = declining || approval?.state === 'pending';
   const decline = (): void => {
     setDeclining(true);
-    void sendSandbox('/ui/api/sandbox-requests', { action: 'decline', id: r.id, reason: reason.trim() }, `${r.template}: declined`, true).finally(() => setDeclining(false));
+    void sendSandbox('/ui/api/sandbox-requests', { action: 'decline-run', job: c.jobId, template: c.template, reason: reason.trim() }, `${t?.label ?? c.template}: declined`, true).finally(() => setDeclining(false));
   };
   return (
-    <li data-sandbox-request={r.id} className="space-y-2 rounded-md border border-warn/50 p-3">
+    <li data-run-card={runCardKey(c)} {...(c.request ? { 'data-sandbox-request': c.request } : {})} className="space-y-2 rounded-md border border-warn/50 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        {can && <SelectBox label={template?.label ?? r.template} checked={selected} disabled={pending} onChange={(on) => toggleSelected(runKey(r), on)} />}
+        {can && <SelectBox label={t?.label ?? c.template} checked={selected} disabled={pending} onChange={(on) => toggleSelected(key, on)} />}
         <Boxes className="size-4 text-warn" />
-        {template?.label && <span className="text-sm font-medium break-all">{template.label}</span>}
-        <span className={template?.label ? 'font-mono text-xs text-muted-foreground break-all' : 'font-mono text-sm font-medium break-all'}>{r.template}</span>
-        {template && <TemplateRadiusBadge radius={template.radius} />}
-        <span className="text-xs text-warn">{STATE_TEXT[r.state]}</span>
+        {t?.label && <span data-slot="template-label" className="text-sm font-medium break-all">{t.label}</span>}
+        <span className={t?.label ? 'font-mono text-xs text-muted-foreground break-all' : 'font-mono text-sm font-medium break-all'}>{c.template}</span>
+        {t && <TemplateRadiusBadge radius={t.radius} />}
+        {high !== undefined && <HighTag priority={high} />}
+        <span className="text-xs text-warn">waits for a person{t && c.waits.template ? `: ${approvalText(t)}` : ''}</span>
       </div>
-      <SandboxAsk purpose={r.purpose} plan={r.plan} job={{ id: r.jobId, title: r.jobTitle, url: r.jobUrl }} needs={template?.profiles} secrets={secrets} />
-      {r.jev && <p data-slot="sandbox-request-jev" className="text-xs text-warn">{jevText(r.jev)}</p>}
-      <p className="text-xs text-muted-foreground">Asked at {r.askedAt}.</p>
+      <SandboxAsk purpose={c.purpose} plan={c.plan} job={{ id: c.jobId, title: c.jobTitle, url: c.jobUrl }} needs={t?.profiles} secrets={secrets} />
+      {t && <TemplateRadiusReasons radius={t.radius} />}
+      {t && explicitApprovals(t).map((p) => {
+        const asked = profileAskOf(asks, t.name, p);
+        return asked ? <p key={profileText(p)} data-slot="profile-asked" className="text-xs text-warn break-words">{profileText(p)}: {asked}</p> : null;
+      })}
+      {t && (
+        <dl data-slot="run-access" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}{t.tools?.length ? ` + ${t.tools.join(', ')}` : ''}</dd>
+          <dt className="text-muted-foreground">Secrets</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
+          <dt className="text-muted-foreground">Egress</dt><dd className="font-mono break-words">{egressText(t)}</dd>
+        </dl>
+      )}
+      {c.jev && <p data-slot="sandbox-request-jev" className="text-xs text-warn">{jevText(c.jev)}</p>}
+      <p className="text-xs text-muted-foreground">Asked at {c.askedAt}.</p>
       {can ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Confirm title={`Start a box of ${r.template}?`} action="Approve" onConfirm={() => void approveItems([runItem(r)])}
-            description={<>Each step of the job runs in a new sandbox of <span className="font-mono">{r.template}</span>, which the hopper destroys after the step. A step gets what the template is approved for{template?.radius ? <>, blast radius {template.radius.level}</> : null}.</>}>
+          <Confirm title={`Run ${t?.label ?? c.template} for this job?`} action="Approve" onConfirm={() => void approveItems([runItem(c, t)])} description={grants(t, c)}>
             <Button size="sm" disabled={pending}><Check />Approve</Button>
           </Confirm>
-          <Input className="h-8 max-w-64 text-sm" placeholder="Why not (the job is told)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={`Why not start ${r.template}`} />
+          <Input className="h-8 max-w-64 text-sm" placeholder="Why not (the job is told)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={`Why not run ${c.template}`} />
           <Button size="sm" variant="outline" disabled={pending || reason.trim() === ''} onClick={decline}><X />Decline</Button>
           {declining ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" />Declining…</span> : <ApprovalState approval={approval} />}
         </div>
@@ -86,18 +119,23 @@ function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; templat
   );
 }
 
-/** Access requests, Sandbox runs (issue #991). Always rendered: with none, it says what will show here. */
+/**
+ * Access requests, Sandbox runs (issues #991, #2197): one card per job and template that waits for a person, its
+ * template's approval and its run in one; high-priority jobs first. Always rendered: with none, it says what will show here.
+ */
 export function SandboxRuns({ view, can }: { view: VaultView | null; can: boolean }) {
-  const all = view?.sandboxRequests ?? [];
-  const waiting = sandboxRunsWaiting(view);
-  const rest = all.filter((r) => r.state !== 'waiting');
+  const jobs = useHopper((s) => s.jobs);
+  const threshold = useHopper((s) => s.highPriority);
+  const high = (id: string): boolean => isHighJob(jobs[id], threshold);
+  const waiting = runCardsOf(view, high);
+  const rest = sandboxRunsDecided(view);
   const templates = view?.templates ?? [];
   return (
     <div data-access-panel="sandbox-runs">
       <Panel title="Sandbox runs" icon={Rocket} count={waiting.length || ''} bodyClassName="space-y-3">
-        <p className="text-sm text-muted-foreground">A job asks the hopper for a sandbox. Once its runs are approved, each step of the job runs in a new sandbox, which the hopper destroys after the step. A run waits here for a person unless <a href="#settings/vault" className="underline">the auto-approve policy</a> holds its blast radius, skip sandbox approval is on, or a person approved the template the job asked for.</p>
+        <p className="text-sm text-muted-foreground">A job asks the hopper for a sandbox. Each card is one job&apos;s run, with what it will do and the access it needs: approve it once, and the job&apos;s steps run, each in a new sandbox the hopper destroys after the step. A run waits here for a person unless <a href="#settings/vault" className="underline">the auto-approve policy</a> holds its blast radius, skip sandbox approval is on, or a person approved the same access for the job.</p>
         {waiting.length === 0 ? <Empty>No sandbox run waits. A run a job asks for waits here.</Empty>
-          : <ul className="space-y-2">{waiting.map((r) => <Waiting key={r.id} r={r} template={templates.find((t) => t.name === r.template)} secrets={view?.secrets ?? []} can={can} />)}</ul>}
+          : <ul className="space-y-2">{waiting.map((c) => <Waiting key={runCardKey(c)} c={c} template={templates.find((t) => t.name === c.template)} asks={view?.asks} secrets={view?.secrets ?? []} can={can} high={high(c.jobId) ? jobs[c.jobId]?.priority : undefined} />)}</ul>}
         {rest.length > 0 && (
           <ul className="space-y-1 text-xs">
             {rest.map((r) => (

@@ -15,6 +15,7 @@ export type { Mark, OutOfBandChange, OutOfBandMark, OutOfBandView, SignalSource 
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 import type { SandboxApprovals, SandboxRequestView } from './sandbox-approvals.ts';
 import type { RememberedWriteView } from './remembered-writes.ts';
+import type { RunCardView } from './run-cards.ts';
 import type { ConnectedAccountKey } from './connected-accounts.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
@@ -191,6 +192,11 @@ export interface VaultView {
   sandboxApprovals?: SandboxApprovals;
   /** The boxes the user's jobs at work asked for (issue #991): waiting for a person, starting, running, declined or failed. */
   sandboxRequests?: SandboxRequestView[];
+  /**
+   * The run cards (issue #2197): one per job and template that waits for a person — the template's approval, the job's
+   * sandbox run, or both —, approved or declined once. A template a job asked for waits on its run card, never on a card of its own.
+   */
+  runs?: RunCardView[];
   /** A person's write, sync and apply approvals the hopper remembers now (issue #1001), each with its end. */
   rememberedWrites?: RememberedWriteView[];
   /** Jobs on boxes that asked the vault with no vault grant (issue #652): a person grants them the vault, or not. */

@@ -19,6 +19,8 @@
 // (`JEV_APPROVER`), hold leaves it for a person, deny declines it and lowers the job's trust; no sure pick holds it.
 // Issue #655 part 16: before all of that, a run of a template with a profile whose minimum trust the job's stamp does not
 // meet is declined at once by the minimum trust (`MIN_TRUST_DECLINER`), and lowers no trust; set later, it stops the run.
+// Issue #2197: each ask of a job that waits on a template for a person is kept too (`waits`), with the job's words, so
+// it shows as one run card; a person who declines that card declines the job's run of the template before it is asked.
 import { randomUUID } from 'node:crypto';
 import type { MinorDecisionMode, MinorDecisionOutcome } from '../domain/minor-decisions.ts';
 import { checkedVerdict, jevChecks, sandboxCheckText, type SandboxHistoryItem } from '../domain/sandbox-check.ts';
@@ -29,6 +31,7 @@ import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type 
 import type { ReadPolicy } from '../domain/read-policy.ts';
 import { MIN_TRUST_DECLINER } from '../domain/stamp-capabilities.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake, type SandboxStrictness } from '../domain/sandbox-strictness.ts';
+import type { TemplateWait } from '../domain/run-cards.ts';
 import type { NewEvent, OperationProfile } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 
@@ -78,8 +81,18 @@ export interface SandboxRequests {
    * so). `about` (issue #1001): why the job asks and its plan, kept on a new request.
    */
   ask(jobId: string, template: string, about?: { purpose: string; plan?: string }): SandboxRequestView;
-  /** The job waited on the template for a person's approval (issue #1001): that approval covers the job's run. */
-  waited(jobId: string, template: string): void;
+  /**
+   * The job waited on the template for a person's approval (issue #1001): that approval covers the job's run. Kept with
+   * the job's words for its run card (issue #2197). Answers the job's run of the template when a person declined it.
+   */
+  waited(jobId: string, template: string, about?: { purpose: string; plan?: string }): SandboxRequestView | undefined;
+  /** The asks of jobs not ended that waited on a template for a person (issue #2197), oldest first. */
+  waits(): TemplateWait[];
+  /**
+   * A person declines the job's run of the template (issue #2197): its waiting request, else a declined one made now, so
+   * the job's ask that waits on the template is told no.
+   */
+  declineRun(jobId: string, template: string, reason: string, by: string): SandboxRequestResult;
   /** A person approves a waiting request: the job's box steps run. */
   approve(id: string, by: string): SandboxRequestResult;
   /** A person declines a waiting request, with the reason the job is told. */
@@ -100,8 +113,8 @@ export interface SandboxRequests {
 export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequests {
   const newId = o.newId ?? (() => randomUUID());
   const requests = new Map<string, SandboxRequestView>();
-  /** `<job> <template>`: the templates each job at work waited on for a person (issue #1001). */
-  const waitedOn = new Set<string>();
+  /** `<job> <template>`: the templates each job at work waited on for a person (issue #1001), with its ask (issue #2197). */
+  const waitedOn = new Map<string, TemplateWait>();
   const event = (r: SandboxRequestView, type: NewEvent['type'], data: Record<string, unknown> = {}): void => {
     o.record({ type, jobId: r.jobId, data: { request: r.id, template: r.template, ...data } });
   };
@@ -124,7 +137,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   /** The requests of jobs that ended forgotten, and the overdue ones declined: how many were declined. */
   const forget = (): number => {
     for (const [id, r] of requests) if (!o.live(r.jobId)) requests.delete(id);
-    for (const k of waitedOn) if (!o.live(k.slice(0, k.indexOf(' ')))) waitedOn.delete(k);
+    for (const [k, w] of waitedOn) if (!o.live(w.jobId)) waitedOn.delete(k);
     return expire();
   };
 
@@ -217,8 +230,36 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       }
       return { ...r };
     },
-    waited(jobId, template) {
-      waitedOn.add(`${jobId} ${template}`);
+    waited(jobId, template, about) {
+      const key = `${jobId} ${template}`;
+      if (!waitedOn.has(key)) {
+        waitedOn.set(key, { jobId, template, ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}), askedAt: o.clock.now().toISOString() });
+      }
+      const declined = [...requests.values()].find((r) => r.jobId === jobId && r.template === template && r.state === 'declined');
+      return declined ? { ...declined } : undefined;
+    },
+    waits() {
+      forget();
+      return [...waitedOn.values()].map((w) => ({ ...w }));
+    },
+    declineRun(jobId, template, reason, by) {
+      forget();
+      const had = [...requests.values()].find((r) => r.jobId === jobId && r.template === template);
+      if (had && had.state !== 'waiting') return { ok: false, code: 'conflict', error: `the sandbox runs of template ${template} for job ${jobId} are ${had.state}, not waiting` };
+      if (had) {
+        decline(had, reason, by);
+        return { ok: true };
+      }
+      const w = waitedOn.get(`${jobId} ${template}`);
+      if (!w) return { ok: false, code: 'not_found', error: `job ${jobId} waits on no template ${template}` };
+      const title = o.jobTitle?.(jobId), url = o.jobUrl?.(jobId);
+      const r: SandboxRequestView = {
+        id: newId(), jobId, ...(title ? { jobTitle: title } : {}), ...(url ? { jobUrl: url } : {}), template, state: 'waiting', askedAt: w.askedAt,
+        ...(w.purpose ? { purpose: w.purpose } : {}), ...(w.plan ? { plan: w.plan } : {}),
+      };
+      requests.set(r.id, r);
+      decline(r, reason, by);
+      return { ok: true };
     },
     approve(id, by) {
       const r = waiting(id);

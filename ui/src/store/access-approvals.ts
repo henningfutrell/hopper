@@ -1,13 +1,14 @@
-// Approvals on Access requests (issue #1018): a template card's and a sandbox run card's Approve, and Approve selected,
+// Approvals on Access requests (issue #1018): a template card's and a run card's Approve, and Approve selected,
 // which approves every card a person selected in one action. Each item's posts are sent at once, never one after
 // another: an item waits only for its own answers, and a failure on one stops no other. Each item keeps its own state —
 // waiting for the daemon, approved, or failed with why — which its card shows. Each answer is the vault's view, kept by
-// viewAnswer (issue #1019), so answers that come back in any order leave no stale view.
+// viewAnswer (issue #1019), so answers that come back in any order leave no stale view. Issue #2197: a run card is one
+// post, `approve-run`: the daemon approves its template, each profile it lists and its run in one action.
 import { toast } from 'sonner';
 import { create } from 'zustand';
 import { post, RoleRefused, SessionRejected } from '@/lib/api';
-import type { SandboxRequestView, TemplateView, VaultView } from '@/model/wire';
-import { allListed } from '@/model/vault';
+import type { RunCardView, TemplateView, VaultView } from '@/model/wire';
+import { allListed, runCardKey } from '@/model/vault';
 import { useHopper } from './index';
 import { viewAnswer } from './vault';
 
@@ -23,14 +24,16 @@ export const useAccessApprovals = create<{ items: Record<string, ItemApproval>; 
 
 /** A template card's key: a template saved again is a new item, with no state of the last one. */
 export const templateKey = (t: TemplateView): string => `template:${t.name}@${t.savedAt}`;
-export const runKey = (r: SandboxRequestView): string => `run:${r.id}`;
+/** A run card's key: a template saved again makes it a new item, with no state of the last one. */
+export const runKey = (c: RunCardView, t?: Pick<TemplateView, 'savedAt'>): string => `run:${runCardKey(c)}@${t?.savedAt ?? ''}`;
 
 /** The template as it is and each listed profile (Approve all listed). */
 export const templateItem = (t: TemplateView): ApprovalItem => ({
   key: templateKey(t), label: t.name, posts: allListed(t).map((edit) => ({ path: '/ui/api/vault', body: edit })),
 });
-export const runItem = (r: SandboxRequestView): ApprovalItem => ({
-  key: runKey(r), label: r.template, posts: [{ path: '/ui/api/sandbox-requests', body: { action: 'approve', id: r.id } }],
+/** The run card's one approval (issue #2197): its template as it is, each profile it lists, and its run. */
+export const runItem = (c: RunCardView, t?: Pick<TemplateView, 'savedAt' | 'label'>): ApprovalItem => ({
+  key: runKey(c, t), label: t?.label ?? c.template, posts: [{ path: '/ui/api/sandbox-requests', body: { action: 'approve-run', job: c.jobId, template: c.template } }],
 });
 
 const put = (key: string, a: ItemApproval): void => useAccessApprovals.setState((s) => ({ items: { ...s.items, [key]: a } }));

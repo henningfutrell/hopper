@@ -11,6 +11,7 @@ export const DELEGATE_PRESET = 'delegate-approver';
 /** What a delegate approver may do: read the vault's view, and approve, decline or deny what waits there. */
 export const DELEGATE_SCOPES: readonly string[] = [
   'vault:read', 'jobs:grant-vault', 'jobs:deny-vault', 'vault:edit.approve-template', 'sandbox-requests:edit.approve', 'sandbox-requests:edit.decline',
+  'sandbox-requests:edit.approve-run', 'sandbox-requests:edit.decline-run', // issue #2197: a run card
 ];
 
 /** A delegate approver's approver policy: the names it may never approve. Empty: none. */

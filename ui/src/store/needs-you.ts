@@ -19,10 +19,10 @@ import { useVault } from './vault';
 export function useNeedsYou(): NeedsYouRow[] {
   const intake = useHopper((s) => requestsWaiting(s.sources) + notAssignedWaiting(s.sources) + trustHeldWaiting(s.jobs));
   const vault = useVault();
-  // Issue #2196: a template a job asked for counts while its job waits, and marks the badge when the job is high priority.
+  // Issues #2196, #2197: a job's run card counts while its job waits, and marks the badge when the job is high priority.
   const jobs = useHopper((s) => s.jobs);
   const threshold = useHopper((s) => s.highPriority);
-  const access = accessRequestsWaiting(vault, jobs);
+  const access = accessRequestsWaiting(vault);
   const accessHigh = accessRequestsHigh(vault, jobs, threshold);
   const unknownAssets = useMemo(() => unknownAssetLines(vault), [vault]);
   const plans = plansWaiting(useInfraPlans(), useServerNow());

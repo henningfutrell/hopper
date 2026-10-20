@@ -124,7 +124,7 @@ describe('a delegate approver (issue #1138)', () => {
     const minted = await mintDelegate(a, session, { deny: ['prod'] });
     expect(minted.status, minted.text).toBe(200);
     expect(minted.body.view).toMatchObject({ label: 'cos', box: true, delegate: { deny: ['prod'] } });
-    expect(minted.body.view.scopes).toEqual(['jobs:deny-vault', 'jobs:grant-vault', 'sandbox-requests:edit.approve', 'sandbox-requests:edit.decline', 'vault:edit.approve-template', 'vault:read']);
+    expect(minted.body.view.scopes).toEqual(['jobs:deny-vault', 'jobs:grant-vault', 'sandbox-requests:edit.approve', 'sandbox-requests:edit.approve-run', 'sandbox-requests:edit.decline', 'sandbox-requests:edit.decline-run', 'vault:edit.approve-template', 'vault:read']);
     const file = refreshFile(minted.body.refresh as string);
 
     const approved = await delegateCli(a, file, ['grant', 'approve', job.id]);

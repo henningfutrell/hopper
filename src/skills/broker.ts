@@ -46,8 +46,11 @@ export interface SkillUser {
   template(name: string): TemplateView | undefined;
   /** A sandbox request (issue #991): the job's ask for a box of the template, and where it is now; `about`: why, and its plan (issue #1001). */
   sandbox(template: string, job: Job, about?: AskAbout): SandboxRequestView;
-  /** The job's sandbox ask waits on the template for a person (issue #1001): their approval then covers the job's run. */
-  sandboxWaits?(template: string, job: Job): void;
+  /**
+   * The job's ask waits on the template for a person (issue #1001): their approval then covers the job's run. Its run card
+   * (issue #2197); answers the job's run of the template when a person declined that card.
+   */
+  sandboxWaits?(template: string, job: Job, about?: AskAbout): SandboxRequestView | undefined;
   /** Why needs are outside the job's trust stamp (issue #655 part 16): asked before a template is made for them. Absent: inside. */
   outsideStamp?(profiles: readonly OperationProfile[], job: Job): string | undefined;
 }
@@ -156,7 +159,12 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     if (name === TEMPLATE_SKILL) {
       const t = await user.requestTemplate(askOf((k) => field(body, k)), job, about);
       if ('reason' in t) return no(t.status, t.reason);
-      if (t.status === 202) return { status: 202, text: `${t.text} Add --wait to have the hopper tell you when it is ready.\n` };
+      if (t.status === 202) {
+        // Issue #2197: the ask is a run card; a person who declined it declined the job's run of the template.
+        const declined = user.sandboxWaits?.(t.template, job, about);
+        if (declined) return no(403, declinedText(t.template, declined));
+        return { status: 202, text: `${t.text} Add --wait to have the hopper tell you when it is ready.\n` };
+      }
       record('skill.loaded');
       return { status: 200, text: `${t.text}\n` };
     }
@@ -222,7 +230,8 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       if ('reason' in t) return no(t.status, t.reason);
       const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
       if (t.status === 202) {
-        user.sandboxWaits?.(t.template, job);
+        const declined = user.sandboxWaits?.(t.template, job, about);
+        if (declined) return no(403, declinedText(t.template, declined));
         return { status: 202, text: `${t.text} Then the sandbox runs of it wait for approval.${later}` };
       }
       const r = user.sandbox(t.template, job, about);
@@ -270,7 +279,10 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       const later = ' Add --wait to have the hopper tell you when the sandbox runs are approved.\n';
       if (r.state === 'waiting') return { status: 202, text: `${waitingText(name, r)}${later}` };
       if (r.state === 'declined') return no(403, declinedText(name, r));
-      if (!templateReady(t)) return { status: 202, text: `waiting: the sandbox runs of template ${name} are approved, but the template waits for a person or for its read-only check on Access requests.${later}` };
+      if (!templateReady(t)) {
+        user.sandboxWaits?.(name, job, about);
+        return { status: 202, text: `waiting: the sandbox runs of template ${name} are approved, but the template waits for a person or for its read-only check on Access requests.${later}` };
+      }
       return approved(name, r);
     }
 
