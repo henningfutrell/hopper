@@ -1,0 +1,1 @@
+- When a job asks you to approve a sandbox run, your notifier now tells you too, with how urgent the job is and a link to approve it.

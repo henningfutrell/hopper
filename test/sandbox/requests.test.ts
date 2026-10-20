@@ -9,7 +9,9 @@ import { createSandboxRequests } from '../../src/sandbox/requests.ts';
 import { REMEMBERED_APPROVER } from '../../src/domain/remembered-writes.ts';
 import type { SandboxStrictness } from '../../src/domain/sandbox-strictness.ts';
 
-const T = { name: 'asked-1' } as TemplateView;
+/** Nothing of a template waits for a person but its approval (issue #2197: a run card reads it). */
+const NONE_PENDING = { pending: { secrets: [], image: false, egress: [], profiles: [] } };
+const T = { name: 'asked-1', ...NONE_PENDING } as unknown as TemplateView;
 
 function setup(o: { approvals?: SandboxApprovals } = {}) {
   const events: NewEvent[] = [];
@@ -35,9 +37,9 @@ describe('sandbox requests (issue #991)', () => {
     expect(s.requests.list()).toHaveLength(1);
     expect(s.requests.approve(r.id, 'Ada')).toEqual({ ok: true });
     expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: r.id, state: 'approved', approvedBy: 'Ada' });
-    expect(s.types()).toEqual(['vault.sandbox_requested', 'vault.sandbox_approved']);
+    expect(s.types()).toEqual(['vault.sandbox_requested', 'vault.run_card_opened', 'vault.sandbox_approved']);
     expect(s.events.every((e) => e.jobId === 'job-1')).toBe(true);
-    expect(s.events[1]!.data).toMatchObject({ request: r.id, template: T.name, by: 'Ada' });
+    expect(s.events[2]!.data).toMatchObject({ request: r.id, template: T.name, by: 'Ada' });
     expect(s.requests.approve(r.id, 'Ada')).toMatchObject({ ok: false, code: 'conflict' });
   });
 
@@ -89,8 +91,8 @@ describe('the sandbox approval toggles (issue #991)', () => {
 });
 
 describe('runs approved with no separate run approval (issue #1001)', () => {
-  const HIGH = { name: 'asked-2', radius: { level: 'high', reasons: [] } } as unknown as TemplateView;
-  const LOW = { name: 'asked-3', radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
+  const HIGH = { name: 'asked-2', ...NONE_PENDING, radius: { level: 'high', reasons: [] } } as unknown as TemplateView;
+  const LOW = { name: 'asked-3', ...NONE_PENDING, radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
   function on(templates: TemplateView[], approvals: SandboxApprovals = NO_SKIPS) {
     const events: NewEvent[] = [];
     const requests = createSandboxRequests({
@@ -151,7 +153,7 @@ describe('the asks that wait on a template, as run cards (issue #2197)', () => {
     expect(s.requests.declineRun('job-1', T.name, 'not now', 'Ada')).toEqual({ ok: true });
     expect(s.requests.waited('job-1', T.name)).toMatchObject({ state: 'declined', reason: 'not now', declinedBy: 'Ada', purpose: 'Why' });
     expect(s.requests.ask('job-1', T.name)).toMatchObject({ state: 'declined' });
-    expect(s.types()).toEqual(['vault.sandbox_declined']);
+    expect(s.types()).toEqual(['vault.run_card_opened', 'vault.sandbox_declined']);
     expect(s.requests.declineRun('job-1', T.name, 'again', 'Ada')).toMatchObject({ ok: false, code: 'conflict' });
     expect(s.requests.declineRun('job-2', T.name, 'x', 'Ada')).toMatchObject({ ok: false, code: 'not_found' });
   });
@@ -166,7 +168,7 @@ describe('the asks that wait on a template, as run cards (issue #2197)', () => {
 
 describe('a remembered write approval and the purpose of a run (issue #1001)', () => {
   const WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } } as const;
-  const HIGH = { name: 'asked-w', secrets: [], profiles: [WRITE], radius: { level: 'high', reasons: [] }, approval: { by: 'Ada' }, askedBy: 'job-1' } as unknown as TemplateView;
+  const HIGH = { name: 'asked-w', ...NONE_PENDING, secrets: [], profiles: [WRITE], radius: { level: 'high', reasons: [] }, approval: { by: 'Ada' }, askedBy: 'job-1' } as unknown as TemplateView;
   function remembering(o: { remembered?: boolean; secrets?: string[] } = {}) {
     const events: NewEvent[] = [];
     const t = { ...HIGH, secrets: o.secrets ?? [] };
@@ -206,7 +208,7 @@ describe('a remembered write approval and the purpose of a run (issue #1001)', (
 describe('a job below approved (issue #655 part 7)', () => {
   it('gets no run with no person: every automatic approver waits; a person approves it', () => {
     const events: NewEvent[] = [];
-    const t = { name: 'asked-low', askedBy: 'job-1', approval: { by: 'Ada' }, radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
+    const t = { name: 'asked-low', ...NONE_PENDING, askedBy: 'job-1', approval: { by: 'Ada' }, radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
     const requests = createSandboxRequests({
       record: (e) => events.push(e),
       approvals: () => ({ skipTemplateApproval: true, skipSandboxApproval: true }),
@@ -224,8 +226,8 @@ describe('a job below approved (issue #655 part 7)', () => {
 });
 
 describe('sandbox strictness (issue #655 part 8, brake 2)', () => {
-  const LOW = { name: 'asked-low', radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
-  const HIGH = { name: 'asked-high', radius: { level: 'high', reasons: [] } } as unknown as TemplateView;
+  const LOW = { name: 'asked-low', ...NONE_PENDING, radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
+  const HIGH = { name: 'asked-high', ...NONE_PENDING, radius: { level: 'high', reasons: [] } } as unknown as TemplateView;
   function braked(strictness: SandboxStrictness) {
     const events: NewEvent[] = [];
     let s = strictness;

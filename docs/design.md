@@ -3062,7 +3062,10 @@ and the test event are sent at once, in memory only.
   adds `machineId`, `label`, `since`); `machine.disk_over_budget` and `machine.disk_within_budget` (issue #1203, "Hopper's own
   disk use": body adds `machineId`, `usedBytes`, `budgetBytes`, and `paths` for an over; once each, as the events are);
   `work_item.person_asked` (issue #1891, "The item lifecycle": a blocked work item waits on a person; body adds `issueUrl`,
-  `cause`, `waitingOn` in plain words and `pullRequest`; once per block, as the event is).
+  `cause`, `waitingOn` in plain words and `pullRequest`; once per block, as the event is); `vault.run_card_opened` (issue
+  #2197 part 2, "One approval per sandbox run": a new run card; body adds `repo`, `issueNumber`, `priority`, `high`,
+  `template`, `waits`, `purpose` and `accessUrl`, the Access requests view — `NotifierEvents.accessUrl` —; never the
+  template's secrets, profiles or plan; once per card, as the event is).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -30179,7 +30182,19 @@ waits with no card. The decline lowers the job's trust as a sandbox request's de
 **Not built (left for later parts).** An "allow again" choice on the card: today an approval of a card keeps the
 template approved for every later job with the same needs, as before, and a person's write approval is remembered for
 the time limit. An approval for this job only needs a template approval that names its job, read by the need step's
-covering template and the template reuse. A notifier message for each new run card.
+covering template and the template reuse.
+
+**Part 2: a notice per new run card (2026-10-19).** The badge alone did not reach a person who was not looking at the
+UI. Each new run card is one event, `vault.run_card_opened` (`template`, `waits`, `purpose`), on the job's timeline,
+appended by `SandboxRequests` (`src/sandbox/requests.ts`) where the card first appears: a sandbox request that waits for
+a person (after the approvers; when Jev reads it, only once Jev holds it), or an ask that waits on a template for a
+person (`waited`, when the template waits for a person, not only for its read-only check). Once per job and template
+while the hopper runs; a restart forgets which cards were sent, so a job that asks again after a restart sends its card
+again. A waiting template a job asked for before a restart (`askedBy`) is a card with no new notice. The notifiers send
+the event: the Grok Bot routine as `vault.run_card_opened`, with the job's priority and `high`, so the receiver ranks a
+high-priority job's card first, and the Access requests link ("Grok Bot routine webhook"). Tests:
+`test/sandbox/run-card-notices.test.ts`, `test/plugins/grokbot-run-cards.test.ts`, and `test/integration/need-steps.test.ts`
+(a write need's one notice, on the real daemon).
 
 **Residual risk, stated.** One click now approves the template's image, egress hosts, vault secrets and every write the
 card lists. The confirm says each of them, and the card lists them before the click. Each approval is still its own
