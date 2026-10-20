@@ -54,7 +54,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
   const closers = new Map<string, ClosingPullRequest>();
   const subIssues = new Map<string, string[]>(); const diffs = new Map<string, NonNullable<PullRequestInput['diff']>>();
   /** Every pull request, by the issue it mentions: a closing one, or a part. */
-  const pulls: (ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string; headRef: string; base?: string; crossReferenced?: false })[] = [];
+  const pulls: (ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string; closedAt?: string; headRef: string; base?: string; crossReferenced?: false })[] = [];
   const addPull = (repo: string, issue: string, o: PullRequestInput, closes: boolean, body: string): OpenPullRequest => {
     const number = ++pullNumber;
     const pr = {
@@ -288,7 +288,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     mentionIssue: (repo, n, m) => { find(repo, n); return xrefs.mention(key(repo, n), repo, m); },
     setChecks(url, checks, failedChecks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; if (failedChecks) p.failedChecks = failedChecks; else delete p.failedChecks; },
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
-    closePullRequest(url) { pull(url).state = 'closed'; },
+    closePullRequest(url, at) { Object.assign(pull(url), { state: 'closed', closedAt: at ?? new Date().toISOString() }); },
     markReady(url) { pull(url).isDraft = false; },
     setHeadChecks: heads.setHeadChecks, setCheckRuns: heads.setCheckRuns, setJobLog: jobLogs.setJobLog, setWorkflowRun: jobLogs.setWorkflowRun, setReviews: reviews.setReviews, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods, ...fakeChangedLines((m, a) => enter(m, a), (url) => diffs.get(url)),

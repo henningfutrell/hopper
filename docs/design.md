@@ -23692,8 +23692,8 @@ their own pane waited for ever once a host restart killed the pane, and one fail
 - **Read at each sync** (`src/sources/watched-ends.ts`, `JobSource.endedWatched`; GitHub: `src/sources/github/watched.ts`).
   Each item is read by its number, the pull request first and then the issue, and a run through Actions
   (`GitHubApi.workflowRun`, `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, Actions read). An issue closed, a pull
-  request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began,
-  `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
+  request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began
+  (but not for a wait on an outside event, issue #2219 below), `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
   only), `job.wait_ended { by: hopper, note }`. A read that fails is logged and asked again at the next sync.
 - **An item that does not exist** (issue #1691). A wait named `gss#330`, a repository that does not exist, and was read
   again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
@@ -23704,6 +23704,17 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   and rewrites its wait. A refusal (403) or a rate limit is still a failed read.
 - **No wake loop.** A job woken so that waits again on the very same items is not woken for them again: the sync keeps, in
   memory, the items each job was last woken for. After a restart such a job is woken once more.
+- **What ended before an outside wait began** (issue #2219, 2026-10-20). Reported from a real run: a wait `on: outside:
+  gated: …` whose text named a pull request closed before the wait began ended at once with "was closed", twice in a row.
+  That close was what the job knew, not the event it waited for. Now each end carries when it happened, when the source
+  says (`WatchedEnd.at`: an issue's `closedAt`, a pull request's `mergedAt`, else its `closedAt`, which the pull request read
+  by its number now asks GraphQL for). An item a wait on an outside event (or one with nothing recorded) names that ended
+  before the wait's `since` is left out of that wait (`endedBeforeWait`, `src/domain/watched-items.ts`), at the sync
+  (`src/sources/watched-ends.ts`) and at the wait check (`items_ended`, `src/engine/wait-checks.ts`): the wait ends once
+  every other item ended, and a wait whose items all ended before it began is not ended by them (its check says "ended
+  before the wait began"). A wait on an item or a pull request still ends on one that ended before it (issue #1356), an
+  item that does not exist is still said at once (issue #1691), and a run has no end time, so it ends the wait as before.
+  Tests: `test/domain/watched-items.test.ts`, `test/integration/watched-items.test.ts`.
 - **A deployment decision** wakes when its run completes: a rejection completes the run; an approval wakes the job when the
   run ends. A run that waits for its approval is not ended.
 - **A wait its pane carries** (`paneCarriesWait`): on its own command, on an outside event that names nothing watched (the
