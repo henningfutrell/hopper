@@ -10737,7 +10737,7 @@ replaces them; test with doubles, and state the gap to a real environment.
   (`approvalWait`, as for an approval); a job's template request answers 202. A save makes the check stale, so a changed
   image, tool or profile is checked again.
 - **When it runs.** The check pass (`createCheckPass`, `src/sandbox/check.ts`) runs with the reconcile pass, every 10 s
-  and at start, one check at a time. A template is due when it takes a check, its image (and tools) are approved, and its
+  and at start, up to `CHECKS_AT_ONCE` (3) checks at once (issue #2236). A template is due when it takes a check, its image (and tools) are approved, and its
   version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself
   (issue #1468: but one that failed only on a network error — each mint refusal, or the check box's start, said
   `ECONNRESET`, `ETIMEDOUT`, a timeout and the like — is `transient`, says so, and runs again `CHECK_RETRY_MS`, 5 minutes,
@@ -10754,6 +10754,15 @@ replaces them; test with doubles, and state the gap to a real environment.
   the pass goes on to the next template; it runs again `CHECK_RETRY_MS` after, with no person. A run that ends late
   records nothing, and its check box, if any, is no run's: the next pass removes it. A check a stopped hopper left
   `running` runs again, after the templates with no check, so a check that hangs again holds none of them.
+- **A check holds only its own template** (issue #2236). A template the read policy approved got no check for hours, as
+  the pass waited for a check that did not end. Now each tick runs a pass of its own, which starts the check of each due
+  template that is not checked now, up to `CHECKS_AT_ONCE` at once; a pass ends when every check that runs now has, and
+  no tick waits for it. A due check that cannot start now is held, with the reason, in the hopper's memory
+  (`CheckTemplates.held`, the vault's `holdCheck`; never stored): as many checks run, or no place can run it (no runtime
+  beside the hopper, and no machine of the user dialled in with one). The template's view carries it (`checkHeld`), so
+  its wait says why (`checkWait`: "it has not run on this version yet: <reason>"), and a check that runs says since
+  when. `sandbox --needs`, `sandbox-template`, `hopper-step need` and `hopper-step box` give that text; a box step of a
+  template not ready says what it waits for (`templateWait`, `src/domain/sandboxes-before-start.ts`).
 - **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
   the sandbox flags (`ContainerSpec.script`: `sh -c` in place of the entrypoint, on a terminal, never restarted), on the
   hopper's network, as the image's own non-root user, with a home volume made for it. It carries the label

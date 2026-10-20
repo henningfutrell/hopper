@@ -366,6 +366,8 @@ export interface TemplateView extends Template {
   label?: string;
   /** The job that asked for it (issue #1001): its title and its issue or pull request, while the hopper knows the job. */
   askedByJob?: { id: string; title?: string; url?: string };
+  /** Why its due read-only check does not start now (issue #2236), from the hopper's memory; absent: nothing holds it. */
+  checkHeld?: string;
   /** Its needs' assets the vault cannot find (issue #2067), with the clusters the topology lists; absent: none. */
   unknownAssets?: UnknownAsset[];
   /** Its needs' short cluster names (issue #2168), each with the one cluster the topology lists that it resolves to; absent: none. */

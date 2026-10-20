@@ -300,7 +300,14 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     for (const at of sweepPlaces()) await sweepSteps(at).then(() => sweepStepHomes(at));
     closeRemoved();
   });
-  const readOnlyChecks = checkPass ? onePass('read-only check pass', checkPass) : undefined;
+  // Issue #2236: each tick a check pass of its own, which starts the due checks that do not run yet; a check that does not
+  // end holds its own template only, never the next pass (src/sandbox/check.ts keeps one check of a template at a time).
+  const readOnlyChecks = checkPass ? (): Promise<void> => {
+    const done: Promise<void> = checkPass().catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))
+      .finally(() => { inFlight.splice(inFlight.indexOf(done), 1); });
+    inFlight.push(done);
+    return done;
+  } : undefined;
   const warm = warmPass ? onePass('warm pass', warmPass) : undefined;
   const check = (): Promise<void> => Promise.all([sweep(), readOnlyChecks?.(), warm?.()]).then(() => undefined);
 
