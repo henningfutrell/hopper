@@ -11,6 +11,7 @@ import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrin
 import type { CheckFastForward, CountPushLines } from '../git-mirror/push-lines.ts';
 import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, directPushFor, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
+import { ownsPullRequest } from './owns-pull-request.ts';
 import { isGitLabItem } from '../domain/gitlab-account.ts';
 import { GITLAB_GIT_PATH } from '../gitlab/git-broker.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
@@ -44,8 +45,6 @@ import {
 /** No AI connection (issue #471): File an issue says so, and drafts nothing. */
 const NO_DRAFTER: IssueDrafter = { provider: 'claude', available: async () => ({ ok: false, reason: 'no AI connection to draft with' }), draft: async () => ({ error: 'no AI connection to draft with' }) };
 
-/** How many of a job's newest proxy events say which pull requests it opened (issue #1734). */
-const OWNED_READ = 1000;
 
 /** A user's side of the GitHub proxy: their jobs as askers, and their GitHub connection, which acts for their jobs and their jobs' git. */
 export interface UserGitHubProxy {
@@ -201,18 +200,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       };
     },
     pullRequest,
-    // A pull request the job opened through the proxy, or its work item's — one an earlier job of the item opened (issue #1734) —,
-    // or the one it was started to tend (issue #2127): `job.pull_request_tended` of the job it reruns names it the next job.
-    // An edit also of one its issue's text names (issue #2151, `linkedPulls`, read at intake): the job was told to update it.
-    ownsPullRequest: (job, repo, number, op) => {
-      if (op === 'pr.edit' && (job.source?.linkedPulls ?? []).some((p) => !p.unread && isPullRequest(p.url, repo, number))) return true;
-      const opened = o.store.events.recent(OWNED_READ, ['github_proxy.done'], job.id)
-        .some((e) => e.data.op === 'pr.create' && e.data.number === number && typeof e.data.repo === 'string' && e.data.repo.toLowerCase() === repo.toLowerCase());
-      const itemPr = job.source ? o.store.workItems.get(job.source.key)?.pullRequest : undefined;
-      const tends = job.rerunOf !== undefined && o.store.events.recent(OWNED_READ, ['job.pull_request_tended'], job.rerunOf)
-        .some((e) => e.data.nextJobId === job.id && typeof e.data.pullRequest === 'string' && isPullRequest(e.data.pullRequest, repo, number));
-      return opened || tends || (itemPr !== undefined && isPullRequest(itemPr, repo, number));
-    },
+    ownsPullRequest: (job, repo, number, op) => ownsPullRequest(o.store, job, repo, number, op),
     // A fan-out key is the issue's (issue #1909): an earlier job of the same issue's answer too.
     replay: (jobId, key) => {
       const issue = o.store.jobs.get(jobId)?.source?.key;
