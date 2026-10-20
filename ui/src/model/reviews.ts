@@ -23,11 +23,19 @@ export const REVIEW_UI: Readonly<Record<ReviewKind, {
 };
 
 /** One review section as the store holds it; settings and type null until read. */
-export interface ReviewState { items: ReviewItemView[]; decided: ReviewItemView[]; settings: ReviewSettingsView | null; type: ReviewSectionView | null }
+/** `parked` (issue #2167): the open ones whose job is parked on them, out of `items`. */
+export interface ReviewState { items: ReviewItemView[]; parked: ReviewItemView[]; decided: ReviewItemView[]; settings: ReviewSettingsView | null; type: ReviewSectionView | null }
 export const EMPTY_REVIEWS: Readonly<Record<ReviewKind, ReviewState>> = {
-  proposal: { items: [], decided: [], settings: null, type: null },
-  research: { items: [], decided: [], settings: null, type: null },
+  proposal: { items: [], parked: [], decided: [], settings: null, type: null },
+  research: { items: [], parked: [], decided: [], settings: null, type: null },
 };
+
+/**
+ * The review kind of the item a job has last (issue #2167): its proposal once it has one, else its research report. A
+ * job that asks for both does research first, then the proposal it informs.
+ */
+export const reviewKindOfJob = (job: { proposalId?: string; researchId?: string }): ReviewKind | undefined =>
+  job.proposalId ? 'proposal' : job.researchId ? 'research' : undefined;
 
 /** Open and at the human stage: it waits on a person until a decision. */
 export const awaitsDecision = (p: ReviewItemView): boolean => p.status === 'open' && p.stage === 'human';

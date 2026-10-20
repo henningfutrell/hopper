@@ -13,7 +13,8 @@
 // sanitized; a long item shows its summary — its first part: a proposal's Goal, a report's Question — and the rest
 // behind Show all (issue #569).
 // A proposal is a set of paths (issue #651): its card is the selection form of proposal-paths.tsx. Reject (issue #1659)
-// rejects a whole proposal, open or sent back; a person may select several and reject them at once.
+// rejects a whole proposal, open or sent back; a person may select several and reject them at once. Park (issue #2167)
+// parks the item's job: the item leaves the list for the folded Parked group below it, until its job is picked up.
 import { ArtifactEmbeds } from '@/components/artifacts';
 import { Check, ChevronRight, FileCheck, Lock, RotateCcw, Telescope, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -38,6 +39,8 @@ import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
 import { PathsDecide, PathsView } from './proposal-paths';
 import { RejectProposals } from './proposal-reject';
 import { ReviewHistory, ReviewSettingsPanel } from './review-settings';
+import { ParkButton } from './dashboard/lanes';
+import { ParkedItems } from './parked-items';
 
 const ICON: Record<ReviewKind, LucideIcon> = { proposal: FileCheck, research: Telescope };
 
@@ -229,6 +232,7 @@ function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type
           {kind === 'proposal' && canAct && type.decisions.some((d) => d.effect === 'reject') && <RejectProposals ids={[p.id]} />}
         </div>
       )}
+      {job && canAct && <div className="flex justify-end"><ParkButton job={job} /></div>}
       {p.status === 'open' && !canAct && (
         <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           <Lock className="size-4" />Your role ({role}) cannot decide on {ui.noun}s; an operator or admin can.
@@ -280,6 +284,7 @@ export function ReviewSection({ kind }: { kind: ReviewKind }) {
           </div>
         ))
         : <Panel title={ui.label} icon={ICON[kind]}><Empty>no open {ui.noun}s</Empty></Panel>}
+      <ParkedItems kind={kind} />
       {decided.length > 0 && <ReviewHistory kind={kind} items={decided} type={type} />}
       {canAdmin && settings && <ReviewSettingsPanel kind={kind} settings={settings} />}
     </div>

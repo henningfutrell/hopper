@@ -1,6 +1,7 @@
 // Issue #1875: a template request that names vault secrets, the hopper's test image and egress hosts. The template holds
 // what the request names, under a name of its own; the needs may be none; and no policy or toggle approves a secret or
 // an egress host: the template waits for a person. A job names an image only from the hopper's own list.
+// Issue #2146: a request may name box tools beside the ones its needs use; the policies approve them as the needs' tools.
 import { describe, expect, it } from 'vitest';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { TEST_IMAGE } from '../../src/sandbox/box-image.ts';
@@ -116,5 +117,39 @@ describe('the extras read (issue #1875)', () => {
   it('takes the fields from a skill request body', () => {
     const body: Record<string, string> = { needs: 'read/cluster/lab', egress: 'a.dev:443', why: 'x' };
     expect(askOf((k) => body[k])).toEqual({ needs: 'read/cluster/lab', egress: 'a.dev:443' });
+  });
+});
+
+describe('a template request with box tools (issue #2146)', () => {
+  const OBSERVE = { needs: 'read/cluster/uat', tools: 'promtool jq logcli' };
+
+  it('adds the tools it names to the needs\' tools, under a name of its own, and the read policy approves it', async () => {
+    const { u, saved, calls } = user({ policy: ['cluster/uat'] });
+    const r = await requestTemplate(u, OBSERVE, 'job j1', 'j1');
+    const name = 'template' in r ? r.template : '';
+    expect(saved).toEqual([expect.objectContaining({ tools: ['helm', 'jq', 'kubectl', 'logcli', 'promtool'], secrets: [], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'uat' } }], readOnly: true })]);
+    expect(name).not.toBe(requestedName([{ operation: 'read', asset: { kind: 'cluster', name: 'uat' } }]));
+    expect(calls).toEqual([`approve ${name} by the read policy`]);
+  });
+
+  it('uses the template it made again, and the answer names the tools', async () => {
+    const { u, templates } = user({ policy: ['cluster/uat'] });
+    const first = await requestTemplate(u, OBSERVE, 'job j1', 'j1');
+    const r = await requestTemplate(u, { ...OBSERVE, tools: 'jq,logcli promtool' }, 'job j2', 'j2');
+    expect(r).toMatchObject({ template: 'template' in first ? first.template : '' });
+    expect(templates.size).toBe(1);
+    expect(previewTemplate(u, OBSERVE)).toMatchObject({ needs: expect.arrayContaining(['tool jq', 'tool logcli', 'tool promtool']) });
+  });
+
+  it('a tool the hopper does not add is refused', async () => {
+    const { u } = user();
+    expect(await requestTemplate(u, { ...OBSERVE, tools: 'jq nmap' }, 'job j1', 'j1')).toMatchObject({ status: 400, reason: expect.stringContaining('nmap is not a tool the hopper adds to a box') });
+  });
+
+  it('reads the tools in the catalog\'s order, each once, and takes them from a skill request body', () => {
+    expect(extrasOf({ tools: 'promtool JQ jq' })).toEqual({ secrets: [], egress: [], tools: ['jq', 'promtool'] });
+    expect(extrasOf({ tools: ' ' })).toEqual({ secrets: [], egress: [] });
+    const body: Record<string, string> = { needs: 'read/cluster/uat', tools: 'jq' };
+    expect(askOf((k) => body[k])).toEqual({ needs: 'read/cluster/uat', tools: 'jq' });
   });
 });

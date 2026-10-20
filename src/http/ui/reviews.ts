@@ -52,7 +52,7 @@ export const decisionNote = (kind: ReviewKind, effect: ReviewDecision['effect'])
   ? ' `paths` (issue #651): the paths to continue with, each `{ id, note? }` — at least one, all viable, each once —, or none on a proposal of zero paths; each continues as a follow-on job (`proposal.followed_on`), linked to the proposal and this job, and kept in `signOff.selected` with its job. 400: a selection that names no path, a path twice, a path the version lacks or one a reviewer level found not viable.'
   : effect === 'send_back' ? ' `paths` (issue #651): the selection made so far, kept on the proposal (`selection`) for the next version.' : '');
 
-const STATUS = { not_found: 404, not_open: 409, not_offered: 404, not_switched: 409, bad_selection: 400 } as const;
+const STATUS = { not_found: 404, not_open: 409, not_offered: 404, not_switched: 409, bad_selection: 400, parked: 409 } as const;
 /** A bulk decision (issue #1659): the items it takes, each once, and the notes for every one. */
 export const bulkBody = (d: ReviewDecision) => (d.notes === 'required' ? notesBody : optionalNotesBody)
   .extend({ ids: z.array(z.string().trim().min(1).max(64)).min(1).max(100).refine((ids) => new Set(ids).size === ids.length, { message: 'name each item once' }) });

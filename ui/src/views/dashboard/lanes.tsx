@@ -1,5 +1,9 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
 import { ExternalLink, FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from 'lucide-react';
+import { useState } from 'react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { rejectBody } from '@/components/reject';
 import { PriorityLaneMark } from '@/components/priority';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
@@ -8,7 +12,7 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { GROUP, canPickUp, laneJobState, laneRows, machineName, overCap, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
 import { goalOf, issuePointer } from '@/model/job';
-import { REVIEW_UI } from '@/model/reviews';
+import { REVIEW_UI, reviewKindOfJob } from '@/model/reviews';
 import type { Job, ReviewKind } from '@/model/wire';
 import { act, useHopper } from '@/store';
 import { useJobBoard, useJobIndex } from '@/store/selectors';
@@ -27,22 +31,43 @@ export function CancelButton({ job }: { job: Job }) {
 }
 
 /**
- * Park a running job or one on a question (issues #501, #530): it leaves its lane now, its pane and agent end, and its
- * work tree, session (when it has one), machine and question are kept, in Parked, until it is picked up. Offered where the daemon
- * takes it; on a running job or one on a question it cannot park, it says why instead.
+ * Park a running job or one on a question (issues #501, #530), or on a proposal or a research report (issue #2167): it
+ * leaves its lane now, its pane and agent end, and its work tree, session (when it has one), machine, question and review
+ * item are kept, in Parked, until it is picked up. The person may say why; the reason is kept on the job, with who parked
+ * it. Offered where the daemon takes it; on a running job or one on a question it cannot park, it says why instead.
  */
 export function ParkButton({ job }: { job: Job }) {
   const authed = useCanOperate();
   const parking = useHopper((s) => s.health?.parkingExecutors);
+  const [reason, setReason] = useState('');
   if (!authed || !parking || (job.status !== 'running' && job.status !== 'waiting_answer')) return null;
   const refused = parkRefusal(job, parking);
   if (refused) return <span data-slot="park-refusal" className="text-xs text-muted-foreground" title={`Park does not apply: ${refused}`}>cannot park: {refused}</span>;
   const kept = job.agentSession === undefined ? 'Its work tree and branch stay on its machine' : 'Its work tree, branch and agent session stay on its machine';
+  const item = job.status === 'waiting_answer' && !job.questionId ? reviewKindOfJob(job) : undefined;
+  const waitsOn = item ? `, and its ${REVIEW_UI[item].noun} leaves ${REVIEW_UI[item].label}: no reviewer reviews it and no one decides on it` : job.status === 'waiting_answer' ? ', and its question stays open and never expires' : '';
   return (
-    <Confirm title="Park this job?" action="Park job" onConfirm={() => act(`/ui/api/jobs/${job.id}/park`, {}, 'Job parked')}
-      description={<>“{goalOf(job)}” leaves its lane and its machine now{job.status === 'running' ? ', stopped mid-turn' : ''}. {kept}{job.status === 'waiting_answer' ? ', and its question stays open and never expires' : ''}, until you pick it up from Parked.{job.agentSession === undefined ? ' No agent session was recorded for it: picked up, it starts a fresh one there.' : ''}</>}>
-      <Button size="xs" variant="outline" aria-label={`Park ${goalOf(job)}`} title="Park: free its lane and its machine, keep its work for later"><Pause />Park</Button>
-    </Confirm>
+    <AlertDialog onOpenChange={(open) => { if (!open) setReason(''); }}>
+      <AlertDialogTrigger asChild>
+        <Button size="xs" variant="outline" aria-label={`Park ${goalOf(job)}`} title="Park: free its lane and its machine, keep its work for later"><Pause />Park</Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Park this job?</AlertDialogTitle>
+          <AlertDialogDescription>
+            “{goalOf(job)}” leaves its lane and its machine now{job.status === 'running' ? ', stopped mid-turn' : ''}. {kept}{waitsOn}, until you pick it up from Parked.{job.agentSession === undefined ? ' No agent session was recorded for it: picked up, it starts a fresh one there.' : ''}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <label className="space-y-1 text-sm">
+          <span>Reason <span className="text-muted-foreground">(optional, shown in Parked and the job&apos;s timeline)</span></span>
+          <Input data-park-reason value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="why it waits" />
+        </label>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep it</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={() => act(`/ui/api/jobs/${job.id}/park`, rejectBody(reason), 'Job parked')}>Park job</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

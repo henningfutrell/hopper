@@ -7,7 +7,8 @@
 import type { ShiftThen } from './phase.ts';
 import { pathsOf, proposalDocument, type FollowOnView, type PathSelection, type ProposalPathSet, type SelectedPath } from './proposal-paths.ts';
 import type { Tldr } from './tldr.ts';
-import type { JobId, PriorityTag, QuestionStatus, RaisedBy } from './types.ts';
+import { parkAskOf, type ParkAsk } from './park-ask.ts';
+import type { Job, JobId, PriorityTag, QuestionStatus, RaisedBy } from './types.ts';
 
 /**
  * The review kinds, in the order a job asking for several does them (the orchestration loop): research first, then
@@ -147,7 +148,7 @@ export interface ReviewItem {
  * phase of its kind, what a person may pick for the job at Accept (issue #548). A fork's (issue #570): the question it
  * was forked from as it is now — answered without it, its acceptance delivers nothing to that job.
  */
-export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[]; forkQuestion?: ForkQuestion; followOns?: FollowOnView[] };
+export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[]; forkQuestion?: ForkQuestion; followOns?: FollowOnView[]; parked?: ParkedItem };
 
 /** The question a fork's item was forked from, as it is now: its status, and who answered it. */
 export interface ForkQuestion { status: QuestionStatus | 'missing'; answeredBy?: string }
@@ -304,6 +305,18 @@ export const reviewKindOf = (section: string): ReviewKind | undefined => REVIEW_
 /** What a section declares to the UI. */
 export const reviewSectionView = (kind: ReviewKind): ReviewSectionView =>
   ({ parts: REVIEW_SECTIONS[kind].parts.map((p): [string, string] => [p.id, p.label]), decisions: REVIEW_SECTIONS[kind].decisions.map((d) => ({ ...d })) });
+
+/** A parked item (issue #2167): its job is parked on it. When it was parked, and who parked it and why, when a person did. */
+export type ParkedItem = { at: string } & ParkAsk;
+
+/**
+ * The park of the item's job while the job is parked on it (issue #2167), else undefined. A parked item is out of its
+ * section's open list and counts: no reviewer level reviews it, and no decision is taken on it, until its job is picked up.
+ */
+export function parkedItemOf(job: Pick<Job, 'status' | 'parked' | 'proposalId' | 'researchId'> | undefined, p: Pick<ReviewItem, 'id' | 'kind' | 'status'>): ParkedItem | undefined {
+  if (job?.status !== 'parked' || !job.parked || job[REVIEW_SECTIONS[p.kind].jobField] !== p.id || !REVIEW_OPEN_STATUSES.includes(p.status)) return undefined;
+  return { at: job.parked.at, ...parkAskOf(job.parked) };
+}
 
 /** The review kinds a job spec asks for, in the order the job does them. */
 export const asksOfSpec = (spec: { proposal?: true; research?: true }): ReviewKind[] => REVIEW_KINDS.filter((k) => spec[REVIEW_SECTIONS[k].specFlag] === true);

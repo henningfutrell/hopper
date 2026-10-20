@@ -10605,8 +10605,10 @@ image per template. Before it, a box ran its template's image as it was, and eve
 box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
 
 - **The catalog** (`BOX_TOOLS`, `src/domain/sandboxes.ts`; the recipes in `src/sandbox/tools.ts`): `aws`, `helm`,
-  `kubectl`, `terraform`. Each is one version, pinned, from the tool's own release (AWS CLI v2 from awscli.amazonaws.com,
-  Helm from get.helm.sh, kubectl from dl.k8s.io, Terraform from releases.hashicorp.com), with its SHA-256 for `amd64` and
+  `jq`, `kubectl`, `logcli`, `promtool`, `terraform` (`jq`, `logcli` and `promtool` since issue #2146, "Observability
+  sandboxes"). Each is one version, pinned, from the tool's own release (AWS CLI v2 from awscli.amazonaws.com,
+  Helm from get.helm.sh, kubectl from dl.k8s.io, Terraform from releases.hashicorp.com; jq, logcli and promtool from
+  their projects' GitHub releases), with its SHA-256 for `amd64` and
   `arm64`. The sums were taken from each project's published sums; the AWS CLI's from the archives, whose signatures were
   checked against the AWS CLI team's key. A new version is a change to that file, reviewed like any other. A tool outside
   the catalog is refused (400) with the ones the hopper adds.
@@ -12699,6 +12701,42 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   no limit for parked jobs.
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
+
+### Parking a proposal or a research report (issue #2167, 2026-10-19)
+
+A person sets a proposal or a research report aside without acting on it or rejecting it: they park the job that waits
+on it. Parking was already open to that job (it is `waiting_answer`); this adds who parked it and why, takes the item out
+of its section, and keeps the review from moving on while it is parked.
+
+- **Who and why.** `POST /ui/api/jobs/:id/park { reason? }` (`parkBody`, at most 500 characters) and `hopper job park
+  <id> [--reason <text>]`. The person signed in (`actingOf`: `by` their name, `via` `ui`, `cli` or `api`) and the reason
+  are kept in `parked` (`by`, `via`, `reason`, `src/domain/park-ask.ts`) and on `job.parked`. A running job is parked
+  only once its executor stepped aside, maybe by another hopper (issue #1662): the command keeps the ask on the job
+  (`parkAsk`) before it stops the run, and `recordPark` moves it into `parked`. Auto-park and the moves keep no person:
+  their `why` says why. Nothing is written to GitHub: a park is the hopper's own state, and the hopper writes only labels
+  to an issue ("GitHub text is neutral").
+- **Out of its section.** A **parked item** (`parkedItemOf`, `src/domain/review.ts`) is an open or sent-back item whose
+  job is parked on it. `GET /api/<section>` leaves it out of `status=open`, and `status=parked` lists only those, each
+  with `parked: { at, by?, via?, reason? }`; `GET /api/sections` does not count it in its section (Parked counts its job).
+  The UI shows it folded under the section's list (`ui/src/views/parked-items.tsx`: its job, its first part, how long
+  parked, by whom and why, Pick up), and the Parked row of its job says what it waits on.
+- **Nothing moves while it is parked** (`src/review/service.ts`). No reviewer level enters it; a level's reply that comes
+  back after the park is dropped, its call cleared, so the level is asked again later; the end of the levels neither
+  continues with it (auto-continue) nor sends it to a person; a person's decision is refused, 409 `parked` ("pick it up
+  first"), so no follow-on job starts and its job neither ends nor runs.
+- **Pick up puts it back.** `recordUnpark` already returns the job to `waiting_answer` on its open item. After the
+  commit, `ReviewService.resume` starts the review again from the stage it stopped at (`resumeAt`), unless a review of
+  it is still in flight. The item keeps its versions, trail, stage and seen mark.
+- **Persisted state.** No schema change: `parked` and `parkAsk` are fields of the job's JSON body, and the build before
+  ignores them. A park survives a restart and a move to another hopper: it is all in the database.
+- **Its issue closes meanwhile.** As for any job: closed in a way that cancels it (not planned, label removed, gone),
+  its job ends cancelled at the next sync, the sweep cancels the item, and a pick up is refused (409). The item keeps
+  its versions in the history. Closed as completed after it started, the job stays parked, and a pick up puts it back.
+- **Not here.** A job of the hopper parking a job through a skill: a `/job/*` route that changes a job is outside the
+  repo law ("No route creates or changes a job … except through the UI session"); it waits on an owner decision.
+- **Verification.** `test/integration/park-review-item.test.ts` (a proposal and a research report parked and picked up,
+  the refusals, a restart, a reviewer level in flight, a running job's park with a reason, a long reason refused),
+  `test/integration/park-review-item-closed.test.ts` (its issue closed both ways), `test/ui/park-review-item.test.ts`.
 
 ## Preemption (issue #1525, 2026-10-16)
 
@@ -29816,6 +29854,59 @@ split them differently. A job read two texts and had to join them.
 skill through the real `hopper-skill`; the repository copy recorded); `test/skills/served-skills.test.ts` (one served
 skill, the merged text holds both skills' parts); `test/ui/skills.test.ts`, `test/ui/skills-view.test.ts` (the alias
 line, the requires line, the settings that name an alias).
+
+## Observability sandboxes (issue #2146, part 1, 2026-10-19)
+
+**The problem.** A job could read a cluster through a sandbox, but not its metrics, logs or dashboards. The box image had
+no `promtool`, `logcli` or `jq`, nothing started a port-forward and ended it with the command, and no skill said how to
+query Prometheus, Loki or Grafana and keep the results as evidence. The cluster side — a role that may port-forward to
+the monitoring services only, and a Grafana Viewer token — is the platform's, on its own issue.
+
+- **The observability tools** (`src/sandbox/tools.ts`). `jq` (jq's static release binary), `logcli` (Loki's release)
+  and `promtool` (from the Prometheus release; the server binary is not kept) join the **box tools**, pinned and checked
+  by their published SHA-256 for `amd64` and `arm64`, as every tool is. The published tools images (`box-tools`) carry
+  every tool, so they carry these too.
+- **The port-forward helper** (`src/sandbox/port-forward-helper.ts`). Every image with `kubectl` has
+  `hopper-port-forward` in `/opt/hopper-tools/bin`, written from base64 as the terraform wrappers are. `hopper-port-forward
+  [-n NS] [--context NAME] TARGET LOCAL[:REMOTE] -- COMMAND` starts `kubectl port-forward --address 127.0.0.1` in the
+  background, waits until kubectl says the local port is forwarded (30 s, `HOPPER_PORT_FORWARD_WAIT_S`), runs the
+  command, and stops the forward when the command ends, on a signal too. Its exit code is the command's; 1 when the forward
+  did not start, with kubectl's words; 2 for a bad call. Nested, it holds more than one forward. A box of a box step or a
+  need step is burned when its command ends, so no forward outlives the step either way.
+- **Tools on request** (`src/skills/template-ask.ts`). `sandbox` and `sandbox-template` take `--tools "TOOL ..."`: box
+  tools beside the ones the needs use (`toolsForNeeds`). A tool outside the catalog is a 400. The template's name hashes
+  `tool:` lines after the other extras, so a request that names none keeps its name. Tools are the hopper's own pinned
+  software and give a box no access, so they change nothing of who approves: the read policy approves a read template
+  with them, as it approves the needs' tools. A template approved for the request is reused when it has at least the tools
+  asked for.
+- **The observability skill** (`src/skills/catalog.ts`, `sh "$HOPPER_SKILL" observability`). Text only: ask for a sandbox
+  with `--tools "jq promtool logcli"` and, for Grafana, `--secrets` with the vault secret of a Viewer token (a person
+  approves it, as every secret); run each query as a box step under `hopper-port-forward`; a PromQL instant and range query
+  (the HTTP API or `promtool query`), a LogQL query (`logcli`), a Grafana search, dashboard and panel query (the token read
+  with `"$HOPPER_SECRET" get` in the command only); keep the JSON and a short `jq` table as evidence, in the pull request,
+  the report or an artifact. It says what a job must not do: no `kubectl exec`, no Secret reads, no change in Grafana, no
+  Alertmanager silence, never print the token; a Forbidden forward is said, not worked around.
+
+**Decisions:**
+- **The guardrails stay where they are enforced.** What a forward reaches is the cluster's RBAC for the box's credential;
+  the Grafana token's role is Viewer. The helper and the skill text are no boundary, and the hopper adds none of its own.
+- **The helper with `kubectl`, not a tool of its own.** It is a few lines of shell that need `kubectl`, so every image that
+  can forward has it, and no template names it.
+- **`--tools` changes no approval.** A tool is software the hopper pins, not access. A secret still needs a person.
+- **Release binaries, not Debian packages.** Every tool is fetched in the fetch stage and copied into the box image alone;
+  a static release binary needs no library of the base image.
+
+Left for part 2: the **observe profile** — a minted credential whose role may port-forward to the monitoring services and
+nothing else (its own IAM role, as `hopper-read` is for a read), so a read need's role stays view-only; read-only check
+probes that `kubectl exec` and a Secret read are refused under it; `--tools` on a need step; and the live check on a
+cluster (a job port-forwards Prometheus and Grafana, runs `up` and a range query, fetches a dashboard, and is refused
+`kubectl exec` and a Secret read).
+
+Tests: `test/sandbox/tools.test.ts` (the three recipes, only promtool kept of the Prometheus release, the helper in an
+image with kubectl only), `test/sandbox/port-forward-helper.test.ts` (the helper with a kubectl of the test's own: the
+command runs once the port is forwarded, its exit code, the forward stopped after it; a forward that fails or is never
+ready runs no command; a bad call), `test/skills/template-request-extras.test.ts` (tools on request: saved, named,
+approved by the read policy, reused, an unknown tool refused), `test/skills/observability.test.ts`.
 
 ## A comment ends the job's own wait (issue #2159, 2026-10-19)
 
