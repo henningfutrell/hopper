@@ -30355,10 +30355,31 @@ action is a person's act, as the confirmation asks of issue #909 make an API tok
 action and resource, not per job, so an outage's second step needs no second click; its end is the remembered-write time
 limit, so an admin who sets it to 1 hour has a person decide almost each time.
 
-**Not built (left for later parts).** The template check before a job starts that says which actions the minted role
-cannot do (IAM policy simulation at the read-only check); the action on the job's run card, so a step that waits on both
-its template and an action is one approval; `hopper sandbox` commands for the grants; the deploy guide's Terraform for
-the action role.
+**The action check (part 2, 2026-10-20).** A missing permission shows when the job asks for its template, not partway
+through its work. `sh "$HOPPER_SKILL" sandbox-template --needs "apply/aws-role/<account>/<role>" --actions
+"<service:Action>=<ARN> ..."` names the actions the change does (`ASKED` keeps `actions`, so a watch asks again with
+them). Before the template is made, `checkTemplateActions` (`src/vault/template-actions.ts`) gives each action a verdict
+(`actionChecks`, `src/domain/action-check.ts`, pure):
+
+- **ready** — the role allows it (IAM's policy simulation), and on the action role a person granted it;
+- **waits** (`grant`) — on the action role, no live grant covers it: it is asked of a person now (`askActions`, the same
+  `vault.action_asked`), so the grant waits on Access requests beside the template;
+- **cannot** (`role-denies`) — the role does not allow it. No grant helps, as a session policy only narrows. The request
+  is refused (409) before a template is made, with the need to ask for in its place (the action role, `--action`), or,
+  on the action role itself, the operator's change to make;
+- **not checked** (`unchecked`) — IAM could not simulate it; the line says why, and nothing is refused for it.
+
+The simulation is the port `ActionSimulator`: `iam:SimulatePrincipalPolicy` (`src/vault/action-simulation.ts`,
+@aws-sdk/client-iam) of the role's ARN, one call per action on its resource, with a read session of the account's read
+role `hopper-read`, minted as topology discovery mints one (`mintForDiscovery`: no job or template takes part, so Access
+is not asked, and `vault.discovery_minted` records it). It reads the role's own policies: a service control policy or a
+resource policy can still refuse the call when it runs. A need step with `--action` and no template yet passes its actions
+to the template request, so the template and the grant wait for a person in the same visit, not one after the other.
+`--actions` on `sandbox` is refused: a box step's change is not narrowed to granted actions. With infra applies off, the
+check refuses as the step does, and asks for nothing.
+
+**Not built (left for later parts).** The action on the job's run card, so that one click approves both the template and
+the action; `hopper sandbox` commands for the grants; the deploy guide's Terraform for the action role.
 
 **Residual risk, stated.** The action role is wide in IAM; only the hopper's minting narrows it. A person who holds the
 minting credential can assume it unnarrowed, as with any role it can assume. A resource ARN with a wildcard (`nodegroup/<cluster>/<group>/*`)
@@ -30371,4 +30392,8 @@ step runs in its need box, STS asked for the action role with `ReadOnlyAccess` a
 names the plan and the action; the apply in the Infra changes feed; the same action again at once; a decline tells the step
 no; infra applies off asks nothing; a bare change on the action role refused), `test/ui/action-grants-view.test.ts`,
 `test/ui/needs-you.test.ts` (the count), `test/ui/infra-plans.test.ts` (the apply's words), `test/domain/wait-on.test.ts`
-(the wake).
+(the wake), `test/domain/action-check.test.ts` (the verdicts and their words), `test/vault/action-simulation.test.ts`
+(one simulation per action, of the role, with the read session; a refusal says why), and in
+`test/integration/action-grants.test.ts` the action check (IAM answered on loopback beside STS: an action the role does
+not allow refuses the template request before a template is made; on the action role the grant is asked at once; a need
+step with no template asks for both in one visit, and runs once both are approved).

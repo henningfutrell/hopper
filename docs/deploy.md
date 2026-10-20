@@ -1198,6 +1198,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   The hopper never mints a change on `hopper-action` that is not narrowed to granted actions, and each change still needs
   its approved plan. For an EKS action on a cluster's API (not the AWS API), the cluster's access entry decides, as for
   any role. With infra applies off, no action is asked and the role is not used for changes.
+  Before a template is made for a change, the hopper asks IAM's policy simulation whether the role allows each action the
+  job names (the **action check**). It asks with a read session of the account's read role `hopper-read`, so that role
+  needs `iam:SimulatePrincipalPolicy` (`ReadOnlyAccess` holds it as `iam:Simulate*`). Without it, the check says "not
+  checked" and refuses nothing.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.

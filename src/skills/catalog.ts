@@ -134,7 +134,7 @@ export const SKILLS: readonly Skill[] = [
     // Issue #716: the template a job's work needs, made by the hopper (src/skills/template-request.ts answers it).
     name: 'sandbox-template',
     line: 'its template only',
-    text: 'sandbox-template: sh "$HOPPER_SKILL" sandbox-template --why "<why>" [--plan "<the plan>"] --needs "<operation>/<kind>/<asset> ..." [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] [--tools "TOOL ..."] [--wait]',
+    text: 'sandbox-template: sh "$HOPPER_SKILL" sandbox-template --why "<why>" [--plan "<the plan>"] --needs "<operation>/<kind>/<asset> ..." [--secrets "NAME ..."] [--egress "host:port ..."] [--image test] [--tools "TOOL ..."] [--actions "<service:Action>=<resource ARN> ..."] [--wait]\nIssue #2206: --actions names the AWS actions its one change on an aws-role does. The hopper checks each before it makes the template: one the role does not allow is refused, with the need to ask for on hopper-action in its place; one on hopper-action that no grant covers is asked of a person now.',
   },
   {
     // Issue #624: what a job makes for a person to see. Needs no access: the job's own token is enough.
