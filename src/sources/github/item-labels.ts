@@ -60,3 +60,15 @@ export const driftWords = (item: Pick<WorkItem, 'state' | 'blockedCause'>, d: La
     ...(d.remove.length ? [`${d.remove.join(', ')} on the issue`] : []),
     ...(d.add.length ? [`${d.add.join(', ')} not on the issue`] : []),
   ].join('; ')}`;
+
+/**
+ * The end label a person took off the issue by hand (issue #1892): `item`'s state wants one of its labels on (PR open,
+ * blocked), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
+ * seen before (never read back as state), one is still on (a swap of PR open's waiting labels is none), or the state wants
+ * no label. Whether the item moved since, or the hopper's own write took it off, the caller judges.
+ */
+export function labelTakenOff(item: Pick<WorkItem, 'state' | 'blockedCause'>, before: readonly string[], now: readonly string[]): string | undefined {
+  const want = labelsFor(item);
+  if (want?.add === undefined || now.some((l) => want.allowed.includes(l))) return undefined;
+  return before.find((l) => want.allowed.includes(l));
+}

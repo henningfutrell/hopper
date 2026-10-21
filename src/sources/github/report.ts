@@ -35,6 +35,8 @@ export interface ReportContext {
   ensuredLabels: Set<string>;
   /** This user's claim holder id (issue #440); absent: claims carry no holder label. */
   holder?: string;
+  /** Tell the ledger the issue `key` was read closed (issue #1892), when it does not hold that yet; absent: it is not told. */
+  issueClosed?(key: string, reason: string | undefined): void;
 }
 
 type State = Record<string, unknown>;
@@ -96,6 +98,8 @@ async function finished(ctx: ReportContext, job: Job, repo: string, number: numb
   }
   if (issue.state === 'closed') {
     await settle(ctx, repo, number, [LABEL_DONE], also, issue.labels);
+    // The ledger reads the close too (issue #1892): its item is done, not blocked for want of a pull request.
+    if (job.source?.key) ctx.issueClosed?.(job.source.key, issue.stateReason);
     return state;
   }
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else

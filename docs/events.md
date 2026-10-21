@@ -5919,6 +5919,30 @@ Version 1 (`docs/schemas/work_item.person_asked.v1.json`). The one notice of a b
 }
 ```
 
+## `work_item.label_edited`
+
+Version 1 (`docs/schemas/work_item.label_edited.v1.json`). A person took an end label off a work item's issue by hand on GitHub (issue #1892, design.md "The item lifecycle"): the end label its state wants (`hopper:blocked` or `hopper:pr-closed` of a blocked item, `hopper:pr-ready` or `hopper:partly-done` of an item in PR open) was on at the last discover of `source` and is gone now, with the item not moved since and no write of the hopper's own on its way. `key` is the item's source key, `jobId` its newest job, `from` the state it was in, `label` the label taken off, `means` what the edit asks for: `run_again`. The item's state stays, and it keeps the ask (`runAgainAsked`): Intake gives it no reason, so the discover runs it again; the label is not put back. The new job's `job.queued` moves it, and any move forgets the ask. A label that is not on the issue when it is first seen is never read as an edit.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `jobId` | string | no |
+| `from` | `waiting_for_approval` \| `queued` \| `working` \| `needs_you` \| `waiting_outside` \| `pr_open` \| `partly_done` \| `done` \| `failed` \| `blocked` \| `dropped` | yes |
+| `label` | string | yes |
+| `means` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/owner/repo/issues/9",
+  "jobId": "job-1",
+  "from": "blocked",
+  "label": "hopper:pr-closed",
+  "means": "run_again"
+}
+```
+
 ## `job.pull_request_classified`
 
 Version 1 (`docs/schemas/job.pull_request_classified.v1.json`). A followed pull request's change kind (issue #1076), new or changed: `kind` — `docs` (docs or comments only), `tests`, `low_risk`, `code` or `sensitive` (auth, secrets, migrations, the sandbox, CI, infra, dependencies, agent instructions, or a line a content rule matches) —, read from the files and lines it changes by the repository's change rule, and `why`: a few files and the rule each matched. The kind names its merge gate: merged when ready with no person, merged when ready only with yolo mode on, or merged only by a person. The work-item ledger keeps it on the item.
