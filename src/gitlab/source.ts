@@ -24,7 +24,8 @@ import { gitlabAutoApproval, gitlabIntakeAct, gitlabVerdict, projectOfKey, taken
 import { autoApprovedReason, LABEL_HIGH } from '../domain/intake-auto-approve.ts';
 import { openRequests, requestOutcome, withdrawRequests } from '../sources/github/origin.ts';
 import { checkJobs, notComplete } from './completion.ts';
-import { endLabels, followMergeRequest, readyMergeRequest } from './follow.ts';
+import { endChange, followMergeRequest, readyMergeRequest, relabel } from './follow.ts';
+import { reportLabels } from '../sources/github/item-labels.ts';
 import { mergeRequestHold } from './done-criteria.ts';
 import type { JobAllowedDeletes, JobDoneCriteria } from '../sources/github/done-criteria.ts';
 
@@ -85,13 +86,25 @@ async function gitlabCall<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * A done job's end on its issue (issue #1642 part 2): closed already, `hopper:done`; else `hopper:pr-ready`, and its ready merge
- * request kept to follow (`follow.ts`), or none named yet, which the follow looks for.
+ * request kept to follow (`follow.ts`), or none named yet, which the follow looks for. The end labels its state does not want
+ * come off (issue #1892 part 16).
  */
 async function finished(api: GitLabApi, project: string, iid: number, before: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const closed = (await api.issue(project, iid)).state === 'closed';
+  const issue = await api.issue(project, iid);
+  const closed = issue.state === 'closed';
   const ready = closed ? undefined : await readyMergeRequest(api, project, iid);
-  await api.editLabels(project, iid, endLabels(closed));
+  await relabel(api, project, iid, endChange(reportLabels(closed ? { end: 'closed' } : { end: 'pr_open', part: false }, issue.labels), issue.labels));
   return { ...before, reported: 'finished', ...(closed ? {} : { ...(ready ? { pullRequest: ready.url } : {}), follow: 'open' }) };
+}
+
+/**
+ * The label change of an end the report writes with no read of the issue (issue #1892 part 16): the end label of the state it
+ * moves the item to, as `reportLabels` names it, and the claim off. A rejection keeps `hopper:rejected`: the GitLab source reads
+ * no rejection record, so the label keeps the issue out.
+ */
+function unreadEnd(kind: 'failed' | 'cancelled' | 'rejected'): { add: string[]; remove: string[] } {
+  const add = kind === 'rejected' ? [LABEL_REJECTED] : reportLabels(kind === 'failed' ? { end: 'failed' } : { end: 'cancelled', tendAgain: false }).add;
+  return { add, remove: [LABEL_CLAIMED] };
 }
 
 export function createGitLabSource(o: GitLabSourceOptions): JobSource {
@@ -241,10 +254,8 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       if (project === undefined || iid === undefined) throw new SourceError(`job ${r.job.id} names no GitLab issue`, true);
       if (r.kind === 'finished') return gitlabCall(() => o.account.act(async (a) => finished(a, project, iid, before)));
       const change = r.kind === 'claimed' ? { add: [LABEL_CLAIMED], remove: [] }
-        : r.kind === 'failed' ? (r.fixing ? { add: [], remove: [] } : { add: [LABEL_FAILED], remove: [LABEL_CLAIMED] })
-            : r.kind === 'rejected' ? { add: [LABEL_REJECTED], remove: [LABEL_CLAIMED] }
-              : { add: [], remove: [LABEL_CLAIMED] };
-      await gitlabCall(() => o.account.act((a) => a.editLabels(project, iid, change)));
+        : r.kind === 'failed' && r.fixing ? { add: [], remove: [] } : unreadEnd(r.kind);
+      await gitlabCall(() => o.account.act((a) => relabel(a, project, iid, change)));
       return { ...before, reported: r.kind };
     },
   };
