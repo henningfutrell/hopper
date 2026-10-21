@@ -111,8 +111,7 @@ const reviewKind = z.enum(REVIEW_KINDS);
 const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()), changeKinds: changeKinds.optional(), push: z.array(z.string()).optional() });
 // `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
 const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
-const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
-const tokenBudgetSettings = strict({ jobTokens: z.number().min(0), jobCostUsd: z.number().min(0) });
+const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) }); const tokenBudgetSettings = strict({ jobTokens: z.number().min(0), jobCostUsd: z.number().min(0) });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
 export const EVENT_SCHEMAS = {
@@ -322,8 +321,7 @@ export const EVENT_SCHEMAS = {
   'job.fork_resolved': strict({ forkId: z.string(), kind: reviewKind, questionId: z.string(), decision: z.enum(['accept', 'reject']), delivered: z.boolean(), question: z.enum(['open', 'answered', 'closed', 'dismissed', 'expired', 'lapsed', 'cancelled', 'missing']).optional() }),
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   'auto_answer.settings_changed': strict({ from: autoAnswerSettings, to: autoAnswerSettings, by: z.string() }),
-  'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }),
-  'token_budget.settings_changed': strict({ from: tokenBudgetSettings, to: tokenBudgetSettings, by: z.string() }),
+  'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }), 'token_budget.settings_changed': strict({ from: tokenBudgetSettings, to: tokenBudgetSettings, by: z.string() }),
   ...TLDR_EVENT_SCHEMAS,
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.

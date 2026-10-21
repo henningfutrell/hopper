@@ -139,6 +139,7 @@ export type { VaultGrant, VaultGrantAsk, VaultGrantItem, VaultGrantView } from '
 export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SuggestAnswer } from '../../../src/domain/search.ts';
 export type { JobTranscript, TranscriptPart, TranscriptTurn } from '../../../src/domain/transcript.ts';
 export type { JobTokenView, TokenRollupRow, TokenTotals } from '../../../src/domain/token-usage.ts';
+export type { TokenBudgetSettings } from '../../../src/domain/token-budget.ts';
 export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';
 export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/job-notes.ts';
 export type { AllowedHostsView } from '../../../src/domain/allowed-hosts.ts';

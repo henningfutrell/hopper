@@ -1,7 +1,7 @@
 // The token ledger's words (issue #2302): token counts and an estimated cost as a person reads them, and the ledger by
-// day as the Dashboard's tokens over time stacks it (part 2). Pure.
+// day as the Dashboard's tokens over time stacks it (part 2); the token budget in Settings and Needs you (part 3). Pure.
 import { goalOf } from './job.ts';
-import type { Job, TokenRollupRow, TokenTotals } from './wire.ts';
+import type { Job, TokenBudgetSettings, TokenRollupRow, TokenTotals } from './wire.ts';
 
 /** A token count in short: 950, 12.3k, 2.4M. */
 export function tokenCount(n: number): string {
@@ -64,3 +64,27 @@ export function tokenDays(groups: readonly TokenRollupRow[], days: number, today
 /** Needs you's Budgets row (issue #2302, part 3): each parked job its token budget paused, with why. */
 export const budgetPausedLines = (jobs: readonly Job[]): string[] =>
   jobs.filter((j) => j.status === 'parked' && j.budgetPaused).map((j) => `${goalOf(j)}: ${j.budgetPaused!.why} Pick it up to let it go on.`);
+
+/** The token budget, what is on now, in one sentence. */
+export function tokenBudgetSummary(s: TokenBudgetSettings): string {
+  const tokens = s.jobTokens > 0 ? `${tokenCount(s.jobTokens)} tokens` : undefined;
+  const cost = s.jobCostUsd > 0 ? `an estimated $${s.jobCostUsd.toFixed(2)}` : undefined;
+  if (!tokens && !cost) return 'Off: no job is paused for what it spends.';
+  return tokens && cost ? `A job is paused when it used ${tokens} or ${cost}, whichever comes first.` : `A job is paused when it used ${tokens ?? cost}.`;
+}
+
+export interface TokenBudgetDraft { jobTokens: string; jobCostUsd: string }
+
+/** The change a save sends: only what differs (undefined: nothing to save), or why the draft is refused. An empty field is 0. */
+export function tokenBudgetPatch(s: TokenBudgetSettings, d: TokenBudgetDraft): { ok: true; patch: Partial<TokenBudgetSettings> | undefined } | { ok: false; error: string } {
+  const read = (raw: string, whole: boolean): number | undefined => {
+    const text = raw.trim() || '0';
+    const n = Number(text);
+    return Number.isFinite(n) && n >= 0 && (!whole || Number.isInteger(n)) ? n : undefined;
+  };
+  const jobTokens = read(d.jobTokens, true), jobCostUsd = read(d.jobCostUsd, false);
+  if (jobTokens === undefined) return { ok: false, error: 'Tokens: a whole number from 0' };
+  if (jobCostUsd === undefined) return { ok: false, error: 'Cost: a number of US dollars from 0' };
+  const patch = { ...(jobTokens === s.jobTokens ? {} : { jobTokens }), ...(jobCostUsd === s.jobCostUsd ? {} : { jobCostUsd }) };
+  return { ok: true, patch: Object.keys(patch).length > 0 ? patch : undefined };
+}
