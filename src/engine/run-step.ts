@@ -176,9 +176,9 @@ export async function runStep(c: EngineContext, e: RunEntry, d: JobRunData, take
     const { finish } = judged;
     const now = store.tx(() => {
       store.events.append({ type: 'job.finish_briefed', jobId: started.id, laneId: d.laneId, data: { pullRequest: finish.pullRequest, step: finish.step } });
-      // A parked or continued job's run (issues #501, #551) reopened its session already: the brief types into that pane.
+      // A parked, continued or released job's run (issues #501, #551, #2303) reopened its session already: the brief types into that pane.
       const j = store.jobs.get(started.id) ?? started;
-      return j.parked || j.continued ? store.jobs.update(started.id, { parked: undefined, continued: undefined }) : j;
+      return j.parked || j.continued || j.waitReleased ? store.jobs.update(started.id, { parked: undefined, continued: undefined, waitReleased: undefined }) : j;
     });
     outcome = await attempt(() => goOn!(now, finishBrief(finish)));
   }

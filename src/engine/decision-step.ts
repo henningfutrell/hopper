@@ -17,6 +17,7 @@ import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
 import { preemptionSettings } from './preemption.ts';
 import { queueOrder } from './queue-order.ts';
+import { recordWaitReleases, waitSessionsOf } from './wait-release.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
 
@@ -43,6 +44,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const sandboxesHeld = c.sandboxesHeld(waiting);
     const parkingExecutors = c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined);
     const preemption = preemptionInput(preemptionSettings(c.store), parkingExecutors);
+    const waitSessions = waitSessionsOf(c, parkingExecutors);
     const strictness = c.store.settings.getIntakeStrictness() ?? DEFAULT_INTAKE_STRICTNESS;
     // Jev's trust check (issue #655 part 4) and kind check: asked after this Decision's transaction; active, a job waits for them.
     const checking = checks.trust.of(waiting);
@@ -71,7 +73,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(signedOut.length ? { signedOut } : {}),
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
-      ...(preemption ? { preemption } : {}), parkingExecutors, ...memoryPausedAtOf(c, nowIso(c)),
+      ...(preemption ? { preemption } : {}), parkingExecutors, ...memoryPausedAtOf(c, nowIso(c)), ...(waitSessions.length ? { waitSessions } : {}),
       ...(stampHeld.length ? { stampHeld } : {}),
       policy: policyOf(c),
     };
@@ -102,15 +104,15 @@ const memoryPausedAtOf = (c: EngineContext, at: string): { memoryPausedAt?: Reco
 
 /** A Decision that changes nothing is not recorded (design.md "The decider"). */
 export function isNoOp(d: Decision): boolean {
-  if (d.start.length > 0 || (d.preempt?.length ?? 0) > 0 || (d.memoryPause?.length ?? 0) > 0) return false;
+  if (d.start.length > 0 || (d.preempt?.length ?? 0) > 0 || (d.memoryPause?.length ?? 0) > 0 || (d.waitRelease?.length ?? 0) > 0) return false;
   if (d.lanes.some((p) => p.open > 0 || p.close.length > 0 || p.drain.length > 0)) return false;
   const byId = new Map(d.inputs.waiting.map((j) => [j.id, j]));
   return d.hold.every((h) => byId.get(h.jobId)?.holdReason === h.reason)
     && d.wait.every((w) => { const j = byId.get(w.jobId); return j?.status === 'queued' && j.waitReason === w.reason; });
 }
 
-/** What one Decision asks of the runner: the claims to start, and the running jobs to park for preemption (issue #1525). */
-export interface Applied { claims: Claim[]; preempts: JobId[] }
+/** What one Decision asks of the runner: the claims to start, the running jobs to park for preemption (issue #1525), and the jobs on their own wait whose agents end (issue #2303). */
+export interface Applied { claims: Claim[]; preempts: JobId[]; releases: JobId[] }
 
 function apply(c: EngineContext, d: Decision): Applied {
   const { store } = c;
@@ -183,7 +185,8 @@ function apply(c: EngineContext, d: Decision): Applied {
     });
     preempts.push(p.jobId);
   }
-  return { claims, preempts };
+  // A wait release (issue #2303): marked here; its agent ends after the commit.
+  return { claims, preempts, releases: recordWaitReleases(c, d, d.waitRelease ?? []) };
 }
 
 /**
@@ -226,7 +229,7 @@ function failRetiredPins(c: EngineContext, machines: readonly MachineSnapshot[])
 
 /** Returns the claims whose executors the caller must start, and the jobs it must park for preemption, outside the transaction. */
 export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks, checks: PreStartChecks): Promise<Applied> {
-  const none: Applied = { claims: [], preempts: [] };
+  const none: Applied = { claims: [], preempts: [], releases: [] };
   const { machines, inputs } = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected, picks, checks);
   if (c.stopping()) return none;
   freeStrandedLanes(c);

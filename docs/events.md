@@ -3799,6 +3799,20 @@ Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this run
 }
 ```
 
+## `job.wait_released`
+
+Version 1 (`docs/schemas/job.wait_released.v1.json`). A Decision ended the agent of this job on its own wait (issue #2303): a job waits for memory on its machine (`machineId`), and the hopper ends this wait by itself, with no pane. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session in a new pane. `reason`: the Decision's.
+
+| field | type | required |
+|---|---|---|
+| `reason` | string | yes |
+
+```json
+{
+  "reason": "releases the agent of j-wait on laptop: a job waits for memory there, and j-wait waits on its own since 42 min ago; it resumes its session when its wait ends"
+}
+```
+
 ## `github_rate_limiter.settings_changed`
 
 Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), how many polls run at once in a batch (`batchSize`), and how many calls intake leaves for job work (`intakeReserve`, issue #983), how often intake lists the job repositories, in minutes (`intakeSyncMinutes`, issue #985), and how often the in-motion cycle reads the pull requests in motion, in minutes (`prCycleMinutes`, issue #985); each absent from a change made before it. `from` and `to`. An instance event: in every user's log.

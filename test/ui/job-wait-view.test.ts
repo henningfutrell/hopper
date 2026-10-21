@@ -131,4 +131,10 @@ describe('a job on its own wait', () => {
     expect(row()!.querySelector('[data-slot="own-wait"]')!.textContent).toBe('stranded: its agent session ended');
     expect(buttonIn(row()!, 'End the wait')).toBeDefined();
   });
+
+  it('a wait whose agent the hopper ended to free memory says so, with End the wait (issue #2303)', async () => {
+    await boot('admin', '#dashboard', [{ ...waitingJob, wait: { ...waitingJob.wait, on: { kind: 'grant' } }, waitReleased: { at: T, machineId: 'local' } }]);
+    expect(row()!.querySelector('[data-slot="own-wait"]')!.textContent).toBe('waiting: agent ended to free memory');
+    expect(buttonIn(row()!, 'End the wait')).toBeDefined();
+  });
 });

@@ -44,7 +44,7 @@ describe('a wait release (issue #2303)', () => {
     await waitFor(async () => (await a.events('types=job.wait_released')).length > 0, { what: 'a wait release', timeoutMs: 8000 });
     const [released] = await a.events('types=job.wait_released');
     expect(released!.jobId).toBe(waiter.id);
-    expect(released!.data).toMatchObject({ machineId: 'local' });
+    expect(released!.machineId).toBe('local');
     const kept: Job = await a.job(waiter.id);
     expect(kept.status).toBe('waiting_on');
     expect(kept.waitReleased?.machineId).toBe('local');
