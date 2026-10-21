@@ -8,7 +8,8 @@
 import { busyMove, resumesOnItsMachine } from '../decider/busy-move.ts';
 import type { Job } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
-import { recordPark, recordUnpark } from './park.ts';
+import { finishLeftMoves, finishMove } from './move-finish.ts';
+import { recordPark } from './park.ts';
 import { howToMove, MOVE_RETRY_MS } from './signed-out-move.ts';
 
 /** How long a resuming job waits for a lane on its own full machine while another machine has room. */
@@ -26,6 +27,8 @@ export function createBusyMove(c: EngineContext): () => Promise<void> {
     const { store } = c;
     const now = c.clock.now().getTime();
     for (const [id, at] of tried) if (now - at >= MOVE_RETRY_MS) tried.delete(id);
+    // A move a stop cut short first (issue #1892).
+    if (await finishLeftMoves(c, 'busy_machine')) c.trigger('busy_machine.move');
     const queued = store.jobs.list({ status: ['queued'] }).filter(resumesOnItsMachine);
     const seen = new Set(queued.map((j) => j.id));
     for (const id of since.keys()) if (!seen.has(id)) since.delete(id);
@@ -55,35 +58,11 @@ export function createBusyMove(c: EngineContext): () => Promise<void> {
         const job = store.jobs.get(waiting.id);
         if (!job || !busyMove(job, machines, store.lanes.list())) return undefined;
         // A job with its answer pending in its live pane was on its question; one picked up keeps where it was parked from.
-        return recordPark(c, job, job.parked?.from ?? 'waiting_answer', undefined, why);
+        return recordPark(c, job, job.parked?.from ?? 'waiting_answer', undefined, why, undefined, { kind: 'busy_machine', how, live });
       });
       if (!parked) continue;
       since.delete(parked.id);
-      if (live) {
-        try {
-          await c.executors.get(parked.spec.executor)?.park?.(parked);
-        } catch (e) {
-          if (!c.stopping()) console.warn(`hopper: job ${parked.id} moves, but its machine could not be reached to end its agent: ${(e as Error).message}; the sweep stops it`);
-        }
-        // Once more with its agent ended, so its session is whole; the one before stands if this one fails.
-        if (how === 'checkpoint' && !c.stopping()) await c.checkpoints?.take(parked.id);
-      }
-      if (c.stopping()) return;
-      store.tx(() => {
-        const job = store.jobs.get(parked.id);
-        if (job?.status !== 'parked') return;
-        if (how === 'checkpoint') {
-          // A refusal writes nothing: the job stays parked, and a person picks it up.
-          try {
-            recordUnpark(c, job.id, false, true);
-          } catch (e) {
-            console.warn(`hopper: job ${job.id} was parked to move, and could not resume elsewhere: ${(e as Error).message}`);
-          }
-          return;
-        }
-        store.jobs.update(job.id, { status: 'queued', parked: undefined, resumeOn: undefined, pendingAnswer: undefined, holdReason: undefined, waitReason: undefined });
-        store.events.append({ type: 'job.unparked', jobId: job.id, data: { to: 'queued', elsewhere: true } });
-      });
+      if (!await finishMove(c, parked)) continue;
       c.trigger('busy_machine.move');
     }
   };
