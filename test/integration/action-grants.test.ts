@@ -23,6 +23,8 @@
 //   The run card (part 3): the job's action asks are on its run card, and one approval grants them with the template
 //   Scenario: one approve-run of the card approves the template and grants the action; the step runs, in the feed
 //   Scenario: one decline-run of the card declines the action too; the step is told no
+//   Issue #2370: a change narrowed to granted actions needs no infra plan; the grant approves it
+//   Scenario: a node-group scale card with no plan goes from approved to applied with no other step
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -321,5 +323,39 @@ describe('action grants (issue #2206)', () => {
     const v = await vaultOf(b);
     expect([v.runs, v.actionAsks, v.actionGrants]).toEqual([[], [], []]);
     expect(b.sts.seen.filter((x) => decodeURIComponent(x.body).includes(`RoleArn=arn:aws:iam::${ACCOUNT}:role/hopper-action`))).toHaveLength(0);
+  });
+
+  it('issue #2370: a node-group scale card with no infra plan goes from one approve-run to applied with no other step', async () => {
+    const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
+    const call = `aws eks update-nodegroup-config --cluster-name identity-eks --nodegroup-name identity-eks-nodes --scaling-config desiredSize=6`;
+    const plan = `${call}; undone by the same call with desiredSize=3`;
+    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', plan, '--command', call, '--wait', '60']);
+    await run.waiting;
+    const card = (await vaultOf(b)).runs![0]!;
+    expect(card).toMatchObject({ jobId: b.job, plan, actions: [expect.objectContaining({ job: b.job, ...SCOPE })] });
+
+    const ok = await decide(b, { action: 'approve-run', job: b.job, template: card.template });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    const r = await run.end;
+    expect(r.code, r.stdout + r.stderr).toBe(0);
+    const assume = decodeURIComponent(b.sts.seen.at(-1)!.body.replace(/\+/g, ' '));
+    expect(assume).toContain(`RoleArn=arn:aws:iam::${ACCOUNT}:role/hopper-action`);
+    expect(assume).toContain('"Action":"eks:UpdateNodegroupConfig"');
+    // The mint names the granted action and no plan; nothing was refused on the way.
+    const events = await ofJob(b);
+    expect(events.filter((e) => e.type === 'vault.mint_refused')).toEqual([]);
+    const minted = events.find((e) => e.type === 'vault.minted')?.data as Record<string, unknown>;
+    expect(minted).toMatchObject({ operation: 'apply', actions: [{ action: SCOPE.action, resource: ARN }] });
+    expect(minted).not.toHaveProperty('plan');
+  });
+
+  it('issue #2370: a plan the step names is still checked, granted actions or not', async () => {
+    const b = await boot();
+    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan-id', 'no-such-plan', '--command', 'true', '--wait', '60']);
+    await run.waiting;
+    expect((await decide(b, { action: 'grant-action', job: b.job, grant: SCOPE })).status).toBe(200);
+    const r = await run.end;
+    expect(r.code).not.toBe(0);
+    expect(r.stdout + r.stderr).toContain('no plan no-such-plan');
   });
 });
