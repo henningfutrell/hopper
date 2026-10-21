@@ -20219,8 +20219,24 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   spent, not what is new. Its words name the cap and the day, not the spend, so a held job is held once, not again at each
   checkpoint. A running job runs on: its own cap still pauses it. The hold ends by itself on the next UTC day, or when an
   admin raises or turns off the cap (the next Decision reads it). With every day cap off, no Decision reads the ledger.
-- **What it does not do yet** (later parts of #2302): print-mode agents (they keep no agent session; `claude -p`'s
-  own JSON answer holds its usage). A subagent's own session file is not read.
+- **Subagents** (part 6). Claude Code writes each subagent's messages to a log of its own, beside the session's:
+  `<config>/projects/<dir>/<session>/subagents/agent-<id>.jsonl`, not into the session's file. The checkpoint script
+  (`src/client/checkpoint.ts`) now also prints them, one after the other, gzip, as `subagents`; the scrub worker counts them
+  with the session (`scrubParts`), and `sessionTokenUse` counts a message both hold once (by message and request id). They
+  are counted only: no checkpoint keeps them, nothing scrubs them, and a resume elsewhere does not need them. They do not
+  count against the checkpoint's size: when the session and the patch fit and the subagents do not, the checkpoint leaves
+  them out, and their tokens are not counted. A client release before this one prints no `subagents`, so it counts as before.
+- **Print-mode Claude** (part 6). A `claude` print-mode job ("Print-mode agent executors") keeps no `agentSession`, so no
+  checkpoint reads its log. Each turn's JSON result says what the turn spent: `modelUsage`, per model, its subagents' too.
+  The `claude` dialect reads it (`Dialect.usage`, `printTurnTokenUse` in `src/domain/token-usage.ts`), whatever the turn
+  answered, and the executor gives it to the run's `tokenUse` (`ExecutionContext.tokenUse`, `src/domain/ports.ts`), by the
+  turn's session id. The engine adds it to what the ledger holds of that session (`keepTokenUse(…, turn)`,
+  `withTurnUse`), since a result counts its own turn only; the session's first and last counted message are when its turns
+  started and ended. The result gives no turns per model: `num_turns` goes to the model that wrote most. The one-hour
+  cache write is the result's `usage.cache_creation`, given only to a turn of one model. The budget pause does not park a
+  print-mode job, which has no park; the day budgets count its spend as any other.
+- **What it does not do**: the other print-mode CLIs (cursor-agent, codex, opencode, omp) are not read: their answers name
+  no Claude model with a list price, and the issue asks for Claude's.
 
 Verification of part 3: `test/domain/token-budget.test.ts` (the caps, the words, counted from a go-on),
 `test/integration/token-budget.test.ts` (the real daemon over the fake herdr: the setting and its event; a running job that
@@ -20240,6 +20256,14 @@ queue gate first), `test/integration/token-budget.test.ts` (the real daemon: the
 token budget used a waiting job is held with why and starts once it is raised; with a repository's used, only that
 repository's job is held), `test/ui/token-budget.test.ts` (Settings), `test/cli/usage-tokens.test.ts` (`hopper usage budget
 set --day-tokens …`).
+
+Verification of part 6: `test/domain/token-turns.test.ts` (a print-mode turn's `modelUsage` per model, with no text kept;
+a turn added to its session's rows), `test/client/checkpoint.test.ts` (the script prints the subagent logs and leaves
+them out when they do not fit), `test/engine/checkpoint-scrub.test.ts` (counted with the session, once, and not kept),
+`test/adapters/print-agent-executors.test.ts` (the `claude` executor reports each turn's use by its session),
+`test/integration/token-ledger.test.ts` (the real daemon: a checkpoint's subagents counted, the kept checkpoint without
+them), `test/integration/token-ledger-print.test.ts` (the real daemon and the `claude` executor: a question and its
+answer count both turns in one session).
 
 ## Stack resources (issue #947, 2026-10-12)
 

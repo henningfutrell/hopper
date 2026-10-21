@@ -98,6 +98,23 @@ describe('taking a checkpoint', () => {
     expect(git(wt, 'status', '--porcelain')).toContain('?? new.txt');
   });
 
+  // Issue #2302, part 6: the session's subagent logs go with it, for the token ledger, and only while they fit.
+  it('carries the session\'s subagent logs, one after the other, and leaves them out when they do not fit', async () => {
+    const { wt, home } = await workOnFirstMachine();
+    const dir = join(home, '.claude', 'projects', 'some-dir', SESSION, 'subagents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'agent-a1.jsonl'), '{"agent":"one"}');
+    writeFileSync(join(dir, 'agent-a2.jsonl'), '{"agent":"two"}\n');
+    writeFileSync(join(dir, 'agent-a2.meta.json'), '{"meta":true}');
+    const read = readCheckpoint(await run(checkpointArgv(JOB, wt, SESSION), wt, { HOME: home, CLAUDE_CONFIG_DIR: '' }));
+    if (!read || !('taken' in read)) throw new Error('no checkpoint');
+    expect(gunzipSync(read.taken.subagents!).toString('utf8').split('\n').filter(Boolean)).toEqual(['{"agent":"one"}', '{"agent":"two"}']);
+    expect(gunzipSync(read.taken.session!).toString('utf8')).not.toContain('agent');
+    const sized = read.taken.patch.length + read.taken.session!.length;
+    const tight = readCheckpoint(await run(checkpointArgv(JOB, wt, SESSION, sized), wt, { HOME: home, CLAUDE_CONFIG_DIR: '' }));
+    expect(tight && 'taken' in tight && tight.taken.session && !tight.taken.subagents).toBe(true);
+  });
+
   it('says why it took none: the worktree gone, or too large', async () => {
     const { wt, home } = await workOnFirstMachine();
     const gone = readCheckpoint(await run(checkpointArgv(JOB, `${wt}-gone`, SESSION), root, { HOME: home }));

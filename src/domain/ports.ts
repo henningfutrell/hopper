@@ -7,8 +7,7 @@ import type {
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountKey, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ResolutionWrite, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
-import type { UserStore } from './store.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
-export type { NoteDelivery } from './job-notes.ts';
+import type { UserStore } from './store.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts'; export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts'; export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
 export type * from './escalation-ports.ts'; export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
@@ -75,6 +74,11 @@ export interface ExecutionContext {
    * of its link not answered in time. The engine takes the job's checkpoint at once, at most once a minute. Absent → none.
    */
   missedHeartbeat?(): void;
+  /**
+   * A turn's token use the agent's own answer gave (issue #2302, part 6: a print-mode Claude turn, which keeps no agent
+   * session the checkpoint reads), by its session: kept in the token ledger, added to that session's. Absent → not kept.
+   */
+  tokenUse?(session: string, use: import('./token-usage.ts').SessionTokenUse): void;
 }
 
 /**

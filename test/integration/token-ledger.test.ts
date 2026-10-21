@@ -5,7 +5,7 @@
 // daemon over the fake herdr, as
 // checkpoint.test.ts.
 import { homedir } from 'node:os';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckpointCapture, Job } from '../../src/domain/types.ts';
 import type { TokenRollupRow, TokenTotals } from '../../src/domain/token-usage.ts';
@@ -157,6 +157,22 @@ describe('the token ledger', () => {
     await a.waitForStatus(job.id, 'finished');
     expect((await a.api<{ waste: unknown[] }>('GET', `/api/jobs/${job.id}/tokens`)).body.waste).toEqual([]);
     expect((await a.api<{ waste: unknown[] }>('GET', '/api/usage/tokens')).body.waste).toEqual([]);
+  });
+
+  // Part 6: the session's subagent logs are counted with it; the checkpoint keeps none of them.
+  it('counts the session\'s subagents with it, a message both hold once, and keeps no subagent log', async () => {
+    const SUB = assistant('a1', 'claude-haiku-4-5', { input_tokens: 7, output_tokens: 70 }).replace(SECRET_TEXT, 'the subagent text');
+    const k = capture(ONE);
+    if ('taken' in k) k.taken.subagents = gzipSync(`${ONE[1]}\n${SUB}\n`);
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [tree()], checkpoint: k });
+    const a = await boot(herdr);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'running');
+    await waitFor(() => herdr.prompts.length > 0, { what: 'the prompt sent' });
+    await a.user().engine.checkpoints.take(job.id);
+    expect(a.user().store.tokenLedger.list({ jobId: job.id }).map((e) => [e.model, e.turns, e.input, e.output])).toEqual([['claude-haiku-4-5', 1, 7, 70], ['claude-opus-5-5', 1, 10, 100]]);
+    const kept = a.user().store.checkpoints.get(job.id)!;
+    expect(gunzipSync(kept.session!).toString('utf8')).not.toContain('the subagent text');
   });
 
   it('keeps none for a job whose machine reads no session', async () => {

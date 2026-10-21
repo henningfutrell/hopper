@@ -46,4 +46,14 @@ describe('scrubbing a checkpoint off the event loop', () => {
   it('rejects a part that is not gzip', async () => {
     await expect(scrubCheckpoint({ patch: Buffer.from('not gzip') })).rejects.toThrow();
   });
+
+  // Issue #2302, part 6: a session's subagent logs are counted with it, a message both hold once, and never kept.
+  it('counts the session\'s subagent logs with it, and keeps none of them', async () => {
+    const msg = (id: string, out: number, text: string): string => JSON.stringify({ type: 'assistant', requestId: `r-${id}`, message: { id, model: 'claude-opus-5-5', content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: out } } });
+    const parts = { patch: gzipSync(''), session: gzipSync(`${msg('m1', 10, 'main')}\n`), subagents: gzipSync(`${msg('m1', 10, 'main')}\n${msg('a1', 5, 'the subagent text')}\n`) };
+    const off = await scrubCheckpoint(parts);
+    expect(off.use!.models).toEqual([{ model: 'claude-opus-5-5', turns: 2, input: 2, output: 15, cacheRead: 0, cacheWrite: 0 }]);
+    expect(gunzipSync(off.session!).toString('utf8')).not.toContain('the subagent text');
+    expect(scrubParts({ ...parts, countOnly: true }).use!.models[0]!.output).toBe(15);
+  });
 });

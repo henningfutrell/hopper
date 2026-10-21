@@ -16,6 +16,7 @@ import { jobSkillsOf } from '../skill-library/index.ts';
 import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
+import { keepTokenUse } from './checkpoints.ts';
 import { agentSignIn, placeCredentials, Unreached } from './credentials.ts';
 import { moveLost, type Lost } from './lost-move.ts';
 import { nudgeCheck } from './nudge-check.ts';
@@ -202,6 +203,8 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
     agentSession: (id) => { if (!left(c, e)) store.jobs.update(j.id, { agentSession: id }); },
     // A missed heartbeat of its machine (issue #1569): its checkpoint now, while the machine may still answer.
     missedHeartbeat: () => c.checkpoints?.soon(j.id),
+    // A print-mode turn's token use (issue #2302, part 6), kept even when the job ended meanwhile.
+    tokenUse: (session, use) => store.tx(() => { const now = store.jobs.get(j.id); if (now) keepTokenUse(c, now, session, use, true); }),
   };
 }
 
