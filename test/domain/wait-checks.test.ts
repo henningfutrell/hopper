@@ -156,7 +156,7 @@ describe('the check a job names (checkAskOf, issue #1694 part 2)', () => {
     const early = afterCheck(newCheck(outside, at(0)), 'it rechecks at its time', at(60_000));
     expect(early.check.nextCheckAt).toBe(at30);
     expect(recheckOutcome({ kind: 'recheck', at: at30 }, outside.wait!, at(60_000))).toEqual({ met: false, result: `it looks again at ${at30}` });
-    const met = recheckOutcome({ kind: 'recheck', at: at30 }, outside.wait!, at(RECHECK_MS));
+    const met = recheckOutcome({ kind: 'recheck', at: at30 }, outside.wait!, at(30 * 60_000));
     expect(met).toMatchObject({ met: true });
     expect(met.met && met.told).toContain('cannot see what you wait on (the deploy to finish)');
     expect(met.met && met.told).toContain('HOPPER_WAITING');

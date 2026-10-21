@@ -11,8 +11,7 @@
 // A job on a wait for its own background command (issue #1037) that has not gone on is watched too (`ownCommandRuns`): its
 // pane shows no background work for the grace, it is nudged once (`job.own_command_nudged`); the grace after that, still
 // not gone on, its wait check ends the wait (issue #1694, wait-checks.ts): it is never left stuck for a person.
-// A job on a wait only its pane can end (issue #1508, `paneCarriesWait`: its own command, or a background poll for an outside
-// event the hopper watches nothing of) whose pane is lost — its machine or herdr restarted — is woken by the hopper, told so
+// A job on a wait only its pane can end (issue #1508, `paneCarriesWait`: its own command; issue #2338: no outside event) whose pane is lost — its machine or herdr restarted — is woken by the hopper, told so
 // (`job.wait_ended { by: hopper }`): its resume opens a new pane. Asked on every tick, so after a start and a seat's restart too.
 // Then the runner reattaches it: the executor watches the new turn until the next outcome.
 // Any other wait whose pane is lost (issue #1779: its agent session ended, its pane a bare shell) is marked stranded
