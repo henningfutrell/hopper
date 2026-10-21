@@ -7,7 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../../domain/ports.ts';
 import { TAGGED_STARTS, TAGGED_WORKS, type TaggedItem, type TaggedStarted } from '../../domain/tagged.ts';
-import { taggedJob } from '../../domain/tagged-jobs.ts';
+import { taggedJob, taggedWorkOf } from '../../domain/tagged-jobs.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -43,7 +43,7 @@ export function registerTaggedStartRoutes(app: FastifyInstance, o: { operator: G
     if (before) return { started: before, ...(t.directJobs.get(before.directJob) ? { directJob: t.directJobs.get(before.directJob) } : {}), replayed: true };
     const made = t.directJobs.submit({ ...taggedJob(item, b.start, b.work) }, actingOf(s));
     const started: TaggedStarted = {
-      key: item.key, start: b.start, ...(b.start === 'work' && b.work ? { work: b.work } : {}),
+      key: item.key, start: b.start, ...(b.start === 'work' ? { work: b.work ?? taggedWorkOf(item) } : {}),
       directJob: made.directJob.id, ...(made.job ? { jobId: made.job.id } : {}), at: o.clock.now().toISOString(),
     };
     const r = await t.registry.intakeAction(name, { kind: 'tagged_start', keys: [item.key], started });
