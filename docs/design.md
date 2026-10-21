@@ -22064,6 +22064,27 @@ label kept the issue out.
 end label put on by hand withdraws the card once and stays; a label at first sight is no withdraw),
 `test/sources/github-item-labels.test.ts` (`labelsFor` and `labelPutOn` of a card).
 
+### A hand-off's label mirrors the ledger (issue #1892 part 8, 2026-10-21)
+
+Milestone 2, part 8: the hand-off, which part 6 left to the labels. A hand-off is an item in needs you whose failed job waits
+on a person in Failures (`waitingOn` is `HANDOFF_WAIT`). Its job failed, so its labels are those of a failed item.
+
+- **`labelsFor` judges a hand-off once its job's failure was reported as failed.** The item wants `hopper:failed`, and no
+  other end label, as a failed item does (part 3). The fact is the same (`failureReported`: the item's job failed, its final
+  report went out, and not as one the hopper fixes). Before that report, the labels decide, as before.
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item the failed reason, whatever end labels its issue
+  carries; the mirror corrects them (a stale `hopper:pr-ready` comes off, a missing `hopper:failed` goes on).
+- **`hopper:failed` taken off by hand is a Run again**, as for a failed item: one `work_item.label_edited` with
+  `from: needs_you`. Intake takes the item again, as it did before when the labels decided; the event now records the
+  person's act. The hopper's own label change at a resolution in Needs a person is no label edit: the resolution moves the
+  item first, and its outbox row is held until it is sent.
+
+**Left to the labels:** a done item with no whole merge, dropped.
+
+**Verification:** `test/sources/github-label-needs-you.test.ts` (a hand-off whose failure was reported gets `hopper:failed`
+and the failed reason, and the label taken off by hand is one Run again; one not reported is not judged),
+`test/sources/github-item-labels.test.ts` (`labelsFor` of a hand-off).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
