@@ -3281,6 +3281,29 @@ Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machin
 }
 ```
 
+## `machine.sandbox_host_set`
+
+Version 1 (`docs/schemas/machine.sandbox_host_set.v1.json`). A person named the sandbox host (issue #2272): `hosts`, first first, are the machines the user's sandboxes start on from now on — the first one online —, never another machine; empty: cleared, and sandboxes start where they did before. `was`: the sandbox host before. A sandbox that runs already ends where it started. `person` and `via` say who and the way.
+
+| field | type | required |
+|---|---|---|
+| `hosts` | string[] | yes |
+| `was` | string[] | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "hosts": [
+    "box-vm",
+    "local"
+  ],
+  "was": [],
+  "person": "Pat",
+  "via": "ui"
+}
+```
+
 ## `minor_decision.picked`
 
 Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`, `intake-trust`, `intake-kind`, `sandbox-request`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).

@@ -17,7 +17,7 @@ import { resourcesText } from '@/model/machine-history';
 import { hopperDiskText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
 import { orderReadings, readingKey } from '@/model/usage';
-import type { MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries } from '@/model/wire';
+import type { MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
 import { allows } from '@/model/roles';
 import { useHopper } from '@/store';
 import { EditMachineForm, LocalMachineForm } from './machine-forms';
@@ -26,6 +26,7 @@ import { CredentialCheck } from './machine-credentials';
 import { CpuSparkline, MachineResourcesGraph } from './machine-resources';
 import { MachineTerminal } from './machine-terminal';
 import { MachineDrainButton, MachineDrainNotice } from './machine-drain';
+import { SandboxHostButton, SandboxHostNotice } from './machine-sandbox-host';
 import { UnhealthyLanesNotice } from './machine-lane-health';
 import { MachineLeftovers } from './machine-leftovers';
 
@@ -48,6 +49,8 @@ export interface Ctx {
   edit: (e: Exclude<PluginsEdit, { action: 'rescan' }>, done: string) => Promise<boolean>;
   /** Every machine's CPU over the last day, for the sparklines (issue #560). */
   sparks: readonly ResourceSeries[];
+  /** The user's sandbox runs (GET /api/sandboxes): how many run on a machine of the sandbox host now (issue #2272). */
+  boxes: SandboxesView | null;
 }
 
 export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
@@ -118,6 +121,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
       <MachineDrainNotice m={m} now={now} />
+      <SandboxHostNotice m={m} boxes={ctx.boxes} />
       <UnhealthyLanesNotice m={m} now={now} />
       <CredentialCheck m={m} authed={ctx.authed} busy={ctx.busy} />
       <MachineLeftovers m={m} canAct={ctx.authed && operator} />
@@ -145,6 +149,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         <Button size="sm" variant="outline" aria-expanded={graph} onClick={() => setGraph((g) => !g)}><Activity />{graph ? 'Hide the graph' : 'Resources, lanes and usage'}</Button>
         {admin && m.online && m.herdr && !terminal && <Button size="sm" variant="outline" onClick={() => setTerminal(true)}><SquareTerminal />Terminal</Button>}
         {admin && ctx.authed && <MachineDrainButton m={m} />}
+        {admin && ctx.authed && <SandboxHostButton m={m} />}
         {actions}
       </div>
       {graph && <MachineResourcesGraph machineId={m.id} />}

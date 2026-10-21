@@ -83,11 +83,11 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/tldr', async (req) => tldrView(o.tenant(req)));
   // The Pull requests list (issue #637): the waiting pull requests, per repository, their state and yolo mode; where merging waits.
   app.get('/api/pull-requests', async (req) => pullRequestsView(o.tenant(req)));
-  // The machines, and the last report of the keep-alive loop on Windows on the Windows link (issue #712), when fresh.
+  // The machines, the last report of the keep-alive loop on Windows on the Windows link (issue #712), when fresh, and the sandbox host (issue #2272), when set.
   app.get('/api/machines', async (req) => {
     const t = o.tenant(req);
-    const windowsLink = t.windowsLink.reported(o.clock.now().toISOString());
-    return { machines: await t.engine.getMachines(), ...(windowsLink ? { windowsLink } : {}) };
+    const windowsLink = t.windowsLink.reported(o.clock.now().toISOString()), sandboxHost = t.engine.sandboxHost.hosts();
+    return { machines: await t.engine.getMachines(), ...(windowsLink ? { windowsLink } : {}), ...(sandboxHost.length ? { sandboxHost } : {}) };
   });
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
   app.get('/api/machines/config', async (req) => ({ ...(await o.tenant(req).plugins.machinesConfig()), port: o.port() }));

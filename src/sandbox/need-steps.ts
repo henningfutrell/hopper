@@ -47,6 +47,8 @@ const COMMAND_IN_EVENT = 300;
 const ID = /^[a-f0-9-]{36}$/;
 /** How often a running step looks whether its job is still at work. */
 const AT_WORK_MS = 5_000;
+/** How often a step that waits for its sandbox host looks at it again (issue #2272). */
+export const HOST_WAIT_MS = 10_000;
 
 const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 
@@ -95,6 +97,13 @@ export interface NeedStepsOptions {
   keepMs?: number;
   /** Whether infra applies are on (issue #1722, the instance's setting, read at each ask); off, no step that applies runs. Absent: on. */
   applies?: () => boolean;
+  /**
+   * "sandbox host <name> is offline" while the user's sandbox host is set and none of its machines is online (issue #2272,
+   * the sandbox module's `hostOffline`): the step waits, before anything is minted. Absent: it never waits.
+   */
+  hostOffline?: () => Promise<string | undefined>;
+  /** How often a waiting step looks at the sandbox host again (default HOST_WAIT_MS). */
+  hostWaitMs?: number;
 }
 
 /** What the job sent with its ask: its key for the ask, and the inputs (a tar; empty: none). */
@@ -212,6 +221,32 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     return { id: step.id };
   };
 
+  /**
+   * Waits while the sandbox host is offline, its log saying so once per wait; whether the step goes on. It ends cancelled
+   * when its job stops meanwhile, and stops waiting when its saga is aborted or its hopper stops (the saga goes on after).
+   */
+  const hostWait = async (s: NeedStep, signal: AbortSignal): Promise<boolean> => {
+    let told: string | undefined;
+    for (;;) {
+      const offline = await o.hostOffline?.();
+      if (offline === undefined) {
+        if (told) o.steps.appendLog(s.id, 'hopper: the sandbox host is online: the step starts\n');
+        return true;
+      }
+      if (offline !== told) {
+        o.steps.appendLog(s.id, `hopper: ${offline}: the step waits for it, and never starts on another machine\n`);
+        told = offline;
+      }
+      if (!o.atWork(s.jobId)) { finish(s, { exit: 125, problem: `cancelled: job ${s.jobId} is not at work` }, 0); return false; }
+      const waited = await new Promise<boolean>((resolve) => {
+        const t = setTimeout(() => { signal.removeEventListener('abort', stop); resolve(true); }, o.hostWaitMs ?? HOST_WAIT_MS);
+        const stop = (): void => { clearTimeout(t); resolve(false); };
+        signal.addEventListener('abort', stop, { once: true });
+      });
+      if (!waited || signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('the step was stopped while it waited for its sandbox host');
+    }
+  };
+
   /** Mints, runs the need box and keeps the result: the `run` step's do, once per step. */
   const run = async (stepId: string, signal: AbortSignal): Promise<void> => {
     const s = o.steps.get(stepId);
@@ -223,6 +258,9 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     if (o.ran(s.id)) { finish(s, { exit: 125, problem: STEP_INTERRUPTED }, 0); return; }
     if (!o.atWork(s.jobId)) { finish(s, { exit: 125, problem: `cancelled: job ${s.jobId} is not at work` }, 0); return; }
     if (!o.run) throw new Error('this hopper runs no sandbox step');
+    // Issue #2272: while no machine of the sandbox host is online, the step waits, and never starts on another machine.
+    // The saga's lease holds meanwhile; a stop of the hopper leaves it to wait again on any host.
+    if (!(await hostWait(s, signal))) return;
     // Minted now, for this try only: no credential is kept in the database or between tries.
     const credentials: NeedCredential[] = [];
     // Issue #2206: the one change on an aws-role the granted actions narrow.

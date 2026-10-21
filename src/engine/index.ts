@@ -30,7 +30,7 @@ import { createPassLeases } from './pass-leases.ts';
 import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts'; import { pauseForBudget } from './token-budget.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
-import { createMachineDrains, drainedMachines, type MachineDrains } from './machine-drains.ts';
+import { createMachineDrains, drainedMachines, type MachineDrains } from './machine-drains.ts'; import { createSandboxHostSetting, sandboxHostMachines, type SandboxHostSetting } from './sandbox-host.ts';
 import { createReachHolds } from './reach-holds.ts'; import { createLaneHealth } from './lane-health.ts';
 import { createPlacementPicks } from './lane-calls.ts';
 import { createTrustChecks } from './trust-checks.ts';
@@ -101,6 +101,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly laneTuning: LaneTuningService;
   /** Drained machines (issue #1511): a person drains or undrains a machine; every machine the engine lists carries it. */
   readonly machineDrains: MachineDrains;
+  /** The sandbox host (issue #2272): the machines the user's sandboxes start on. */
+  readonly sandboxHost: SandboxHostSetting;
   /** Job checkpoints (issue #921): a pass every minute takes those due; a park takes one. */
   readonly checkpoints: Checkpoints;
   /**
@@ -147,7 +149,7 @@ export function createEngine(o: EngineOptions): Engine {
 
   const reachHolds = createReachHolds(o.clock); const laneHealth = createLaneHealth(o.clock);
   const c: EngineContext = {
-    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: laneHealth.source(reachHolds.source(drainedMachines(o.machines, { store }))), reachHolds, laneHealth, configuredMachines: o.configuredMachines ?? (() => undefined),
+    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: laneHealth.source(reachHolds.source(sandboxHostMachines(drainedMachines(o.machines, { store }), { store }))), reachHolds, laneHealth, configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, doneReadRetryMs: o.doneReadRetryMs ?? 5000, ownCommandGraceMs: o.ownCommandGraceMs ?? 300000, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), agentSignIn: o.agentSignIn ?? (async () => ({ none: true as const })), deliveredSecrets: o.deliveredSecrets ?? (async () => []), traceContext: o.traceContext ?? (() => ({})), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems, sandboxesHeld: o.sandboxesHeld ?? (() => []),
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
@@ -218,7 +220,7 @@ export function createEngine(o: EngineOptions): Engine {
     priorityLanes,
     blastRadius,
     laneTuning,
-    machineDrains: createMachineDrains(c),
+    machineDrains: createMachineDrains(c), sandboxHost: createSandboxHostSetting(c),
     checkpoints,
     discardWork: (jobId, by) => sweep.discard(jobId, by),
     discarding: (jobId) => sweep.discarding(jobId),
