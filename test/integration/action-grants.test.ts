@@ -64,10 +64,10 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-async function boot(o: { template?: false; iamAllows?: string[] } = {}): Promise<Booted> {
+async function boot(o: { template?: false; iamAllows?: string[]; iamMissingRoles?: string[] } = {}): Promise<Booted> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const sts = await fakeSts(ACCOUNT, o.iamAllows ? { iamAllows: o.iamAllows } : {});
+  const sts = await fakeSts(ACCOUNT, { ...(o.iamAllows ? { iamAllows: o.iamAllows } : {}), ...(o.iamMissingRoles ? { iamMissingRoles: o.iamMissingRoles } : {}) });
   cleanups.push(sts.close);
   const github = await createFakeGitHub({ clientId: 'gh-client-id' });
   cleanups.push(() => github.close());
@@ -237,6 +237,19 @@ describe('action grants (issue #2206)', () => {
     const v = await vaultOf(b);
     expect(v.templates).toEqual([]);
     expect(v.actionAsks).toEqual([]);
+  });
+
+  it('the action check: a role the account does not have refuses the template request at once, and asks for no grant (issue #2387)', async () => {
+    const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'], iamMissingRoles: ['hopper-action'] });
+    const r = await skill(b, { name: 'sandbox-template', needs: NEED, actions: SCALE, ...ABOUT });
+    expect(r.status, r.text).toBe(409);
+    expect(r.text).toContain(`cannot: eks:UpdateNodegroupConfig on ${ARN} as aws-role ${SCOPE.role}: the role arn:aws:iam::${ACCOUNT}:role/hopper-action does not exist (IAM GetRole: NoSuchEntity)`);
+    expect(simulations(b)).toEqual([]);
+    const v = await vaultOf(b);
+    expect(v.templates).toEqual([]);
+    expect(v.runs).toEqual([]);
+    expect(v.actionAsks).toEqual([]);
+    expect((await ofJob(b)).filter((e) => e.type === 'vault.action_asked')).toHaveLength(0);
   });
 
   it('the action check: a template request on the action role asks for the grant at once, beside the template', async () => {
