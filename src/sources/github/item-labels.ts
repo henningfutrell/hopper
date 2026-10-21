@@ -9,10 +9,12 @@
 // request merged as the whole item (`wholeMerged`): the follow put it on with the merge. Not a done item a job's end or a read
 // of GitHub made done: its report set the labels by what the issue said then. A partly done item carries none once its merged
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
-// runs. Not a last part that made every declared part done: the follow put `hopper:done` on. Every other state is not judged.
+// runs. Not a last part that made every declared part done: the follow put `hopper:done` on. An item that needs a person carries
+// none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
+// Not a hand-off (`HANDOFF_WAIT`): its job failed, and its report may have put `hopper:failed` on. Every other state is not judged.
 // Pure: no I/O, no clock.
 import type { BlockedCause } from '../../domain/item-lifecycle.ts';
-import type { WorkItem, WorkItemState } from '../../domain/work-items.ts';
+import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
 import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 
 /** The end labels an item's state allows, and the one to add when none of them is on (absent: none is needed). */
@@ -25,8 +27,8 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
  */
 export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean }
 
-/** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, and its merge. */
-export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged'>>;
+/** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, its merge, and what it waits on. */
+export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn'>>;
 
 /** The end labels `item`'s state wants on its issue; undefined: the state is not judged. */
 export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLabels | undefined {
@@ -40,6 +42,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     case 'failed': return item.eventState === 'failed' && facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
     case 'done': return item.pullRequestState === 'merged' && item.wholeMerged === true ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     case 'partly_done': return item.eventState === 'partly_done' && facts.partsLeft ? { allowed: [] } : undefined;
+    case 'needs_you': return item.waitingOn !== undefined && item.waitingOn !== HANDOFF_WAIT ? { allowed: [] } : undefined;
     default: return undefined;
   }
 }
