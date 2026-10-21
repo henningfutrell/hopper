@@ -19099,8 +19099,17 @@ One pattern for each page, in `ui/src/components/pager.tsx` and `panel.tsx`:
   code view keeps its own.
 - **Kept.** The mode and each fold are **page choices** (`jh_page_prefs`), as the nav groups are kept; which page shows is not.
 
-Part 1: Jobs, Pull requests, Events, Failures, Search. Left: Settings, Questions, Proposals, Research, Usage, Resources,
-Sources, Accounts.
+Part 1: Jobs, Pull requests, Events, Failures, Search. Part 2:
+
+- **Questions, Proposals, Research**: Cards or Rows (`ui/src/components/card-rows.tsx`), 6 cards or 30 rows to a page.
+  A row opens its card in place, below it, so a person answers or decides with the same card; which rows are open is
+  not kept. Questions' reason filter starts again at the first page.
+- **Usage, Resources, Accounts**: each panel folds (Panel `fold`, its page choice key). A usage graph card folds too.
+- **Sources**: the GitHub, GitLab and Repository setup sections fold by their heading (`FoldSection`), and each source.
+- **Settings**: one section shows at a time already, so the long part was its strip of 35 links. The links are in six
+  groups (General, Questions, Jobs, GitHub, Network, Access); each group folds by its title, and a folded group still
+  shows the open section's link. A **jump list** above them names every section by its group. A section in no group
+  fails the typecheck.
 
 ## The isolation stop (issue #752, 2026-10-11)
 
