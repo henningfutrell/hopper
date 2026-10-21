@@ -72,7 +72,7 @@ afterEach(async () => {
 });
 
 describe('the nav groups after the merge', () => {
-  it('Dashboard and Needs you pinned; Waiting on you, Work, Fleet, Infra and Admin; no group of one; 21 entries at most', async () => {
+  it('Dashboard and Needs you pinned; Waiting on you, Work, Fleet, Infra and Admin; no group of one; 24 entries at most', async () => {
     const nav = '../../ui/src/app/nav.tsx';
     const { NAV_GROUPS, NAV_PINNED } = (await import(nav)) as { NAV_PINNED: readonly string[]; NAV_GROUPS: readonly { id: string; label: string; views: readonly string[] }[] };
     expect(NAV_PINNED).toEqual(['dashboard', 'needs-you']);
@@ -80,11 +80,11 @@ describe('the nav groups after the merge', () => {
       ['waiting', 'Waiting on you', ['intake', 'questions', 'proposals', 'approvals', 'failures', 'tagged']],
       ['jobs', 'Work', ['jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity']],
       ['sources-machines', 'Fleet', ['machines', 'usage', 'sources']],
-      ['infra', 'Infra', ['infra', 'topology']],
-      ['settings', 'Admin', ['skills', 'settings']],
+      ['infra', 'Infra', ['infra', 'topology', 'vault']],
+      ['settings', 'Admin', ['users-access', 'skills', 'plugins', 'settings']],
     ]);
     for (const g of NAV_GROUPS) expect(g.views.length).toBeGreaterThan(1);
-    expect(NAV_PINNED.length + NAV_GROUPS.reduce((t, g) => t + g.views.length, 0)).toBeLessThanOrEqual(21);
+    expect(NAV_PINNED.length + NAV_GROUPS.reduce((t, g) => t + g.views.length, 0)).toBeLessThanOrEqual(24);
   });
 
   it('every tab of a merged page is reached by one hash: its home and the tab', async () => {

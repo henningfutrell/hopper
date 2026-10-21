@@ -1486,7 +1486,7 @@ page** (`PAGE_TABS`, `ui/src/app/routes.ts`; `ui/src/app/page-tabs.tsx`), whose 
 - **No entry**: Search, which the header's search box opens (on a phone, which has no search box, the navigation
   drawer lists it after Needs you); Your reports and Version history, in the user menu. Their routes stay (`#search`,
   `#reports`, `#settings/version-history`).
-- **Fits**: with every group open the sidebar holds 21 entries and needs no scroll at 1440×900; its rows are tighter
+- **Fits**: with every group open the sidebar holds 24 entries (with Plugins, Vault and Users & access, issue #2373) and needs no scroll at 1440×900; its rows are tighter
   than the drawer's, whose rows stay a touch target's height.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
@@ -19198,7 +19198,7 @@ Requirement: no horizontal strip of Settings links; every section in view at 144
   typecheck, as a nav group of one entry does (`NAV_GROUPS`, `ui/src/app/nav.tsx`).
 - **Views of their own.** Plugins (`#plugins`), Vault (`#vault`) and **Users & access** (`#users-access`, sections
   `users`, `access`, `permissions`, `api-tokens`; `ui/src/views/users-access.tsx`) are workflows a person acts in, not
-  configuration. Each is an entry in Set up, its one home. Webhooks and Sign-in stay in Settings.
+  configuration. Each is an entry of its own, its one home: Vault in Infra, Plugins and Users & access in Admin (issue #2374). Webhooks and Sign-in stay in Settings.
 - **Old hashes.** `#settings/plugins`, `#settings/vault`, `#settings/users`, `#settings/access`, `#settings/permissions`
   and `#settings/api-tokens` are replaced by their new hash; what follows the section (a device grant's user code)
   follows the new one. A device grant's `verificationPath` is `/#users-access/api-tokens`.

@@ -62,9 +62,6 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   plugins: { label: 'Plugins', icon: Puzzle },
   vault: { label: 'Vault', icon: LockKeyhole },
   'users-access': { label: 'Users & access', icon: Users },
-  plugins: { label: 'Plugins', icon: Puzzle },
-  vault: { label: 'Vault', icon: LockKeyhole },
-  'users-access': { label: 'Users & access', icon: Users },
   usage: { label: 'Usage', icon: Gauge },
   settings: { label: 'Settings', icon: Settings },
   job: { label: 'Job', icon: Briefcase },
@@ -127,7 +124,7 @@ function Links({ view, onPick, phone }: { view: View; onPick?: () => void; phone
     const counted = b && b.n > 0 ? b : undefined;
     return (
       <a key={v} href={`#${v}`} onClick={onPick} aria-current={view === v ? 'page' : undefined}
-        className={cn('flex items-center gap-2.5 rounded-md px-2.5 text-sm', phone ? 'h-9' : 'h-7.5', 'text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+        className={cn('flex items-center gap-2.5 rounded-md px-2.5 text-sm', phone ? 'h-9' : 'h-7', 'text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
           view === v && 'bg-muted text-foreground')}>
         <Icon className="size-4" />{label}
         {counted && <Count slot="nav-badge" b={counted} />}
@@ -136,7 +133,7 @@ function Links({ view, onPick, phone }: { view: View; onPick?: () => void; phone
     );
   };
   return (
-    <nav className="grid gap-1">
+    <nav className="grid gap-0.5">
       <div className="grid gap-px">{NAV_PINNED.map((v) => entry(v))}{phone && entry('search')}</div>
       {NAV_GROUPS.map((g) => {
         const open = !collapsed.includes(g.id);
@@ -145,7 +142,7 @@ function Links({ view, onPick, phone }: { view: View; onPick?: () => void; phone
         return (
           <div key={g.id} data-nav-group={g.id} className="grid gap-px">
             <button type="button" data-slot="nav-group-toggle" aria-expanded={open} data-current={!open && holdsView ? true : undefined} onClick={() => toggleNavGroup(g.id)}
-              className={cn('flex h-6 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground',
+              className={cn('flex h-5.5 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground',
                 !open && holdsView && 'text-foreground')}>
               <ChevronDown className={cn('size-3.5 transition-transform', !open && '-rotate-90')} aria-hidden />{g.label}
               {!open && sum.badge && <Count slot="nav-group-badge" b={sum.badge} />}
@@ -179,7 +176,7 @@ function Backburner({ slot, n, alone }: { slot: string; n: number; alone: boolea
 }
 
 export function Sidebar({ view }: { view: View }) {
-  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 overflow-y-auto overscroll-contain border-r p-3 lg:block"><Links view={view} /></aside>;
+  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 overflow-y-auto overscroll-contain border-r px-3 py-2 lg:block"><Links view={view} /></aside>;
 }
 
 export function MobileNav({ view }: { view: View }) {

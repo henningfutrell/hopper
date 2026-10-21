@@ -16,8 +16,8 @@ The menu puts the other pages in groups. Each group has a heading.
 | Waiting on you | Intake, Questions, Proposals, Approvals, Failures, Tagged |
 | Work | Jobs, Pull requests, Research, Ask hopper, Artifacts, Activity |
 | Fleet | Machines, Usage, Sources |
-| Infra | Infra, Topology |
-| Admin | Skills, Settings |
+| Infra | Infra, Topology, Vault |
+| Admin | Users & access, Skills, Plugins, Settings |
 
 Some pages have tabs. Each tab shows one part of the same work:
 
