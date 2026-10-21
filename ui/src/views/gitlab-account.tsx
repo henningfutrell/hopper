@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Panel } from '@/components/panel';
+import { FoldSection, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
 import type { GitLabAccountStatus, SourceStatus } from '@/model/wire';
@@ -101,13 +101,10 @@ export function GitLabSection({ source }: { source: SourceStatus | undefined }) 
   const why = error ?? (s.state === 'not-connected' ? s.error : undefined);
   const attached = 'account' in s ? s : undefined;
   return (
-    <section className="space-y-2" aria-labelledby="sources-gitlab">
-      <div>
-        <h2 id="sources-gitlab" className="text-sm font-semibold">GitLab</h2>
+    <FoldSection id="sources-gitlab" title="GitLab" fold="sources.gitlab" line={
         <p className="text-xs text-muted-foreground">
           Issues labelled <code>hopper</code> in the projects you pick are listed in Intake. An issue that your GitLab account wrote, labelled and assigned to itself becomes a job. The job fetches and pushes through the hopper with this account's token, and opens a merge request. Give the token the scopes <code>api</code>, <code>read_user</code> and <code>write_repository</code>.
-        </p>
-      </div>
+        </p>}>
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel title="GitLab account" icon={Link2} action={<StatusBadge status={s.state} label={LABEL[s.state]} tone={tone} />} bodyClassName="space-y-2 text-xs">
           <div data-gitlab-account={s.state} className="space-y-2">
@@ -131,6 +128,6 @@ export function GitLabSection({ source }: { source: SourceStatus | undefined }) 
           </div>
         </Panel>
       </div>
-    </section>
+    </FoldSection>
   );
 }

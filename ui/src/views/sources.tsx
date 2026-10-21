@@ -5,12 +5,13 @@
 // A source that takes the same work as an earlier one (issue #1264) is named in a banner at the top, with one click to remove it.
 // More than one GitHub account (issue #1448): each further account has a panel of its own, with its source inside it, and Add
 // another GitHub account, in the first account's panel once it is connected, takes a personal access token of another account.
-// Below GitHub, the GitLab account (issue #1448 part 2), with its source's sync inside its panel.
+// Below GitHub, the GitLab account (issue #1448 part 2), with its source's sync inside its panel. Each section and source
+// folds, and stays folded over a reload (issue #2353).
 import { useCallback, useEffect, useState } from 'react';
 import { CopyX, Inbox, Trash2 } from 'lucide-react';
 import { sendPluginsEdit } from '@/components/plugin-form';
 import { Button } from '@/components/ui/button';
-import { Empty, Panel } from '@/components/panel';
+import { Empty, FoldSection, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { sourcesView } from '@/model/sources';
 import type { ConnectedAccountStatus, SourceStatus } from '@/model/wire';
@@ -24,7 +25,7 @@ import { SourceSync } from './source-sync';
 
 function SourceCard({ s }: { s: SourceStatus }) {
   return (
-    <Panel title={s.name} icon={Inbox} action={<StatusBadge status={s.state} tone={s.state === 'ok' ? 'ok' : undefined} />} bodyClassName="space-y-3">
+    <Panel title={s.name} icon={Inbox} fold={`sources.source.${s.name}`} action={<StatusBadge status={s.state} tone={s.state === 'ok' ? 'ok' : undefined} />} bodyClassName="space-y-3">
       <SourceSync s={s} />
     </Panel>
   );
@@ -74,17 +75,13 @@ export function Sources() {
   return (
     <div className="space-y-4">
       <DuplicateBanner duplicates={v.duplicates} />
-      <section className="space-y-2" aria-labelledby="sources-github">
-        <div>
-          <h2 id="sources-github" className="text-sm font-semibold">GitHub</h2>
-          <p data-github-summary className="text-xs text-muted-foreground">{v.summary}</p>
-        </div>
+      <FoldSection id="sources-github" title="GitHub" fold="sources.github" line={<p data-github-summary className="text-xs text-muted-foreground">{v.summary}</p>}>
         <div className="grid gap-3 lg:grid-cols-2">
           <ConnectedAccountPanel provider="github" source={v.account} onStatus={setSignIn} onAdded={readFurther} />
           {further.map((k) => <ConnectedAccountPanel key={k} provider="github" accountKey={k} source={v.further[k]} onRemoved={readFurther} />)}
           {v.github.map((s) => <SourceCard key={s.name} s={s} />)}
         </div>
-      </section>
+      </FoldSection>
       <GitLabSection source={v.gitlab} />
       <RepoSetupSection />
       {v.others.length > 0 && (

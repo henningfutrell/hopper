@@ -13,7 +13,7 @@ import { ago } from '@/model/format';
 import { useServerNow } from '@/store/selectors';
 import { SETUP_ASKS, UNREAD_WHY, setupLine } from '@/model/repo-setup';
 import type { RepoChecks, RepoChecksView } from '@/model/wire';
-import { Panel } from '@/components/panel';
+import { FoldSection, Panel } from '@/components/panel';
 
 const POLL_MS = 60_000;
 /** While a read is under way: how soon the list is read again. */
@@ -68,16 +68,13 @@ export function RepoSetupSection() {
   if (repos.length === 0) return null;
   const warn = repos.some((r) => r.setup.state === 'not set up');
   return (
-    <section className="space-y-2" aria-labelledby="sources-repo-setup">
-      <div>
-        <h2 id="sources-repo-setup" className="text-sm font-semibold">Repository setup</h2>
-        <p data-repo-setup-line className={`text-xs ${warn ? 'text-warn' : 'text-muted-foreground'}`}>{setupLine(repos)}</p>
-      </div>
+    <FoldSection id="sources-repo-setup" title="Repository setup" fold="sources.repo-setup"
+      line={<p data-repo-setup-line className={`text-xs ${warn ? 'text-warn' : 'text-muted-foreground'}`}>{setupLine(repos)}</p>}>
       <Panel title="Job repositories" icon={ShieldAlert} bodyClassName="space-y-1"
         action={<Button data-repo-setup-refresh size="sm" variant="ghost" disabled={reading} onClick={() => void refresh()}><RefreshCw />Refresh</Button>}>
         <p className="text-xs text-muted-foreground">{SETUP_ASKS}</p>
         <ul className="divide-y">{repos.map((r) => <Repo key={r.repo} r={r} now={now} />)}</ul>
       </Panel>
-    </section>
+    </FoldSection>
   );
 }

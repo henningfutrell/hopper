@@ -2,15 +2,20 @@
 // optional action on the right. It fills its grid cell, so the panels of one row line up. A list
 // box (`list`) holds its list in a body of one height bound that scrolls past it (issue #84).
 // On a long page (issue #2353): a sticky panel keeps its header, and the toolbar under it (its filters), in view below the
-// app's header while its body scrolls with the page; a panel with `onToggle` folds, its title the toggle.
+// app's header while its body scrolls with the page; a panel with `onToggle` folds, its title the toggle. A panel with
+// `fold` folds by itself, open or folded kept per browser under that page choice key (`usage.accounts`).
 import { ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { useGroupOpen } from '@/hooks/use-page-pref';
 import { cn } from '@/lib/utils';
 
-export function Panel({ title, icon: Icon, count, action, toolbar, list, sticky, open = true, onToggle, className, bodyClassName, children }: {
+export function Panel({ title, icon: Icon, count, action, toolbar, list, sticky, fold, open: openGiven = true, onToggle: toggleGiven, className, bodyClassName, children }: {
   title: string; icon?: LucideIcon; count?: React.ReactNode; action?: React.ReactNode; toolbar?: React.ReactNode; list?: boolean;
-  sticky?: boolean; open?: boolean; onToggle?: () => void; className?: string; bodyClassName?: string; children: React.ReactNode;
+  sticky?: boolean; fold?: string; open?: boolean; onToggle?: () => void; className?: string; bodyClassName?: string; children: React.ReactNode;
 }) {
+  const [kept, toggleKept] = useGroupOpen(fold ?? '');
+  const open = fold ? kept : openGiven;
+  const onToggle = fold ? toggleKept : toggleGiven;
   const heading = <>
     {onToggle && (open ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />)}
     {Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
@@ -34,6 +39,23 @@ export function Panel({ title, icon: Icon, count, action, toolbar, list, sticky,
           className={cn('min-h-0 flex-1 p-4', list && 'max-h-96 overflow-y-auto overscroll-contain', bodyClassName)}>{children}</div>
       )}
     </Card>
+  );
+}
+
+/** A page's section with a heading and a line under it (Sources' GitHub, GitLab): its heading folds it, kept as `fold`. */
+export function FoldSection({ id, title, line, fold, children }: { id: string; title: string; line?: React.ReactNode; fold: string; children: React.ReactNode }) {
+  const [open, toggle] = useGroupOpen(fold);
+  return (
+    <section data-open={String(open)} className="space-y-2" aria-labelledby={id}>
+      <div>
+        <button type="button" data-slot="panel-toggle" aria-expanded={open} onClick={toggle} className="-mx-1 flex items-center gap-1 rounded px-1 text-left hover:bg-muted/40">
+          {open ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
+          <h2 id={id} className="text-sm font-semibold">{title}</h2>
+        </button>
+        {line}
+      </div>
+      {open && children}
+    </section>
   );
 }
 
