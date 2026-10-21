@@ -169,6 +169,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const where = ctx.machine.id;
     try {
       ctx.progress(`${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
+      const first = new Date().toISOString();
       // A device code the agent's tools print goes to the logins while the turn waits on it (issue #476).
       const login = watchRunOutput(ctx.logins, { now: () => new Date() }, (line) => ctx.progress(line));
       const r = await runOn(ctx, script, p.timeoutMs, login.feed).then((ran) => {
@@ -178,6 +179,9 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       if (r === 'aborted') return { kind: 'failed', error: 'aborted' };
       if (r === 'timeout') return { kind: 'failed', error: `${label} on ${where} timed out after ${p.timeoutMs} ms` };
       // What the turn printed goes on as an error, a question or progress: never with a device code (issue #476).
+      // What the turn spent (issue #2302, part 6), whatever it answered.
+      const spent = dialect.usage?.(r.stdout, { first, last: new Date().toISOString() });
+      if (spent) ctx.tokenUse?.(spent.session, spent.use);
       const seen = `${r.stdout}\n${r.stderr}`;
       const hidden = (text: string): string => hideCodes(text, seen, login.codes());
       const answer = dialect.read(r.stdout);

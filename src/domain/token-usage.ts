@@ -100,6 +100,40 @@ function addCounts<T extends TokenCounts>(a: T, b: TokenCounts): T {
   return { ...a, input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, ...(hour ? { cacheWrite1h: hour } : {}) };
 }
 
+/**
+ * The token use a print-mode Claude turn answers (`claude -p --output-format json`, part 6): its `modelUsage`, per model,
+ * every model the turn ran — its subagents' too —, counted once. The result names no turns per model: `num_turns` goes to
+ * the model that wrote most. The one-hour cache write is the result's own `usage`, which only a one-model turn can be
+ * given. `at`: when the turn started and ended. Undefined when it names no use. Counts only, never its text.
+ */
+export function printTurnTokenUse(result: unknown, at: { first: string; last: string }): SessionTokenUse | undefined {
+  const r = (result && typeof result === 'object' ? result : {}) as { num_turns?: unknown; usage?: { cache_creation?: Record<string, unknown> }; modelUsage?: unknown };
+  const per = r.modelUsage && typeof r.modelUsage === 'object' ? Object.entries(r.modelUsage as Record<string, Record<string, unknown> | null>) : [];
+  const models: ModelTokenUse[] = per.map(([model, u]) => ({ model, turns: 0, input: num(u?.inputTokens), output: num(u?.outputTokens), cacheRead: num(u?.cacheReadInputTokens), cacheWrite: num(u?.cacheCreationInputTokens) }))
+    .filter((m) => m.input + m.output + m.cacheRead + m.cacheWrite > 0).sort((a, b) => a.model.localeCompare(b.model));
+  if (models.length === 0) return undefined;
+  const most = models.reduce((a, b) => (b.output > a.output ? b : a));
+  most.turns = Math.max(1, Math.floor(num(r.num_turns)));
+  const hour = Math.min(num(r.usage?.cache_creation?.ephemeral_1h_input_tokens), models[0]!.cacheWrite);
+  if (models.length === 1 && hour) models[0]!.cacheWrite1h = hour;
+  return { models, ...at };
+}
+
+/** A turn's use added to the ledger's rows of its session (part 6): a print-mode turn answers only its own use. */
+export function withTurnUse(before: readonly TokenLedgerEntry[], turn: SessionTokenUse): SessionTokenUse {
+  const models = new Map<string, ModelTokenUse>();
+  for (const { model, turns, input, output, cacheRead, cacheWrite, cacheWrite1h, failedTests } of [...before, ...turn.models]) {
+    const was = models.get(model);
+    const counts: ModelTokenUse = { model, turns, input, output, cacheRead, cacheWrite, ...(cacheWrite1h ? { cacheWrite1h } : {}), ...(failedTests ? { failedTests } : {}) };
+    if (!was) { models.set(model, counts); continue; }
+    const failed = (was.failedTests ?? 0) + (failedTests ?? 0);
+    models.set(model, { ...addCounts(was, counts), turns: was.turns + turns, ...(failed ? { failedTests: failed } : {}) });
+  }
+  const times = (pick: (u: { first?: string | undefined; last?: string | undefined }) => string | undefined): string[] => [...before, turn].flatMap((u) => { const t = pick(u); return t ? [t] : []; }).sort();
+  const first = times((u) => u.first)[0], last = times((u) => u.last).at(-1);
+  return { models: [...models.values()].sort((a, b) => a.model.localeCompare(b.model)), ...(first ? { first } : {}), ...(last ? { last } : {}) };
+}
+
 /** Model uses summed, each one's cost estimated at its own model's price. */
 export function sumTokenUse(uses: readonly ModelTokenUse[]): TokenTotals {
   let total: TokenTotals = { turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0, costKnown: true };

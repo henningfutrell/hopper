@@ -9,7 +9,7 @@
 // Each read of the session keeps its token use in the token ledger (issue #2302), counts only; `tokens` reads it once more
 // as a run ends, so the ledger holds the run's last turns, and keeps nothing else.
 import type { JobCheckpoint } from '../domain/checkpoints.ts';
-import type { SessionTokenUse } from '../domain/token-usage.ts';
+import { withTurnUse, type SessionTokenUse } from '../domain/token-usage.ts';
 import { CHECKPOINT_COMMITS } from '../domain/checkpoints.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import { scrubCheckpoint } from './checkpoint-scrub.ts';
@@ -49,6 +49,17 @@ const unchanged = (k: JobCheckpoint, kept: { patch: Buffer; session?: Buffer }, 
   && kept.patch.equals(patch) && (kept.session && session ? kept.session.equals(session) : kept.session === session);
 
 /**
+ * A session's token use kept in the ledger: where it was read, and who that machine's Claude was signed in as then. `turn`:
+ * a print-mode turn's own use (part 6), added to what the ledger holds of the session, since its answer counts that turn only.
+ */
+export function keepTokenUse(c: Pick<EngineContext, 'store' | 'clock'>, job: Job, session: string, use: SessionTokenUse, turn = false): void {
+  const machineId = machineOf(c, job);
+  const account = c.store.lastAccounts.get(machineId, 'claude')?.identity;
+  const whole = turn ? withTurnUse(c.store.tokenLedger.list({ jobId: job.id }).filter((e) => e.session === session), use) : use;
+  c.store.tokenLedger.put(job.id, session, whole, { readAt: nowIso(c), machineId, ...(job.laneId ? { laneId: job.laneId } : {}), ...(account ? { account } : {}) });
+}
+
+/**
  * `spent`: told after a checkpoint kept a job's token use, while the job may still run (issue #2302, part 3: the budget
  * pause looks at it there).
  */
@@ -58,13 +69,7 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
   /** When each job's checkpoint was last tried, taken or not: a machine that cannot be reached is not asked every pass. */
   const tried = new Map<string, number>();
 
-  /** The session's token use kept in the ledger: where it was read, and who that machine's Claude was signed in as then. */
-  const keepUse = (job: Job, use: SessionTokenUse | undefined): void => {
-    if (!use || !job.agentSession) return;
-    const machineId = machineOf(c, job);
-    const account = store.lastAccounts.get(machineId, 'claude')?.identity;
-    store.tokenLedger.put(job.id, job.agentSession, use, { readAt: nowIso(c), machineId, ...(job.laneId ? { laneId: job.laneId } : {}), ...(account ? { account } : {}) });
-  };
+  const keepUse = (job: Job, use: SessionTokenUse | undefined): void => { if (use && job.agentSession) keepTokenUse(c, job, job.agentSession, use); };
 
   async function take(jobId: string): Promise<JobCheckpoint | string> {
     const job = store.jobs.get(jobId);
@@ -80,7 +85,7 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
       if ('none' in got) return got.none;
       // The vault secrets delivered to the job, masked by value: no pattern knows one (issue #1957).
       const held = await c.deliveredSecrets(jobId);
-      const { patch, session, use } = await scrubCheckpoint({ patch: got.taken.patch, ...(got.taken.session ? { session: got.taken.session } : {}), held });
+      const { patch, session, use } = await scrubCheckpoint({ patch: got.taken.patch, ...(got.taken.session ? { session: got.taken.session } : {}), ...(got.taken.subagents ? { subagents: got.taken.subagents } : {}), held });
       if (c.stopping()) return 'the hopper stops';
       const kept = store.tx(() => {
         const now = store.jobs.get(jobId);
@@ -120,7 +125,7 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
       try {
         const got = await executor.checkpoint(job);
         if (!got || 'none' in got || !got.taken.session || c.stopping()) return;
-        const { use } = await scrubCheckpoint({ patch: Buffer.alloc(0), session: got.taken.session, countOnly: true });
+        const { use } = await scrubCheckpoint({ patch: Buffer.alloc(0), session: got.taken.session, ...(got.taken.subagents ? { subagents: got.taken.subagents } : {}), countOnly: true });
         if (!c.stopping()) store.tx(() => { const now = store.jobs.get(jobId); if (now) keepUse(now, use); });
       } catch (e) {
         console.warn(`hopper: no token use read for job ${jobId} as its run ends: ${(e as Error).message}`);
