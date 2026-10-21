@@ -20,31 +20,31 @@ describe('Intake: an action\'s GitHub write after the answer (issue #1194)', () 
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     daemon.answer = () => new Promise((res) => { answer = () => res({ done: [url(4)], failed: {} }); });
-    await click(button(row(view()!, url(4)), 'Take off the backburner'));
-    expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')?.textContent).toContain('taking off the backburner on GitHub');
-    expect(button(row(view()!, url(4)), 'Take off the backburner')).toBeUndefined();
+    await click(button(row(view()!, url(4)), 'Take out of Later'));
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')?.textContent).toContain('taking out of Later on GitHub');
+    expect(button(row(view()!, url(4)), 'Take out of Later')).toBeUndefined();
     await act(async () => { answer(); });
     await vi.waitFor(() => expect(posts).toHaveLength(1));
     await streamItem4({ writeBehind: { act: 'unbackburner', state: 'running' } });
     expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')).not.toBeNull();
-    expect(button(row(view()!, url(4)), 'Take off the backburner')).toBeUndefined();
+    expect(button(row(view()!, url(4)), 'Take out of Later')).toBeUndefined();
   });
 
   it('a write that failed says why on the row, and offers the action again', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
-    await click(button(row(view()!, url(4)), 'Take off the backburner'));
+    await click(button(row(view()!, url(4)), 'Take out of Later'));
     await streamItem4({ writeBehind: { act: 'unbackburner', state: 'failed', error: 'GitHub is down' } });
-    expect(row(view()!, url(4)).querySelector('[data-write-behind="failed"]')?.textContent).toBe('taking off the backburner on GitHub failed: GitHub is down ·');
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="failed"]')?.textContent).toBe('taking out of Later on GitHub failed: GitHub is down ·');
     expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')).toBeNull();
-    expect(button(row(view()!, url(4)), 'Take off the backburner')).toBeDefined();
+    expect(button(row(view()!, url(4)), 'Take out of Later')).toBeDefined();
   });
 
   it('a write the GitHub outbox tries again by itself says so (issue #1238)', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     await streamItem4({ writeBehind: { act: 'unbackburner', state: 'running', attempt: 2, error: 'GitHub is down' } });
-    expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')?.textContent).toBe('taking off the backburner on GitHub, trying again: GitHub is down ·');
+    expect(row(view()!, url(4)).querySelector('[data-write-behind="running"]')?.textContent).toBe('taking out of Later on GitHub, trying again: GitHub is down ·');
   });
 
   it('a refused action shows its action again at once', async () => {

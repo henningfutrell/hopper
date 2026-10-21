@@ -22,6 +22,8 @@ describe('why a question came to a person', () => {
     expect(b.textContent).toMatch(/held back on purpose/);
     expect(b.textContent).toMatch(/Fable says: Go ahead/);
     expect(b.compareDocumentPosition(card()!.querySelector('[data-slot="question-text"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Issue #2375: the trail is folded behind "1 model answer".
+    await click(card()!.querySelector<HTMLElement>('[data-slot="model-answers-toggle"]')!);
     expect(button("Use Fable's answer")).toBeDefined();
   });
 
@@ -59,6 +61,7 @@ describe('why a question came to a person', () => {
 
   it('the trail no longer shows "(no rules yet)"', async () => {
     await boot({ authed: true, attempts: [fableSaysGo], escalation: guard });
+    await click(await vi.waitFor(() => { const t = card()?.querySelector<HTMLElement>('[data-slot="model-answers-toggle"]'); expect(t).toBeTruthy(); return t!; }));
     await vi.waitFor(() => expect(card()!.textContent).toContain('fine'));
     expect(card()!.textContent).not.toContain('no rules yet');
   });

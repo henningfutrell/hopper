@@ -129,9 +129,15 @@ describe("the levels' recommendations on an escalated question", () => {
   const useButtons = () => [...card()!.querySelectorAll('button')].filter((b) => /^Use \w+'s answer$/.test(b.textContent?.trim() ?? ''));
   const answers = (daemon: { calls: Call[] }) => daemon.calls.filter((c) => c.path === `/ui/api/questions/${question.id}/answer`);
   const result = () => card()?.querySelector('[data-slot="answer-result"]') ?? null;
+  // Issue #2375: the trail is folded behind "N model answers"; open it.
+  const openTrail = async () => {
+    const toggle = await vi.waitFor(() => { const t = card()!.querySelector<HTMLElement>('[data-slot="model-answers-toggle"]'); expect(t).not.toBeNull(); return t!; });
+    await click(toggle);
+  };
 
   it('show on the trail with the model that ran, each with a button that names whose answer it uses', async () => {
     await boot({ authed: true, attempts });
+    await openTrail();
     await vi.waitFor(() => expect(card()!.querySelector('textarea')).not.toBeNull());
     expect(card()!.textContent).toContain('take option 1');
     expect(card()!.textContent).toContain('claude-fable-x');
@@ -141,6 +147,7 @@ describe("the levels' recommendations on an escalated question", () => {
   // Issue #459: one click sends; no separate Send. The same answer route as Send answer.
   it('Use answer sends that answer at once: exactly one POST of it, and the card says it was sent', async () => {
     const daemon = await boot({ authed: true, attempts });
+    await openTrail();
     await vi.waitFor(() => expect(useButtons()).toHaveLength(2));
     await click(useButtons()[1]);
     await vi.waitFor(() => expect(answers(daemon)).toHaveLength(1));
@@ -154,6 +161,7 @@ describe("the levels' recommendations on an escalated question", () => {
 
   it('a double click is one submission: the buttons are disabled while it is in flight', async () => {
     const daemon = await boot({ authed: true, attempts, mutationDelayMs: 100 });
+    await openTrail();
     await vi.waitFor(() => expect(useButtons()).toHaveLength(2));
     const use = useButtons()[0]!;
     await act(async () => { use.click(); use.click(); });
@@ -167,6 +175,7 @@ describe("the levels' recommendations on an escalated question", () => {
 
   it('a failed send says why on the card, with Retry, which sends the same answer again', async () => {
     const daemon = await boot({ authed: true, attempts, mutationStatus: 500, mutationError: 'database unavailable' });
+    await openTrail();
     await vi.waitFor(() => expect(useButtons()).toHaveLength(2));
     await click(useButtons()[1]);
     await vi.waitFor(() => expect(result()?.textContent).toContain('database unavailable'));
@@ -178,6 +187,7 @@ describe("the levels' recommendations on an escalated question", () => {
 
   it('the answer box and Send answer stay, for an answer of the owner\'s own', async () => {
     await boot({ authed: true, attempts });
+    await openTrail();
     await vi.waitFor(() => expect(button('Send answer')).toBeDefined());
     expect(card()!.querySelector('textarea')).not.toBeNull();
   });
@@ -185,6 +195,7 @@ describe("the levels' recommendations on an escalated question", () => {
   // Issue #1169: every question is answered through one Questionnaire form; Send answer is its submit.
   it('the answer box is the one question form: a questionnaire whose submit is Send answer', async () => {
     const daemon = await boot({ authed: true, attempts });
+    await openTrail();
     const form = await vi.waitFor(() => { const f = card()!.querySelector<HTMLFormElement>('[data-slot="questionnaire"][data-question-form="answer"]'); expect(f).not.toBeNull(); return f!; });
     expect(form.querySelector('[data-slot="questionnaire-title"]')?.textContent).toBe('Your answer');
     expect(form.querySelector('textarea')?.getAttribute('aria-label')).toBe('Your answer');

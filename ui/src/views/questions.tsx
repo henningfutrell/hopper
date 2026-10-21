@@ -19,6 +19,8 @@
 // Why it came to a person (issue #679): one sentence at the top of the card, with what the level recommends, and the
 // list filters by that reason, each with its count. Use answer names whose answer it uses.
 // The answer box is the one question form (issue #1169): a Questionnaire, its title Your answer, Send answer its submit.
+// The escalation trail, the levels' answers, is folded behind "N model answers" (issue #2375): the question and the
+// answer box stay in view, about 4 questions to a screen.
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
 import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
@@ -153,7 +155,16 @@ export function QuestionCard({ q }: { q: QuestionView }) {
           <LogBlock title="Recent output" copy={lines.slice(-40).join('\n')} lineNumbers className="mt-2" contentClassName="max-h-80 text-[11px]">{lines.slice(-40).join('\n')}</LogBlock>
         </CollapsibleContent>
       </Collapsible>
-      {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} busy={sending} onUse={canAnswer && q.tier === 'human' && a.role !== 'human' && a.answer ? (answer) => void submit(answer) : undefined} />)}</div>}
+      {q.attempts.length > 0 && (
+        <Collapsible>
+          <CollapsibleTrigger data-slot="model-answers-toggle" className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />{q.attempts.length} model {q.attempts.length === 1 ? 'answer' : 'answers'} (escalation trail)
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-1.5 space-y-1.5">
+            {q.attempts.map((a, i) => <Attempt key={i} a={a} busy={sending} onUse={canAnswer && q.tier === 'human' && a.role !== 'human' && a.answer ? (answer) => void submit(answer) : undefined} />)}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
       {canAnswer && (
         <div className="space-y-2">
           <QuestionForm name="answer" title="Your answer" text={draft} onText={setDraft} busy={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"

@@ -34,7 +34,7 @@ type Send = 'assign' | 'release' | 'unbackburner' | 'wont_do';
 
 /** What a write-behind does on GitHub, as the row says it. */
 const WRITE_BEHIND: Partial<Record<IntakeActionKind, string>> = {
-  assign: 'assigning to you on GitHub', release: 'releasing the claim on GitHub', unbackburner: 'taking off the backburner on GitHub',
+  assign: 'assigning to you on GitHub', release: 'releasing the claim on GitHub', unbackburner: 'taking out of Later on GitHub',
   approve: 'updating the issue on GitHub', wont_do: 'marking it hopper:rejected on GitHub',
 };
 
@@ -133,7 +133,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
         <Button size="xs" variant="outline" title="Removes hopper:claimed and its holder label: no job here holds it, and the next sync takes it" onClick={() => void send('release', 'Releasing the claim')}><Unlock />Release claim</Button>
       )}
       {offers('unbackburner') && (
-        <Button size="xs" variant="outline" title="Removes hopper:backburner from the issue: the next sync takes it" onClick={() => void send('unbackburner', 'Taking off the backburner')}><Flame />Take off the backburner</Button>
+        <Button size="xs" variant="outline" title="Removes hopper:backburner from the issue: the next sync takes it" onClick={() => void send('unbackburner', 'Taking out of Later')}><Flame />Take out of Later</Button>
       )}
       {offers('wont_do') && (
         <Button size="xs" variant="outline" title="Drops the item: the hopper takes its blocked label off and puts hopper:rejected on, so no hopper takes it again" onClick={() => void send('wont_do', 'Won\'t do: dropping it')}><Ban />Won't do</Button>
@@ -147,6 +147,11 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
 }
 
 /** Why a group's issues are not taken, where the reason on each row does not say it all (issue #1463). */
+/** A group label's tooltip, where the label alone is a plain word for a hopper term (issue #2375). */
+const GROUP_TITLE: Partial<Record<IntakeGroupKind, string>> = {
+  backburner: 'On the backburner: the hopper:backburner label is on these issues, so no job starts on them until you take them out of Later.',
+};
+
 const GROUP_WHY: Partial<Record<IntakeGroupKind, string>> = {
   'not-assigned': 'Intake takes a labelled issue only when it is assigned to you, or when you comment /hopper run on it. Nothing works on these issues until you do.',
 };
@@ -163,7 +168,7 @@ export function IntakeGroups({ items, source, repo }: { items: IntakeOutcome[]; 
     <div className="space-y-3">
       {intakeGroups(repo === undefined ? items : items.filter((x) => repoOf(x) === repo), kept).map((g) => (
         <section key={g.kind} data-intake-group={g.kind} className="space-y-1">
-          <h3 className="flex items-center gap-1.5 font-medium">
+          <h3 data-slot="intake-group-label" title={GROUP_TITLE[g.kind]} className="flex items-center gap-1.5 font-medium">
             {g.kind === 'backburner' && <Flame className="size-3.5 text-muted-foreground" aria-hidden />}
             {INTAKE_GROUP_LABEL[g.kind]}
             <span data-intake-group-count className={`num rounded-full px-1.5 text-[11px] font-semibold ${g.kind === 'request' ? 'bg-warn text-background' : 'bg-muted text-foreground'}`}>{g.count}</span>

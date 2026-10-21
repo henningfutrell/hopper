@@ -123,6 +123,6 @@ describe('Direct queries', () => {
 
   it('says so when there are no direct queries', async () => {
     await render('operator', []);
-    expect(document.body.textContent).toContain('No direct queries yet');
+    expect(document.body.textContent).toContain('No questions yet');
   });
 });
