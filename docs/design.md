@@ -19716,7 +19716,8 @@ rendered nothing when empty, so a person could not tell the feature was there.
   no Approve.
 - **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
   grants, and Template approvals (`template-approvals.tsx`: Approve, and Approve `<profile>` for a high-radius profile),
-  plus a pointer to Settings → API tokens for box tokens. A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
+  plus a pointer to Settings → API tokens for box tokens, and Bastions (issue #2146, "Bastions": each bastion of a job
+  that runs now, with Stop). A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
   it was never approved or a new image, secret or profile waits. A template a job asked for (`askedBy`) counts in the
   badge and the Needs you row while its job has not ended (issue #2196), and a high-priority job's template or sandbox run
   marks them (`accessRequestsHigh`) and comes first in its panel. Since issue #2197 both are one **run card** ("One
@@ -30384,6 +30385,30 @@ Tests (part 5): `test/sandbox/check-observe.test.ts` (the probes under observe, 
 that may exec and read Secrets fails, a read and an observe on one asset), `test/skills/template-preview.test.ts` (read and
 observe needs take the check), `test/sandbox/bastions.test.ts` (the bastion names its reaches),
 `test/store/tenant-migration-88.test.ts`.
+
+**A person's stop.** A bastion is kept in memory and ends by itself, but a person must be able to end one now: a job that
+went wrong, a forward nobody needs any more.
+- **The list.** `GET /api/vault` carries `bastions` (`Bastions.list`): each bastion of the user's jobs that starts or runs
+  now, oldest first, as the job reads it (`BastionView`, `src/domain/bastions.ts`): its template, box, targets, state,
+  start, TTL end and the tail of its output. Never a token. The UI reads the view again on `bastion.started` and
+  `bastion.ended` (`rereadsVault`).
+- **The stop.** `POST /ui/api/bastions/stop` (`job`, `src/http/ui/bastions.ts`) stops the job's bastion as the job's own
+  `bastion stop` does: each relay connection closes, its tokens are released, its box is burned, and `bastion.ended` names
+  the person (`by`). 404 when the job has none that runs. Answers the vault's view.
+- **The panel.** Access requests → **Bastions** (`ui/src/views/bastions.tsx`): a card for each, with its job's link, its
+  targets, when its TTL ends, and **Stop**.
+
+**Decisions (the stop):**
+- **A stop is a cancel, not a box action.** It starts nothing and changes no work on a machine, so an API token of the
+  role may do it with no box token, as a job's cancel. Least role: operator, as a job's cancel.
+- **In the vault's view, not a route of its own.** The bastions are what jobs on boxes hold now, beside the action grants
+  live now, and Access requests already reads that one view. A bastion of a job of another user is not in it.
+- **No confirm.** A stopped bastion leaves nothing, and the job asks again for a new one.
+
+Tests (the stop): `test/sandbox/bastions.test.ts` (the list: the bastions that run, apart from what the caller changes,
+and a stopped one leaves it), `test/integration/bastion.test.ts` (the real daemon: the vault's view lists the job's
+bastion, never its token; a person's stop ends it, its box goes, `bastion.ended` names the person, a second stop is a
+404), `test/ui/bastions-view.test.ts` (the panel, its Stop), `test/ui/needs-you.test.ts` (`rereadsVault`).
 
 ## A comment ends the job's own wait (issue #2159, 2026-10-19)
 

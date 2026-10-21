@@ -156,6 +156,12 @@ describe('A template a job saved and waits on (issue #2196; its run card since i
     expect(rereadsVault('vault.approved')).toBe(true);
     expect(rereadsVault('job.started')).toBe(false);
   });
+
+  it('a bastion that starts or ends rereads the vault view, which lists the bastions that run (issue #2146)', () => {
+    expect(rereadsVault('bastion.started')).toBe(true);
+    expect(rereadsVault('bastion.ended')).toBe(true);
+    expect(rereadsVault('bastion.relayed')).toBe(false);
+  });
 });
 
 const plan = (o: Partial<PlanView> = {}): PlanView => ({

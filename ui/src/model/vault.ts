@@ -131,9 +131,10 @@ export function profileAskOf(asks: readonly ProfileAsk[] | undefined, template: 
 
 /**
  * Whether an event changes the vault's view: a vault event, or a template's (issue #2196: a job's template request
- * records `template.saved`, and Access requests and its badge must show it at once).
+ * records `template.saved`, and Access requests and its badge must show it at once), or a bastion's start or end (issue
+ * #2146: the view lists the bastions that run).
  */
-export const rereadsVault = (type: string): boolean => type.startsWith('vault.') || type.startsWith('template.');
+export const rereadsVault = (type: string): boolean => type.startsWith('vault.') || type.startsWith('template.') || type === 'bastion.started' || type === 'bastion.ended';
 
 /** A template waits for a person (issue #897, Access requests): never approved, or a new image, egress host, secret or profile waits. */
 export const templateWaits = (t: TemplateView): boolean =>

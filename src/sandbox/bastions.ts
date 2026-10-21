@@ -15,38 +15,18 @@ import type { Minted, MintReach } from '../domain/minting.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import type { BoxPipe } from '../domain/sandboxes.ts';
+import type { BastionEnd, BastionView } from '../domain/bastions.ts';
 import type { NeedBox, NeedBoxIo, NeedBoxResult, RunningNeedBox } from './need-box.ts';
 import {
   bastionEnv, bastionTokens, placeTargets, relayCommand, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
 } from './bastion.ts';
 
+export type { BastionEnd, BastionView } from '../domain/bastions.ts';
+
 /** How often the hopper looks whether a bastion's job is still at work and its TTL has passed. */
 const CHECK_MS = 5_000;
 /** The most of a bastion's output the hopper keeps: its tail. */
 const LOG_TAIL = 4096;
-
-/** Why a bastion ended: the job or a person stopped it, its TTL passed, its job ended, or a mint or its box failed. */
-export type BastionEnd = 'stopped' | 'expired' | 'job-ended' | 'failed';
-
-/** A bastion as the job and a person read it. */
-export interface BastionView {
-  id: string;
-  jobId: string;
-  template: string;
-  box: string;
-  /** Each target, and its port on 127.0.0.1 in the box. */
-  targets: { target: string; local: number }[];
-  state: 'starting' | 'running' | 'ended';
-  startedAt: string;
-  /** When its TTL ends, unless it is used before. */
-  expiresAt: string;
-  endedAt?: string;
-  ended?: BastionEnd;
-  endedBy?: string;
-  problem?: string;
-  /** The tail of its output: each forward's lines, marked with its target. Never a token. */
-  log: string;
-}
 
 export interface BastionsOptions {
   userId: string;
@@ -77,6 +57,8 @@ export interface Bastions {
   start(job: Job, template: TemplateView, targets: readonly BastionTarget[]): Promise<BastionView | { status: number; no: string }>;
   /** The job's bastion: the one that runs, else the last one that ended. */
   of(jobId: string): BastionView | undefined;
+  /** Each bastion that starts or runs now, oldest first: what a person sees, to stop one. */
+  list(): BastionView[];
   /** Stops the job's bastion that runs, `by` the job or a person; undefined: it has none. */
   stop(jobId: string, by: string): BastionView | undefined;
   /** A use of the job's bastion: its TTL starts again. */
@@ -222,6 +204,8 @@ export function createBastions(o: BastionsOptions): Bastions {
     },
 
     of: viewOf,
+
+    list: () => [...live.keys()].map((jobId) => viewOf(jobId)!),
 
     stop(jobId, by) {
       const l = live.get(jobId);
