@@ -99,6 +99,12 @@ export const egressText = (t: { egress?: readonly string[]; pending?: { egress: 
 export const bastionTargetsText = (t: { bastionTargets?: readonly string[]; pending?: { bastionTargets?: readonly string[] } }): string =>
   t.bastionTargets?.length ? t.bastionTargets.map((x) => (t.pending?.bastionTargets?.includes(x) ? `${x} (waits)` : x)).join(', ') : 'none';
 
+/** A bastion target (issue #2146): `<cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>` (src/sandbox/bastion.ts parseTargets). */
+export const BASTION_TARGET = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}\/[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?\/(?:svc|pod|deploy)\/[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?:[1-9][0-9]{0,4}$/;
+
+/** The bastion targets typed in a field, split by spaces or commas, each once. */
+export const bastionTargetsOf = (text: string): string[] => [...new Set(text.split(/[\s,]+/).filter((x) => x !== ''))];
+
 /** `write on cluster x`. */
 export const profileText = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
 
@@ -204,10 +210,12 @@ function pointAsset(a: Asset, from: string, to: string): Asset {
 
 /**
  * The save that points a template at a cluster (issue #2168): each need on cluster `from` names `to`. What it leaves out
- * (limits, tools, egress, agent credential, probe marks) the save keeps as it was.
+ * (limits, tools, egress, agent credential, probe marks) the save keeps as it was; its bastion targets on `from` name `to`.
  */
 export const pointedAt = (t: TemplateView, from: string, to: string) => ({
   action: 'save-template' as const, name: t.name, image: t.image, secrets: t.secrets, profiles: t.profiles.map((p) => ({ ...p, asset: pointAsset(p.asset, from, to) })),
+  // Issue #2146: a bastion target is `<cluster>/…`, as a namespace's name is.
+  ...(t.bastionTargets?.length ? { bastionTargets: t.bastionTargets.map((x) => (x.split('/')[0] === from ? [to, ...x.split('/').slice(1)].join('/') : x)) } : {}),
 });
 
 /** A template's assets the vault cannot find (issue #2067), in words, as the server says them: `no cluster staging; known: …`. */

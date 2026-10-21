@@ -30420,8 +30420,17 @@ evidence and the guardrails are as before. The catalog line names the bastion.
   PromQL or LogQL on its data source in its place. A Grafana read through the bastion's box is a later part (part 6, the
   bastion read, below).
 
+**A template's bastion targets on Settings → Vault (part 8).** A template's card lists its bastion targets, each a
+person has not approved marked `(waits)`. Its form edits them in one field, split by spaces or commas, and Save sends
+them as `bastionTargets` with the rest of `save-template`; an empty field saves none. The form checks each word's shape
+(`BASTION_TARGET`, `ui/src/model/vault.ts`, the shape of `parseTargets`) and does not save while one is wrong; the save
+itself still refuses a target no observe of the template reaches, and a new target waits for `approve-template`, as
+before. Pointing a template at a cluster (issue #2168, `pointedAt`) also renames its bastion targets on the old cluster,
+else that save is refused. No route, event or stored shape changes.
+
 **Not built (the later parts).** Part 7: the live check on a cluster (it was named part 6 before the bastion read took
-that number). Editing a template's bastion targets in the Settings → Vault form.
+that number). It needs the cluster's RoleBinding for `hopper-observe` and a Grafana Viewer token in the vault (the
+platform issue linked on #2146).
 
 **Persisted state.** No schema change: a bastion is kept in memory, its run is a row of the sandbox runs ledger, and its
 events are new types a build before this one ignores. A model with the observe relations is the default's next version.
