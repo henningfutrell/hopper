@@ -1,6 +1,7 @@
 // The token ledger's words (issue #2302): token counts and an estimated cost as a person reads them, and the ledger by
 // day as the Dashboard's tokens over time stacks it (part 2). Pure.
-import type { TokenRollupRow, TokenTotals } from '@/model/wire';
+import { goalOf } from './job.ts';
+import type { Job, TokenRollupRow, TokenTotals } from './wire.ts';
 
 /** A token count in short: 950, 12.3k, 2.4M. */
 export function tokenCount(n: number): string {
@@ -59,3 +60,7 @@ export function tokenDays(groups: readonly TokenRollupRow[], days: number, today
     }),
   };
 }
+
+/** Needs you's Budgets row (issue #2302, part 3): each parked job its token budget paused, with why. */
+export const budgetPausedLines = (jobs: readonly Job[]): string[] =>
+  jobs.filter((j) => j.status === 'parked' && j.budgetPaused).map((j) => `${goalOf(j)}: ${j.budgetPaused!.why} Pick it up to let it go on.`);

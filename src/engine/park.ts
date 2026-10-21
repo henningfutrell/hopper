@@ -13,6 +13,7 @@ import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { releaseLane } from './outcome.ts';
 import { openItemOf } from './reviews.ts';
+import { jobSpend } from './token-budget.ts';
 
 /** What the resumed agent session is told when no answer waits for it: it was parked, and goes on. */
 export const PARKED_RESUME = 'This job was parked and is resumed now, in the same session and work tree. Go on with it where you left off.';
@@ -117,7 +118,9 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'parked') throw new EngineError('conflict', `job ${id} is ${job.status}: only a parked job can be re-queued`);
-  if (elsewhere) return recordElsewhere(c, job, by);
+  // Picked up past its token budget (issue #2302): it goes on, its budget counted again from what it had spent.
+  if (job.budgetPaused) store.jobs.update(id, { budgetPaused: undefined, budgetFrom: jobSpend(store, id) });
+  if (elsewhere) return recordElsewhere(c, store.jobs.get(id)!, by);
   // Never a fresh start the person did not agree to (issue #530).
   if (startsFresh(job) && !freshSession) {
     throw new EngineError('conflict', `job ${id} has no agent session to resume: re-queued, it starts a fresh session in its kept work tree, told its question and answer; confirm with freshSession`);

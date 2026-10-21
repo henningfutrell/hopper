@@ -10,6 +10,7 @@ import { taggedWaiting } from '@/model/tagged';
 import { trustHeldWaiting } from '@/model/trust';
 import { signedOutLines } from '@/model/tool-accounts';
 import { notReadyLines } from '@/model/machines';
+import { budgetPausedLines } from '@/model/token-ledger';
 import { accessRequestsHigh, accessRequestsWaiting, unknownAssetLines } from '@/model/vault';
 import { useHopper } from './index';
 import { useInfraPlans, useLandingBatches, usePullRequestsView, useToolAccounts } from './polled';
@@ -42,8 +43,9 @@ export function useNeedsYou(): NeedsYouRow[] {
   const checksUnread = useMemo(() => checksProblemLines(view), [view]);
   const landing = useLandingBatches();
   const stuckLanding = useMemo(() => stuckLandingLines(landing), [landing]);
+  const budgetPaused = useMemo(() => budgetPausedLines(Object.values(jobs)), [jobs]);
   const tagged = useHopper((s) => taggedWaiting(s.sources));
   const sorting = useAwaitingSort();
   const sections = useSectionBadges();
-  return useMemo(() => needsYouRows({ intake, access, accessHigh, unknownAssets, plans, plansHigh: planHigh, planLines, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections }), [intake, access, accessHigh, unknownAssets, plans, planHigh, planLines, signedOut, notReady, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections]);
+  return useMemo(() => needsYouRows({ intake, access, accessHigh, unknownAssets, plans, plansHigh: planHigh, planLines, signedOut, notReady, budgetPaused, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections }), [intake, access, accessHigh, unknownAssets, plans, planHigh, planLines, signedOut, notReady, budgetPaused, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections]);
 }

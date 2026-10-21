@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "jobTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "jobCostUsd": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "jobTokens",
+        "jobCostUsd"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "jobTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "jobCostUsd": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "jobTokens",
+        "jobCostUsd"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

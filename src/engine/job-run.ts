@@ -293,7 +293,8 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       const job = store.jobs.get(d.jobId);
       const running = runJob(c, d);
       // Parked already by a try a stop cut short: its agent is ended again, which is idempotent.
-      const parked = running ? store.tx(() => recordPark(c, running, 'running', d.laneId))
+      // A budget pause (issue #2302) says why, as a park by the hopper does.
+      const parked = running ? store.tx(() => recordPark(c, running, 'running', d.laneId, running.budgetPaused?.why))
         : job?.status === 'parked' && job.attempts === d.attempt ? job : undefined;
       if (parked) await releaseParked(c, parked);
       return {};

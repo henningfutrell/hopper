@@ -183,6 +183,7 @@
         "question.corrected",
         "auto_answer.settings_changed",
         "auto_park.settings_changed",
+        "token_budget.settings_changed",
         "preemption.settings_changed",
         "library_skill.saved",
         "library_skill.removed",
