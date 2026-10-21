@@ -1,7 +1,7 @@
 // Labels mirror the database (issues #1891, #1933): the end labels an issue should carry are a pure function of its work item's
 // state, and a drift is what a discover saw against them.
 import { describe, expect, it } from 'vitest';
-import { blockLabels, labelDrift, labelsFor } from '../../src/sources/github/item-labels.ts';
+import { blockLabels, labelDrift, labelsFor, labelTakenOff } from '../../src/sources/github/item-labels.ts';
 
 describe('labelsFor: the end labels a state wants (issue #1891)', () => {
   it('a job at work: no end label', () => {
@@ -59,5 +59,24 @@ describe('blockLabels: the label change of a block the item reconciler makes (is
 
   it('a state a job holds: nothing to take off', () => {
     for (const state of ['queued', 'working', 'waiting_outside'] as const) expect(blockLabels(state, 'stale')).toEqual({ remove: [], add: ['hopper:blocked'] });
+  });
+});
+
+describe('labelTakenOff: an end label a person took off by hand (issue #1892)', () => {
+  it('blocked: the blocked label seen before and gone now', () => {
+    expect(labelTakenOff({ state: 'blocked', blockedCause: 'pr_closed' }, ['hopper', 'hopper:pr-closed'], ['hopper'])).toBe('hopper:pr-closed');
+    expect(labelTakenOff({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:blocked'], ['hopper', 'hopper:high'])).toBe('hopper:blocked');
+  });
+
+  it('PR open: its waiting label gone, but not a swap of one waiting label for the other', () => {
+    expect(labelTakenOff({ state: 'pr_open' }, ['hopper', 'hopper:pr-ready'], ['hopper'])).toBe('hopper:pr-ready');
+    expect(labelTakenOff({ state: 'pr_open' }, ['hopper', 'hopper:pr-ready'], ['hopper', 'hopper:partly-done'])).toBeUndefined();
+  });
+
+  it('no label seen before, the label still on, or a state with no label to want: no edit', () => {
+    expect(labelTakenOff({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper'], ['hopper'])).toBeUndefined();
+    expect(labelTakenOff({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:blocked'], ['hopper', 'hopper:blocked'])).toBeUndefined();
+    expect(labelTakenOff({ state: 'working' }, ['hopper', 'hopper:done'], ['hopper'])).toBeUndefined();
+    expect(labelTakenOff({ state: 'failed' }, ['hopper', 'hopper:failed'], ['hopper'])).toBeUndefined();
   });
 });

@@ -98,9 +98,12 @@ describe('labels mirror the database (issue #1891)', () => {
   });
 
   it('an issue the discover takes as a new job is not judged: its end label is not put back (issue #1954)', async () => {
-    // Its end label came off (a give-back the hopper made, or a person): the discover runs it again.
+    // Its end label came off since the last discover (a give-back the hopper made, or a person; issue #1892: a Run again):
+    // the discover runs it again.
     const { gh, source, drifts } = setup({ [url(1)]: { blockedCause: 'pr_closed', closedWithoutMerge: 1, jobId: 'job-1' } }, { rerunnable: [url(1)] });
-    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-closed'] });
+    expect(await source.discover()).toEqual([]);
+    gh.issue(REPO, 1).labels = ['hopper'];
     expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
     expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
