@@ -13,8 +13,10 @@
 // updates live, read again on each assessor event. The assessment summary and a person's note are rendered as Markdown,
 // sanitized (issue #569); the raw error stays as it was written. Each hand-off card and failure row has Report a bug on its
 // job (issue #694), for an operator or admin. Work not pushed (issue #1010, kept-work.tsx) after Needs a person.
+// A long page (issue #2353): the counts stay in view with Cards or Rows — in Rows a failure is one line —; Needs a
+// person, Recent failures and Ended each fold and page, with no scroll box of their own; the mode and folds are kept.
 import { LogBlock } from '@/components/log-block';
-import { Archive, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
+import { Archive, History, LayoutList, List, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,9 +25,12 @@ import { JobTitle } from '@/components/job';
 import { Markdown, TldrLine } from '@/components/markdown';
 import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
+import { ModeToggle, Pager, usePaged } from '@/components/pager';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
+import { useGroupOpen, usePagePref } from '@/hooks/use-page-pref';
 import { ago } from '@/model/format';
+import { CARDS_PER_PAGE, ROWS_PER_PAGE } from '@/model/page-prefs';
 import {
   DECISION_LABEL, DECISION_TONE, HANDOFF_REASON_LABEL, RESOLUTIONS, countsText, handoffEndText, offered, outcomeText, plural, resolutionLeadsTo, resolutionsFor, writeBackText,
 } from '@/model/failures';
@@ -39,6 +44,20 @@ import { FailureProfilePanel, NameCause } from './failure-profile';
 import { FailureSettingsPanel } from './failure-settings';
 import { WorkNotPushed } from './kept-work';
 import { Stuck } from './stuck';
+
+const MODES = [
+  { mode: 'cards', label: 'Cards', icon: LayoutList, title: 'Each failure with its summary' },
+  { mode: 'rows', label: 'Rows', icon: List, title: 'One line per failure' },
+] as const;
+type Mode = (typeof MODES)[number]['mode'];
+const MODE_NAMES: readonly Mode[] = MODES.map((m) => m.mode);
+const useMode = () => usePagePref<Mode>('failures.mode', 'cards', MODE_NAMES);
+
+/** A page of a section's items: cards to a page, or rows in Rows. */
+function useSectionPage<T>(items: readonly T[], rows: boolean) {
+  const [mode] = useMode();
+  return usePaged(items, rows && mode === 'rows' ? ROWS_PER_PAGE : CARDS_PER_PAGE, mode);
+}
 
 /** Where a problem applies, in words. */
 function scopeText(p: ProblemView): string {
@@ -226,10 +245,13 @@ export function HandoffRow({ h }: { h: HandoffView }) {
 function NeedsAPerson({ handoffs }: { handoffs: HandoffView[] }) {
   const open = handoffs.filter((h) => h.status === 'open');
   const count = open.length > 0 ? <span data-slot="handoff-count" className="num grid h-5 min-w-5 place-items-center rounded-full bg-bad px-1.5 text-[11px] font-semibold text-background">{open.length}</span> : '';
+  const [shown, toggle] = useGroupOpen('failures.needs-a-person');
+  const page = useSectionPage(open, false);
   return (
     <div data-section="needs-a-person">
-      <Panel title="Needs a person" icon={UserRound} count={count} list bodyClassName="p-0" className={open.length ? 'border-bad/40' : ''}>
-        {open.length ? <ul className="divide-y">{open.map((h) => <HandoffRow key={h.id} h={h} />)}</ul> : <Empty>no job waits on a person</Empty>}
+      <Panel title="Needs a person" icon={UserRound} count={count} bodyClassName="p-0" className={open.length ? 'border-bad/40' : ''} open={shown} onToggle={toggle}>
+        {open.length ? <ul className="divide-y">{page.shown.map((h) => <HandoffRow key={h.id} h={h} />)}</ul> : <Empty>no job waits on a person</Empty>}
+        <Pager p={page} onPage={page.setPage} className="border-t px-4 py-2" />
       </Panel>
     </div>
   );
@@ -238,14 +260,15 @@ function NeedsAPerson({ handoffs }: { handoffs: HandoffView[] }) {
 /** Ended (issue #618): the hand-offs closed and the failures that ended in the last day. History: nothing waits on them. */
 function Ended({ handoffs, failures }: { handoffs: HandoffView[]; failures: FailureRecordView[] }) {
   const closed = handoffs.filter((h) => h.status === 'closed');
-  if (!closed.length && !failures.length) return null;
+  const [shown, toggle] = useGroupOpen('failures.ended');
+  const items = [...closed.map((h) => ({ h })), ...failures.map((r) => ({ r }))];
+  const page = useSectionPage(items, false);
+  if (!items.length) return null;
   return (
     <div data-section="ended">
-      <Panel title="Ended in the last day" icon={Archive} count={closed.length + failures.length} list bodyClassName="p-0">
-        <ul className="divide-y">
-          {closed.map((h) => <HandoffRow key={h.id} h={h} />)}
-          {failures.map((r) => <FailureRow key={r.id} r={r} />)}
-        </ul>
+      <Panel title="Ended in the last day" icon={Archive} count={items.length} bodyClassName="p-0" open={shown} onToggle={toggle}>
+        <ul className="divide-y">{page.shown.map((i) => ('h' in i ? <HandoffRow key={i.h.id} h={i.h} /> : <FailureRow key={i.r.id} r={i.r} />))}</ul>
+        <Pager p={page} onPage={page.setPage} className="border-t px-4 py-2" />
       </Panel>
     </div>
   );
@@ -257,23 +280,26 @@ function FailureRow({ r }: { r: FailureRecordView }) {
   // Answered at once (issue #1194): the item is given back after, and the button waits until the stream says how it ended.
   const sent = useGivingBack((s) => s[r.jobId] !== undefined);
   const retry = () => giveBack(r.jobId, 'retry', { path: `/ui/api/failures/${encodeURIComponent(r.id)}/retry` });
+  const [mode] = useMode();
+  const oneLine = mode === 'rows';
   return (
-    <li data-failure={r.id} className="space-y-1.5 px-4 py-3">
-      <div className="flex items-start gap-2">
-        <JobLine id={r.jobId} tag={r} />
+    <li data-failure={r.id} data-row={oneLine ? '' : undefined} className={oneLine ? 'flex min-w-0 items-center px-4 py-1.5' : 'space-y-1.5 px-4 py-3'}>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 truncate"><JobLine id={r.jobId} tag={r} /></span>
+        {oneLine && <span className="num hidden shrink-0 text-xs text-muted-foreground sm:inline" title={r.at}>{ago(r.at, now)}</span>}
         <span className="ml-auto flex shrink-0 items-center gap-2">
           <StatusBadge status={r.decision} tone={DECISION_TONE[r.decision]} label={DECISION_LABEL[r.decision]} title={r.reasons.join('\n')} />
           {offered(r.actions.retry, canAct) && <Button size="xs" variant="outline" disabled={sent} onClick={() => void retry()}><RotateCcw />{sent ? PENDING.retry : 'Retry'}</Button>}
           <ReportBugButton jobId={r.jobId} />
         </span>
       </div>
-      <Markdown text={r.summary} className="text-sm" />
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {!oneLine && <Markdown text={r.summary} className="text-sm" />}
+      {!oneLine && <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {r.causeName && <span>{r.causeName}</span>}
         <span>{outcomeText(r)}</span>
         {r.note && <span title={r.note} className="max-w-full truncate">{r.note}</span>}
         <span className="num ml-auto" title={r.at}>{ago(r.at, now)}</span>
-      </div>
+      </div>}
     </li>
   );
 }
@@ -281,13 +307,19 @@ function FailureRow({ r }: { r: FailureRecordView }) {
 export function Failures() {
   const failures = useHopper((s) => s.failures);
   const canAdmin = useCanAdmin();
+  const [mode, setMode] = useMode();
+  const [recentOpen, toggleRecent] = useGroupOpen('failures.recent');
+  const recent = useSectionPage(failures?.recent ?? [], true);
   if (!failures) return <Panel title="Failures" icon={OctagonAlert}><Empty>failures not read yet</Empty></Panel>;
   const open = failures.problems.filter((p) => p.status === 'open');
   const resolved = failures.problems.filter((p) => p.status !== 'open');
   const left = failures.counts.failed + failures.counts.needsPerson;
   return (
     <div className="space-y-3">
-      <div data-section="failure-counts" className={`text-sm ${left ? 'text-foreground' : 'text-muted-foreground'}`}>{countsText(failures.counts)}</div>
+      <div data-slot="failures-bar" className="sticky top-14 z-20 -mx-1 flex flex-wrap items-center gap-2 bg-background/95 px-1 py-1.5 backdrop-blur-sm">
+        <div data-section="failure-counts" className={`min-w-0 flex-1 text-sm ${left ? 'text-foreground' : 'text-muted-foreground'}`}>{countsText(failures.counts)}</div>
+        <ModeToggle slot="failures-mode" value={mode} choices={MODES} onPick={setMode} />
+      </div>
       <Stuck stuck={failures.stuck} />
       <NeedsAPerson handoffs={failures.handoffs} />
       <WorkNotPushed kept={failures.keptWork} />
@@ -295,8 +327,9 @@ export function Failures() {
         ? <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{open.map((p) => <ProblemCard key={p.id} p={p} />)}</div>
         : <Panel title="Open problems" icon={OctagonAlert}><Empty>no open problem</Empty></Panel>}
       <div data-section="open-failures">
-        <Panel title="Recent failures" icon={History} count={failures.recent.length || ''} list bodyClassName="p-0">
-          {failures.recent.length ? <ul className="divide-y">{failures.recent.map((r) => <FailureRow key={r.id} r={r} />)}</ul> : <Empty>no failure left to look at</Empty>}
+        <Panel title="Recent failures" icon={History} count={failures.recent.length || ''} bodyClassName="p-0" open={recentOpen} onToggle={toggleRecent}>
+          {failures.recent.length ? <ul className="divide-y">{recent.shown.map((r) => <FailureRow key={r.id} r={r} />)}</ul> : <Empty>no failure left to look at</Empty>}
+          <Pager p={recent} onPage={recent.setPage} className="border-t px-4 py-2" />
         </Panel>
       </div>
       <Ended handoffs={failures.handoffs} failures={failures.ended} />

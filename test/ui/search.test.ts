@@ -113,6 +113,19 @@ describe('the Search view', () => {
     expect(document.querySelector('[data-slot="search-total"]')?.textContent).toContain('2');
   });
 
+  it('keeps the header with the search form in view, and pages a long answer 20 to a page (issue #2353)', async () => {
+    const many = { ...ANSWER, total: 45, hits: Array.from({ length: 20 }, (_, i) => ({ ...ANSWER.hits[1]!, ref: `j${i}` })) };
+    await renderView(searchHash({ q: 'cache', type: [], status: [], label: [], repo: [], offset: 0 }), () => many);
+    const header = document.querySelector('[data-slot="panel-header"][data-sticky]')!;
+    expect(header.className).toContain('sticky');
+    expect(header.querySelector('form[role="search"]')).not.toBeNull();
+    expect(hits()).toHaveLength(20);
+    expect(document.querySelector('[data-slot="search-total"]')?.textContent).toContain('1–20');
+    const more = [...document.querySelectorAll('button')].find((b) => b.textContent === 'More')!;
+    await act(async () => { more.click(); });
+    expect(parseSearch(window.location.hash.replace(/^#search\/?/, '')).offset).toBe(20);
+  });
+
   it('filters by a facet value: the search is read again with it', async () => {
     await renderView(searchHash({ q: 'cache', type: [], status: [], label: [], repo: [], offset: 0 }));
     const facet = [...document.querySelectorAll('[data-slot="search-facet"]')].find((b) => b.getAttribute('data-value') === 'failed') as HTMLButtonElement;

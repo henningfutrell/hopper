@@ -3,7 +3,8 @@
 // graph made by the real jobGraph. The graph mode: a section per job tree, a node per job, issue and pull request, what
 // blocks the root marked, a node's details on select. The list mode: a row per job with its stage, issue
 // (owner/repo#number), lane, task count, pull request and last event; a partly done job names the pull request it waits
-// on. Counts per stage; filters by stage and by repository; a stage change arrives live, with no reload; 250 jobs render.
+// on. Counts per stage; filters by stage and by repository; a stage change arrives live, with no reload; 200 jobs render.
+// Issue #2353 (jobs-long-page.test.ts): a row is one line, 30 to a page.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -85,7 +86,7 @@ async function boot(mode: 'graph' | 'list' = 'list') {
   await vi.waitFor(() => expect(document.querySelector('[data-slot="jobs-mode-list"]')).not.toBeNull());
   if (mode === 'list') {
     await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-list"]')!);
-    await vi.waitFor(() => expect(cards().length).toBe(jobs.length));
+    await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 30)));
   }
 }
 
@@ -93,8 +94,8 @@ async function click(el: HTMLElement | SVGElement) {
   await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 }
 
-const cards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="job-card"]')];
-const card = (id: string) => document.querySelector<HTMLElement>(`[data-slot="job-card"][data-job-id="${id}"]`)!;
+const cards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="job-row"]')];
+const card = (id: string) => document.querySelector<HTMLElement>(`[data-slot="job-row"][data-job-id="${id}"]`)!;
 const slot = (el: HTMLElement, name: string) => el.querySelector<HTMLElement>(`[data-slot="${name}"]`)?.textContent ?? '';
 
 async function choose(name: string, value: string) {
@@ -126,12 +127,12 @@ describe('the Jobs view (issue #434)', () => {
     await boot();
     const running = card('job-1');
     expect(running.dataset.stage).toBe('running');
-    expect(slot(running, 'card-tasks')).toBe('2/5');
-    expect(slot(running, 'card-issue')).toBe('acme/site#1');
-    expect(running.querySelector<HTMLAnchorElement>('[data-slot="card-issue"] a')?.href).toBe('https://github.com/acme/site/issues/1');
-    expect(slot(running, 'card-lane')).toBe('box (m1) · lane-1');
-    await vi.waitFor(() => expect(slot(running, 'card-last-event')).toContain('job.queued'));
-    expect(slot(card('job-2'), 'card-lane')).toBe('no lane');
+    expect(slot(running, 'row-tasks')).toBe('2/5');
+    expect(slot(running, 'row-issue')).toBe('acme/site#1');
+    expect(running.querySelector<HTMLAnchorElement>('[data-slot="row-issue"] a')?.href).toBe('https://github.com/acme/site/issues/1');
+    expect(slot(running, 'row-lane')).toBe('box (m1) · lane-1');
+    await vi.waitFor(() => expect(slot(running, 'row-last-event')).toContain('job.queued'));
+    expect(slot(card('job-2'), 'row-lane')).toBe('no lane');
     expect(running.querySelector<HTMLAnchorElement>('a[href="#job/job-1"]')).not.toBeNull();
   });
 
@@ -140,8 +141,8 @@ describe('the Jobs view (issue #434)', () => {
     jobs = [{ ...pointed(1, 'finished'), partlyDone: pr, sourceState: { source: { pullRequest: pr, follow: 'open', seen: { draft: false, conflicting: false, checks: 'passing' } } } }];
     await boot();
     expect(card('job-1').dataset.stage).toBe('partly_done');
-    expect(slot(card('job-1'), 'card-partly-done')).toBe('waits on the merge of PR #70; then the next part of acme/site#1 runs');
-    expect(slot(card('job-1'), 'card-pr')).toContain('checks passing');
+    expect(slot(card('job-1'), 'row-partly-done')).toBe('waits on the merge of PR #70; then the next part of acme/site#1 runs');
+    expect(slot(card('job-1'), 'row-pr')).toContain('checks passing');
   });
 
   it('counts the jobs per stage, and filters by stage and by repository, and says how many show', async () => {
@@ -160,20 +161,23 @@ describe('the Jobs view (issue #434)', () => {
     expect(cards().map((c) => c.dataset.jobId)).toEqual(['job-21', 'job-6']);
     expect(document.querySelector('[data-slot="jobs-count"]')?.textContent).toContain('2 of 30');
     await choose('jobs-filter-stage', '');
-    expect(cards().every((c) => slot(c, 'card-issue').startsWith('acme/widgets#'))).toBe(true);
+    expect(cards().every((c) => slot(c, 'row-issue').startsWith('acme/widgets#'))).toBe(true);
     expect(cards()).toHaveLength(10);
   });
 
   it('a stage change reaches its row live, with no reload', async () => {
-    jobs = Array.from({ length: 250 }, (_, n) => pointed(n, STATUSES[n % STATUSES.length]!));
+    // One page of jobs (30 to a page): the row stays in view whatever its new place.
+    jobs = Array.from({ length: 30 }, (_, n) => pointed(n, STATUSES[n % STATUSES.length]!));
     await boot();
-    expect(card('job-0').dataset.stage).toBe('queued');
-    jobs = jobs.map((j) => (j.id === 'job-0' ? { ...j, status: 'running', laneId: 'm1/lane-0' } : j));
-    await act(async () => { FakeEventSource.last!.send(event(1000, 'job-0', 'job.started')); });
-    await vi.waitFor(() => expect(card('job-0').dataset.stage).toBe('running'));
-    expect(slot(card('job-0'), 'card-last-event')).toContain('job.started');
-    expect(slot(card('job-0'), 'card-lane')).toBe('box (m1) · lane-0');
-    expect(cards()).toHaveLength(250);
+    const id = 'job-0';
+    const n = 0;
+    expect(card(id).dataset.stage).toBe('queued');
+    jobs = jobs.map((j) => (j.id === id ? { ...j, status: 'running', laneId: `m1/lane-${n}` } : j));
+    await act(async () => { FakeEventSource.last!.send(event(1000, id, 'job.started')); });
+    await vi.waitFor(() => expect(card(id).dataset.stage).toBe('running'));
+    expect(slot(card(id), 'row-last-event')).toContain('job.started');
+    expect(slot(card(id), 'row-lane')).toBe(`box (m1) · lane-${n}`);
+    expect(cards()).toHaveLength(30);
   });
 
   it('opens in the graph mode: a tree per root, its nodes, what blocks the root, and a node\'s details on select', async () => {
@@ -204,6 +208,23 @@ describe('the Jobs view (issue #434)', () => {
     expect(details.dataset.nodeId).toBe('job:job-1');
     expect(details.textContent).toContain('the next part of acme/site#1 runs');
     expect(details.textContent).toContain('continues in');
+  });
+
+  it('fits each tree to the panel width by default, with a toggle for actual size (issue #2354)', async () => {
+    jobs = [pointed(1, 'running')];
+    await boot('graph');
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="job-tree-graph"]')).not.toBeNull());
+    const svg = () => document.querySelector<SVGSVGElement>('[data-slot="job-tree-graph"]')!;
+    const frame = () => svg().closest<HTMLElement>('[data-slot="fit-graph"]')!;
+    expect(svg().getAttribute('viewBox')).toBe(`0 0 ${svg().getAttribute('width')} ${svg().getAttribute('height')}`);
+    expect(frame().dataset.size).toBe('fit');
+    expect(svg().getAttribute('class')).toMatch(/\bmax-w-full\b/);
+    expect(svg().getAttribute('class')).toMatch(/\bh-auto\b/);
+    expect(svg().parentElement!.className).not.toMatch(/overflow/);
+    await click([...frame().querySelectorAll('button')].find((b) => b.textContent === 'Actual size')!);
+    expect(frame().dataset.size).toBe('actual');
+    expect(svg().getAttribute('class')).not.toMatch(/max-w-full/);
+    expect(svg().parentElement!.className).toMatch(/overflow-x-auto/);
   });
 
   it('shows an open question as a node of its job that blocks the root, and links its details to the job', async () => {

@@ -8,6 +8,7 @@
 // Settings (issue #151). A session whose UI role cannot act (viewer) sees a
 // notice instead of the box. One order, the API's: high-priority jobs' questions first (issue #535), tagged, then oldest
 // first, the longest waiting on top (issue #450).
+// A long page (issue #2353): Cards or Rows, 6 cards or 30 rows to a page; a row opens its card in place.
 // Research this and Propose this (issue #548): a phase shift — a fork, or a switch of the whole job — where the server
 // takes one, else why not; a suggested one in one click; an admin's phase-shift settings below the questions. The forks
 // made from a question show on its card, with their status and a link (issue #570).
@@ -27,6 +28,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Confirm } from '@/components/confirm';
 import { Countdown, JobTitle } from '@/components/job';
 import { CardText, Markdown } from '@/components/markdown';
+import { CardModeToggle, CardPage, CardRow, firstLine } from '@/components/card-rows';
 import { LogBlock } from '@/components/log-block';
 import { Empty, Panel } from '@/components/panel';
 import { QuestionForm } from '@/components/question-form';
@@ -220,9 +222,18 @@ function OpenQuestions() {
   useEffect(() => { if (canAnswer && unseen) void markSeen(unseen.split(',')); }, [canAnswer, unseen]);
   return (
     <div ref={list} className="space-y-3 [overflow-anchor:none]">
-      <ReasonFilter counts={counts} total={questions.length} value={active} onChange={setReason} />
+      <div className="flex flex-wrap items-center gap-2">
+        <ReasonFilter counts={counts} total={questions.length} value={active} onChange={setReason} />
+        <span className="ml-auto"><CardModeToggle page="questions" /></span>
+      </div>
       {ordered.length
-        ? ordered.map((q) => <div key={q.id} data-question={q.id}><QuestionCard q={q} /></div>)
+        ? <CardPage page="questions" items={ordered} id={(q) => q.id} reset={active} render={(q, row) => (
+          <div key={q.id} data-question={q.id} className="space-y-1">
+            {row && <CardRow slot="question-row" {...row} high={q.high} label={q.tier === 'human' ? 'For you' : `With ${q.tier}`}
+              text={firstLine(q.tldr?.text ?? q.text)} facts={<>asked {clock(q.createdAt)}</>} />}
+            {(!row || row.open) && <QuestionCard q={q} />}
+          </div>
+        )} />
         : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>}
       {canAdmin && <PhaseShiftSettingsPanel />}
       {below > 0 && (

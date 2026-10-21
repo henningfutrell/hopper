@@ -3,6 +3,7 @@
 // is next) with the job's summary; what waits on the person, pinned at the top; the job's own graph, a node per part
 // under its group; and the parts as a table, filtered by group, status and text. Each part links to its own page.
 import { useEffect, useMemo, useState } from 'react';
+import { FitGraph } from '@/components/fit-graph';
 import { GhLink } from '@/components/job';
 import { Empty } from '@/components/panel';
 import { FIELD } from '@/components/plugin-form';
@@ -76,8 +77,7 @@ export function BomGraph({ bom, title }: { bom: JobBom; title: string }) {
   const parts = useMemo(() => new Map(bom.parts.map((p) => [`part:${p.id}`, p])), [bom]);
   const PAD = 8;
   return (
-    <div className="overflow-x-auto">
-      <svg data-slot="bom-graph" width={layout.width + 2 * PAD} height={layout.height + 2 * PAD} className="block" role="group" aria-label="the job's parts">
+    <FitGraph slot="bom-graph" label="the job's parts" width={layout.width + 2 * PAD} height={layout.height + 2 * PAD}>
         <g transform={`translate(${PAD},${PAD})`}>
           {layout.links.map((l) => {
             const a = at.get(l.from)!;
@@ -103,8 +103,7 @@ export function BomGraph({ bom, title }: { bom: JobBom; title: string }) {
             return part?.href ? <a key={p.id} href={part.href}>{box}</a> : box;
           })}
         </g>
-      </svg>
-    </div>
+    </FitGraph>
   );
 }
 

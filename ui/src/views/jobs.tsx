@@ -6,91 +6,45 @@
 // - Graph (the default): a section per job tree, named by its root, laid out from it; nodes are jobs, issues and pull
 //   requests, coloured by stage, a job with its task count; edges are typed. What blocks the root is ringed, and the
 //   edges to it are drawn bold. A settled tree starts folded. Select a node to read its details.
-// - List: a row per job — its issue, stage, task count, lane, time in stage, pull request and checks, last event; a
-//   partly done job names the pull request that blocks the rest and what runs after its merge.
-// A row and a node render again only when what they show changes, so the view stays quick with hundreds of jobs.
+// - List: one line per job (job-row.tsx).
+// A row and a node render again only when what they show changes, so the view stays quick with hundreds of jobs. On a
+// long page (issue #2353): the header, its filters and the stage counts stay in view; the list shows 30 rows to a page and
+// the graph 8 trees; the mode and each tree folded or open are kept per browser.
 import { Briefcase, ChevronDown, ChevronRight, CircleHelp, List, Network } from 'lucide-react';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useSection } from '@/app/nav';
-import { detailOf, eventTone } from '@/components/event-line';
 import { GhLink } from '@/components/job';
 import { NodeTends } from '@/components/node-tends';
+import { FitGraph } from '@/components/fit-graph';
 import { Empty, Panel } from '@/components/panel';
+import { ModeToggle, Pager, usePaged } from '@/components/pager';
 import { COLOR, StatusBadge, TEXT, type Tone } from '@/components/status';
 import { WaitsOnLink } from '@/components/waits-on';
 import { useNow } from '@/hooks/use-now';
+import { useGroupOpen, usePagePref } from '@/hooks/use-page-pref';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { laneName } from '@/model/board';
-import { clock, elapsed } from '@/model/format';
+import { elapsed } from '@/model/format';
 import { jobHref } from '@/model/job';
 import {
-  EDGE_TEXT, filterChoices, IN_FLIGHT_SECTION, KIND_TEXT, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_H, NODE_W, pullRequestText, pullRequestTone, shownTrees, stageCounts, stageInfo,
+  EDGE_TEXT, filterChoices, IN_FLIGHT_SECTION, KIND_TEXT, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_H, NODE_W, shownTrees, stageCounts, stageInfo,
   STAGES, tasksText, type JobsFilter,
 } from '@/model/jobs-view';
+import { ROWS_PER_PAGE } from '@/model/page-prefs';
 import type { DomainEvent, JobGraph, JobGraphEdge, JobGraphNode, JobStage, JobTree } from '@/model/wire';
 import { useHopper } from '@/store';
 import { Filter, InFlightToggle, StageCounts } from './jobs-filters';
+import { issueOf, JobRow, PullRequest, StageBadge } from './job-row';
 
 const EMPTY: JobGraph = { nodes: [], edges: [], trees: [], stages: {} };
-type Mode = 'graph' | 'list';
-
-function StageBadge({ stage, text }: { stage: JobStage; text?: string }) {
-  const s = stageInfo(stage);
-  return <StatusBadge status={stage} label={text || s.label} tone={s.tone} title={s.title} />;
-}
-
-const prLabel = (url: string): string => { const n = /\/pull\/(\d+)/.exec(url)?.[1]; return n ? `PR #${n}` : 'its pull request'; };
-
-function PullRequest({ pr }: { pr: NonNullable<JobGraphNode['pullRequest']> }) {
-  return (
-    <span data-slot="card-pr" className="inline-flex min-w-0 items-center gap-1.5">
-      <GhLink url={pr.url}>{prLabel(pr.url)}</GhLink>
-      <span className={cn('truncate', TEXT[pullRequestTone(pr)])}>{pullRequestText(pr)}</span>
-    </span>
-  );
-}
-
-const issueOf = (n: JobGraphNode): string | undefined => (n.repo && n.number !== undefined ? `${n.repo}#${n.number}` : undefined);
-
-interface RowProps { node: JobGraphNode; lane: string; last: DomainEvent | undefined; since: string | undefined }
-
-const same = (a: RowProps, b: RowProps): boolean =>
-  a.node.id === b.node.id && a.node.stage === b.node.stage && a.node.stageText === b.node.stageText && a.node.status === b.node.status && a.node.stageSince === b.node.stageSince
-  && a.node.tasks?.done === b.node.tasks?.done && a.node.tasks?.total === b.node.tasks?.total && a.lane === b.lane && a.last?.seq === b.last?.seq
-  && a.since === b.since && JSON.stringify(a.node.pullRequest) === JSON.stringify(b.node.pullRequest);
-
-const JobRow = memo(function JobRow({ node, lane, last, since }: RowProps) {
-  const issue = issueOf(node);
-  const detail = last ? detailOf(last) : '';
-  return (
-    <div data-slot="job-card" data-job-id={node.jobId} data-stage={node.stage} data-status={node.status} className="min-w-0 space-y-1.5 rounded-lg border bg-card px-3 py-2.5">
-      <div className="flex items-start gap-2">
-        <a href={jobHref(node.jobId!)} className="min-w-0 flex-1 truncate text-sm font-medium underline-offset-4 hover:underline" title={`${node.label}\njob ${node.jobId}`}>{node.label}</a>
-        {node.tasks && <span data-slot="card-tasks" className="num shrink-0 font-mono text-xs text-muted-foreground" title="tasks done of its task list">{tasksText(node)}</span>}
-        <span data-slot="card-stage"><StageBadge stage={node.stage} text={node.stageText} /></span>
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span data-slot="card-issue" className="font-mono">{issue ? <GhLink url={node.url}>{issue}</GhLink> : 'no issue'}</span>
-        <span data-slot="card-lane" title="its lane">{lane}</span>
-        {since && <span data-slot="card-since" title={`in this stage since ${node.stageSince}`}>{since} in stage</span>}
-        {node.pullRequest && <PullRequest pr={node.pullRequest} />}
-      </div>
-      {node.partlyDone && (
-        <div data-slot="card-partly-done" className={cn('text-xs', TEXT.operator)}>
-          waits on the merge of <GhLink url={node.partlyDone.pullRequest}>{prLabel(node.partlyDone.pullRequest)}</GhLink>; then {node.partlyDone.afterMerge}
-        </div>
-      )}
-      <div data-slot="card-last-event" className="flex min-w-0 items-baseline gap-2 text-xs" title={last ? `${last.at}${detail ? ` — ${detail}` : ''}` : undefined}>
-        {last ? <>
-          <span className="num shrink-0 font-mono text-muted-foreground/80">{clock(last.at)}</span>
-          <span className={cn('shrink-0 font-mono font-medium', TEXT[eventTone(last.type)])}>{last.type}</span>
-          {detail && <span className="min-w-0 truncate text-muted-foreground">{detail}</span>}
-        </> : <span className="text-muted-foreground/70">no event yet</span>}
-      </div>
-    </div>
-  );
-}, same);
+const MODES = [
+  { mode: 'graph', label: 'Graph', icon: Network },
+  { mode: 'list', label: 'List', icon: List, title: 'One line per job' },
+] as const;
+type Mode = (typeof MODES)[number]['mode'];
+const MODE_NAMES: readonly Mode[] = MODES.map((m) => m.mode);
+const TREES_PER_PAGE = 8;
 
 const EDGE_STYLE: Record<JobGraphEdge['kind'], { dash?: string; tone: Tone }> = {
   parent: { tone: 'muted' }, follow_up: { dash: '2 3', tone: 'muted' }, works: { tone: 'muted' },
@@ -134,8 +88,7 @@ function TreeGraph({ graph, tree, selected, onSelect }: { graph: JobGraph; tree:
   const edges = useMemo(() => graph.edges.filter((e) => at.has(e.from) && at.has(e.to)), [graph, at]);
   const PAD = 8;
   return (
-    <div className="overflow-x-auto">
-      <svg data-slot="job-tree-graph" width={layout.width + 2 * PAD} height={layout.height + 2 * PAD} className="block" role="group" aria-label="job tree">
+    <FitGraph slot="job-tree-graph" label="job tree" width={layout.width + 2 * PAD} height={layout.height + 2 * PAD}>
         <g transform={`translate(${PAD},${PAD})`}>
           {edges.map((e) => {
             const a = at.get(e.from)!;
@@ -157,8 +110,7 @@ function TreeGraph({ graph, tree, selected, onSelect }: { graph: JobGraph; tree:
             <NodeBox key={p.id} node={byId.get(p.id)!} x={p.x} y={p.y} blocking={blocking.has(p.id)} selected={selected === p.id} onSelect={onSelect} />
           ))}
         </g>
-      </svg>
-    </div>
+    </FitGraph>
   );
 }
 
@@ -199,9 +151,11 @@ function NodeDetails({ graph, id, laneOf, now, onClose }: { graph: JobGraph; id:
   );
 }
 
-function TreeSection({ graph, tree, open, onToggle, selected, onSelect, children }: {
-  graph: JobGraph; tree: JobTree; open: boolean; onToggle: () => void; selected: string | null; onSelect: (id: string) => void; children?: React.ReactNode;
+/** A tree, open or folded as a person left it; else open unless nothing blocks it and other trees show (`openFirst`). */
+function TreeSection({ graph, tree, openFirst, selected, onSelect, children }: {
+  graph: JobGraph; tree: JobTree; openFirst: boolean; selected: string | null; onSelect: (id: string) => void; children?: React.ReactNode;
 }) {
+  const [open, onToggle] = useGroupOpen(`jobs.tree.${tree.root}`, openFirst);
   const root = graph.nodes.find((n) => n.id === tree.root)!;
   const jobs = Object.values(tree.stages).reduce((a, b) => a + (b ?? 0), 0);
   return (
@@ -240,9 +194,7 @@ export function Jobs() {
   const [picked, setFilter] = useState<JobsFilter>(NO_FILTER);
   const inFlight = useSection() === IN_FLIGHT_SECTION; // the hash's, so the header badge's link turns it on
   const filter = useMemo(() => ({ ...picked, inFlight }), [picked, inFlight]);
-  const [mode, setMode] = useState<Mode>('graph');
-  // A tree a person opened or folded; else it starts open unless nothing blocks it and other trees show.
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const [mode, setMode] = usePagePref<Mode>('jobs.mode', 'graph', MODE_NAMES);
   const [selected, setSelected] = useState<string | null>(null);
   const now = useNow();
   const minute = Math.floor(now / 60_000);
@@ -263,7 +215,9 @@ export function Jobs() {
   const trees = useMemo(() => shownTrees(g, filter), [g, filter]);
   const total = g.nodes.filter((n) => n.kind === 'job').length;
   const laneOf = (laneId: string) => laneName(laneId, machines);
-  const isOpen = (t: JobTree) => opened[t.root] ?? !(t.blocking.length === 0 && trees.length > 1);
+  const reset = `${filter.stage} ${filter.repo} ${filter.inFlight}`;
+  const rowPage = usePaged(rows, ROWS_PER_PAGE, reset);
+  const treePage = usePaged(trees, TREES_PER_PAGE, reset);
   const empty = graph === null ? 'reading the jobs…'
     : total === 0 ? 'No jobs yet. A job starts when a source takes an issue: label it and assign it as Sources says.'
       : 'No job matches the filters.';
@@ -271,33 +225,32 @@ export function Jobs() {
     <Panel title="Jobs" icon={Briefcase}
       count={<span data-slot="jobs-count">{rows.length === total ? total : `${rows.length} of ${total}`}</span>}
       action={<div className="flex flex-wrap items-center gap-2">
-        <div role="group" aria-label="View mode" className="inline-flex rounded-md border">
-          <button type="button" data-slot="jobs-mode-graph" aria-pressed={mode === 'graph'} onClick={() => setMode('graph')} className={cn('inline-flex items-center gap-1 px-2 py-1 text-xs', mode === 'graph' && 'bg-muted')}><Network className="size-3.5" />Graph</button>
-          <button type="button" data-slot="jobs-mode-list" aria-pressed={mode === 'list'} onClick={() => setMode('list')} className={cn('inline-flex items-center gap-1 border-l px-2 py-1 text-xs', mode === 'list' && 'bg-muted')}><List className="size-3.5" />List</button>
-        </div>
+        <ModeToggle slot="jobs-mode" value={mode} choices={MODES} onPick={setMode} />
         <InFlightToggle on={inFlight} />
         <Filter<JobStage> slot="jobs-filter-stage" label="Stage" value={filter.stage} choices={choices.stages} name={(s) => stageInfo(s).label} onPick={(stage) => setFilter((f) => ({ ...f, stage }))} />
         <Filter<string> slot="jobs-filter-repo" label="Repository" value={filter.repo} choices={choices.repos} name={(r) => r} onPick={(repo) => setFilter((f) => ({ ...f, repo }))} />
         <a href="/help/jobs" target="_blank" rel="noopener" className="text-muted-foreground hover:text-foreground" aria-label="Help for the Jobs view" title="Help for the Jobs view"><CircleHelp className="size-4" /></a>
       </div>}
+      sticky toolbar={<StageCounts counts={counts} chosen={filter.stage} onPick={(stage) => setFilter((f) => ({ ...f, stage }))} />}
       bodyClassName="p-0">
-      <StageCounts counts={counts} chosen={filter.stage} onPick={(stage) => setFilter((f) => ({ ...f, stage }))} />
       {mode === 'list' ? (
-        <div data-slot="jobs-list" className="grid gap-2 p-4 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.length ? rows.map((n) => (
+        <div data-slot="jobs-list">
+          {rows.length ? <ul className="divide-y">{rowPage.shown.map((n) => (
             <JobRow key={n.id} node={n} lane={n.laneId ? laneOf(n.laneId) : 'no lane'} last={last.get(n.jobId!)} since={n.stageSince ? elapsed(n.stageSince, minute * 60_000) : undefined} />
-          )) : <div className="col-span-full"><Empty>{empty}</Empty></div>}
+          ))}</ul> : <Empty>{empty}</Empty>}
+          <Pager p={rowPage} onPage={rowPage.setPage} className="border-t px-4 py-2" />
         </div>
       ) : (
         <div data-slot="jobs-graph" className="space-y-2 p-4">
           {trees.length ? <>
             <Legend />
-            {trees.map((t) => (
-              <TreeSection key={t.root} graph={g} tree={t} open={isOpen(t)} onToggle={() => setOpened((o) => ({ ...o, [t.root]: !isOpen(t) }))}
+            {treePage.shown.map((t) => (
+              <TreeSection key={t.root} graph={g} tree={t} openFirst={!(t.blocking.length === 0 && trees.length > 1)}
                 selected={selected} onSelect={(id) => setSelected((s) => (s === id ? null : id))}>
                 {selected && t.nodes.includes(selected) && <NodeDetails graph={g} id={selected} laneOf={laneOf} now={now} onClose={() => setSelected(null)} />}
               </TreeSection>
             ))}
+            <Pager p={treePage} onPage={treePage.setPage} />
           </> : <Empty>{empty}</Empty>}
         </div>
       )}

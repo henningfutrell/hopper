@@ -1946,12 +1946,13 @@ Version 1 (`docs/schemas/source.request_decline_written.v1.json`). GitHub took t
 
 ## `source.request_withdrawn`
 
-Version 1 (`docs/schemas/source.request_withdrawn.v1.json`). A request card left Intake with no person's approval or decline (issue #1067, part 4): a sync of `source` that listed every repository of the item no longer offers it — its issue closed, its label or assignee gone, or it is of a trusted origin now. Its work item, waiting for approval, is dropped; offered again, it records `source.request_opened` again. Never the text.
+Version 1 (`docs/schemas/source.request_withdrawn.v1.json`). A request card left Intake with no person's approval or decline (issue #1067, part 4): a sync of `source` that listed every repository of the item no longer offers it — its issue closed, its label or assignee gone, or it is of a trusted origin now. Or a person put an end label on its issue by hand on GitHub (issue #1892): `label` names it, and the label stays. Its work item, waiting for approval, is dropped; offered again, it records `source.request_opened` again. Never the text.
 
 | field | type | required |
 |---|---|---|
 | `source` | string | yes |
 | `key` | string | yes |
+| `label` | string | no |
 
 ```json
 {

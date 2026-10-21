@@ -172,6 +172,13 @@ describe('Settings → Permission matrix', () => {
     expect(cell('user:bob', 'cluster/x')!.querySelector('[data-op]')).toBeNull();
   });
 
+  it('scrolls with the page: the table scrolls only across, with no height bound of its own (issue #2354)', async () => {
+    await boot();
+    const box = matrix()!.querySelector('table')!.parentElement!;
+    expect(box.className).toMatch(/\boverflow-x-auto\b/);
+    expect(box.className).not.toMatch(/max-h-|overflow-(y-)?auto\b(?!-)|overflow-auto/);
+  });
+
   it('a click on a cell says why: the path, who approved it and when; Revoke there posts it', async () => {
     const daemon = await boot();
     await click(cell('machine:admin/box-kube', 'cluster/x')!.querySelector('button'));

@@ -5958,6 +5958,17 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   one height bound (`max-h-96`, at every screen width) and scrolls past it, so one long list does not
   stretch its row and leave its neighbours ragged. `Panel` `list` in `ui/src/components/panel.tsx`.
   Tested through the rendered app: `test/ui/dashboard-list-boxes.test.ts`.
+- **A page's list scrolls with the page** (issue #2354). A list box is only for a list that shares the
+  screen with others (the Dashboard, the Queue). A list that is the page (Parked, Artifacts, Stuck, Work not
+  pushed, Decider picks, Infra's Applies and drift) is no list box: its panel grows with it and the page scrolls,
+  so there is one scrollbar and an expanded row is never cut. No region nested in a page scrolls but a log
+  or code block, and a wide table or graph across. The permission matrix scrolls only across. The job tree
+  and parts graphs fit their panel's width by default (`FitGraph`, `ui/src/components/fit-graph.tsx`: a
+  `viewBox`, scaled down only), and **Actual size** draws them at their layout's size, scrolled across. The
+  lane timeline draws at most 12 lanes, the lanes that ran in the window first, until **Show all**;
+  **Hide idle lanes** drops the lanes that ran nothing; on a narrow panel its label column takes at most
+  30% of the width. The usage graph's height follows its width (170–300px). Tested:
+  `test/ui/page-lists.test.ts`, `test/ui/graph-scaling.test.ts`, `test/ui/parked-view.test.ts`.
 - **Dismissed notices** (issue #83). Each Attention item and the update notice has a Dismiss button
   (X); toasts have a close button. A dismissed notice is kept per browser like the dashboard layout
   (`localStorage` `jh_dismissed`, `ui/src/model/dismissed.ts` pure, `ui/src/hooks/use-dismissed.ts`):
@@ -19066,7 +19077,39 @@ a clock, not a ticking age, so no card renders each second.
 
 Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one event per job, the newest; none with no
 job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
-over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs).
+over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs; since issue #2353 a row
+per job, 30 to a page).
+
+### Long pages (issue #2353, 2026-10-21)
+
+Requirement: the long pages show a first view under two viewport heights, with 200 jobs, 100 pull requests or 500 events.
+One pattern for each page, in `ui/src/components/pager.tsx` and `panel.tsx`:
+
+- **Rows or cards.** A page that shows cards has **Rows**: one line per item, its acts and details left to Cards. The Jobs
+  view's List is rows only: a **job row** per job (`ui/src/views/job-row.tsx`), no card grid.
+- **Groups fold.** A Panel with `onToggle` folds by its title (Pull requests' repository groups, Landing, Not tracked;
+  Failures' sections; the Jobs view's trees).
+- **Pages.** A list past one page shows a page of it with the **pager**: 30 rows or 6 cards, 8 trees in the graph.
+  A filter starts again at the first page. Paging is in the page, not on the wire: every list here is already read whole.
+- **The header stays.** A sticky Panel (`sticky`) keeps its header and its `toolbar` (the filters) under the app's header
+  while its body scrolls with the page. A header sticks only inside its own card: a page whose header is a short card
+  of its own (Pull requests' summary, Failures' counts) makes that whole card sticky. Its card clips with `overflow: clip`, not `hidden`: a hidden overflow makes the
+  card its own scroll box, and the header would stick inside it.
+- **One scroll box.** No list box (`list`) inside a page that scrolls: Failures' sections page in place of it. A log or a
+  code view keeps its own.
+- **Kept.** The mode and each fold are **page choices** (`jh_page_prefs`), as the nav groups are kept; which page shows is not.
+
+Part 1: Jobs, Pull requests, Events, Failures, Search. Part 2:
+
+- **Questions, Proposals, Research**: Cards or Rows (`ui/src/components/card-rows.tsx`), 6 cards or 30 rows to a page.
+  A row opens its card in place, below it, so a person answers or decides with the same card; which rows are open is
+  not kept. Questions' reason filter starts again at the first page.
+- **Usage, Resources, Accounts**: each panel folds (Panel `fold`, its page choice key). A usage graph card folds too.
+- **Sources**: the GitHub, GitLab and Repository setup sections fold by their heading (`FoldSection`), and each source.
+- **Settings**: one section shows at a time already, so the long part was its strip of 35 links. The links are in six
+  groups (General, Questions, Jobs, GitHub, Network, Access); each group folds by its title, and a folded group still
+  shows the open section's link. A **jump list** above them names every section by its group. A section in no group
+  fails the typecheck.
 
 ## The isolation stop (issue #752, 2026-10-11)
 
@@ -22019,6 +22062,27 @@ the claim stays, and the end comes with the job's report.
 **Verification:** `test/sources/github-label-needs-you.test.ts` (the mirror takes an end label off an item whose job waits on a
 question or a proposal, with no label edit; a hand-off's `hopper:failed` stays), `test/sources/github-item-labels.test.ts`
 (`labelsFor` of an item that needs a person).
+
+### A request card carries no end label (issue #1892 part 7, 2026-10-21)
+
+Milestone 2, part 7: the waiting for approval state. Before it, the mirror did not judge a request card, and Intake took its
+reason from its labels. A card has no job yet, and no report writes an end label for it: Intake opened it only while no end
+label kept the issue out.
+
+- **`labelsFor` judges a request card.** The item wants no end label, as an item a job works. An end label left on comes off
+  through the outbox, and Intake gives the card no end-label reason (`ledgerReason`).
+- **An end label a person puts on a card by hand withdraws it** (`labelPutOn`). Before the discover judges Intake, the mirror
+  finds an end label that was not on the issue at the last discover and is on now, with the item not moved since. It records
+  `source.request_withdrawn` with `label`, once. The ledger drops the item, so the labels decide Intake's reason (for example
+  `hopper:rejected`), and the label stays. This is the person's explicit event: the label is never read back as state.
+  Taken off again, the card opens again, as a withdrawn card does.
+- **A label on the card at its first sight is no withdraw.** As with a label edit, the mirror takes it off.
+
+**Left to the labels:** a done item with no whole merge, dropped, a hand-off.
+
+**Verification:** `test/sources/github-label-request-card.test.ts` (an end label left on a card comes off with no withdraw; an
+end label put on by hand withdraws the card once and stays; a label at first sight is no withdraw),
+`test/sources/github-item-labels.test.ts` (`labelsFor` and `labelPutOn` of a card).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

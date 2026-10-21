@@ -15,7 +15,9 @@
 // A proposal is a set of paths (issue #651): its card is the selection form of proposal-paths.tsx. Reject (issue #1659)
 // rejects a whole proposal, open or sent back; a person may select several and reject them at once. Park (issue #2167)
 // parks the item's job: the item leaves the list for the folded Parked group below it, until its job is picked up.
+// A long page (issue #2353): Cards or Rows, 6 cards or 30 rows to a page; a row opens its card in place.
 import { ArtifactEmbeds } from '@/components/artifacts';
+import { CardModeToggle, CardPage, CardRow, firstLine } from '@/components/card-rows';
 import { Check, ChevronRight, FileCheck, Lock, RotateCcw, Telescope, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -273,17 +275,20 @@ export function ReviewSection({ kind }: { kind: ReviewKind }) {
           <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>Clear</Button>
         </div>
       )}
+      <div className="flex justify-end"><CardModeToggle page={ui.section} /></div>
       {ordered.length && type
-        ? ordered.map((p) => (
+        ? <CardPage page={ui.section} items={ordered} id={(p) => p.id} render={(p, row) => (
           <div key={p.id} data-item={p.id} className="space-y-1">
             {bulk && (
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input type="checkbox" data-select={p.id} checked={picked.has(p.id)} onChange={() => toggle(p.id)} />Select
               </label>
             )}
-            <ItemCard kind={kind} p={p} type={type} />
+            {row && <CardRow slot="review-row" {...row} high={p.high} label={p.status === 'revising' ? ui.revising : p.stage === 'human' ? 'For you' : `With ${p.stage}`}
+              text={firstLine(p.tldr?.text ?? p.versions.at(-1)!.text)} facts={<>version {p.versions.at(-1)!.number} · {clock(p.versions.at(-1)!.at)}</>} />}
+            {(!row || row.open) && <ItemCard kind={kind} p={p} type={type} />}
           </div>
-        ))
+        )} />
         : <Panel title={ui.label} icon={ICON[kind]}><Empty>no open {ui.noun}s</Empty></Panel>}
       <ParkedItems kind={kind} />
       {decided.length > 0 && <ReviewHistory kind={kind} items={decided} type={type} />}

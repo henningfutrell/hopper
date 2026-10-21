@@ -54,7 +54,7 @@ export function Stuck({ stuck }: { stuck: StuckCause[] | undefined }) {
   const total = stuck.reduce((n, c) => n + c.ids.length, 0);
   return (
     <div data-section="stuck">
-      <Panel title="Stuck" icon={CircleAlert} count={total} list bodyClassName="p-0" className="border-warn/40">
+      <Panel title="Stuck" icon={CircleAlert} count={total} bodyClassName="p-0" className="border-warn/40">
         <ul className="divide-y">{stuck.map((c) => <StuckRow key={c.cause} c={c} />)}</ul>
       </Panel>
     </div>

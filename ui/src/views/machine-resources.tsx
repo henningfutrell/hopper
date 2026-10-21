@@ -29,7 +29,7 @@ export function MachinesResourcesPanel({ className }: { className?: string }) {
   const linesOf = useCallback((h: MachineHistory) => allMachineLines(h.series, labelOf), [labelOf]);
   return (
     <UsageGraphCard<MachineHistory> path="/api/machines/history" linesOf={linesOf} title="Machine resources over time" what="resource history"
-      recordedBy="machine" empty={EMPTY} {...(className ? { className } : {})} />
+      recordedBy="machine" empty={EMPTY} fold="usage.machine-resources" {...(className ? { className } : {})} />
   );
 }
 

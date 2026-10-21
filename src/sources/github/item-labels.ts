@@ -11,7 +11,9 @@
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. Not a last part that made every declared part done: the follow put `hopper:done` on. An item that needs a person carries
 // none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
-// Not a hand-off (`HANDOFF_WAIT`): its job failed, and its report may have put `hopper:failed` on. Every other state is not judged.
+// Not a hand-off (`HANDOFF_WAIT`): its job failed, and its report may have put `hopper:failed` on. A request card (waiting for
+// approval) carries none: it has no job yet, and no report wrote one. An end label a person puts on a card by hand is their
+// withdraw of it (`labelPutOn`), never read back as state. Every other state is not judged.
 // Pure: no I/O, no clock.
 import type { BlockedCause } from '../../domain/item-lifecycle.ts';
 import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
@@ -33,7 +35,7 @@ export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pi
 /** The end labels `item`'s state wants on its issue; undefined: the state is not judged. */
 export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLabels | undefined {
   switch (item.state) {
-    case 'queued': case 'working': case 'waiting_outside': return { allowed: [] };
+    case 'waiting_for_approval': case 'queued': case 'working': case 'waiting_outside': return { allowed: [] };
     case 'pr_open': return { allowed: [LABEL_PR_READY, LABEL_PARTLY_DONE], add: facts.part ? LABEL_PARTLY_DONE : LABEL_PR_READY };
     case 'blocked': {
       const label = item.blockedCause === 'pr_closed' ? LABEL_PR_CLOSED : LABEL_BLOCKED;
@@ -91,4 +93,14 @@ export function labelTakenOff(item: LabelledItem, before: readonly string[], now
   const want = labelsFor(item, facts);
   if (want?.add === undefined || now.some((l) => want.allowed.includes(l))) return undefined;
   return before.find((l) => want.allowed.includes(l));
+}
+
+/**
+ * The end label a person put on a request card by hand (issue #1892): `item` waits for approval, and an end label not on the
+ * issue at the last discover (`before`) is on now. It withdraws the card; the label stays. Undefined: no such edit. Whether
+ * the item moved since, the caller judges.
+ */
+export function labelPutOn(item: LabelledItem, before: readonly string[], now: readonly string[]): string | undefined {
+  if (item.state !== 'waiting_for_approval') return undefined;
+  return now.find((l) => END_LABELS.includes(l) && !before.includes(l));
 }

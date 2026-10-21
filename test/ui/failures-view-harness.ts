@@ -84,9 +84,10 @@ export class FakeEventSource {
 let root: Root | undefined;
 export let daemon: ReturnType<typeof fakeDaemon>;
 
-export async function boot(hash: string, d: Daemon) {
+/** `kept`: a reload, with what the browser kept (issue #2353); else a browser that kept nothing. */
+export async function boot(hash: string, d: Daemon, kept = false) {
   window.location.hash = hash;
-  localStorage.clear();
+  if (!kept) localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   daemon = fakeDaemon(d);
   vi.stubGlobal('fetch', daemon.fetch);

@@ -1,0 +1,51 @@
+// The Machines list view (issue #2352): one row per machine, its badges and readings in short, beside the cards. A
+// machine's badges are the same in its card's header and its row; an alert is any warning badge, or a problem its card
+// says that has none. The view mode is kept per browser (hooks/use-machines-layout.ts); what is read back is checked.
+import { unhealthyLaneLines } from './lane-health.ts';
+import { credentialCard, offNetwork } from './machines.ts';
+import type { MachineView } from './wire.ts';
+
+export type MachinesMode = 'cards' | 'list';
+
+/** The view mode as browser storage has it: list only when it says list. */
+export const parseMachinesMode = (raw: string | null): MachinesMode => (raw === 'list' ? 'list' : 'cards');
+
+/** A badge's tone: a warning, or quiet; none is the online or offline badge's own. */
+export interface MachineBadge { status: string; tone?: 'warn' | 'muted' }
+
+/** A machine's badges, the warnings first and its online or offline badge last. */
+export function machineBadges(m: MachineView, now: number): MachineBadge[] {
+  const warn = (on: unknown, status: string): MachineBadge[] => (on ? [{ status, tone: 'warn' }] : []);
+  const credential = credentialCard(m);
+  return [
+    ...warn(m.template?.waiting, 'waiting for template approval'),
+    ...warn(m.leaving, 'leaving'),
+    ...warn(m.drained, 'drained'),
+    ...warn(unhealthyLaneLines(m, now).length > 0, 'unhealthy lane'),
+    ...warn(offNetwork(m), 'off-network'),
+    ...warn(m.herdrProblem, 'herdr outdated'),
+    ...warn(m.disk?.low, 'disk low'),
+    ...(credential ? [{ status: credential.badge, tone: credential.state === 'acknowledged' ? 'muted' as const : 'warn' as const }] : []),
+    ...warn(m.hopperDisk?.over, 'over disk budget'),
+    ...warn(m.resources?.windowsLink?.ok === false, 'Windows link broken'),
+    { status: m.online ? 'online' : 'offline' },
+  ];
+}
+
+/** Whether a machine has an alert: a warning badge, a work tree problem, or a client that cannot be updated from here. */
+export const machineHasAlert = (m: MachineView, now: number): boolean =>
+  machineBadges(m, now).some((b) => b.tone === 'warn') || !!m.workTreeProblem || !!m.client?.update?.problem;
+
+const pct = (f: number): string => `${Math.round(f * 100)}%`;
+
+/** A machine's row: lanes in use of its max, CPU busy, memory used, disk free and its client release; a dash for none. */
+export function machineRow(m: MachineView): { lanes: string; cpu: string; memory: string; disk: string; version: string } {
+  const r = m.resources;
+  return {
+    lanes: `${m.lanes.filter((l) => l.state !== 'idle').length}/${m.maxLanes}`,
+    cpu: r?.cpuBusyFrac !== undefined ? pct(r.cpuBusyFrac) : '—',
+    memory: r && r.memTotalBytes > 0 ? pct((r.memTotalBytes - r.memAvailableBytes) / r.memTotalBytes) : '—',
+    disk: m.disk && m.disk.totalBytes > 0 ? `${pct(m.disk.freeBytes / m.disk.totalBytes)} free` : '—',
+    version: m.client?.release ?? '—',
+  };
+}

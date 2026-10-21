@@ -86,7 +86,7 @@ export function WorkNotPushed({ kept }: { kept: KeptWorkView[] }) {
   if (!kept.length) return null;
   return (
     <div data-section="work-not-pushed">
-      <Panel title="Work not pushed" icon={GitBranch} count={kept.length} list bodyClassName="p-0" className="border-warn/40">
+      <Panel title="Work not pushed" icon={GitBranch} count={kept.length} bodyClassName="p-0" className="border-warn/40">
         <ul className="divide-y">{kept.map((k) => <KeptWorkRow key={k.jobId} k={k} />)}</ul>
       </Panel>
     </div>
