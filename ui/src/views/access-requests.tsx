@@ -8,6 +8,7 @@
 // them all, side by side; each card shows its own progress and result, and the bar counts what was approved and failed.
 // Issue #1138: an admin mints a delegate approver here, an agent that approves what waits for them, and revokes it here.
 // Issue #2197: one card per sandbox run, first: a template a job asked for is approved on its run card, not on its own.
+// Issue #2146: the bastions of jobs that run now, each with Stop (an operator's).
 import { CheckCheck, Ticket } from 'lucide-react';
 import { useEffect } from 'react';
 import { Confirm } from '@/components/confirm';
@@ -18,11 +19,12 @@ import { ownTemplatesWaiting, runCardsOf, unknownAssetTemplates } from '@/model/
 import type { VaultView } from '@/model/wire';
 import { approveItems, batchText, forgetEndedItems, runItem, selectOnly, templateItem, useAccessApprovals } from '@/store/access-approvals';
 import { useHopper } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { useCanAdmin, useCanOperate } from '@/store/selectors';
 import { sendVault, useVault, useVaultStore } from '@/store/vault';
 import { AskedFor } from './vault-requests';
 import { VaultGrants } from './vault-grants';
 import { ActionGrants } from './action-grants';
+import { Bastions } from './bastions';
 import { TemplateApprovals } from './template-approvals';
 import { SandboxRuns } from './sandbox-approvals';
 import { UnknownAssets } from './unknown-assets';
@@ -55,6 +57,7 @@ function ApproveSelected({ view }: { view: VaultView | null }) {
 
 export function AccessRequests() {
   const can = useCanAdmin();
+  const canOperate = useCanOperate();
   const view = useVault();
   const busy = useVaultStore((s) => s.busy);
   const error = useVaultStore((s) => s.error);
@@ -73,6 +76,8 @@ export function AccessRequests() {
       <SandboxRuns view={view} can={can} />
       <TemplateApprovals waiting={ownTemplatesWaiting(view)} {...(view?.asks ? { asks: view.asks } : {})} secrets={view?.secrets ?? []} can={can} />
       <UnknownAssets templates={unknownAssetTemplates(view)} can={can} />
+      {/* Issue #2146: the bastions of jobs that run now; an operator stops one. */}
+      <Bastions view={view} can={canOperate} />
       {can && <DelegateApprovers />}
       <Panel title="Box tokens" icon={Ticket}>
         <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>

@@ -29,7 +29,7 @@ const clusterFacts = (parts: Pick<TenantParts, 'vault' | 'store'>): ClusterFacts
  * waiting profiles an API token asked to approve (issue #909), the sandbox approvals and requests (issue #991), the
  * run cards (issue #2197), and the asks and grants of AWS actions (issue #2206).
  */
-export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & Partial<Pick<TenantParts, 'sandboxRequests'>>): Promise<VaultView> {
+export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & Partial<Pick<TenantParts, 'sandboxRequests' | 'bastions'>>): Promise<VaultView> {
   const view = await vaultView(parts.vault);
   const facts = clusterFacts(parts);
   // Issue #1001: the job that asked for each template, by its title and its issue or pull request. Issue #2067: the
@@ -55,6 +55,8 @@ export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & 
     // Sandboxes jobs start (issue #991): the toggles, and the requests of jobs at work.
     // The auto-approve policy (issue #1001) answered in full, the default where none was set.
     sandboxApprovals: approvalsInFull(parts.store.settings.getSandboxApprovals() ?? NO_SKIPS), sandboxRequests: requests, runs,
+    // Issue #2146: the bastions that run now, for a person to stop.
+    ...(parts.bastions ? { bastions: parts.bastions.list() } : {}),
     rememberedWrites: rememberedNow(parts.store),
     // Issue #2206: the asks for an AWS action that wait for a person and no run card holds, and the grants live now.
     actionAsks: looseAsks(actions, runs), actionGrants: grantsNow(parts.store, new Date()),
