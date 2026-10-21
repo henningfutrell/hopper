@@ -115,7 +115,9 @@ else if (kind === 'codex') {
     out({ type: 'result', subtype: 'success', is_error: true, api_error_status: 401, result: 'Invalid API key · Fix external API key', session_id: session, terminal_reason: 'api_error' });
     printed(1);
   }
-  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: toolOutput ? `${toolOutput}\n${answer}` : answer, session_id: session, permission_denials: [] });
+  // Its token use, per model (issue #2302): what the hopper keeps in the token ledger.
+  const modelUsage = { 'claude-opus-5-5': { inputTokens: 3, outputTokens: 30, cacheReadInputTokens: 300, cacheCreationInputTokens: 20, costUSD: 0.01 } };
+  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: toolOutput ? `${toolOutput}\n${answer}` : answer, session_id: session, permission_denials: [], modelUsage });
 } else {
   process.stderr.write(`fake-print-agent: FAKE_AGENT_KIND must be codex, opencode, omp or claude, not ${kind}\n`);
   process.exit(2);

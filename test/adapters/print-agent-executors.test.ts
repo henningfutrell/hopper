@@ -11,6 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import type { TaskCount } from '../../src/domain/task-count.ts';
+import type { SessionTokenUse } from '../../src/domain/token-usage.ts';
 import { createPrintAgentExecutor, type PrintAgent } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { userSystemd } from '../support/systemd.ts';
@@ -50,15 +51,16 @@ const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string> } = {}) {
   const saved: Record<string, unknown>[] = [];
   const progress: { message?: string; tasks?: TaskCount }[] = [];
+  const tokens: { session: string; use: SessionTokenUse }[] = [];
   const job: Job = {
     id: ID, spec: { executor: 'agent', payload, machineId: HERE.id }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
     job, laneId: 'local/lane-1', machine: HERE, signal: o.signal ?? new AbortController().signal, progress: (message, tasks) => { progress.push({ message, tasks }); }, saveState: (s) => { saved.push(s); },
-    workTree() {}, ...(o.credentials ? { credentials: async () => o.credentials! } : {}),
+    workTree() {}, ...(o.credentials ? { credentials: async () => o.credentials! } : {}), tokenUse: (session, use) => { tokens.push({ session, use }); },
   };
-  return { ctx, saved, progress };
+  return { ctx, saved, progress, tokens };
 }
 
 /** Per agent: its arguments in the test, how a first turn and a resumed turn call its CLI, and its session id. */
@@ -89,6 +91,22 @@ const AGENTS: { agent: PrintAgent; args: string[]; first: (model: string) => str
     error: 'claude exited 1 on local: Invalid API key · Fix external API key',
   },
 ];
+
+// Issue #2302, part 6: a print-mode Claude turn keeps no agent session the checkpoint reads; its JSON result's
+// modelUsage is what the turn spent, kept in the token ledger by its session.
+describe('the claude executor\'s token use', () => {
+  const ex = createPrintAgentExecutor({ agent: 'claude', name: 'claude', bin: FAKE, args: [], sshAuth: () => { throw new Error('no ssh in this test'); } });
+  beforeEach(() => { process.env.FAKE_AGENT_KIND = 'claude'; });
+
+  it('reports each turn\'s use, by its session, with when the turn ran', async () => {
+    reply('Which colour?\nHOPPER_QUESTION');
+    const t = ctxFor({ prompt: 'Paint it', cwd: work });
+    const before = new Date().toISOString();
+    expect((await ex.run(t.ctx)).kind).toBe('question');
+    expect(t.tokens).toEqual([{ session: 'claude-session-1', use: { models: [{ model: 'claude-opus-5-5', turns: 2, input: 3, output: 30, cacheRead: 300, cacheWrite: 20 }], first: expect.any(String), last: expect.any(String) } }]);
+    expect(t.tokens[0]!.use.first! >= before && t.tokens[0]!.use.last! >= t.tokens[0]!.use.first!).toBe(true);
+  });
+});
 
 describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, session, error }) => {
   const noSsh = () => { throw new Error('no ssh in this test'); };
