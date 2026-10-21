@@ -75,6 +75,18 @@ describe('unknown assets on Access requests (issue #2123)', () => {
     });
   });
 
+  // Issue #2146: a bastion target on the old cluster names the new one too, else the save refuses it (no observe reaches it).
+  it('pointing a template at a cluster renames its bastion targets on that cluster', () => {
+    const t = template('uat', {
+      profiles: [{ operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } }],
+      bastionTargets: ['uat/monitoring/svc/grafana:80', 'uat-old/monitoring/svc/loki:3100'],
+    } as Partial<TemplateView>);
+    expect(pointedAt(t, 'uat', 'uat-eks')).toMatchObject({
+      profiles: [{ operation: 'observe', asset: { kind: 'namespace', name: 'uat-eks/monitoring' } }],
+      bastionTargets: ['uat-eks/monitoring/svc/grafana:80', 'uat-old/monitoring/svc/loki:3100'],
+    });
+  });
+
   it('says so when no template has an unknown asset', async () => {
     const el = await render([], true);
     expect(el.querySelectorAll('[data-unknown-asset]')).toHaveLength(0);
