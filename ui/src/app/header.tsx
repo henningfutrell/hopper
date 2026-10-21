@@ -35,10 +35,11 @@ import { SearchBox } from './search-box';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
 
-/** What a stall of the event loop was (issue #1002): how long, when, the routes in flight, the database's part (issue #1154), and the code it ran (issue #1383). */
+/** What a stall of the event loop was (issue #1002): how long, when, the routes in flight, the database's part (issue #1154), the processes it started (issue #2367), and the code it ran (issue #1383). */
 const stallTitle = (s: NonNullable<Health['eventLoopStall']>): string =>
   `The hopper stopped answering for ${(s.ms / 1000).toFixed(1)} s at ${new Date(s.at).toLocaleTimeString()}${s.during.length ? `, during ${s.during.join(', ')}` : ''}.`
   + `${s.store ? ` The database held it for ${(s.store.ms / 1000).toFixed(1)} s (${s.store.calls.map((c) => c.what).join(', ')}).` : ''}`
+  + `${s.processes ? ` It started ${s.processes.count} process${s.processes.count > 1 ? 'es' : ''} (${s.processes.programs.map((p) => p.what).join(', ')}).` : ''}`
   + `${s.held?.[0]?.frames[0] ? ` It ran ${s.held[0].frames[0]}.` : ''} Its log says more.`;
 
 const BADGE_ICONS: Record<HeaderBadge, typeof Activity> = {

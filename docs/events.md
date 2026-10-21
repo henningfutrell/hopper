@@ -8402,13 +8402,14 @@ Version 1 (`docs/schemas/landing_batch.restarted.v1.json`). A person restarted t
 
 ## `hopper.event_loop_stalled`
 
-Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event loop was held for `ms` (issue #1154): for that long no request was answered and no machine's link was served. `during`: the routes of the requests in flight, never their URLs. `store`: the store calls in it (all of them, issue #1383), `ms` in all and the statements that held it longest (`what`: the verb and table, never a value). `held` (issue #1383): where the loop ran while it was held, read by a thread of its own each 5 s of it, at most three reads: `afterMs` into the stall, and the top `frames` (`function (file:line)`, the file in the hopper's tree only); absent when no read was taken. `memory`: the process's resident size and JavaScript heap in use when it ended, in MiB. `skipped`: the stalls since the last one raised, which are logged only: at most one is raised a minute. An instance event: in every user's log.
+Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event loop was held for `ms` (issue #1154): for that long no request was answered and no machine's link was served. `during`: the routes of the requests in flight, never their URLs. `store`: the store calls in it (all of them, issue #1383), `ms` in all and the statements that held it longest (`what`: the verb and table, never a value). `processes` (issue #2367): the processes the hopper started in it, each of which holds the loop while it forks: `count` in all and the programs started most (`what`: the program's file name, never its path or arguments); absent when none. `held` (issue #1383): where the loop ran while it was held, read by a thread of its own each 5 s of it, at most three reads: `afterMs` into the stall, and the top `frames` (`function (file:line)`, the file in the hopper's tree only); absent when no read was taken. `memory`: the process's resident size and JavaScript heap in use when it ended, in MiB. `skipped`: the stalls since the last one raised, which are logged only: at most one is raised a minute. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
 | `ms` | integer | yes |
 | `during` | string[] | yes |
 | `store` | object | no |
+| `processes` | object | no |
 | `held` | object[] | no |
 | `memory` | object | no |
 | `skipped` | integer | yes |

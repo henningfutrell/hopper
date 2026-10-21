@@ -25124,7 +25124,15 @@ said what did not hold the loop, never what did.
   stderr, so the log says the loop is held while it is: `hopper: the event loop is held for 2.0 s now; it runs list
   (src/store/jobs.ts:88) ← …`. The watchdog names the reads with the stall when the loop is free (`held`: `afterMs`,
   `frames`), in its log line, in `/api/health`'s `eventLoopStall`, in `hopper.event_loop_stalled` (additive, still v1)
-  and in the **stalled** badge's title. A frame names its function and its file in the hopper's tree (`src/…`,
+  and in the **stalled** badge's title.
+- **A stall names the processes started in it** (issue #2367, `src/http/event-loop-processes.ts`). Each process the
+  hopper starts holds the loop while it forks, longer the larger the hopper is (about 2 ms at 800 MiB resident here,
+  more on WSL): the update check's thousands of git processes a minute were stalls of 2–4 s with almost no store time.
+  Node names each child process it makes on the `child_process` diagnostics channel, so every caller is counted. The
+  watchdog reads the totals at each tick, as it reads the store's; a stall's line adds `…; processes started in it: 41
+  (git ×38, herdr ×3)` when any started, and `processes` (`count`, `programs`) is in `eventLoopStall` and
+  `hopper.event_loop_stalled` (additive). A program is named by its file name only, never its path or its arguments.
+  `spawnSync` makes no child process object and is not counted. A frame names its function and its file in the hopper's tree (`src/…`,
   `node_modules/…`, `node:…`), else the file name alone: never an absolute path. The debugger is on only for the read.
   No inspector port is opened: the session is in-process. A Node with no inspector starts with none, and says so.
 - **A stall says the process's memory** (`memory`: `rssMb`, `heapMb`), and the watchdog logs each time the resident size
