@@ -47,7 +47,7 @@ export type CardJob = (jobId: string) => { title?: string; url?: string } | unde
  * job's run (`jobId`, part 3), also when its approval is for other jobs only.
  */
 export const waitsForPerson = (t: TemplateView, jobId?: string): boolean =>
-  !t.approval || (jobId !== undefined && !approvalCovers(t, jobId)) || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
+  !t.approval || (jobId !== undefined && !approvalCovers(t, jobId)) || t.pending.image || t.pending.egress.length > 0 || (t.pending.bastionTargets?.length ?? 0) > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
 
 const HIGH = ['write', 'sync', 'apply', 'observe'];
 
@@ -59,7 +59,7 @@ const HIGH = ['write', 'sync', 'apply', 'observe'];
 export function approvalsOf(t: TemplateView, jobId?: string): { whole: boolean; profiles: OperationProfile[] } {
   const profiles = t.pending.profiles.filter((p) => HIGH.includes(p.operation));
   const reads = t.pending.profiles.length - profiles.length;
-  return { whole: !t.approval || (jobId !== undefined && !approvalCovers(t, jobId)) || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || reads > 0, profiles };
+  return { whole: !t.approval || (jobId !== undefined && !approvalCovers(t, jobId)) || t.pending.image || t.pending.egress.length > 0 || (t.pending.bastionTargets?.length ?? 0) > 0 || t.pending.secrets.length > 0 || reads > 0, profiles };
 }
 
 /**

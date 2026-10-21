@@ -6,7 +6,9 @@
 // renewal is refused, or when its box ends by itself; then its tokens are released. One bastion a job at a time. Kept
 // in memory: a hopper that stops ends every bastion, and its start's sweep burns the boxes. The relay (part 2): a job's
 // connection to one of its bastion's targets is a byte pipe to a command the hopper starts in the box for it, which
-// connects to that target's forward on 127.0.0.1 there (relayCommand); the connection ends with the bastion.
+// connects to that target's forward on 127.0.0.1 there (relayCommand); the connection ends with the bastion. Part 3: a
+// bastion starts only to targets approved with its template, Access decides each connection, and each connection, or
+// its refusal, is an event on the job's timeline.
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,7 +20,7 @@ import type { BoxPipe } from '../domain/sandboxes.ts';
 import type { BastionEnd, BastionView } from '../domain/bastions.ts';
 import type { NeedBox, NeedBoxIo, NeedBoxResult, RunningNeedBox } from './need-box.ts';
 import {
-  bastionEnv, bastionTokens, placeTargets, relayCommand, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
+  bastionEnv, bastionTokens, placeTargets, relayCommand, targetsOutside, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
 } from './bastion.ts';
 
 export type { BastionEnd, BastionView } from '../domain/bastions.ts';
@@ -36,6 +38,11 @@ export interface BastionsOptions {
   release(box: string): Promise<void>;
   /** Runs the bastion's box (the sandbox module's `needStep`); absent: this hopper runs no sandbox. */
   run?: (box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: Omit<NeedBoxIo, 'phases'>, run: { jobId: string; step: string; template: string }) => Promise<NeedBoxResult>;
+  /**
+   * Whether the job may relay to the target of its bastion of `template` now (part 3): Access's `bastion#can_relay`, with
+   * whether a person approved the target with the template as it is now. Asked at each connection.
+   */
+  mayRelay(ask: { jobId: string; template: string; target: string }): Promise<{ allowed: boolean; reason: string }>;
   /** Whether the job is at work: a bastion of a job that stopped ends. */
   atWork(jobId: string): boolean;
   /** Where each bastion's own directory goes on this machine: the hopper's work dir (scratch). */
@@ -146,6 +153,8 @@ export function createBastions(o: BastionsOptions): Bastions {
     async start(job, template, targets) {
       const placing = placeTargets(targets, template.profiles);
       if (typeof placing === 'string') return { status: 400, no: placing };
+      const outside = targetsOutside(template, targets);
+      if (outside) return { status: 403, no: outside.why === 'unnamed' ? `${outside.no}: ask for a template with --targets "${outside.targets.join(' ')}"` : outside.no };
       const asked = placing.placed.map(targetText);
       const running = live.get(job.id);
       if (running) {
@@ -223,6 +232,11 @@ export function createBastions(o: BastionsOptions): Bastions {
       if (!t) return { status: 404, no: `the job's bastion forwards to ${l.view.targets.map((x) => x.target).join(', ')}; not to ${target}` };
       if (l.view.state !== 'running') return { status: 409, no: `the job's bastion ${l.view.id} is ${l.view.state}: ask again in a few seconds` };
       if (!l.pipe) return { status: 503, no: 'the container runtime of the bastion\'s box starts no command in it: no relay reaches it' };
+      const said = await o.mayRelay({ jobId, template: l.view.template, target }).catch((e: unknown) => ({ allowed: false, reason: `Access could not be asked: ${e instanceof Error ? e.message : String(e)}` }));
+      if (!said.allowed) {
+        o.record({ type: 'bastion.relay_refused', jobId, data: { bastion: l.view.id, target, reason: said.reason } });
+        return { status: 403, no: `Access denies the relay to ${target}: ${said.reason}` };
+      }
       let pipe: BoxPipe;
       try {
         pipe = await l.pipe(relayCommand(t.local));
@@ -232,7 +246,12 @@ export function createBastions(o: BastionsOptions): Bastions {
       if (l.why) { pipe.destroy(); return { status: 404, no: `the job's bastion ${l.view.id} ended` }; }
       l.open.add(pipe);
       used(l);
-      pipe.once('close', () => { l.open.delete(pipe); used(l); });
+      const opened = now();
+      pipe.once('close', () => {
+        l.open.delete(pipe);
+        used(l);
+        o.record({ type: 'bastion.relayed', jobId, data: { bastion: l.view.id, target, openedAt: opened.toISOString(), ms: now().getTime() - opened.getTime() } });
+      });
       return pipe;
     },
 

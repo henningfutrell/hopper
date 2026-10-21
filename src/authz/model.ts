@@ -151,6 +151,16 @@ type machine_terminal
   relations
     define owner: [user]
     define can_attach: owner
+
+# A target of a job's bastion (issue #2146): a service, a pod or a deployment and a port, in a namespace of a cluster. At
+# each relay connection the hopper tells the job whose bastion it is (owner), that the job runs the bastion's template
+# (template#running), and, only when a person approved the target with that template, the template (approved_for). A
+# job relays to a target only when it owns the bastion and the target is approved for a template it runs.
+type bastion
+  relations
+    define owner: [job]
+    define approved_for: [template]
+    define can_relay: owner and requester from approved_for
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -196,6 +206,10 @@ const ASKED: readonly [type: string, relation: string][] = MINT_OPERATIONS.map((
 const OBSERVE_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['asset', 'grants_observe', 'operation_profile']];
 const OBSERVE_ASKED: readonly [type: string, relation: string][] = [['asset', 'can_observe']];
 
+/** What the hopper tells and asks for a relay connection (issue #2146): apart, so a model edited before it still decides mints. */
+const BASTION_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['bastion', 'owner', 'job'], ['bastion', 'approved_for', 'template']];
+const BASTION_ASKED: readonly [type: string, relation: string][] = [['bastion', 'can_relay']];
+
 /** What the hopper tells and asks for vault grants (issue #652): apart, so a model edited before them still decides mints. */
 const VAULT_GRANT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['vault_grant', 'owner', 'user']];
 const VAULT_GRANT_ASKED: readonly [type: string, relation: string][] = [['vault_grant', 'can_grant']];
@@ -234,6 +248,11 @@ export function observeGaps(model: ModelJson): string[] {
 
 /** The tuples OpenFGA takes under a model with these observe gaps: none of observe's grants when it lacks them (issue #2146). */
 export const observeKept = <T extends { relation: string }>(tuples: T[], gaps: readonly string[]): T[] => (gaps.length === 0 ? tuples : tuples.filter((t) => t.relation !== 'grants_observe'));
+
+/** What the model lacks for relay connections (issue #2146); empty: they are decided. A gap here denies every relay, never a mint. */
+export function bastionGaps(model: ModelJson): string[] {
+  return gapsIn(model, BASTION_WRITTEN, BASTION_ASKED);
+}
 
 /** What the model lacks for artifacts (issue #624); empty: shares are decided. A gap here denies every share, never a mint. */
 export function artifactGaps(model: ModelJson): string[] {

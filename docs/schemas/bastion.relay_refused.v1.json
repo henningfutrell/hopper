@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "bastion": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "bastion",
+    "target",
+    "reason"
+  ],
+  "additionalProperties": false
+}

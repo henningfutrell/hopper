@@ -3,7 +3,9 @@
 // tokens as files, and the hopper mints them again while it runs. It ends when its TTL passes, when its job ends, when
 // the job stops it, or when a mint is refused; its tokens are released, and each start and end is an event on the job's
 // timeline. Part 2: a job's relay connection to one of its targets is a pipe to the connect command in the box, which
-// keeps it from expiring while it is open and ends with it. The vault's mint and the need box are doubles at their seams.
+// keeps it from expiring while it is open and ends with it. Part 3: a bastion forwards only to targets approved with its
+// template; Access decides each connection, and each connection, or its refusal, is an event on the job's timeline. The
+// vault's mint, Access and the need box are doubles at their seams.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +20,8 @@ import { parseTargets, relayCommand, type BastionTarget } from '../../src/sandbo
 import { createBastions, type BastionsOptions } from '../../src/sandbox/bastions.ts';
 
 const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
-const TEMPLATE = { name: 'observe-uat', image: 'img', tools: ['kubectl'], profiles: [MONITORING] } as unknown as TemplateView;
+const APPROVED = ['uat/monitoring/svc/grafana:80', 'uat/monitoring/svc/prometheus-server:9090'];
+const TEMPLATE = { name: 'observe-uat', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: APPROVED, pending: { bastionTargets: [] } } as unknown as TemplateView;
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
 const TARGETS = parseTargets('uat/monitoring/svc/prometheus-server:9090 uat/monitoring/svc/grafana:80') as BastionTarget[];
 const SERVER = { kind: 'kube' as const, server: 'https://uat.example:6443' };
@@ -56,6 +59,7 @@ function bastions(o: Partial<BastionsOptions> & { pipe?: RunningNeedBox['pipe'] 
     userId: 'u1', dir, run, record: (e) => { events.push(e); }, log: () => {}, atWork: () => atWork,
     mint: async () => ({ minted: { kind: 'kube', token: `token-${++minted}`, expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: SERVER }),
     release: async (box) => { released.push(box); },
+    mayRelay: async () => ({ allowed: true, reason: 'job:u1/job-1 may relay' }),
     ttlMs: 60_000, renewMs: 60_000, checkMs: 10,
     ...o,
   });
@@ -263,5 +267,56 @@ describe('the relay to a bastion (issue #2146, part 2)', () => {
     await until(() => b.of('job-1')?.state === 'ended');
     expect(r.destroyed).toBe(true);
     expect(await b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 404 });
+  });
+});
+
+describe('targets approved with the template, and Access for each connection (issue #2146, part 3)', () => {
+  it('starts no bastion to a target the template does not name, or names but a person has not approved yet', async () => {
+    const { b, boxes, minted } = bastions();
+    const loki = parseTargets('uat/monitoring/svc/loki:3100') as BastionTarget[];
+    expect(await b.start(JOB, TEMPLATE, loki)).toEqual({
+      status: 403, no: 'template observe-uat names no bastion target uat/monitoring/svc/loki:3100: ask for a template with --targets "uat/monitoring/svc/loki:3100"',
+    });
+    const waiting = { ...TEMPLATE, bastionTargets: [...APPROVED, 'uat/monitoring/svc/loki:3100'], pending: { bastionTargets: ['uat/monitoring/svc/loki:3100'] } } as unknown as TemplateView;
+    expect(await b.start(JOB, waiting, loki)).toEqual({
+      status: 403, no: 'the bastion target uat/monitoring/svc/loki:3100 of template observe-uat waits for a person to approve it on Access requests',
+    });
+    expect(boxes).toEqual([]);
+    expect(minted()).toBe(0);
+  });
+
+  it('asks Access for each connection, and records it when it closes', async () => {
+    const p = pipes();
+    const asked: unknown[] = [];
+    let now = Date.parse('2026-10-20T12:00:00.000Z');
+    const { b, events } = bastions({ pipe: p.pipe, now: () => new Date(now), mayRelay: async (a) => { asked.push(a); return { allowed: true, reason: 'job:u1/job-1 may relay' }; } });
+    const r = await b.start(JOB, TEMPLATE, TARGETS);
+    if ('no' in r) throw new Error(r.no);
+    await until(() => b.of('job-1')?.state === 'running');
+    const pipe = await b.relay('job-1', 'uat/monitoring/svc/grafana:80') as BoxPipe;
+    expect(asked).toEqual([{ jobId: 'job-1', template: 'observe-uat', target: 'uat/monitoring/svc/grafana:80' }]);
+    now += 1500;
+    pipe.destroy();
+    await until(() => events.some((e) => e.type === 'bastion.relayed'));
+    expect(events.find((e) => e.type === 'bastion.relayed')).toEqual({
+      type: 'bastion.relayed', jobId: 'job-1',
+      data: { bastion: r.id, target: 'uat/monitoring/svc/grafana:80', openedAt: '2026-10-20T12:00:00.000Z', ms: 1500 },
+    });
+  });
+
+  it('refuses a connection Access denies, starts no command for it, and records the refusal', async () => {
+    const p = pipes();
+    const { b, events } = bastions({ pipe: p.pipe, mayRelay: async () => ({ allowed: false, reason: 'job:u1/job-1 may not relay to uat/monitoring/svc/grafana:80' }) });
+    const r = await b.start(JOB, TEMPLATE, TARGETS);
+    if ('no' in r) throw new Error(r.no);
+    await until(() => b.of('job-1')?.state === 'running');
+    expect(await b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toEqual({
+      status: 403, no: 'Access denies the relay to uat/monitoring/svc/grafana:80: job:u1/job-1 may not relay to uat/monitoring/svc/grafana:80',
+    });
+    expect(p.started).toEqual([]);
+    expect(events.find((e) => e.type === 'bastion.relay_refused')).toEqual({
+      type: 'bastion.relay_refused', jobId: 'job-1',
+      data: { bastion: r.id, target: 'uat/monitoring/svc/grafana:80', reason: 'job:u1/job-1 may not relay to uat/monitoring/svc/grafana:80' },
+    });
   });
 });

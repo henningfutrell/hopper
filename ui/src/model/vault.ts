@@ -95,6 +95,10 @@ export const egressOf = (text: string): string[] => [...new Set(text.toLowerCase
 export const egressText = (t: { egress?: readonly string[]; pending?: { egress: readonly string[] } }): string =>
   t.egress?.length ? t.egress.map((h) => (t.pending?.egress.includes(h) ? `${h} (waits)` : h)).join(', ') : 'none';
 
+/** A template's bastion targets (issue #2146), with `(waits)` when one is not approved; `none` without. */
+export const bastionTargetsText = (t: { bastionTargets?: readonly string[]; pending?: { bastionTargets?: readonly string[] } }): string =>
+  t.bastionTargets?.length ? t.bastionTargets.map((x) => (t.pending?.bastionTargets?.includes(x) ? `${x} (waits)` : x)).join(', ') : 'none';
+
 /** `write on cluster x`. */
 export const profileText = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
 
@@ -116,7 +120,7 @@ export const explicitApprovals = (t: TemplateView): OperationProfile[] => t.pend
  */
 export function allListed(t: TemplateView): ({ action: 'approve-template'; name: string } | ({ action: 'approve-profile'; name: string } & OperationProfile))[] {
   const reads = t.pending.profiles.filter((p) => !highRadius(p));
-  const whole = !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || reads.length > 0;
+  const whole = !t.approval || t.pending.image || t.pending.egress.length > 0 || (t.pending.bastionTargets?.length ?? 0) > 0 || t.pending.secrets.length > 0 || reads.length > 0;
   return [
     ...(whole ? [{ action: 'approve-template' as const, name: t.name }] : []),
     ...explicitApprovals(t).map((p) => ({ action: 'approve-profile' as const, name: t.name, ...p })),
@@ -138,7 +142,7 @@ export const rereadsVault = (type: string): boolean => type.startsWith('vault.')
 
 /** A template waits for a person (issue #897, Access requests): never approved, or a new image, egress host, secret or profile waits. */
 export const templateWaits = (t: TemplateView): boolean =>
-  !t.approval || t.pending.image || t.pending.egress.length > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
+  !t.approval || t.pending.image || t.pending.egress.length > 0 || (t.pending.bastionTargets?.length ?? 0) > 0 || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
 
 /**
  * The run cards (issue #2197): one per job and template that waits for a person, its template's approval and its run in
@@ -221,7 +225,7 @@ export function approvalText(t: TemplateView, jobId?: string): string {
   if (unknown) return unknown;
   if (!t.approval) return 'not approved yet: its boxes take no job and get nothing from the vault';
   const waits = [
-    ...(t.pending.image ? ['a new image'] : []), ...(t.pending.egress.length ? [`egress to ${t.pending.egress.join(', ')}`] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : []),
+    ...(t.pending.image ? ['a new image'] : []), ...(t.pending.egress.length ? [`egress to ${t.pending.egress.join(', ')}`] : []), ...(t.pending.bastionTargets?.length ? [`bastion target ${t.pending.bastionTargets.join(', ')}`] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : []),
     ...t.pending.profiles.map((p) => `${profileText(p)}${highRadius(p) ? ' (explicit)' : ''}`),
   ];
   if (waits.length) return `waits for approval: ${waits.join('; ')}`;

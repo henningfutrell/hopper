@@ -1,7 +1,7 @@
 // What Access answers (issue #559, design.md "Access: OpenFGA decides each mint"): the port the vault, artifacts, the
 // system scope and a changed item's acceptance ask. Implemented by createAccess (service.ts); apart for its size.
 import type {
-  AccessAnswer, AccessDecisionRecord, ApiTokenAsk, ApiTokenBoxAsk, CheckMintRequest, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
+  AccessAnswer, AccessDecisionRecord, ApiTokenAsk, ApiTokenBoxAsk, CheckMintRequest, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, RelayAsk, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
 } from '../domain/types.ts';
 import type { TrustLevel } from '../domain/trust-stamp.ts';
 import type { GitLabActorRef, MinTrust } from '../domain/access.ts';
@@ -47,6 +47,12 @@ export interface Access extends TemplateApprovals {
    * terminal's own events are. Denied, marked `unavailable`, when OpenFGA cannot be asked.
    */
   decideMachineTerminal(userId: string, terminal: { ownerId: string; machineId: string }): Promise<AccessAnswer>;
+  /**
+   * Whether a job may relay to a target of its bastion (issue #2146): OpenFGA's `bastion#can_relay`, the job told as its
+   * owner and as running its template, and the template as approved for the target when a person approved it. Not
+   * recorded: the relay's own events are. Denied, marked `unavailable`, when OpenFGA cannot be asked.
+   */
+  decideRelay(ask: RelayAsk): Promise<AccessAnswer>;
   /**
    * Whether the user may see a search hit (issue #945): OpenFGA's `search_hit#can_view`, its owner told at the check and,
    * unless it is private (a direct job's), every user as a reader. Not recorded. Denied, marked `unavailable`, when

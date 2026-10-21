@@ -51,6 +51,8 @@ export const vaultEditBody = z.discriminatedUnion('action', [
     profiles: z.array(z.strictObject({ ...profile, backend: stateBackend.optional() })).max(256).optional(), limits: templateLimits.optional(), tools: z.array(z.string().max(32)).max(16).optional(),
     // The hosts its boxes may reach through the egress proxy (issue #1875): `host:port`. Absent keeps them; `[]` drops them.
     egress: z.array(z.string().max(260)).max(32).optional(),
+    // The targets a bastion of it may forward to (issue #2146 part 3). Absent keeps them; `[]` drops them.
+    bastionTargets: z.array(z.string().max(400)).max(32).optional(),
     // One of its secrets its boxes' agent signs in with (issue #708, part 10): absent keeps it, null names none.
     agentCredential: z.string().max(64).nullable().optional(),
     // A person's marks on its read probes (issue #916): probe id → `expect-denied` or `skip`. Absent keeps them; `{}` drops them.
