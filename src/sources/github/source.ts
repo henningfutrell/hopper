@@ -14,6 +14,7 @@
 // while its listing shows no change (`listed-reads.ts`); every other read — before a write — goes to GitHub.
 // Beside intake, a connected account's source reads the user's **tagged items** (issue #1141, `tagged.ts`).
 
+import { issueChangeEvent } from '../../domain/work-items.ts';
 import { commandAsks, commandOf } from '../../domain/comment-command.ts';
 import type { IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
@@ -137,7 +138,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const batch = followedBatch(api);
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
   const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
-  const reportContext = () => ({ api, ensuredLabels, ...(o.intake ? { holder: o.intake.holder } : {}) });
+  // A close the report finds is the ledger's too (issue #1892), once: a read, as the fallback read records it.
+  const issueClosed = (key: string, reason: string | undefined) => {
+    const item = o.intake?.workItem?.(key);
+    const e = item && issueChangeEvent(item, { state: 'closed', ...(reason ? { reason } : {}) }, 'read');
+    if (e?.type === 'work_item.issue_closed') o.intake?.record(e.type, e.data);
+  };
+  const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.intake ? { holder: o.intake.holder } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
     ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}) });
@@ -189,7 +196,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
   const workItem = o.intake?.workItem;
-  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line) }) : undefined;
+  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
@@ -231,9 +238,12 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const intake = o.intake;
       const migrating = intake !== undefined && intake.migration() === undefined;
       const listed = await listing.issues(repos, config.label, d?.due === true);
+      // An end label a person took off by hand is their Run again (issue #1892), found before Intake reads the ledger.
+      const edited = mirror?.edits(listed.issues);
       const found = await discoverIssues(api, config, {
         listed, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
         ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
+        ...(workItem ? { item: workItem, part: (key: string) => intake?.partOpen?.(key) ?? false, ...(edited ? { edited } : {}) } : {}),
       });
       // The new listing is built apart and kept at the end, in one step (issue #1019): until then the intake is the last
       // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list. A merge

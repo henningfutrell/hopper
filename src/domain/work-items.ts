@@ -92,6 +92,11 @@ export interface WorkItem {
   blockedCause?: BlockedCause;
   /** A person was asked about it, once, while it stays blocked for the same cause (`work_item.person_asked`, issue #1891). */
   personAsked?: true;
+  /**
+   * A person took its state's end label off the issue by hand (issue #1892, `work_item.label_edited`): the label, and the
+   * Run again it asks for. Kept until the item moves: Intake gives it no reason, so the next discover runs it again.
+   */
+  runAgainAsked?: string;
   /** How many of its pull requests in a row were closed without a merge on GitHub (issue #1891); a merge ends the row. */
   closedWithoutMerge?: number;
   /** The jobs of it whose work was kept, not pushed (`job.work_kept`), until removed. */
@@ -120,7 +125,7 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'handoff.opened', 'handoff.closed', 'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_classified',
   'job.work_kept', 'job.work_removed', 'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened', 'work_item.reconciled', 'work_item.dropped', 'work_item.person_asked',
-  ...LANDING_LEDGER_EVENTS,
+  'work_item.label_edited', ...LANDING_LEDGER_EVENTS,
 ]);
 
 /** The source key an event without a job names (a request card's, or an issue GitHub closed or reopened), else undefined. */
@@ -177,12 +182,11 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const next: Base = { ...base, ...change, eventState, eventAt: event.at };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
     if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
-    if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
+    delete next.runAgainAsked; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
     return settled(item, next, event.at);
   };
   const mark = (change: Partial<Base>): WorkItem => {
-    const next: Base = { ...base, ...change };
-    for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
+    const next: Base = { ...base, ...change }; for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
     return settled(item, next, event.at); };
 
   // A request card, before any job.
@@ -203,8 +207,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   }
   // The item reconciler's correction (issue #1891): folded again from its job's end, or blocked. Only from the state it saw.
   if (event.type === 'work_item.reconciled') {
-    if (!item || item.state !== d.from) return undefined;
-    const replay = d.replay as { type: EventType; data: Record<string, unknown> } | undefined;
+    if (!item || item.state !== d.from) return undefined; const replay = d.replay as { type: EventType; data: Record<string, unknown> } | undefined;
     if (replay) return job && job.id === item.jobId ? applyEvent(item, { type: replay.type, at: event.at, data: replay.data }, key, job) : undefined;
     const cause = BLOCKED_CAUSES.find((c) => c === d.cause);
     // Partly done: its merged part is history, so it is not read as the whole item's merge (`stateOf`).
@@ -214,6 +217,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   if (event.type === 'work_item.dropped') return item?.eventState === 'blocked' ? move('dropped', { waitingOn: undefined }) : undefined;
   // The one notice of a blocked item (issue #1891): its state stays; once. A move out of blocked, or to another cause, forgets it.
   if (event.type === 'work_item.person_asked') return item?.state === 'blocked' && item.personAsked !== true ? mark({ personAsked: true }) : undefined;
+  // A label a person took off by hand (issue #1892): a Run again, asked while the item stays in the state it was seen in.
+  if (event.type === 'work_item.label_edited') return item !== undefined && item.state === d.from && typeof d.label === 'string' && item.runAgainAsked === undefined ? mark({ runAgainAsked: d.label }) : undefined;
   if (!job) return undefined;
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
@@ -323,7 +328,8 @@ export function applyLandingEvent(item: WorkItem, event: Pick<DomainEvent, 'type
 /**
  * The item after a read of GitHub; undefined: it says nothing new. A read of the issue older than the item's newest event is
  * old news. A reopen after a close (issue #1232) ends its landing stage: the merge it waited on is history, and the reopen is
- * a person's, so the hopper does not take the item for one its batch promoted and close its issue again.
+ * a person's, so the hopper does not take the item for one its batch promoted and close its issue again. A block that a close as
+ * completed hid (issue #1892) is history at the reopen: the item is done, and Intake judges the reopen as a done item's.
  */
 export function applyRead(item: WorkItem, read: LedgerRead): WorkItem | undefined {
   const { state: _s, stateSince: _ss, version: _v, ...base } = item;
@@ -335,11 +341,11 @@ export function applyRead(item: WorkItem, read: LedgerRead): WorkItem | undefine
   const issueState = read.state.toLowerCase();
   const issueReason = read.reason?.toLowerCase();
   if (item.issueState === issueState && item.issueReason === issueReason) return undefined;
-  const next: Base = { ...base, issueState };
-  if (issueReason) next.issueReason = issueReason;
-  else delete next.issueReason;
-  if (item.issueState === 'closed' && issueState === 'open') delete next.landing;
-  return settled(item, next, read.at);
+  const next: Base = { ...base, issueState }; if (issueReason) next.issueReason = issueReason; else delete next.issueReason;
+  if (issueState === 'open' && item.issueState === 'closed' && base.eventState === 'blocked' && !NOT_COMPLETED.includes(item.issueReason ?? '')) {
+    Object.assign(next, { eventState: 'done' }); for (const k of ['blockedCause', 'waitingOn', 'personAsked', 'runAgainAsked'] as const) delete next[k];
+  }
+  if (item.issueState === 'closed' && issueState === 'open') delete next.landing; return settled(item, next, read.at);
 }
 
 /**

@@ -21691,6 +21691,45 @@ was only logged and counted.
 `test/sources/github-label-mirror.test.ts` (a drift of each judged state one coalesced change, once; PR open with no
 waiting label; an item with outbox rows not sent not judged).
 
+### Intake reads the ledger; a label edited by hand is a person's event (issue #1892 part 1, 2026-10-21)
+
+Milestone 2, part 1. Before it, Intake took an item's reason from the end labels on its issue (`labelReason`), so a stale
+label showed a state the ledger did not hold, and a label a person took off was read back as state.
+
+- **Intake reads the ledger.** For an item in a state the label mirror judges (`labelsFor`: queued, working, waiting
+  outside, PR open, blocked), the end-label reason is the ledger's (`ledgerReason`, `src/sources/github/discover.ts`): PR
+  open says its pull request (or its part) waits for review; blocked names its cause (no pull request, past its deadline,
+  pull request closed), with Won't do; a job at work gives no end-label reason. The end labels on the issue do not count
+  for such an item: the mirror corrects them. The labels still decide for an issue the hopper does not know, and for the
+  states the mirror does not judge yet (failed, done, dropped, partly done, needs you, waiting for approval). The
+  backburner and an address to another hopper always count: they are a person's labels, not a mirror of state.
+- **A label taken off by hand is a person's event.** Before the discover judges Intake, the label mirror compares each
+  listed issue's labels with what it saw at its last discover (`edits`). The end label the item's state wants
+  (`labelTakenOff`, `src/sources/github/item-labels.ts`), seen then and gone now, is `work_item.label_edited` with `means:
+  run_again`, when the item did not move since the label was seen (and not in the last two minutes) and no outbox row of
+  its own is unsent. The ledger keeps the ask on the item (`runAgainAsked`), and its state stays. Intake gives that item
+  no end-label reason, so the discover runs it again as it runs any ended item. The mirror does not put the label back.
+  The new job's `job.queued` moves the item, and any move forgets the ask. Removing `hopper:pr-closed` or `hopper:blocked`
+  from a blocked item, or `hopper:pr-ready` / `hopper:partly-done` from an item in PR open, is a Run again. A swap of PR
+  open's two waiting labels is no edit.
+- **A missing label is never read back as state.** A label not on the issue when the mirror first sees it is no edit: the
+  mirror puts it back, and the item stays where the ledger has it. What the mirror saw is kept in memory, so after a start
+  the first discover only looks. An edit made while the hopper is stopped is put back; the person takes it off again.
+- **The report tells the ledger of a close it finds.** A job that ends on an issue already closed puts `hopper:done` on it
+  (`report.ts`), and now also records `work_item.issue_closed` (`via: read`) when the ledger does not hold the close. Before,
+  the ledger blocked such an item for want of a pull request until the fallback read came, and Intake (now reading the
+  ledger) offered Won't do on a reopened issue in place of its reopened card.
+- **A block that a close as completed hid is history at a reopen.** A reopen of the issue moves a blocked item whose issue
+  closed as completed to done (`applyRead`), so the reopen is judged as a done item's (a reopened card, issue #1126). After
+  a close as not planned, the block stays.
+
+**Verification:** `test/sources/github-item-labels.test.ts` (`labelTakenOff`), `test/sources/github-label-edit.test.ts`
+(Intake's reasons from the ledger, the labels for an unknown item and a state not judged; a label taken off a blocked or
+PR open item is one Run again and is not put back; a swap is none; no edit at first sight, after a move, or with the
+hopper's own rows unsent; the report's close), `test/domain/work-items-label-edited.test.ts` (the ask kept, a person's
+move, forgotten by the next job), `test/domain/work-items.test.ts` (a hidden block is done at the reopen),
+`test/sources/github-wont-do.test.ts` (Won't do not offered for an item in PR open, whatever its labels say).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

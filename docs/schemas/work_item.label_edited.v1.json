@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string",
+      "enum": [
+        "waiting_for_approval",
+        "queued",
+        "working",
+        "needs_you",
+        "waiting_outside",
+        "pr_open",
+        "partly_done",
+        "done",
+        "failed",
+        "blocked",
+        "dropped"
+      ]
+    },
+    "label": {
+      "type": "string"
+    },
+    "means": {
+      "type": "string",
+      "const": "run_again"
+    }
+  },
+  "required": [
+    "source",
+    "key",
+    "from",
+    "label",
+    "means"
+  ],
+  "additionalProperties": false
+}

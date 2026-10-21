@@ -15,6 +15,12 @@
 // for such an issue). Its origin then reads the command as the nominating act (origin.ts), and after a rejection only a
 // command written since takes it again.
 //
+// Intake reads the ledger (issue #1892): for an issue whose work item is in a state the label mirror judges (a job at work,
+// PR open, blocked; `labelsFor`), its end-label reason is the ledger's (`ledgerReason`), whatever end labels the issue
+// carries — the mirror corrects them. The labels decide only for an issue the hopper does not know, or a state the mirror
+// does not judge yet. An item a person asked to run again by taking its end label off (`runAgainAsked`, or `edited` in this
+// pass) has no such reason, so it is taken again.
+//
 // The scope is given: a repo list (the app's installed repos, a connected account's chosen repos), its open labelled
 // issues as the listing cache holds them (issue #985, `listing.ts`). Never a search: the app never passes an empty list,
 // and a connected account's source with none chosen is paused (issue #321).
@@ -24,6 +30,8 @@ import type { IntakeOutcome, NotTakenGroup } from '../../domain/intake.ts';
 import type { Rejection } from '../../domain/rejection.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
+import type { WorkItem } from '../../domain/work-items.ts';
+import { labelsFor } from './item-labels.ts';
 import {
   ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_BLOCKED, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED, holderLabel,
 } from './labels.ts';
@@ -39,6 +47,7 @@ export const PR_READY = 'done: its pull request waits for review';
 export const PARTLY_DONE = 'partly done: the rest runs once its pull request merges';
 export const PR_CLOSED = 'its pull request was closed without a merge: hopper:pr-closed is on the issue';
 export const BLOCKED = 'blocked: no pull request was found for it; hopper:blocked is on the issue';
+export const BLOCKED_STALE = 'blocked: it stayed past its deadline with no move, and waits on a person';
 export const REJECTED_LABEL = 'rejected: hopper:rejected is on the issue';
 export const REJECTED_BY_YOU = 'rejected by you: not taken until assigned to you again';
 export const ADDRESSED_ELSEWHERE = 'addressed to another hopper';
@@ -87,14 +96,37 @@ export interface DiscoverScope {
   othersKnown?: (keys: string[]) => Set<string>;
   /** True during the intake migration: a claim with no holder and no job anywhere in this hopper is released. */
   migrating?: boolean;
+  /** The work item of an issue, by its URL (issue #1892): Intake's reason for a state the label mirror judges is the ledger's. */
+  item?: (key: string) => WorkItem | undefined;
+  /** Whether the open pull request of an item in PR open is a part. */
+  part?: (key: string) => boolean;
+  /** The issues whose end label a person took off by hand, found in this pass (`work_item.label_edited`): no reason from the ledger. */
+  edited?: ReadonlySet<string>;
 }
 
 /** GitHub logins compare without case. */
 export const isAssignedTo = (i: Pick<GitHubIssue, 'assignees'>, login: string): boolean =>
   i.assignees.some((a) => a.toLowerCase() === login.toLowerCase());
 
-/** Why the issue's labels keep it out, before assignment and claims are asked; undefined when they do not. */
-export function labelReason(i: Pick<GitHubIssue, 'labels'>, name: string | null): string | undefined {
+/**
+ * Intake's end-label reason from the ledger (issue #1892), for an item in a state the label mirror judges: PR open, its pull
+ * request (or its part) waits for review; blocked, why. `{}`: no such reason (a job at work, or a person's Run again).
+ * Undefined: the ledger does not decide (no item, or a state the mirror does not judge), so the labels do.
+ */
+export function ledgerReason(item: WorkItem | undefined, part: boolean): { reason?: string } | undefined {
+  if (item === undefined || labelsFor(item) === undefined) return undefined;
+  if (item.runAgainAsked !== undefined) return {};
+  if (item.state === 'pr_open') return { reason: part ? PARTLY_DONE : PR_READY };
+  if (item.state === 'blocked') return { reason: item.blockedCause === 'pr_closed' ? PR_CLOSED : item.blockedCause === 'stale' ? BLOCKED_STALE : BLOCKED };
+  return {};
+}
+
+/**
+ * Why the issue keeps out, before assignment and claims are asked; undefined when it does not. Its end labels count only when
+ * the ledger does not decide (`ledger` undefined); the backburner and an address to another hopper always count.
+ */
+export function labelReason(i: Pick<GitHubIssue, 'labels'>, name: string | null, ledger?: { reason?: string }): string | undefined {
+  if (ledger) return ledger.reason ?? otherReason(i, name);
   if (i.labels.includes(LABEL_DONE)) return DONE_OPEN;
   if (i.labels.includes(LABEL_PR_READY)) return PR_READY;
   if (i.labels.includes(LABEL_PARTLY_DONE)) return PARTLY_DONE;
@@ -102,6 +134,11 @@ export function labelReason(i: Pick<GitHubIssue, 'labels'>, name: string | null)
   if (i.labels.includes(LABEL_BLOCKED)) return BLOCKED;
   if (i.labels.includes(LABEL_FAILED)) return FAILED;
   if (i.labels.includes(LABEL_REJECTED)) return REJECTED_LABEL;
+  return otherReason(i, name);
+}
+
+/** The reasons no end label gives: the backburner, an address to another hopper. */
+function otherReason(i: Pick<GitHubIssue, 'labels'>, name: string | null): string | undefined {
   if (i.labels.includes(LABEL_BACKBURNER)) return BACKBURNER;
   if (!forThisHopper(i, name)) return ADDRESSED_ELSEWHERE;
   return undefined;
@@ -162,7 +199,7 @@ function claimVerdict(i: GitHubIssue, scope: DiscoverScope, otherUser: boolean):
 const GROUP_OF: Record<string, NotTakenGroup> = { [NOT_ASSIGNED]: 'not-assigned', [BACKBURNER]: 'backburner', [PR_READY]: 'pr-waiting', [PARTLY_DONE]: 'partly-done' };
 
 /** What a person can do about an issue its labels keep out: take it off the backburner, or Won't do on a blocked one (issue #1891). */
-const LABEL_ACTION: Record<string, IntakeOutcome['action']> = { [BACKBURNER]: 'unbackburner', [BLOCKED]: 'wont_do', [PR_CLOSED]: 'wont_do' };
+const LABEL_ACTION: Record<string, IntakeOutcome['action']> = { [BACKBURNER]: 'unbackburner', [BLOCKED]: 'wont_do', [BLOCKED_STALE]: 'wont_do', [PR_CLOSED]: 'wont_do' };
 
 const outcome = (i: GitHubIssue, reason?: string, action?: IntakeOutcome['action']): IntakeOutcome => ({
   key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason, group: GROUP_OF[reason] ?? 'other' } : {}), ...(action ? { action } : {}),
@@ -176,7 +213,8 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
   const reasons = new Map<string, { reason: string; action?: IntakeOutcome['action'] }>();
   const candidates: GitHubIssue[] = [];
   for (const i of issues) {
-    const byLabel = labelReason(i, config.hopperName);
+    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), scope.part?.(i.url) ?? false);
+    const byLabel = labelReason(i, config.hopperName, ledger);
     if (byLabel) reasons.set(i.url, { reason: byLabel, ...(LABEL_ACTION[byLabel] ? { action: LABEL_ACTION[byLabel] } : {}) });
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });
     else candidates.push(i);
