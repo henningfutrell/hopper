@@ -25464,6 +25464,19 @@ session recorded fails with the reason: a fresh session would lose what it did.
 **Not changed.** A pane saved before this change has no terminal and is not checked. The hopper does not change herdr's
 config: `resume_agents_on_restore` is the machine owner's, and herdr reads one config for the whole server.
 
+**Claude resumed in another pane (issue #2320, 2026-10-21).** A job whose pane was lost resumed in a new pane, and then
+ran with no `HOPPER_URL`, `HOPPER_GH`, `HOPPER_TOKEN_FILE` or git credentials, while its credentials dir still held its
+files. Every pane the hopper opens gets the job's variables at `tab create`; a shell herdr restores gets none. Two ways
+let a herdr-resumed Claude stay the job's: the hopper compared only the terminal, so Claude in **another pane** (its
+saved pane's terminal unknown, or herdr's resume racing the hopper's) was taken as the job's and the answer went to it;
+and the restart closed only the pane the hopper had saved, never the pane Claude ran in, so that Claude went on, with the
+job's agent name, outside the job's scope, which the reap does not stop. Now `outsideItsPane`
+(`src/executors/herdr/restored.ts`) is the one test, in the watch, the resume and the wait's lost-pane probe: Claude in
+another pane, or in the same pane in another terminal. The restart closes the pane Claude runs in as well as the saved
+one. A lost pane's resume closes the saved pane first, as at a park (the reap without the scratch dir), so herdr resumes
+no Claude there later. The new pane is set up as at the start: `placeCredentials` builds the job's variables there as at
+a first start.
+
 **Decisions:**
 - **Detect and start again, not prevent.** Turning `resume_agents_on_restore` off would need a write to the machine's herdr
   config, which the hopper does not own ("Deployable": nothing leans on the machine), and would still
