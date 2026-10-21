@@ -106,7 +106,7 @@ describe('Add machine (issue #1349)', () => {
 describe('Settings → Vault: a template\'s limits (issue #708)', () => {
   async function boot() {
     const daemon = setup();
-    window.location.hash = '#settings/vault';
+    window.location.hash = '#vault';
     vi.resetModules();
     const app = '../../ui/src/app/app.tsx';
     const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };

@@ -130,7 +130,7 @@ const matrix = () => document.querySelector('[data-slot="permission-matrix"]');
 async function boot(view: AccessView = VIEW) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#settings/permissions';
+  window.location.hash = '#users-access/permissions';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const daemon = fakeDaemon(view);
@@ -163,7 +163,7 @@ afterEach(async () => {
 describe('Settings → Permission matrix', () => {
   it('is a settings section: rows with each template\'s radius, assets grouped by kind, the operations in each cell, the waiting ones apart', async () => {
     await boot();
-    expect(document.querySelector('[data-slot="settings-nav"] a[href="#settings/permissions"]')?.textContent).toBe('Permission matrix');
+    expect(document.querySelector('[data-slot="users-access-nav"] a[href="#users-access/permissions"]')?.textContent).toBe('Permission matrix');
     expect([...matrix()!.querySelectorAll('thead [data-kind]')].map((h) => h.textContent)).toEqual(['cluster', 'aws-account']);
     expect(matrix()!.querySelector('[data-row="template:kubectl-diag"]')!.textContent).toContain('high radius');
     const c = cell('template:kubectl-diag', 'cluster/x')!;

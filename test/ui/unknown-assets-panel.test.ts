@@ -45,7 +45,7 @@ describe('unknown assets on Access requests (issue #2123)', () => {
     const first = rows[0]!;
     expect(first.textContent).toContain('no cluster staging; known: staging-eks, control-plane-eks');
     expect(first.querySelector('a[href="#settings/clusters"]')).not.toBeNull();
-    expect(first.querySelector('a[href="#settings/vault"]')).not.toBeNull();
+    expect(first.querySelector('a[href="#vault"]')).not.toBeNull();
     expect([...first.querySelectorAll('button')].some((b) => b.textContent?.includes('Remove'))).toBe(true);
   });
 

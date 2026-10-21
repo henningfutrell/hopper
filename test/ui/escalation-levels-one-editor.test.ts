@@ -114,7 +114,7 @@ afterEach(async () => {
 
 describe('escalation levels have one editor (issue #444)', () => {
   it('Plugins shows the levels read-only, in order, with a link to Question gates; no level edit control', async () => {
-    await boot('#settings/plugins');
+    await boot('#plugins');
     await vi.waitFor(() => expect(summary()).not.toBeNull());
     const items = [...summary()!.querySelectorAll('[data-level]')].map((e) => e.getAttribute('data-level'));
     expect(items).toEqual(['level-1', 'level-2']);
@@ -142,7 +142,7 @@ describe('escalation levels have one editor (issue #444)', () => {
     await vi.waitFor(() => expect(levelForms()).toHaveLength(2));
     await act(async () => { document.querySelector<HTMLButtonElement>('button[aria-label="Move level-2 earlier"]')!.click(); });
     await vi.waitFor(() => expect([...levelForms()].map((e) => e.getAttribute('data-instance'))).toEqual(['level-2', 'level-1']));
-    await go('#settings/plugins');
+    await go('#plugins');
     await vi.waitFor(() => expect(summary()).not.toBeNull());
     expect([...summary()!.querySelectorAll('[data-level]')].map((e) => e.getAttribute('data-level'))).toEqual(['level-2', 'level-1']);
   });

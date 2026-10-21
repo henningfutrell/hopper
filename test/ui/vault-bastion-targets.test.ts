@@ -83,7 +83,7 @@ async function boot(t: Record<string, unknown>) {
   const daemon = fakeDaemon();
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
-  window.location.hash = '#settings/vault';
+  window.location.hash = '#vault';
   vi.resetModules();
   const app = '../../ui/src/app/app.tsx';
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };

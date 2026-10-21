@@ -18,34 +18,34 @@ describe('Settings as a long page (issue #2353)', () => {
     const hrefs = groups.flatMap((g) => [...g.querySelectorAll('a[href^="#settings/"]')].map((a) => a.getAttribute('href')));
     expect(new Set(hrefs).size).toBe(hrefs.length);
     expect(hrefs).toContain('#settings/version');
-    expect(hrefs).toContain('#settings/permissions');
+    expect(hrefs).toContain('#settings/sign-in');
     for (const g of groups) expect(g.querySelector('[data-slot="settings-group-toggle"]')).not.toBeNull();
   });
 
   it('folds a group, and keeps it folded over a reload', async () => {
     await boot('#settings');
-    expect(links('access').length).toBeGreaterThan(0);
-    await click(group('access')!.querySelector('[data-slot="settings-group-toggle"]'));
-    expect(links('access')).toHaveLength(0);
+    expect(links('security').length).toBeGreaterThan(0);
+    await click(group('security')!.querySelector('[data-slot="settings-group-toggle"]'));
+    expect(links('security')).toHaveLength(0);
     await unmount();
     await boot('#settings', {}, true);
-    expect(links('access')).toHaveLength(0);
-    expect(group('access')!.querySelector('[data-slot="settings-group-toggle"]')?.getAttribute('aria-expanded')).toBe('false');
+    expect(links('security')).toHaveLength(0);
+    expect(group('security')!.querySelector('[data-slot="settings-group-toggle"]')?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('keeps the open section\'s link in view when its group is folded', async () => {
-    await boot('#settings/vault');
-    await click(group('access')!.querySelector('[data-slot="settings-group-toggle"]'));
-    expect(links('access').map((a) => a.getAttribute('href'))).toEqual(['#settings/vault']);
+    await boot('#settings/allowed-hosts');
+    await click(group('security')!.querySelector('[data-slot="settings-group-toggle"]'));
+    expect(links('security').map((a) => a.getAttribute('href'))).toEqual(['#settings/allowed-hosts']);
   });
 
   it('jumps to the section picked in the jump list', async () => {
     await boot('#settings');
     const jump = document.querySelector<HTMLSelectElement>('select[data-slot="settings-jump"]')!;
     const options = [...jump.options].map((o) => o.value);
-    expect(options).toContain('vault');
+    expect(options).toContain('sign-in');
     expect(options).toContain('version');
-    await act(async () => { jump.value = 'vault'; jump.dispatchEvent(new Event('change', { bubbles: true })); });
-    expect(window.location.hash).toBe('#settings/vault');
+    await act(async () => { jump.value = 'sign-in'; jump.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(window.location.hash).toBe('#settings/sign-in');
   });
 });

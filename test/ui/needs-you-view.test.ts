@@ -266,7 +266,7 @@ describe('one home each: no Approve stays in Sources or Settings → Vault (issu
   });
 
   it('Settings → Vault offers no Approve and no Grant, and links a waiting template to Access requests', async () => {
-    await boot('#settings/vault');
+    await boot('#vault');
     await vi.waitFor(() => expect(main().textContent).toContain('ghcr.io/x/box:1'));
     for (const action of ['Approve', 'Grant', 'Give']) expect(buttons(main())).not.toContain(action);
     expect(main().querySelector('a[href="#access-requests"]')).not.toBeNull();

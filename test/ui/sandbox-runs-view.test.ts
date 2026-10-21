@@ -158,7 +158,7 @@ describe('Access requests: sandbox runs (issue #991)', () => {
 
 describe('Settings → Vault: sandbox approvals (issue #991)', () => {
   it('says a person approves each; YOLO posts both on; a toggle posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const panel = approvals()!;
     expect(panel.textContent).toContain('Templates and runs of low blast radius are approved with no person. A person approves each other new template and sandbox run.');
     await act(async () => { panel.querySelector<HTMLButtonElement>('[aria-label="YOLO"]')!.click(); });
@@ -262,7 +262,7 @@ describe('approve several at once (issue #1018)', () => {
 
 describe('Settings → Vault: the auto-approve policy (issue #1001)', () => {
   it('shows low on and medium and high off by default; a level posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const sw = (level: string) => approvals()!.querySelector<HTMLButtonElement>(`[aria-label="Auto-approve ${level} radius"]`)!;
     expect(sw('low').getAttribute('aria-checked')).toBe('true');
     expect(sw('medium').getAttribute('aria-checked')).toBe('false');
@@ -275,7 +275,7 @@ describe('Settings → Vault: the auto-approve policy (issue #1001)', () => {
 
 describe('Settings → Vault: the standing read grant (issue #1472)', () => {
   it('shows it off by default; the switch posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const sw = approvals()!.querySelector<HTMLButtonElement>('[aria-label="Standing read grant"]')!;
     expect(sw.getAttribute('aria-checked')).toBe('false');
     await act(async () => { sw.click(); });
@@ -315,7 +315,7 @@ describe('cards that say what the sandbox is for (issue #1001)', () => {
 
 describe('Settings → Vault: remembered write approvals (issue #1001)', () => {
   it('lists each remembered write with its end; Forget posts it; the time limit posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const row = approvals()!.querySelector<HTMLElement>('[data-remembered-write="write/aws-account/123456789012"]')!;
     expect(row.textContent).toContain('write on aws-account 123456789012');
     expect(row.textContent).toContain('Ada');
