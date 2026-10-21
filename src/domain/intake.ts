@@ -174,6 +174,11 @@ export interface IntakeContext {
    * label. Not while the hopper fixes it itself (issue #1230), or its report waits.
    */
   failureReported?(key: string): boolean;
+  /**
+   * Whether a partly done item's merged part leaves parts to run (issue #1892): the follow recorded the merge of a part, and
+   * not every declared part is done. It then carries no end label, and Intake takes it again for its next part.
+   */
+  partsLeft?(key: string): boolean;
 }
 
 /**

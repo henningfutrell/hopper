@@ -6,7 +6,7 @@ import { allowedDeletesOfJob, doneCriteriaOfJob } from '../skill-library/index.t
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
-import { DEFAULT_YOLO_MODE, isRerunnable, mergeRuleFor, yoloModeFor } from '../domain/types.ts';
+import { DEFAULT_YOLO_MODE, isRerunnable, mergeRuleFor, yoloModeFor, type Parts } from '../domain/types.ts';
 import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
@@ -16,6 +16,7 @@ import { storeIntakeTrust, type DecideIntakeActor } from './intake-trust.ts';
 import { join } from 'node:path';
 import { createGitMirrors } from '../git-mirror/mirrors.ts';
 import { graphKeys } from '../search/index.ts';
+import { allPartsDone } from '../sources/github/parts.ts';
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
@@ -55,6 +56,12 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
         const job = id === undefined ? undefined : store.jobs.get(id);
         const sync = (job?.sourceState?.sync ?? {}) as { finalReported?: boolean; fixingReported?: boolean };
         return job?.status === 'failed' && sync.finalReported === true && sync.fixingReported !== true;
+      },
+      // Its part merged with parts left (issue #1892): no end label, Intake takes it again; not a last part that made all done.
+      partsLeft: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
+        return s?.follow === 'merged' && s.part === true && !allPartsDone(s.parts);
       },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
