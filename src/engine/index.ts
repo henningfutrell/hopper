@@ -27,7 +27,7 @@ import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { createPassLeases } from './pass-leases.ts';
-import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts';
+import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts'; import { pauseForBudget } from './token-budget.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
 import { createMachineDrains, drainedMachines, type MachineDrains } from './machine-drains.ts';
@@ -172,7 +172,7 @@ export function createEngine(o: EngineOptions): Engine {
   });
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
-  const checkpoints = createCheckpoints(c);
+  const checkpoints = createCheckpoints(c, undefined, (jobId) => pauseForBudget(c, jobId, (id) => runner.park(id) || c.leases.relay(id, { kind: 'park' })));
   c.checkpoints = checkpoints;
   // The signed-out move (issue #1211): a job held on a not-signed-in question goes on at a signed-in machine.
   const signedOutMove = createSignedOutMove(c);

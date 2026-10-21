@@ -48,7 +48,11 @@ const unchanged = (k: JobCheckpoint, kept: { patch: Buffer; session?: Buffer }, 
   k.branch === taken.branch && k.base === taken.base && k.head === taken.head && k.commits.join('\n') === taken.commits.slice(0, CHECKPOINT_COMMITS).join('\n')
   && kept.patch.equals(patch) && (kept.session && session ? kept.session.equals(session) : kept.session === session);
 
-export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' | 'clock' | 'stopping' | 'deliveredSecrets'>, everyMs = CHECKPOINT_EVERY_MS): Checkpoints {
+/**
+ * `spent`: told after a checkpoint kept a job's token use, while the job may still run (issue #2302, part 3: the budget
+ * pause looks at it there).
+ */
+export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' | 'clock' | 'stopping' | 'deliveredSecrets'>, everyMs = CHECKPOINT_EVERY_MS, spent?: (jobId: string) => void): Checkpoints {
   const { store } = c;
   const inFlight = new Set<string>();
   /** When each job's checkpoint was last tried, taken or not: a machine that cannot be reached is not asked every pass. */
@@ -78,7 +82,7 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
       const held = await c.deliveredSecrets(jobId);
       const { patch, session, use } = await scrubCheckpoint({ patch: got.taken.patch, ...(got.taken.session ? { session: got.taken.session } : {}), held });
       if (c.stopping()) return 'the hopper stops';
-      return store.tx(() => {
+      const kept = store.tx(() => {
         const now = store.jobs.get(jobId);
         // What it spent is kept even when it ended meanwhile.
         if (now) keepUse(now, use);
@@ -96,6 +100,8 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
         store.events.append({ type: 'job.checkpointed', jobId, data: { machineId: k.machineId, bytes: k.bytes, session: k.session, commits: k.commits.length } });
         return k;
       });
+      if (use) spent?.(jobId);
+      return kept;
     } catch (e) {
       // The error says where it failed: a machine not reached, or a script that ran there and refused (issue #1353).
       return `it could not be taken: ${(e as Error).message}`;

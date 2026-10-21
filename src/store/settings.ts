@@ -6,6 +6,7 @@ import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { InfraPlanSettings } from '../domain/infra-plans.ts';
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountKey, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
+import type { TokenBudgetSettings } from '../domain/token-budget.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { machineDrainSettings } from './machine-drain-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts'; import { gitlabAccountSettings } from './gitlab-account-settings.ts'; import { preemptionSettings } from './preemption-settings.ts'; import { cloudLinkSettings } from './cloud-link-settings.ts'; import { telemetrySettings } from './telemetry-settings.ts';
@@ -191,13 +192,10 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       // `holdHighPriority` (issue #679): absent in a record from before it, read as off; the build before ignores it.
       write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold, ...(settings.holdHighPriority === undefined ? {} : { holdHighPriority: settings.holdHighPriority }) }));
     },
-    getAutoPark() {
-      const text = read('autoPark');
-      return text === undefined ? undefined : JSON.parse(text) as AutoParkSettings;
-    },
-    setAutoPark(settings) {
-      write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes }));
-    },
+    getAutoPark: () => { const text = read('autoPark'); return text === undefined ? undefined : JSON.parse(text) as AutoParkSettings; },
+    setAutoPark: (settings) => write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes })),
+    getTokenBudget: () => { const text = read('tokenBudget'); return text === undefined ? undefined : JSON.parse(text) as TokenBudgetSettings; },
+    setTokenBudget: (settings) => write('tokenBudget', JSON.stringify({ jobTokens: settings.jobTokens, jobCostUsd: settings.jobCostUsd })),
     getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
     setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
     getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; },

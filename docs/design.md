@@ -20177,9 +20177,29 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   the ledger's total for the same days, so the graph reconciles with the job ledger. A session counts on the day of its last
   counted message, as `by=day` does: the ledger keeps a session's totals, not each message's time. `hopper usage tokens
   --split <group>` reads the same.
+- **The token budget** (part 3). The user's `TokenBudgetSettings` (`src/domain/token-budget.ts`, pure): `jobTokens` (every
+  token, as the views count them) and `jobCostUsd` (the estimated cost), 0 for no cap, both off by default. An admin sets it
+  (Settings → Token budget, `POST /ui/api/token-budget`, `token_budget.settings_changed`, `hopper usage budget set`);
+  `GET /api/token-budget` and `hopper usage budget` read it. After a checkpoint keeps a running job's use, the **budget
+  pause** (`src/engine/token-budget.ts`) sums the job's ledger and asks `budgetReached`; over a cap, the job is marked
+  `budgetPaused` (`{ at, tokens, costUsd, why }`) and parked by its run — here, or relayed to the hopper that runs it — as the
+  Park button parks it: lane freed, pane and agent ended, work tree and agent session kept, its checkpoint taken. The park
+  records the mark's why (`job.parked` `auto`, `why`), so Parked shows it. Needs you's **Budgets** row
+  (`budgetPausedLines`, `ui/src/model/token-ledger.ts`) lists each such job with why, linked to Parked. A person's pick up
+  clears the mark and sets `budgetFrom`: what the job had spent then; its budget then counts from there, so each go-on gives
+  a whole budget again. The job is never killed. The check runs only at checkpoints (every 10 minutes, `CHECKPOINT_EVERY_MS`),
+  so a job may go over its cap by what it spends between two. No schema change: both marks are in the job's JSON, which a
+  build before this ignores.
 - **What it does not do yet** (later parts of #2302): waste signals,
-  tokens per merged pull request, budgets that pause a job, and print-mode agents (they keep no agent session; `claude -p`'s
+  tokens per merged pull request, budgets per repository or per day, budgets as an input of the lane and admission
+  decisions, and print-mode agents (they keep no agent session; `claude -p`'s
   own JSON answer holds its usage). A subagent's own session file is not read.
+
+Verification of part 3: `test/domain/token-budget.test.ts` (the caps, the words, counted from a go-on),
+`test/integration/token-budget.test.ts` (the real daemon over the fake herdr: the setting and its event; a running job that
+reaches its budget at a checkpoint is parked with why, its session kept; picked up, it runs on and is paused again only by
+new spend; a job under its budget runs on), `test/ui/needs-you.test.ts` (the Budgets row), `test/ui/token-budget.test.ts`
+(Settings), `test/cli/usage-tokens.test.ts` (`hopper usage budget`).
 
 ## Stack resources (issue #947, 2026-10-12)
 
