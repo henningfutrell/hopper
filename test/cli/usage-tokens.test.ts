@@ -1,4 +1,4 @@
-// `hopper usage tokens [--job <id>] [--repo <owner/repo>] [--since <date>] [--by <group>]` (issue #2302): the call the
+// `hopper usage tokens [--job <id>] [--repo <owner/repo>] [--since <date>] [--by <group>] [--split <group>]` (issue #2302): the call the
 // operator CLI makes, before any daemon. It reads GET /api/usage/tokens, as the UI and an agent do.
 import { describe, expect, it } from 'vitest';
 import { usageCall } from '../../src/cli-operator-usage.ts';
@@ -8,6 +8,9 @@ describe('hopper usage tokens (issue #2302)', () => {
     expect(usageCall(['tokens'])).toEqual({ role: 'viewer', path: '/api/usage/tokens' });
     expect(usageCall(['tokens', '--repo', 'octo/shed', '--since', '2026-10-01', '--by', 'day']))
       .toEqual({ role: 'viewer', path: '/api/usage/tokens?by=day&repo=octo%2Fshed&since=2026-10-01' });
+    // Part 2: each day split by account, as the Dashboard stacks it.
+    expect(usageCall(['tokens', '--by', 'day', '--split', 'account']))
+      .toEqual({ role: 'viewer', path: '/api/usage/tokens?by=day&split=account' });
   });
 
   it('reads one job\'s token use, per model', () => {
@@ -19,5 +22,6 @@ describe('hopper usage tokens (issue #2302)', () => {
     expect(() => usageCall(['cost'])).toThrow(/usage: hopper usage tokens/);
     expect(() => usageCall(['tokens', 'more'])).toThrow(/usage: hopper usage tokens/);
     expect(() => usageCall(['tokens', '--job', 'j1', '--by', 'day'])).toThrow(/usage: hopper usage tokens/);
+    expect(() => usageCall(['tokens', '--job', 'j1', '--split', 'repo'])).toThrow(/usage: hopper usage tokens/);
   });
 });
