@@ -31761,10 +31761,15 @@ them). Before the template is made, `checkTemplateActions` (`src/vault/template-
 - **cannot** (`role-denies`) — the role does not allow it. No grant helps, as a session policy only narrows. The request
   is refused (409) before a template is made, with the need to ask for in its place (the action role, `--action`), or,
   on the action role itself, the operator's change to make;
+- **cannot** (`no-role`, issue #2387) — the role does not exist in its account (IAM `GetRole` answers `NoSuchEntity`).
+  No session of it can be minted, so the request is refused (409) the same way, before a template is made and before a
+  grant is asked; the line names the role's ARN and, for the action role, that an operator makes it;
 - **not checked** (`unchecked`) — IAM could not simulate it; the line says why, and nothing is refused for it.
 
 The simulation is the port `ActionSimulator`: `iam:SimulatePrincipalPolicy` (`src/vault/action-simulation.ts`,
-@aws-sdk/client-iam) of the role's ARN, one call per action on its resource, with a read session of the account's read
+@aws-sdk/client-iam) of the role's ARN, one call per action on its resource, after one `iam:GetRole` of the role (issue
+#2387: a role the account does not have is `no-role`, and a `GetRole` IAM refuses for another reason goes on to the
+simulation, as `ReadOnlyAccess` holds `iam:GetRole` but a narrower read role may not), with a read session of the account's read
 role `hopper-read`, minted as topology discovery mints one (`mintForDiscovery`: no job or template takes part, so Access
 is not asked, and `vault.discovery_minted` records it). It reads the role's own policies: a service control policy or a
 resource policy can still refuse the call when it runs. A need step with `--action` and no template yet passes its actions

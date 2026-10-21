@@ -61,12 +61,32 @@ export const fakeKubeApi = (o: { forbid?: boolean } = {}): Promise<FakeApi> => {
 
 /**
  * STS: AssumeRole answered, in the query protocol's XML. With `iamAllows` (issue #2206, part 2), it is IAM too: a
- * SimulatePrincipalPolicy answers `allowed` for each action named there, else `implicitDeny`.
+ * SimulatePrincipalPolicy answers `allowed` for each action named there, else `implicitDeny`. A GetRole (issue #2387)
+ * answers the role, or NoSuchEntity for a role named in `iamMissingRoles`.
  */
-export const fakeSts = (account: string, o: { iamAllows?: string[] } = {}): Promise<FakeApi> => fakeServer((r) => (o.iamAllows && r.body.includes('Action=SimulatePrincipalPolicy') ? simulated(r.body, o.iamAllows) : {
-  status: 200, type: 'text/xml',
-  body: `<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>${MINTED_AWS.AccessKeyId}</AccessKeyId><SecretAccessKey>${MINTED_AWS.SecretAccessKey}</SecretAccessKey><SessionToken>${MINTED_AWS.SessionToken}</SessionToken><Expiration>${EXPIRES}</Expiration></Credentials><AssumedRoleUser><Arn>arn:aws:sts::${account}:assumed-role/readonly/hopper</Arn><AssumedRoleId>AROA:hopper</AssumedRoleId></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>r1</RequestId></ResponseMetadata></AssumeRoleResponse>`,
-}));
+export const fakeSts = (account: string, o: { iamAllows?: string[]; iamMissingRoles?: string[] } = {}): Promise<FakeApi> => fakeServer((r) => {
+  if (r.body.includes('Action=GetRole')) return gotRole(account, r.body, o.iamMissingRoles ?? []);
+  if (o.iamAllows && r.body.includes('Action=SimulatePrincipalPolicy')) return simulated(r.body, o.iamAllows);
+  return {
+    status: 200, type: 'text/xml',
+    body: `<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>${MINTED_AWS.AccessKeyId}</AccessKeyId><SecretAccessKey>${MINTED_AWS.SecretAccessKey}</SecretAccessKey><SessionToken>${MINTED_AWS.SessionToken}</SessionToken><Expiration>${EXPIRES}</Expiration></Credentials><AssumedRoleUser><Arn>arn:aws:sts::${account}:assumed-role/readonly/hopper</Arn><AssumedRoleId>AROA:hopper</AssumedRoleId></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>r1</RequestId></ResponseMetadata></AssumeRoleResponse>`,
+  };
+});
+
+/** IAM's GetRole answer: the role, or NoSuchEntity when it is missing. */
+function gotRole(account: string, body: string, missing: readonly string[]): { status: number; type: string; body: string } {
+  const name = new URLSearchParams(body).get('RoleName') ?? '';
+  if (missing.includes(name)) {
+    return {
+      status: 404, type: 'text/xml',
+      body: `<ErrorResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><Error><Type>Sender</Type><Code>NoSuchEntity</Code><Message>The role with name ${name} cannot be found.</Message></Error><RequestId>r3</RequestId></ErrorResponse>`,
+    };
+  }
+  return {
+    status: 200, type: 'text/xml',
+    body: `<GetRoleResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><GetRoleResult><Role><Path>/</Path><RoleName>${name}</RoleName><RoleId>AROA${name.length}</RoleId><Arn>arn:aws:iam::${account}:role/${name}</Arn><CreateDate>2026-10-01T00:00:00Z</CreateDate></Role></GetRoleResult><ResponseMetadata><RequestId>r3</RequestId></ResponseMetadata></GetRoleResponse>`,
+  };
+}
 
 /** IAM's SimulatePrincipalPolicy answer for the one action the request names. */
 function simulated(body: string, allows: readonly string[]): { status: number; type: string; body: string } {
