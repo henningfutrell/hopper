@@ -31601,3 +31601,46 @@ is a preference, never a hold.
 **Verification.** `test/client/job-runtime.test.ts` (each step fits a line, the steps run for real),
 `test/herdr/executor-runtime.test.ts` (every typed command fits, the guards before the setup),
 `test/engine/lane-health.test.ts`, `test/decider/unhealthy-lanes.test.ts`, `test/ui/machine-unhealthy-lanes.test.ts`.
+
+## The sandbox host (issue #2272, 2026-10-21)
+
+**The gap.** A sandbox (a need or box step, a bastion, the read-only check, the warm pass) started beside the hopper when it
+had a runtime, else on the first of the user's client targets dialled in with one. A person could not say where sandboxes
+run: a step could land on a worker seat that runs coding lanes, and so the credentials minted for it reached that seat. A
+dedicated machine for sandboxes was not possible to point at.
+
+**The change, part 1** (`src/domain/sandbox-host.ts`; `src/engine/sandbox-host.ts`; `src/store/machine-drain-settings.ts`;
+`src/sandbox/runtime.ts` `createPlacements` `where`; `src/sandbox/service.ts` `hostOffline`; `src/sandbox/need-steps.ts`
+`hostWait`; `src/http/ui/sandbox-host.ts`; `src/cli-operator-machine.ts`; Machines, `ui/src/views/machine-sandbox-host.tsx`):
+- **The sandbox host** (glossary) is a user's setting: the machines the user's sandboxes start on, first first, at most 5.
+  `local` is the runtime beside the hopper; any other is a machine the hopper knows that runs **no coding lane** (its lanes are
+  0), so no minted credential reaches a worker seat. A machine with lanes is refused: set its lanes to 0 first.
+- **Placement.** While it is set, every sandbox starts only on the first machine of it whose runtime answers now (a client
+  target dialled in with a rootless runtime, or the runtime beside the hopper): never on another machine and never beside the
+  hopper when `local` is not named. None online: the sandbox does not start, and the reason is `sandbox host <name> is
+  offline` (`sandbox hosts <a>, <b> are offline` for a list). Not set: sandboxes start where they did before.
+- **A step waits.** A need or box step looks at the sandbox host before it mints anything: while it is offline, the step waits
+  (every 10 s), and its log says once `hopper: sandbox host <name> is offline: the step waits for it, and never starts on
+  another machine`. Once the host is back, it mints and runs. Its saga holds its lease meanwhile; a hopper that stops leaves the
+  step to wait again on any host. A step whose job stops meanwhile ends cancelled, with nothing minted. A read-only check
+  finds no place, and waits for its next pass; a bastion that cannot start says why.
+- **A change** is read at each sandbox: no restart, no redeploy. A sandbox that runs already ends where it started; the next one
+  starts on the new host. Kept in the user's settings (`sandboxHost`: the machines, who, the way, when), so a restart keeps it.
+- **Set** by an admin: `POST /ui/api/machines/sandbox-host {hosts}` (`[]` clears it), the Machines card's Use as sandbox host
+  (adds it last) and Stop as sandbox host, and `hopper machine sandbox-host [<machine>...|--clear]` (no machine: print it).
+  Each change records `machine.sandbox_host_set` with the list before and after, who and the way; one that changes nothing
+  records nothing. Not a box action: it starts and stops no work.
+- **Shown.** `GET /api/machines` carries `sandboxHost` (the list) and marks each machine of it with its place. The card has a
+  *sandbox host* badge, its place, and how many sandboxes run there now (its sandbox runs not ended).
+
+**Not changed.** Sandbox network rules: no API-server proxy, no port-forward RBAC, no new port or tunnel. A box step's vault
+secrets still go only into a need box beside the hopper (`NO_SECRET_COPY`).
+
+**Left for the next parts** (path 2 of the proposal): a **remote Podman host** record (`sandbox-hosts`, shaped as
+`windows-hosts`) reached over the hopper's own ssh key and pinned host key by `ssh -T <host> podman system dial-stdio`, a
+`SocketCall` over it under the unchanged Podman adapter, secrets copied into such a host's box (lifting `NO_SECRET_COPY` there);
+the host's CPU and memory and its totals on Machines; and on Kubernetes `local:<node>`, a box pod pinned by `nodeSelector`.
+
+Tests: `test/domain/sandbox-host.test.ts` (which machines can be the host), `test/sandbox/sandbox-host.test.ts` (placement, no
+fallback, offline, a change mid-run), `test/sandbox/need-step-host-wait.test.ts` (the wait), `test/integration/sandbox-host.test.ts`
+(the route, the event, a restart, the CLI), `test/ui/machine-sandbox-host.test.ts` (the card).
