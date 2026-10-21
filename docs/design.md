@@ -22000,6 +22000,26 @@ the mirror takes the end labels off an item not taken yet, with no label edit; a
 judged), `test/sources/github-item-labels.test.ts` (`labelsFor` of a partly done item),
 `test/users/source-context-parts-left.test.ts` (the store's fact).
 
+### An item that needs a person carries no end label (issue #1892 part 6, 2026-10-21)
+
+Milestone 2, part 6: the needs you state. Before it, the mirror did not judge an item that needs a person, and Intake took its
+reason from its labels. Its job still holds the item while it waits on a person, and no report writes an end label then:
+the claim stays, and the end comes with the job's report.
+
+- **`labelsFor` judges an item that needs a person while its job waits on one.** The item wants no end label, as an item a
+  job works. This is a question, a proposal, a research report or a pick-up of a parked job (`waitingOn`). An end label left
+  on, for example `hopper:pr-ready` of a tend job's pull request, comes off through the outbox.
+- **Not judged: a hand-off** (`waitingOn` is `HANDOFF_WAIT`). Its job failed, and its report may have put `hopper:failed`
+  on, unless the hopper fixes it itself. The labels decide for it, as before, until the person resolves it.
+- **No label edit.** The state wants no label, so a person has no label to take off.
+- **Intake.** `ledgerReason` gives such an item no end-label reason, as for an item a job works; its job keeps it out.
+
+**Left to the labels:** a done item with no whole merge, dropped, a hand-off, waiting for approval.
+
+**Verification:** `test/sources/github-label-needs-you.test.ts` (the mirror takes an end label off an item whose job waits on a
+question or a proposal, with no label edit; a hand-off's `hopper:failed` stays), `test/sources/github-item-labels.test.ts`
+(`labelsFor` of an item that needs a person).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
