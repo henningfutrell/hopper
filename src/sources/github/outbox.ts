@@ -23,7 +23,9 @@
 // A send claims its rows (issue #1959, `OUTBOX_CLAIM_MS`), and renews the claim before each call: a second hopper on the
 // database sends none of them meanwhile. A row a stopped or killed hopper left `sending` is sent again once its claim ends.
 // A followed pull request's end (issue #1892 part 14) is rows too (act `follow`): the end labels of the state it moves the
-// item to, sent in the follow's own pass (`sendOf`), and by a later flush when GitHub refused them for now.
+// item to, sent in the follow's own pass (`sendOf`), and by a later flush when GitHub refused them for now. A job's report
+// (issue #1892 part 15) is rows the same way (act `report`): its claim, and the end labels of the state its end moves the
+// item to; an end drops its claim's rows not sent yet, and takes the claim off all the same.
 import { createHash } from 'node:crypto';
 import type { ActingPerson } from '../../domain/failures.ts';
 import type { IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
@@ -240,7 +242,14 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
      * sent goes on.
      */
     dropLabelRows(key: string): void {
-      rows.update(openOf(key).filter((r) => (r.act === 'mirror' || r.act === 'follow') && r.state === 'pending').map((r) => r.id), { state: 'sent', sentAt: now() });
+      rows.update(openOf(key).filter((r) => (r.act === 'mirror' || r.act === 'follow' || r.act === 'report') && r.state === 'pending').map((r) => r.id), { state: 'sent', sentAt: now() });
+    },
+    /**
+     * Drops item `key`'s rows of `act` tagged `tag` not sent yet (issue #1892 part 15): a later change replaces them, such as a
+     * job's end its claim. One being sent goes on.
+     */
+    drop(act: OutboxAct, key: string, tag: string): void {
+      rows.update(openOf(key).filter((r) => r.act === act && r.tag === tag && r.state === 'pending').map((r) => r.id), { state: 'sent', sentAt: now() });
     },
     /**
      * Sends the rows of item `key` and `act` that are due now, apart from a flush (issue #1892 part 14): the follow's label

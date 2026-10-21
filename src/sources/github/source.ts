@@ -45,14 +45,14 @@ import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, u
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
-import { createLabelMirror } from './label-mirror.ts'; import { handoffSettling, type LabelDrift } from './item-labels.ts';
+import { createLabelMirror } from './label-mirror.ts'; import { handoffSettling } from './item-labels.ts';
 import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { awaitingBatch, closePromoted, declinedOutcome, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
-import { ensureLabels, keepResolution, reportToGitHub, takeBack } from './report.ts';
+import { ensureLabels, keepResolution, reportToGitHub, takeBack, type LabelSink } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
@@ -149,15 +149,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.intake ? { holder: o.intake.holder } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
-    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: followLabelRows });
-  /** A follow's label change (issue #1892 part 14): outbox rows, once per end, sent in the follow's pass. */
-  const followLabelRows = async (key: string, repo: string, change: LabelDrift, tag: string): Promise<void> => {
-    if (outbox.sent('follow', key, tag)) return;
-    outbox.queue('follow', key, repo, [
+    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: labelRows('follow') });
+  /** A follow's or a report's label change (issue #1892 parts 14 and 15): outbox rows, once per end, sent in its own pass. */
+  const labelRows = (act: 'follow' | 'report'): LabelSink => async (key, repo, change, tag, replaces) => {
+    if (replaces !== undefined) outbox.drop(act, key, replaces);
+    if (outbox.sent(act, key, tag)) return;
+    outbox.queue(act, key, repo, [
       ...(change.remove.length ? [{ change: { op: 'remove_labels' as const, labels: change.remove } }] : []),
       ...(change.add.length ? [{ change: { op: 'add_labels' as const, labels: change.add } }] : []),
     ], { tag });
-    await outbox.sendOf('follow', key, outboxSend(api, approvals.readComments, (r, labels) => ensureLabels(reportContext(), r, labels)));
+    await outbox.sendOf(act, key, outboxSend(api, approvals.readComments, (r, labels) => ensureLabels(reportContext(), r, labels)));
   };
 
   /**
@@ -329,7 +330,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return r.signals;
     }),
     report(r) {
-      return reportToGitHub(reportContext(), r);
+      return reportToGitHub({ ...reportContext(), labels: labelRows('report') }, r);
     },
     rerun: (job) => giving(job, async () => {
       const issue = await takeBack(reportContext(), config.label, job, o.assignee());

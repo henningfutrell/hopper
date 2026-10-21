@@ -175,9 +175,9 @@ describe('GitHub source report', () => {
     expect(err).toMatchObject({ permanent: true, status: 404 });
   });
 
-  it('a transient GitHub failure is a SourceError to retry', async () => {
+  it('a transient GitHub failure of a read is a SourceError to retry (a label refused waits in the outbox, issue #1892)', async () => {
     const { gh, source } = withIssue();
-    gh.failNext('addLabels', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
+    gh.failNext('getIssue', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
     const err = await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'x' }) }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SourceError);
     expect(err).toMatchObject({ permanent: false, status: 502 });
