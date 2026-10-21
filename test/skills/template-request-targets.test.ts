@@ -1,7 +1,7 @@
 // Issue #2146 (the bastion path, part 3): a template request that names bastion targets. `sandbox-template --needs
 // "observe/namespace/uat/monitoring" --targets "uat/monitoring/svc/grafana:80"` saves a template that names the targets,
 // under a name of its own; each target needs an observe of the request on its namespace or cluster. The targets are
-// approved with the template, as its observe is: by a person.
+// approved with the template, as its observe is: by a person. The template takes the read-only check (part 5).
 import { describe, expect, it } from 'vitest';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { askOf, extrasOf } from '../../src/skills/template-ask.ts';
@@ -24,7 +24,8 @@ function user() {
     },
     async approve(name, by) {
       const t = templates.get(name)!;
-      templates.set(name, { ...t, approval: { by } as never, pending: { secrets: [], image: false, egress: [], profiles: [], bastionTargets: [] } });
+      // An observe template takes the read-only check (part 5): here it passed on this version.
+      templates.set(name, { ...t, approval: { by } as never, pending: { secrets: [], image: false, egress: [], profiles: [], bastionTargets: [] }, check: { version: t.savedAt, state: 'passed', at: 'now', probes: [] } as never });
       return { ok: true };
     },
     async approveProfile() { return { ok: true }; },
