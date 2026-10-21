@@ -19137,6 +19137,24 @@ plain words. The terms stay in the glossary and the code; only the UI words chan
 - **Later** in place of the backburner: the Intake group, its tooltip names the `hopper:backburner` label; the action
   is Take out of Later; the nav badge and the Queue link say "for later".
 
+### The Jobs table (issue #2372, 2026-10-21)
+
+Requirement: Jobs opens as a table, one row per job, at least 20 rows in view at 1440×900, the page at most 1.5 screens
+tall with the demo data; the run graph on expand, no longer the default.
+
+- **List is the default.** The `jobs.mode` page choice falls back to `list`; a browser that kept `graph` keeps it. Graph or
+  List is the same `ModeToggle` and page choice as before (Machines' Cards / List toggle copied this control, #2352).
+- **A table.** `JobTableHead` and `JobRow` (`ui/src/views/job-row.tsx`) share one column list: stage, issue, title and
+  task count, lane, time in stage, pull request, last event. A row is 28 px. A narrow screen hides a column's cells and
+  keeps its `col` at no width, so the table always has every column: a cell that spans them (the run graph's) then makes
+  no extra column. The last event shows on a wide screen only, so the title keeps its room at 1440 px.
+- **The run graph.** A click on a row, but on a link, opens a row under it with the **job tree** the job is in, drawn by
+  the Graph mode's own `TreeGraph`, and a node's details on select. One row is open at a time; which one is not kept.
+- **Measured** with the screenshot demo (`scripts/screenshots/demo.ts`) in Chromium at 1440×900: 25 rows in view, the
+  page 1.22 screens tall with 30 rows, against 1.73 for Graph with its 8 trees.
+
+Tests: `test/ui/jobs-table.test.ts` (the default mode, the columns, the toggle kept over a reload, a row's run graph).
+
 ## The isolation stop (issue #752, 2026-10-11)
 
 Issue #752 asks that a box cut off from the hopper degrade safely. This part is the box's own time limit: a client target
