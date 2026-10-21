@@ -159,7 +159,7 @@ describe('the badges of a merged page', () => {
   it('an entry\'s badge sums its tabs\'; each tab shows its own', async () => {
     await boot('#jobs');
     await vi.waitFor(() => expect(entryBadge('#jobs')?.textContent).toBe('2'));
-    expect(entryBadge('#jobs')!.getAttribute('title')).toBe('2 jobs wait on the pre-sort');
+    expect(entryBadge('#jobs')!.getAttribute('title')).toBe('2 jobs waiting to be ordered');
     expect(tabBadge('#jobs/queue')?.textContent).toBe('2');
     expect(tabBadge('#jobs/jobs')).toBeNull();
     expect(entryBadge('#failures')?.textContent).toBe('1');
@@ -168,7 +168,7 @@ describe('the badges of a merged page', () => {
   it('a collapsed group sums its entries\' badges, the merged ones too', async () => {
     await boot('#dashboard', '["jobs"]');
     const badge = await vi.waitFor(() => { const b = document.querySelector('aside [data-nav-group="jobs"] [data-slot="nav-group-badge"]'); expect(b?.textContent).toBe('2'); return b!; });
-    expect(badge.getAttribute('title')).toBe('Jobs: 2 jobs wait on the pre-sort');
+    expect(badge.getAttribute('title')).toBe('Jobs: 2 jobs waiting to be ordered');
   });
 
   it('on the Failures page, the Parked tab shows the parked jobs\' count', async () => {

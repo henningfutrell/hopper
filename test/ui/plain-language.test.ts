@@ -110,10 +110,10 @@ describe('Ask hopper (issue #2375)', () => {
 });
 
 describe('Plain labels (issue #2375)', () => {
-  it('the Queue badge says the jobs wait to be ordered', async () => {
+  it('the Queue order badge says the jobs wait to be ordered', async () => {
     const waiting = [{ ...job(JOBS[0]!, 1), accepted: false }];
     await boot('#queue', { '/api/queue': { ...QUEUE['/api/queue'], waiting, gate: { mode: 'review', autoAcceptPerHour: null }, presort: { sorter: 'priority', jobIds: [JOBS[0]], reject: [] } } });
-    const badge = all('nav a').find((a) => a.getAttribute('href') === '#queue')!.querySelector('[data-slot="nav-badge"]')!;
+    const badge = all('nav a').find((a) => a.getAttribute('href') === '#jobs/queue')!.querySelector('[data-slot="tab-badge"]')!;
     expect(badge.getAttribute('title')).toBe('1 job waiting to be ordered');
     expect(document.body.textContent).not.toMatch(/pre-sort/i);
   });
