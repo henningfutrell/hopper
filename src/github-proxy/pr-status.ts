@@ -56,6 +56,22 @@ export function knownPullRequest(number: number, url: string, o: { card?: PullRe
 }
 
 /**
+ * A failing answer from the records with its checks as GitHub reads them now (issue #2321): the follow's last read can be of a
+ * head a push replaced since, or of a run a newer run of its check superseded. `read` is `pr status` read on GitHub: the
+ * checks of the head as it is now, the newest run of each check. What the follow read of a failed check (`reported`) stays
+ * with the same run, by its URL. A `checks failing` wait the read does not bear out is dropped. No checks in `read`: `known`.
+ */
+export function withReadChecks(known: PullRequestStatus, read: Record<string, unknown>): PullRequestStatus {
+  const r = read as Partial<PullRequestStatus>;
+  if (r.checks === undefined) return known;
+  const before = new Map(known.failedChecks.filter((c) => c.url).map((c) => [c.url!, c]));
+  const failedChecks = (r.failedChecks ?? []).map((c) => (c.url && before.get(c.url)?.reported ? { ...c, reported: before.get(c.url)!.reported! } : c));
+  const { checksWhy: _why, waits, ...rest } = known;
+  const keepWaits = waits && !(waits === 'checks failing' && r.checks !== 'failing');
+  return { ...rest, checks: r.checks, failedChecks, ...(r.checksWhy ? { checksWhy: r.checksWhy } : {}), ...(keepWaits ? { waits } : {}) };
+}
+
+/**
  * Whether a wait on a pull request's checks (`pr wait`, issue #1072 part 2) is over: its checks ended (passing, failing,
  * none, or checks the hopper may not read), or it is merged or closed. Only checks that run keep a job waiting.
  */

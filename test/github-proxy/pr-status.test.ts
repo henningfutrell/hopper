@@ -63,7 +63,7 @@ describe('the broker answers pr status from the hopper first (issue #1072)', () 
   const bearer = `Bearer ${proxyToken(key, 'u1', 'job-1')}`;
   const ask = { op: 'pr.status', repo: 'octo/tools', number: '8' };
 
-  function setup(known: ReturnType<NonNullable<ProxyUser['pullRequest']>>) {
+  function setup(known: ReturnType<NonNullable<ProxyUser['pullRequest']>>, read: Record<string, unknown> = { checks: 'pending', failedChecks: [] }, limited = false) {
     const events: NewEvent[] = [];
     let now = 1_000_000;
     const asked: ProxyRequest[] = [];
@@ -72,22 +72,22 @@ describe('the broker answers pr status from the hopper first (issue #1072)', () 
       pullRequest: () => known,
     };
     const api: ProxyApi = {
-      perform: async (r) => { asked.push(r); return { number: 8, url: URL, state: 'open', draft: false, mergeable: 'mergeable', checks: 'pending', failedChecks: [], base: 'dev', head: 'issue-7' }; },
+      perform: async (r) => { asked.push(r); return { number: 8, url: URL, state: 'open', draft: false, mergeable: 'mergeable', base: 'dev', head: 'issue-7', ...read }; },
       repo: async () => { throw new Error('not read'); }, head: async () => { throw new Error('not read'); },
       pullRequestBase: async () => { throw new Error('not read'); },
     };
     const proxy = createGitHubProxy({
-      user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => now,
+      user: () => user, limiter: { take: () => (limited ? 'too many reads' : undefined) }, log: () => {}, now: () => now,
       connection: () => ({ jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => api }),
     });
     return { proxy, events, asked, later: (ms: number) => { now += ms; } };
   }
 
   it('a pull request the hopper follows: answered from its records, GitHub not asked, `source: hopper` on the job\'s timeline', async () => {
-    const known = knownPullRequest(8, URL, { card: card(), seen, item: item() })!;
+    const known = knownPullRequest(8, URL, { card: card({ checks: 'pending', waits: 'checks pending' }), seen: { ...seen, checks: 'pending', failedChecks: [] }, item: item() })!;
     const t = setup({ known, item: known.item });
     const r = await t.proxy.handle(bearer, ask);
-    expect(r).toMatchObject({ status: 200, body: { ok: true, op: 'pr.status', repo: 'octo/tools', source: 'hopper', state: 'open', checks: 'failing', waits: 'checks failing' } });
+    expect(r).toMatchObject({ status: 200, body: { ok: true, op: 'pr.status', repo: 'octo/tools', source: 'hopper', state: 'open', checks: 'pending', waits: 'checks pending' } });
     expect(t.asked).toEqual([]);
     expect(t.events.at(-1)).toMatchObject({ type: 'github_proxy.done', jobId: 'job-1', data: { op: 'pr.status', number: 8, url: URL, source: 'hopper' } });
   });
@@ -102,5 +102,36 @@ describe('the broker answers pr status from the hopper first (issue #1072)', () 
     t.later(2);
     expect(await t.proxy.handle(bearer, ask)).toMatchObject({ body: { source: 'github' } });
     expect(t.asked).toHaveLength(2);
+  });
+
+  // Issue #2321: the follow's last read can be of a head a force push replaced since, or of a run a newer run superseded.
+  // A failing answer is what a job or a person acts on, so its checks are read again on GitHub: the head as it is now, the
+  // newest run of each check.
+  it('failed checks in its records, all passing on its head now: answered passing, with no failed checks and no stale wait', async () => {
+    const known = knownPullRequest(8, URL, { card: card(), seen, item: item() })!;
+    const t = setup({ known, item: known.item }, { checks: 'passing', failedChecks: [] });
+    const r = await t.proxy.handle(bearer, ask);
+    expect(r).toMatchObject({ status: 200, body: { source: 'hopper', state: 'open', checks: 'passing', failedChecks: [] } });
+    expect((r.body as { waits?: string }).waits).toBeUndefined();
+    expect(t.asked).toEqual([{ op: 'pr.status', repo: 'octo/tools', number: 8 }]);
+    t.later(REPO_QUERY_FRESH_MS - 1);
+    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ body: { checks: 'passing' } });
+    expect(t.asked).toHaveLength(1);
+  });
+
+  it('still failing on its head: the checks that fail now, with what the follow read of the same run', async () => {
+    const known = knownPullRequest(8, URL, { card: card(), seen, item: item() })!;
+    const now = [{ name: 'pr / test', url: 'https://github.com/octo/tools/runs/1' }, { name: 'pr / lint', url: 'https://github.com/octo/tools/runs/2' }];
+    const t = setup({ known, item: known.item }, { checks: 'failing', failedChecks: now });
+    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ body: { checks: 'failing', waits: 'checks failing', failedChecks: [
+      { name: 'pr / test', url: 'https://github.com/octo/tools/runs/1', reported: ['a.ts:3: boom'] }, { name: 'pr / lint', url: 'https://github.com/octo/tools/runs/2' },
+    ] } });
+  });
+
+  it('a read the limits refuse: the records\' answer, as before', async () => {
+    const known = knownPullRequest(8, URL, { card: card(), seen, item: item() })!;
+    const t = setup({ known, item: known.item }, { checks: 'passing', failedChecks: [] }, true);
+    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ body: { source: 'hopper', checks: 'failing' } });
+    expect(t.asked).toEqual([]);
   });
 });

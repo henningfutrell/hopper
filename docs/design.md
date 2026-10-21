@@ -23404,7 +23404,13 @@ job does not. A repo query (issue #1074, "Repo queries"): `source` says where th
    or, with no card, a pull request the work-item ledger says merged or closed (`WorkItemLedger.byPullRequest`, whatever the URL's case). A card
    not checked yet, or an open pull request only the ledger names, says nothing of its checks, so it is not answered
    from here (`knownPullRequest`, `src/github-proxy/pr-status.ts`, pure). Neither the hopper's GitHub connection nor
-   the rate limits are asked.
+   the rate limits are asked. One exception (issue #2321): an open pull request whose records say its checks fail. The
+   follow's last read can be of a head a push replaced since (a tend job's force push after a rebase), or of a run a
+   newer run of its check superseded, and a job or a person acts on failed checks. So its checks are read again as in
+   3 below — the head as it is now, the newest run of each check —, from the repo-query cache while fresh
+   (`withReadChecks`): `checks` and `failedChecks` are the read's, what the follow read of a failed check (`reported`)
+   stays with the same run, by its URL, and a `checks failing` wait the read does not bear out is dropped. `source`
+   stays `hopper`. A read the rate limits refuse, or that fails on GitHub, leaves the records' answer.
 2. `cache` — the repo-query cache (`repo-query.ts`): a GitHub read of the same `pr.status` query kept less than
    `REPO_QUERY_FRESH_MS` (30 s) ago, or of a merged pull request, with the item as the ledger says now. Counted against
    the rate limits as every repo query.

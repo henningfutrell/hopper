@@ -32,7 +32,7 @@ import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, PR_OWNED, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyOp, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
-import { prWaitOver, unfollowedWait, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
+import { prWaitOver, unfollowedWait, withReadChecks, type KnownPullRequest, type PrWaitOver, type PullRequestStatus } from './pr-status.ts';
 import { createPollWatch, POLL_READS, polledOn, pollNote, type PollWatch } from './polls.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
 import { passProxyKillPoint, proxyPostKey } from './resend.ts';
@@ -242,9 +242,27 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
           o.log(`hopper: GitHub proxy: telling the engine that job ${job.id} polls failed: ${(e as Error).message}`);
         }
       };
+      // A failing answer from the records is read again on GitHub (issue #2321): a push since the follow's last read replaced
+      // the head, or a newer run superseded the failed one, and a job acts on failed checks. Refused by the limits, or failed
+      // on GitHub: the records' answer.
+      const headChecks = async (k: PullRequestStatus): Promise<PullRequestStatus> => {
+        if (k.state !== 'open' || k.checks !== 'failing' || 'problem' in api) return k;
+        const key = queryKey(req);
+        const kept = cache.get(key);
+        if (kept && answersNow(req.op, kept, now(), undefined)) return withReadChecks(k, kept.result);
+        if (o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`)) return k;
+        try {
+          const result = await api.perform(req);
+          cache.put(key, result, now());
+          return withReadChecks(k, result);
+        } catch (e) {
+          o.log(`hopper: GitHub proxy: reading the checks of ${req.repo}#${'number' in req ? req.number : ''} again failed: ${(e as Error).message}`);
+          return k;
+        }
+      };
       if (knownPr?.known && req.op === 'pr.status') {
+        const known = await headChecks(knownPr.known);
         const at = now();
-        const known = knownPr.known;
         const over: PrWaitOver = waiting?.for === 'mergeable' ? { for: 'mergeable', from: known.mergeable } : { for: 'checks' };
         // `pr wait` while what it waits for has not come: a watch, and the job is told on its stream; else answered now.
         const settled = prWaitOver(known, over);
