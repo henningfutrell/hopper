@@ -7,6 +7,7 @@ import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { LOST_NOTE } from '../../src/executors/herdr/restored.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -285,15 +286,22 @@ describe('a job that waits on its own background command (issue #1037)', () => {
     expect(herdr.prompts[1]!.text).toContain('your pane was lost');
   });
 
-  it('a wait on a background poll for an outside event (issue #1508): its pane lost, it is woken the same way', async () => {
+  it('a wait on an outside event (issue #2338): its pane lost, it is not woken; a person ends the wait', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WAIT, DONE] });
     const a = await start(herdr);
     const job = await waiting(a, herdr);
     expect(job.wait?.on).toEqual({ kind: 'outside', what: 'write access to the repository' });
     herdr.killAgent((job.executorState as { agentName: string }).agentName);
 
+    await waitFor(async () => (await a.job(job.id)).wait?.strandedAt, { what: 'its lost pane seen' });
+    expect((await a.job(job.id)).status).toBe('waiting_on');
+    expect((await ofJob(a, job.id)).filter((e) => e.type === 'job.wait_ended')).toEqual([]);
+    expect(herdr.prompts).toHaveLength(1);
+
+    const admin = await a.login();
+    expect((await a.ui(`/ui/api/jobs/${job.id}/end-wait`, {}, { token: admin })).status).toBe(200);
     await a.waitForStatus(job.id, 'finished', 8000);
-    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: 'its pane was lost' });
-    expect(herdr.prompts[1]!.text).toContain('outside (reason not given): write access to the repository');
+    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.wait_ended')!.data).toMatchObject({ by: 'person' });
+    expect(herdr.prompts[1]!.text).toContain('A person ended your wait');
   });
 });

@@ -1,6 +1,6 @@
 // Issue #2335 gap 2: every job on its own wait has its agent ended, whatever it waits on, but a wait on its own command —
 // a build or a test run of the job that runs in its pane. A wait only a background poll in its pane watched (an outside
-// event the hopper watches nothing of) is the hopper's now too: its recheck wakes it to look again.
+// event the hopper watches nothing of) is the hopper's now too: a person ends it, or the check-in it named (issue #2338).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobWait } from '../../src/domain/types.ts';
 import type { EngineContext } from '../../src/engine/context.ts';
@@ -27,6 +27,8 @@ const WAITS: Record<string, Partial<JobWait>> = {
   'scheduled recheck': { on: { kind: 'outside', what: 'a deploy window' }, checkLine: 'after 2h' },
   'outside, named items': { on: { kind: 'outside', what: 'octo/identity#199 to close' } },
   'outside, nothing the hopper watches (a background poll)': { on: { kind: 'outside', what: 'the deploy to finish' } },
+  'outside, gated': { on: { kind: 'outside', what: 'the production apply', why: 'gated' } },
+  'outside, not managed': { on: { kind: 'outside', what: 'a release of a vendor repository', why: 'not_managed' } },
   'nothing recorded': {},
 };
 
