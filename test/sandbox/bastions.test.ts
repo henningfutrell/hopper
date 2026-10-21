@@ -83,6 +83,13 @@ describe('a bastion (issue #2146)', () => {
     expect(b.of('job-1')?.log).toContain('forwarding 2 targets');
   });
 
+  it('names where its tokens reach (part 5): a read-only template\'s box runs behind the egress proxy, which lets the cluster through', async () => {
+    const { b, boxes } = bastions();
+    await b.start(JOB, TEMPLATE, TARGETS);
+    await until(() => boxes.length === 1);
+    expect(boxes[0]!.box.reaches).toEqual([SERVER]);
+  });
+
   it('one bastion a job: the same ask again is the same bastion; another is refused while the first runs', async () => {
     const { b, boxes } = bastions();
     const first = await b.start(JOB, TEMPLATE, TARGETS);
