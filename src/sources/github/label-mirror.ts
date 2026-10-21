@@ -2,8 +2,8 @@
 // every issue listed are compared with what its work item's state wants (`labelDrift`, item-labels.ts). It reads only what
 // the discover already listed, and the ledger: no call of its own. A drift is logged once and counted. It is corrected:
 // the labels change through the GitHub outbox (act `mirror`, tagged with the state), coalesced, once, so `hopper:pr-ready`
-// comes off an item the item reconciler blocked, an end label comes off an item a job works, and PR open gets its waiting
-// label. A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
+// comes off an item the item reconciler blocked, an end label comes off an item a job works, PR open gets its waiting
+// label, and a failed item whose failure was reported as failed gets `hopper:failed` (`failureReported`, issue #1892). A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
 // last moments, that has outbox rows not sent, or that is given back now or was in the last moments (`busy`), is not judged:
 // the move's own writes are on their way. The source passes no issue its discover takes as a new job (issue #1954): that job
 // moves the item.
@@ -19,7 +19,7 @@ import { RECONCILE_GRACE_MS } from '../../domain/item-lifecycle.ts';
 import type { WorkItem } from '../../domain/work-items.ts';
 import { labelCorrected, labelDriftSeen } from '../../telemetry/sources.ts';
 import type { GitHubIssue } from './api.ts';
-import { driftWords, labelDrift, labelTakenOff } from './item-labels.ts';
+import { driftWords, labelDrift, labelTakenOff, type LabelFacts } from './item-labels.ts';
 import type { GitHubOutbox } from './outbox.ts';
 
 export interface LabelMirror {
@@ -38,6 +38,8 @@ export function createLabelMirror(o: {
   item(key: string): WorkItem | undefined;
   /** Whether an item's open pull request is a part, by its URL: PR open's waiting label is then `hopper:partly-done`. */
   part(key: string): boolean;
+  /** Whether a failed item's failure was reported to its issue as failed (issue #1892): only then is `hopper:failed` its label. */
+  failureReported?(key: string): boolean;
   /** Whether the item is given back now or was moments ago (issue #1892): it is not judged, the new job moves it. */
   busy?(key: string): boolean;
   now(): string;
@@ -51,6 +53,9 @@ export function createLabelMirror(o: {
   const seen = new Map<string, { labels: string[]; at: string }>();
   /** The issues whose label edit the last `edits` found: not judged in the same discover. */
   let edited = new Set<string>();
+  /** What the item's labels are judged by besides its state: asked only for the state that needs it. */
+  const facts = (key: string, item: WorkItem): LabelFacts =>
+    item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' ? { failureReported: o.failureReported?.(key) ?? false } : {};
   return {
     start(listed, at) {
       for (const issue of listed) if (!seen.has(issue.url)) seen.set(issue.url, { labels: [...issue.labels], at });
@@ -67,7 +72,7 @@ export function createLabelMirror(o: {
         const item = o.item(issue.url);
         if (!was || !o.record || !item || item.runAgainAsked !== undefined || o.outbox.held(issue.url) || o.busy?.(issue.url)) continue;
         if (Date.parse(item.eventAt) > Math.min(Date.parse(was.at), settledBefore)) continue;
-        const label = labelTakenOff(item, was.labels, issue.labels);
+        const label = labelTakenOff(item, was.labels, issue.labels, facts(issue.url, item));
         if (label === undefined) continue;
         o.record('work_item.label_edited', { source: o.source, key: issue.url, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), from: item.state, label, means: 'run_again' });
         o.log(`hopper: ${o.source}: ${label} was taken off ${issue.url} by hand: a Run again of its work item (${item.state})`);
@@ -83,7 +88,7 @@ export function createLabelMirror(o: {
       for (const issue of listed) {
         const item = o.item(issue.url);
         if (!item || Date.parse(item.eventAt) > settledBefore || o.outbox.held(issue.url) || o.busy?.(issue.url) || item.runAgainAsked !== undefined || edited.has(issue.url)) continue;
-        const d = labelDrift(item, issue.labels, item.state === 'pr_open' ? { part: o.part(issue.url) } : {});
+        const d = labelDrift(item, issue.labels, facts(issue.url, item));
         if (!d) { logged.delete(issue.url); continue; }
         const words = driftWords(item, d);
         const tag = `${item.state}:${item.blockedCause ?? ''}`;

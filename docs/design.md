@@ -21848,7 +21848,7 @@ label showed a state the ledger did not hold, and a label a person took off was 
   open says its pull request (or its part) waits for review; blocked names its cause (no pull request, past its deadline,
   pull request closed), with Won't do; a job at work gives no end-label reason. The end labels on the issue do not count
   for such an item: the mirror corrects them. The labels still decide for an issue the hopper does not know, and for the
-  states the mirror does not judge yet (failed, done, dropped, partly done, needs you, waiting for approval). The
+  states the mirror does not judge yet (failed until part 3, done, dropped, partly done, needs you, waiting for approval). The
   backburner and an address to another hopper always count: they are a person's labels, not a mirror of state.
 - **A label taken off by hand is a person's event.** Before the discover judges Intake, the label mirror compares each
   listed issue's labels with what it saw at its last discover (`edits`). The end label the item's state wants
@@ -21887,6 +21887,31 @@ PR open item is one Run again and is not put back; a swap is none; no edit at fi
 hopper's own rows unsent; the report's close), `test/domain/work-items-label-edited.test.ts` (the ask kept, a person's
 move, forgotten by the next job), `test/domain/work-items.test.ts` (a hidden block is done at the reopen),
 `test/sources/github-wont-do.test.ts` (Won't do not offered for an item in PR open, whatever its labels say).
+
+### A failed item's label mirrors the ledger (issue #1892 part 3, 2026-10-21)
+
+Milestone 2, part 3: the first of the states part 1 left to the labels. Before it, a failed item's Intake reason came from
+`hopper:failed` on its issue, and the mirror did not judge it.
+
+- **`labelsFor` judges a failed item once its failure was reported as failed.** The item wants `hopper:failed`, and no
+  other end label. It is judged only when its events alone put it in failed (`eventState`), and its job's failure was told
+  to its issue as failed (`failureReported`: the job failed, its final report went out, and not as one the hopper fixes).
+  So the mirror does not put `hopper:failed` on an item the hopper fixes itself (issue #1230, Own PR checks red), nor
+  before its report decided, nor on a culprit whose merge a red batch reverted (failed by its landing, not by its job).
+  Those stay to the labels, as before.
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item the failed reason, whatever end labels its issue
+  carries; the mirror corrects them (a stale `hopper:pr-ready` comes off, a missing `hopper:failed` goes on).
+- **`hopper:failed` taken off by hand is a Run again**, as part 1 made it for PR open and blocked: the label edit is
+  recorded once (`work_item.label_edited`, `from: failed`), Intake takes the item again, and the label is not put back.
+- **The fact comes from the store** (`failureReported`, `src/users/source-context.ts`): the item's job, its status and its
+  sync flags (`finalReported`, `fixingReported`). The source passes it to the mirror and the discover, as it passes `part`.
+
+**Left to the labels:** done, dropped, partly done, needs you, waiting for approval. `origin.ts` (`awaitingBatch`) and
+`batch-wait.ts` still start from the label reason `DONE_OPEN`.
+
+**Verification:** `test/sources/github-label-edit.test.ts` (a failed item's reason from the ledger and its labels
+corrected; `hopper:failed` taken off by hand is one Run again; a failure not reported as failed, or a reverted culprit, is
+not judged), `test/sources/github-item-labels.test.ts` (`labelsFor` of a failed item).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
