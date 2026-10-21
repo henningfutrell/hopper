@@ -315,6 +315,8 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       const cancel = d.cancel ?? cancelOf(e).cancel;
       // Its machine lost (issue #1569): it resumes there in its kept work tree, or elsewhere from its checkpoint, when it can.
       if (d.lost && outcome.kind === 'failed' && !cancel && moveLost(c, job.id, d.laneId, d.lost, d.lostWhy ?? outcome.error)) return {};
+      // What the run spent, read once more before its end is recorded (issue #2302): the last turns are in the token ledger.
+      if (!d.lost) await c.checkpoints?.tokens(job.id);
       const recorded = recordOutcome(c, job, d.laneId, outcome, cancel, await machineOf(c, d.laneId));
       if (!cancel) laneEnded(c, d.laneId, outcome.kind === 'failed' ? outcome.error : undefined);
       if (recorded.kind === 'question') c.questions.handle(recorded.questionId);

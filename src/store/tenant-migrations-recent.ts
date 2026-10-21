@@ -32,7 +32,7 @@ import { TOPOLOGY_TABLE } from './topology.ts';
 import { containerTargets } from './migration-container-target.ts';
 import { SKILL_LIBRARY_TABLE } from './skill-library.ts';
 import { originPendingOffered, originPendingStarted } from './migration-origin-pending.ts';
-import { INTAKE_ARRIVAL_TABLE } from './intake-arrivals.ts';
+import { INTAKE_ARRIVAL_TABLE } from './intake-arrivals.ts'; import { TOKEN_LEDGER_TABLE } from './token-ledger.ts';
 import { observeTemplatesChecked } from './migration-observe-checked.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
@@ -162,4 +162,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // `readOnly`. Rows only: the build before checks only its reads, so a template of observes only fails that check and
   // waits, and its bastion with it.
   (db) => { observeTemplatesChecked(db); },
+  // 89: The token ledger (issue #2302): each model's token use in each agent session of each job. A table only: the build
+  // before runs on it, and never reads it.
+  TOKEN_LEDGER_TABLE,
 ];
