@@ -208,6 +208,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     try { return await give(); } finally { givenBack.set(key, o.clock.now().getTime()); }
   };
   const busy = (key: string) => { const at = givenBack.get(key); if (at === undefined) return false; if (at + RECONCILE_GRACE_MS > o.clock.now().getTime()) return true; givenBack.delete(key); return false; };
+  let mirrorStarted = false;
   const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, busy, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
@@ -249,6 +250,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       }
       const intake = o.intake;
       const migrating = intake !== undefined && intake.migration() === undefined;
+      // After a start, the mirror takes what the listing cache kept before this sync lists again (issue #1892).
+      if (mirror && !mirrorStarted) { mirrorStarted = true; for (const r of repos) { const l = listings.listing(r); if (l) mirror.start(l.items.filter((i) => i.kind === 'issue' && i.labels.includes(config.label)), l.fetchedAt); } }
       const listed = await listing.issues(repos, config.label, d?.due === true);
       // An end label a person took off by hand is their Run again (issue #1892), found before Intake reads the ledger.
       const edited = mirror?.edits(listed.issues);
