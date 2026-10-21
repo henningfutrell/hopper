@@ -15,6 +15,7 @@
 // Beside intake, a connected account's source reads the user's **tagged items** (issue #1141, `tagged.ts`).
 
 import { issueChangeEvent } from '../../domain/work-items.ts';
+import { RECONCILE_GRACE_MS } from '../../domain/item-lifecycle.ts';
 import { commandAsks, commandOf } from '../../domain/comment-command.ts';
 import type { IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
@@ -196,7 +197,18 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
   const workItem = o.intake?.workItem;
-  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
+  // Each item given back (Run again, Rework; issue #1892): when its give-back ended, or Infinity while it runs. Until the
+  // grace after it the mirror does not judge the item: the new job's `job.queued` is on its way and moves it.
+  const givenBack = new Map<string, number>();
+  const giving = async <T>(job: { source?: { key: string } }, give: () => Promise<T>): Promise<T> => {
+    const key = job.source?.key;
+    if (key === undefined) return give();
+    outbox.dropMirror(key);
+    givenBack.set(key, Infinity);
+    try { return await give(); } finally { givenBack.set(key, o.clock.now().getTime()); }
+  };
+  const busy = (key: string) => { const at = givenBack.get(key); if (at === undefined) return false; if (at + RECONCILE_GRACE_MS > o.clock.now().getTime()) return true; givenBack.delete(key); return false; };
+  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, busy, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {
@@ -304,19 +316,17 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     report(r) {
       return reportToGitHub(reportContext(), r);
     },
-    async rerun(job) {
-      if (job.source) outbox.dropMirror(job.source.key);
+    rerun: (job) => giving(job, async () => {
       const issue = await takeBack(reportContext(), config.label, job, o.assignee());
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), o.assignee());
-    },
-    async rework(job) {
-      if (job.source) outbox.dropMirror(job.source.key);
+    }),
+    rework: (job) => giving(job, async () => {
       const back = await sendBack(reportContext(), config.label, job, o.assignee());
       const projects = await readProjects(api, config, [back.issue]);
       const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), o.assignee());
       return { item, pullRequest: back.pullRequest, state: back.state };
-    },
+    }),
     withText(item, text) {
       return { ...item, ...promptWithText(item, text, config.recentComments) };
     },

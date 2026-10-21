@@ -4,8 +4,9 @@
 // the labels change through the GitHub outbox (act `mirror`, tagged with the state), coalesced, once, so `hopper:pr-ready`
 // comes off an item the item reconciler blocked, an end label comes off an item a job works, and PR open gets its waiting
 // label. A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
-// last moments, or that has outbox rows not sent, is not judged: the move's own writes are on their way. The source passes
-// no issue its discover takes as a new job (issue #1954): that job moves the item.
+// last moments, that has outbox rows not sent, or that is given back now or was in the last moments (`busy`), is not judged:
+// the move's own writes are on their way. The source passes no issue its discover takes as a new job (issue #1954): that job
+// moves the item.
 //
 // A label edited by hand (issue #1892): before the discover judges Intake, the mirror compares each listed issue's labels with
 // what it saw at its last discover (`edits`). The end label the item's state wants (`labelTakenOff`), seen then and gone now,
@@ -33,6 +34,8 @@ export function createLabelMirror(o: {
   item(key: string): WorkItem | undefined;
   /** Whether an item's open pull request is a part, by its URL: PR open's waiting label is then `hopper:partly-done`. */
   part(key: string): boolean;
+  /** Whether the item is given back now or was moments ago (issue #1892): it is not judged, the new job moves it. */
+  busy?(key: string): boolean;
   now(): string;
   log(line: string): void;
   /** Record a person's label edit (`work_item.label_edited`); absent: none is recorded. */
@@ -55,7 +58,7 @@ export function createLabelMirror(o: {
         const was = seen.get(issue.url);
         seen.set(issue.url, { labels: [...issue.labels], at });
         const item = o.item(issue.url);
-        if (!was || !o.record || !item || item.runAgainAsked !== undefined || o.outbox.held(issue.url)) continue;
+        if (!was || !o.record || !item || item.runAgainAsked !== undefined || o.outbox.held(issue.url) || o.busy?.(issue.url)) continue;
         if (Date.parse(item.eventAt) > Math.min(Date.parse(was.at), settledBefore)) continue;
         const label = labelTakenOff(item, was.labels, issue.labels);
         if (label === undefined) continue;
@@ -72,7 +75,7 @@ export function createLabelMirror(o: {
       for (const key of [...logged.keys()]) if (!listedKeys.has(key)) logged.delete(key);
       for (const issue of listed) {
         const item = o.item(issue.url);
-        if (!item || Date.parse(item.eventAt) > settledBefore || o.outbox.held(issue.url) || item.runAgainAsked !== undefined || edited.has(issue.url)) continue;
+        if (!item || Date.parse(item.eventAt) > settledBefore || o.outbox.held(issue.url) || o.busy?.(issue.url) || item.runAgainAsked !== undefined || edited.has(issue.url)) continue;
         const d = labelDrift(item, issue.labels, item.state === 'pr_open' ? { part: o.part(issue.url) } : {});
         if (!d) { logged.delete(issue.url); continue; }
         const words = driftWords(item, d);
