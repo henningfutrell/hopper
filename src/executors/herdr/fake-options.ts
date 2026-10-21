@@ -3,6 +3,7 @@
 import type { Survey } from '../../domain/ports.ts';
 import type { CheckpointCapture, DiscoveryFacts } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
+import type { FakeRestore } from './fake-shell.ts';
 
 /** One scripted turn of Claude's: what it shows while working and when it ends, and how it ends. */
 export interface FakeTurn {
@@ -96,8 +97,8 @@ export interface FakeHerdrOptions {
   unreached?: string;
   /** What a checkpoint finds on the machine (issue #921), or the error it throws (issue #1353). Default none taken. */
   checkpoint?: CheckpointCapture | Error;
-  /** What the restore of a checkpoint in a pane says (issue #921). Default `restored`. */
-  restore?: 'restored' | 'kept' | 'failed';
+  /** What the restore of a checkpoint in a pane says (issue #921); `no-way`: no way to the hopper (issue #2316). A list: one per restore, the last kept. Default `restored`. */
+  restore?: FakeRestore | FakeRestore[];
   /** What setting up the job's own container runtime says (issue #1295); `silent` says nothing. Default `none`: no podman. */
   runtime?: 'own' | 'none' | 'failed' | 'silent';
   /** What setting up the job's sandbox says (issue #1295). Default `none`: no bubblewrap. */

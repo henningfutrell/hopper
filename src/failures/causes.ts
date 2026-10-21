@@ -28,12 +28,12 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
     description: 'A Unix socket path under the job\'s TMPDIR is longer than the system allows: every job with the same TMPDIR on that machine crashes the same way.',
     pattern: /socket path (is )?too long|path too long for (a )?unix (domain )?socket|ENAMETOOLONG/i,
   }),
-  // Before Login expired, whose words a job's text may quote (issue #2233). Not the reach check's own text ("cannot reach
+  // Before Login expired, whose words a job's text may quote (issue #2233); and a checkpoint restore's (issue #2316). Not the reach check's own text ("cannot reach
   // the hopper at <url>"): that is the machine's, and stays Machine offline when the machine refused it.
   cause({
     id: NO_WAY_TO_HOPPER, name: 'No way to the hopper', cls: 'transient', decision: 'retry', scope: 'machine',
-    description: 'The job\'s session has no way to the hopper: HOPPER_URL, HOPPER_GH or its credentials dir is missing, so it cannot push, ask the hopper or run steps. That session cannot go on: the job runs again as a new job, its way to the hopper placed afresh, and Continue on its hand-off runs a new job too.',
-    pattern: /cannot reach the hopper(?! at )|\bHOPPER_(?:URL|GH)\b[^\n]{0,80}?\b(?:missing|not set|unset|empty)\b/i,
+    description: 'The job\'s session has no way to the hopper: HOPPER_URL, HOPPER_GH, its token file or its credentials dir is missing (also when its checkpoint is restored on another machine), so it cannot push, ask the hopper or run steps. That session cannot go on: the job runs again as a new job, its way to the hopper placed afresh, and Continue on its hand-off runs a new job too.',
+    pattern: /cannot reach the hopper(?! at )|hopper: the job has no way to the hopper|\bHOPPER_(?:URL|GH)\b[^\n]{0,80}?\b(?:missing|not set|unset|empty)\b/i,
   }),
   cause({
     id: 'login-expired', name: 'Login expired', cls: 'shared', decision: 'hold', scope: 'executor',

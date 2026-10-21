@@ -64,6 +64,9 @@ describe('matchCause', () => {
     expect(cause('interrupted by daemon restart')).toBe('daemon-restart');
     expect(cause('read ECONNRESET')).toBe('network');
     expect(cause('herdr: agent did not start')).toBe('start-race');
+    // Issue #2316: a checkpoint restore with no way to the hopper, also after the starts in new panes.
+    expect(cause('the checkpoint could not be restored on fleet-l4: hopper: the job has no way to the hopper\nhopper-restore-failed')).toBe('no-way-to-hopper');
+    expect(cause('claude did not start in 3 attempts: the checkpoint could not be restored on m: hopper: the job has no way to the hopper: HOPPER_URL is not set')).toBe('no-way-to-hopper');
     expect(cause('question unanswered')).toBe('question-unanswered');
     expect(cause('invalid payload for executor test: prompt must be a string')).toBe('invalid-spec');
   });

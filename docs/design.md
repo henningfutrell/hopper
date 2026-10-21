@@ -17151,7 +17151,8 @@ resume (<why>)`, never resumed without it. That failure, and a job's own report 
 missing or that it cannot reach the hopper, is the known cause `no-way-to-hopper` (transient, retry): it runs again as a
 new job, placed afresh. Continue on its hand-off runs a new job too (`continueResumes` false): the session's history
 keeps telling its agent the hopper is out of reach, whatever its new pane holds. The reach check's own text (`cannot
-reach the hopper at <url>`) is not this cause: it is the machine's.
+reach the hopper at <url>`) is not this cause: it is the machine's. A checkpoint restore's own line (issue #2316, `hopper: the job has no way to
+the hopper`) is this cause too, never the restore script's text that the pane's screen echoes.
 
 **A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
 machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
@@ -20127,7 +20128,11 @@ runs, and a parked job with such a copy can resume on any machine.
 - **The claim.** `Executor.resume` with `job.parked.elsewhere` set (herdr-claude's `relocate`): on the machine the job got, a new
   pane in that machine's work tree for it, a new job worktree of its repository as for any start, then — before shared
   dependencies are linked — the restore command (`restoreCommand`), typed into the pane's shell, which has the job's way
-  to the hopper (a machine that runs its jobs without the hopper's proxy cannot restore one: the job fails, saying so). It gets the checkpoint's parts from the hopper (`GET /job/checkpoint/patch` and `/session`, with the
+  to the hopper (a machine that runs its jobs without the hopper's proxy cannot restore one: the job fails, saying so). With
+  no way to the hopper in that pane (issue #2316: `HOPPER_URL` not set, or its token file not readable after a wait of a few
+  seconds), the restore prints `hopper: the job has no way to the hopper: <what is missing>`, and the start is tried again in a
+  new pane, its way to the hopper placed afresh, as a start that timed out (issue #462); when no pane gets it, the job fails
+  with that line, the known cause `no-way-to-hopper` (transient, retry), never a hand-off with no known cause. It gets the checkpoint's parts from the hopper (`GET /job/checkpoint/patch` and `/session`, with the
   job's proxy token), checks out the base on the job's branch (fetched through the hopper when it is not there), applies
   the patch as uncommitted changes, and puts the session file where Claude finds it for that directory
   (`projects/<the directory, each character not a letter or digit a dash>`). A worktree that holds changes already is the
