@@ -22440,11 +22440,34 @@ sync sent the whole report again.
   follow's (`dropLabelRows`): a failed job's `hopper:failed` not sent yet would else land on the issue its new job works.
 
 Left: GitLab's report and follow (`src/gitlab/`) still write their labels with their own calls: the GitLab source has no
-outbox.
+outbox. Part 16 takes their labels from the item's state too.
 
 **Verification:** `test/sources/github-report-labels.test.ts` (each end's labels from `labelsFor`; a claim and an end each
 sent at once; GitHub refuses the end for now, the report ends, the rows wait, and the report again sends them once; a claim
 refused for now never lands after the end; a Run again drops the end not sent).
+
+### GitLab's labels from the ledger (issue #1892 part 16, 2026-10-21)
+
+Milestone 3 names `src/gitlab/follow.ts` with the GitHub follow: its labelling moves behind the item's state. The GitLab
+follow and report picked their labels by hand: a merge took off `hopper:pr-ready`, `hopper:claimed` and `hopper:failed` and
+put `hopper:done` on, whatever else the issue carried; a close without a merge took off only `hopper:pr-ready`.
+
+- **Each end names a state, and `labelsFor` names its label**, through the same pure functions as on GitHub: `followLabels`
+  for a follow's end (merged: done; closed without a merge: blocked `pr_closed`), `reportLabels` for a report's end (a done
+  job: PR open, or done when its issue is closed already; failed; cancelled).
+- **Every end label the state does not want comes off**, from the issue's labels as just read: the follow reads the issue
+  at a merge or a close (one call, only then), and the report of a done job read it already. The ended job's claim comes off
+  with them. A write that changes nothing is not sent (`relabel`, `src/gitlab/follow.ts`).
+- **Ends that read nothing** (failed, cancelled, rejected) put on their end label and take off only the claim, as on GitHub.
+- **A rejection keeps `hopper:rejected` on GitLab.** On GitHub a rejection at the queue gate puts no end label on: the
+  rejection record keeps the issue out. The GitLab source reads no rejection record, so its label still does.
+
+No GitLab outbox: a GitLab label write is one call, made in the follow's or the report's own pass, and a call that fails
+fails that pass, which the sync loop asks again.
+
+**Verification:** `test/gitlab/item-labels.test.ts` (a merge and a close take off every end label but their own and the
+claim; a merge on an issue that carries `hopper:done` sends no write; a done job's end takes off `hopper:pr-closed`; a failed
+job's end, and a fixing one; a cancelled job's end).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -27898,7 +27921,7 @@ The hopper follows a GitLab job's merge request after the job ends, as it follow
 `src/gitlab/follow.ts`), and merges it in yolo mode once its pipeline passed.
 
 **The report** of a done job (`finished`): the issue closed already, `hopper:done`. Else `hopper:pr-ready` in place of the
-claim (and of `hopper:failed`, for a failed job found done later), and the newest ready merge request that closes the issue
+claim (and of every other end label, issue #1892 part 16: "GitLab's labels from the ledger"), and the newest ready merge request that closes the issue
 kept in the job's source state to follow (`pullRequest`, `follow: open`). None found yet: `follow: open` alone, and each follow
 looks for the newest open one that closes the issue, else one merged since the job began. `hopper:pr-ready` and
 `hopper:pr-closed` keep the issue out of Intake, as the other end labels do.
