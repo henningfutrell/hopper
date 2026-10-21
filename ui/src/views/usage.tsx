@@ -1,6 +1,7 @@
 // Usage: who each part acts as (accounts), every usage reading by source, and what usage does to
 // each machine's lanes now (design.md "Usage and accounts (issue #18)"); the usage limits on their graph
-// (issue #522) and how long the usage history is kept (issue #385), the settings here, an admin's.
+// (issue #522) and how long the usage history is kept (issue #385), the settings here, an admin's. Each panel folds, and
+// stays folded over a reload (issue #2353).
 import { useEffect, useState } from 'react';
 import { Gauge as GaugeIcon, History, Layers, MemoryStick, SlidersHorizontal, UserRound } from 'lucide-react';
 import { UsageLimitsGraph } from '@/charts/usage-limits';
@@ -46,7 +47,7 @@ function AccountRow({ a }: { a: PartAccount }) {
 
 function Accounts({ accounts }: { accounts: PartAccount[] }) {
   return (
-    <Panel title="Accounts" icon={UserRound} count={accounts.length || ''}>
+    <Panel title="Accounts" icon={UserRound} fold="usage.accounts" count={accounts.length || ''}>
       {accounts.length ? <ul className="divide-y">{accounts.map((a) => <AccountRow key={`${a.role}/${a.instance}`} a={a} />)}</ul>
         : <Empty>no part reports an account</Empty>}
     </Panel>
@@ -56,7 +57,7 @@ function Accounts({ accounts }: { accounts: PartAccount[] }) {
 function LaneEffect({ usage }: { usage: UsageReport }) {
   const { soft, hard } = usage.limits;
   return (
-    <Panel title="Lane effect" icon={Layers} bodyClassName="space-y-3">
+    <Panel title="Lane effect" icon={Layers} fold="usage.lane-effect" bodyClassName="space-y-3">
       <p className="text-xs text-muted-foreground">
         From <span className="num text-foreground">{pct(soft)}</span> of a throttling budget a machine keeps <span className="num text-foreground">{lanes(usage.limits.softLanes)}</span>; at <span className="num text-foreground">{pct(hard)}</span> lanes stop.
         Informational readings never throttle.
@@ -97,7 +98,7 @@ function Sources({ usage }: { usage: UsageReport }) {
         const line = sourceLine(s, now);
         const readings = orderReadings(usage.readings.filter((r) => r.source === s.name));
         return (
-          <Panel key={s.name} title={s.name} icon={GaugeIcon} count={readings.length || ''} bodyClassName="space-y-3">
+          <Panel key={s.name} title={s.name} icon={GaugeIcon} fold={`usage.source.${s.name}`} count={readings.length || ''} bodyClassName="space-y-3">
             <div className={`text-xs break-words ${line.problem ? 'text-warn' : 'text-muted-foreground'}`}>{line.text}</div>
             {readings.length ? <div className="flex flex-wrap justify-around gap-x-2 gap-y-4">{readings.map((r) => <ReadingGauge key={`${r.window ?? ''}|${r.machineId ?? ''}`} r={r} now={now} />)}</div>
               : <Empty>no readings now</Empty>}
@@ -173,7 +174,7 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
     }
   };
   return (
-    <Panel title="Usage limits" icon={SlidersHorizontal} bodyClassName="space-y-3" className="lg:col-span-2">
+    <Panel title="Usage limits" icon={SlidersHorizontal} fold="usage.limits" bodyClassName="space-y-3" className="lg:col-span-2">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
         <div>
           <div className="num text-3xl font-semibold tracking-tight" data-slot="usage-now-value">{pct(now)}</div>
@@ -241,7 +242,7 @@ function HistoryRetention() {
     if (valid && await act('/ui/api/usage-history/retention', { days: n }, `Usage history kept for ${n} ${n === 1 ? 'day' : 'days'}`)) setDays(n);
   };
   return (
-    <Panel title="Usage history" icon={History} bodyClassName="space-y-2">
+    <Panel title="Usage history" icon={History} fold="usage.history" bodyClassName="space-y-2">
       <p className="text-xs text-muted-foreground">
         Every reading of every usage source is kept, for the Dashboard's usage graph. Readings older than this are deleted.
       </p>
@@ -281,7 +282,7 @@ function MemoryAlertPanel() {
     if (await act('/ui/api/machines/memory-alert', { alert: next }, done)) show(next);
   };
   return (
-    <Panel title="Memory alert" icon={MemoryStick} bodyClassName="space-y-2">
+    <Panel title="Memory alert" icon={MemoryStick} fold="usage.memory-alert" bodyClassName="space-y-2">
       <p className="text-xs text-muted-foreground">
         Tells you (webhooks and notifiers) when a machine's free memory stays low. On a machine in WSL, this is the free memory of Windows,
         not of the Linux VM: the VM keeps its page cache, which Windows cannot use.

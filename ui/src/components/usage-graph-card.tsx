@@ -45,13 +45,15 @@ function stepText(ms: number): string {
   return h < 1 ? `per ${Math.round(ms / 60_000)} minutes` : h === 1 ? 'per hour' : h < 24 ? `per ${h} hours` : h === 24 ? 'per day' : h === 168 ? 'per week' : `per ${h / 24} days`;
 }
 
-export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, save, title, empty, what = 'usage history', recordedBy = 'usage', className }: {
+export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, save, title, empty, what = 'usage history', recordedBy = 'usage', className, fold }: {
   path: string; save?: (view: UsageGraphView) => void; title: string; empty: string;
   /** What it reads, as its loading and error lines name it. */
   what?: string;
   /** Which stream count reads it again: new usage samples, or new machine samples; null: none, only the minute's read. */
   recordedBy?: 'usage' | 'machine' | null;
   className?: string;
+  /** A page choice key: the card folds, kept per browser (issue #2353). */
+  fold?: string;
 } & ({ seriesOf: (data: T) => UsageSeries[]; linesOf?: never } | { linesOf: (data: T) => GraphLine[]; seriesOf?: never })) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +111,7 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, s
   const rangeTab = zoom ? '' : current && 'preset' in current.range ? current.range.preset : '';
 
   return (
-    <Panel title={title} icon={LineChart} {...(className ? { className } : {})} count={lines.length ? `${lines.length - hidden.size} of ${lines.length}` : ''}>
+    <Panel title={title} icon={LineChart} {...(className ? { className } : {})} {...(fold ? { fold } : {})} count={lines.length ? `${lines.length - hidden.size} of ${lines.length}` : ''}>
       {current && (
         <div data-slot="usage-graph-controls" className="mb-3 flex flex-wrap items-center gap-2 text-xs">
           <Tabs value={rangeTab} onValueChange={(v) => choose({ range: { preset: v as typeof GRAPH_PRESETS[number] } })}>

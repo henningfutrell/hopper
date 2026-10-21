@@ -128,33 +128,33 @@ export function Resources() {
   return (
     <div className="max-w-4xl space-y-3">
       <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started; OpenFGA&apos;s checks count since it started, Solr&apos;s queries since its core was loaded.</p>
-      <Panel title="Containers" icon={Container} count={stack.length || ''}>
+      <Panel title="Containers" icon={Container} fold="resources.containers" count={stack.length || ''}>
         {'problem' in containers ? <Problem>{containers.problem}</Problem>
           : stack.length === 0 ? <Empty>No container of the hopper&apos;s compose project. A hopper on the computer itself has none.</Empty>
           : <ul className="divide-y">{stack.map((c) => <ContainerRow key={c.name} c={c} now={now} />)}</ul>}
       </Panel>
       {(boxes.length > 0 || unread.length > 0) && (
-        <Panel title="Sandbox boxes" icon={Boxes} count={boxes.length || ''}>
+        <Panel title="Sandbox boxes" icon={Boxes} fold="resources.sandbox-boxes" count={boxes.length || ''}>
           <div className="space-y-3">
             {unread.map((m) => <Problem key={m.machine}>{m.machine}: {m.problem}</Problem>)}
             {boxes.length > 0 && <ul className="divide-y">{boxes.map((c) => <ContainerRow key={c.service} c={c} now={now} />)}</ul>}
           </div>
         </Panel>
       )}
-      <Panel title="Postgres" icon={Database}>
+      <Panel title="Postgres" icon={Database} fold="resources.postgres">
         {'problem' in postgres ? <Problem>{postgres.problem}</Problem> : <Lines slot="postgres-reading" lines={postgresLines(postgres)} />}
       </Panel>
-      <Panel title="OpenFGA" icon={ShieldCheck}>
+      <Panel title="OpenFGA" icon={ShieldCheck} fold="resources.openfga">
         {'problem' in openfga ? <Problem>{openfga.problem}</Problem> : <Lines slot="openfga-reading" lines={openFgaLines(openfga)} />}
       </Panel>
-      <Panel title="Solr" icon={Search}>
+      <Panel title="Solr" icon={Search} fold="resources.solr">
         <div className="space-y-3">
           {'problem' in solr && <Problem>{solr.problem}</Problem>}
           {solrLines(solr).length > 0 && <Lines slot="solr-reading" lines={solrLines(solr)} />}
         </div>
       </Panel>
       <UsageGraphCard<StackHistory> path="/api/resources/history" linesOf={linesOfStack} title="Stack resources over time" what="stack history"
-        recordedBy={null} empty={NO_SAMPLES} />
+        recordedBy={null} empty={NO_SAMPLES} fold="resources.history" />
       <p className="text-xs text-muted-foreground">Each line is a share: a container&apos;s CPU of its CPU limit, else of the cores it sees; its memory of its limit, else of the computer&apos;s; Postgres&apos;s connections of the most it allows; OpenFGA&apos;s failed checks of its checks since the minute before. Sandbox boxes&apos; lines are hidden until you show them.</p>
       <TelemetrySummary everyMs={READ_EVERY_MS} />
     </div>

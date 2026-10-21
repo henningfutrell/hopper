@@ -4,6 +4,7 @@
 // the nav badge. Never a token. Sign in (issue #1128, an operator): starts the tool's sign-in on that machine, which waits in Logins
 // for the person to open its page and paste the code it shows. A machine whose job user holds infra credentials is flagged as not
 // ready, with their names (issues #1128 part 7, #1248). A machine not signed in says who it was last signed in as (issue #1269).
+// Each card folds, and stays folded over a reload (issue #2353).
 import { LogIn, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -41,7 +42,7 @@ function AccountCard({ a, now }: { a: ToolAccount; now: number }) {
   const canOperate = useCanOperate();
   const facts = accountFacts({ ...a, role: 'usage-source', instance: '' });
   return (
-    <Panel title={accountTitle(a)} icon={UserRound} count={a.machines.length} action={<StatusBadge status={a.login} label={LOGIN_LABEL[a.login]} tone={LOGIN_TONE[a.login]} />} bodyClassName="space-y-3">
+    <Panel title={accountTitle(a)} icon={UserRound} count={a.machines.length} fold={`accounts.${a.service}/${a.identity ?? a.login}`} action={<StatusBadge status={a.login} label={LOGIN_LABEL[a.login]} tone={LOGIN_TONE[a.login]} />} bodyClassName="space-y-3">
       <div data-slot="tool-account" className="space-y-3">
         {facts.length > 0 && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
