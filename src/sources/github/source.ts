@@ -209,7 +209,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   };
   const busy = (key: string) => { const at = givenBack.get(key); if (at === undefined) return false; if (at + RECONCILE_GRACE_MS > o.clock.now().getTime()) return true; givenBack.delete(key); return false; };
   let mirrorStarted = false;
-  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, part: (key) => o.intake?.partOpen?.(key) ?? false, failureReported: (key) => o.intake?.failureReported?.(key) ?? false, partsLeft: (key) => o.intake?.partsLeft?.(key) ?? false, busy, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
+  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, listedAt: (repo) => listings.listing(repo)?.fetchedAt, part: (key) => o.intake?.partOpen?.(key) ?? false, failureReported: (key) => o.intake?.failureReported?.(key) ?? false, partsLeft: (key) => o.intake?.partsLeft?.(key) ?? false, busy, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false });
 
   return {

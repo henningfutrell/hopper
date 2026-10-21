@@ -22323,6 +22323,18 @@ is in each process's memory), and both could record one label edit.
   logs a mirror line. The test kills that one and ends its leases: the other takes the lease, and a label then taken off
   #7 by hand is its Run again, once.
 
+- **A correction another hopper sent** (`sent` with `since`, `src/sources/github/outbox.ts`; `listedAt`). Any hopper's
+  outbox sends the mirror's rows, and the listing cache is shared, but what was sent since the last listing is in the
+  memory of the process that sent it. A listing read between the remove and the add showed the holder a drift again, and it
+  queued a second add (seen on a loaded CI runner). Now a row of the same act and tag that any hopper sent at or after the
+  repository's listing was read counts as sent: that listing may not show it. A drift in a listing read after the send is
+  a new one. A change read refreshes rows and not the listing's time, so such a drift waits for the next full listing.
+- **One new job of an item at a time** (`lockItem`, `src/store/jobs.ts`; `ingest`, `src/engine/source-host.ts`). Each
+  hopper's discover offers an item whose Run again is asked, and each made a job: the transaction read the item's newest
+  job, then made one, and two such transactions both read the old job. The transaction now takes a Postgres advisory lock
+  on the item's source key first, so the second waits, reads the first's new job, and makes none. This holds for every new
+  job of an item from a discover, not only the mirror's Run again.
+
 **Decisions.**
 - **A lease per source, not a database claim per row.** A unique claim on the outbox rows would stop a second correction,
   not a second label edit, and each write of the mirror would need its own. The lease puts all of them on one host, as the
@@ -22331,7 +22343,9 @@ is in each process's memory), and both could record one label edit.
 
 **Verification:** `test/sources/github-label-lease.test.ts` (a host without the lease corrects and records nothing; the
 holder's correction is no edit to the next holder; an edit made while the holder stopped recorded once by the next holder,
-and not put back), `test/crash/label-two-hosts.test.ts`.
+and not put back), `test/sources/github-label-sent-elsewhere.test.ts` (a correction another hopper sent after the listing
+is not queued again; a drift in a later listing is), `test/store/job-item-lock.test.ts` (the item lock held until the
+transaction ends, another item free), `test/crash/label-two-hosts.test.ts`.
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

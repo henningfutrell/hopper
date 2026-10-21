@@ -27,6 +27,9 @@ const chunks = (ids: readonly string[]): string[][] => {
  * once a second, and the call blocks the event loop. A get sends the kept version and is answered the body only when
  * the row is at another one.
  */
+/** The advisory lock of an item's jobs, by its source key (`lockItem`): one per item and schema. */
+export const ITEM_LOCK = "hashtext('hopper item ' || current_schema() || ' ' || ?)";
+
 export function createJobRepository(c: StoreContext, onStamped: (jobId: string, data: StampedEvent) => void = () => {}): JobRepository {
   const kept = new Map<string, { v: string; job: Job }>();
   /** The user's trust stamp key (issue #655): absent until the runtime gives it, and then no job is stamped or checked. */
@@ -111,6 +114,7 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
       return job;
     },
     get,
+    lockItem(key) { c.db.get(`SELECT pg_advisory_xact_lock(${ITEM_LOCK}) AS held`, key); },
     getBySourceKey(key) {
       const r = c.db.get('SELECT id, xmin::text AS v FROM jobs WHERE source_key = ? ORDER BY created_at DESC, seq DESC LIMIT 1', key);
       return r ? bodies([r])[0] : undefined;

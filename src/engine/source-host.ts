@@ -157,6 +157,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     const spec = { ...specFor(item, source, priority, routedBy, fromConfig), ...(tend ? { tend: true as const } : {}) };
     const invalid = problemWith(c, item, spec);
     return store.tx((): Job | null => {
+      // Two hoppers that run one item again at once (issue #1892): the second waits here, then reads the first's new job.
+      store.jobs.lockItem?.(item.key);
       const known = store.jobs.getBySourceKey(item.key);
       if (known && !isRerunnable(known)) return null;
       const job = store.jobs.create(spec, priority, ref);

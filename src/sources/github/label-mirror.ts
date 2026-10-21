@@ -58,6 +58,11 @@ export function createLabelMirror(o: {
   failureReported?(key: string): boolean;
   /** Whether a partly done item's merged part leaves parts to run (issue #1892): only then is no end label its labels. */
   partsLeft?(key: string): boolean;
+  /**
+   * When the listing of a repository was read (issue #1892): a correction any hopper sent after it is not queued again, as
+   * that listing may not show it. Absent: only this hopper's own sends count.
+   */
+  listedAt?(repo: string): string | undefined;
   /** Whether the item is given back now or was moments ago (issue #1892): it is not judged, the new job moves it. */
   busy?(key: string): boolean;
   now(): string;
@@ -127,7 +132,7 @@ export function createLabelMirror(o: {
         if (!d) { logged.delete(issue.url); continue; }
         const words = driftWords(item, d);
         const tag = `${item.state}:${item.blockedCause ?? ''}`;
-        const fix = !o.outbox.sent('mirror', issue.url, tag);
+        const fix = !o.outbox.sent('mirror', issue.url, tag, o.listedAt?.(issue.repo));
         if (logged.get(issue.url) !== words) {
           logged.set(issue.url, words);
           labelDriftSeen(o.source, item.state, fix);
