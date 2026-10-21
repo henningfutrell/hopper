@@ -11,11 +11,13 @@
 // since a moment is answered (`heldSince`), so a dial-in that waited behind a stall is not refused as stale. The process's
 // memory is logged each time its resident size grows past another GiB. The process reading (`reading`, GET /api/process,
 // issue #1383) says the memory now, and the loop's delay and use over the last minute, so growth and a slow loop show
-// before they become a stall.
+// before they become a stall. Issue #2367: the processes the hopper started in a stall are named with it, by program
+// (event-loop-processes.ts), as each one holds the loop while it forks.
 import { monitorEventLoopDelay, performance as perf, type EventLoopUtilization } from 'node:perf_hooks';
 import type { FastifyInstance } from 'fastify';
 import type { HeldSample, HeldWatch } from './event-loop-held.ts';
 import type { StoreTotal } from '../store/slow-calls.ts';
+import { processesBetween, type StallProcesses } from './event-loop-processes.ts';
 
 /** A timer this late is a stall. */
 export const STALL_MS = 2000;
@@ -45,9 +47,10 @@ export interface StallMemory { rssMb: number; heapMb: number }
 
 /**
  * A stall of the event loop: when it ended, how long it was, the requests in flight during it, the store calls
- * that ran in it (absent: none), where the loop ran while it was held (absent: not read), and the memory.
+ * that ran in it (absent: none), the processes started in it (absent: none), where the loop ran while it was held
+ * (absent: not read), and the memory.
  */
-export interface EventLoopStall { at: string; ms: number; during: string[]; store?: StallStoreCalls; held?: StallHeld[]; memory?: StallMemory }
+export interface EventLoopStall { at: string; ms: number; during: string[]; store?: StallStoreCalls; processes?: StallProcesses; held?: StallHeld[]; memory?: StallMemory }
 
 /** The store calls between two totals (src/store/slow-calls.ts), by statement, longest first. */
 export function storeCallsBetween(before: ReadonlyMap<string, StoreTotal>, after: ReadonlyMap<string, StoreTotal>): StallStoreCalls | undefined {
@@ -62,6 +65,10 @@ const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 const storeLine = (s: StallStoreCalls | undefined): string => (s
   ? `; store calls in it: ${seconds(s.ms)} (${s.calls.map((c) => `${c.what} ${seconds(c.ms)}${c.count > 1 ? ` ×${c.count}` : ''}`).join(', ')})`
   : '; no store call in it');
+
+const processLine = (p: StallProcesses | undefined): string => (p
+  ? `; processes started in it: ${p.count} (${p.programs.map((x) => `${x.what}${x.count > 1 ? ` ×${x.count}` : ''}`).join(', ')})`
+  : '');
 
 const heldLine = (h: StallHeld[] | undefined): string => (h?.length
   ? `; it ran ${h.map((r) => `at ${seconds(r.afterMs)}: ${r.frames.slice(0, 3).join(' ← ') || 'no JavaScript'}`).join('; ')}`
@@ -100,6 +107,8 @@ export interface WatchOptions {
   warn(line: string): void;
   /** The store's totals by statement now (src/store/slow-calls.ts). Absent: the store calls are not named. */
   storeCalls?: () => ReadonlyMap<string, StoreTotal>;
+  /** The processes started so far, by program (event-loop-processes.ts). Absent: the processes are not named. */
+  processes?: () => ReadonlyMap<string, number>;
   /** A stall to tell a person: at most one each `raiseEveryMs`; `skipped`, the stalls since the last one raised. */
   raise?: (stall: EventLoopStall & { skipped: number }) => void;
   /** The thread that reads where the loop is held (event-loop-held.ts). Absent: a stall does not say. */
@@ -137,7 +146,7 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     };
   };
   /** The store's totals at the last tick: a stall's store calls are the difference at its end. */
-  let storeAt = o.storeCalls?.();
+  let storeAt = o.storeCalls?.(), processesAt = o.processes?.();
 
   const end = (id: string): void => {
     const s = open.get(id);
@@ -159,8 +168,9 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     const now = performance.now(), late = now - at - tickMs, since = beat, wall = Date.now();
     at = now;
     beat = o.held?.beat() ?? wall;
-    const storeBefore = storeAt;
+    const storeBefore = storeAt, processesBefore = processesAt;
     storeAt = o.storeCalls?.();
+    processesAt = o.processes?.();
     if (now - memoryAt >= memoryEveryMs) {
       memoryAt = now;
       watchMemory();
@@ -171,7 +181,8 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     stalls.push({ from: wall - late, to: wall });
     while (stalls.length && stalls[0]!.to < wall - STALLS_KEPT_MS) stalls.shift();
     // The held thread's last read is a message still in the queue: read it after the queue's turn.
-    setImmediate(() => { stalled(now, late, o.held?.of(since) ?? [], storeBefore && storeAt ? storeCallsBetween(storeBefore, storeAt) : undefined); });
+    const processes = processesBefore && processesAt ? processesBetween(processesBefore, processesAt) : undefined;
+    setImmediate(() => { stalled(now, late, o.held?.of(since) ?? [], storeBefore && storeAt ? storeCallsBetween(storeBefore, storeAt) : undefined, processes); });
   }, tickMs);
   const watchMemory = (): void => {
     const rss = memory().rss, step = Math.floor(rss / GIB);
@@ -179,17 +190,17 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     rssStep = step;
     o.warn(`hopper: the process's resident memory grew past ${step} GiB (${mib(rss)} MiB)`);
   };
-  const stalled = (now: number, late: number, reads: HeldSample[], store: StallStoreCalls | undefined): void => {
+  const stalled = (now: number, late: number, reads: HeldSample[], store: StallStoreCalls | undefined, processes: StallProcesses | undefined): void => {
     const from = now - late;
     const during = [...new Set([...ended.filter((s) => s.to! >= from), ...open.values()].filter((s) => s.from <= now).map((s) => s.route))];
     const held = reads.map((r) => ({ afterMs: Math.round(r.heldMs), frames: r.frames }));
     const m = memory();
     const stall: EventLoopStall = {
-      at: o.clock.now().toISOString(), ms: Math.round(late), during, ...(store ? { store } : {}), ...(held.length ? { held } : {}),
+      at: o.clock.now().toISOString(), ms: Math.round(late), during, ...(store ? { store } : {}), ...(processes ? { processes } : {}), ...(held.length ? { held } : {}),
       memory: { rssMb: mib(m.rss), heapMb: mib(m.heapUsed) },
     };
     last = { stall, seen: now };
-    o.warn(`hopper: the event loop stalled for ${seconds(late)}; requests in flight: ${during.length ? during.join(', ') : 'none (a timer or the engine held it)'}${o.storeCalls ? storeLine(store) : ''}${heldLine(stall.held)}; memory: ${stall.memory!.rssMb} MiB resident, ${stall.memory!.heapMb} MiB heap`);
+    o.warn(`hopper: the event loop stalled for ${seconds(late)}; requests in flight: ${during.length ? during.join(', ') : 'none (a timer or the engine held it)'}${o.storeCalls ? storeLine(store) : ''}${processLine(processes)}${heldLine(stall.held)}; memory: ${stall.memory!.rssMb} MiB resident, ${stall.memory!.heapMb} MiB heap`);
     if (!o.raise) return;
     if (raised !== undefined && now - raised < raiseEveryMs) { skipped++; return; }
     raised = now;

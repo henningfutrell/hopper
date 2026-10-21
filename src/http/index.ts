@@ -16,7 +16,7 @@ import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, InstanceEvents, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
-import { slowStoreCalls } from '../store/slow-calls.ts';
+import { slowStoreCalls } from '../store/slow-calls.ts'; import { startedProcesses } from './event-loop-processes.ts';
 import type { ClusterInstall, StackDrift } from '../domain/types.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
@@ -179,10 +179,10 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const instanceTag = instanceTagOf(o.instance.settings.instanceId());
   installInstanceTag(app, instanceTag);
   // The event loop watchdog (issue #1002): a stall is logged with the routes in flight and the store calls in it
-  // (issue #1154), shown on /api/health, and raised as an instance event.
+  // (issue #1154) and the processes started in it (issue #2367), shown on /api/health, and raised as an instance event.
   const events = o.events;
   const loop = watchEventLoop(app, {
-    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.totals, ...(o.held ? { held: o.held } : {}),
+    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.totals, processes: startedProcesses.totals, ...(o.held ? { held: o.held } : {}),
     ...(events ? { raise: ({ at: _at, ...data }: EventLoopStall & { skipped: number }) => { events.append({ type: 'hopper.event_loop_stalled', data }); } } : {}),
   });
   // Every end of a session is logged and is an event of its user's (issue #439): early logouts can be told apart.
