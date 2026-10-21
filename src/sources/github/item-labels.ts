@@ -91,6 +91,32 @@ export function labelDrift(item: LabelledItem, seen: readonly string[], facts: L
   return remove.length || add.length ? { remove, add } : undefined;
 }
 
+/**
+ * How a follow of a job's pull request ends for its item (issue #1892 part 14): merged as the whole item (or its last part),
+ * a part merged with parts left, closed without a merge, a blocked item's pull request found open, or abandoned (the issue
+ * closed as not planned).
+ */
+export type FollowEnd = { end: 'merged' | 'part_merged' | 'closed' | 'abandoned' } | { end: 'found_open'; part: boolean };
+
+/** The waiting labels an abandoned follow takes off: dropped is a state the ledger does not judge, so none goes on. */
+const ABANDONED_OFF: readonly string[] = [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED, LABEL_BLOCKED];
+
+/**
+ * The label change of a follow's end on an issue that carries `carried` (issue #1892 part 14): the drift of the state the
+ * end moves the item to, as `labelsFor` names it. Undefined: the issue carries what that state wants.
+ */
+export function followLabels(f: FollowEnd, carried: readonly string[]): LabelDrift | undefined {
+  if (f.end === 'abandoned') {
+    const remove = carried.filter((l) => ABANDONED_OFF.includes(l));
+    return remove.length ? { remove, add: [] } : undefined;
+  }
+  if (f.end === 'found_open') return labelDrift({ state: 'pr_open' }, carried, { part: f.part });
+  const [item, facts]: [LabelledItem, LabelFacts] = f.end === 'merged' ? [{ state: 'done', pullRequestState: 'merged', wholeMerged: true }, {}]
+    : f.end === 'part_merged' ? [{ state: 'partly_done', eventState: 'partly_done' }, { partsLeft: true }]
+      : [{ state: 'blocked', blockedCause: 'pr_closed' }, {}];
+  return labelDrift(item, carried, facts);
+}
+
 /** One line for the log: the item's state and how its labels differ. */
 export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
   `${item.state}${item.blockedCause ? ` (${item.blockedCause})` : ''}: ${[

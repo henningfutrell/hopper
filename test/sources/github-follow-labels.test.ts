@@ -55,15 +55,20 @@ describe('the follow\'s label change goes through the GitHub outbox', () => {
     expect(pending(source)).toBeUndefined();
   });
 
-  it('GitHub refuses the label change for now: the follow still ends, its rows wait, and the next send makes it once', async () => {
+  it('GitHub refuses the label change for now: the follow still ends, its rows wait, and a follow again sends them once', async () => {
     const { gh, source, job, pr } = await ended();
     gh.mergePullRequest(pr.url);
     gh.failNext('removeLabels', new TypeError('fetch failed'));
     expect(await source.follow!(job)).toMatchObject({ outcome: 'merged' });
     expect(gh.issue(REPO, 1).labels).toContain('hopper:pr-ready');
     expect(pending(source)).toBe(2);
-    // The same end followed again (a stop before its record): its rows are on their way, so none is kept twice.
+    // The same end followed again (a stop before its record): its rows are sent again, and none is kept twice.
+    gh.calls.length = 0;
     await source.follow!(job);
-    expect(pending(source)).toBe(2);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.calls.filter((c) => c.method === 'removeLabels' || c.method === 'addLabels').map((c) => c.method)).toEqual(['removeLabels', 'addLabels']);
+    expect(pending(source)).toBeUndefined();
+    await source.flushOutbox!();
+    expect(gh.calls.filter((c) => c.method === 'removeLabels' || c.method === 'addLabels')).toHaveLength(2);
   });
 });

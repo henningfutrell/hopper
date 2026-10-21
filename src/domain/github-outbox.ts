@@ -35,14 +35,15 @@ export type OutboxGiveBackMore = Pick<Extract<OutboxChange, { op: 'give_back' }>
 /**
  * The act that asked for a row: a person's intake action, `resolve`, a person's resolution of a hand-off told to its item,
  * a person's Merge now or Close PR (part 3), a person's act that gives an ended job's item back (parts 4 and 5), or
- * `mirror`, the label mirror's change of a blocked item's end labels to its state (issue #1891).
+ * `mirror`, the label mirror's change of a blocked item's end labels to its state (issue #1891), or `follow`, the end labels
+ * of the state a followed pull request's end moves its item to (issue #1892 part 14).
  */
-export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror';
+export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow';
 
-const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend', 'mirror'];
+const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend', 'mirror', 'follow'];
 
 /** An act whose rows are not an intake item's write: the item shows no marker for them. */
-export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' => NOT_INTAKE.includes(act);
+export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' => NOT_INTAKE.includes(act);
 
 /**
  * The sync loop's part of a flush: it sends a Merge now or Close PR row (part 3) or a give-back row (parts 4 and 5), and
@@ -97,9 +98,9 @@ export interface GitHubOutboxRepository {
   /**
    * Claims the source's rows due at `at` — pending ones, and `sending` ones whose claim ended (a stopped or killed hopper
    * left them) — for a send, until `until`, in one statement: of two hoppers on one database one gets each row (issue
-   * #1959). Answers them `sending`, oldest first.
+   * #1959). Answers them `sending`, oldest first. With `only`, only the rows of that item and act (issue #1892 part 14).
    */
-  claim(source: string, at: string, until: string): OutboxRow[];
+  claim(source: string, at: string, until: string, only?: { key: string; act: OutboxAct }): OutboxRow[];
   update(ids: number[], patch: OutboxPatch): void;
   /** The source's rows of one item, sent ones too (until pruned), oldest first. */
   of(source: string, key: string): OutboxRow[];

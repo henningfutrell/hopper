@@ -3,7 +3,8 @@
 import { SourceError } from '../../domain/ports.ts';
 import { pullRequestRepo, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
-import { numberOf, waiting, type FollowContext } from './follow.ts';
+import type { PullRequestContext } from './follow-context.ts';
+import { numberOf, waiting } from './follow.ts';
 
 interface Followed { pullRequest?: string; follow?: string; seen?: PullRequestSeen }
 
@@ -14,7 +15,7 @@ interface Followed { pullRequest?: string; follow?: string; seen?: PullRequestSe
  * ready under its repository's gate (yolo mode), as for a job of an issue. Merged or closed without a merge: it ends, and
  * the merge closes nothing. A throw is asked again on a later sync.
  */
-export async function followDirectPullRequest(ctx: FollowContext, job: Job, act?: PullRequestAct): Promise<FollowUp | undefined> {
+export async function followDirectPullRequest(ctx: PullRequestContext, job: Job, act?: PullRequestAct): Promise<FollowUp | undefined> {
   const s = (job.sourceState?.source ?? {}) as Followed & Record<string, unknown>;
   const url = s.pullRequest;
   try {
