@@ -1,6 +1,7 @@
 // A parked job resumed elsewhere (issue #921) whose checkpoint restore finds no way to the hopper in its pane (issue #2316):
-// HOPPER_URL not set, or its token file not readable. That pane cannot go on: the start is tried again in a new pane, its way
-// to the hopper placed afresh. When no pane gets it, the job fails with a reason the failure assessor knows as transient.
+// HOPPER_URL not set, or its token file not readable. A new pane on the same machine got none either (issue #2355): the
+// job fails at once with a reason the failure assessor knows as transient, marked so the engine places it on another
+// machine (`noWayToHopper`).
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { matchCause, NO_WAY_TO_HOPPER } from '../../src/failures/causes.ts';
@@ -17,34 +18,23 @@ const moved = (): Job => jobWith({ prompt: 'go', cwd: CWD }, {
   checkpoint: { at: AT, machineId: 'other', base: BASE, head: BASE, commits: [], bytes: 1, session: true },
 });
 
-describe('herdr-claude executor: a checkpoint restore with no way to the hopper (issue #2316)', () => {
-  it('starts again in a new pane, its way to the hopper placed afresh, and resumes there', async () => {
-    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], restore: ['no-way', 'restored'] }, { jobWorktrees: true });
-    const c = contextFor(moved());
-    let placed = 0;
-    c.ctx.credentials = async () => ({ HOPPER_URL: `http://hopper.test/${++placed}` });
-    expect(await executor.resume!(c.ctx, 'The job moved.')).toMatchObject({ kind: 'finished' });
-    expect(herdr.restores).toHaveLength(2);
-    expect(placed).toBe(2);
-    expect(herdr.agentStarts).toHaveLength(1);
-    expect(c.progress.map((p) => p.message).join('\n')).toMatch(/no way to the hopper/);
-  });
-
-  it('with no way in any pane: fails with a reason known as transient, never a hand-off with no known cause', async () => {
+describe('herdr-claude executor: a checkpoint restore with no way to the hopper (issues #2316, #2355)', () => {
+  it('fails at once, marked for another machine, with a reason known as transient: no new pane on this machine', async () => {
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], restore: 'no-way' }, { jobWorktrees: true });
     const out = await executor.resume!(contextFor(moved()).ctx, 'The job moved.');
-    expect(out.kind).toBe('failed');
+    expect(out).toMatchObject({ kind: 'failed', noWayToHopper: true });
     const error = out.kind === 'failed' ? out.error : '';
     expect(error).toContain('the job has no way to the hopper');
     expect(matchCause(error, 'sig', [])?.id).toBe(NO_WAY_TO_HOPPER);
-    expect(herdr.restores).toHaveLength(3);
+    expect(herdr.restores).toHaveLength(1);
     expect(herdr.agentStarts).toHaveLength(0);
   });
 
-  it('a restore that fails for another reason fails the job at once, as before', async () => {
+  it('a restore that fails for another reason fails the job at once, as before, with no mark', async () => {
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], restore: 'failed' }, { jobWorktrees: true });
     const out = await executor.resume!(contextFor(moved()).ctx, 'The job moved.');
     expect(out).toMatchObject({ kind: 'failed', error: expect.stringContaining('the checkpoint could not be restored') });
+    expect(out).not.toHaveProperty('noWayToHopper');
     expect(herdr.restores).toHaveLength(1);
   });
 });

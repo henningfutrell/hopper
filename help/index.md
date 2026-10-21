@@ -41,4 +41,5 @@ The pages are Markdown files in the `help/` directory of the hopper's repository
 - Sign-in and roles: [docs/sign-in.md](https://github.com/henningfutrell/hopper/blob/dev/docs/sign-in.md).
 - Plugins: [docs/plugins.md](https://github.com/henningfutrell/hopper/blob/dev/docs/plugins.md).
 - The event log and webhooks: [docs/events.md](https://github.com/henningfutrell/hopper/blob/dev/docs/events.md).
+- Connect an outside agent to the hopper: [docs/agent-integration.md](https://github.com/henningfutrell/hopper/blob/dev/docs/agent-integration.md).
 - The user guide on the project site: [guide](https://henningfutrell.github.io/hopper/guide.html).

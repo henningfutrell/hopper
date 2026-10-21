@@ -29,4 +29,11 @@ describe('a drained machine', () => {
     const d = decide(inputs({ machines: [seat({ maxLanes: 2 })], lanes: [busy(1, 'r', { machineId: 'seat' })], running: [job('r', { status: 'running' })] }), 'd1');
     expect(d.lanes.find((l) => l.machineId === 'seat')).toMatchObject({ drain: [] });
   });
+  // Issue #2355: a job that resumes elsewhere from its checkpoint holds no pane there: it opens a new one, so it is held too.
+  it('a job that resumes elsewhere goes to a machine that is not drained', () => {
+    const elsewhere = job('a', { pendingAnswer: 'go on', parked: { at: '2026-10-21T00:00:00.000Z', from: 'running', elsewhere: { at: '2026-10-21T00:00:00.000Z', checkpointAt: '2026-10-21T00:00:00.000Z', from: 'box' } } });
+    const d = decide(inputs({ machines: [seat({ maxLanes: 4 }), machine({ id: 'host', maxLanes: 1 })], waiting: [elsewhere] }), 'd1');
+    expect(d.start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'host' })]);
+    expect(decide(inputs({ machines: [seat()], waiting: [elsewhere] }), 'd1').start).toEqual([]);
+  });
 });

@@ -11,11 +11,12 @@
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. Not a last part that made every declared part done: the follow put `hopper:done` on. An item that needs a person carries
 // none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
-// Not a hand-off (`HANDOFF_WAIT`): its job failed, and its report may have put `hopper:failed` on. A request card (waiting for
+// A hand-off (`HANDOFF_WAIT`) carries `hopper:failed` once its job's failure was reported as failed (`failureReported`), as a
+// failed item does: its job failed, and the hand-off waits on a person; before, the labels decide. A request card (waiting for
 // approval) carries none: it has no job yet, and no report wrote one. An end label a person puts on a card by hand is their
 // withdraw of it (`labelPutOn`), never read back as state. Every other state is not judged.
 // Pure: no I/O, no clock.
-import type { BlockedCause } from '../../domain/item-lifecycle.ts';
+import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
 import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
 import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 
@@ -24,7 +25,7 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
 
 /**
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
- * item: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
+ * item or a hand-off: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
  * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done).
  */
 export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean }
@@ -44,10 +45,20 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     case 'failed': return item.eventState === 'failed' && facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
     case 'done': return item.pullRequestState === 'merged' && item.wholeMerged === true ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     case 'partly_done': return item.eventState === 'partly_done' && facts.partsLeft ? { allowed: [] } : undefined;
-    case 'needs_you': return item.waitingOn !== undefined && item.waitingOn !== HANDOFF_WAIT ? { allowed: [] } : undefined;
+    case 'needs_you':
+      if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
+      return item.waitingOn !== undefined ? { allowed: [] } : undefined;
     default: return undefined;
   }
 }
+
+/**
+ * Whether `item` is a hand-off that moved within the reconciler's grace before `now` (issue #1892): the label mirror and
+ * the label edit check do not judge it yet, so Intake does not read the ledger for it either; its labels decide. A person
+ * who takes `hopper:failed` off it in that time gets a Run again, as before the hand-off was judged.
+ */
+export const handoffSettling = (item: Pick<WorkItem, 'state' | 'waitingOn' | 'eventAt'> | undefined, now: number): boolean =>
+  item?.state === 'needs_you' && item.waitingOn === HANDOFF_WAIT && Date.parse(item.eventAt) > now - RECONCILE_GRACE_MS;
 
 /**
  * The label change of a block the item reconciler makes (part 8): the end labels the state it leaves may have put on
@@ -85,7 +96,7 @@ export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
 
 /**
  * The end label a person took off the issue by hand (issue #1892): `item`'s state wants one of its labels on (PR open,
- * blocked, failed as reported), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
+ * blocked, failed or handed off as reported), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
  * seen before (never read back as state), one is still on (a swap of PR open's waiting labels is none), or the state wants
  * no label. Whether the item moved since, or the hopper's own write took it off, the caller judges.
  */

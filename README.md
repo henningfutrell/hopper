@@ -472,6 +472,7 @@ The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 | `docs/sign-in.md` | sign-in, roles, reaching the UI across the LAN or a public URL |
 | `docs/plugins.md` | writing a plugin; the plugin store |
 | `docs/events.md` | the event log and webhooks |
+| [`docs/agent-integration.md`](docs/agent-integration.md) | connect an outside agent: a scoped grant, webhooks and their signatures, direct queries, answering questions and approving Intake |
 | `docs/design.md` | how it works, and why |
 | `docs/glossary.md` | the words |
 

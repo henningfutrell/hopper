@@ -27,7 +27,8 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --credential TEXT  for a service the hopper has no skill for: the credential it takes (issue #583)
 #     --needs TEXT       for sandbox and sandbox-template: what the work needs, as <operation>/<kind>/<asset> ...
 #                        (issues #716, #991)
-#     --template NAME    for sandbox, in place of --needs: a template the user has, as a brief names it (issue #1471)
+#     --template NAME    for sandbox, in place of --needs: a template the user has, as a brief names it (issue #1471);
+#                        for a credential off a box: the template of the job's approved sandbox runs (issue #2356)
 #     --secrets TEXT     for sandbox and sandbox-template: vault secrets its sandboxes get, by name (issue #1875);
 #                        for bastion: the vault secrets its box holds for reads; for bastion read: the one it uses
 #     --egress TEXT      for sandbox and sandbox-template: the hosts its sandboxes may reach, as host:port (issue #1875)

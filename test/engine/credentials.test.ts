@@ -40,6 +40,7 @@ const fresh = { id: 'job-1' } as Job;
 const started = { id: 'job-1', agentSession: 'session-1' } as Job;
 const continued = { ...started, continued: { at: '2026-10-20T15:13:00.000Z', handoffId: 'h-1' } } as Job;
 const parked = { ...started, parked: { at: '2026-10-20T15:13:00.000Z' } } as Job;
+const elsewhere = { ...started, parked: { at: '2026-10-20T15:13:00.000Z', elsewhere: { at: '2026-10-20T15:13:00.000Z', checkpointAt: '2026-10-20T15:13:00.000Z', from: 'seat-2' } } } as Job;
 
 describe('placeCredentials (issues #563, #2040)', () => {
   it('keeps the files on the machine and gives the variables that point there', async () => {
@@ -88,5 +89,20 @@ describe('placeCredentials (issues #563, #2040)', () => {
     const s = shell({ reach: async () => 'this machine cannot reach the hopper at http://127.0.0.1:1' });
     await expect(placeCredentials(engine, fresh, MACHINE, s, SCRATCH, false, () => {})).rejects.toBeInstanceOf(Unreached);
     await expect(placeCredentials(engine, started, MACHINE, s, SCRATCH, false, () => {})).rejects.toBeInstanceOf(Unreached);
+  });
+
+  // Issue #2355: a job that resumes elsewhere gets its checkpoint from the hopper; with no way to it there, it cannot go on.
+  it('a job that resumes elsewhere and gets no way to the hopper on its machine throws, saying why', async () => {
+    const none = { jobProxy: () => undefined };
+    const noUrl = placeCredentials(none, elsewhere, MACHINE, shell(), SCRATCH, false, () => {});
+    await expect(noUrl).rejects.toBeInstanceOf(Unreached);
+    await expect(noUrl).rejects.toThrow(/cannot reach the hopper: the hopper has no URL its jobs reach it at on seat-1/);
+    const noShell = placeCredentials(engine, elsewhere, MACHINE, undefined, SCRATCH, false, () => {});
+    await expect(noShell).rejects.toThrow(/cannot reach the hopper: the hopper has no shell on seat-1/);
+    const message = await noUrl.then(() => '', (e: Error) => e.message);
+    expect(matchCause(message, 'sig', [])?.id).toBe(NO_WAY_TO_HOPPER);
+    // Any other job runs without the proxy there, as before.
+    expect(await placeCredentials(none, parked, MACHINE, shell(), SCRATCH, false, () => {})).toEqual({});
+    expect(await placeCredentials(none, fresh, MACHINE, shell(), SCRATCH, false, () => {})).toEqual({});
   });
 });

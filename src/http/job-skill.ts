@@ -17,7 +17,7 @@
 //                     a template request's `actions` are checked first (src/vault/template-actions.ts).
 import type { FastifyInstance } from 'fastify';
 import type { Access } from '../authz/service.ts';
-import { createSkillBroker, createSkillWaits, SKILL_PATH, type SkillUser, type SkillWaits } from '../skills/index.ts';
+import { createSkillBroker, createSkillWaits, SKILL_PATH, type BoxSecret, type SkillUser, type SkillWaits } from '../skills/index.ts';
 import { requestTemplate } from '../skills/template-request.ts';
 import { mintTarget } from '../domain/minting.ts';
 import type { Tenants } from './tenants.ts';
@@ -30,6 +30,14 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
   const parts = tenants.user(id);
   if (!parts) return undefined;
   const { holds, job, record } = parts.githubProxy.user;
+  const boxSecrets = (names: readonly string[]): BoxSecret[] => {
+    const all = parts.vault.view().secrets;
+    return names.map((name) => {
+      const s = all.find((x) => x.name === name);
+      // What it is for (issue #583): the skill a person gave it for, the kind, their words. Never a value.
+      return { name, ...(s?.scope ? { scope: s.scope } : {}), ...(s?.skill ? { skill: s.skill } : {}), ...(s?.kind ? { kind: s.kind } : {}), ...(s?.note ? { note: s.note } : {}) };
+    });
+  };
   return {
     id, holds, job, record,
     mintsFor(form, asset) {
@@ -38,12 +46,12 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     },
     box(machine) {
       const { template, secrets } = parts.vault.scopeOf(machine);
-      const all = parts.vault.view().secrets;
-      return { ...(template ? { template } : {}), secrets: secrets.map((name) => {
-        const s = all.find((x) => x.name === name);
-        // What it is for (issue #583): the skill a person gave it for, the kind, their words. Never a value.
-        return { name, ...(s?.scope ? { scope: s.scope } : {}), ...(s?.skill ? { skill: s.skill } : {}), ...(s?.kind ? { kind: s.kind } : {}), ...(s?.note ? { note: s.note } : {}) };
-      }) };
+      return { ...(template ? { template } : {}), secrets: boxSecrets(secrets) };
+    },
+    // Issue #2356: a job off a box asks for a credential for the template of its approved sandbox runs: its box steps get it.
+    runsOf(job, template) {
+      const t = parts.sandboxRequests.runnable(job.id).includes(template) ? parts.vault.view().templates.find((x) => x.name === template) : undefined;
+      return t ? { template, secrets: boxSecrets(t.gives) } : undefined;
     },
     need: (ask, asker) => parts.vault.need(ask, asker),
     // Issue #716: the template the job's needs say, through the vault's own save and approve, the user's read policy deciding.
