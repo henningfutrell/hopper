@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #2302, part 2: the Dashboard's tokens over time, beside the usage graph — the token ledger by day, stacked by
 // repository or account (GET /api/usage/tokens?by=day&split=…). Each day's stacks sum to the day, and the days to the
-// ledger's total, which the panel shows. Counts only.
+// ledger's total, which the panel shows. Counts only. Part 4: tokens per merged pull request, and the jobs flagged for waste.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +16,7 @@ interface TokenDay { day: string; tokens: number; costUsd: number; parts: { key:
 interface Model {
   tokensOf(t: { input: number; output: number; cacheRead: number; cacheWrite: number }): number;
   tokenDays(groups: TokenRollupRow[], days: number, today: string, most?: number): { days: TokenDay[]; stacks: { key: string; color: string }[] };
+  perMergedLine(p: { pullRequests: number; tokens?: number; costUsd?: number }): string;
 }
 
 const totals = (input: number, costUsd = input / 1000) => ({ turns: 1, input, output: 0, cacheRead: 0, cacheWrite: 0, costUsd, costKnown: true });
@@ -51,6 +52,13 @@ describe('tokens over time, by day (issue #2302)', () => {
     expect(days.reduce((n, d) => n + d.tokens, 0)).toBe(575);
   });
 
+  it('says tokens per merged pull request, or that none was merged (part 4)', async () => {
+    const { perMergedLine } = (await import(MODEL)) as Model;
+    expect(perMergedLine({ pullRequests: 4, tokens: 2_400_000, costUsd: 3.4 })).toBe('2.4M tokens · $3.40 per merged pull request (4 merged)');
+    expect(perMergedLine({ pullRequests: 1, tokens: 900, costUsd: 0.01 })).toBe('900 tokens · $0.01 per merged pull request (1 merged)');
+    expect(perMergedLine({ pullRequests: 0 })).toBe('No pull request merged in this range.');
+  });
+
   it('is a dashboard panel beside the usage graph, split by repository unless the viewer chose account', async () => {
     const { DEFAULT_LAYOUT, parseLayout } = (await import(LAYOUT)) as {
       DEFAULT_LAYOUT: { panels: { id: string }[]; settings: { tokenSplit: string } };
@@ -75,7 +83,8 @@ async function render(split: 'repo' | 'account') {
     reads.push(String(input));
     const by = new URL(String(input), 'http://x').searchParams.get('split');
     const groups = by === 'account' ? [day('2026-10-21', [part('work', 300), part('personal', 200)])] : GROUPS;
-    return json({ by: 'day', total: totals(groups.reduce((n, g) => n + g.input, 0)), groups, top: [] });
+    const waste = [{ jobId: 'j-waste', title: 'Paint the shed', repo: 'o/a', ...totals(400), signals: [{ kind: 'no_progress', why: '200 turns with no commit and no push.' }] }];
+    return json({ by: 'day', total: totals(groups.reduce((n, g) => n + g.input, 0)), groups, top: [], waste, perMerged: { pullRequests: 5, tokens: 115, costUsd: 0.115 } });
   }));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
@@ -102,6 +111,13 @@ describe('the Tokens over time panel (issue #2302)', () => {
     expect(reads.some((r) => r.startsWith('/api/usage/tokens?') && r.includes('by=day') && r.includes('split=repo') && r.includes('since='))).toBe(true);
     expect(slots('token-history-total')[0]).toContain('575');
     expect(slots('token-history-stack')).toEqual(['o/a', 'o/b', 'o/c']);
+  });
+
+  it('shows tokens per merged pull request and the jobs flagged for waste, each linked to its job (part 4)', async () => {
+    await render('repo');
+    expect(slots('token-history-per-merged')).toEqual(['115 tokens · $0.12 per merged pull request (5 merged)']);
+    expect(slots('token-history-waste')).toEqual(['Paint the shed: No progress']);
+    expect(document.querySelector('[data-slot="token-history-waste"] a')?.getAttribute('href')).toBe('#job/j-waste');
   });
 
   it('stacks by account when the viewer chose it', async () => {
