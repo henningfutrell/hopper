@@ -15,6 +15,11 @@ export const MEMORY_PER_JOB_GIB = 2;
 export const MEMORY_RAMP_MS = 10 * 60_000;
 /** After a memory pause on a machine, no other there for this long: the park frees memory, and the next reading shows it. */
 export const MEMORY_PAUSE_EVERY_MS = 2 * 60_000;
+/**
+ * How old a job's own wait is before its agent ends (issue #2326): a wait the hopper answers in a few seconds (a request of
+ * the job, issue #998) pays no park and restore, and an agent that ended at once is seen as stranded first (issue #1779).
+ */
+export const WAIT_RELEASE_AFTER_MS = 5_000;
 
 /** A running job the decider pauses because its machine's memory is below the floor. */
 export interface MemoryPausePlan {
@@ -35,12 +40,16 @@ export const MEMORY_WAIT = 'waiting for memory';
 
 /**
  * A job on its own wait whose agent session is still live on its machine, and whose wait the hopper ends by itself
- * (issue #2303): a job that waits for memory there may have its agent ended. `since`: when its wait began.
+ * (issue #2303): its agent ends, memory short or not (issue #2326). `since`: when its wait began.
  */
 export interface WaitSession { jobId: JobId; machineId: MachineId; since: string }
 
-/** A job on its own wait whose agent the decider ends, because a job waits for memory on its machine (issue #2303). */
+/** A job on its own wait whose agent the decider ends, so no waiting job holds memory (issues #2303, #2326). */
 export interface WaitReleasePlan { jobId: JobId; machineId: MachineId; reason: string }
 
-/** Set on a job on its own wait when its agent was ended to free memory; cleared when its session resumes. */
-export interface JobWaitReleased { at: string; machineId: MachineId }
+/**
+ * Set on a job on its own wait when its agent was ended (issues #2303, #2326); cleared when its session resumes or its wake
+ * queues it to resume elsewhere. `checkpointAt`: the checkpoint taken after its agent ended, with its session; with it the
+ * job resumes on any machine with room.
+ */
+export interface JobWaitReleased { at: string; machineId: MachineId; checkpointAt?: string }

@@ -51,8 +51,8 @@ export async function restartInNewPane(d: RestartDeps, ctx: ExecutionContext, s:
 /** What a job is told first in the new pane it resumes in, its pane lost while it waited (issue #1508). One line. */
 export const LOST_NOTE = '[hopper] The job\'s pane was lost while it waited (its machine or herdr restarted). The hopper resumed this session in a new pane, set up as at the start. A background command you started in the old pane stopped with it.';
 
-/** What a job is told first in the new pane it resumes in, its agent ended on its wait to free memory (issue #2303). One line. */
-export const RELEASED_NOTE = '[hopper] The hopper ended this session\'s agent while you waited, to free memory for other jobs on the machine. The hopper resumed this session in a new pane, set up as at the start, in the same work tree. A background command you started in the old pane stopped with it.';
+/** What a job is told first in the new pane it resumes in on its own machine, its agent ended on its wait (issues #2303, #2326). One line. */
+export const RELEASED_NOTE = '[hopper] The hopper ended this session\'s agent while you waited, so a waiting job holds no memory. The hopper resumed this session in a new pane, set up as at the start, in the same work tree. A background command you started in the old pane stopped with it.';
 
 /** What the resume of a lost pane needs of the executor: the close of a pane as at a park, and a new pane's start and first send. */
 export interface LostDeps {

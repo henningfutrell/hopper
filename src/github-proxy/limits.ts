@@ -30,6 +30,8 @@ export const PROXY_LIMITS: Readonly<Record<LimitedOp, { job: number; machine: nu
   'repo.view': { job: 120, machine: 600 },
   'repo.fork': { job: 3, machine: 20 },
   'check.log': { job: 30, machine: 150 },
+  'run.list': { job: 120, machine: 600 },
+  'run.view': { job: 120, machine: 600 },
   'report.bug': { job: 3, machine: 10, day: true },
 };
 

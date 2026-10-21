@@ -22,7 +22,7 @@ import { LOOK_ONLY } from '../domain/direct-jobs.ts';
 
 export const PROXY_OPS = [
   'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
-  'pr.reviews', 'pr.status', 'pr.ready', 'pr.edit', 'pr.close', 'repo.view', 'repo.fork', 'check.log',
+  'pr.reviews', 'pr.status', 'pr.ready', 'pr.edit', 'pr.close', 'repo.view', 'repo.fork', 'check.log', 'run.list', 'run.view',
 ] as const;
 export type ProxyOp = (typeof PROXY_OPS)[number];
 
@@ -34,6 +34,8 @@ const branch = z.string().regex(/^[A-Za-z0-9._/-]{1,200}$/, 'a branch name: lett
 const head = z.string().regex(/^(?:[A-Za-z0-9-]{1,39}:)?[A-Za-z0-9._/-]{1,200}$/, 'a branch name, or owner:branch for a fork\'s');
 /** A resend key (issue #1607): hopper-gh makes one for each issue create, comment and pull request create (issue #1959), the same each time it sends it. */
 const key = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'a resend key: 8 to 64 letters, digits, _ or -');
+/** A workflow run's event, as GitHub names it: `push`, `pull_request`, `workflow_dispatch`. */
+const event = z.string().regex(/^[a-z_]{1,40}$/, 'an event: lower-case letters and _, as push or pull_request');
 /** A flag: from a form it comes as the text `true`. */
 const flag = z.union([z.literal('true'), z.literal(true)]).transform(() => true as const);
 
@@ -63,6 +65,9 @@ export const proxyRequest = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('repo.fork'), repo }),
   // A failed check's full log (issue #993): `number` is its GitHub Actions job, the last number of the check's link.
   z.strictObject({ op: z.literal('check.log'), repo, number }),
+  // A repository's workflow runs, of a branch and an event when named, and one run's jobs (issue #2318): `number` is the run's id.
+  z.strictObject({ op: z.literal('run.list'), repo, branch: branch.optional(), event: event.optional() }),
+  z.strictObject({ op: z.literal('run.view'), repo, number }),
 ]);
 export type ProxyRequest = z.infer<typeof proxyRequest>;
 
@@ -121,13 +126,13 @@ export const JOB_COMMAND = 'a job writes no comment command (/hopper run, resear
 export const CONTRIBUTION_OFF = 'contributing through a fork is off: a person turns it on in Settings → Contribution';
 
 /** What a job may ask on its fork: issues, and reads. Its pull request goes on the repository the fork is of. */
-const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view'];
+const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view', 'run.list', 'run.view'];
 
 /**
  * What only reads (issue #1015): a job asks them on any repository its user's connection sees. Each is a **repo
  * query** (issue #1074): answered from the repo-query cache when it can be (repo-query.ts).
  */
-export const READS: readonly ProxyOp[] = ['issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view', 'check.log'];
+export const READS: readonly ProxyOp[] = ['issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'pr.reviews', 'pr.status', 'repo.view', 'check.log', 'run.list', 'run.view'];
 export const isRead = (op: ProxyOp): boolean => READS.includes(op);
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();

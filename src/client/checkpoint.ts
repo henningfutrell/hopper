@@ -114,8 +114,11 @@ export function readCheckpoint(stdout: string): ReadCheckpoint | undefined {
 export const RESTORE_MARK = 'hopper-restore-';
 export type RestoreOutcome = 'restored' | 'kept' | 'failed';
 
+/** The line the restore prints when the pane has no way to the hopper (issue #2316): that pane cannot go on, a new one may. Never in the script's text, which the pane's screen echoes. */
+export const RESTORE_NO_WAY = 'hopper: the job has no way to the hopper';
+
 // Run by `sh` in the job's worktree, with the job's variables (HOPPER_URL, HOPPER_TOKEN_FILE; git reaches GitHub through
-// the hopper): $1 the base, $2 the branch (empty: none), $3 the session id, $4 1 when the checkpoint holds the session.
+// the hopper; a token file not readable yet is waited for a few seconds, issue #2316): $1 the base, $2 the branch (empty: none), $3 the session id, $4 1 when the checkpoint holds the session.
 // It gets the checkpoint's parts from the hopper first, then checks out the base (fetched when it is not here), applies
 // the patch as uncommitted changes, and puts the session where the agent finds it for this directory. A worktree that
 // holds changes already is the job's own work, never overwritten: `kept` (only a missing session file is put).
@@ -124,7 +127,9 @@ const RESTORE_SCRIPT = [
   'base=$1 b=$2 s=$3 hs=$4;',
   'export GIT_TERMINAL_PROMPT=0;',
   'no() { echo "hopper: $*" >&2; echo failed; exit 0; };',
-  '[ -n "$HOPPER_URL" ] && [ -r "$HOPPER_TOKEN_FILE" ] || no "the job has no way to the hopper";',
+  'k=0; while [ -n "$HOPPER_URL" ] && [ -n "$HOPPER_TOKEN_FILE" ] && [ ! -r "$HOPPER_TOKEN_FILE" ] && [ $k -lt 5 ]; do sleep 1; k=$((k+1)); done;',
+  '[ -n "$HOPPER_URL" ] || no "the job has no way to the hopper: HOPPER_URL is not set";',
+  '[ -r "$HOPPER_TOKEN_FILE" ] || no "the job has no way to the hopper: HOPPER_TOKEN_FILE is not readable";',
   't=$(mktemp -d) || no "no temp dir";',
   'get() { printf "authorization: Bearer %s\\n" "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS --fail -H @- -o "$2" "$HOPPER_URL/job/checkpoint/$1"; };',
   'get patch "$t/p" || no "could not get the checkpoint\'s patch";',

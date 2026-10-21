@@ -13014,8 +13014,7 @@ the queue moved only when waits ended by chance.
   lane, so a waiting agent that started after the baseline counts as the running job's: with 50 agents resident, the expected
   peaks grew with them. With waits released while a job waits for memory, that share falls away. The floor of 1.4 GiB is 10%
   of the 14 GiB VM, as set. Not changed here: the expected peak still counts when it is more than the job's memory.
-- **Not built.** Releasing a wait before a job waits for memory (a wait keeps its agent while memory holds every job); a count
-  of each agent's memory.
+- **Not built.** A count of each agent's memory. (Releasing a wait before a job waits for memory: issue #2326, below.)
 - **Persisted state.** No schema change: `waitReleased` is in the job's JSON, `waitSessions` and `waitRelease` in the
   Decision's. A build before this ignores them: a released job's wait ends as a lost pane's does (issue #1508), or it is
   marked stranded, and its resume opens a new pane (`resumeLostPane`).
@@ -13025,6 +13024,42 @@ every job fits), `test/domain/stuck.test.ts` (`memory_starved` only while nothin
 `test/integration/wait-release.test.ts` (the real daemon over the fake herdr: a job on a vault-grant wait, the memory short,
 a new job queued; the wait is released and its pane closed, not stranded, Failures shows `memory_starved`; the memory back,
 the new job finishes; End the wait resumes the first job's own session in a new pane with `RELEASED_NOTE`, and it finishes).
+
+### Every wait released, and its wake on any machine (issue #2326, 2026-10-21)
+
+Reported from a real run of the release above: 45 jobs on their own wait still held 34 resident Claude processes with
+nothing queued, as the release ran only while a job waited for memory. The owner's direction: a waiting job is parked at
+once, the wait check wakes it, and it does not need to start again on the machine it came from.
+
+- **Every wait, at once.** `waitReleases` (`src/decider/memory-floor.ts`) names every job of `waitSessions`, on every
+  machine, the oldest wait first, once its wait is 5 seconds old (`WAIT_RELEASE_AFTER_MS`), whether or not a job waits for
+  memory. Step 7 no longer gives `memoryShort`. The 5 seconds spare a park and a restore to a wait the hopper answers at
+  once (a request of the job, issue #998), and let a wait whose agent ended at once be seen as stranded (issue #1779) first. Which waits stay is as before: one only its pane carries (its own command, a background
+  poll) keeps its agent. With nothing queued, the steady state is no agent for any wait the hopper ends by itself. A stranded
+  wait is not released: its agent ended already.
+- **Its checkpoint, marked.** After the commit, `releaseWait` (`src/engine/wait-release.ts`) ends the pane and agent
+  (`Executor.park`), then takes its checkpoint and waits for it. A checkpoint that holds the agent session is marked on the
+  job: `waitReleased.checkpointAt`. A checkpoint the same as the last one (issue #1975) is the last one, and is marked so.
+- **Its wake, on any machine.** `recordEndWait` (`src/engine/wait.ts`), the one path every wake takes (the event that
+  settles what it waits on, its wait check, a comment, the hopper's answer, a person's End the wait), queues a released job
+  whose marked checkpoint is still its checkpoint, with its agent session and no machine pin of its spec, as picked up to
+  resume elsewhere (issue #921): `parked: { from: 'waiting_answer', auto, why, elsewhere: { checkpointAt, from } }`,
+  `resumeOn` and `waitReleased` cleared. Admission control places it on any machine with room; herdr-claude restores the
+  checkpoint in a new job worktree there (`relocate`, with the #2316 restore that needs the job's way to the hopper first)
+  and resumes the same session, told `WAIT_RELEASED_NOTE`, then that it moved (`elsewhereBrief`), then the wake's note. A
+  released job woken before its checkpoint was marked resumes on its own machine as before (`RELEASED_NOTE`); the
+  busy-machine move may still take it elsewhere.
+- **UI.** The Dashboard's wait row says `parked (waiting on <what it waits on>)`, with End the wait.
+- **Not built.** A job parked on a question (the Park button, auto-park) keeps its pin to its machine; the busy-machine move
+  and a person's pick up elsewhere still move it. A wait that ends a few seconds after it began is released all the same.
+- **Persisted state.** No schema change: `waitReleased.checkpointAt` is in the job's JSON. A build before this reads a woken
+  job as one picked up to resume elsewhere, as after a busy-machine move.
+
+Verification: `test/decider/memory-floor.test.ts` (every wait released, on every machine, with nothing queued, none less than
+5 seconds old),
+`test/ui/job-wait-view.test.ts`, and `test/integration/wait-release.test.ts` (two machines over the fake herdr: a job on a
+vault-grant wait with nothing queued has its pane closed and its checkpoint marked; its machine drained, End the wait
+resumes it on the other machine from its checkpoint, with the same session and `WAIT_RELEASED_NOTE`).
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
@@ -17151,7 +17186,8 @@ resume (<why>)`, never resumed without it. That failure, and a job's own report 
 missing or that it cannot reach the hopper, is the known cause `no-way-to-hopper` (transient, retry): it runs again as a
 new job, placed afresh. Continue on its hand-off runs a new job too (`continueResumes` false): the session's history
 keeps telling its agent the hopper is out of reach, whatever its new pane holds. The reach check's own text (`cannot
-reach the hopper at <url>`) is not this cause: it is the machine's.
+reach the hopper at <url>`) is not this cause: it is the machine's. A checkpoint restore's own line (issue #2316, `hopper: the job has no way to
+the hopper`) is this cause too, never the restore script's text that the pane's screen echoes.
 
 **A machine out of reach takes no new job** (issue #1920, `src/engine/reach-holds.ts`). A job must not fail for the
 machine it was placed on. The case: a long-lived sandbox box, a registered machine no probe reads, was offered ordinary
@@ -20127,7 +20163,11 @@ runs, and a parked job with such a copy can resume on any machine.
 - **The claim.** `Executor.resume` with `job.parked.elsewhere` set (herdr-claude's `relocate`): on the machine the job got, a new
   pane in that machine's work tree for it, a new job worktree of its repository as for any start, then — before shared
   dependencies are linked — the restore command (`restoreCommand`), typed into the pane's shell, which has the job's way
-  to the hopper (a machine that runs its jobs without the hopper's proxy cannot restore one: the job fails, saying so). It gets the checkpoint's parts from the hopper (`GET /job/checkpoint/patch` and `/session`, with the
+  to the hopper (a machine that runs its jobs without the hopper's proxy cannot restore one: the job fails, saying so). With
+  no way to the hopper in that pane (issue #2316: `HOPPER_URL` not set, or its token file not readable after a wait of a few
+  seconds), the restore prints `hopper: the job has no way to the hopper: <what is missing>`, and the start is tried again in a
+  new pane, its way to the hopper placed afresh, as a start that timed out (issue #462); when no pane gets it, the job fails
+  with that line, the known cause `no-way-to-hopper` (transient, retry), never a hand-off with no known cause. It gets the checkpoint's parts from the hopper (`GET /job/checkpoint/patch` and `/session`, with the
   job's proxy token), checks out the base on the job's branch (fetched through the hopper when it is not there), applies
   the patch as uncommitted changes, and puts the session file where Claude finds it for that directory
   (`projects/<the directory, each character not a letter or digit a dash>`). A worktree that holds changes already is the
@@ -21759,6 +21799,13 @@ the hopper's own job only, rate-limited as `pr.view` (120 an hour per job, 600 p
 | `pr checks N` | `pr.checks` | the pull request, `GET …/commits/<head>/check-runs` (every page) and `…/status` | `state`, `merged`, `head`, `headSha`, `checks` (id — the `check log` job —, name, status, conclusion, url), `statuses` |
 | `issue comments N` | `issue.comments` | `GET …/issues/N/comments`, every page | `comments` (id, author, createdAt, body, url): an issue's, or a pull request's conversation |
 | `pr reviews N` | `pr.reviews` | `GET …/pulls/N/reviews`, every page (issue #1072 part 3) | `reviews` (id, author, state, body, submittedAt, url), `decision` (`approved`, `changes_requested`, `none`) |
+| `run list [--branch B] [--event E]` | `run.list` | `GET …/actions/runs?branch=B&event=E`, one page of `RUN_LIST_MAX` (50), the newest (issue #2318) | no `number`; `url` (the repository's Actions page), `total` (how many runs match), `runs` (id, name, event, branch, headSha, status, conclusion, runNumber, runAttempt, createdAt, url) |
+| `run view RUN` | `run.view` | `GET …/actions/runs/RUN` and `…/actions/runs/RUN/jobs`, every page (issue #2318) | the run's fields as in `run list`; `jobs` (id — the `check log` job —, name, status, conclusion, startedAt, completedAt, url), the latest attempt's |
+
+`run list` and `run view` (issue #2318, `src/github-proxy/runs.ts`) read a run that no pull request names: a branch's
+push runs, a release job's result. `pr checks` reads only a pull request's head commit. The cache key of `run list` also
+names its branch and its event, so two lists of one repository are two answers. A run is never final: it is read again
+once its answer is 30 s old.
 
 The diff is built from the files' patches, not asked as `application/vnd.github.diff`: one JSON route, the file list
 with it, and the same cap GitHub puts on patches (a file with none says so).
@@ -23392,7 +23439,13 @@ job does not. A repo query (issue #1074, "Repo queries"): `source` says where th
    or, with no card, a pull request the work-item ledger says merged or closed (`WorkItemLedger.byPullRequest`, whatever the URL's case). A card
    not checked yet, or an open pull request only the ledger names, says nothing of its checks, so it is not answered
    from here (`knownPullRequest`, `src/github-proxy/pr-status.ts`, pure). Neither the hopper's GitHub connection nor
-   the rate limits are asked.
+   the rate limits are asked. One exception (issue #2321): an open pull request whose records say its checks fail. The
+   follow's last read can be of a head a push replaced since (a tend job's force push after a rebase), or of a run a
+   newer run of its check superseded, and a job or a person acts on failed checks. So its checks are read again as in
+   3 below — the head as it is now, the newest run of each check —, from the repo-query cache while fresh
+   (`withReadChecks`): `checks` and `failedChecks` are the read's, what the follow read of a failed check (`reported`)
+   stays with the same run, by its URL, and a `checks failing` wait the read does not bear out is dropped. `source`
+   stays `hopper`. A read the rate limits refuse, or that fails on GitHub, leaves the records' answer.
 2. `cache` — the repo-query cache (`repo-query.ts`): a GitHub read of the same `pr.status` query kept less than
    `REPO_QUERY_FRESH_MS` (30 s) ago, or of a merged pull request, with the item as the ledger says now. Counted against
    the rate limits as every repo query.
@@ -23422,8 +23475,15 @@ answer, the same `github_proxy.done` event, which records `wait`:
   GitHub). Its checks ended, or it is merged or closed: `wait: settled`. Else `wait: none` — nothing would tell the hopper
   when the checks end — with `waitOn`, the `on:` line `pr OWNER/NAME#N checks`, and a `note` that says to end the turn
   with HOPPER_WAITING and that line: the wait check reads the pull request on GitHub in any repository ("Wait checks",
-  `pr_checks_ended`) and wakes the job when its checks end (issue #1731; `unfollowedWait`, `pr-status.ts`). `hopper-gh`
-  exits 3. Only for `--for checks`: `--for mergeable` answers `wait: none` alone.
+  `pr_checks_ended`) and wakes the job when its checks end (issue #1731; `unwatchedWait`, `pr-status.ts`). `hopper-gh`
+  exits 3. Only for `--for checks`: `--for mergeable` answers `wait: none` alone. A running job's own pull request is one
+  the hopper does not follow yet: the Pull requests list holds only the pull requests of ended jobs;
+- **no checks is not settled** (issue #2322). Right after a push GitHub has not made the head commit's check runs yet, so
+  a read says `none`; a moment later they are there, `queued`, which the read counts as running (`pending`). So `checks:
+  none` on an open pull request never settles a wait on its checks (`prSettled`), whether the hopper follows it or not.
+  No event tells the hopper when checks start, so it opens no watch: it answers `wait: none` with `waitOn` and the note,
+  as above. The wait check holds while checks run, or while none started within two minutes of the head commit
+  (`checksOutcome`, `NO_CHECKS_MS`), and then wakes the job: a repository with no checks costs the job those minutes.
 
 **Pushed, not polled.** The watch is answered again from the user's records — never GitHub, never on a timer — when an
 event says what the hopper saw of a pull request changed (`job.pull_request_seen`: following it saw its wait change, as

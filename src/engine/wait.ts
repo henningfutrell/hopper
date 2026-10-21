@@ -7,8 +7,23 @@
 import { polledWait } from '../domain/own-command.ts';
 import type { DomainEvent, Job, JobWait } from '../domain/types.ts';
 import { SETTLING_EVENT_TYPES, settledBy, waitOnLabel, waitsFor, type Settled, type WaitOn } from '../domain/wait-on.ts';
-import type { EngineContext } from './context.ts';
+import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
+
+/** What a job whose agent ended on its wait is told first when it resumes from its checkpoint (issue #2326). */
+export const WAIT_RELEASED_NOTE = '[hopper] The hopper ended this session\'s agent while you waited, so a waiting job holds no memory. A background command you started then stopped with it.';
+
+/**
+ * A released job's wake (issue #2326): with a checkpoint of its whole session kept after its agent ended, it is not pinned to
+ * its machine; picked up to resume elsewhere, as a parked job (issue #921), its claim restores the checkpoint on any machine
+ * with room. Undefined: it resumes on its own machine.
+ */
+function wakeElsewhere(c: Pick<EngineContext, 'clock'>, job: Job): Pick<Job, 'parked'> | undefined {
+  const r = job.waitReleased;
+  if (!r?.checkpointAt || !job.checkpoint?.session || job.checkpoint.at !== r.checkpointAt || !job.agentSession || job.spec.machineId !== undefined) return undefined;
+  const elsewhere = { at: nowIso(c), checkpointAt: job.checkpoint.at, from: r.machineId };
+  return { parked: { at: r.at, from: 'waiting_answer', auto: true, why: 'its agent ended on its own wait', elsewhere } };
+}
 
 /** Who ends a job's wait: a person, or the hopper with an answer the job asked it for (issue #998). */
 export type WaitEnder = 'person' | 'hopper';
@@ -29,16 +44,21 @@ export function waitEndedNote(wait: Pick<JobWait, 'for' | 'strandedAt'> | undefi
 
 /**
  * In the tx: a person, or the hopper, ends the job's wait. It is queued again with the note pending, pinned to its machine (a pending
- * answer pins it, as for an answered question), and its claim types the note into its pane. `job.wait_ended`; `ended.check`: the key
+ * answer pins it, as for an answered question) — a released one with its checkpoint kept to any machine (issue #2326) —, and its claim types the note into its pane. `job.wait_ended`; `ended.check`: the key
  * of the wait check's condition that ended it (issue #1694); `ended.comment`: the link of the comment that woke it (issue #2159).
  */
-export function recordEndWait(c: Pick<EngineContext, 'store'>, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string, ended: { check?: string; comment?: string } = {}): Job {
+export function recordEndWait(c: Pick<EngineContext, 'store' | 'clock'>, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string, ended: { check?: string; comment?: string } = {}): Job {
   const { store } = c;
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'waiting_on') throw new EngineError('conflict', `job ${id} is ${job.status}: only a job on its own wait can have its wait ended`);
-  const pendingAnswer = told ? told(job.wait) : waitEndedNote(job.wait, note, by);
-  const next = store.jobs.update(id, { status: 'queued', pendingAnswer, wait: undefined, holdReason: undefined, waitReason: undefined });
+  const said = told ? told(job.wait) : waitEndedNote(job.wait, note, by);
+  const moved = wakeElsewhere(c, job);
+  const pendingAnswer = moved ? `${WAIT_RELEASED_NOTE}\n\n${said}` : said;
+  const next = store.jobs.update(id, {
+    status: 'queued', pendingAnswer, wait: undefined, holdReason: undefined, waitReason: undefined,
+    ...(moved ? { ...moved, resumeOn: undefined, waitReleased: undefined } : {}),
+  });
   store.events.append({ type: 'job.wait_ended', jobId: id, data: { by, ...(note ? { note } : {}), ...(ended.check ? { check: ended.check } : {}), ...(ended.comment ? { comment: ended.comment } : {}) } });
   return next;
 }
@@ -117,7 +137,7 @@ export function recordPollSeen(c: EngineContext, id: string, on: WaitOn, answer:
  * still the wait that began at `since`. The job is told the comment (`told`). The job as it is now; undefined when it is
  * no longer on that wait.
  */
-export function recordCommentWake(c: Pick<EngineContext, 'store'>, id: string, since: string, comment: { url: string; author: string }, told: string): Job | undefined {
+export function recordCommentWake(c: Pick<EngineContext, 'store' | 'clock'>, id: string, since: string, comment: { url: string; author: string }, told: string): Job | undefined {
   const job = c.store.jobs.get(id);
   if (job?.status !== 'waiting_on' || job.wait?.since !== since) return undefined;
   return recordEndWait(c, id, `${comment.author} commented`, 'hopper', () => told, { comment: comment.url });

@@ -2,11 +2,11 @@
 // only while its memory available, less what the jobs it started lately keep and what the new job needs, stays at or
 // above its floor; else the job waits for memory, and preempts nothing. Below the floor itself, the job that started
 // there last is paused: parked on the Park button's path, its work kept, and queued again to resume there. One pause
-// per machine at a time. Issue #2303: on a machine a job waits for memory on, the agents of the jobs on their own wait there
-// end (their sessions kept), as nothing else frees memory while nothing runs. Pure: the clock is `at`.
+// per machine at a time. Issues #2303, #2326: the agent of every job on its own wait ends (its session kept), memory short or
+// not, so no waiting job holds memory. Pure: the clock is `at`.
 import {
-  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_PAUSE_EVERY_MS, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT,
-  type ExpectedCost, type Job, type JobId, type Lane, type MachineId, type MachineSnapshot, type MemoryPausePlan, type ResourceReading,
+  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_PAUSE_EVERY_MS, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
+  type ExpectedCost, type Job, type JobId, type Lane, type MachineSnapshot, type MemoryPausePlan, type ResourceReading,
   type WaitReleasePlan, type WaitSession,
 } from '../domain/types.ts';
 
@@ -98,16 +98,16 @@ export function memoryPauses(
 }
 
 /**
- * Issue #2303: on each machine a job waits for memory on, end the agent of every job on its own wait there, the oldest wait
- * first. Each keeps its wait, work tree and agent session, and resumes its session when its wait ends. Not counted as memory
- * freed in this Decision: the next reading shows what the ended agents held.
+ * Issues #2303, #2326: end the agent of every job on its own wait, on every machine, the oldest wait first, whether or not a
+ * job waits for memory, once its wait is `WAIT_RELEASE_AFTER_MS` old. Each keeps its wait, work tree and agent session, and resumes its session when its wait ends, on any
+ * machine with room once its checkpoint is taken. Not counted as memory freed in this Decision: the next reading shows it.
  */
-export function waitReleases(sessions: readonly WaitSession[] | undefined, short: ReadonlySet<MachineId>, atIso: string): WaitReleasePlan[] {
+export function waitReleases(sessions: readonly WaitSession[] | undefined, atIso: string): WaitReleasePlan[] {
   const at = Date.parse(atIso);
-  return (sessions ?? []).filter((s) => short.has(s.machineId))
+  return (sessions ?? []).filter((s) => at - Date.parse(s.since) >= WAIT_RELEASE_AFTER_MS)
     .sort((a, b) => a.since.localeCompare(b.since) || a.jobId.localeCompare(b.jobId))
     .map((s) => ({
       jobId: s.jobId, machineId: s.machineId,
-      reason: `releases the agent of ${s.jobId} on ${s.machineId}: a job waits for memory there, and ${s.jobId} waits on its own since ${Math.round((at - Date.parse(s.since)) / 60_000)} min ago; it resumes its session when its wait ends`,
+      reason: `releases the agent of ${s.jobId} on ${s.machineId}: it waits on its own since ${Math.round((at - Date.parse(s.since)) / 60_000)} min ago, and a waiting job holds no agent; it resumes its session when its wait ends, on any machine with room`,
     }));
 }

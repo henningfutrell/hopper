@@ -56,10 +56,27 @@ export function knownPullRequest(number: number, url: string, o: { card?: PullRe
 }
 
 /**
- * Whether a wait on a pull request's checks (`pr wait`, issue #1072 part 2) is over: its checks ended (passing, failing,
- * none, or checks the hopper may not read), or it is merged or closed. Only checks that run keep a job waiting.
+ * A failing answer from the records with its checks as GitHub reads them now (issue #2321): the follow's last read can be of a
+ * head a push replaced since, or of a run a newer run of its check superseded. `read` is `pr status` read on GitHub: the
+ * checks of the head as it is now, the newest run of each check. What the follow read of a failed check (`reported`) stays
+ * with the same run, by its URL. A `checks failing` wait the read does not bear out is dropped. No checks in `read`: `known`.
  */
-export const prSettled = (s: PullRequestStatus): boolean => s.state !== 'open' || s.checks !== 'pending';
+export function withReadChecks(known: PullRequestStatus, read: Record<string, unknown>): PullRequestStatus {
+  const r = read as Partial<PullRequestStatus>;
+  if (r.checks === undefined) return known;
+  const before = new Map(known.failedChecks.filter((c) => c.url).map((c) => [c.url!, c]));
+  const failedChecks = (r.failedChecks ?? []).map((c) => (c.url && before.get(c.url)?.reported ? { ...c, reported: before.get(c.url)!.reported! } : c));
+  const { checksWhy: _why, waits, ...rest } = known;
+  const keepWaits = waits && !(waits === 'checks failing' && r.checks !== 'failing');
+  return { ...rest, checks: r.checks, failedChecks, ...(r.checksWhy ? { checksWhy: r.checksWhy } : {}), ...(keepWaits ? { waits } : {}) };
+}
+
+/**
+ * Whether a wait on a pull request's checks (`pr wait`, issue #1072 part 2) is over: its checks ended (passing, failing, or
+ * checks the hopper may not read), or it is merged or closed. Checks that run keep a job waiting, and so do no checks
+ * (issue #2322): right after a push, GitHub has not made the head's check runs yet, and they start queued.
+ */
+export const prSettled = (s: PullRequestStatus): boolean => s.state !== 'open' || (s.checks !== 'pending' && s.checks !== 'none');
 
 /**
  * What a `pr wait` waits for (issue #1210): its checks to end (the default), or its mergeability to be other than `from`,
@@ -79,16 +96,21 @@ export const isPullRequest = (url: string, repo: string, number: number): boolea
   url.toLowerCase().endsWith(`/${repo.toLowerCase()}/pull/${number}`);
 
 /**
- * How `pr wait` answers on a pull request the hopper does not follow (issue #1731): no event of the hopper's tells it when the
- * checks end, so it opens no watch. Checks that ended: `settled`. Else `none`, with the `on:` line of a job's own wait on its
- * checks: the wait check reads that pull request on GitHub, in any repository (design.md "Wait checks").
+ * How `pr wait` answers when the hopper opens no watch (issue #1731): on a pull request it does not follow, no event of the
+ * hopper's tells it when the checks end; on one with no checks (issue #2322), none tells it when they start. Checks that
+ * ended: `settled`. Else `none`, with the `on:` line of a job's own wait on its checks: the wait check reads that pull request
+ * on GitHub, in any repository, holds while its checks run or have not started after its last commit, and wakes the job when
+ * they end (design.md "Wait checks").
  */
-export function unfollowedWait(repo: string, number: number, read: Record<string, unknown>, over: PrWaitOver['for']): { wait: 'settled' | 'none'; waitOn?: string; note?: string } {
+export function unwatchedWait(repo: string, number: number, read: Record<string, unknown>, over: PrWaitOver['for']): { wait: 'settled' | 'none'; waitOn?: string; note?: string } {
   if (over !== 'checks') return { wait: 'none' };
-  if (read.state !== undefined && read.checks !== undefined && (read.state !== 'open' || read.checks !== 'pending')) return { wait: 'settled' };
+  if (read.state !== undefined && read.checks !== undefined && prSettled(read as unknown as PullRequestStatus)) return { wait: 'settled' };
   const waitOn = `pr ${repo}#${number} checks`;
+  const why = read.checks === 'none'
+    ? 'Its head commit has no checks yet: they can start a short time after a push, so pr wait cannot wait on it.'
+    : 'The hopper does not follow this pull request, so pr wait cannot wait on it.';
   return {
     wait: 'none', waitOn,
-    note: `The hopper does not follow this pull request, so pr wait cannot wait on it. To wait until its checks end, end your turn with HOPPER_WAITING and the line on: ${waitOn}. The hopper then reads the pull request and wakes you when its checks end.`,
+    note: `${why} To wait until its checks end, end your turn with HOPPER_WAITING and the line on: ${waitOn}. The hopper then reads the pull request and wakes you when its checks end.`,
   };
 }
