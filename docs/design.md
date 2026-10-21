@@ -21810,8 +21810,11 @@ label showed a state the ledger did not hold, and a label a person took off was 
   from a blocked item, or `hopper:pr-ready` / `hopper:partly-done` from an item in PR open, is a Run again. A swap of PR
   open's two waiting labels is no edit.
 - **A missing label is never read back as state.** A label not on the issue when the mirror first sees it is no edit: the
-  mirror puts it back, and the item stays where the ledger has it. What the mirror saw is kept in memory, so after a start
-  the first discover only looks. An edit made while the hopper is stopped is put back; the person takes it off again.
+  mirror puts it back, and the item stays where the ledger has it. What the mirror saw is kept in memory. After a start,
+  the source gives the mirror the labels of the listing cache (`github_listed_items`, "Repository listings") before its
+  first discover lists again (`start`), as seen when that listing was read (its `fetched_at`). So an edit made while the
+  hopper was stopped is a label edit too, when the item did not move since that listing. An issue the cache does not
+  hold is first seen at that discover.
 - **A give-back drops the mirror's unsent rows.** Run again and Rework move the item, so the source drops the label
   mirror's outbox rows for that issue that are not sent yet (`dropMirror`, `src/sources/github/outbox.ts`): they were for
   the state the item left. Without it, a hopper killed between the reconciler's give-back and the new job left the next

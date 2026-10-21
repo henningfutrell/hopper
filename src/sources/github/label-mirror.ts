@@ -12,7 +12,9 @@
 // what it saw at its last discover (`edits`). The end label the item's state wants (`labelTakenOff`), seen then and gone now,
 // with the item not moved since and no outbox row of its own not sent, is a person's Run again: `work_item.label_edited`, once.
 // It is not put back, nor is the label of an item whose Run again is asked (`runAgainAsked`). A label not on the issue at its
-// first sight is no edit: what the mirror saw is kept in memory, so after a start the first discover only looks.
+// first sight is no edit. What the mirror saw is kept in memory; after a start the source gives it the listing cache's
+// labels (`start`), kept in the database, as seen when that listing was read, so an edit made while the hopper was stopped
+// counts too.
 import { RECONCILE_GRACE_MS } from '../../domain/item-lifecycle.ts';
 import type { WorkItem } from '../../domain/work-items.ts';
 import { labelCorrected, labelDriftSeen } from '../../telemetry/sources.ts';
@@ -25,6 +27,8 @@ export interface LabelMirror {
   check(listed: readonly Pick<GitHubIssue, 'url' | 'repo' | 'labels'>[]): number;
   /** Find the end labels a person took off by hand since the last discover, and record each (issue #1892): their issues' URLs. */
   edits(listed: readonly Pick<GitHubIssue, 'url' | 'labels'>[]): Set<string>;
+  /** After a start (issue #1892): what the last listing before it held, read at `at`. Only an issue not seen yet takes it. */
+  start(listed: readonly Pick<GitHubIssue, 'url' | 'labels'>[], at: string): void;
 }
 
 export function createLabelMirror(o: {
@@ -48,6 +52,9 @@ export function createLabelMirror(o: {
   /** The issues whose label edit the last `edits` found: not judged in the same discover. */
   let edited = new Set<string>();
   return {
+    start(listed, at) {
+      for (const issue of listed) if (!seen.has(issue.url)) seen.set(issue.url, { labels: [...issue.labels], at });
+    },
     edits(listed) {
       const at = o.now();
       const settledBefore = Date.parse(at) - RECONCILE_GRACE_MS;

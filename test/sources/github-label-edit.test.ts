@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
 import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
+import { memoryListings } from '../../src/sources/github/listing.ts';
 import { BLOCKED, BLOCKED_STALE, FAILED, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 import { RECONCILE_GRACE_MS } from '../../src/domain/item-lifecycle.ts';
@@ -19,14 +20,14 @@ const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[] } = {}) {
-  const gh = createFakeGitHub();
-  let now = Date.parse('2026-10-18T12:00:00.000Z');
+function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string } = {}) {
+  const gh = o.gh ?? createFakeGitHub();
+  let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   const recorded: { type: string; data: Record<string, unknown> }[] = [];
   const source = createGitHubSource({
     name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig({}), api: gh,
-    trust: testTrust(), ...(o.outbox ? { outbox: o.outbox } : {}), clock: { now: () => new Date(now) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k])),
+    trust: testTrust(), ...(o.outbox ? { outbox: o.outbox } : {}), ...(o.listings ? { listings: o.listings } : {}), clock: { now: () => new Date(now) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k])),
     rerunnable: (keys: string[]) => new Set(keys.filter((k) => o.rerunnable?.includes(k))),
     intake: {
       holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: LONG_AGO, changes: [] }), migrated: () => {},
@@ -119,6 +120,39 @@ describe('a label edited by hand on GitHub is a person\'s event (issue #1892)', 
     await source.flushOutbox!();
     expect(edits()).toEqual([]);
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-closed']);
+  });
+
+  it('a label taken off while the hopper was stopped: the next start reads what the listing cache kept, and it is a Run again', async () => {
+    const gh = createFakeGitHub();
+    const listings = memoryListings();
+    const items: Record<string, Partial<WorkItem>> = { [url(1)]: { blockedCause: 'pr_closed', closedWithoutMerge: 2, jobId: 'job-1' } };
+    const before = setup(items, { gh, listings, rerunnable: [url(1)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-closed'] });
+    await before.source.discover();
+    gh.removeLabel(REPO, 1, 'hopper:pr-closed');
+    const after = setup(items, { gh, listings, rerunnable: [url(1)], at: '2026-10-18T12:30:00.000Z' });
+    expect((await after.source.discover()).map((i) => i.key)).toEqual([url(1)]);
+    expect(after.edits()).toEqual([{ source: 'github', key: url(1), jobId: 'job-1', from: 'blocked', label: 'hopper:pr-closed', means: 'run_again' }]);
+    expect(await after.source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+  });
+
+  it('after a start, an item that moved since the cached listing, or a label the cache never held: no edit, the label is put back', async () => {
+    const gh = createFakeGitHub();
+    const listings = memoryListings();
+    const items: Record<string, Partial<WorkItem>> = { [url(1)]: { blockedCause: 'no_pr', jobId: 'job-1' }, [url(2)]: { blockedCause: 'no_pr', jobId: 'job-2' } };
+    const before = setup(items, { gh, listings });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:blocked'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    await before.source.discover();
+    gh.removeLabel(REPO, 1, 'hopper:blocked');
+    items[url(1)] = { ...items[url(1)], eventAt: '2026-10-18T12:05:00.000Z', stateSince: '2026-10-18T12:05:00.000Z' };
+    const fresh = memoryListings();
+    for (const l of [listings, fresh]) {
+      const after = setup(items, { gh, listings: l, at: '2026-10-18T12:30:00.000Z' });
+      await after.source.discover();
+      expect(after.edits()).toEqual([]);
+    }
   });
 
   it('a Run again drops the mirror\'s label change not sent yet: the label the give-back took off stays off', async () => {
