@@ -29,6 +29,29 @@ export interface TaggedItem {
   checks?: ChecksState | 'none';
   /** A pull request that is a draft. */
   isDraft?: boolean;
+  /** The job a person started on it from Tagged (issue #2342); absent: none. */
+  started?: Omit<TaggedStarted, 'key'>;
+}
+
+/**
+ * What a person starts on a tagged item with one click (issue #2342): a research job, a proposal, or the work its item asks
+ * for — a review of a pull request, or a fix of an issue (`TaggedWork`).
+ */
+export const TAGGED_STARTS = ['research', 'propose', 'work'] as const;
+export type TaggedStart = typeof TAGGED_STARTS[number];
+/** The work Start work does: review a pull request, or fix an issue (or the pull request's own branch). */
+export const TAGGED_WORKS = ['review', 'fix'] as const;
+export type TaggedWork = typeof TAGGED_WORKS[number];
+
+/** A job a person started on a tagged item: its direct job, and that direct job's first job. */
+export interface TaggedStarted {
+  key: string;
+  start: TaggedStart;
+  /** Start work's kind of work. */
+  work?: TaggedWork;
+  directJob: string;
+  jobId?: string;
+  at: string;
 }
 
 /** A person's dismissal of one tagged item, for the reasons it had then. */
@@ -38,7 +61,12 @@ export interface TaggedDismissal { key: string; why: TaggedWhy[] }
  * What a source keeps of its tagged items between reads, in the user's settings: the pull requests it last saw ask for the
  * user's review (so each new request is recorded once) and the dismissals still in force.
  */
-export interface TaggedRecord { reviewRequested: string[]; dismissed: TaggedDismissal[] }
+export interface TaggedRecord {
+  reviewRequested: string[];
+  dismissed: TaggedDismissal[];
+  /** The jobs started on items still tagged (issue #2342); absent in a record kept before. */
+  started?: TaggedStarted[];
+}
 
 export const NO_TAGGED_RECORD: TaggedRecord = { reviewRequested: [], dismissed: [] };
 
@@ -70,13 +98,25 @@ export function taggedRead(kept: TaggedRecord, items: readonly TaggedItem[]): { 
     const why = d.why.filter((w) => now.get(d.key)?.why.includes(w));
     return why.length ? [{ key: d.key, why }] : [];
   });
-  return { record: { reviewRequested: reviews.map((i) => i.key), dismissed }, newReviews: reviews.filter((i) => !before.has(i.key)) };
+  const started = (kept.started ?? []).filter((s) => now.has(s.key));
+  return { record: { reviewRequested: reviews.map((i) => i.key), dismissed, started }, newReviews: reviews.filter((i) => !before.has(i.key)) };
 }
 
-/** The items a person has not dismissed: one with a reason its dismissal does not hold is shown. */
+/** The items a person has not dismissed: one with a reason its dismissal does not hold is shown, with the job started on it. */
 export function shownTagged(items: readonly TaggedItem[], record: TaggedRecord): TaggedItem[] {
   const dismissed = new Map(record.dismissed.map((d) => [d.key, d.why]));
-  return items.filter((i) => i.why.some((w) => !dismissed.get(i.key)?.includes(w)));
+  const started = new Map((record.started ?? []).map(({ key, ...s }) => [key, s]));
+  return items.filter((i) => i.why.some((w) => !dismissed.get(i.key)?.includes(w)))
+    .map((i) => { const s = started.get(i.key); return s ? { ...i, started: s } : i; });
+}
+
+/** Keep a job started on `started.key`, only while the last read listed it and nothing was started on it yet. */
+export function startTagged(record: TaggedRecord, items: readonly TaggedItem[], started: TaggedStarted): { record: TaggedRecord; done: string[]; failed: Record<string, string> } {
+  const kept = record.started ?? [];
+  const before = kept.find((s) => s.key === started.key);
+  if (before) return { record, done: [], failed: { [started.key]: `already started: direct job ${before.directJob}` } };
+  if (!items.some((i) => i.key === started.key)) return { record, done: [], failed: { [started.key]: 'not a tagged item the last sync listed' } };
+  return { record: { ...record, started: [...kept, started] }, done: [started.key], failed: {} };
 }
 
 /** Dismiss `keys`, each only while the last read listed it: for every reason it has now. */

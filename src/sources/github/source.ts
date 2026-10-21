@@ -218,7 +218,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     intake: () => outbox.on(approvals.on(outcomes)), afterAnswerTimings: outbox.timings, releaseOutbox: outbox.release, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
     pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
     giveBackAct: (job, act, acting, more) => (job.source?.repo ? outbox.giveBackAct(job.source.key, job.source.repo, act, job.id, acting, more) : undefined),
-    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, offered: approvals.on(outcomes), listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, resolve: approvals.resolve, label: config.label, priorityLabels: Object.keys(config.priorityLabels), takeIn: census.takeIn(), outbox }, a),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : a.kind === 'tagged_start' && a.started ? tagged.start(a.started) : intakeAct({ source: o.name, offered: approvals.on(outcomes), listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, resolve: approvals.resolve, label: config.label, priorityLabels: Object.keys(config.priorityLabels), takeIn: census.takeIn(), outbox }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();

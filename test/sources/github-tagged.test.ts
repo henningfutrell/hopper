@@ -86,4 +86,21 @@ describe('tagged items (issue #1141)', () => {
     expect(t.tagged()).toEqual([[1, ['review']]]);
     expect(t.source.describe().taggedError).toBe('GraphQL: rate limited');
   });
+
+  it('keeps the job a person started on an item, once; a restart keeps it, and it goes when the item does (issue #2342)', async () => {
+    const t = setup();
+    t.set([pr(1, 'review'), pr(2, 'mention')]);
+    await t.source.discover();
+    const key = `https://github.com/${REPO}/pull/1`;
+    const started = { key, start: 'research' as const, directJob: 'd1', jobId: 'j1', at: '2026-10-14T10:00:00.000Z' };
+    expect(await t.source.intakeAction!({ kind: 'tagged_start', keys: [key], started })).toEqual({ done: [key], failed: {} });
+    expect(await t.source.intakeAction!({ kind: 'tagged_start', keys: [key], started: { ...started, directJob: 'd2' } }))
+      .toEqual({ done: [], failed: { [key]: 'already started: direct job d1' } });
+    const shown = t.source.describe().tagged as { number: number; started?: unknown }[];
+    expect(shown.map((i) => [i.number, i.started])).toEqual([[2, undefined], [1, { start: 'research', directJob: 'd1', jobId: 'j1', at: started.at }]]);
+    const again = setup({ record: t.kept.record! });
+    again.set([pr(2, 'mention')]);
+    await again.source.discover();
+    expect(again.kept.record!.started).toEqual([]);
+  });
 });

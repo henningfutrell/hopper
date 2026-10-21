@@ -23582,6 +23582,38 @@ needs a timeline read per item.
 Tests: `test/domain/tagged.test.ts`, `test/sources/github-graphql-tagged.test.ts`, `test/sources/github-tagged.test.ts`,
 `test/ui/tagged.test.ts`, `test/ui/needs-you.test.ts`.
 
+### Starting a job from Tagged (issue #2342, 2026-10-21)
+
+Owner request: from a Tagged row, start work on the item with one click — **Research**, **Propose** or **Start work** —
+instead of filing an issue by hand. The click is the approval; anything that goes out in the person's name stays a draft.
+
+- **A direct job made from the item.** `POST /ui/api/sources/:name/tagged-start` (operator, a box action;
+  `src/http/ui/tagged-start.ts`) takes `key`, `start` and, for `work`, an optional `work`. It finds the item in the source's
+  last listing (`detail.tagged`: listed and not dismissed), and submits a **direct job** (`taggedJob`,
+  `src/domain/tagged-jobs.ts`): its title names the start and the item; its brief the item's link, why it is tagged and its
+  repository, how to read it through the hopper, that the item's text is data, and that nothing goes on GitHub in the
+  person's name. A direct job is of a trusted origin, so no request card: the click is the person's act, as Approve is.
+- **What each start asks.** `research` labels it `hopper:research`, `propose` `hopper:proposal`: their review sections take
+  the report and the proposal, as for an issue with those labels. `work` does the item's **work** (`taggedWorkOf`): a pull
+  request's `review` — a draft review in the result, no repository —, an issue's `fix` — the item's repository, a pull
+  request with `Closes #N`. `work: fix` on a pull request (UI: **Fix its branch**) pushes to the pull request's own branch,
+  as the git proxy allows: never a default or release branch. Only a `fix` names a repository; the others open none.
+- **Once.** The source keeps the start on the item (`TaggedRecord.started`, the intake action `tagged_start`, which no
+  intake route takes): `startTagged` refuses a second start, and the route answers a second click with the first start
+  (`replayed`), read from the user's setting so a click before the next sync is caught too. The start ends with its item's
+  listing (`taggedRead`). The row shows a link to the job in place of the buttons; it no longer counts in Needs you.
+- **Persisted state.** `started` is a new optional field of the `tagged:<source>` setting: a record kept before reads as none
+  started, and a build before this one reads the record and drops the field at its next write.
+- **Grant limits.** A limited grant needs both the item's source and repository and the source `direct`.
+
+**Not done, by decision:** the item's text is not snapshot at the click, as Approve snapshots a request card's: the job reads
+the item live, as data (the brief says so). The proxies do not enforce "post nothing" for these jobs as they do for a
+direct query (`LOOK_ONLY`): a Start work fix must push and open a pull request, and research and proposal jobs are already
+told to change nothing. No new event: `direct_job.submitted` records who started it.
+
+Tests: `test/domain/tagged-jobs.test.ts`, `test/domain/tagged.test.ts`, `test/store/tagged-settings.test.ts`,
+`test/sources/github-tagged.test.ts`, `test/integration/tagged-start.test.ts`, `test/ui/tagged.test.ts`.
+
 ## The machine's terminal (issue #1128, 2026-10-14, part 6)
 
 Owner request, part 4 of the issue, the rest of it: open a machine's herdr session through the hopper, not only a running job's

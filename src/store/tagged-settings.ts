@@ -12,7 +12,11 @@ export function taggedSettings(read: (key: string) => string | undefined, write:
       return text === undefined ? undefined : JSON.parse(text) as TaggedRecord;
     },
     setTaggedRecord(source, record) {
-      write(`tagged:${source}`, JSON.stringify({ reviewRequested: record.reviewRequested, dismissed: record.dismissed.map((d) => ({ key: d.key, why: d.why })) }));
+      write(`tagged:${source}`, JSON.stringify({
+        reviewRequested: record.reviewRequested, dismissed: record.dismissed.map((d) => ({ key: d.key, why: d.why })),
+        // The jobs started from Tagged (issue #2342); a build before it reads the record without them.
+        ...(record.started?.length ? { started: record.started.map((t) => ({ key: t.key, start: t.start, ...(t.work ? { work: t.work } : {}), directJob: t.directJob, ...(t.jobId ? { jobId: t.jobId } : {}), at: t.at })) } : {}),
+      }));
     },
   };
 }

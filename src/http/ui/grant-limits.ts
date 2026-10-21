@@ -58,6 +58,13 @@ const ROUTES: Record<string, TargetsOf> = {
   '/ui/api/repo-checks/queue': (_p, b) => (text(b.repo) ? [{ repo: String(b.repo) }] : []),
   // A direct job (issue #901) is of the job source `direct`, on the repository it names, if any.
   '/ui/api/direct-jobs': (_p, b) => [{ source: DIRECT_SOURCE, ...(text(b.repo) ? { repo: String(b.repo) } : {}) }],
+  // A start on a tagged item (issue #2342): the item, of the source in the path, and its direct job, of the source
+  // `direct`; both on the item's repository.
+  '/ui/api/sources/:name/tagged-start': (p, b) => {
+    const repo = text(b.key) === undefined ? undefined : repoOfItemKey(String(b.key));
+    const source = text(p.name);
+    return [{ ...(source ? { source } : {}), ...(repo ? { repo } : {}) }, { source: DIRECT_SOURCE, ...(repo ? { repo } : {}) }];
+  },
   // Each item named, of the source in the path; its repository when its key is a GitHub issue or pull request URL.
   '/ui/api/sources/:name/intake': (p, b) => {
     const source = text(p.name);
