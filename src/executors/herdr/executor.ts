@@ -5,7 +5,7 @@ import type { Clock, ExecutionContext, ExecutionOutcome, Executor, Reaped } from
 import type { Job, LaneId, MachineSnapshot } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
-import { LOST_NOTE, RESTORED_NOTE, restartInNewPane, restoredByHerdr, resumeLostPane } from './restored.ts';
+import { LOST_NOTE, RELEASED_NOTE, RESTORED_NOTE, restartInNewPane, restoredByHerdr, resumeLostPane } from './restored.ts';
 import { afterStatusNote, nudgeGapMs } from './nudge.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { afterLoginAct, loginWait, restoreLogin, takeLogin } from './login.ts';
@@ -323,7 +323,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     resume(ctx, answer) {
       const state = paneStateOf(ctx.job);
       // A failed job a person continued (issue #551) left no pane either: its session reopens in its work tree as a parked one's.
-      if (ctx.job.parked || ctx.job.continued) return reopen(ctx, state, answer);
+      // So does one whose agent ended on its wait to free memory (issue #2303), told why first.
+      if (ctx.job.parked || ctx.job.continued || ctx.job.waitReleased) return reopen(ctx, state, ctx.job.waitReleased ? `${RELEASED_NOTE}\n\n${answer}` : answer);
       if (!state) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
       const p = resolvePayload(ctx.job, ctx.machine);
       const refused = heldElsewhere(lanes, ctx.laneId, state);
@@ -406,8 +407,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
     async cleanup(job) {
       const state = paneStateOf(job);
-      // Parked (issue #501): its pane closed then, and its id may name another job's pane by now. Only the reap runs.
-      if (state && job.parked) return reap(herdrOn(state), heldOf(state, job.id));
+      // Parked (issue #501), or released on its wait (issue #2303): its pane closed then, and its id may name another job's pane by now. Only the reap runs.
+      if (state && (job.parked || job.waitReleased)) return reap(herdrOn(state), heldOf(state, job.id));
       // Timed out (issue #630): its scratch dir stays, as a parked job's, until it goes on or the sweep removes it.
       const open = state ? await exitAndClose(heldOf(state, job.id), job.liveness ? 'keep' : 'remove') : undefined;
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);

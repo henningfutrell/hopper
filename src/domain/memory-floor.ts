@@ -29,3 +29,18 @@ export interface MemoryPausePlan {
 
 /** Set on a job when a memory pause names it; kept while it is parked and queued again, cleared when it runs again. */
 export interface JobMemoryPaused { at: string; machineId: MachineId; availableBytes: number; floorBytes: number }
+
+/** The wait reason of a job no machine's memory holds now (issue #2303 reads it). */
+export const MEMORY_WAIT = 'waiting for memory';
+
+/**
+ * A job on its own wait whose agent session is still live on its machine, and whose wait the hopper ends by itself
+ * (issue #2303): a job that waits for memory there may have its agent ended. `since`: when its wait began.
+ */
+export interface WaitSession { jobId: JobId; machineId: MachineId; since: string }
+
+/** A job on its own wait whose agent the decider ends, because a job waits for memory on its machine (issue #2303). */
+export interface WaitReleasePlan { jobId: JobId; machineId: MachineId; reason: string }
+
+/** Set on a job on its own wait when its agent was ended to free memory; cleared when its session resumes. */
+export interface JobWaitReleased { at: string; machineId: MachineId }

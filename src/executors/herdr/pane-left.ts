@@ -20,7 +20,7 @@ export function paneLeft(herdrOn: (w: Where) => HerdrClient, exitAndClose: (pane
     async endLeft(job, left) {
       const old = paneStateOf({ ...job, executorState: left });
       if (!old) return;
-      const now = !job.parked && AT_WORK.includes(job.status) ? paneStateOf(job) : undefined;
+      const now = !job.parked && !job.waitReleased && AT_WORK.includes(job.status) ? paneStateOf(job) : undefined;
       if (now && samePane({ ...now, paneId: old.paneId }, old)) {
         if (now.paneId === old.paneId) throw new Error(`pane ${old.paneId} is still the one job ${job.id} works in`);
         await herdrOn(old).closePane(old.paneId).catch((e: unknown) => { if (!(e instanceof HerdrError && e.code === 'pane_not_found')) throw e; });

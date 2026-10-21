@@ -17,6 +17,7 @@
 // Then the runner reattaches it: the executor watches the new turn until the next outcome.
 // Any other wait whose pane is lost (issue #1779: its agent session ended, its pane a bare shell) is marked stranded
 // (`strandedAt`), never ended: what it waits on, or a person (stuck work, `stranded`), wakes it, and its resume opens a new pane.
+// A wait whose agent the hopper ended to free memory (issue #2303, `waitReleased`) is not probed: it has no pane.
 // The job already runs physically, so it never waits for a lane: with none idle it opens one
 // more, marked past the cap (`pastCap`), over the lane cap until it ends: the decider drains that lane first (issue #1181).
 import type { PaneAnswer } from '../domain/ports.ts';
@@ -155,7 +156,8 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
       try {
         for (const job of store.jobs.list({ status: ['waiting_answer', 'waiting_on'] })) {
           const probe = c.executors.get(job.spec.executor)?.answeredInPane;
-          if (!probe || (job.status === 'waiting_answer' && !job.questionId)) continue;
+          // Its agent ended to free memory (issue #2303): no pane of its own to probe, and its old pane id may name another's.
+          if (!probe || (job.status === 'waiting_answer' && !job.questionId) || job.waitReleased) continue;
           const seen = await probe(job).catch(() => null);
           if (c.stopping()) continue;
           if (!seen) {

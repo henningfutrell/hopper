@@ -7,7 +7,7 @@ import { laneSlots } from './priority-lanes.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
 import { laneEffect, machinePolicy, placementPressure } from './usage.ts';
 import { signedOutNote } from './signed-out.ts';
-import { preempt } from './preempt.ts'; import { memoryPauses, memoryRoom, type MemoryRoom } from './memory-floor.ts';
+import { preempt } from './preempt.ts'; import { memoryPauses, memoryRoom, waitReleases, type MemoryRoom } from './memory-floor.ts';
 import { numberNewLanes, outAt, outReason, withoutOut } from './lane-health.ts';
 
 /** A machine's own usage limits (issue #1860) and soft lanes (issue #2091), as its usage reason names them; nothing when the user's apply. */
@@ -128,7 +128,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
   const ordered = order(candidates, inputs.queueOrder?.jobIds);
   const assigned = assign(ordered, states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks, inputs.credentialHeld, inputs.avoidLanes);
-  const placed = { ...assigned, start: numberNewLanes(assigned.start, machines, lanes, inputs.at, inputs.avoidLanes) };
+  const { memoryShort, ...rest } = assigned;
+  const placed = { ...rest, start: numberNewLanes(assigned.start, machines, lanes, inputs.at, inputs.avoidLanes) };
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
   const elbowing = new Set(inputs.running.filter((j) => elbowsInAs(j) !== undefined).map((j) => j.id));
 
@@ -146,14 +147,16 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const drained = new Set(plans.flatMap((p) => p.drain));
   const preempts = preempt(ordered, placed.wait, inputs.running, lanes, states, drained, inputs.preemption, inputs.at, inputs.priorityLanes);
   const pauses = memoryPauses(machines, lanes, inputs.running, inputs.waiting, inputs.parkingExecutors, inputs.at, new Set(preempts.map((p) => p.jobId)), inputs.memoryPausedAt);
+  const releases = waitReleases(inputs.waitSessions, memoryShort, inputs.at);
 
   reasons.push(
     `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held, ${placed.wait.length} waiting for a lane`,
     ...advice.map((d) => `advice ${d.advice} on ${d.jobId}: native ${d.native}, with advice ${d.withAdvice}`),
-    ...preempts.map((p) => p.reason), ...pauses.map((p) => p.reason),
+    ...preempts.map((p) => p.reason), ...pauses.map((p) => p.reason), ...releases.map((r) => r.reason),
   );
   return {
     id: decisionId, at: inputs.at, trigger: inputs.trigger,
-    lanes: plans, start: placed.start, hold, wait: placed.wait, advice, ...(preempts.length ? { preempt: preempts } : {}), ...(pauses.length ? { memoryPause: pauses } : {}), reasons, inputs,
+    lanes: plans, start: placed.start, hold, wait: placed.wait, advice, ...(preempts.length ? { preempt: preempts } : {}), ...(pauses.length ? { memoryPause: pauses } : {}),
+    ...(releases.length ? { waitRelease: releases } : {}), reasons, inputs,
   };
 }

@@ -1,4 +1,4 @@
-import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, LaneId, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, SignedOutTool, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, LaneId, MachineId, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, SignedOutTool, StartPlan, WaitPlan } from '../domain/types.ts';
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
@@ -407,9 +407,10 @@ function windowsWait(job: Job, states: MachineState[]): string {
  * to the machine holding the best free priority lane first (issue #535). Of the machines it may go to, one where its expected
  * cost fits goes first, and of those Jev's applied pick of its machine (issue #688).
  */
-export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>, picks?: Record<JobId, PlacementPick>, credentialHeld?: readonly string[], avoid: Record<JobId, LaneId> = {}): { start: StartPlan[]; wait: WaitPlan[] } {
+export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>, picks?: Record<JobId, PlacementPick>, credentialHeld?: readonly string[], avoid: Record<JobId, LaneId> = {}): { start: StartPlan[]; wait: WaitPlan[]; memoryShort: Set<MachineId> } {
   const start: StartPlan[] = [];
-  const wait: WaitPlan[] = [];
+  // `memoryShort`: the machines a job waits for memory on (issue #2303).
+  const wait: WaitPlan[] = []; const memoryShort = new Set<MachineId>();
   const critical = policy.pacing?.criticalPriority ?? 0;
   const ahead = pl ? ordered.map((c) => c.job).filter((j) => isHigh(j, pl)) : [];
   // The same state objects, not copies: placing a job counts its lane on them, and the lane plan reads them after.
@@ -428,6 +429,7 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it.
     const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]));
     if (able.length === 0) {
+      for (const s of laned) memoryShort.add(s.machine.id);
       wait.push({ jobId: job.id, reason: laned.length ? memoryWait(laned, costs?.[job.id]) : waitReason(job, checked, pl) });
       continue;
     }
@@ -459,5 +461,5 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
       reason: `${where} on ${pick.machine.id}, ${why.join(', ')}`,
     });
   }
-  return { start, wait };
+  return { start, wait, memoryShort };
 }
