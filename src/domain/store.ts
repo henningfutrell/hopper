@@ -35,7 +35,11 @@ export interface JobRepository {
    * and it gets at most its parent's verified level, never `owner`, or no stamp when its parent's does not verify.
    */
   create(spec: JobSpec, priority: number, source?: JobSourceRef, parent?: Job): Job;
-  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined; list(filter?: JobFilter): Job[];
+  /**
+   * `lockItem`: holds item `key`'s jobs to this transaction until it ends (issue #1892): of two hoppers that make a new job
+   * of one item at once, the second reads the first's. Absent: one hopper (a test's store).
+   */
+  get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined; list(filter?: JobFilter): Job[]; lockItem?(key: string): void;
   /**
    * Many jobs in one read (issue #1411), so a pass over many jobs reads none one by one: `getMany` the jobs of `ids` that
    * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`;

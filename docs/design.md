@@ -22302,6 +22302,88 @@ crash harness") covered the item reconciler's corrections; the mirror had no kil
 
 **Verification:** `test/crash/label-kill.test.ts`.
 
+### The label mirror on one hopper at a time (issue #1892 part 12, 2026-10-21)
+
+The issue's two-host test, for the label mirror: "Only the lease holder acts, and the other host takes over once the lease
+expires." Every hopper on one database syncs the user's sources, and each discover ran the mirror. Two hoppers could both
+see a drift before either kept its outbox rows (the check and the insert are two statements, and what the outbox sent last
+is in each process's memory), and both could record one label edit.
+
+- **The mirror lease** (`label-mirror/<source>`, a user's sweep lease, "Sweep leases: one host per sweep"). The source asks
+  it once per discover (`mirrorHeld`, `IntakeContext`; `src/users/source-context.ts`). Only its holder corrects labels and
+  records a label edit or a card's withdraw. Another hopper reads the same issues and judges Intake from the ledger, as
+  before; it writes nothing. With no lease (a hopper alone, or a test), the mirror judges.
+- **A host that does not hold it still watches** (`edits` with `judge` false, `src/sources/github/label-mirror.ts`). It
+  keeps what it saw of each issue current, so a label the holder put on or took off is no edit when it takes the lease.
+  The one exception is an issue a person edited: it keeps seeing it as before the edit. The holder records the edit and the
+  item moves, so the next discover drops it; a holder killed before it recorded the edit leaves it to this host, which
+  records it once it takes the lease, and does not put the label back.
+- **Two hosts in the crash harness** (`test/crash/label-two-hosts.test.ts`). Two hoppers sync one source at once: #7's
+  correction is queued and sent once, #9's label taken off by hand is one Run again and one new job, and only one hopper
+  logs a mirror line. The test kills that one and ends its leases: the other takes the lease, and a label then taken off
+  #7 by hand is its Run again, once.
+
+- **A correction another hopper sent** (`sent` with `since`, `src/sources/github/outbox.ts`; `listedAt`). Any hopper's
+  outbox sends the mirror's rows, and the listing cache is shared, but what was sent since the last listing is in the
+  memory of the process that sent it. A listing read between the remove and the add showed the holder a drift again, and it
+  queued a second add (seen on a loaded CI runner). Now a row of the same act and tag that any hopper sent at or after the
+  repository's listing was read counts as sent: that listing may not show it. A drift in a listing read after the send is
+  a new one. A change read refreshes rows and not the listing's time, so such a drift waits for the next full listing.
+- **One new job of an item at a time** (`lockItem`, `src/store/jobs.ts`; `ingest`, `src/engine/source-host.ts`). Each
+  hopper's discover offers an item whose Run again is asked, and each made a job: the transaction read the item's newest
+  job, then made one, and two such transactions both read the old job. The transaction now takes a Postgres advisory lock
+  on the item's source key first, so the second waits, reads the first's new job, and makes none. This holds for every new
+  job of an item from a discover, not only the mirror's Run again.
+
+**Decisions.**
+- **A lease per source, not a database claim per row.** A unique claim on the outbox rows would stop a second correction,
+  not a second label edit, and each write of the mirror would need its own. The lease puts all of them on one host, as the
+  item reconciler's (`item-reconcile`) does.
+- **The listing stays on every host.** Intake reads it on each hopper; only the mirror's writes are leased.
+
+**Verification:** `test/sources/github-label-lease.test.ts` (a host without the lease corrects and records nothing; the
+holder's correction is no edit to the next holder; an edit made while the holder stopped recorded once by the next holder,
+and not put back), `test/sources/github-label-sent-elsewhere.test.ts` (a correction another hopper sent after the listing
+is not queued again; a drift in a later listing is), `test/store/job-item-lock.test.ts` (the item lock held until the
+transaction ends, another item free), `test/crash/label-two-hosts.test.ts`.
+
+### A moved job goes back to the queue (issue #1892 part 13, 2026-10-21)
+
+Milestone 3 asks: "Jobs moved off a signed-out or lost machine (`signed-out-move.ts`, the `job-move` saga) go back to the
+queue through the item saga." The hopper moves a job off a machine with no person in three ways: the signed-out move
+(issue #1211), the busy-machine move (issue #1977) and the lost-machine move (issue #1569). Each one parks the job and picks
+it up elsewhere. Before this part the ledger read the park as any park: the item went to needs you ("a person to pick up
+the parked job"), and the pick up then put it back in queued. The signed-out and busy-machine moves park in one
+transaction and pick up in a later one, after the job's pane ends and one more checkpoint is taken. A stop between the two
+left the job parked for a person and its item in Needs you, and nothing took it on.
+
+- **A park to move names its move** (`ParkedMove`, `src/domain/checkpoints.ts`; `recordPark`, `src/engine/park.ts`). The
+  job keeps `parked.move` until its pick up: the move (`signed_out`, `busy_machine`, `lost_machine`), how it goes on (from
+  its checkpoint, or as a new start), whether it had a live pane to end, and whether that end was confirmed (`ended`).
+  `job.parked` carries `move`. Any pick up, a person's too, ends the move and takes the mark off.
+- **The ledger keeps the item in the queue** (`work-items.ts`). A `job.parked` with `move` moves the item to queued, waiting
+  on "a move to another machine" (`MOVE_WAIT`), owned by the scheduler; the pick up keeps it queued. A park with no move
+  still waits on a person. `transitionOwner` reads the event's data: a park to move and a pick up no one asked for are the
+  scheduler's, a park or pick up a person asked for is the person's, one a job asked for through the park skill is the lane
+  worker's.
+- **A move a stop cut short is finished** (`finishMove`, `finishLeftMoves`, `src/engine/move-finish.ts`). Each pass of the
+  signed-out and busy-machine moves first finishes the jobs still parked for its move, on the host that holds the pass's
+  lease, so after a restart, or on the host that takes the lease. Each step is safe to do again: the pane is ended only when
+  its end was not confirmed (its id may name another job's pane after that), the checkpoint is taken again, and the pick up
+  happens only while the job is still parked for that move. A pick up the engine refuses ends the move and leaves the job
+  parked for a person, as before.
+- **The lost-machine move** parks and picks up in one transaction, inside the job-run saga's end step: it names its move so
+  the item does not pass through needs you. Its `job-move` saga ends the agent it left, as before.
+
+**Not in this part:** the other milestone 3 moves (the labelling of `follow.ts` behind the saga; a next check and a deadline
+set per transition, not per state) and milestone 4.
+
+**Verification:** `test/domain/work-items-move.test.ts` (a park to move keeps the item queued; a signed-out move takes it
+from needs you to queued; a park with no move waits on a person; the owners), `test/engine/move-finish.test.ts` (a
+busy-machine move stopped after its park, or before its pane ended, finished by the next hopper's pass, once; a signed-out
+move finished with no sign-out read; a new start; a job a person parked or picked up left as it is),
+`test/engine/busy-move.test.ts` (`move` on `job.parked`).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

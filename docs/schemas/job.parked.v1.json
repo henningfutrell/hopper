@@ -33,6 +33,14 @@
     },
     "reason": {
       "type": "string"
+    },
+    "move": {
+      "type": "string",
+      "enum": [
+        "signed_out",
+        "busy_machine",
+        "lost_machine"
+      ]
     }
   },
   "required": [

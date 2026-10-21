@@ -200,7 +200,7 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did, and the reason they gave.
    * `parkAsk`: a running job's park, kept until its executor stepped aside and the park is recorded.
    */
-  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere; checkpointAt?: string } & import('./park-ask.ts').ParkAsk; parkAsk?: import('./park-ask.ts').ParkAsk;
+  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere; checkpointAt?: string; move?: import('./checkpoints.ts').ParkedMove } & import('./park-ask.ts').ParkAsk; parkAsk?: import('./park-ask.ts').ParkAsk;
   /**
    * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:

@@ -32,6 +32,17 @@ export interface JobCheckpoint {
  */
 export interface ParkedElsewhere { at: string; checkpointAt: string; from?: MachineId; lost?: true }
 
+/** The moves that park a job to take it off a machine with no person (issue #1892): the signed-out, busy-machine and lost-machine moves. */
+export const JOB_MOVES = ['signed_out', 'busy_machine', 'lost_machine'] as const;
+export type JobMove = (typeof JOB_MOVES)[number];
+
+/**
+ * A park to move the job (issue #1892), kept on it until its pick up: the move, how it goes on (from its checkpoint, or
+ * as a new start), whether it had a live pane to end, and whether that end was confirmed. A stop between the park and the
+ * pick up leaves it: the move's next pass finishes it (`move-finish.ts`).
+ */
+export interface ParkedMove { kind: JobMove; how: 'checkpoint' | 'fresh'; live: boolean; ended?: true }
+
 /** At most this many commits are named on a checkpoint. */
 export const CHECKPOINT_COMMITS = 50;
 

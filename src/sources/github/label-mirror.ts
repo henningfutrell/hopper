@@ -18,6 +18,10 @@
 // the card: `source.request_withdrawn` with the label, once. Its item is dropped, so the labels decide Intake's reason, and the
 // label stays.
 //
+// On several hoppers on one database (issue #1892), only the holder of the source's mirror lease judges: it corrects and
+// records. Another (`edits` with `judge` false) records nothing and corrects nothing, and keeps seeing an issue a person
+// edited as it was before the edit, so it records the edit itself when it takes the lease before the holder recorded it.
+//
 // Kill points (issue #1892, the crash harness): once a correction's rows are queued, and once a label edit is recorded. A
 // hopper killed there leaves the rows or the event to the next hopper, which does not queue or record them again.
 import { RECONCILE_GRACE_MS } from '../../domain/item-lifecycle.ts';
@@ -34,8 +38,11 @@ export const mirrorKillPoint = (kind: 'correct' | 'edit', at: 'after-queue' | 'a
 export interface LabelMirror {
   /** Compare the issues a discover listed with their work items; answers how many items got outbox rows. */
   check(listed: readonly Pick<GitHubIssue, 'url' | 'repo' | 'labels'>[]): number;
-  /** Find the end labels a person took off by hand since the last discover, and record each (issue #1892): their issues' URLs. */
-  edits(listed: readonly Pick<GitHubIssue, 'url' | 'labels'>[]): Set<string>;
+  /**
+   * Find the end labels a person took off by hand since the last discover, and record each (issue #1892): their issues' URLs.
+   * With `judge` false (another hopper holds the mirror's lease), nothing is recorded, and an issue edited is still seen as before.
+   */
+  edits(listed: readonly Pick<GitHubIssue, 'url' | 'labels'>[], judge?: boolean): Set<string>;
   /** After a start (issue #1892): what the last listing before it held, read at `at`. Only an issue not seen yet takes it. */
   start(listed: readonly Pick<GitHubIssue, 'url' | 'labels'>[], at: string): void;
 }
@@ -51,6 +58,11 @@ export function createLabelMirror(o: {
   failureReported?(key: string): boolean;
   /** Whether a partly done item's merged part leaves parts to run (issue #1892): only then is no end label its labels. */
   partsLeft?(key: string): boolean;
+  /**
+   * When the listing of a repository was read (issue #1892): a correction any hopper sent after it is not queued again, as
+   * that listing may not show it. Absent: only this hopper's own sends count.
+   */
+  listedAt?(repo: string): string | undefined;
   /** Whether the item is given back now or was moments ago (issue #1892): it is not judged, the new job moves it. */
   busy?(key: string): boolean;
   now(): string;
@@ -68,11 +80,21 @@ export function createLabelMirror(o: {
   const facts = (key: string, item: WorkItem): LabelFacts =>
     item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' || item.state === 'needs_you' ? { failureReported: o.failureReported?.(key) ?? false }
       : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : {};
+  /** A person's label edit on the issue since `was`: an end label put on a request card, or the one its state wants taken off. */
+  const editOf = (issue: Pick<GitHubIssue, 'url' | 'labels'>, was: { labels: string[]; at: string }, settledBefore: number): { item: WorkItem; put?: string; label?: string } | undefined => {
+    const item = o.item(issue.url);
+    if (!o.record || !item || item.runAgainAsked !== undefined || o.outbox.held(issue.url) || o.busy?.(issue.url)) return undefined;
+    if (Date.parse(item.eventAt) > Math.min(Date.parse(was.at), settledBefore)) return undefined;
+    const put = labelPutOn(item, was.labels, issue.labels);
+    if (put !== undefined) return { item, put };
+    const label = labelTakenOff(item, was.labels, issue.labels, facts(issue.url, item));
+    return label === undefined ? undefined : { item, label };
+  };
   return {
     start(listed, at) {
       for (const issue of listed) if (!seen.has(issue.url)) seen.set(issue.url, { labels: [...issue.labels], at });
     },
-    edits(listed) {
+    edits(listed, judge = true) {
       const at = o.now();
       const settledBefore = Date.parse(at) - RECONCILE_GRACE_MS;
       const keys = new Set(listed.map((i) => i.url));
@@ -80,19 +102,18 @@ export function createLabelMirror(o: {
       edited = new Set();
       for (const issue of listed) {
         const was = seen.get(issue.url);
+        const edit = was && editOf(issue, was, settledBefore);
+        // A host that does not judge keeps what it saw of an edit: the holder records it, or this host once it takes the lease.
+        if (edit && !judge) continue;
         seen.set(issue.url, { labels: [...issue.labels], at });
-        const item = o.item(issue.url);
-        if (!was || !o.record || !item || item.runAgainAsked !== undefined || o.outbox.held(issue.url) || o.busy?.(issue.url)) continue;
-        if (Date.parse(item.eventAt) > Math.min(Date.parse(was.at), settledBefore)) continue;
-        const put = labelPutOn(item, was.labels, issue.labels);
-        if (put !== undefined) {
-          o.record('source.request_withdrawn', { source: o.source, key: issue.url, label: put });
-          o.log(`hopper: ${o.source}: ${put} was put on ${issue.url} by hand: its request card is withdrawn`);
+        if (!edit) continue;
+        if (edit.put !== undefined) {
+          o.record!('source.request_withdrawn', { source: o.source, key: issue.url, label: edit.put });
+          o.log(`hopper: ${o.source}: ${edit.put} was put on ${issue.url} by hand: its request card is withdrawn`);
           continue;
         }
-        const label = labelTakenOff(item, was.labels, issue.labels, facts(issue.url, item));
-        if (label === undefined) continue;
-        o.record('work_item.label_edited', { source: o.source, key: issue.url, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), from: item.state, label, means: 'run_again' });
+        const { item, label } = edit;
+        o.record!('work_item.label_edited', { source: o.source, key: issue.url, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), from: item.state, label, means: 'run_again' });
         killPoint(mirrorKillPoint('edit', 'after-record'));
         o.log(`hopper: ${o.source}: ${label} was taken off ${issue.url} by hand: a Run again of its work item (${item.state})`);
         edited.add(issue.url);
@@ -111,7 +132,7 @@ export function createLabelMirror(o: {
         if (!d) { logged.delete(issue.url); continue; }
         const words = driftWords(item, d);
         const tag = `${item.state}:${item.blockedCause ?? ''}`;
-        const fix = !o.outbox.sent('mirror', issue.url, tag);
+        const fix = !o.outbox.sent('mirror', issue.url, tag, o.listedAt?.(issue.repo));
         if (logged.get(issue.url) !== words) {
           logged.set(issue.url, words);
           labelDriftSeen(o.source, item.state, fix);
