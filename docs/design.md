@@ -14905,8 +14905,10 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    with its oldest user's connection for every job, and another user's job could only file an issue.);
 4. the GitHub connection of the job's own user (issue #1380 part 5): none, or its sign-in ended — **503** saying so;
    A job edits a pull request's title or body (`pr edit N [--title T] [--body-file F]`, op `pr.edit`) or closes it with
-   no merge (`pr close N`, op `pr.close`) only when it opened that pull request through the proxy (a `github_proxy.done`
-   of `pr.create` on its timeline) or the pull request is its **work item**'s, one an earlier job of the item opened
+   no merge (`pr close N`, op `pr.close`) only when it or an earlier job of its item opened that pull request through the
+   proxy (a `github_proxy.done` of `pr.create` on the timeline of a job of its item; issue #2319: an earlier part opened a
+   pull request in another repository, which is not the work item's, and the next part, or the job resumed, could not
+   edit it) or the pull request is its **work item**'s, one an earlier job of the item opened
    (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
    or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
    job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).

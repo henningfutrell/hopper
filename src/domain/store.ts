@@ -38,9 +38,10 @@ export interface JobRepository {
   get(id: JobId): Job | undefined; getBySourceKey(key: string): Job | undefined; list(filter?: JobFilter): Job[];
   /**
    * Many jobs in one read (issue #1411), so a pass over many jobs reads none one by one: `getMany` the jobs of `ids` that
-   * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`.
+   * exist; `newestOfItems` the newest job of each item (source key) of `keys` that has one, as `getBySourceKey`;
+   * `idsOfItem` the ids of every job of item `key`, newest first, no body read (issue #2319).
    */
-  getMany(ids: readonly JobId[]): Map<JobId, Job>; newestOfItems(keys: readonly string[]): Map<string, Job>;
+  getMany(ids: readonly JobId[]): Map<JobId, Job>; newestOfItems(keys: readonly string[]): Map<string, Job>; idsOfItem(key: string): JobId[];
   /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */ update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt' | 'stamp'>>): Job;
   /** Replace the spec of a job that has not started (issue #375); stamped again at its verified level or lower (issue #655). Bumps updatedAt. */
   respecify(id: JobId, spec: JobSpec): Job;
