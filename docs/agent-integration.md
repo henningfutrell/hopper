@@ -38,7 +38,7 @@ sequenceDiagram
     participant H as Hopper
     participant J as Job
 
-    P->>H: Mint a grant (Settings → API tokens) or approve the agent's device code
+    P->>H: Mint a grant (Users & access → API tokens) or approve the agent's device code
     P->>H: Add a webhook subscription (Settings → Webhooks)
     H-->>P: Signing secret, shown one time
     P->>A: Give the refresh token and the signing secret to the agent's secret store
@@ -66,7 +66,7 @@ agent then gets short-lived API tokens from it by itself.
 
 - The grant gives two tokens one time: a **refresh token** (`hopper_rt_…`) and an **API token** (`hopper_at_…`)
   (`src/domain/sign-in.ts`, `REFRESH_TOKEN_PREFIX` and `API_TOKEN_PREFIX`). The hopper keeps only their hashes.
-- An API token lives 10 minutes by default. The hopper's admin sets 5 to 15 minutes in **Settings → API tokens**
+- An API token lives 10 minutes by default. The hopper's admin sets 5 to 15 minutes in **Users & access → API tokens**
   (`API_TOKEN_MINUTES` in `src/domain/sign-in.ts`).
 - A grant ends 90 days after it is made by default (1 to 365, `--days`), or 30 days after its last refresh, or when a
   person revokes it (`GRANT_DEFAULT_DAYS`, `GRANT_MAX_DAYS`, `GRANT_IDLE_DAYS` in `src/domain/sign-in.ts`).
@@ -144,7 +144,7 @@ Least privilege:
 
 ### Mint it
 
-In the UI: **Settings → API tokens → Mint grant**. Copy the refresh token one time, into the agent's secret store.
+In the UI: **Users & access → API tokens → Mint grant**. Copy the refresh token one time, into the agent's secret store.
 
 From the command line, on the hopper's host (`src/cli-operator-keys.ts`):
 
@@ -160,7 +160,7 @@ The command prints the answer as JSON one time: `grant`, `token`, `expiresAt`, `
 (`ApiGrantMinted` in `src/domain/sign-in.ts`).
 
 Or let the agent ask for the grant with a device code, so no person copies a token:
-`POST /ui/auth/device-grant`, then a person approves the code in **Settings → API tokens → Approve a device**, then the
+`POST /ui/auth/device-grant`, then a person approves the code in **Users & access → API tokens → Approve a device**, then the
 agent polls `POST /ui/auth/device-grant/poll` (`src/http/ui/api-tokens.ts`, `src/http/ui/device-grants.ts`). The steps
 are in "Let an agent ask for a grant" in [API tokens and grants](../help/api-tokens.md).
 
@@ -276,7 +276,7 @@ content-type: application/json
 - **On the hopper:** the signing secret is a **system secret** in the vault, the row
   `system/webhook.<subscription id>.signing-secret` (`src/webhooks/secrets.ts`, `src/domain/vault.ts`). It is sealed under
   the master key and written only through `SystemSecrets.keep` (`src/vault/system.ts`). No route answers it again, and
-  no job, machine or box gets it. **Settings → Vault** shows its audit trail, never its value.
+  no job, machine or box gets it. **Vault** shows its audit trail, never its value.
 - **On the agent:** keep the copy in the agent's own secret store, with its refresh token. Never in a file in a
   repository, never in an `.env` file, never in a log.
 - A typed secret has 32 to 4096 printable ASCII characters and no spaces. A secret the hopper makes has 64 hex
@@ -521,7 +521,7 @@ Turn remote access off when the agent does not need it.
 
 ## Walkthrough
 
-1. **Mint the grant.** In **Settings → API tokens**, mint a box grant with the role `operator`, the scopes `*:read`,
+1. **Mint the grant.** In **Users & access → API tokens**, mint a box grant with the role `operator`, the scopes `*:read`,
    `direct-queries:edit`, `questions:answer` and `sources:intake.approve`, and the repositories it works on. Or let the
    agent ask with a device code. Put the refresh token into the agent's secret store.
 2. **Add the webhook.** In **Settings → Webhooks**, add `my-agent` with the agent's URL and the events of

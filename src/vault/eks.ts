@@ -149,7 +149,7 @@ export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: 
     for (const a of asked) if (a.cluster) found.push({ credential: name, account, keys, roleArn, sessionName, session, cluster: a.cluster });
   }
   if (!found.length) return { refused: `no minting credential mints for cluster ${d.cluster}, and the vault found it in none of the accounts it mints for (${looked.join('; ')})` };
-  if (found.length > 1) return { refused: `EKS has a cluster ${d.cluster} in ${found.length} places: ${found.map((f) => `${f.account} in ${f.cluster.region} (${f.credential})`).join(', ')}. The vault does not pick one: a person adds a minting credential for cluster ${d.cluster} on Settings → Vault, or names its account and region in the cluster's override on Settings → Clusters` };
+  if (found.length > 1) return { refused: `EKS has a cluster ${d.cluster} in ${found.length} places: ${found.map((f) => `${f.account} in ${f.cluster.region} (${f.credential})`).join(', ')}. The vault does not pick one: a person adds a minting credential for cluster ${d.cluster} on Vault, or names its account and region in the cluster's override on Settings → Clusters` };
   const [f] = found as [typeof found[number]];
   const where = { credential: f.credential, account: f.account, region: f.cluster.region, searched };
   if (d.role === EKS_READ_ROLE) return { ...await signedFor(o, f.session, f.cluster, f.roleArn, f.sessionName, identify), ...where };

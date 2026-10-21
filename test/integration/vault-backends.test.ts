@@ -104,7 +104,7 @@ describe('a vault secret kept in a vault backend', () => {
     await first.edit({ action: 'set', name: 'LOCAL_KEY', value: LOCAL });
     await first.edit({ action: 'save-template', name: 'db', image: 'localhost/box-db:1', secrets: ['DB_PASS', 'LOCAL_KEY'] });
     await first.edit({ action: 'approve-template', name: 'db' });
-    // The backend leaves the plugins config: a person removes it in Settings → Plugins.
+    // The backend leaves the plugins config: a person removes it in Plugins.
     const { a, session } = first;
     const version = (await a.api('GET', '/api/plugins')).body.config.version as string;
     expect((await a.ui('/ui/api/plugins', { action: 'remove', role: 'vault-backend', name: 'my-vault', version }, { token: session })).status).toBe(200);

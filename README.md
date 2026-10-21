@@ -308,10 +308,10 @@ directories exist on the machine: a job whose directory is missing there fails.
 ### This host
 
 Set up by [Run it](#run-it): `install.sh` starts its herdr session (`hopper-herdr`). A new hopper
-does not list its own host as a machine: add it in Settings → Plugins → Machine sources (the `local`
+does not list its own host as a machine: add it in Plugins → Machine sources (the `local`
 plugin), and pick it as the machine of the escalation levels and the usage source. It runs 4
 lanes. To change that: the UI's Machines view, Edit on this machine. To keep some executors off this
-host, set the `executors` option of the `local` instance in Settings → Plugins → Machine sources
+host, set the `executors` option of the `local` instance in Plugins → Machine sources
 (for example `test` and `herdr-claude`).
 
 With [Podman](#with-podman-recommended) the hopper's container is not a machine: it lists no `local`
@@ -334,7 +334,7 @@ machine (`HOPPER_LOCAL_MACHINE=false`), and jobs run on the machines attached be
 
    A key of your own instead (optional): mount it as the secret `HOPPER_SSH_KEY_FILE` and prepare the
    target with `bash ~/.local/lib/hopper/scripts/attach-machine.sh my-desktop 2`, which lets that key in
-   and prints the options to set in Settings → Plugins → Machine sources.
+   and prints the options to set in Plugins → Machine sources.
 5. Optional: give it a work tree (Machines → Edit → work tree). Default `~/hopper-jobs` there. The
    hopper makes it and clones each job's repository into it; nothing to set up by hand.
 
@@ -350,8 +350,8 @@ starts through the container runtime the hopper starts its sandboxes with ([docs
 "Sandboxes the hopper starts"](docs/deploy.md)); while it has none, the target is offline.
 
 1. Attach it in the UI:
-   - Settings → Plugins → Executors: **Add** a `command` instance named `command`.
-   - Settings → Plugins → Machine sources: **Add** a `container` instance named `box`, and set its
+   - Plugins → Executors: **Add** a `command` instance named `command`.
+   - Plugins → Machine sources: **Add** a `container` instance named `box`, and set its
      options `lanes: 1`, `executors: command`. Its `image` is the hopper's box image by default;
      another image must run as a user other than root.
    - Keep commands off this host: on the `local` instance there, set `executors` to the others
@@ -383,7 +383,7 @@ of it shows in a herdr pane.
 ### Machines nobody watches: Claude with no key press
 
 A job never waits on a key press at Claude's startup. On each herdr-claude instance, **unattended** (on by default,
-Settings → Plugins) seeds Claude's config where the machine has none — a fresh container's empty home starts with no
+Plugins) seeds Claude's config where the machine has none — a fresh container's empty home starts with no
 first-run screen — and answers Claude's first-run screens (theme, the machine's API key, notices) with their defaults.
 A screen the hopper has no default for, or Claude not signed in, comes to you as a question with the screen; your
 answer picks its option. In a container, give Claude its credential as `CLAUDE_CODE_OAUTH_TOKEN`: name it in `compose.override.yaml`
@@ -432,7 +432,7 @@ made (not writable, the home itself) takes no job: its jobs wait, held with the 
 that can take them, and the Machines view says what is wrong.
 
 A job pinned to a machine that is offline waits for it. To keep room for pinned jobs, give a machine
-`reservedLanes` (Settings → Plugins → Machine sources): jobs that could run on any machine leave that
+`reservedLanes` (Plugins → Machine sources): jobs that could run on any machine leave that
 many of its lanes free for the jobs pinned to it, and go to other machines first. How each kind works and why:
 `docs/design.md` "Attached machines", "Container targets", "Client targets", "Target
 authentication".
@@ -453,7 +453,7 @@ question gates, webhooks, users and sign-in.
 What each part of the UI is for, and what to do there: the [help pages](https://henningfutrell.github.io/hopper/help/) (`/help/` on your
 hopper). Needs a person, parking, the blast-radius gate, failures and client updates: the [user guide](https://henningfutrell.github.io/hopper/guide.html).
 
-<img src="docs/screenshots/job-rules.webp" width="49%" alt="Settings → Job rules: the rules text every job's prompt carries, and the fixed part after it."> <img src="docs/screenshots/plugins.webp" width="49%" alt="Settings → Plugins: the shipped plugins, each switched on or off, with what it does.">
+<img src="docs/screenshots/job-rules.webp" width="49%" alt="Settings → Job rules: the rules text every job's prompt carries, and the fixed part after it."> <img src="docs/screenshots/plugins.webp" width="49%" alt="Plugins: the shipped plugins, each switched on or off, with what it does.">
 
 The API: `GET /api/*` reads, free on loopback, and with a UI session (`x-hopper-session`) or an API token
 (`Authorization: Bearer hopper_at_…`) from anywhere else; the only changes are `POST /ui/api/*`, behind a UI session or

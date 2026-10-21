@@ -1,4 +1,4 @@
-// Issue #708, part 10: a template's agent credential on Settings → Vault, the page's pure model. The form offers only
+// Issue #708, part 10: a template's agent credential on Vault, the page's pure model. The form offers only
 // the template's own secrets, never a shared one, and drops the choice when its secret leaves the template; the template
 // says whether its boxes start signed in, and when its agent credential still waits for approval.
 import { describe, expect, it } from 'vitest';

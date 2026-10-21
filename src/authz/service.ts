@@ -1,6 +1,6 @@
 // Access (issue #559, design.md "Access: OpenFGA decides each mint"): the decision point the vault (issue #558) asks
 // before every credential it mints or renews — `decideMint` —, the approvals and the model the hopper keeps and pushes
-// to OpenFGA with the tuples of who is live (issue #581), and Settings → Access's view. Fail closed: with no OpenFGA set
+// to OpenFGA with the tuples of who is live (issue #581), and Users & access → Access's view. Fail closed: with no OpenFGA set
 // up, OpenFGA not reached, a change it has not taken yet, a model it refused or that lacks a relation the hopper writes,
 // or a requester that is not live, the answer is a deny, recorded like any other. Each template shows with its blast
 // radius (issue #584), rated from its approvals and the vault templates of that name.
@@ -118,7 +118,7 @@ export function createAccess(o: AccessOptions): Access {
     if (storeId !== o.repo.state(KEY_STORE)) o.repo.setState(KEY_STORE, storeId);
     const m = model();
     const gaps = gapsOf(m.dsl);
-    if (gaps.length > 0) throw new Error(`the access model lacks what the hopper writes or asks: ${gaps.join(', ')}: save one that has them in Settings → Access`);
+    if (gaps.length > 0) throw new Error(`the access model lacks what the hopper writes or asks: ${gaps.join(', ')}: save one that has them in Users & access → Access`);
     let pushed = pushedModel();
     if (pushed?.storeId !== storeId || pushed.version !== m.version) {
       const modelId = await server.writeModel(storeId, compileAccessModel(m.dsl));
@@ -173,7 +173,7 @@ export function createAccess(o: AccessOptions): Access {
     if (dirty) { await running; await sync(); }
     if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
     const pushed = pushedModel()!, noObserve = r.operation === 'observe' ? observeGapsOf(model().dsl) : [];
-    const profile = { operation: r.operation, asset: r.asset }, key = emailKeyed(); if (noObserve.length > 0) return { allowed: false, modelId: pushed.modelId, reason: `the access model lacks what observe needs: ${noObserve.join(', ')}: add it in Settings → Access` };
+    const profile = { operation: r.operation, asset: r.asset }, key = emailKeyed(); if (noObserve.length > 0) return { allowed: false, modelId: pushed.modelId, reason: `the access model lacks what observe needs: ${noObserve.join(', ')}: add it in Users & access → Access` };
     try {
       const allowed = await server.check(pushed.storeId, pushed.modelId, key({ subject, relation: `can_${r.operation}`, object: assetObject(r.asset) }), contextual.map(key));
       if (!allowed) return { allowed, modelId: pushed.modelId, reason: `${who} is not approved to ${r.operation} on ${describeAsset(r.asset)}` };
@@ -209,7 +209,7 @@ export function createAccess(o: AccessOptions): Access {
   const checkOnce = async (what: string, gaps: string[], tuple: RelationshipTuple, contextual: RelationshipTuple[], why: (allowed: boolean) => string): Promise<AccessAnswer> => {
     const server = o.server;
     if (!server) return { allowed: false, reason: NOT_CONFIGURED, unavailable: true };
-    if (gaps.length > 0) return { allowed: false, reason: `the access model lacks what ${what} need: ${gaps.join(', ')}: add it in Settings → Access` };
+    if (gaps.length > 0) return { allowed: false, reason: `the access model lacks what ${what} need: ${gaps.join(', ')}: add it in Users & access → Access` };
     if (liveKey() !== pushedRequesters) dirty = true;
     if (dirty) { await running; await sync(); }
     if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}`, unavailable: true };

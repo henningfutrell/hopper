@@ -4772,7 +4772,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 
 ## `vault.minted`
 
-Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. `bound` (issue #1371): the Secret a need box's Kubernetes token is bound to; deleting it (`vault.unbound`) ends the token. `actions` (issue #2206): the granted AWS actions, each on its resource, a need step's session was narrowed to. A mint that names a plan and is no renewal is an apply: the notifiers send it as `infra.plan_applied`, with the watchers of the plan's environments (issue #870 part 4). Never the credential.
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Users & access → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. `bound` (issue #1371): the Secret a need box's Kubernetes token is bound to; deleting it (`vault.unbound`) ends the token. `actions` (issue #2206): the granted AWS actions, each on its resource, a need step's session was narrowed to. A mint that names a plan and is no renewal is an apply: the notifiers send it as `infra.plan_applied`, with the watchers of the plan's environments (issue #870 part 4). Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -4816,7 +4816,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 
 ## `vault.mint_refused`
 
-Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to mint a credential and got none (issue #580): Access denied it — the profile waits at the first-time gate on Settings → Vault, or the template does not declare it —, or no minting credential covers the asset, or the outside service refused. `decision` when Access answered; never a value.
+Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to mint a credential and got none (issue #580): Access denied it — the profile waits at the first-time gate on Vault, or the template does not declare it —, or no minting credential covers the asset, or the outside service refused. `decision` when Access answered; never a value.
 
 | field | type | required |
 |---|---|---|
@@ -4900,7 +4900,7 @@ Version 1 (`docs/schemas/vault.discovery_minted.v1.json`). Topology discovery (i
 
 ## `vault.check_minted`
 
-Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-lived read credential for a read-only check box of a template (issue #797): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the read need on the asset, from the minting credential named, after Access allowed the template it (`decision`, a decision of the check on Settings → Access). The check runs no job; `check` is its check box. `bound` (issue #1371): the Secret a Kubernetes token is bound to, deleted when the check box ends (`vault.unbound`). Never the credential.
+Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-lived read credential for a read-only check box of a template (issue #797): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the read need on the asset, from the minting credential named, after Access allowed the template it (`decision`, a decision of the check on Users & access → Access). The check runs no job; `check` is its check box. `bound` (issue #1371): the Secret a Kubernetes token is bound to, deleted when the check box ends (`vault.unbound`). Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -4954,7 +4954,7 @@ Version 1 (`docs/schemas/vault.check_mint_refused.v1.json`). A read-only check b
   },
   "template": "asked-0afb8cc6",
   "check": "hopper-check-asked-0afb8cc6-mgk2x0",
-  "reason": "no minting credential mints for cluster lab: a person adds one on Settings → Vault",
+  "reason": "no minting credential mints for cluster lab: a person adds one on Vault",
   "decision": "6c1d2e3f-0000-4000-8000-000000000005"
 }
 ```
@@ -5281,7 +5281,7 @@ Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the
 
 ## `sandbox.strictness_changed`
 
-Version 1 (`docs/schemas/sandbox.strictness_changed.v1.json`). An admin changed the sandbox strictness in Settings → Vault (issue #655, brake 2): which sandbox runs gate 2 may approve with no person, `default`, by blast radius level (`radius`) and by template (`templates`). `relaxed` and `standard`: the approval toggles and policies decide; `strict`: a person approves each run of a medium or high radius template, or one with no rating; `locked`: a person approves each run. It applies at once. `from` and `to`, `by` who changed it.
+Version 1 (`docs/schemas/sandbox.strictness_changed.v1.json`). An admin changed the sandbox strictness in Vault (issue #655, brake 2): which sandbox runs gate 2 may approve with no person, `default`, by blast radius level (`radius`) and by template (`templates`). `relaxed` and `standard`: the approval toggles and policies decide; `strict`: a person approves each run of a medium or high radius template, or one with no rating; `locked`: a person approves each run. It applies at once. `from` and `to`, `by` who changed it.
 
 | field | type | required |
 |---|---|---|
@@ -5444,7 +5444,7 @@ Version 1 (`docs/schemas/vault.write_forgotten.v1.json`). An admin forgot a reme
 
 ## `vault.grant_asked`
 
-Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, or a job's Windows sandbox step asked for a vault secret (issue #731), or its box step (issue #1875), and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine and the template (a box), the `windowsHost` (a Windows step), or the need `box` and the template (a box step), and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
+Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, or a job's Windows sandbox step asked for a vault secret (issue #731), or its box step (issue #1875), and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Vault). The job, its item's key, the machine and the template (a box), the `windowsHost` (a Windows step), or the need `box` and the template (a box step), and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
 
 | field | type | required |
 |---|---|---|
@@ -5468,7 +5468,7 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 
 ## `vault.granted`
 
-Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for; `standing read grant` (issue #1472) when the user's standing read grant gave it, with no person, to a job on a box of a template that only reads what the read policy holds.
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for; `standing read grant` (issue #1472) when the user's standing read grant gave it, with no person, to a job on a box of a template that only reads what the read policy holds.
 
 | field | type | required |
 |---|---|---|
@@ -7718,7 +7718,7 @@ Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows s
   "name": "NUGET_TOKEN",
   "host": "build-host",
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
-  "reason": "job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again"
+  "reason": "job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page, then ask again"
 }
 ```
 

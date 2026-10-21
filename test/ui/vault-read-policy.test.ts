@@ -1,4 +1,4 @@
-// Issue #716, item 1: the read policy on Settings → Vault, the page's pure model. The admin types the entries one per
+// Issue #716, item 1: the read policy on Vault, the page's pure model. The admin types the entries one per
 // line (or comma- or space-separated); the panel says what the policy lets the hopper do with no person.
 import { describe, expect, it } from 'vitest';
 import { readPolicyEntries, readPolicyText } from '../../ui/src/model/vault-read-policy.ts';

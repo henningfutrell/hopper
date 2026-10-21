@@ -62,7 +62,7 @@ const SHOTS: Shot[] = [
   { name: 'usage', viewport: { width: 1440, height: 900 }, go: view('#usage') },
   { name: 'settings', go: view('#settings/routing') },
   { name: 'job-rules', go: view('#settings/job-rules') },
-  { name: 'plugins', go: view('#settings/plugins') },
+  { name: 'plugins', go: view('#plugins') },
   { name: 'queue-order', go: view('#queue') },
   { name: 'sign-in', signedOut: true, go: (page) => settle(page, 2500) },
   { name: 'phone', viewport: PHONE, scale: 2, go: view('#dashboard') },

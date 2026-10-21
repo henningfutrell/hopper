@@ -8,16 +8,16 @@
 //     Given the minting credentials KUBE_LAB (cluster/lab) and AWS_LAB (aws-account/123456789012)
 //     And the template kube, which declares read and write on namespace/lab/web and read on aws-role/123456789012/diag
 //     And a job running on a box joined as kube, which takes a job only once kube is approved (issue #602)
-//     And the read on namespace/lab/web revoked in Settings → Access while the job runs
+//     And the read on namespace/lab/web revoked in Users & access → Access while the job runs
 //     When the job runs `$HOPPER_SECRET kube read namespace/lab/web`
 //     Then it is refused: the profile waits for a person's approval on Access requests
 //     And the Kubernetes API is not asked
 //   Scenario: once the template is approved, the job gets a short-lived token, and the audit names Access's decision
 //     Then the token is a TokenRequest token for the service account hopper-read in namespace web, with its expiry
-//     And `vault.minted` carries the id of the allowing decision Settings → Access records
+//     And `vault.minted` carries the id of the allowing decision Users & access → Access records
 //   Scenario: a write on the same asset is denied and mints nothing
 //   Scenario: an AWS role session, read only, through STS
-//   Scenario: after a revoke in Settings → Access, the next renewal is denied
+//   Scenario: after a revoke in Users & access → Access, the next renewal is denied
 //   Scenario: a minting credential is never given out, and a profile the template does not declare is refused
 //   Scenario: with the vault in a container of its own (issue #586), Access decides in the hopper and the vault mints
 //   Scenario: a minting credential that names a session name (issue #781) assumes the role with that name, still 900 s
@@ -217,7 +217,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     mintingCredentialsNowhere(a, dir);
   });
 
-  it('mints a read-only AWS role session through STS; after a revoke in Settings → Access the next renewal is denied', async () => {
+  it('mints a read-only AWS role session through STS; after a revoke in Users & access → Access the next renewal is denied', async () => {
     const { a, session, sts } = await boot();
     await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
     const { dir, job, token } = await boxWithJob(a, session);

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Users (issue #158): the users of this hopper, and for an admin "Add user", which shows the
+// Users & access → Users (issue #158): the users of this hopper, and for an admin "Add user", which shows the
 // one-time login link the daemon answers, to copy and hand over. A session that is not admin neither
 // lists nor adds users (GET /api/users answers an admin). An admin reads the users' work only as totals
 // across all of them (issue #221).

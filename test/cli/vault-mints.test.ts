@@ -1,5 +1,5 @@
 // `hopper vault set <name> --mints <kind>/<name>|none` (issue #791): the call the operator CLI makes, before any daemon.
-// The Settings → Vault page's Mints for, `mints` on `POST /ui/api/vault` `set`; none sends null (a plain secret again),
+// The Vault page's Mints for, `mints` on `POST /ui/api/vault` `set`; none sends null (a plain secret again),
 // and leaving it out sends no `mints` (the secret keeps what it mints for). The integration test runs it on a daemon
 // (test/integration/operator-cli-vault.test.ts).
 import { describe, expect, it } from 'vitest';

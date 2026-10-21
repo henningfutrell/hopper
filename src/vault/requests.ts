@@ -130,7 +130,7 @@ export function createCredentialRequests(o: {
         // Its metadata only: the value stays as the vault keeps it (sealed, or in a vault backend, issue #585).
         vault.replace({ ...rest, skill: r.skill, kind: g.kind, ...(note ? { note } : {}) }, vault.sealed(s.id) ?? null);
         // The person gives it for this template's boxes: that approves the widening by this one secret, and nothing more.
-        // A template never approved, or whose image changed, still waits for a person on Settings → Vault.
+        // A template never approved, or whose image changed, still waits for a person on Vault.
         const approves = imageApproved(t);
         vault.saveTemplate({
           ...t, secrets: t.secrets.includes(g.name) ? t.secrets : [...t.secrets, g.name],

@@ -144,7 +144,7 @@ export function createVaultService(o: {
       return { id, sealed: sealer.seal(s.value, vaultContext(id)) };
     }
     const b = backendOf(s.backend);
-    if (!b) return fail('invalid', `no vault backend ${s.backend}: add it in Settings → Plugins first`);
+    if (!b) return fail('invalid', `no vault backend ${s.backend}: add it in Plugins first`);
     if (!b.backend) return fail('invalid', `the vault backend ${s.backend} cannot run: ${b.problem ?? 'unknown'}`);
     if (s.reference.length === 0 || s.reference.length > VAULT_REFERENCE_MAX) return fail('invalid', `reference must be 1 to ${VAULT_REFERENCE_MAX} characters`);
     const bad = b.backend.check(s.reference);
@@ -155,7 +155,7 @@ export function createVaultService(o: {
   /** The value of a secret kept in a backend, read there now; or why not. */
   async function readBackend(secret: VaultSecret & { backend: { name: string; reference: string } }): Promise<{ value: string } | { refused: string }> {
     const b = backendOf(secret.backend.name);
-    if (!b) return { refused: `no vault backend ${secret.backend.name}: ${secret.name} is kept there; add the backend again in Settings → Plugins` };
+    if (!b) return { refused: `no vault backend ${secret.backend.name}: ${secret.name} is kept there; add the backend again in Plugins` };
     if (!b.backend) return { refused: `the vault backend ${b.name} cannot run: ${b.problem ?? 'unknown'}` };
     try {
       return { value: await b.backend.read(secret.backend.reference) };

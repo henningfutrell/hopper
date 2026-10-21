@@ -1,4 +1,4 @@
-// Access (issue #559): GET /api/access, Settings → Access — whether OpenFGA can be asked, the model, each template's
+// Access (issue #559): GET /api/access, Users & access → Access — whether OpenFGA can be asked, the model, each template's
 // approvals with the relationship chain, the revoked ones, the newest decisions. The instance's: its admin's alone.
 // GET /api/access/status (issue #696): whether OpenFGA can be asked, for every reader — the banner and the forms that
 // need Access say so before a save is tried. The state and why only: no store, no model.

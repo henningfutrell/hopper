@@ -49,7 +49,7 @@ describe('sourcesView', () => {
     expect(sourcesView([source('github-account', 'github-account', 'error', {}, { lastError: 'invalid options: pollSeconds' })], signedIn()).summary)
       .toBe('Signed in with GitHub as octo-user, but its job source cannot run: invalid options: pollSeconds.');
     expect(sourcesView([source('github-account', 'github-account', 'disabled', {})], signedIn()).summary)
-      .toBe('Signed in with GitHub as octo-user, but its job source is switched off in Settings → Plugins.');
+      .toBe('Signed in with GitHub as octo-user, but its job source is switched off in Plugins.');
   });
 
   it('not signed in: it says how to sign in', () => {

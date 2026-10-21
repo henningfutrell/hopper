@@ -1,4 +1,4 @@
-// A template's read-only check on Settings → Vault (issue #716, design.md "The read-only check"): for a template a job
+// A template's read-only check on Vault (issue #716, design.md "The read-only check"): for a template a job
 // asked for with read needs only, whether the check of its current version passed (beside who approved it), a link to its
 // check report (issue #715: an artifact of the job that asked for the template), and a button to run it again.
 import { RefreshCw } from 'lucide-react';

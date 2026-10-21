@@ -1,4 +1,4 @@
-// Settings → Access, a minimum trust (issue #655, part 15): each operation profile with one, with Clear, and a form
+// Users & access → Access, a minimum trust (issue #655, part 15): each operation profile with one, with Clear, and a form
 // that sets one. No job whose trust stamp is below a profile's minimum gets that operation on its asset, whatever its
 // template's approvals say. A box and a person are no job: the minimum does not gate them. The daemon checks it in
 // OpenFGA; the UI only sets and shows it.
@@ -20,8 +20,8 @@ export const MIN_LEVELS: Level[] = ['owner', 'trusted', 'approved', 'screened', 
 
 const profileText = (m: Pick<MinTrust, 'profile'>) => `${m.profile.operation} on ${m.profile.asset.kind} ${m.profile.asset.name}`;
 
-export function MinTrustPanel({ view, operations, kinds, onChanged }: {
-  view: AccessView; operations: Operation[]; kinds: AssetKind[]; onChanged: (v: AccessView) => void;
+export function MinTrustPanel({ view, operations, kinds, onChanged, fold }: {
+  view: AccessView; operations: Operation[]; kinds: AssetKind[]; onChanged: (v: AccessView) => void; fold?: string;
 }) {
   const [operation, setOperation] = useState<Operation>('write');
   const [kind, setKind] = useState<AssetKind>('cluster');
@@ -37,7 +37,8 @@ export function MinTrustPanel({ view, operations, kinds, onChanged }: {
     setBusy(false);
   };
   return (
-    <Panel title="Minimum trust" icon={ShieldCheck} count={view.minTrust.length}>
+    <Panel title="Minimum trust" icon={ShieldCheck} count={view.minTrust.length} fold={fold}
+      summary={view.minTrust.length ? `${view.minTrust.length} ${view.minTrust.length === 1 ? 'operation has' : 'operations have'} a minimum trust` : 'no operation has a minimum trust'}>
       <div data-slot="access-min-trust" className="space-y-2 text-sm">
         <p className="text-muted-foreground">
           A job whose trust stamp is below an operation's minimum does not get that operation on its asset, whatever its template's approvals say. A box and a person are no job: the minimum does not apply to them.

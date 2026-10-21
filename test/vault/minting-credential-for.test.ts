@@ -13,11 +13,11 @@ describe('the minting credential for an account or a cluster (issue #1761)', () 
   });
 
   it('is none when no secret mints for it', () => {
-    expect(mintingCredentialFor([secret('PLAIN')], ACCOUNT)).toBe('no minting credential mints for aws-account 123456789012: a person adds one on Settings → Vault');
+    expect(mintingCredentialFor([secret('PLAIN')], ACCOUNT)).toBe('no minting credential mints for aws-account 123456789012: a person adds one on Vault');
   });
 
   it('is refused, with every name, when several secrets mint for it', () => {
     const said = mintingCredentialFor([secret('AWS_OLD', ACCOUNT), secret('AWS_KEY_ID', ACCOUNT), secret('AWS_KEY_SECRET', ACCOUNT)], ACCOUNT);
-    expect(said).toBe('3 minting credentials mint for aws-account 123456789012: AWS_OLD, AWS_KEY_ID, AWS_KEY_SECRET. The vault does not pick one: a person keeps one on Settings → Vault and clears Mints for on the others');
+    expect(said).toBe('3 minting credentials mint for aws-account 123456789012: AWS_OLD, AWS_KEY_ID, AWS_KEY_SECRET. The vault does not pick one: a person keeps one on Vault and clears Mints for on the others');
   });
 });

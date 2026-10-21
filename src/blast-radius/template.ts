@@ -61,7 +61,7 @@ export function rateTemplate(scope: TemplateScope, approved: readonly OperationP
 const rank = (r: TemplateRadius): number => RADIUS_LEVELS.indexOf(r.level);
 
 /**
- * A template's rating as Settings → Access shows it: from its approvals and each vault template of its name (`scopes`);
+ * A template's rating as Users & access → Access shows it: from its approvals and each vault template of its name (`scopes`);
  * the highest when users' templates share it, and the default rules when none does.
  */
 export function templateRadius(template: string, approved: OperationProfile[], scopes: { name: string; scope: TemplateScope; rules: RadiusRules }[]): TemplateRadius {

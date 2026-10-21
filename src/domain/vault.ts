@@ -108,7 +108,7 @@ export function systemBackendRefusal(name: string): string | undefined {
   return `${name} stays in the hopper: ${why}`;
 }
 
-/** A system secret as Settings → Vault shows it (issue #658): never its value. */
+/** A system secret as Vault shows it (issue #658): never its value. */
 export interface SystemSecretView {
   name: string;
   kind: SystemSecretKind;
@@ -409,7 +409,7 @@ export function purposeLabel(purpose: string): string | undefined {
 }
 
 /**
- * The template a request makes, shown before it is made (issue #708, part 9: the template request on Settings → Vault): what a
+ * The template a request makes, shown before it is made (issue #708, part 9: the template request on Vault): what a
  * request with these needs saves now, and who approves it. `exists`: a template of that name is there already, with the
  * same needs (a request makes no second one) or changed by a person (a request is refused).
  */

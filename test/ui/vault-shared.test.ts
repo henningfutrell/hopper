@@ -1,4 +1,4 @@
-// Issue #718: shared secrets on Settings → Vault, the page's pure model. Each says whose agents may read it, who set it
+// Issue #718: shared secrets on Vault, the page's pure model. Each says whose agents may read it, who set it
 // and when; the readers the hopper's admin types are user ids, comma- or space-separated, or none for every user.
 import { describe, expect, it } from 'vitest';
 import { readersOf, sharedReadersText, sharedSecretLine } from '../../ui/src/model/vault-shared.ts';

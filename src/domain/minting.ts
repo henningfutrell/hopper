@@ -322,8 +322,8 @@ export function mintingCredentialFor<S extends { name: string; mints?: Asset }>(
   const all = secrets.filter((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
   if (all.length === 1) return all[0]!;
   const what = `${mintsFor.kind} ${mintsFor.name}`;
-  if (all.length === 0) return `no minting credential mints for ${what}: a person adds one on Settings → Vault`;
-  return `${all.length} minting credentials mint for ${what}: ${all.map((s) => s.name).join(', ')}. The vault does not pick one: a person keeps one on Settings → Vault and clears Mints for on the others`;
+  if (all.length === 0) return `no minting credential mints for ${what}: a person adds one on Vault`;
+  return `${all.length} minting credentials mint for ${what}: ${all.map((s) => s.name).join(', ')}. The vault does not pick one: a person keeps one on Vault and clears Mints for on the others`;
 }
 
 /**

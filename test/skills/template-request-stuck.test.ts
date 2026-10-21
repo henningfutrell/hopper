@@ -2,7 +2,7 @@
 // the read-only check, and the vault mints the check's read credentials for an aws-role, a cluster or a namespace only:
 // such a request with a read need on an aws-account is refused when it is asked for, and the refusal names the need to
 // ask for in its place. When a person changed a template a job asked for, the refusal names the template's needs now,
-// and whether the operator CLI or Settings → Vault changed it. Pure.
+// and whether the operator CLI or Vault changed it. Pure.
 import { describe, expect, it } from 'vitest';
 import type { OperationProfile } from '../../src/domain/access.ts';
 import { OPERATOR_CLI_NAME } from '../../src/domain/failures.ts';
@@ -81,10 +81,10 @@ describe('a template a person changed since a job asked for it (issue #1468)', (
     const r = await requestTemplate(u, { needs: asked }, 'job j1', 'j1');
     expect(r.status).toBe(409);
     expect('reason' in r && r.reason).toContain(`--needs "read/aws-role/${ACCOUNT}/ReadOnly write/cluster/lab"`);
-    expect('reason' in r && r.reason).toContain(`changed template ${name} in Settings → Vault`);
+    expect('reason' in r && r.reason).toContain(`changed template ${name} in Vault`);
   });
 
-  it('says when the operator CLI changed it, not Settings → Vault', async () => {
+  it('says when the operator CLI changed it, not Vault', async () => {
     const { u } = user(changed(OPERATOR_CLI_NAME));
     const r = await requestTemplate(u, { needs: asked }, 'job j1', 'j1');
     expect(r.status).toBe(409);

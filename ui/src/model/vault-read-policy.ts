@@ -1,4 +1,4 @@
-// The read policy on Settings → Vault (issue #716): the assets the hopper approves read on with no person, for a
+// The read policy on Vault (issue #716): the assets the hopper approves read on with no person, for a
 // template a job asks for. The admin types the entries; the hopper checks each one when it is saved.
 
 /** The entries typed: one per line, or comma- or space-separated, each once. None clears the policy. */

@@ -21,6 +21,9 @@ import { Failures } from '@/views/failures';
 import { Infra } from '@/views/infra';
 import { Topology } from '@/views/topology-page'; import { PendingApprovals } from '@/views/pending-approvals';
 import { Skills } from '@/views/skills';
+import { Plugins } from '@/views/plugins';
+import { UsersAccess } from '@/views/users-access';
+import { Vault } from '@/views/vault';
 import { JobView } from '@/views/job';
 import { Jobs } from '@/views/jobs';
 import { Intake } from '@/views/intake';
@@ -50,7 +53,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, ask: AskHopper, intake: Intake, tagged: Tagged, 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, accounts: Accounts, sources: Sources, machines: Machines, infra: Infra, topology: Topology, skills: Skills, usage: Usage, resources: Resources, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, ask: AskHopper, intake: Intake, tagged: Tagged, 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, accounts: Accounts, sources: Sources, machines: Machines, infra: Infra, topology: Topology, skills: Skills, plugins: Plugins, vault: Vault, 'users-access': UsersAccess, usage: Usage, resources: Resources, settings: Settings, job: JobView,
 };
 
 function Loading() {

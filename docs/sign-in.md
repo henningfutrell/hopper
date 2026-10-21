@@ -297,7 +297,7 @@ tries them first, while there is one, then each LDAP realm that is on.
 - **An admin runs the hopper, never another user's work.** Once an account has signed in, it signs in as
   its own user: an admin cannot set its password, nor add it again after it was removed (409). Its user
   changes the password in Settings → Sign-in → Your password, with the current one; the account's other
-  sessions and API tokens end. Its grants stay (an agent's delegation): end one in Settings → API tokens.
+  sessions and API tokens end. Its grants stay (an agent's delegation): end one in Users & access → API tokens.
 - **No lockout from the UI.** The account you signed in with cannot be removed, nor lowered from admin,
   from Settings: sign in as an admin another way first, or use the CLI.
 - **What is kept.** A salted scrypt hash of each password (`local_accounts`), made by Node's crypto, never
@@ -567,7 +567,7 @@ An API token (`Authorization: Bearer hopper_at_…`) reads `GET /api/*` and chan
 session does. How to make, use and revoke one, step by step: help page "API tokens and grants" (`/help/api-tokens`).
 What sign-in decides about it:
 
-- **Mint.** A person mints a **grant** from a UI session: Settings → API tokens, `POST /ui/api/api-tokens`, or
+- **Mint.** A person mints a **grant** from a UI session: Users & access → API tokens, `POST /ui/api/api-tokens`, or
   `hopper token mint`. The grant gives a refresh token (`hopper_rt_…`) and an API token. The agent trades the refresh
   token at `POST /ui/auth/token/refresh` for a new pair before the API token ends. An API token never mints a grant.
 - **Exchange.** An agent with no UI session sends a sign-in this door accepts (a connected account's GitHub token, or
@@ -664,7 +664,7 @@ admin's realm is on, the oldest user's (a hopper from before: its default admin 
 Only the instance admin:
 
 - changes sign-in realms and the admins, and reads them (`GET /api/realms`, Settings → Sign-in);
-- adds users and hands out their login links, and lists the users (`GET /api/users`, Settings → Users);
+- adds users and hands out their login links, and lists the users (`GET /api/users`, Users & access → Users);
 - reads the totals across users (`GET /api/instance`, issue #241) — counts and sums, never one user's work;
 - applies updates and changes their settings;
 - installs and removes plugins from the plugin store.
@@ -695,7 +695,7 @@ user of their own, and then it is folded into that user at the next start (below
 **Identity keyed by email (issue #1380).** Each user keeps the verified email it is known by: a local account's email,
 or the first email a realm vouches for at a sign-in (OIDC only with `email_verified`, GitHub its primary verified
 email). A second identity with that email — another realm, or the same provider with a new subject — signs in as the
-same user. Settings → Users shows each user's email.
+same user. Users & access → Users shows each user's email.
 
 **Move from a GitHub sign-in to a local account or SSO.** A person who signed in with GitHub keeps their user, their
 work and their GitHub connection (now a source in Sources):
@@ -709,7 +709,7 @@ work and their GitHub connection (now a source in Sources):
 An admin cannot add a local account of another user's email in Settings → Sign-in (409): that would be a way into that
 user's work (issue #221). The operator CLI can, as it can every other change to the database.
 
-- An admin adds a user from **Settings → Users** (or `hopper user add <name>`) and hands over the
+- An admin adds a user from **Users & access → Users** (or `hopper user add <name>`) and hands over the
   one-time login link it shows.
 - A user added later reads its secrets under its own prefix: a plugin option naming `GITHUB_TOKEN`
   reads `HOPPER_USER_<ID>_GITHUB_TOKEN` (or its `_FILE`), so set the variable for that user in the

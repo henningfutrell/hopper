@@ -1,4 +1,4 @@
-// A template's agent credential in its form on Settings → Vault (issue #708, part 10): one of its own secrets, a Claude
+// A template's agent credential in its form on Vault (issue #708, part 10): one of its own secrets, a Claude
 // token, which its boxes start with, signed in. None: a person signs the agent in once in each box.
 import { FIELD } from '@/components/plugin-form';
 import { Label } from '@/components/vault-fields';

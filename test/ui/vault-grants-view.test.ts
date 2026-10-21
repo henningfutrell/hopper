@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Access requests (issue #897; Settings → Vault until then), "Vault grants" (issue #652, requirement 5), rendered in happy-dom inside the whole app against a fake
+// Access requests (issue #897; Vault until then), "Vault grants" (issue #652, requirement 5), rendered in happy-dom inside the whole app against a fake
 // of the daemon's HTTP surface: a job on a box that asked the vault with no grant shows as a card — the job, its box and
 // template, what it asked for — with "Grant this job the vault"; Grant posts the job's grant. A granted job's item shows
 // who granted it, and Revoke takes the grant back.

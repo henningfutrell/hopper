@@ -32,10 +32,10 @@ const isConnected = (s: SourceStatus | undefined) => s !== undefined && typeof s
 
 /** Why the connection's source reads no issue, from its status: switched off, cannot run, or paused. Undefined: it reads. */
 function sourceTrouble(account: SourceStatus | undefined): string | undefined {
-  if (!account) return 'its job source is not in the plugins config: add a github-account job source in Settings → Plugins';
+  if (!account) return 'its job source is not in the plugins config: add a github-account job source in Plugins';
   if (account.state === 'error' && account.lastError) return `its job source cannot run: ${account.lastError}`;
   if (typeof account.detail.paused === 'string') return undefined;
-  if (account.state === 'disabled') return 'its job source is switched off in Settings → Plugins';
+  if (account.state === 'disabled') return 'its job source is switched off in Plugins';
   return undefined;
 }
 

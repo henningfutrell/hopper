@@ -26,9 +26,9 @@ describe('device grant requests (issue #892)', () => {
     if (!r.ok) throw new Error(r.error);
     expect(r.value).toMatchObject({
       deviceCode: expect.stringMatching(/^hopper_dc_[0-9a-f]{64}$/), userCode: expect.stringMatching(/^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/),
-      verificationPath: '/#settings/api-tokens', interval: DEVICE_GRANT.intervalS, expiresAt: new Date(start + DEVICE_GRANT.minutes * MINUTE).toISOString(),
+      verificationPath: '/#users-access/api-tokens', interval: DEVICE_GRANT.intervalS, expiresAt: new Date(start + DEVICE_GRANT.minutes * MINUTE).toISOString(),
     });
-    expect(r.value.verificationPathComplete).toBe(`/#settings/api-tokens/${r.value.userCode}`);
+    expect(r.value.verificationPathComplete).toBe(`/#users-access/api-tokens/${r.value.userCode}`);
     const seen = requests.find(r.value.userCode.toLowerCase().replace('-', ' '));
     expect(seen).toEqual({ userCode: r.value.userCode, ask, from: 'caller-1', createdAt: new Date(start).toISOString(), expiresAt: r.value.expiresAt });
     expect(JSON.stringify(seen)).not.toContain(r.value.deviceCode);

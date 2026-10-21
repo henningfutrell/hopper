@@ -262,7 +262,7 @@ terraform init -input=false -no-color`,
 /** A probe that writes to the need's state backend: its environment, or why it is not run (issue #715). */
 function backendOf(n: OperationProfile): Pick<ProbeRun, 'vars' | 'notRun'> {
   const b = n.backend;
-  if (!b) return { notRun: `not run: no backend configured. A person sets the state backend of ${n.asset.kind} ${n.asset.name} (its bucket, region and key prefix) in Settings → Vault` };
+  if (!b) return { notRun: `not run: no backend configured. A person sets the state backend of ${n.asset.kind} ${n.asset.name} (its bucket, region and key prefix) in Vault` };
   return { vars: { HOPPER_STATE_BUCKET: b.bucket, HOPPER_STATE_REGION: b.region, HOPPER_STATE_KEY: stateProbeKey(b) } };
 }
 

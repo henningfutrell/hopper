@@ -1,4 +1,4 @@
-// Settings → Vault, the read policy (issue #716): the assets the hopper approves read on with no person, for a template a
+// Vault, the read policy (issue #716): the assets the hopper approves read on with no person, for a template a
 // job asks for (`sh "$HOPPER_SKILL" sandbox-template --needs …`). Each entry is an asset as Access names it
 // (`cluster/lab`) or one that ends in `*` (`aws-account/*`). Write, sync and apply always wait for a person. Every user
 // sees the policy; only an admin edits it.

@@ -14,7 +14,7 @@ const MINUTE = 60_000;
 const LETTERS = 'BCDFGHJKLMNPQRSTVWXZ';
 const hashOf = (code: string): string => createHash('sha256').update(code, 'utf8').digest('hex');
 /** The settings page a person enters the user code on, as a path of the hopper's URL the agent called. */
-const VERIFICATION_PATH = '/#settings/api-tokens';
+const VERIFICATION_PATH = '/#users-access/api-tokens';
 
 /** A user code as typed, in its one form (`BCDF-GHJK`): case, spaces and dashes do not count. Undefined: it cannot be one. */
 export function userCodeOf(typed: string): string | undefined {

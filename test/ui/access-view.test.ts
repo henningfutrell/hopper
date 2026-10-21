@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Access (issue #559), rendered in happy-dom inside the whole app against a fake of the daemon's HTTP
+// Users & access → Access (issue #559), rendered in happy-dom inside the whole app against a fake of the daemon's HTTP
 // surface: whether OpenFGA can be asked, and why not; each template's approvals with the relationship chain from the
 // template to the asset, each with Revoke (asked once, then POST /ui/api/access); a check tried for a template, an
 // operation and an asset, with its answer and path; the newest decisions; and the model, saved against its version.
@@ -80,7 +80,7 @@ let root: Root | undefined;
 async function boot(view: unknown = VIEW) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#settings/access';
+  window.location.hash = '#users-access/access';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const daemon = fakeDaemon(view);
@@ -132,10 +132,28 @@ describe('access model', () => {
   });
 });
 
-describe('Settings → Access', () => {
+describe('Users & access → Access', () => {
+  it('folds each block to its title and a one-line summary, and Fold all folds every block (issue #2373)', async () => {
+    await boot();
+    const cards = () => [...panel()!.querySelectorAll('[data-open]')];
+    expect(cards().length).toBeGreaterThanOrEqual(6);
+    for (const c of cards()) {
+      expect(c.querySelector('[data-slot="panel-toggle"]')).not.toBeNull();
+      expect(c.querySelector('[data-slot="panel-summary"]')?.textContent).not.toBe('');
+    }
+    expect(cards().find((c) => c.textContent?.includes('Recent decisions'))!.querySelector('[data-slot="panel-summary"]')?.textContent).toBe('3 decisions: 1 denied');
+    await click(button('Fold all'));
+    for (const c of cards()) {
+      expect(c.getAttribute('data-open')).toBe('false');
+      expect(c.querySelector('[data-slot="panel-body"]')).toBeNull();
+    }
+    await click(button('Open all'));
+    for (const c of cards()) expect(c.getAttribute('data-open')).toBe('true');
+  });
+
   it('shows OpenFGA connected, each template\'s approvals with the chain, and the newest decisions', async () => {
     await boot();
-    expect(document.querySelector('[data-slot="settings-nav"] a[href="#settings/access"]')?.textContent).toBe('Access');
+    expect(document.querySelector('[data-slot="users-access-nav"] a[href="#users-access/access"]')?.textContent).toBe('Access');
     expect(panel()!.querySelector('[data-access-state]')!.getAttribute('data-access-state')).toBe('connected');
     const approval = panel()!.querySelector('[data-approval="7"]')!;
     expect(approval.textContent).toContain('read on cluster x');
@@ -150,7 +168,7 @@ describe('Settings → Access', () => {
   it('points to the permission matrix for who may do what (issues #559, #581), and names a decision\'s requester', async () => {
     await boot();
     expect(panel()!.querySelector('[data-slot="access-matrix"]')).toBeNull();
-    expect(panel()!.querySelector('a[href="#settings/permissions"]')?.textContent).toBe('Permission matrix');
+    expect(panel()!.querySelector('a[href="#users-access/permissions"]')?.textContent).toBe('Permission matrix');
     expect(panel()!.querySelector('[data-decision="d2"]')!.textContent).toContain('job j1');
     // A read-only check's mint (issue #797) is named by its check box.
     expect(panel()!.querySelector('[data-decision="d0"]')!.textContent).toContain('read-only check hopper-check-kubectl-diag-1');

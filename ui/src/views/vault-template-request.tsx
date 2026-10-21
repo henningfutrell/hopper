@@ -1,4 +1,4 @@
-// Settings → Vault, the template request (issue #708, part 9): an admin writes what the box must do — in plain words, or its
+// Vault, the template request (issue #708, part 9): an admin writes what the box must do — in plain words, or its
 // needs, one operation profile each, as a job's `sandbox-template --needs` says them — and the hopper shows the template it makes from them
 // before it is made (`preview-template`): its name, its image, the tools its needs use, no vault secret, and who approves
 // it. Ask for it then makes it (`request-template`), the same path as a job's request. Changed needs are shown again

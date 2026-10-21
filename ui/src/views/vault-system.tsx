@@ -1,4 +1,4 @@
-// Settings → Vault, the hopper's own secrets (issue #658): the vault's system scope — the GitHub connection's tokens,
+// Vault, the hopper's own secrets (issue #658): the vault's system scope — the GitHub connection's tokens,
 // the webhook signing secrets, the TypeSafe API key and the sign-in realms' secrets —, each with what it is for, its last
 // 4 characters, who set it and when, and where it is changed; and the one audit trail of them. Each is changed on its own
 // page; here an admin may only keep a user's TypeSafe key or webhook secret in a vault backend (issue #658, requirement

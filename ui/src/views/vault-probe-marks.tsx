@@ -1,4 +1,4 @@
-// A template's probe marks on Settings → Vault (issue #916, design.md "The read-only check"): for a template that takes
+// A template's probe marks on Vault (issue #916, design.md "The read-only check"): for a template that takes
 // the read-only check, each read probe its last check ran can be marked. `expect-denied`: the read must be refused, as a
 // credential that is right refuses it (helm list on a view role). `skip`: the check does not run it. A write probe takes
 // no mark: each write must be refused, always. A save runs the check again.

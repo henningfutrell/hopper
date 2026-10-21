@@ -1,6 +1,6 @@
 // The vault in the store. The live stream (issue #583): a job asks the user for a credential — said once, as it comes; the
 // request itself waits on Access requests until an admin gives one or declines. The vault's view (issue #897): one copy,
-// read again after each vault event, for Settings → Vault, Access requests, and the counts of Needs you and the nav. A
+// read again after each vault event, for Vault, Access requests, and the counts of Needs you and the nav. A
 // view that cannot be read is no count, and Access requests says why; the other pages keep the last view.
 import { useEffect } from 'react';
 import { toast } from 'sonner';

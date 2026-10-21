@@ -1,9 +1,9 @@
 // Sandboxes jobs start (issue #991). Access requests, **Sandbox runs**: the boxes jobs asked for — a run that waits for a
 // person, with the job, the template and its blast radius, Approve (the box starts) and Decline (with the reason the job
-// is told); then the runs that start, run, were declined or failed. Settings → Vault, **Sandbox approvals**: the two
+// is told); then the runs that start, run, were declined or failed. Vault, **Sandbox approvals**: the two
 // toggles that skip a person, and YOLO, both. Approving and the toggles are an admin's.
 // Issue #1001: each run card decides on its own — while its approval is pending, only it says so, and the others stay
-// clickable; the box starts in the background. Settings → Vault also sets the auto-approve policy, per blast radius level.
+// clickable; the box starts in the background. Vault also sets the auto-approve policy, per blast radius level.
 // Issue #1018: a card's Approve goes through the Access requests approvals (store/access-approvals.ts), the same as
 // Approve selected, so the card shows its own progress and result whichever started it.
 // Issue #2197: one card per run. A job's ask that waits on a template, on its run, or on both, is one card: what the step
@@ -150,7 +150,7 @@ export function SandboxRuns({ view, can }: { view: VaultView | null; can: boolea
   return (
     <div data-access-panel="sandbox-runs">
       <Panel title="Sandbox runs" icon={Rocket} count={waiting.length || ''} bodyClassName="space-y-3">
-        <p className="text-sm text-muted-foreground">A job asks the hopper for a sandbox. Each card is one job&apos;s run, with what it will do and the access it needs: approve it once, and the job&apos;s steps run, each in a new sandbox the hopper destroys after the step. A run waits here for a person unless <a href="#settings/vault" className="underline">the auto-approve policy</a> holds its blast radius, skip sandbox approval is on, or a person approved the same access for the job.</p>
+        <p className="text-sm text-muted-foreground">A job asks the hopper for a sandbox. Each card is one job&apos;s run, with what it will do and the access it needs: approve it once, and the job&apos;s steps run, each in a new sandbox the hopper destroys after the step. A run waits here for a person unless <a href="#vault" className="underline">the auto-approve policy</a> holds its blast radius, skip sandbox approval is on, or a person approved the same access for the job.</p>
         {waiting.length === 0 ? <Empty>No sandbox run waits. A run a job asks for waits here.</Empty>
           : <ul className="space-y-2">{waiting.map((c) => <Waiting key={runCardKey(c)} c={c} template={templates.find((t) => t.name === c.template)} asks={view?.asks} secrets={view?.secrets ?? []} can={can} high={high(c.jobId) ? jobs[c.jobId]?.priority : undefined} />)}</ul>}
         {rest.length > 0 && (
@@ -207,7 +207,7 @@ function Remembered({ remembered, hours, can, busy }: { remembered: readonly Rem
   );
 }
 
-/** Settings → Vault, Sandbox approvals (issue #991): skip template approval, skip sandbox approval, and YOLO, both; the standing read grant (issue #1472); the auto-approve policy and the remembered write approvals (issue #1001). */
+/** Vault, Sandbox approvals (issue #991): skip template approval, skip sandbox approval, and YOLO, both; the standing read grant (issue #1472); the auto-approve policy and the remembered write approvals (issue #1001). */
 export function SandboxApprovals({ approvals, remembered, can, busy }: { approvals: Approvals | undefined; remembered: readonly RememberedWriteView[]; can: boolean; busy: boolean }) {
   const a = approvals ?? { skipTemplateApproval: false, skipSandboxApproval: false };
   const auto = autoApproveOf(approvals);

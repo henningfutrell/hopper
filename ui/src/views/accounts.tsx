@@ -79,7 +79,7 @@ export function Accounts() {
   const now = useNow();
   const report = useToolAccounts();
   if (!report) return <Panel title="Accounts" icon={UserRound}><Empty>reading the tool accounts…</Empty></Panel>;
-  if (!report.accounts.length) return <Panel title="Accounts" icon={UserRound}><Empty>no usage source reads a tool account yet: add one for each machine in <a className="underline" href="#settings/plugins">Settings → Plugins</a> (claude-plan)</Empty></Panel>;
+  if (!report.accounts.length) return <Panel title="Accounts" icon={UserRound}><Empty>no usage source reads a tool account yet: add one for each machine in <a className="underline" href="#plugins">Plugins</a> (claude-plan)</Empty></Panel>;
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       {report.accounts.map((a) => <AccountCard key={`${a.service}/${a.identity ?? a.login}`} a={a} now={now} />)}

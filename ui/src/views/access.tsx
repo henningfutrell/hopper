@@ -1,15 +1,16 @@
-// Settings → Access (issue #559): OpenFGA decides each credential a job is given. Whether OpenFGA can be asked, and
+// Users & access → Access (issue #559): OpenFGA decides each credential a job is given. Whether OpenFGA can be asked, and
 // why not (every credential is denied meanwhile); each template's approvals, each with the relationship chain from
 // the template to the asset and Revoke (the next check is denied), and its blast radius with the reasons (issue #584);
 // each operation's minimum trust (issue #655, ./min-trust.tsx); a check tried for a template, an operation, an asset and
 // a job's trust level, answered with its path; the newest decisions; and the access model, saved against the version
 // read. Who may do what is the permission matrix's (issue #559), linked from here. The instance admin's alone: anyone
-// else is told so.
+// else is told so. In Users & access (issue #2373): each block is a card that folds to its title and a one-line summary,
+// kept per browser, and Fold all folds or opens them at once.
 import { KeySquare } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
-import { Empty, Panel } from '@/components/panel';
+import { Empty, FoldAll, Panel } from '@/components/panel';
 import { FIELD } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
@@ -26,6 +27,11 @@ import { MIN_LEVELS, MinTrustPanel } from './min-trust';
 const POLL_MS = 10_000;
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply', 'observe'];
 const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
+
+/** The page choice key each block folds under. */
+const foldOf = (block: string) => `access.${block}`;
+const FOLDS = ['status', 'approvals', 'min-trust', 'check', 'decisions', 'model'].map(foldOf);
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const profileText = (a: Pick<Approval, 'profile'>) => `${a.profile.operation} on ${a.profile.asset.kind} ${a.profile.asset.name}`;
 
@@ -52,8 +58,10 @@ function Approvals({ view, onChanged }: { view: AccessView; onChanged: (v: Acces
     setBusy(false);
   };
   const count = view.templates.reduce((n, t) => n + t.approvals.length, 0);
+  const waiting = view.templates.filter((t) => t.radius.profiles.some((p) => !p.approved)).length;
   return (
-    <Panel title="Approvals" icon={KeySquare} count={count}>
+    <Panel title="Approvals" icon={KeySquare} count={count} fold={foldOf('approvals')}
+      summary={[`${plural(count, 'approval', 'approvals')} on ${plural(view.templates.length, 'template', 'templates')}`, waiting > 0 && `${waiting} waiting`].filter(Boolean).join(', ')}>
       {view.templates.length === 0 ? <Empty>No template is approved for anything: every credential is denied.</Empty> : (
         <div className="space-y-3">
           {view.templates.map((t) => (
@@ -126,7 +134,7 @@ function Check() {
     setBusy(false);
   };
   return (
-    <Panel title="Try a check" icon={KeySquare}>
+    <Panel title="Try a check" icon={KeySquare} fold={foldOf('check')} summary={result ? `last: ${result.allowed ? 'allowed' : 'denied'}` : 'what a job from a template would get now'}>
       <div data-slot="access-check" className="space-y-2 text-sm">
         <p className="text-muted-foreground">What a live job from this template, at the trust level chosen, would get now: OpenFGA is asked as for a real credential, and the answer is recorded.</p>
         <div className="flex flex-wrap items-end gap-2">
@@ -166,7 +174,7 @@ function Model({ view, onChanged }: { view: AccessView; onChanged: (v: AccessVie
     setBusy(false);
   };
   return (
-    <Panel title="Access model" icon={KeySquare}>
+    <Panel title="Access model" icon={KeySquare} fold={foldOf('model')} summary={`saved by ${view.model.writtenBy} at ${clock(view.model.writtenAt)}`}>
       <div className="space-y-2 text-sm">
         <p className="text-muted-foreground">
           OpenFGA's model language. It may change how a job reaches an asset; it must keep every relation the hopper writes or asks. Saved by {view.model.writtenBy} at {clock(view.model.writtenAt)}.
@@ -186,22 +194,26 @@ export function Access() {
   }, []);
   usePoll(load, POLL_MS);
   if (!view) return <Panel title="Access" icon={KeySquare}><Empty>{error ?? 'loading'}</Empty></Panel>;
+  const denied = view.decisions.filter((d) => !d.allowed).length;
   return (
     <div data-slot="access" className="space-y-3">
-      <Panel title="Access" icon={KeySquare}>
+      <div className="flex justify-end"><FoldAll keys={FOLDS} /></div>
+      <Panel title="Access" icon={KeySquare} fold={foldOf('status')}
+        summary={view.status.state === 'connected' ? 'OpenFGA is connected' : `OpenFGA ${view.status.state === 'not-configured' ? 'is not set up' : 'cannot be asked'}: every credential is denied`}>
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
             Before a credential is given, the hopper asks OpenFGA whether the requester — a job, a box or a user — reaches a template
             approved for that operation on that asset. Revoking an approval denies the next request; nothing already given is widened.
-            Who may do what on each asset: <a href="#settings/permissions" className="underline underline-offset-2 hover:text-foreground">Permission matrix</a>.
+            Who may do what on each asset: <a href="#users-access/permissions" className="underline underline-offset-2 hover:text-foreground">Permission matrix</a>.
           </p>
           <Status status={view.status} />
         </div>
       </Panel>
       <Approvals view={view} onChanged={setView} />
-      <MinTrustPanel view={view} operations={OPERATIONS} kinds={ASSET_KINDS} onChanged={setView} />
+      <MinTrustPanel view={view} operations={OPERATIONS} kinds={ASSET_KINDS} onChanged={setView} fold={foldOf('min-trust')} />
       <Check />
-      <Panel title="Recent decisions" icon={KeySquare} count={view.decisions.length} list>
+      <Panel title="Recent decisions" icon={KeySquare} count={view.decisions.length} list fold={foldOf('decisions')}
+        summary={view.decisions.length ? `${plural(view.decisions.length, 'decision', 'decisions')}: ${denied} denied` : 'no decisions yet'}>
         {view.decisions.length === 0 ? <Empty>no decisions yet</Empty> : (
           <ul>
             {view.decisions.map((d) => (

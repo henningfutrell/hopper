@@ -79,7 +79,7 @@ describe('OpenFGA subjects keyed by email (issue #1380)', () => {
     const denied = await access.decideMint({ requester: { kind: 'user', userId: 'bob' }, ...PROD });
     expect(denied).toMatchObject({ allowed: false });
     expect(denied.reason).toBe('user bob@example.com is not approved to read on cluster prod');
-    // Settings → Access's matrix reads the same.
+    // Users & access → Access's matrix reads the same.
     const row = access.view().requesters.find((r) => r.requester.kind === 'user' && r.requester.userId === 'ada')!;
     expect(row.grants[0]?.path[0]?.subject).toBe('user:ada@example.com');
   });

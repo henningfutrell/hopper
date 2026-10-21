@@ -120,7 +120,7 @@ describe('a job\'s parts list (issue #935)', () => {
     expect(part(bom, 'plan:pl2')).toMatchObject({ status: 'waiting_on_you', detail: 'waits for an admin to approve it' });
     expect(part(bom, 'credential:c1')).toMatchObject({ group: 'infra', label: 'read credential for aws prod', detail: 'until 2026-10-01T03:00:00.000Z' });
     expect(part(bom, 'drift:oob1')).toMatchObject({ group: 'infra', label: 'Drift: dns', detail: 'a record changed by hand', status: 'open' });
-    expect(part(bom, 'grant')).toMatchObject({ group: 'infra', label: 'Vault grant asked', detail: 'aws read prod', status: 'waiting_on_you', href: '#settings/vault' });
+    expect(part(bom, 'grant')).toMatchObject({ group: 'infra', label: 'Vault grant asked', detail: 'aws read prod', status: 'waiting_on_you', href: '#vault' });
   });
 
   it('lists the decisions: each question with who answered it, an override, and a hand-off', () => {

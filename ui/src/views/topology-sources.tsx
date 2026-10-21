@@ -68,7 +68,7 @@ export function NoSources({ onGraph }: { onGraph?: (g: TopologyGraph) => void })
             <Button key={k} size="sm" variant={adding === k ? 'secondary' : 'outline'} disabled={busy || (!local && backends.length === 0)} onClick={() => setAdding(k)}><Plus />{ADD[k]}</Button>
           ))}
         </div>
-      ) : <p className="text-muted-foreground">An admin adds an AWS account or a cluster on <a href="#settings/vault" className="underline">Settings → Vault</a>.</p>}
+      ) : <p className="text-muted-foreground">An admin adds an AWS account or a cluster on <a href="#vault" className="underline">Vault</a>.</p>}
       {adding && (
         <div className="rounded-md border p-3">
           <p className="mb-2 text-xs text-muted-foreground">{adding === 'aws-account'

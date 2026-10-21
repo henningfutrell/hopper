@@ -160,7 +160,7 @@ export async function run(o: {
   let told = false;
   while (typeof t === 'string' || !approved(t)) {
     if (typeof t !== 'string' && !told) {
-      o.say(`the template ${name} waits for a person: approve it with hopper template approve ${name} (or Settings → Vault)`);
+      o.say(`the template ${name} waits for a person: approve it with hopper template approve ${name} (or Vault)`);
       told = true;
     }
     if (o.now().getTime() >= until) break;

@@ -114,7 +114,7 @@ afterEach(async () => {
 
 describe('escalation levels have one editor (issue #444)', () => {
   it('Plugins shows the levels read-only, in order, with a link to Question gates; no level edit control', async () => {
-    await boot('#settings/plugins');
+    await boot('#plugins');
     await vi.waitFor(() => expect(summary()).not.toBeNull());
     const items = [...summary()!.querySelectorAll('[data-level]')].map((e) => e.getAttribute('data-level'));
     expect(items).toEqual(['level-1', 'level-2']);
@@ -122,7 +122,8 @@ describe('escalation levels have one editor (issue #444)', () => {
     expect(summary()!.querySelector('a[href="#settings/questions"]')).not.toBeNull();
     expect(levelForms()).toHaveLength(0);
     expect(document.querySelector('select[name="add-plugin-escalation-level"]')).toBeNull();
-    expect(buttons(/level-|claude-cli|anthropic-api/)).toEqual([]);
+    // A card's fold toggle names its levels in its summary (issue #2373): it is no edit control.
+    expect(buttons(/level-|claude-cli|anthropic-api/).filter((b) => b.getAttribute('data-slot') !== 'panel-toggle')).toEqual([]);
     expect(document.querySelector('[role="switch"][aria-label$="claude-cli"]')).toBeNull();
     expect(document.querySelector('[role="switch"][aria-label$="anthropic-api"]')).toBeNull();
     // The other list roles keep their editors and switches.
@@ -142,7 +143,7 @@ describe('escalation levels have one editor (issue #444)', () => {
     await vi.waitFor(() => expect(levelForms()).toHaveLength(2));
     await act(async () => { document.querySelector<HTMLButtonElement>('button[aria-label="Move level-2 earlier"]')!.click(); });
     await vi.waitFor(() => expect([...levelForms()].map((e) => e.getAttribute('data-instance'))).toEqual(['level-2', 'level-1']));
-    await go('#settings/plugins');
+    await go('#plugins');
     await vi.waitFor(() => expect(summary()).not.toBeNull());
     expect([...summary()!.querySelectorAll('[data-level]')].map((e) => e.getAttribute('data-level'))).toEqual(['level-2', 'level-1']);
   });

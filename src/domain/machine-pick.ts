@@ -39,7 +39,7 @@ export function offlineNote(id: string, connection: 'client' | 'ssh' | 'other'):
   return `machine ${id} is offline: questions skip this level until it is back. ${back}or pick another machine for this level in Settings → Question gates.`;
 }
 
-export const NO_MACHINE_FOR_USAGE = 'No machine can run claude for this usage source. Attach a machine, or pick one for it in Settings → Plugins.';
+export const NO_MACHINE_FOR_USAGE = 'No machine can run claude for this usage source. Attach a machine, or pick one for it in Plugins.';
 
 export const WHY_JOB = 'the job\'s machine';
 export const WHY_ONLY = 'the only machine that can run claude';
@@ -56,7 +56,7 @@ export type MachinePick = { machine: string; why: string } | { none: string };
 const several = (reach: MachineReach, names: string[]): string => (reach === 'no-container'
   ? `This level names no machine, and ${names.join(', ')} can run claude: the job's machine cannot, and no default escalation machine is set. `
     + 'Pick a machine for this level, or set the default escalation machine, in Settings → Question gates.'
-  : `This usage source names no machine, and ${names.join(', ')} can run claude. Pick one for it in Settings → Plugins.`);
+  : `This usage source names no machine, and ${names.join(', ')} can run claude. Pick one for it in Plugins.`);
 
 const nothing = (reach: MachineReach): string => (reach === 'no-container' ? NO_MACHINE_FOR_LEVEL : NO_MACHINE_FOR_USAGE);
 

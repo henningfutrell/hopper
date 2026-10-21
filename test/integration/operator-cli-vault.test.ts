@@ -11,7 +11,7 @@
 //     When the operator runs `hopper vault remove DEPLOY_KEY`
 //     Then the vault holds no DEPLOY_KEY
 //   Scenario: a value as an argument, or no value on stdin, is refused
-//   Scenario: --mints is checked as on Settings → Vault (issue #872): a name a credential cannot mint for is refused before
+//   Scenario: --mints is checked as on Vault (issue #872): a name a credential cannot mint for is refused before
 //     any call, the set is a vault.secret_set event with what it mints for, and the vault refuses to mark a secret that a
 //     template gives out
 //   Scenario: a template is saved with its secrets and profiles, waits for a person, and is approved
@@ -127,7 +127,7 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'cluster/lab', '--shared'], aws)).toMatchObject({ code: 2, err: expect.stringContaining('a shared secret mints nothing') });
   });
 
-  it('checks --mints as Settings → Vault does: a bad name before the call, a secret in a template\'s scope by the vault (issue #872)', async () => {
+  it('checks --mints as Vault does: a bad name before the call, a secret in a template\'s scope by the vault (issue #872)', async () => {
     const { a } = await boot();
     type Mints = { secrets: { name: string; mints?: { kind: string; name: string } }[] };
     const mints = async () => json<Mints>(await hopper(a, ['vault'])).secrets.find((s) => s.name === 'KUBE_MINT')?.mints;
