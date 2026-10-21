@@ -12,7 +12,7 @@ const partsLeftOf = (source: Record<string, unknown> | undefined, jobId = 'j1'):
     workItems: { get: (key: string) => (key === KEY ? { key, jobId } : undefined) },
     jobs: { get: (id: string) => (id === 'j1' ? { id, status: 'finished', ...(source ? { sourceState: { source } } : {}) } : undefined) },
   } as unknown as UserStore;
-  return storeSourceContext(store, undefined, undefined).intake!('github').partsLeft!(KEY);
+  return storeSourceContext(store, undefined, undefined).intake('github')!.partsLeft!(KEY);
 };
 
 describe('partsLeft: a part merged with parts left (issue #1892)', () => {
