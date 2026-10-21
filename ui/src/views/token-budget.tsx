@@ -1,6 +1,7 @@
 // The token budget (issue #2302, part 3), in Settings, an admin's: the most one job may spend, in tokens or in estimated
-// cost, before it is paused; 0 turns that cap off. Saved to the daemon (POST /ui/api/token-budget) and read at each
-// checkpoint, without a restart. A paused job is parked, and Needs you lists it under Budgets.
+// cost, before it is paused; 0 turns that cap off. Part 5: the most the jobs may spend in a UTC day, in all or per
+// repository, before a waiting job is held. Saved to the daemon (POST /ui/api/token-budget) and read at each checkpoint and
+// each Decision, without a restart. A paused job is parked, and Needs you lists it under Budgets.
 import { Coins } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -8,12 +9,12 @@ import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { tokenBudgetPatch, tokenBudgetSummary, type TokenBudgetDraft } from '@/model/token-ledger';
+import { TOKEN_BUDGET_CAPS, tokenBudgetPatch, tokenBudgetSummary, type TokenBudgetDraft } from '@/model/token-ledger';
 import type { TokenBudgetSettings } from '@/model/wire';
 import { useHopper } from '@/store';
 
 function Form({ view, onSaved }: { view: TokenBudgetSettings; onSaved: (v: TokenBudgetSettings) => void }) {
-  const [draft, setDraft] = useState<TokenBudgetDraft>({ jobTokens: String(view.jobTokens), jobCostUsd: String(view.jobCostUsd) });
+  const [draft, setDraft] = useState<TokenBudgetDraft>(() => Object.fromEntries(TOKEN_BUDGET_CAPS.map(([k]) => [k, String(view[k])])) as TokenBudgetDraft);
   const [busy, setBusy] = useState(false);
   const checked = tokenBudgetPatch(view, draft);
   const save = async () => {
@@ -45,6 +46,14 @@ function Form({ view, onSaved }: { view: TokenBudgetSettings; onSaved: (v: Token
       </p>
       {field('jobTokens', 'Tokens per job', 'tokens')}
       {field('jobCostUsd', 'Estimated cost per job', 'US dollars')}
+      <p className="text-xs text-muted-foreground">
+        A day cap counts what the jobs spent in the UTC day. When the jobs reach it, no job starts or goes on until the next UTC day, or until you
+        raise the cap. A running job runs on. A job that waits shows why. The repository cap counts each repository by itself.
+      </p>
+      {field('dayTokens', 'Tokens per day', 'tokens')}
+      {field('dayCostUsd', 'Estimated cost per day', 'US dollars')}
+      {field('repoDayTokens', 'Tokens per repository per day', 'tokens')}
+      {field('repoDayCostUsd', 'Estimated cost per repository per day', 'US dollars')}
       {!checked.ok && <p role="alert" className="text-xs text-destructive">{checked.error}</p>}
       <Button size="sm" disabled={busy || !checked.ok || !checked.patch} onClick={() => void save()}>Save</Button>
     </div>

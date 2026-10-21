@@ -76,26 +76,36 @@ export function tokenDays(groups: readonly TokenRollupRow[], days: number, today
 export const budgetPausedLines = (jobs: readonly Job[]): string[] =>
   jobs.filter((j) => j.status === 'parked' && j.budgetPaused).map((j) => `${goalOf(j)}: ${j.budgetPaused!.why} Pick it up to let it go on.`);
 
-/** The token budget, what is on now, in one sentence. */
+/** The token budget, what is on now: a sentence for each kind of cap. */
 export function tokenBudgetSummary(s: TokenBudgetSettings): string {
-  const tokens = s.jobTokens > 0 ? `${tokenCount(s.jobTokens)} tokens` : undefined;
-  const cost = s.jobCostUsd > 0 ? `an estimated $${s.jobCostUsd.toFixed(2)}` : undefined;
-  if (!tokens && !cost) return 'Off: no job is paused for what it spends.';
-  return tokens && cost ? `A job is paused when it used ${tokens} or ${cost}, whichever comes first.` : `A job is paused when it used ${tokens ?? cost}.`;
+  const either = (tokens: number, cost: number): string | undefined => {
+    const t = tokens > 0 ? `${tokenCount(tokens)} tokens` : undefined;
+    const c = cost > 0 ? `an estimated $${cost.toFixed(2)}` : undefined;
+    return t && c ? `${t} or ${c}` : t ?? c;
+  };
+  const job = either(s.jobTokens, s.jobCostUsd), day = either(s.dayTokens, s.dayCostUsd), repo = either(s.repoDayTokens, s.repoDayCostUsd);
+  const lines = [
+    job && `A job is paused when it used ${job}${s.jobTokens > 0 && s.jobCostUsd > 0 ? ', whichever comes first' : ''}.`,
+    day && `No job starts or goes on once the jobs used ${day} in a day (UTC).`,
+    repo && `No job of a repository starts or goes on once its jobs used ${repo} in a day (UTC).`,
+  ].filter((l): l is string => !!l);
+  return lines.length ? lines.join(' ') : 'Off: no job is paused or held for what it spends.';
 }
 
-export interface TokenBudgetDraft { jobTokens: string; jobCostUsd: string }
+/** Each cap of the token budget, and whether it counts tokens (a whole number) or US dollars. */
+export const TOKEN_BUDGET_CAPS = [
+  ['jobTokens', true], ['jobCostUsd', false], ['dayTokens', true], ['dayCostUsd', false], ['repoDayTokens', true], ['repoDayCostUsd', false],
+] as const satisfies readonly (readonly [keyof TokenBudgetSettings, boolean])[];
+
+export type TokenBudgetDraft = Record<keyof TokenBudgetSettings, string>;
 
 /** The change a save sends: only what differs (undefined: nothing to save), or why the draft is refused. An empty field is 0. */
 export function tokenBudgetPatch(s: TokenBudgetSettings, d: TokenBudgetDraft): { ok: true; patch: Partial<TokenBudgetSettings> | undefined } | { ok: false; error: string } {
-  const read = (raw: string, whole: boolean): number | undefined => {
-    const text = raw.trim() || '0';
-    const n = Number(text);
-    return Number.isFinite(n) && n >= 0 && (!whole || Number.isInteger(n)) ? n : undefined;
-  };
-  const jobTokens = read(d.jobTokens, true), jobCostUsd = read(d.jobCostUsd, false);
-  if (jobTokens === undefined) return { ok: false, error: 'Tokens: a whole number from 0' };
-  if (jobCostUsd === undefined) return { ok: false, error: 'Cost: a number of US dollars from 0' };
-  const patch = { ...(jobTokens === s.jobTokens ? {} : { jobTokens }), ...(jobCostUsd === s.jobCostUsd ? {} : { jobCostUsd }) };
+  const patch: Partial<TokenBudgetSettings> = {};
+  for (const [key, whole] of TOKEN_BUDGET_CAPS) {
+    const n = Number(d[key].trim() || '0');
+    if (!Number.isFinite(n) || n < 0 || (whole && !Number.isInteger(n))) return { ok: false, error: whole ? 'Tokens: a whole number from 0' : 'Cost: a number of US dollars from 0' };
+    if (n !== s[key]) patch[key] = n;
+  }
   return { ok: true, patch: Object.keys(patch).length > 0 ? patch : undefined };
 }
