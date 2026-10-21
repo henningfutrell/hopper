@@ -14,12 +14,14 @@
 // It is not put back, nor is the label of an item whose Run again is asked (`runAgainAsked`). A label not on the issue at its
 // first sight is no edit. What the mirror saw is kept in memory; after a start the source gives it the listing cache's
 // labels (`start`), kept in the database, as seen when that listing was read, so an edit made while the hopper was stopped
-// counts too.
+// counts too. An end label a person put on a request card by hand (`labelPutOn`), not seen then and on now, is their withdraw of
+// the card: `source.request_withdrawn` with the label, once. Its item is dropped, so the labels decide Intake's reason, and the
+// label stays.
 import { RECONCILE_GRACE_MS } from '../../domain/item-lifecycle.ts';
 import type { WorkItem } from '../../domain/work-items.ts';
 import { labelCorrected, labelDriftSeen } from '../../telemetry/sources.ts';
 import type { GitHubIssue } from './api.ts';
-import { driftWords, labelDrift, labelTakenOff, type LabelFacts } from './item-labels.ts';
+import { driftWords, labelDrift, labelPutOn, labelTakenOff, type LabelFacts } from './item-labels.ts';
 import type { GitHubOutbox } from './outbox.ts';
 
 export interface LabelMirror {
@@ -46,8 +48,8 @@ export function createLabelMirror(o: {
   busy?(key: string): boolean;
   now(): string;
   log(line: string): void;
-  /** Record a person's label edit (`work_item.label_edited`); absent: none is recorded. */
-  record?(type: 'work_item.label_edited', data: Record<string, unknown>): void;
+  /** Record a person's label edit (`work_item.label_edited`), or a card's withdraw by a label put on (`source.request_withdrawn`); absent: none is recorded. */
+  record?(type: 'work_item.label_edited' | 'source.request_withdrawn', data: Record<string, unknown>): void;
 }): LabelMirror {
   /** The drift each item was last logged with: a drift is logged and counted once, until it changes or ends. */
   const logged = new Map<string, string>();
@@ -75,6 +77,12 @@ export function createLabelMirror(o: {
         const item = o.item(issue.url);
         if (!was || !o.record || !item || item.runAgainAsked !== undefined || o.outbox.held(issue.url) || o.busy?.(issue.url)) continue;
         if (Date.parse(item.eventAt) > Math.min(Date.parse(was.at), settledBefore)) continue;
+        const put = labelPutOn(item, was.labels, issue.labels);
+        if (put !== undefined) {
+          o.record('source.request_withdrawn', { source: o.source, key: issue.url, label: put });
+          o.log(`hopper: ${o.source}: ${put} was put on ${issue.url} by hand: its request card is withdrawn`);
+          continue;
+        }
         const label = labelTakenOff(item, was.labels, issue.labels, facts(issue.url, item));
         if (label === undefined) continue;
         o.record('work_item.label_edited', { source: o.source, key: issue.url, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), from: item.state, label, means: 'run_again' });

@@ -22043,6 +22043,27 @@ the claim stays, and the end comes with the job's report.
 question or a proposal, with no label edit; a hand-off's `hopper:failed` stays), `test/sources/github-item-labels.test.ts`
 (`labelsFor` of an item that needs a person).
 
+### A request card carries no end label (issue #1892 part 7, 2026-10-21)
+
+Milestone 2, part 7: the waiting for approval state. Before it, the mirror did not judge a request card, and Intake took its
+reason from its labels. A card has no job yet, and no report writes an end label for it: Intake opened it only while no end
+label kept the issue out.
+
+- **`labelsFor` judges a request card.** The item wants no end label, as an item a job works. An end label left on comes off
+  through the outbox, and Intake gives the card no end-label reason (`ledgerReason`).
+- **An end label a person puts on a card by hand withdraws it** (`labelPutOn`). Before the discover judges Intake, the mirror
+  finds an end label that was not on the issue at the last discover and is on now, with the item not moved since. It records
+  `source.request_withdrawn` with `label`, once. The ledger drops the item, so the labels decide Intake's reason (for example
+  `hopper:rejected`), and the label stays. This is the person's explicit event: the label is never read back as state.
+  Taken off again, the card opens again, as a withdrawn card does.
+- **A label on the card at its first sight is no withdraw.** As with a label edit, the mirror takes it off.
+
+**Left to the labels:** a done item with no whole merge, dropped, a hand-off.
+
+**Verification:** `test/sources/github-label-request-card.test.ts` (an end label left on a card comes off with no withdraw; an
+end label put on by hand withdraws the card once and stays; a label at first sight is no withdraw),
+`test/sources/github-item-labels.test.ts` (`labelsFor` and `labelPutOn` of a card).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
