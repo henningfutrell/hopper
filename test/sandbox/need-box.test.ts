@@ -4,6 +4,7 @@
 // command's output streamed, its exit code, the outputs back as a tar, and the box and its volume gone after it. The
 // inputs and the saved plan file come by a copy into the box, or, from a runtime with no copy, in its environment.
 import { execFileSync } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,6 +28,8 @@ const KUBE: NeedCredential = {
   reach: { kind: 'kube', server: 'https://lab.example:6443', certificateAuthorityData: 'Q0E=' },
 };
 
+const sha256 = (b: Buffer): string => createHash('sha256').update(b).digest('hex');
+
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 const temp = (prefix: string): string => { const d = mkdtempSync(join(tmpdir(), prefix)); dirs.push(d); return d; };
@@ -47,7 +50,7 @@ function runtime(): FakeContainerRuntime {
   };
   r.runScript = (spec: ContainerSpec) => new Promise((resolve) => {
     const home = homeOf(spec.name);
-    execFile('sh', ['-c', spec.script ?? ''], { env: { ...spec.env, HOME: home, PATH: process.env.PATH }, encoding: 'utf8' }, (err, stdout, stderr) => {
+    execFile('sh', ['-c', spec.script ?? ''], { env: { ...spec.env, HOME: home, PATH: process.env.PATH }, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({ exit: err ? Number((err as { code?: number }).code ?? 1) : 0, output: stdout + stderr });
     });
   });
@@ -235,8 +238,64 @@ describe('a need step\'s box (issue #1007)', () => {
     expect(shownSoFar('all of it\n')).toBe('all of it');
     expect(shownSoFar('all of it\r\n\r')).toBe('all of it\r\n');
     const tar = Buffer.from('a tar').toString('base64');
-    expect(splitOutput(`done\r\n\r\nHOPPER-STEP-OUTPUTS\r\n${tar}\r\nHOPPER-STEP-END\r\ntar: missing: No such file\r\n`)).toEqual({ log: 'done\r\ntar: missing: No such file\r\n', outputs: Buffer.from('a tar') });
+    const sha = sha256(Buffer.from('a tar'));
+    expect(splitOutput(`done\r\n\r\nHOPPER-STEP-OUTPUTS\r\n${tar}\r\nHOPPER-STEP-SHA256 ${sha}\r\nHOPPER-STEP-END\r\ntar: missing: No such file\r\n`)).toEqual({ log: 'done\r\ntar: missing: No such file\r\n', outputs: Buffer.from('a tar'), outputsSha256: sha });
     expect(splitOutput('done\nHOPPER-STEP-OUTPUTS\nAAA').problem).toBe('the outputs did not all come back');
+  });
+
+  it('outputs that differ from their sha256 in the box are a problem, never given; so are outputs with no sha256 (issue #2288)', () => {
+    const tar = Buffer.from('a tar of the outputs');
+    const lines = tar.toString('base64').match(/.{1,4}/g)!;
+    // One line lost on the way, as in the issue: the same tar less 3 bytes.
+    const damaged = splitOutput(`done\nHOPPER-STEP-OUTPUTS\n${lines.filter((_, n) => n !== 2).join('\n')}\nHOPPER-STEP-SHA256 ${sha256(tar)}\nHOPPER-STEP-END\n`);
+    expect(damaged.outputs).toBeUndefined();
+    expect(damaged.problem).toMatch(new RegExp(`^the outputs came back damaged: their sha256 in the box is ${sha256(tar)}, here [0-9a-f]{64}$`));
+    expect(damaged.log).toBe('done');
+    const unsigned = splitOutput(`done\nHOPPER-STEP-OUTPUTS\n${tar.toString('base64')}\nHOPPER-STEP-SHA256 \nHOPPER-STEP-END\n`);
+    expect(unsigned.outputs).toBeUndefined();
+    expect(unsigned.problem).toBe('the box gave no sha256 of the outputs (its image has no sha256sum): they could not be checked');
+  });
+
+  it('a 1 MB output comes back byte for byte, with its sha256 (issue #2288)', async () => {
+    const r = runtime();
+    const src = temp('step-big-');
+    const data = Buffer.concat(Array.from({ length: 16 }, () => Buffer.from(`${randomBytes(48 * 1024).toString('base64')}\n`)));
+    writeFileSync(join(src, 'rendered.yaml'), data);
+    execFileSync('tar', ['-cf', join(src, 'in.tar'), '-C', src, 'rendered.yaml']);
+    const result = await runNeedBox(r, box(needEnv({ command: 'true', outputs: ['rendered.yaml'], credentials: [] }), { inputs: join(src, 'in.tar') }), { log: () => {}, signal: new AbortController().signal, pollMs: 10 });
+    expect(result.problem).toBeUndefined();
+    expect(data.length).toBeGreaterThan(1_000_000);
+    expect(result.outputsSha256).toBe(sha256(result.outputs!));
+    const out = temp('step-big-out-');
+    writeFileSync(join(out, 'o.tar'), result.outputs!);
+    execFileSync('tar', ['-xf', join(out, 'o.tar'), '-C', out]);
+    expect(sha256(readFileSync(join(out, 'rendered.yaml')))).toBe(sha256(data));
+  });
+
+  it('a log that lost a line of the outputs is read again; lost again, the step fails with no outputs (issue #2288)', async () => {
+    const dropLine = (text: string): string => {
+      const at = text.indexOf('HOPPER-STEP-OUTPUTS\n') + 'HOPPER-STEP-OUTPUTS\n'.length;
+      const lines = text.slice(at).split('\n');
+      lines.splice(Math.floor(lines.length / 2), 1);
+      return text.slice(0, at) + lines.join('\n');
+    };
+    const run = async (lossy: (read: number) => boolean) => {
+      const r = runtime();
+      const logs = r.logs.bind(r);
+      let reads = 0;
+      // Only the reads after the box ended: the hopper's polls before it read nothing of the outputs.
+      r.logs = async (id) => { const text = await logs(id); if (!text.includes('HOPPER-STEP-END')) return text; reads++; return lossy(reads) ? dropLine(text) : text; };
+      const command = 'awk \'BEGIN { for (i = 0; i < 20000; i++) printf "line %06d of the rendered chart\\n", i }\' > rendered.yaml';
+      return runNeedBox(r, box(needEnv({ command, outputs: ['rendered.yaml'], credentials: [] })), { log: () => {}, signal: new AbortController().signal, pollMs: 10 });
+    };
+    const once = await run((n) => n === 1);
+    expect(once.problem).toBeUndefined();
+    expect(once.outputsSha256).toBe(sha256(once.outputs!));
+    const always = await run(() => true);
+    expect(always.exit).toBe(0);
+    expect(always.outputs).toBeUndefined();
+    expect(always.outputsSha256).toBeUndefined();
+    expect(always.problem).toMatch(/^the outputs came back damaged: their sha256 in the box is [0-9a-f]{64}, here [0-9a-f]{64}$/);
   });
 });
 
