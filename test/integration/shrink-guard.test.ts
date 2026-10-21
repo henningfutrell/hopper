@@ -130,7 +130,7 @@ describe('the shrink guard (issue #1096)', () => {
     expect(blanked.stderr).not.toContain('ADR-0019-dashboard');
 
     expect(await rebase(linesOf(120))).toMatchObject({ code: 0 });
-  });
+  }, 30_000); // a clone, three pushes through the guard and two rebases: past 15 s on a loaded CI runner
 
   /**
    * main from dev, with a 200-line design; the job's branch issue-7 off main edits notes.md; then dev moves on, main takes
