@@ -9,6 +9,7 @@ import {
   createGitHubProxy, createPrWaits, holdsProxyToken, PR_WAIT_OWNER, prSettled, prWaitOver, proxyToken, waitRequest, type KnownPullRequest, type ProxyApi, type ProxyUser,
   type PrWaitUser, type PullRequestStatus,
 } from '../../src/github-proxy/index.ts';
+import { runChecks } from '../../src/github-proxy/api.ts';
 import { createSkillWaits, type SkillBroker } from '../../src/skills/index.ts';
 
 const URL = 'https://github.com/octo/tools/pull/8';
@@ -19,9 +20,14 @@ const status = (over: Partial<PullRequestStatus> = {}): PullRequestStatus => ({
 describe('when a wait on a pull request\'s checks is over (issue #1072)', () => {
   it('over once its checks end, or once it is merged or closed; not while they run', () => {
     expect(prSettled(status())).toBe(false);
-    for (const checks of ['passing', 'failing', 'none', 'unknown'] as const) expect(prSettled(status({ checks }))).toBe(true);
+    for (const checks of ['passing', 'failing', 'unknown'] as const) expect(prSettled(status({ checks }))).toBe(true);
     expect(prSettled(status({ state: 'merged' }))).toBe(true);
     expect(prSettled(status({ state: 'closed' }))).toBe(true);
+  });
+
+  it('not over while it has no checks: right after a push, they have not started yet (issue #2322)', () => {
+    expect(prSettled(status({ checks: 'none' }))).toBe(false);
+    expect(prSettled(status({ checks: 'none', state: 'merged' }))).toBe(true);
   });
 
   it('the request: a pull request, and the most seconds to wait', () => {
@@ -118,6 +124,30 @@ describe('the broker answers pr wait (issue #1072)', () => {
     const answer = await t.proxy.handle(bearer, ask);
     expect(answer).toMatchObject({ status: 200, body: { wait: 'none', waitOn: 'pr octo/tools#8 checks' } });
     expect((answer.body as { note: string }).note).toContain('HOPPER_WAITING');
+  });
+
+  it('one the hopper does not follow, right after a push: no checks yet is not settled; it says how to wait (issue #2322)', async () => {
+    const t = setup({});
+    t.performs(status({ checks: 'none' }));
+    const answer = await t.proxy.handle(bearer, ask);
+    expect(answer).toMatchObject({ status: 200, body: { checks: 'none', wait: 'none', waitOn: 'pr octo/tools#8 checks' } });
+    expect((answer.body as { note: string }).note).toContain('HOPPER_WAITING');
+    expect(t.events.at(-1)).toMatchObject({ type: 'github_proxy.done', data: { op: 'pr.status', source: 'github' } });
+  });
+
+  it('one the hopper does not follow, after a push its check runs queued: not settled (issue #2322)', async () => {
+    const t = setup({});
+    t.performs({ ...status(), ...runChecks([{ id: 1, name: 'test', status: 'queued', conclusion: null }, { id: 2, name: 'lint', status: 'queued', conclusion: null }]) });
+    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ status: 200, body: { checks: 'pending', wait: 'none', waitOn: 'pr octo/tools#8 checks' } });
+  });
+
+  it('one the hopper follows, seen with no checks after a push: no watch, not settled; it says how to wait (issue #2322)', async () => {
+    const t = setup({ known: status({ checks: 'none' }) });
+    const answer = await t.proxy.handle(bearer, ask);
+    expect(answer).toMatchObject({ status: 200, body: { source: 'hopper', checks: 'none', wait: 'none', waitOn: 'pr octo/tools#8 checks' } });
+    expect((answer.body as { note: string }).note).toContain('no checks yet');
+    expect(t.opened).toEqual([]);
+    expect(t.asked).toEqual([]);
   });
 
   it('one the hopper does not follow, its checks ended: `wait: settled` (issue #1731)', async () => {
