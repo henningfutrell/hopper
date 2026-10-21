@@ -205,8 +205,8 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
-  /** `preempted`: a job of higher priority took its lane (issue #1525, design.md "Preemption"), kept until it runs again. */
-  continued?: { at: string } & ContinuedBy; preempted?: import('./preemption.ts').JobPreempted;
+  /** `preempted`: a job of higher priority took its lane (issue #1525, design.md "Preemption"), kept until it runs again. `memoryPaused`: its machine's memory fell below the floor (issue #2291), kept until it runs again. */
+  continued?: { at: string } & ContinuedBy; preempted?: import('./preemption.ts').JobPreempted; memoryPaused?: import('./memory-floor.ts').JobMemoryPaused;
   /**
    * Its latest checkpoint (issue #921): its agent session and its work not pushed, copied from its machine while it ran.
    * The patch and the session are in the store's checkpoints.
@@ -378,8 +378,8 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    * not approved (issue #602): not saved, never approved, approval revoked, or its image changed since. Absent `waiting`: approved.
    */
   template?: { name: string; waiting?: string };
-  /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. */
-  sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number };
+  /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. `memoryFloor`: its own memory floor (issue #2291); absent: the defaults. */
+  sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number }; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */
@@ -418,8 +418,10 @@ export interface DecisionInputs {
   /**
    * Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it.
    * `avoidLanes` (issue #2234): for a rerun of a job that failed for its lane's fault, that lane; it goes elsewhere when it can. Absent: none.
+   * `parkingExecutors` (issue #2291): the executors that park, whose jobs a memory pause may name. Absent: none, and on Decisions stored before it.
+   * `memoryPausedAt` (issue #2291): per machine, when this hopper last paused a job there for memory, as the paused job may be parked and not an input.
    */
-  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
+  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 
@@ -476,8 +478,8 @@ export interface Decision {
   /** Admitted jobs no lane is free for: they stay queued (issue #381). Decisions recorded before it lack it. */
   wait: WaitPlan[];
   /** Divergences: jobs where the advice differs from the native verdict. */
-  /** `preempt`: running jobs to park so that a waiting job of higher priority takes their lanes (issue #1525). Absent: none. */
-  advice: Divergence[]; preempt?: import('./preemption.ts').PreemptPlan[];
+  /** `preempt`: running jobs to park so that a waiting job of higher priority takes their lanes (issue #1525). Absent: none. `memoryPause`: running jobs to park because their machine's memory is below its floor (issue #2291). Absent: none. */
+  advice: Divergence[]; preempt?: import('./preemption.ts').PreemptPlan[]; memoryPause?: import('./memory-floor.ts').MemoryPausePlan[];
   /** Plain-language reasons, in the order the decider reached them. */
   reasons: string[];
   inputs: DecisionInputs;
@@ -578,7 +580,7 @@ export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
 export * from './auto-answer.ts';
-export * from './auto-park.ts'; export * from './preemption.ts';
+export * from './auto-park.ts'; export * from './preemption.ts'; export * from './memory-floor.ts';
 export * from './thread-ask.ts';
 export * from './access.ts';
 export * from './state-backend.ts';

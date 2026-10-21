@@ -4,7 +4,7 @@
 // reaches it through the machine-source context's `target`, never on its own.
 import type { z as Z } from 'zod';
 import type { AttachedMachine } from '../../domain/types.ts';
-import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts';
+import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts'; import type { MemoryFloor } from '../../domain/memory-floor.ts';
 import type { UsageLimitPair } from '../../domain/usage.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
@@ -81,6 +81,25 @@ export const diskLowShape = (z: typeof Z) => ({
     .meta({ description: 'its disk is low below this share free, in percent (default 10); a machine with a low disk takes no new job' }),
 });
 
+/**
+ * Its memory floor (issue #2291, design.md "The memory floor"): a new job, or a job back, starts there only while its memory
+ * available, less what jobs started lately keep and what the new job needs, stays at or above the floor; below it, the job
+ * that started there last is paused. Plain options, read at every list. Not on a container target, whose memory is not read.
+ */
+export const memoryFloorShape = (z: typeof Z) => ({
+  memoryFloorGiB: z.number().min(0).optional()
+    .meta({ description: 'its memory floor in GiB (default 10% of its memory, at least 1); below it no job starts there and the newest job is paused; 0 turns it off' }),
+  memoryPerJobGiB: z.number().positive().optional()
+    .meta({ description: 'the memory in GiB a new job there needs over the floor, kept for each job for its first 10 minutes (default 2)' }),
+});
+
+/** The memory floor the options set; undefined when neither is. */
+export const memoryFloorOf = (o: { memoryFloorGiB?: number; memoryPerJobGiB?: number }): MemoryFloor | undefined =>
+  (o.memoryFloorGiB === undefined && o.memoryPerJobGiB === undefined ? undefined : {
+    ...(o.memoryFloorGiB !== undefined ? { floorGiB: o.memoryFloorGiB } : {}),
+    ...(o.memoryPerJobGiB !== undefined ? { perJobGiB: o.memoryPerJobGiB } : {}),
+  });
+
 /** The thresholds the disk options set; undefined when neither is. */
 export const diskLowOf = (o: { diskLowBelowGiB?: number; diskLowBelowPercent?: number }): DiskThresholds | undefined =>
   (o.diskLowBelowGiB === undefined && o.diskLowBelowPercent === undefined ? undefined : {
@@ -123,17 +142,18 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 
 export interface AttachedOptions {
   label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
-  reapEveryMinutes?: number; scratchMaxAgeHours?: number;
+  reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number;
 }
 
 /** The plain fields of an attached machine named `name`. */
 export const attachedBase = (name: string, o: AttachedOptions) => {
   const diskLow = diskLowOf(o);
-  const sweep = sweepOf(o);
+  const sweep = sweepOf(o); const memoryFloor = memoryFloorOf(o);
   return {
     name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
     ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), ...usageLimitsOf(o), executors: [...o.executors],
     ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
+    ...(memoryFloor ? { memoryFloor } : {}),
   };
 };
 

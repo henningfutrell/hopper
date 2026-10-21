@@ -3,7 +3,7 @@
 // that explains an allow.
 import { createHash } from 'node:crypto';
 import {
-  OPERATIONS, ASSET_KINDS, type ApiTokenAsk, type ApiTokenBoxAsk, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+  OPERATIONS, ASSET_KINDS, type ApiTokenAsk, type ApiTokenBoxAsk, type LiveRequesters, type RelayAsk, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
@@ -63,6 +63,22 @@ export const machineTerminalObject = (t: { ownerId: string; machineId: string })
 export function machineTerminalCheck(userId: string, t: { ownerId: string; machineId: string }): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
   const object = machineTerminalObject(t);
   return { tuple: { subject: userObject(userId), relation: 'can_attach', object }, contextual: [{ subject: userObject(t.ownerId), relation: 'owner', object }] };
+}
+/** A target of a user's bastions (issue #2146): OpenFGA takes no `:` in an id, and a target holds one, so it is escaped. */
+export const bastionObject = (b: { userId: string; target: string }): string => `bastion:${b.userId}/${encodeURIComponent(b.target)}`;
+/**
+ * The check whether a job may relay to a target of its bastion (issue #2146): the job as its owner and as running its
+ * template, and the template as approved for the target only when a person approved it, told for this check only.
+ */
+export function relayCheck(a: RelayAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = bastionObject(a), job = jobObject(a);
+  return {
+    tuple: { subject: job, relation: 'can_relay', object },
+    contextual: [
+      { subject: job, relation: 'owner', object }, { subject: job, relation: 'running', object: templateObject(a.template) },
+      ...(a.approved ? [{ subject: templateObject(a.template), relation: 'approved_for', object }] : []),
+    ],
+  };
 }
 /** A search hit (issue #945): the user whose work it is, its type and its id there. */
 export const searchHitObject = (h: { ownerId: string; type: string; ref: string }): string => `search_hit:${h.ownerId}/${h.type}/${encodeURIComponent(h.ref)}`;

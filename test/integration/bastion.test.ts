@@ -12,6 +12,8 @@
 //   Scenario (part 2): the job's `hopper-relay` holds a local port joined to a target of its bastion through the hopper's
 //     relay, a command in the box that reaches the forward; a target the bastion does not forward to is refused
 //   Scenario: a person sees the job's bastion in the vault's view, never its token, and stops it there
+//   Scenario (part 3): the template names its bastion target, approved with it; Access allows each connection, and each
+//     is a `bastion.relayed` event on the job's timeline
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type AddressInfo, type Server } from 'node:net';
@@ -80,7 +82,7 @@ function bastionBoxes(b: Booted): (name: string) => string {
  * which the check pass runs with the observe minted for it: exec and a Secret read are refused, so it passes.
  */
 async function observeTemplate(b: Booted, creds: string): Promise<VaultView['templates'][number]> {
-  const made = await skill(b.a, creds, ['sandbox-template', '--why', 'Read the lab dashboards', '--plan', 'port-forward to grafana, read only', '--needs', 'observe/namespace/lab/monitoring']);
+  const made = await skill(b.a, creds, ['sandbox-template', '--why', 'Read the lab dashboards', '--plan', 'port-forward to grafana, read only', '--needs', 'observe/namespace/lab/monitoring', '--targets', 'lab/monitoring/svc/grafana:3000']);
   expect(made.stdout + made.stderr).toContain('waiting for the read-only check of asked-');
   await b.a.app.sandboxes.check();
   const t = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates.find((x) => x.name.startsWith('asked-'))!;
@@ -204,6 +206,8 @@ describe('bastions (issue #2146)', () => {
     // The first connection checks the target; the second is the command's.
     expect(started).toHaveLength(2);
     expect(started.every((x) => x.box === box.id && x.cmd.at(-1) === '20000')).toBe(true);
+    await waitFor(async () => (await b.a.events()).filter((e) => e.type === 'bastion.relayed').length === 2, { timeoutMs: 10_000 });
+    expect((await b.a.events()).filter((e) => e.type === 'bastion.relayed').map((e) => (e.data as { target: string }).target)).toEqual(['lab/monitoring/svc/grafana:3000', 'lab/monitoring/svc/grafana:3000']);
 
     const other = await relay(b, creds, ['lab/monitoring/svc/loki:3100', '--', 'true']);
     expect(other).toMatchObject({ code: 1, stdout: '' });

@@ -5,6 +5,7 @@
 // time since it started or resumed, one whose executor cannot park, one with no agent session to resume, one whose lane
 // drains, or one a preemption already in flight names. Pure: the clock is `at`.
 import { PREEMPT_IN_FLIGHT_MS, type Job, type Lane, type LaneId, type PreemptPlan, type PreemptionInput, type PriorityLanesInput, type WaitPlan } from '../domain/types.ts';
+import { memoryAdmits } from './memory-floor.ts';
 import { fitsLane, pinOf, type Candidate, type MachineState, type MachineStateWithCredentialHold } from './assign.ts';
 
 const MINUTE_MS = 60_000;
@@ -26,7 +27,8 @@ function fitsWhenFreed(s: MachineState, job: Job, lane: Lane, holder: Job, pl?: 
   if (unpinned) c.unpinned -= 1;
   if (at >= 0) e!.occupied.splice(at, 1);
   try {
-    return fitsLane(c, job, pl);
+    // A job its memory holds back waits for memory, not for this lane (issue #2291): it preempts nothing.
+    return fitsLane(c, job, pl) && memoryAdmits(c.memory);
   } finally {
     c.occupied += 1;
     if (unpinned) c.unpinned += 1;

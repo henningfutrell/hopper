@@ -6,7 +6,7 @@ import { isWindowsJob, windowsFits } from '../domain/windows-jobs.ts';
 import { roomToElbowIn } from './elbow-in.ts'; import { awayFrom, takeIdle } from './lane-health.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
-import { fitting, place, type PlacedCost } from './placement-cost.ts';
+import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryWait, type MemoryRoom } from './memory-floor.ts';
 import { jevPicked } from './lane-calls.ts';
 import { SIGN_IN, signedOutFor } from './signed-out.ts';
 
@@ -44,8 +44,8 @@ export interface MachineState {
   slots: LaneSlots;
   /** The blast-radius gate (issue #542): a job it keeps from this machine is placed elsewhere. */
   gate?: BlastRadiusInput;
-  /** What the jobs this Decision placed here are expected to cost (issue #688). */
-  placed: PlacedCost;
+  /** What the jobs this Decision placed here are expected to cost (issue #688). `memory`: its memory room (issue #2291); absent: no reading, or its floor off. */
+  placed: PlacedCost; memory?: MemoryRoom;
   /** Its agent tools that read signed out (issue #1128 part 5): a new job of their executors is placed elsewhere. */
   signedOut?: SignedOutTool[];
 }
@@ -424,9 +424,11 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     const elbowing = fits.length === 0 && as ? checked.filter((s) => elbowsIn(s, job)) : [];
     const elbowed = elbowing.length > 0;
     const squeezed = fits.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
-    const able = elbowed ? elbowing : squeezed ? checked.filter((s) => squeezes(s, job)) : fits;
+    const laned = elbowed ? elbowing : squeezed ? checked.filter((s) => squeezes(s, job)) : fits;
+    // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it.
+    const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]));
     if (able.length === 0) {
-      wait.push({ jobId: job.id, reason: waitReason(job, checked, pl) });
+      wait.push({ jobId: job.id, reason: laned.length ? memoryWait(laned, costs?.[job.id]) : waitReason(job, checked, pl) });
       continue;
     }
     const { options: fit, note: costed } = fitting(awayFrom(able, avoid[job.id]), costs?.[job.id]);
@@ -440,7 +442,7 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     const overCap = (squeezed || elbowed) && pick.occupied + pick.assigned > pick.cap;
     if (overCap) pick.overCap += 1;
     pick.executors.get(ex)!.assigned += 1;
-    place(pick.placed, costs?.[job.id]);
+    place(pick.placed, costs?.[job.id]); keepMemory(pick.memory, costs?.[job.id]);
     const why = [
       ...(elbowed ? [overCap ? `${as}: elbows in over the lane cap ${pick.cap}` : `${as}: elbows in past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
         : overCap ? [`critical priority: one lane over the cap ${pick.cap}`]

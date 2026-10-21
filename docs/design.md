@@ -37,7 +37,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/domain/` | the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
-| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211) | everything but `domain/` |
+| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211); the memory floor and the memory pause (`memory-floor.ts`, issue #2291) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), what a quarantine takes back — the job's steps and its item's vault grant (`quarantine.ts`, issue #655 part 6), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
@@ -12923,6 +12923,56 @@ executors that cannot park, no agent session, in flight, the order of a preempte
 priority, the minimum run time and off preempt nothing; the settings), `test/domain/preempted-words.test.ts`,
 `test/ui/preemption.test.ts`.
 
+## The memory floor (issue #2291, 2026-10-20)
+
+Seven jobs queued at once on a WSL machine of a 14 GB VM all started on free lanes before any of them took its memory.
+Their Gradle builds (a JVM each) and agents then filled the VM: load over 270, under 1 GB available, and the hopper's own
+API stopped answering for hours. Lane counts, lane tuning (issue #688) and placement by expected cost did not stop it: a
+lane count says nothing about memory, the recommendation applies nothing by itself, and the expected cost is a preference,
+never a hold, read from a machine reading taken before the burst took its memory.
+
+- **Admission** (the decider, step 7, `src/decider/memory-floor.ts`; pure). Each machine with a memory reading has a
+  **memory floor**: its `memoryFloorGiB` option, else 10% of its memory and at least 1 GiB (`MEMORY_FLOOR_PERCENT`,
+  `MEMORY_FLOOR_MIN_GIB`). A job there needs a **job's memory**: the `memoryPerJobGiB` option (default 2 GiB,
+  `MEMORY_PER_JOB_GIB`), or its expected memory peak when that is more. The Decision counts, per machine, the memory
+  available less a job's memory for each job on its lanes that is claimed or started (or resumed) less than 10 minutes
+  ago (`MEMORY_RAMP_MS`: its memory is not in the reading yet), and for each job it places there. A job starts or resumes
+  there only while that, less its own need, stays at or above the floor. Else it **waits**, with the reason
+  `waiting for memory: <machine> has 7 GiB available, 4 GiB of it kept for 2 jobs started lately; a new job needs 2 GiB over its floor of 1.4 GiB`.
+  A wait for memory preempts nothing: preemption frees a lane, not memory. This holds for an elbow-in and a critical job
+  too, and for a job resuming on its pane.
+- **WSL.** The memory available is Linux's in the VM, or Windows' own free memory (`hostMemFreeBytes`, issue #868) when
+  that is lower. A machine with no reading (a container target, an old client, offline) has no floor.
+- **The memory pause** (step 7c, `memoryPauses`). An online machine whose memory available is below the floor itself
+  pauses the running job that started there last: its executor parks (`parkingExecutors`, now an input of every
+  Decision, whatever the preemption setting), it has an agent session, and no preemption names it. One per machine every
+  2 minutes (`MEMORY_PAUSE_EVERY_MS`): a job marked `memoryPaused` that recent, or the hopper's own record of its last
+  pause there (`memoryPausedAt`, kept in memory, since between the park and the requeue the paused job is no input), holds
+  the next. The Decision marks the job `memoryPaused: { at, machineId, availableBytes, floorBytes }` and emits
+  `job.memory_paused` in its transaction; the runner parks it after the commit on the preemption's path
+  (`preemptRunning`, `requeuePreempted`): lane freed, pane and agent ended, work tree, agent session and checkpoint kept,
+  then queued at once, pinned to its machine, to resume its session. It starts again only when the memory holds it; its
+  start clears the mark.
+- **The API stays up.** The hopper runs on the machine it guards, so keeping the machine off its memory limit is what
+  keeps `/api/health` and the UI answering; the held-loop health port (issue #1383) still tells a held event loop apart.
+- **Settings.** Plain options of the `local`, `ssh` and `client` machine sources (`memoryFloorShape`), read at every
+  list, so a change applies at the next Decision. A floor of 0 turns both admission and the pause off for that machine.
+  Not on a container target, whose memory is not read.
+- **Persisted state.** No schema change: `memoryPaused` is in the job's JSON, `memoryPause`, `parkingExecutors` and
+  `memoryPausedAt` in the Decision's. A build before this ignores them; a job it shows as queued resumes as a parked job
+  picked up does.
+- **Not built.** A cap on JVM or Gradle memory inside jobs (`org.gradle.jvmargs`, `--max-workers`): the hopper does not
+  know a job's build tool, and the floor bounds every kind of job. Per-job memory accounting by process tree is not read
+  (as in "Machine resources over time").
+
+Verification: `test/decider/memory-floor.test.ts` (a burst of 7 starts what fits, jobs started lately keep memory, a
+resume waits, the better machine, own options and 0, no reading, the expected peak, WSL, no preemption for memory; the
+pause: the newest job, at the floor nothing, one at a time, executors that cannot park and no session, off),
+`test/decider/placement-cost.test.ts`, `test/plugins/memory-floor-options.test.ts`, and
+`test/integration/memory-floor.test.ts` (the real daemon over the fake herdr: a burst of 7 queued jobs on 8 lanes starts
+2, the rest wait for memory while `/api/health` answers; below the floor the newest job is paused, queued again, and
+resumes its own session once the memory holds it).
+
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
 **Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
@@ -21054,7 +21104,15 @@ above holds the Windows half; this section the Linux half.
   and the kubeconfig (a context per cluster or namespace, the first current) under the box's home with umask 077, takes
   them out of the environment, and runs the command in `$HOME/work` with `sh -c`. One AWS role
   is also the AWS CLI's own variables. After the command it prints the outputs as a tar in base64 between two marks,
-  which the job's log never shows (`shownSoFar`, `splitOutput`). The box's output is read every second and streamed with
+  which the job's log never shows (`shownSoFar`, `splitOutput`), with the tar's **outputs sha256** as the box made it
+  (issue #2288). A runtime's log once lost one line of the base64: 57 bytes gone mid-file, the tar's NUL padding at the
+  end of the file, the same length. So the hopper computes the sha256 of the tar it decoded and compares the two: on a
+  difference it reads the box's log once more (the box is still there, and a read changes nothing), and when they still
+  differ, or the box gave none (its image has no `sha256sum`), the step ends with a problem and no outputs. The digest is
+  kept with the step's result (`outputsSha256`, in `step.finished`), sent in `x-hopper-step-outputs-sha256`, and
+  `hopper-step` checks it again on the job's machine before it unpacks the tar. The digest is of the tar, not of each
+  file: the tar holds every output file whole, so one digest covers each byte of each file, and the hopper needs no tar
+  parser. The box's output is read every second and streamed with
   each credential's value masked (`maskSecrets`); the exit code is the command's; a timeout or the job's request gone
   stops the box. The box and its home volume are removed after it, whatever came before.
 - **`terraform apply` in a need box.** A step with `--plan-id` gets, after its write credential is minted through the apply
@@ -30200,7 +30258,8 @@ the monitoring services only, and a Grafana Viewer token — is the platform's, 
   software and give a box no access, so they change nothing of who approves: the read policy approves a read template
   with them, as it approves the needs' tools. A template approved for the request is reused when it has at least the tools
   asked for.
-- **The observability skill** (`src/skills/catalog.ts`, `sh "$HOPPER_SKILL" observability`). Text only: ask for a sandbox
+- **The observability skill** (`src/skills/catalog.ts`, `sh "$HOPPER_SKILL" observability`; since the bastion path's part 4
+  it says the bastion and the relay in place of this, "Bastions"). Text only: ask for a sandbox
   with `--tools "jq promtool logcli"` and, for Grafana, `--secrets` with the vault secret of a Viewer token (a person
   approves it, as every secret); run each query as a box step under `hopper-port-forward`; a PromQL instant and range query
   (the HTTP API or `promtool query`), a LogQL query (`logcli`), a Grafana search, dashboard and panel query (the token read
@@ -30229,7 +30288,7 @@ command runs once the port is forwarded, its exit code, the forward stopped afte
 ready runs no command; a bad call), `test/skills/template-request-extras.test.ts` (tools on request: saved, named,
 approved by the read policy, reused, an unknown tool refused), `test/skills/observability.test.ts`.
 
-## Bastions (issue #2146, the bastion path, parts 1 and 2, 2026-10-20)
+## Bastions (issue #2146, the bastion path, parts 1 to 3, 2026-10-20)
 
 **The problem.** Part 1 gave a sandbox the query tools and `hopper-port-forward`, but its credential could not forward: a
 read maps to view access, which has no `pods/portforward`. The owner then ruled out new cluster openings made by jobs
@@ -30299,7 +30358,34 @@ with no new opening in the cluster: the forward is the bastion's own.
   anything uses the port. With COMMAND it runs it with `HOPPER_RELAY_PORT` set, then closes the port and exits with
   its code; without, it holds the port until stopped. The token goes in a header from its file, never on a command line.
 
+**Approved targets and Access for each connection (part 3).** An observe reaches every pod of its namespace; a person now
+names, with the template, which services a bastion of it reaches.
+- **A template's bastion targets** (`Template.bastionTargets`, `templateTargets` in `src/sandbox/bastion.ts`). Each a
+  target, on a namespace or cluster the template has an observe on, sorted, at most 32; a save that leaves them out keeps
+  them, `[]` drops them. They are approved with the template, as its egress hosts are (`approval.bastionTargets`): a
+  target added waits for a person (`pending.bastionTargets`, a run card and Access requests show it), and holds no other
+  box of the template. A job names them in its template request: `sh "$HOPPER_SKILL" sandbox-template --needs
+  "observe/namespace/<cluster>/<namespace>" --targets "<target> ..."` (`AskExtras.targets`; they name the template, as
+  its other extras do). `template.saved` and `vault.approved` carry them.
+- **A bastion forwards only to approved targets** (`targetsOutside`). The ask (`bastion --targets`) is a 400 for a target
+  the template does not name, with the template request to make, and waits (202) for one a person has not approved;
+  `Bastions.start` refuses both (403).
+- **Access decides each relay connection** (`bastion#can_relay`, `decideRelay`, `relayCheck` in `src/authz/objects.ts`).
+  The object is the target, per user (`bastion:<user>/<target, escaped>`). The hopper tells, for that check only, the
+  job as its owner, the job as running the bastion's template, and the template as approved for the target only when
+  the template as it is now approves it (`approvedTarget`): a revoked template, or a target that waits again, denies the
+  next connection. The default model: `can_relay: owner and requester from approved_for`. A model edited before it
+  (`bastionGaps`) still decides every mint and denies every relay. A denied connection starts no command in the box: a
+  403 and `bastion.relay_refused` (the reason). An allowed one is `bastion.relayed` when it closes: the target, when it
+  opened and how long (`ms`), never what went through it.
+
 **Decisions:**
+- **The target is the object, not the bastion** (part 3). A bastion lives an hour and holds up to 8 targets; a person
+  approves a service, not a box. The same target approved with two templates is one object with two `approved_for`.
+- **Targets are approved with the template, as egress hosts are**, not one by one as profiles are: they narrow what an
+  approved observe reaches, and give nothing on their own. Skip template approval approves them with the template.
+- **One event at a connection's end**, with its time open, and one for each refusal. A byte count would need a counter
+  in the pipe's path; it is not asked for.
 - **Observe is an operation, not a read with another role.** Access decides each mint by its operation: approving a read
   must not approve a port-forward, and a template's rating, its run card and the person's approval show it as what it is.
 - **High radius, but no change.** A forward can reach a pod's every port, so it needs its own approval; it applies
@@ -30328,15 +30414,28 @@ with no new opening in the cluster: the forward is the bastion's own.
 **Residual risk, stated.** A forward reaches every port of its pod, whatever port the target names; the cluster role does
 not limit ports. Read-only past the forward is the target's own credential (a Grafana Viewer token, a read-only database
 role); nothing in the bastion enforces it. The relay reaches only the job's own bastion, whose every target was
-approved as an observe; until part 3 it records no event for a connection.
+approved as an observe and as a bastion target of its template (part 3).
 
-**Not built (the later parts).** Part 3: Access for relay targets (`bastion#can_relay`), approved
-bastion targets in templates, and each connection an event. Part 4: the observability skill text on the bastion and the
-relay. Part 5: the read-only check's probes under observe (`kubectl exec` and a Secret read refused). Part 6: the live
-check on a cluster. A person's stop of a bastion in the UI.
+**The observability skill on the bastion (part 4).** `sh "$HOPPER_SKILL" observability` (`OBSERVABILITY_TEXT`,
+`src/skills/catalog.ts`) now says the bastion path, in place of part 1's box steps under `hopper-port-forward` (a read's
+credential cannot forward): find the services with a need step (`kubectl get svc` under a read of the namespace); ask once
+for a template with an observe on the namespace and each service as a bastion target; start the bastion; reach a target
+with `sh "$HOPPER_RELAY" TARGET -- COMMAND`. The queries run where the job runs: PromQL instant and range and LogQL with
+curl on the HTTP APIs, or `promtool` and `logcli` when the machine has them; Alertmanager's and Tempo's read APIs. The
+evidence and the guardrails are as before. The catalog line names the bastion.
+- **Grafana's API is not in it.** A relay command runs on the job's machine, and a job gets no vault secret (only a box
+  gets the vault's helper), so a Grafana Viewer token has no way to the command. The skill says so, and to run a panel's
+  PromQL or LogQL on its data source in its place. A Grafana read through the bastion's box is a later part (part 6, the
+  bastion read, below).
+
+**Not built (the later parts).** Part 7: the live check on a cluster (it was named part 6 before the bastion read took
+that number). Editing a template's bastion targets in the Settings → Vault form.
 
 **Persisted state.** No schema change: a bastion is kept in memory, its run is a row of the sandbox runs ledger, and its
 events are new types a build before this one ignores. A model with the observe relations is the default's next version.
+Part 3: a template's `bastionTargets` and its approval's are optional fields of its stored body; absent is none, so a
+template saved before names none, and a build before this one ignores them. A model with `bastion` is the default's next
+version, upgraded at start as before.
 
 Tests: `test/domain/observe-operation.test.ts` (observe minted, no plan, high radius; a model edited before it),
 `test/skills/needs-in-words.test.ts` (a port-forward reads as observe), `test/sandbox/bastion.test.ts` (targets, the
@@ -30350,7 +30449,14 @@ apart, a refusal, no command in a box that is no need box), `test/sandbox/relay-
 under `sh` with socat, bash or nc alone, and none), `test/sandbox/bastions.test.ts` (the relay's pipe, its noes, the TTL
 kept while a connection is open, connections closed at the end), and `test/integration/bastion.test.ts` (the real daemon,
 route and `hopper-relay`: a command reaches a target through a local port; another target and a stranger's token are
-refused).
+refused). Part 3: `test/authz/bastion-relay.test.ts` (real Access, OpenFGA a double that evaluates the model: an approved
+target allowed, another denied; a model without bastions denies every relay and still decides mints),
+`test/authz/model.test.ts` (`bastionGaps`), `test/integration/template-bastion-targets.test.ts` (the real daemon: targets
+wait for a person with the template, the approval names them, a new one waits again, a bad one is refused),
+`test/skills/template-request-targets.test.ts` (`--targets` in a template request), `test/skills/bastion-skill.test.ts`
+and `test/sandbox/bastions.test.ts` (a target not named or not approved; Access asked for each connection; both events),
+and `test/integration/bastion.test.ts` (each connection a `bastion.relayed`). Part 4: `test/skills/observability.test.ts`
+(the asks it names parse as the hopper reads them; the relay queries; no `hopper-port-forward`; Grafana's API not reached).
 
 **The read-only check under observe (part 5).** An observe credential may port-forward to the monitoring pods, so the
 hopper proves it can do nothing more before a bastion of its template starts.
@@ -30409,6 +30515,49 @@ Tests (the stop): `test/sandbox/bastions.test.ts` (the list: the bastions that r
 and a stopped one leaves it), `test/integration/bastion.test.ts` (the real daemon: the vault's view lists the job's
 bastion, never its token; a person's stop ends it, its box goes, `bastion.ended` names the person, a second stop is a
 404), `test/ui/bastions-view.test.ts` (the panel, its Stop), `test/ui/needs-you.test.ts` (`rereadsVault`).
+
+**The bastion read (part 6).** Grafana's API needs a token, and a relay command runs where the job runs, which gets no
+vault secret. So the token goes into the bastion's box, and the hopper runs the read there for the job.
+- **The bastion's secrets** (`sh "$HOPPER_SKILL" bastion … --secrets "<vault secret> ..."`, `Bastions.start`). Each must be
+  one the template gives now (`gives`: in its scope and approved), else a 403 that names the template request to make. Each
+  is read for the bastion's box through the vault's `forStep`, as a box step's secret (issue #1875): after the job's vault
+  grant (none: a grant ask and a 403 that says so), `vault.step_delivered` with the box as its host. It goes into the box as
+  a vault secret file, `$HOME/.hopper-need/secrets/read-<name>`, mode 600, holding the line `Authorization: Bearer <value>`;
+  never in its environment, never to the job. The bastion's view and `bastion.started` name the secrets, never a value.
+  Other secrets than the bastion that runs are a 409, as other targets are.
+- **The read** (`sh "$HOPPER_SKILL" bastion read --targets T --path P [--secrets S] [--data JSON]`, `parseRead`,
+  `Bastions.read`, `src/sandbox/bastion-read.ts`). A GET of the path, or, with `--data` (JSON, at most 64 KiB), a POST to
+  Grafana's data source query (`/api/ds/query`) only. It is a relay connection (`Bastions.relay` with its own command):
+  Access decides it (`bastion#can_relay`), it renews the TTL, and it is a `bastion.relayed`. The command (`readCommand`)
+  is curl in the box to 127.0.0.1 at the target's port, with no proxy and a 30 s limit, its header read from the secret's
+  file (`-H @file`, never on a command line), a POST's body on its stdin. Its output is the body and the HTTP status. The
+  hopper answers the body when the status is 2xx; another status is a 502 with the target's words; an answer over 2 MiB is a
+  413. Each read is a `bastion.read`: the target, method, path, status and size, or the problem, and how long it took;
+  never the secret or the answer.
+- **The skill** (`OBSERVABILITY_TEXT`): the secret named in the template request and at the bastion's start, then a search,
+  a dashboard by uid, and a panel's query through `/api/ds/query`. The catalog line names Grafana.
+
+**Decisions (part 6):**
+- **The hopper runs the read in the box, not an HTTP proxy that adds the header.** The relay stays a byte pipe; a read is
+  one command per request, as a relay connection is. curl is in the box image; the hopper adds no binary.
+- **A GET, or a POST to `/api/ds/query` only.** Grafana's API changes things with POST, PUT and DELETE; its data source
+  query is the one read that is a POST. Read-only past that is the token's own role (Viewer): the hopper does not parse
+  Grafana's answers.
+- **The vault's `forStep`, as a box step's secret.** The same grant, the same events, the same refusal of a minting
+  credential, a system secret or a shared secret. The token is read once, at the bastion's start, and is not renewed.
+- **A header file, not the bare value.** curl reads a header line from a file, so the token is never in an argument or in
+  the box's environment. The relay's other commands do not read it.
+- **The answer, not a file.** The job keeps it as its evidence (`> out/dashboards.json`), as it does a relay query's.
+
+**Residual risk (part 6).** A job may read any GET path of a target its bastion forwards to, with the token: what the
+Viewer role lets it read, it reads. A Viewer token can read the data sources' data through `/api/ds/query`.
+
+Tests (part 6): `test/sandbox/bastion-read.test.ts` (the ask as the hopper reads it; the command under `sh` with this
+machine's curl and a server on 127.0.0.1: the header from the file, a POST's body, the target's status, no curl),
+`test/sandbox/bastion-reads.test.ts` (the secrets read for the box after the grant, as header files, never in its
+environment; a secret the template does not give or the vault refuses; the read's command, its stdin, its noes, Access,
+the event), `test/skills/bastion-skill.test.ts` (`--secrets` and `bastion read`), `test/skills/observability.test.ts`
+(the Grafana asks parse as the hopper reads them).
 
 ## A comment ends the job's own wait (issue #2159, 2026-10-19)
 

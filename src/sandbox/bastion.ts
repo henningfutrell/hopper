@@ -4,7 +4,8 @@
 // each target on 127.0.0.1 inside it, a local port each, and starts a forward again when it ends (a pod that restarted).
 // Its kube tokens are files the hopper renews while it runs (the kubeconfig's `tokenFile`, which kubectl reads again
 // within a minute); they never go to the job. Only the box reaches the forwards: the hopper's relay (part 2) joins a
-// job's connection to one through a command it starts in the box for each connection (relayCommand). Pure.
+// job's connection to one through a command it starts in the box for each connection (relayCommand). Part 3: a bastion
+// forwards only to targets its template names as bastion targets, each approved by a person with the template. Pure.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import { credentialName } from './need-box.ts';
@@ -78,6 +79,48 @@ export function placeTargets(targets: readonly BastionTarget[], profiles: readon
     return { ...t, context: credentialName(p), local: BASTION_FIRST_PORT + i };
   });
   return { placed, observes };
+}
+
+/** The most bastion targets one template names. */
+export const TEMPLATE_TARGETS_MAX = 32;
+
+/**
+ * A template's bastion targets as a save takes them (part 3): each a target an observe of its `profiles` reaches, sorted,
+ * each once; or why one is not.
+ */
+export function templateTargets(list: readonly string[], profiles: readonly OperationProfile[]): string[] | string {
+  const words = [...new Set(list.map((w) => w.trim()).filter((w) => w !== ''))];
+  if (words.length > TEMPLATE_TARGETS_MAX) return `a template names at most ${TEMPLATE_TARGETS_MAX} bastion targets, not ${words.length}`;
+  const targets: BastionTarget[] = [];
+  for (const w of words) {
+    const t = parseTargets(w);
+    if (typeof t === 'string') return `bastion target ${t}`;
+    targets.push(...t);
+  }
+  const placed = placeTargets(targets, profiles);
+  if (typeof placed === 'string') return `bastion targets: ${placed}`;
+  return targets.map(targetText).sort();
+}
+
+/** What a template says of its bastion targets: the ones it names, and the ones that wait for a person (its view). */
+export interface TargetsOf { name: string; bastionTargets?: readonly string[]; pending: { bastionTargets?: readonly string[] } }
+
+/** Whether a person approved `target` with the template: it names it, and it does not wait. */
+export const approvedTarget = (t: TargetsOf | undefined, target: string): boolean =>
+  t !== undefined && (t.bastionTargets ?? []).includes(target) && !(t.pending.bastionTargets ?? []).includes(target);
+
+/**
+ * Why a bastion of the template may not forward to `targets` (part 3): a target it does not name (`unnamed`), or one a
+ * person has not approved with it yet (`waiting`); undefined: each is approved.
+ */
+export function targetsOutside(t: TargetsOf, targets: readonly BastionTarget[]): { why: 'unnamed' | 'waiting'; targets: string[]; no: string } | undefined {
+  const asked = targets.map(targetText);
+  const unnamed = asked.filter((x) => !(t.bastionTargets ?? []).includes(x));
+  if (unnamed.length) return { why: 'unnamed', targets: unnamed, no: `template ${t.name} names no bastion target ${unnamed.join(', ')}` };
+  const waiting = asked.filter((x) => !approvedTarget(t, x));
+  if (!waiting.length) return undefined;
+  const one = waiting.length === 1;
+  return { why: 'waiting', targets: waiting, no: `the bastion target${one ? '' : 's'} ${waiting.join(', ')} of template ${t.name} wait${one ? 's' : ''} for a person to approve ${one ? 'it' : 'them'} on Access requests` };
 }
 
 /** The vault secret file of a context's token in the box: `$HOME/.hopper-need/secrets/<name>`. */

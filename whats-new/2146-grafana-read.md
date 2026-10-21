@@ -1,0 +1,1 @@
+- Jobs can now read Grafana dashboards and panels in a cluster through their bastion. The Grafana token stays in the sandbox and the job never sees it.

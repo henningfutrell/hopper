@@ -278,6 +278,12 @@ export interface Template {
    */
   egress?: string[];
   /**
+   * The targets a bastion of it may forward to (issue #2146, design.md "Bastions"): each
+   * `<cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>`, on a namespace or cluster it has an observe on, sorted.
+   * Approved with it: a target added waits for a person, and a bastion forwards only to approved ones. Absent: none.
+   */
+  bastionTargets?: string[];
+  /**
    * A template a job asked for with read needs only (issue #716, item 4): it takes no box and no job until the read-only
    * check of its current version passed. Kept through every save. Absent: no check.
    */
@@ -313,7 +319,7 @@ export interface Template {
    * another job that asks for the same access gets a run card of its own. Absent: every job (allow again, and every
    * approval made before).
    */
-  approval?: { image: string; tools?: BoxTool[]; egress?: string[]; secrets: string[]; by: string; at: string; jobs?: string[] };
+  approval?: { image: string; tools?: BoxTool[]; egress?: string[]; bastionTargets?: string[]; secrets: string[]; by: string; at: string; jobs?: string[] };
 }
 
 /**
@@ -338,6 +344,9 @@ export function egressHostProblem(host: string): string | undefined {
 /** The template's egress hosts that wait for a person (issue #1875): each not in its last approval; all of them when never approved. */
 export const egressPending = (t: Template): string[] => (t.egress ?? []).filter((h) => !(t.approval?.egress ?? []).includes(h));
 
+/** The template's bastion targets that wait for a person (issue #2146): each not in its last approval; all of them when never approved. */
+export const bastionTargetsPending = (t: Template): string[] => (t.bastionTargets ?? []).filter((x) => !(t.approval?.bastionTargets ?? []).includes(x));
+
 /**
  * The jobs a new approval of the template approves (issue #2197 part 3), `job`'s runs only or (undefined) every job's.
  * With no job (allow again, a person's own approval): every job. For one job: that job and those the last approval
@@ -347,7 +356,7 @@ export const egressPending = (t: Template): string[] => (t.egress ?? []).filter(
 export function approvalJobs(t: Template, job: string | undefined): string[] | undefined {
   if (job === undefined) return undefined;
   const a = t.approval;
-  if (a && a.jobs === undefined && imageApproved(t) && egressPending(t).length === 0 && t.secrets.every((s) => a.secrets.includes(s))) return undefined;
+  if (a && a.jobs === undefined && imageApproved(t) && egressPending(t).length === 0 && bastionTargetsPending(t).length === 0 && t.secrets.every((s) => a.secrets.includes(s))) return undefined;
   return [...new Set([...(a?.jobs ?? []), job])];
 }
 
@@ -362,8 +371,11 @@ export function imageApproved(t: Template): boolean {
 /** A template as the vault shows it: what waits for a person, what its boxes may be given now, and its blast radius. */
 export interface TemplateView extends Template {
   profiles: OperationProfile[];
-  /** What waits for approval: secrets added since, whether the image is not the one approved, egress hosts added since (issue #1875), and the profiles access does not approve. */
-  pending: { secrets: string[]; image: boolean; egress: string[]; profiles: OperationProfile[] };
+  /**
+   * What waits for approval: secrets added since, whether the image is not the one approved, egress hosts added since
+   * (issue #1875), bastion targets added since (issue #2146), and the profiles access does not approve.
+   */
+  pending: { secrets: string[]; image: boolean; egress: string[]; bastionTargets?: string[]; profiles: OperationProfile[] };
   /** The secrets its boxes may be given now: its scope, as far as it was approved, while its image is the approved one. */
   gives: string[];
   /** Rated from its profiles and its secrets (issue #584). */
@@ -436,7 +448,7 @@ export function templateView(t: Template, approvedProfiles: readonly OperationPr
   const label = t.purpose ? purposeLabel(t.purpose) : undefined;
   return {
     ...t, profiles, ...(label ? { label } : {}),
-    pending: { secrets: t.secrets.filter((s) => !approved.includes(s)), image, egress: egressPending(t), profiles: profiles.filter((p) => !approvedProfiles.some((a) => sameProfile(a, p))) },
+    pending: { secrets: t.secrets.filter((s) => !approved.includes(s)), image, egress: egressPending(t), bastionTargets: bastionTargetsPending(t), profiles: profiles.filter((p) => !approvedProfiles.some((a) => sameProfile(a, p))) },
     gives: givesOf(t),
     radius,
   };

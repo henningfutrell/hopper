@@ -14,9 +14,9 @@ import {
   profileProblem, type RadiusRules,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, observeGaps, observeKept, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, trustGaps, vaultGrantGaps, type ModelJson } from './model.ts';
+import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, bastionGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, observeGaps, observeKept, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, trustGaps, vaultGrantGaps, type ModelJson } from './model.ts';
 import { belowMinimum, gateTuples, holderTuples, minTrusts, setMinTrust, trustedPath, trustTuples } from './trust.ts';
-import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, gitlabIntakeActorCheck, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject, keyedByEmail } from './objects.ts';
+import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, gitlabIntakeActorCheck, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, relayCheck, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject, keyedByEmail } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 import { AccessEditError, requestProblem } from './edits.ts';
 
@@ -78,7 +78,7 @@ export function createAccess(o: AccessOptions): Access {
     let memo: { dsl: string; gaps: string[] } | undefined;
     return (dsl) => (memo?.dsl === dsl ? memo : (memo = { dsl, gaps: gapsIn(compileAccessModel(dsl)) })).gaps;
   };
-  const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps), itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps), sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), gitlabIntakeGapsOf = gapsMemo(gitlabIntakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps), machineTerminalGapsOf = gapsMemo(machineTerminalGaps), trustGapsOf = gapsMemo(trustGaps), observeGapsOf = gapsMemo(observeGaps);
+  const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps), itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps), sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), gitlabIntakeGapsOf = gapsMemo(gitlabIntakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps), searchGapsOf = gapsMemo(searchHitGaps), terminalGapsOf = gapsMemo(terminalGaps), machineTerminalGapsOf = gapsMemo(machineTerminalGaps), trustGapsOf = gapsMemo(trustGaps), observeGapsOf = gapsMemo(observeGaps), bastionGapsOf = gapsMemo(bastionGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -87,7 +87,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + boxGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + gitlabIntakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length + searchGapsOf(m.dsl).length + terminalGapsOf(m.dsl).length + machineTerminalGapsOf(m.dsl).length + trustGapsOf(m.dsl).length + observeGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + boxGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + gitlabIntakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length + searchGapsOf(m.dsl).length + terminalGapsOf(m.dsl).length + machineTerminalGapsOf(m.dsl).length + trustGapsOf(m.dsl).length + observeGapsOf(m.dsl).length + bastionGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -245,7 +245,7 @@ export function createAccess(o: AccessOptions): Access {
     decideVaultGrant: (userId, grant) => checkOnce('vault grants', vaultGrantGapsOf(model().dsl), { subject: userObject(userId), relation: 'can_grant', object: vaultGrantObject(grant) },
       [{ subject: userObject(grant.ownerId), relation: 'owner', object: vaultGrantObject(grant) }], (allowed) => (allowed ? 'they own the job' : 'only the job\'s owner may grant it the vault')),
     decideTerminal: (userId, terminal) => may('a job\'s terminal', terminalGapsOf, terminalCheck(userId, terminal), () => 'attach to the job\'s terminal'),
-    decideMachineTerminal: (userId, terminal) => may('a machine\'s terminal', machineTerminalGapsOf, machineTerminalCheck(userId, terminal), () => 'attach to the machine\'s terminal'),
+    decideMachineTerminal: (userId, terminal) => may('a machine\'s terminal', machineTerminalGapsOf, machineTerminalCheck(userId, terminal), () => 'attach to the machine\'s terminal'), decideRelay: (ask) => may('relay connections', bastionGapsOf, relayCheck(ask), () => `relay to ${ask.target}`),
     decideIntakeActor: (userId, login, actors) => { const c = intakeActorCheck(userId, login, actors); return checkOnce('intake', intakeGapsOf(model().dsl), c.tuple, c.contextual, (allowed) => `${login} is${allowed ? '' : ' not'} a trusted actor`); },
     // On GitLab (issue #1448): a GitLab user by its GitLab and id, the user's GitLab account told as the trusted actor.
     decideGitLabIntakeActor: (userId, actor, actors) => { const c = gitlabIntakeActorCheck(userId, actor, actors); return checkOnce('intake on GitLab', gitlabIntakeGapsOf(model().dsl), c.tuple, c.contextual, (allowed) => `GitLab user ${actor.userId} is${allowed ? '' : ' not'} a trusted actor`); },

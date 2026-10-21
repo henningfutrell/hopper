@@ -17,14 +17,14 @@ export function preemptRunning(c: EngineContext, runner: Pick<Runner, 'park'>, j
   if (runner.park(jobId) || (relay && c.leases.relay(jobId, { kind: 'park' }))) return;
   c.store.tx(() => {
     const job = c.store.jobs.get(jobId);
-    if (job?.preempted && job.status !== 'parked') c.store.jobs.update(jobId, { preempted: undefined });
+    if ((job?.preempted || job?.memoryPaused) && job.status !== 'parked') c.store.jobs.update(jobId, { preempted: undefined, memoryPaused: undefined });
   });
 }
 
-/** Once a preempted job is parked: back in the queue, to resume its agent session on its machine. */
+/** Once a preempted or memory-paused job (issue #2291) is parked: back in the queue, to resume its agent session on its machine. */
 export function requeuePreempted(c: EngineContext, jobId: string): void {
   c.store.tx(() => {
     const job = c.store.jobs.get(jobId);
-    if (job?.status === 'parked' && job.preempted) recordUnpark(c, jobId);
+    if (job?.status === 'parked' && (job.preempted || job.memoryPaused)) recordUnpark(c, jobId);
   });
 }

@@ -2,7 +2,7 @@
 import { decide } from '../decider/index.ts';
 import { retiredPins } from '../decider/retired.ts';
 import { signedOutOf } from '../decider/signed-out.ts';
-import { preemptionInput, type CleanupDue, type Decision, type DecisionInputs, type ExpectedCost, type Job, type JobId, type Lane, type LaneId, type MachineSnapshot } from '../domain/types.ts';
+import { MEMORY_PAUSE_EVERY_MS, preemptionInput, type CleanupDue, type Decision, type DecisionInputs, type ExpectedCost, type Job, type JobId, type Lane, type LaneId, type MachineSnapshot } from '../domain/types.ts';
 import { brakeOf, DEFAULT_INTAKE_STRICTNESS } from '../domain/intake-strictness.ts';
 import { credentialHeldIds } from '../domain/machine-credentials.ts';
 import { nowIso, policyOf, priorityTagOf, type EngineContext } from './context.ts';
@@ -41,7 +41,8 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const avoidLanes = avoidLanesOf(waiting, (id) => c.store.jobs.get(id));
     const credentialHeld = credentialHeldOf(c, machines);
     const sandboxesHeld = c.sandboxesHeld(waiting);
-    const preemption = preemptionInput(preemptionSettings(c.store), c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined));
+    const parkingExecutors = c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined);
+    const preemption = preemptionInput(preemptionSettings(c.store), parkingExecutors);
     const strictness = c.store.settings.getIntakeStrictness() ?? DEFAULT_INTAKE_STRICTNESS;
     // Jev's trust check (issue #655 part 4) and kind check: asked after this Decision's transaction; active, a job waits for them.
     const checking = checks.trust.of(waiting);
@@ -70,7 +71,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(signedOut.length ? { signedOut } : {}),
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
-      ...(preemption ? { preemption } : {}),
+      ...(preemption ? { preemption } : {}), parkingExecutors, ...memoryPausedAtOf(c, nowIso(c)),
       ...(stampHeld.length ? { stampHeld } : {}),
       policy: policyOf(c),
     };
@@ -89,9 +90,19 @@ function expectedOf(waiting: readonly Job[], expected: ExpectedCostOf): Record<s
   return known.length ? Object.fromEntries(known) : undefined;
 }
 
+/**
+ * Issue #2291: per machine, when this hopper last paused a job there for memory. Kept in memory: between its park and its
+ * requeue the paused job is parked and no input, and a second pause must not follow it. A restart forgets it.
+ */
+const memoryPaused = new WeakMap<EngineContext, Map<string, string>>();
+const memoryPausedAtOf = (c: EngineContext, at: string): { memoryPausedAt?: Record<string, string> } => {
+  const kept = [...(memoryPaused.get(c) ?? new Map<string, string>())].filter(([, t]) => Date.parse(at) - Date.parse(t) < MEMORY_PAUSE_EVERY_MS);
+  return kept.length ? { memoryPausedAt: Object.fromEntries(kept) } : {};
+};
+
 /** A Decision that changes nothing is not recorded (design.md "The decider"). */
 export function isNoOp(d: Decision): boolean {
-  if (d.start.length > 0 || (d.preempt?.length ?? 0) > 0) return false;
+  if (d.start.length > 0 || (d.preempt?.length ?? 0) > 0 || (d.memoryPause?.length ?? 0) > 0) return false;
   if (d.lanes.some((p) => p.open > 0 || p.close.length > 0 || p.drain.length > 0)) return false;
   const byId = new Map(d.inputs.waiting.map((j) => [j.id, j]));
   return d.hold.every((h) => byId.get(h.jobId)?.holdReason === h.reason)
@@ -157,6 +168,18 @@ function apply(c: EngineContext, d: Decision): Applied {
     store.events.append({
       type: 'job.preempted', jobId: p.jobId, laneId: p.laneId, machineId: p.machineId, decisionId: d.id,
       data: { by: p.by, byPriority: p.byPriority, priority: p.priority, reason: p.reason },
+    });
+    preempts.push(p.jobId);
+  }
+  // A memory pause (issue #2291): marked here, and parked by the runner after the commit on the preemption's path.
+  for (const p of d.memoryPause ?? []) {
+    const job = store.jobs.get(p.jobId);
+    if (job?.status !== 'running' || job.laneId !== p.laneId || preempts.includes(p.jobId)) continue;
+    store.jobs.update(p.jobId, { memoryPaused: { at: d.at, machineId: p.machineId, availableBytes: p.availableBytes, floorBytes: p.floorBytes } });
+    memoryPaused.set(c, (memoryPaused.get(c) ?? new Map<string, string>()).set(p.machineId, d.at));
+    store.events.append({
+      type: 'job.memory_paused', jobId: p.jobId, laneId: p.laneId, machineId: p.machineId, decisionId: d.id,
+      data: { availableBytes: p.availableBytes, floorBytes: p.floorBytes, reason: p.reason },
     });
     preempts.push(p.jobId);
   }

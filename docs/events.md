@@ -3781,6 +3781,24 @@ Version 1 (`docs/schemas/job.preempted.v1.json`). A Decision preempted this runn
 }
 ```
 
+## `job.memory_paused`
+
+Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job started there last. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision's.
+
+| field | type | required |
+|---|---|---|
+| `availableBytes` | number | yes |
+| `floorBytes` | number | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "availableBytes": 1073741824,
+  "floorBytes": 1503238554,
+  "reason": "pauses j-new on laptop/lane-6: laptop has 1 GiB available, below its floor of 1.4 GiB; j-new started there last"
+}
+```
+
 ## `github_rate_limiter.settings_changed`
 
 Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), how many polls run at once in a batch (`batchSize`), and how many calls intake leaves for job work (`intakeReserve`, issue #983), how often intake lists the job repositories, in minutes (`intakeSyncMinutes`, issue #985), and how often the in-motion cycle reads the pull requests in motion, in minutes (`prCycleMinutes`, issue #985); each absent from a change made before it. `from` and `to`. An instance event: in every user's log.
@@ -4484,7 +4502,7 @@ Version 1 (`docs/schemas/vault.master_key_rotated.v1.json`). The hopper's admin 
 
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), its `egress` hosts when it names any (issue #1875: each `host:port` its boxes may reach through the egress proxy), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, its `probeMarks` when it has any (issue #916: a read probe of the read-only check marked `expect-denied` or `skip`), and who saved it. A scope wider than the one approved, a new image, or a new egress host, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), its `egress` hosts when it names any (issue #1875: each `host:port` its boxes may reach through the egress proxy), its `bastionTargets` when it names any (issue #2146: each target a bastion of it may forward to), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, its `probeMarks` when it has any (issue #916: a read probe of the read-only check marked `expect-denied` or `skip`), and who saved it. A scope wider than the one approved, a new image, a new egress host, or a new bastion target, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
@@ -4492,6 +4510,7 @@ Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #
 | `image` | string | yes |
 | `tools` | string[] | no |
 | `egress` | string[] | no |
+| `bastionTargets` | string[] | no |
 | `secrets` | string[] | yes |
 | `profiles` | object[] | no |
 | `probeMarks` | object | no |
@@ -4535,7 +4554,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`. `jobs` (issue #2197 part 3): a run card approved with no allow again approves those jobs' runs only; absent, every job's.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716), its egress hosts (issue #1875), its bastion targets (issue #2146) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`. `jobs` (issue #2197 part 3): a run card approved with no allow again approves those jobs' runs only; absent, every job's.
 
 | field | type | required |
 |---|---|---|
@@ -4543,6 +4562,7 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
 | `image` | string | yes |
 | `tools` | string[] | no |
 | `egress` | string[] | no |
+| `bastionTargets` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
 | `jobs` | string[] | no |
@@ -4917,7 +4937,7 @@ Version 1 (`docs/schemas/vault.unbound.v1.json`). A sandbox ended, and the Secre
 
 ## `bastion.started`
 
-Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (issue #2146, design.md "Bastions"): one need box of `template` that holds `kubectl port-forward` to each of `targets` (`<cluster>/<namespace>/<kind>/<name>:<port>`) on 127.0.0.1 inside it, its kube tokens minted for its observe profiles (each a `vault.minted` with `box` as its machine) and minted again while it runs. It ends at `expiresAt` unless it is used before. Never a token.
+Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (issue #2146, design.md "Bastions"): one need box of `template` that holds `kubectl port-forward` to each of `targets` (`<cluster>/<namespace>/<kind>/<name>:<port>`) on 127.0.0.1 inside it, its kube tokens minted for its observe profiles (each a `vault.minted` with `box` as its machine) and minted again while it runs, and, part 6, the vault `secrets` it holds for bastion reads, by name (each a `vault.step_delivered` with `box` as its host). It ends at `expiresAt` unless it is used before. Never a token or a value.
 
 | field | type | required |
 |---|---|---|
@@ -4925,6 +4945,7 @@ Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (iss
 | `template` | string | yes |
 | `box` | string | yes |
 | `targets` | string[] | yes |
+| `secrets` | string[] | no |
 | `expiresAt` | string | yes |
 
 ```json
@@ -4959,6 +4980,71 @@ Version 1 (`docs/schemas/bastion.ended.v1.json`). A bastion ended (issue #2146):
   "box": "hopper-bastion-observe-uat-5c1d2e3f",
   "reason": "stopped",
   "by": "job"
+}
+```
+
+## `bastion.relayed`
+
+Version 1 (`docs/schemas/bastion.relayed.v1.json`). A job's relay connection to `target` of its bastion ended (issue #2146 part 3, design.md "Bastions"): Access allowed it (`bastion#can_relay`, the target approved with the bastion's template), it opened at `openedAt` and was open `ms` milliseconds. Never what went through it.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `target` | string | yes |
+| `openedAt` | string | yes |
+| `ms` | integer | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "target": "uat/monitoring/svc/prometheus-server:9090",
+  "openedAt": "2026-10-20T12:10:00.000Z",
+  "ms": 1500
+}
+```
+
+## `bastion.relay_refused`
+
+Version 1 (`docs/schemas/bastion.relay_refused.v1.json`). A job's relay connection to `target` of its bastion was refused (issue #2146 part 3): Access denied it, or could not be asked (`reason`); no command started in the box.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `target` | string | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "target": "uat/monitoring/svc/grafana:80",
+  "reason": "job:u1/j1 may not relay to uat/monitoring/svc/grafana:80"
+}
+```
+
+## `bastion.read`
+
+Version 1 (`docs/schemas/bastion.read.v1.json`). A bastion read ran (issue #2146 part 6, design.md "Bastions"): one HTTP `method` (GET, or a POST to Grafana's data source query) of `path` on `target`, run with curl in the bastion's box over a relay connection Access allowed, with a vault secret's header from its file there when the job named one. `status` and `bytes`: the target's answer; `problem`: why there was none (curl's words, or an answer over 2 MiB). `ms`: how long it took. Never the secret or the answer.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `target` | string | yes |
+| `method` | `GET` \| `POST` | yes |
+| `path` | string | yes |
+| `status` | integer | no |
+| `bytes` | integer | no |
+| `problem` | string | no |
+| `ms` | integer | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "target": "uat/monitoring/svc/grafana:80",
+  "method": "GET",
+  "path": "/api/search?query=latency",
+  "status": 200,
+  "bytes": 512,
+  "ms": 120
 }
 ```
 
@@ -7437,7 +7523,7 @@ Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step st
 
 ## `step.finished`
 
-Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004; a need box, issue #1007): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back, or its outputs held a vault secret's value and were not given (a box step, issue #1875).
+Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004; a need box, issue #1007): its `exit` code and how long it ran; `outputsBytes` when its outputs came back, and `outputsSha256`, their sha256 as a need box made it and the hopper checked it on arrival (issue #2288); `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back, or its outputs held a vault secret's value and were not given (a box step, issue #1875).
 
 | field | type | required |
 |---|---|---|
@@ -7447,6 +7533,7 @@ Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its W
 | `exit` | integer | yes |
 | `seconds` | integer | yes |
 | `outputsBytes` | integer | no |
+| `outputsSha256` | string | no |
 | `problem` | string | no |
 
 ```json

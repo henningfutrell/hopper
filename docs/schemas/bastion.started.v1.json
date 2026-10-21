@@ -17,6 +17,12 @@
         "type": "string"
       }
     },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "expiresAt": {
       "type": "string"
     }

@@ -1,0 +1,1 @@
+- A person now approves which monitoring services a job's long-lived sandbox may reach, and each connection to one is on the job's timeline.

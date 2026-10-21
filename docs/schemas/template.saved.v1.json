@@ -20,6 +20,12 @@
         "type": "string"
       }
     },
+    "bastionTargets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "secrets": {
       "type": "array",
       "items": {
