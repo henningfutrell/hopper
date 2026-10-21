@@ -70,7 +70,9 @@ describe('a Podman host as the sandbox host (issue #2272)', () => {
   it('a box step with vault secrets runs there by a copy; on a machine of the user\'s it does not', async () => {
     const { boxVm, host, step } = setup();
     host.hosts = ['box-vm'];
-    expect((await step('hopper-need-asked-1-aaaa', 's-1', { 'db-password': 'hunter2' })).exit).toBe(0);
+    // The double's box ends as it starts: the copy is only recorded.
+    boxVm.copyIn = async (id, dir) => { boxVm.copies.push({ box: [...boxVm.boxes.values()].find((b) => b.id === id)!.spec.name, dir }); };
+    expect(await step('hopper-need-asked-1-aaaa', 's-1', { 'db-password': 'hunter2' })).toEqual({ exit: 0 });
     expect(boxVm.copies.some((c) => c.box === 'hopper-need-asked-1-aaaa')).toBe(true);
     host.hosts = ['vm'];
     expect(await step('hopper-need-asked-1-bbbb', 's-2', { 'db-password': 'hunter2' })).toEqual({ exit: 125, problem: NO_SECRET_COPY });

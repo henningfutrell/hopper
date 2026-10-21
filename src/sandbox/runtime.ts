@@ -6,7 +6,9 @@
 // - On a client target: the remote runtime (remote.ts), that machine's own Podman (else Docker) through its client.
 //   The box is on that machine's network.
 // - With a sandbox host set (issue #2272, src/domain/sandbox-host.ts): only on the first of its machines that is online,
-//   never on another one; none online is "sandbox host <name> is offline".
+//   never on another one; none online is "sandbox host <name> is offline". It may name a Podman host (issue #2272,
+//   podman-host.ts): the host's rootless Podman over ssh, which, as the runtime beside the hopper, takes a box's vault
+//   secrets by a copy.
 import { statSync } from 'node:fs';
 import type { ContainerRuntime, RuntimeKind, RuntimeRelay } from '../domain/sandboxes.ts';
 import type { Egress } from './egress.ts';
@@ -88,7 +90,7 @@ export interface ClientTargets {
 export interface Placements {
   /** The runtime beside the hopper; undefined: none is given. */
   readonly local: ContainerRuntime | undefined;
-  /** The runtime a box on `machine` runs in; undefined: none now (no runtime here, or no such client target). */
+  /** The runtime a box on `machine` runs in — a Podman host's first —; undefined: none now (no runtime here, or no such client target). */
   runtimeOf(userId: string, machine: string): ContainerRuntime | undefined;
   /**
    * Where a read-only check of the user's template runs (issue #708): beside the hopper when it is given a runtime, else
@@ -103,22 +105,31 @@ export interface Placements {
   where(userId: string): Promise<Placed | { problem: string; offline?: true } | undefined>;
 }
 
-/** Where a box starts: the machine, its runtime and network, and beside the hopper the egress of a read-only box. */
-export interface Placed { machine: string; runtime: ContainerRuntime; network: string; egress?: Egress }
+/**
+ * Where a box starts: the machine, its runtime and network, and beside the hopper the egress of a read-only box.
+ * `secrets`: it takes a step's vault secrets, by a copy — beside the hopper or on a Podman host, never on a machine of the
+ * user's, which may be the job's own (issue #1875).
+ */
+export interface Placed { machine: string; runtime: ContainerRuntime; network: string; egress?: Egress; secrets?: true }
+
+/** A user's Podman host named `name`: its runtime (issue #2272). Undefined: the user has none of that name. */
+export type PodmanHosts = (userId: string, name: string) => ContainerRuntime | undefined;
 
 /** `hosts`: the user's sandbox host, first first (issue #2272); empty or absent: none set. */
-export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; clients?: ClientTargets; egress?: Egress; hosts?: (userId: string) => readonly string[] }): Placements {
+export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; clients?: ClientTargets; egress?: Egress; hosts?: (userId: string) => readonly string[]; podmanHosts?: PodmanHosts }): Placements {
   // Made at each look: a machine that joined again under the same name has a new link key.
   const remote = (userId: string, machine: string): ContainerRuntime | undefined => {
     const target = o.clients?.(userId, machine);
     return target && createRemoteRuntime(machine, target.relay);
   };
-  const beside = (runtime: ContainerRuntime): Placed => ({ machine: LOCAL, runtime, network: o.network, ...(o.egress ? { egress: o.egress } : {}) });
+  const beside = (runtime: ContainerRuntime): Placed => ({ machine: LOCAL, runtime, network: o.network, ...(o.egress ? { egress: o.egress } : {}), secrets: true });
   /** The first machine of the sandbox host whose runtime answers now; none: offline. */
   const onHost = async (userId: string, hosts: readonly string[]): Promise<Placed | { problem: string; offline: true }> => {
     for (const machine of hosts) {
-      const runtime = machine === LOCAL ? o.local : o.clients?.dialledIn(userId).includes(machine) ? remote(userId, machine) : undefined;
-      if (runtime && (await runtime.problem()) === undefined) return machine === LOCAL ? beside(runtime) : { machine, runtime, network: REMOTE_NETWORK };
+      const podman = machine === LOCAL ? undefined : o.podmanHosts?.(userId, machine);
+      const runtime = machine === LOCAL ? o.local : podman ?? (o.clients?.dialledIn(userId).includes(machine) ? remote(userId, machine) : undefined);
+      if (!runtime || (await runtime.problem()) !== undefined) continue;
+      return machine === LOCAL ? beside(runtime) : { machine, runtime, network: REMOTE_NETWORK, ...(podman ? { secrets: true as const } : {}) };
     }
     return { problem: sandboxHostOffline(hosts), offline: true };
   };
@@ -137,7 +148,7 @@ export function createPlacements(o: { local: ContainerRuntime | undefined; netwo
   };
   return {
     local: o.local,
-    runtimeOf: (userId, machine) => (machine === LOCAL ? o.local : remote(userId, machine)),
+    runtimeOf: (userId, machine) => (machine === LOCAL ? o.local : o.podmanHosts?.(userId, machine) ?? remote(userId, machine)),
     forCheck,
     async where(userId) {
       const hosts = o.hosts?.(userId) ?? [];

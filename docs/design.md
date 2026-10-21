@@ -86,7 +86,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`), the action grants and the asks of jobs for an AWS action (`action-grants.ts`, issue #2206, pure in `src/domain/action-grants.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), a job's bastion, the one need box that outlives a step, and the relay's pipe into it and `hopper-relay` (`bastion.ts`, `bastions.ts`, `box-pipe.ts`, `relay-script.ts`, issue #2146), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), a job's bastion, the one need box that outlives a step, and the relay's pipe into it and `hopper-relay` (`bastion.ts`, `bastions.ts`, `box-pipe.ts`, `relay-script.ts`, issue #2146), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`), and a Podman host's over ssh `podman system dial-stdio` (`podman-host.ts`, its record `podman-hosts.ts`, issue #2272) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the **kill points** a test of the crash harness ends the process at, off in a deploy (`kill-points.ts`, issue #1954, "The crash harness"); the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
@@ -31906,11 +31906,64 @@ dedicated machine for sandboxes was not possible to point at.
 **Not changed.** Sandbox network rules: no API-server proxy, no port-forward RBAC, no new port or tunnel. A box step's vault
 secrets still go only into a need box beside the hopper (`NO_SECRET_COPY`).
 
-**Left for the next parts** (path 2 of the proposal): a **remote Podman host** record (`sandbox-hosts`, shaped as
-`windows-hosts`) reached over the hopper's own ssh key and pinned host key by `ssh -T <host> podman system dial-stdio`, a
-`SocketCall` over it under the unchanged Podman adapter, secrets copied into such a host's box (lifting `NO_SECRET_COPY` there);
-the host's CPU and memory and its totals on Machines; and on Kubernetes `local:<node>`, a box pod pinned by `nodeSelector`.
+**Left for the next parts** (path 2 of the proposal): a **Podman host** record reached over the hopper's own ssh key and
+pinned host key by `podman system dial-stdio` — part 2, "Podman hosts" below —; the host's CPU and memory and its totals on
+Machines; and on Kubernetes `local:<node>`, a box pod pinned by `nodeSelector`.
 
 Tests: `test/domain/sandbox-host.test.ts` (which machines can be the host), `test/sandbox/sandbox-host.test.ts` (placement, no
 fallback, offline, a change mid-run), `test/sandbox/need-step-host-wait.test.ts` (the wait), `test/integration/sandbox-host.test.ts`
 (the route, the event, a restart, the CLI), `test/ui/machine-sandbox-host.test.ts` (the card).
+
+### Podman hosts (issue #2272 part 2, 2026-10-21)
+
+**The gap.** The sandbox host could name only `local` or a machine of the user's with no lanes, and a machine needs the
+hopper client. A dedicated VM for sandboxes needed a hopper client on it, and a box step with vault secrets still ran only
+beside the hopper (`NO_SECRET_COPY`).
+
+**The change** (`src/domain/podman-hosts.ts`; `src/sandbox/podman-hosts.ts`; `src/sandbox/podman-host.ts`;
+`src/sandbox/socket-http.ts` `RuntimeSocket`; `src/sandbox/runtime.ts` `PodmanHosts`; `src/http/ui/podman-hosts.ts`;
+`src/cli-operator-podman-host.ts`; Settings → Podman hosts, `ui/src/views/podman-hosts.tsx`):
+- **A Podman host** (glossary) is a Linux computer with rootless Podman (4 or later) that a person set up for sandboxes. It is
+  kept in the user's config record `podman-hosts`: a name (never `local`), an ssh destination (`[user@]host`), its pinned host
+  key, and the most CPUs and memory (MiB) a box gets there. Not a machine: no hopper client, lane or job runs there. The record
+  is read at each sandbox, so an edit needs no restart.
+- **Added** with its host key confirmed, as a Windows host is: Settings → Podman hosts reads the key the host presents
+  (`POST /ui/api/machines/host-key`), shows its fingerprint, and pins it on Pin this key and save; `hopper machine podman-host
+  add <name> <user@host>` prints the key and its fingerprint and adds nothing, and the same command with `--host-key '<key>'`
+  pins it. `POST /ui/api/podman-hosts` takes the whole list against the version read (admin, a box action: it says where
+  work runs). `GET /api/podman-hosts` reads it; `hopper machine podman-host list|remove` too.
+- **Used** once the sandbox host names it (`hopper machine sandbox-host <name>`, or Use as sandbox host on its row). A name
+  that is both a machine and a Podman host is refused. Placement is part 1's: the first host of the list whose runtime
+  answers, never another, none online `sandbox host <name> is offline`.
+- **The transport.** Each call of the Podman adapter (`podman.ts`, unchanged in its calls) goes over a stream that `ssh` opens
+  in place of the socket: `ssh … -- <host> podman system dial-stdio`, its stdin and stdout the host's Podman API. The ssh
+  connection is the one every ssh target gets ("Target authentication"): the hopper's own key, public-key authentication
+  only, the hardened options, nothing forwarded, and the pinned key only, written to `<workdir>/<user>/ssh/podman/<name>.known_hosts`.
+  One connection is shared per host (ControlMaster, 60 s). node:http drives the stream as it drives a unix socket, so the
+  copy into a box (`copy-in.ts`) and a command in a box (`box-pipe.ts`) go over it too.
+- **The host's key line.** The account's `~/.ssh/authorized_keys` gives the hopper's key one forced command:
+  `command="podman system dial-stdio",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding <public key>`
+  (`AUTHORIZED_KEYS_OPTIONS`; the section shows the line whole). The key then runs no shell and forwards nothing.
+- **Health** is ssh plus libpod `/info`: the adapter's own `problem()` — ssh that fails says why (`ssh to <name> failed
+  (exit 255): …`), and a rootful Podman is refused as it is beside the hopper.
+- **Vault secrets.** A place now says whether it takes a step's vault secrets (`Placed.secrets`): beside the hopper and on a
+  Podman host, by a copy into the box's file system over the same stream — never in its environment, never to a process of
+  the hopper's on the host —; on a machine of the user's, still refused (`NO_SECRET_COPY`).
+- **A dropped wait.** A step's wait can last its whole time limit over one ssh stream. When the stream drops (not a refusal of
+  Podman's), the runtime looks the box up again by its id after 5 s and waits again, until the time limit; a box that is gone
+  ends the step with why. The box is made once, by its name, so nothing runs twice. A hopper that stops mid-step leaves the
+  step to its saga as before: the run ends `interrupted`, the sweep burns the box on the host by its labels.
+- **The most a box gets** there is the host's `cpus` and `memoryMb`, as a Kubernetes box gets the chart's.
+- **The sweep** looks on a Podman host that an open sandbox run names, as on a client target, and burns a need box a step
+  left there; a run on a Podman host the user removed is closed in the ledger, as on a removed machine.
+
+**Not changed.** Sandbox network rules. A box there joins the host's network (`host`), as on a client target; the egress proxy
+of a read-only box is only beside the hopper. The leftover box builds on a Podman host are not removed yet.
+
+**Security.** One new exposure: the hopper's ssh key can drive the host's rootless Podman — the same trust a Windows host
+gets. The forced command limits the key to dial-stdio. Only key authentication to a pinned host key is used.
+
+Tests: `test/domain/podman-hosts.test.ts` (the record), `test/domain/sandbox-host.test.ts` (the sandbox host names one),
+`test/sandbox/podman-host.test.ts` (ssh dial-stdio against a libpod double: health, ssh failing, a box with secrets, the
+limits, a dropped wait), `test/sandbox/sandbox-host-podman.test.ts` (placement, secrets, offline, the sweep),
+`test/integration/podman-hosts.test.ts` (route, sandbox host, CLI), `test/cli/podman-host.test.ts`, `test/ui/podman-hosts.test.ts`.

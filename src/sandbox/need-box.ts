@@ -246,7 +246,7 @@ export const phaseTimes = (p: NeedBoxPhases): string => {
 };
 
 /** Why a step with vault secrets does not run where its runtime takes no copy (issue #1875). */
-export const NO_SECRET_COPY = 'a step with vault secrets runs only in a need box beside the hopper: the secrets are copied in, never put in its environment, and never go to a machine of the user\'s';
+export const NO_SECRET_COPY = 'a step with vault secrets runs only in a need box beside the hopper or on a Podman host: the secrets are copied in, never put in its environment, and never go to a machine of the user\'s';
 
 /** How long past the step's time limit the runtime's own wait may take: the hopper's timer ends the step first. */
 const WAIT_GRACE_MS = 5000;

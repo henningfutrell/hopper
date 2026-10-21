@@ -1,5 +1,6 @@
 // The Podman container runtime (issues #603, #708): rootless Podman, through its own (libpod) REST API on its socket.
-// The primary runtime, and the default whenever it is reachable (src/sandbox/runtime.ts). The create body is
+// The primary runtime, and the default whenever it is reachable (src/sandbox/runtime.ts); a Podman host's over ssh (issue
+// #2272, podman-host.ts) is this adapter on an ssh stream in place of the socket. The create body is
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
 import type { BuildingRuntime, ContainerInfo } from '../domain/sandboxes.ts';
 import { pipeCall } from './box-pipe.ts';
@@ -8,7 +9,7 @@ import { imageCalls } from './images.ts';
 import { infoOf, type Inspected } from './inspected.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
 import { notASandbox, sandboxLabelled } from './owned.ts';
-import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, socketName, streamError, type Answer, type RuntimeSocket, type SocketCall } from './socket-http.ts';
 
 export const API = '/v5.0.0/libpod';
 const PULL_MS = 15 * 60_000;
@@ -19,7 +20,8 @@ interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Recor
 
 const enc = encodeURIComponent;
 
-export function createPodmanRuntime(socket: string, via: SocketCall = socketCall): BuildingRuntime {
+export function createPodmanRuntime(socket: RuntimeSocket, via: SocketCall = socketCall): BuildingRuntime {
+  const at = socketName(socket);
   const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('podman', what, a);
   const read = async (id: string): Promise<Inspected | undefined> => {
@@ -61,12 +63,12 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
       try {
         a = await call('GET', '/info');
       } catch (e) {
-        return `cannot reach podman at ${socket}: ${e instanceof Error ? e.message : String(e)}`;
+        return `cannot reach podman ${typeof socket === 'string' ? 'at' : 'on'} ${at}: ${e instanceof Error ? e.message : String(e)}`;
       }
-      if (!ok(a)) return `podman at ${socket} answered ${a.status}: is it the Podman API socket?`;
+      if (!ok(a)) return `podman at ${at} answered ${a.status}: is it the Podman API socket?`;
       const info = JSON.parse(a.text) as { host?: { security?: { rootless?: boolean } } };
       // Rootful Podman is root on the computer: the hopper never launches through it.
-      if (info.host?.security?.rootless !== true) return `podman at ${socket} is not rootless: the hopper launches sandbox boxes only through a rootless runtime`;
+      if (info.host?.security?.rootless !== true) return `podman at ${at} is not rootless: the hopper launches sandbox boxes only through a rootless runtime`;
       return undefined;
     },
 

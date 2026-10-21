@@ -53,7 +53,7 @@ describe('a Podman host over ssh (issue #2272)', () => {
     const [call] = calls();
     expect(call).toEqual(expect.arrayContaining(['-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes', '-o', 'HostKeyAlias=sandbox@box-vm', '-i', join(dir, 'id')]));
     expect(call).toContain(`UserKnownHostsFile=${join(dir, 'ssh', 'podman', 'box-vm.known_hosts')}`);
-    expect(call!.slice(-6)).toEqual(['-p', '22', '-l', 'sandbox', '--', 'box-vm']);
+    expect(call!.slice(-7)).toEqual(['-p', '22', '-l', 'sandbox', '--', 'box-vm', 'podman system dial-stdio']);
     expect(DIAL_STDIO).toBe('podman system dial-stdio');
     expect(readFileSync(join(dir, 'ssh', 'podman', 'box-vm.known_hosts'), 'utf8')).toBe(`sandbox@box-vm ${KEY}\n`);
   });
@@ -64,7 +64,7 @@ describe('a Podman host over ssh (issue #2272)', () => {
   });
 
   it('runs a need box with vault secrets there: they go in by a copy, and the box gets at most the host\'s CPU and memory', async () => {
-    const box = { name: 'hopper-need-asked-1-aaaa', userId: 'u1', instanceId: 'test', network: 'host', template: { image: 'img', limits: { cpus: { default: 8 }, memoryMb: { default: 4096 } } }, env: {}, timeoutMs: 10_000, dir, files: { secrets: { 'db-password': 'hunter2' } } };
+    const box = { name: 'hopper-need-asked-1-aaaa', userId: 'u1', instanceId: 'test', network: 'host', template: { image: 'img', limits: { cpus: { default: 8, max: 8 }, memoryMb: { default: 4096, max: 4096 } } }, env: {}, timeoutMs: 10_000, dir, files: { secrets: { 'db-password': 'hunter2' } } };
     const r = await runNeedBox(runtime(), box, { log: () => {}, signal: new AbortController().signal, pollMs: 5 });
     expect(r.exit).toBe(0);
     expect(libpod.copies.map((c) => c.container)).toContain('hopper-need-asked-1-aaaa');
