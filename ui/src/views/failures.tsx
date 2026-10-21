@@ -13,7 +13,7 @@
 // updates live, read again on each assessor event. The assessment summary and a person's note are rendered as Markdown,
 // sanitized (issue #569); the raw error stays as it was written. Each hand-off card and failure row has Report a bug on its
 // job (issue #694), for an operator or admin. Work not pushed (issue #1010, kept-work.tsx) after Needs a person.
-// A long page (issue #2353): the counts stay in view with Full or Compact — a compact failure row is one line —; Needs a
+// A long page (issue #2353): the counts stay in view with Cards or Rows — in Rows a failure is one line —; Needs a
 // person, Recent failures and Ended each fold and page, with no scroll box of their own; the mode and folds are kept.
 import { LogBlock } from '@/components/log-block';
 import { Archive, History, LayoutList, List, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
@@ -46,17 +46,17 @@ import { WorkNotPushed } from './kept-work';
 import { Stuck } from './stuck';
 
 const MODES = [
-  { mode: 'full', label: 'Full', icon: LayoutList, title: 'Each failure with its summary' },
-  { mode: 'compact', label: 'Compact', icon: List, title: 'One line per failure' },
+  { mode: 'cards', label: 'Cards', icon: LayoutList, title: 'Each failure with its summary' },
+  { mode: 'rows', label: 'Rows', icon: List, title: 'One line per failure' },
 ] as const;
 type Mode = (typeof MODES)[number]['mode'];
 const MODE_NAMES: readonly Mode[] = MODES.map((m) => m.mode);
-const useMode = () => usePagePref<Mode>('failures.mode', 'full', MODE_NAMES);
+const useMode = () => usePagePref<Mode>('failures.mode', 'cards', MODE_NAMES);
 
-/** A page of a section's items: cards to a page, or rows in Compact. */
+/** A page of a section's items: cards to a page, or rows in Rows. */
 function useSectionPage<T>(items: readonly T[], rows: boolean) {
   const [mode] = useMode();
-  return usePaged(items, rows && mode === 'compact' ? ROWS_PER_PAGE : CARDS_PER_PAGE, mode);
+  return usePaged(items, rows && mode === 'rows' ? ROWS_PER_PAGE : CARDS_PER_PAGE, mode);
 }
 
 /** Where a problem applies, in words. */
@@ -281,20 +281,20 @@ function FailureRow({ r }: { r: FailureRecordView }) {
   const sent = useGivingBack((s) => s[r.jobId] !== undefined);
   const retry = () => giveBack(r.jobId, 'retry', { path: `/ui/api/failures/${encodeURIComponent(r.id)}/retry` });
   const [mode] = useMode();
-  const compact = mode === 'compact';
+  const oneLine = mode === 'rows';
   return (
-    <li data-failure={r.id} data-compact={compact ? '' : undefined} className={compact ? 'flex min-w-0 items-center px-4 py-1.5' : 'space-y-1.5 px-4 py-3'}>
+    <li data-failure={r.id} data-row={oneLine ? '' : undefined} className={oneLine ? 'flex min-w-0 items-center px-4 py-1.5' : 'space-y-1.5 px-4 py-3'}>
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 truncate"><JobLine id={r.jobId} tag={r} /></span>
-        {compact && <span className="num hidden shrink-0 text-xs text-muted-foreground sm:inline" title={r.at}>{ago(r.at, now)}</span>}
+        {oneLine && <span className="num hidden shrink-0 text-xs text-muted-foreground sm:inline" title={r.at}>{ago(r.at, now)}</span>}
         <span className="ml-auto flex shrink-0 items-center gap-2">
           <StatusBadge status={r.decision} tone={DECISION_TONE[r.decision]} label={DECISION_LABEL[r.decision]} title={r.reasons.join('\n')} />
           {offered(r.actions.retry, canAct) && <Button size="xs" variant="outline" disabled={sent} onClick={() => void retry()}><RotateCcw />{sent ? PENDING.retry : 'Retry'}</Button>}
           <ReportBugButton jobId={r.jobId} />
         </span>
       </div>
-      {!compact && <Markdown text={r.summary} className="text-sm" />}
-      {!compact && <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {!oneLine && <Markdown text={r.summary} className="text-sm" />}
+      {!oneLine && <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {r.causeName && <span>{r.causeName}</span>}
         <span>{outcomeText(r)}</span>
         {r.note && <span title={r.note} className="max-w-full truncate">{r.note}</span>}

@@ -19066,7 +19066,29 @@ a clock, not a ticking age, so no card renders each second.
 
 Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one event per job, the newest; none with no
 job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
-over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs).
+over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs; since issue #2353 a row
+per job, 40 to a page).
+
+### Long pages (issue #2353, 2026-10-21)
+
+Requirement: the long pages show a first view under two viewport heights, with 200 jobs, 100 pull requests or 500 events.
+One pattern for each page, in `ui/src/components/pager.tsx` and `panel.tsx`:
+
+- **Rows or cards.** A page that shows cards has **Rows**: one line per item, its acts and details left to Cards. The Jobs
+  view's List is rows only: a **job row** per job (`ui/src/views/job-row.tsx`), no card grid.
+- **Groups fold.** A Panel with `onToggle` folds by its title (Pull requests' repository groups, Landing, Not tracked;
+  Failures' sections; the Jobs view's trees).
+- **Pages.** A list past one page shows a page of it with the **pager**: 40 rows or 10 cards, 20 trees in the graph.
+  A filter starts again at the first page. Paging is in the page, not on the wire: every list here is already read whole.
+- **The header stays.** A sticky Panel (`sticky`) keeps its header and its `toolbar` (the filters) under the app's header
+  while its body scrolls with the page. Its card clips with `overflow: clip`, not `hidden`: a hidden overflow makes the
+  card its own scroll box, and the header would stick inside it.
+- **One scroll box.** No list box (`list`) inside a page that scrolls: Failures' sections page in place of it. A log or a
+  code view keeps its own.
+- **Kept.** The mode and each fold are **page choices** (`jh_page_prefs`), as the nav groups are kept; which page shows is not.
+
+Part 1: Jobs, Pull requests, Events, Failures, Search. Left: Settings, Questions, Proposals, Research, Usage, Resources,
+Sources, Accounts.
 
 ## The isolation stop (issue #752, 2026-10-11)
 

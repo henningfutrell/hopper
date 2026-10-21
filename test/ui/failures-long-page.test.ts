@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The Failures view as a long page (issue #2353): the counts and Full or Compact stay in view; a compact failure row is
-// one line, its summary out; Needs a person, Recent failures and Ended page 10 cards (40 compact rows) to a page with no
+// The Failures view as a long page (issue #2353): the counts and Cards or Rows stay in view; in Rows a failure is one
+// line, its summary out; Needs a person, Recent failures and Ended page 10 cards (40 in Rows) to a page with no
 // scroll box of their own, and fold; the mode and the folds are kept over a reload.
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,18 +27,18 @@ describe('the Failures view as a long page (issue #2353)', () => {
     const bar = document.querySelector('[data-slot="failures-bar"]')!;
     expect(bar.className).toContain('sticky');
     expect(bar.querySelector('[data-section="failure-counts"]')).not.toBeNull();
-    expect(bar.querySelector('[data-slot="failures-mode-compact"]')).not.toBeNull();
+    expect(bar.querySelector('[data-slot="failures-mode-rows"]')).not.toBeNull();
   });
 
-  it('pages 100 recent failures: 10 cards, or 40 one-line rows in Compact; no scroll box of its own', async () => {
+  it('pages 100 recent failures: 10 cards, or 40 one-line rows in Rows; no scroll box of its own', async () => {
     await boot('#failures', { failures: view({ recent }) });
     expect(inSection('open-failures', '[data-failure]')).toHaveLength(10);
     expect(document.querySelector('[data-section="open-failures"] [data-list-box]')).toBeNull();
     expect(inSection('open-failures', '[data-slot="pager-range"]')[0]?.textContent).toBe('1–10 of 100');
-    await click(document.querySelector('[data-slot="failures-mode-compact"]')!);
+    await click(document.querySelector('[data-slot="failures-mode-rows"]')!);
     const rows = inSection('open-failures', '[data-failure]');
     expect(rows).toHaveLength(40);
-    expect(rows[0]!.hasAttribute('data-compact')).toBe(true);
+    expect(rows[0]!.hasAttribute('data-row')).toBe(true);
     expect(rows[0]!.textContent).not.toContain('Held: Disk full on desk');
   });
 
@@ -52,12 +52,12 @@ describe('the Failures view as a long page (issue #2353)', () => {
 
   it('keeps the mode and a folded section over a reload', async () => {
     await boot('#failures', { failures: view() });
-    await click(document.querySelector('[data-slot="failures-mode-compact"]')!);
+    await click(document.querySelector('[data-slot="failures-mode-rows"]')!);
     await click(document.querySelector('[data-section="open-failures"] [data-slot="panel-toggle"]')!);
     expect(inSection('open-failures', '[data-failure]')).toHaveLength(0);
     await unmount();
     await boot('#failures', { failures: view() }, true);
-    expect(document.querySelector('[data-slot="failures-mode-compact"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('[data-slot="failures-mode-rows"]')?.getAttribute('aria-pressed')).toBe('true');
     expect(inSection('open-failures', '[data-failure]')).toHaveLength(0);
     await click(document.querySelector('[data-section="open-failures"] [data-slot="panel-toggle"]')!);
     expect(inSection('open-failures', '[data-failure]')).toHaveLength(2);
