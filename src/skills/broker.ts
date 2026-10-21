@@ -181,7 +181,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     if (name === SANDBOX_SKILL) return sandbox();
     // Issue #2146: the job's bastion, after the same approvals as its sandbox runs.
     if (name === BASTION_SKILL) {
-      return bastionAsk(user, job, { asset: said, template: field(body, 'template'), targets: field(body, 'targets'), why }, {
+      return bastionAsk(user, job, { asset: said, template: field(body, 'template'), targets: field(body, 'targets'), why, secrets: field(body, 'secrets'), path: field(body, 'path'), data: field(body, 'data') }, {
         no, loaded: (text) => { record('skill.loaded'); return { status: 200, text }; }, waiting: (text) => ({ status: 202, text }), waitingText, declinedText,
       });
     }

@@ -76,6 +76,7 @@ A parked item gets no review and no decision. A decision is a person's: you neve
 
 // Issue #2146: how a job reads a cluster's metrics and logs through its bastion (part 4 of the bastion path,
 // design.md "Bastions"): the template with an observe and its targets, the bastion, and the relay (src/sandbox/relay-script.ts).
+// Part 6: Grafana's API through a bastion read, its Viewer token a vault secret kept in the bastion's box (bastion-read.ts).
 const OBSERVABILITY_TEXT = `observability: read the live metrics and logs of a cluster (Prometheus, Loki; Alertmanager and Tempo when it has them) through a bastion. Read only.
 
 1. Find the services once: sh "$HOPPER_STEP" need "read/namespace/CLUSTER/monitoring" --why "<why>" --command 'kubectl get svc'
@@ -94,7 +95,11 @@ PromQL, range: curl -sSfG http://127.0.0.1:$HOPPER_RELAY_PORT/api/v1/query_range
 LogQL: curl -sSfG http://127.0.0.1:$HOPPER_RELAY_PORT/loki/api/v1/query_range --data-urlencode 'query={namespace="NS"} |= "error"' --data-urlencode since=1h --data-urlencode limit=200 -o out/logs.json
   Or, when this machine has logcli: logcli --addr=http://127.0.0.1:$HOPPER_RELAY_PORT query --since=1h --limit=200 --output=jsonl '<LogQL>'
 Alertmanager: GET /api/v2/alerts. Tempo: GET /api/search.
-Grafana: Grafana's own API needs a token, which a job does not get. Run a panel's PromQL or LogQL on Prometheus or Loki in its place.
+Grafana: its API needs a Viewer token, which stays in the bastion's box: you never get it. The hopper runs the read there for you.
+  Name the vault secret that holds the token (SECRET) in the template request (--secrets SECRET) and when you start the bastion (--secrets SECRET), then:
+  sh "$HOPPER_SKILL" bastion read --targets CLUSTER/monitoring/svc/grafana:80 --secrets SECRET --path "/api/search?query=<words>" > out/dashboards.json
+  A dashboard: --path /api/dashboards/uid/<uid>. A panel's query: --path /api/ds/query --data '{"queries":[{"refId":"A","datasource":{"uid":"<uid>"},"expr":"<PromQL>"}],"from":"now-1h","to":"now"}'
+  A read is a GET, or a POST to /api/ds/query only. With no token, run a panel's PromQL or LogQL on Prometheus or Loki in its place.
 Evidence: keep the JSON, and make a short table of it with jq (jq -r '.data.result[] | [.metric.job, .value[1]] | @tsv' out/up.json). Put both in the pull request or report, or show them as an artifact (sh "$HOPPER_SKILL" artifacts).
 
 Read only: no kubectl exec, no Secret reads, no change in Grafana (no dashboard or alert edits), no silence in Alertmanager. Never print a token.
@@ -168,7 +173,7 @@ export const SKILLS: readonly Skill[] = [
   {
     // Issue #2146: PromQL and LogQL queries through the job's bastion; text only, as the bastion ask gives the access.
     name: 'observability',
-    line: 'PromQL and LogQL queries through a bastion',
+    line: 'PromQL, LogQL and Grafana reads through a bastion',
     text: OBSERVABILITY_TEXT,
   },
   {
