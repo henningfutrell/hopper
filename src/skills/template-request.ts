@@ -168,6 +168,10 @@ export interface TemplateRequestUser {
 }
 
 /** `template`: the template's name, when the needs could be read. */
+/** Issue #2356: how a job gets a vault secret that does not exist yet into a template, when a request names one. */
+const NO_SECRET = 'the vault holds no secret';
+const NEW_SECRET_HOW = 'Ask without --secrets, and once the sandbox runs are approved ask a person for it: sh "$HOPPER_SKILL" SERVICE --template NAME --credential "<what it takes>" --why "<what for>". The secret a person gives is added to the template.';
+
 export type TemplateAnswer = { status: 200 | 202; text: string; template: string } | { status: 400 | 409 | 503; reason: string };
 
 const STATUS: Record<string, 400 | 409 | 503> = { invalid: 400, conflict: 409 };
@@ -326,7 +330,7 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
     const readOnly = readOnlyOf(needs);
     const saved = await u.save({ name, image: r.image, secrets: extras.secrets, ...(extras.egress.length ? { egress: extras.egress } : {}), ...(extras.targets ? { bastionTargets: extras.targets } : {}), profiles: needs, tools: toolsOf(r), readOnly, ...(job ? { askedBy: job } : {}),
       ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}) }, by);
-    if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
+    if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error.startsWith(NO_SECRET) ? `${saved.error}. ${NEW_SECRET_HOW}` : saved.error };
     // Only a template made now is approved with no person (automaticApprover): as it is, then each write, sync or apply
     // profile, unless the read policy approved it, which holds reads only.
     const approver = automaticApprover(u, needs, extras);

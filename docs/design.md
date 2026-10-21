@@ -15924,7 +15924,11 @@ token, a config file, a deploy URL, or anything else a person can give. Once a p
 `SERVICE` with or without `--credential`, and a later job that needs the same access gets it with no new request.
 
 **Asking.** The broker ("Skills", step 4 or 8) finds no vault secret given for the skill among what the box's template
-gives. On a machine of no template it says no: the vault gives credentials only to boxes of a template. Else it asks the
+gives. On a machine of no template the job names the template of its approved sandbox runs (`--template NAME`, issue
+#2356): its box steps get what that template gives, so the request is for that template, and the job is told to read
+the secret in a box step of it. The template's sandbox runs not approved for the job (`SandboxRequests.runnable`): **403**,
+with how to ask for them. No template named: it says no, the vault gives credentials only to a template's boxes and box
+steps. A template request that names a vault secret that does not exist yet is refused with this path. Else it asks the
 vault (`Vault.need`), which answers. The requests sit over the vault wherever it runs — in the hopper, or in a container
 of its own (issue #586) — in the hopper's process (`withCredentialRequests`, `src/vault/service.ts`; the requests
 themselves `src/vault/requests.ts`):

@@ -143,7 +143,7 @@ describe('a job off a box asks for a credential for the template of its sandbox 
     expect(given.status).toBe(200);
     expect(given.body.templates.find((x) => x.name === 'web')).toMatchObject({ secrets: [SERVICE], gives: [SERVICE] });
 
-    const ready = await skill(b, [SERVICE, '--template', 'web']);
+    const ready = await skill(b, [SERVICE, ...ASK]);
     expect(ready.code, ready.stdout).toBe(0);
     expect(ready.stdout).toContain('Vault secret: example-api — an API token.');
     expect(ready.stdout).toContain('sh "$HOPPER_STEP" box web --command');
