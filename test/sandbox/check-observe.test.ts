@@ -9,6 +9,8 @@
 //   Scenario: a read need gets neither the exec nor the Secret probe
 //   Scenario: an observe credential that reads and changes nothing passes; the observe credential is the one minted
 //   Scenario: an observe credential that may exec and read Secrets fails, and the failure says it is under observe
+//   Scenario: a credential the cluster does not take errs on exec and the Secret read, and is never reported allowed (issue #2396)
+//   Scenario: one request refused and the other erred is an error, not a refusal (issue #2396)
 //   Scenario: a read and an observe on one asset each get their own credential and their own probes
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OperationProfile } from '../../src/domain/access.ts';
@@ -90,6 +92,30 @@ describe('the read-only check under observe (issue #2146, part 5)', () => {
     const failed = failedProbes(check);
     expect(failed).toContain('observe.exec on uat/monitoring under observe (allowed)');
     expect(failed).toContain('observe.secret-read on uat/monitoring under observe (allowed)');
+  });
+
+  it('a credential the cluster does not take errs on exec and the Secret read, and is never reported allowed (issue #2396)', async () => {
+    const s = setup([OBSERVE], 'unauthorized');
+    await s.pass();
+    const check = s.check();
+    expect(check.state).toBe('failed');
+    for (const id of ['observe.exec', 'observe.secret-read']) {
+      const probe = check.probes.find((p) => p.id === id);
+      expect(probe, id).toMatchObject({ expect: 'denied', outcome: 'error', passed: false });
+      expect(probe!.output).toContain('Unauthorized');
+    }
+    expect(failedProbes(check)).toContain('observe.exec on uat/monitoring under observe (error)');
+  });
+
+  it('one request refused and the other erred is an error, not a refusal (issue #2396)', async () => {
+    const s = setup([OBSERVE], 'get-unauthorized');
+    await s.pass();
+    const check = s.check();
+    expect(check.state).toBe('failed');
+    const exec = check.probes.find((p) => p.id === 'observe.exec');
+    // Its create is Forbidden, its get errs: the probe proves no refusal of both.
+    expect(exec).toMatchObject({ outcome: 'error', passed: false });
+    expect(exec!.output).toMatch(/Forbidden/);
   });
 
   it('a read and an observe on one asset each get their own credential and their own probes', async () => {

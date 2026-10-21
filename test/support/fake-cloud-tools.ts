@@ -20,7 +20,11 @@ import type { ContainerSpec } from '../../src/domain/ports.ts';
 import { TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 import { MIRRORED_PROVIDERS } from '../../src/sandbox/tools.ts';
 
-export type CloudMode = 'read-only' | 'writable';
+/**
+ * `unauthorized` (issue #2396): kubectl's every request is refused as the API server refuses a token it does not take, as
+ * before an EKS access entry holds it; `get-unauthorized`: only its gets are, its other requests answer as `read-only`.
+ */
+export type CloudMode = 'read-only' | 'writable' | 'unauthorized' | 'get-unauthorized';
 /** What a box's egress lets out (issue #849). */
 export type EgressMode = 'limited' | 'open' | 'proxy-open';
 
@@ -56,7 +60,8 @@ const TOOLS: Record<string, string> = {
   *delete-*) exit 0 ;;
   *) if [ "$MODE" = read-only ]; then echo "An error occurred (AccessDenied) when calling the operation: User is not authorized to perform: $2:$3" >&2; exit 254; fi ;;
 esac`,
-  kubectl: `case "$1" in
+  kubectl: `case "$MODE:$1" in unauthorized:*|get-unauthorized:get) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;; get-unauthorized:*) MODE=read-only ;; esac
+case "$1" in
   # A view role reads no Secret and runs nothing in a pod (issue #2146, part 5). Allowed, the exec answers NotFound.
   get) case " $* " in *" secret"*|*"/exec"*)
       if [ "$MODE" = read-only ]; then echo "Error from server (Forbidden): $2 is forbidden: User \\"system:serviceaccount:hopper:hopper\\" cannot get" >&2; exit 1; fi

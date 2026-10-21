@@ -103,7 +103,9 @@ Grafana: its API needs a Viewer token, which stays in the bastion's box: you nev
 Evidence: keep the JSON, and make a short table of it with jq (jq -r '.data.result[] | [.metric.job, .value[1]] | @tsv' out/up.json). Put both in the pull request or report, or show them as an artifact (sh "$HOPPER_SKILL" artifacts).
 
 Read only: no kubectl exec, no Secret reads, no change in Grafana (no dashboard or alert edits), no silence in Alertmanager. Never print a token.
-If the bastion is refused (Forbidden: pods/portforward), the cluster's role for the observe does not allow it. Say so; do not look for another credential.`;
+If the bastion is refused (Forbidden: pods/portforward), the cluster's observe role has view only: that cluster has no hopper metrics read, and the hopper has no other path. Say so; do not look for another credential.
+  A job that needs it waits with: on: outside: gated: pods/portforward for hopper-observe on CLUSTER/NAMESPACE.
+If the read-only check fails with errors (Unauthorized, kube.get errors too), the cluster does not take the observe role yet: that is no allow and no refusal.`;
 
 export const SKILLS: readonly Skill[] = [
   {
