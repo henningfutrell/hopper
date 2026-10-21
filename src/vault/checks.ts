@@ -71,7 +71,7 @@ export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx' 
     checkTemplate(name, by) {
       const t = vault.template(name);
       if (!t) return { ok: false, code: 'not_found', error: `no template ${name}` };
-      if (!t.readOnly) return { ok: false, code: 'invalid', error: `${name} takes no read-only check: only a template a job asked for with read needs only does` };
+      if (!t.readOnly) return { ok: false, code: 'invalid', error: `${name} takes no read-only check: only a template a job asked for with read and observe needs only does` };
       if (currentCheck(t)?.state === 'running') return { ok: false, code: 'conflict', error: `the read-only check of ${name} runs now` };
       store.tx(() => askCheck(store, t, by));
       return { ok: true };

@@ -35,7 +35,7 @@ function setup(profiles: OperationProfile[], mode: CloudMode = 'read-only') {
   const asked: OperationProfile[] = [];
   let template: Template = {
     name: 'asked-0123456789ab', image: IMAGE, secrets: [], tools: ['kubectl'], profiles, readOnly: true,
-    savedBy: 'job j', savedAt: '2030-01-01T00:00:00.000Z', approval: { image: IMAGE, secrets: [], by: 'a person', at: '2030-01-01T00:00:01.000Z' },
+    savedBy: 'job j', savedAt: '2030-01-01T00:00:00.000Z', approval: { image: IMAGE, tools: ['kubectl'], secrets: [], by: 'a person', at: '2030-01-01T00:00:01.000Z' },
   };
   const pass = createCheckPass({
     local: runtime, place: async () => ({ machine: 'local', runtime, network: 'n' }), instanceId: 'i', probes: HOPPER_PROBES,

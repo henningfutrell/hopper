@@ -6,7 +6,7 @@
 // takes each into a shell variable and out of the environment at its start, writes each kubeconfig under /tmp, and gives
 // a probe only the credential of its own asset.
 import { DENIAL } from './probes.ts';
-import { PROBE_OUTPUT_MAX, type CheckCredential, type ProbeOutcome, type ProbeResult, type ProbeRun } from '../domain/read-only-check.ts';
+import { PROBE_OUTPUT_MAX, probeOn, type CheckCredential, type ProbeOutcome, type ProbeResult, type ProbeRun } from '../domain/read-only-check.ts';
 
 /** Where the hopper adds a box's tools (src/sandbox/tools.ts): the real binaries, past any wrapper on PATH. */
 export const TOOLS_DIR = '/opt/hopper-tools/bin';
@@ -56,7 +56,8 @@ function takeCredentials(credentials: readonly CheckCredential[]): string[] {
 
 /** The assignments a probe on `run`'s asset runs with: its credential's, or none. */
 function credentialFor(run: ProbeRun, credentials: readonly CheckCredential[]): string {
-  const i = credentials.findIndex((c) => c.asset.kind === run.kind && c.asset.name === run.asset);
+  // A read and an observe on one asset each have their own credential (issue #2146, part 5).
+  const i = credentials.findIndex((c) => c.asset.kind === run.kind && c.asset.name === run.asset && c.operation === run.operation);
   if (i === -1) return '';
   const c = credentials[i]!;
   return [
@@ -95,7 +96,7 @@ function step(r: ProbeRun, n: number, credentials: readonly CheckCredential[]): 
   const run = `${env} timeout ${PROBE_S} sh ${dir}/probe.sh > ${dir}/out 2>&1 < /dev/null; code=$?`;
   const cleanup = probe.cleanup ? `\nif [ "$code" -eq 0 ]; then ${env} timeout ${PROBE_S} sh ${dir}/cleanup.sh > /dev/null 2>&1 < /dev/null; fi` : '';
   return [
-    `# ${probe.id} on ${asset}`,
+    `# ${probeOn({ id: probe.id, asset, ...(r.operation ? { operation: r.operation } : {}) })}`,
     `mkdir -p ${dir}`,
     file(`${dir}/probe.sh`, probe.script, n),
     ...(probe.cleanup ? [file(`${dir}/cleanup.sh`, probe.cleanup, n)] : []),
@@ -130,7 +131,7 @@ export function readResults(runs: readonly ProbeRun[], logs: string): ProbeResul
   }
   return runs.map((run, n): ProbeResult => {
     // A probe the template marks `expect-denied` (issue #916) expects a refusal: it passes only when its read is refused.
-    const base = { id: run.probe.id, asset: run.asset, expect: run.mark === 'expect-denied' ? 'denied' as const : run.probe.expect, ...(run.mark ? { mark: run.mark } : {}) };
+    const base = { id: run.probe.id, asset: run.asset, ...(run.operation ? { operation: run.operation } : {}), expect: run.mark === 'expect-denied' ? 'denied' as const : run.probe.expect, ...(run.mark ? { mark: run.mark } : {}) };
     const note = run.probe.note !== undefined ? { note: run.probe.note } : {};
     if (run.notRun !== undefined) return { ...base, outcome: 'not-run', passed: false, output: run.notRun, ...note };
     if (run.mark === 'skip') return { ...base, outcome: 'skipped', passed: true, output: 'not run: the template marks it skip' };
