@@ -10731,7 +10731,7 @@ kind after #715, the result recorded and launch blocked while it is red; keep th
 replaces them; test with doubles, and state the gap to a real environment.
 
 - **Which templates.** One a job asked for with read needs only (`Template.readOnly`, set by `requestTemplate`, kept
-  through every save). A template with a write, sync or apply need takes none: a person approves those profiles one by
+  through every save); since issue #2146 part 5, with read and observe needs only ("Bastions"). A template with a write, sync or apply need takes none: a person approves those profiles one by
   one, and a check that writes are refused would fail by design. A template a person saved takes none.
 - **The gate.** Until the check of its current version (`check.version` = its `savedAt`) passed (`checkWait`,
   `src/domain/read-only-check.ts`): a launch of it is a 409 that says why; a box of it that is attached takes no new job
@@ -30350,6 +30350,40 @@ under `sh` with socat, bash or nc alone, and none), `test/sandbox/bastions.test.
 kept while a connection is open, connections closed at the end), and `test/integration/bastion.test.ts` (the real daemon,
 route and `hopper-relay`: a command reaches a target through a local port; another target and a stranger's token are
 refused).
+
+**The read-only check under observe (part 5).** An observe credential may port-forward to the monitoring pods, so the
+hopper proves it can do nothing more before a bastion of its template starts.
+- **Which templates.** An observe changes no asset, so a template a job asked for with read and observe needs only takes the
+  read-only check (`readOnlyOf`, `checkedNeeds`, `src/domain/read-only-check.ts`), and its bastion waits for it as every box
+  of it does (`templateWait`). Tenant migration 88 marks each stored template of reads and observes, with an observe among
+  them, `readOnly`.
+- **The credential.** The vault mints each observe for the check box as it mints a read (`mintForCheck`, Access as the
+  template, `vault.check_minted`). A read and an observe on one asset each have their own credential, and each probe runs
+  with the credential of its own need (`CheckCredential.operation`, `ProbeRun.operation`).
+- **The probes under observe** (`Probe.operations`, `src/sandbox/probes.ts`). `kube.get` must work; `kube.create-namespace`,
+  `kube.delete-pod` and `egress.kube` must be refused, as under a read; and two of observe's own must be refused:
+  `observe.exec` (`pods/exec`, by a POST and by a GET of the exec subresource of a pod that is not there: the API asks the
+  authorization before it looks for the pod, so an allowed exec answers NotFound) and `observe.secret-read` (a list of the
+  Secrets in the namespace, or in every namespace for a cluster, and a get of one). Each passes only when both of its
+  requests are Forbidden. A result under observe says so (`ProbeResult.operation`: `<probe> on <asset> under observe`).
+- **The bastion behind the egress proxy.** A read-only template's boxes run behind it, so the bastion now names where its
+  tokens reach (`NeedBox.reaches`): the proxy lets its cluster's API server through, and nothing that is not on the
+  template's egress list.
+
+**Decisions (part 5):**
+- **Observe takes the read-only check, not a check of its own.** It changes no asset, as a read; the check, its gate, its
+  report and its daily run are the same, and only the probes differ.
+- **Exec and the Secret read run under observe only.** A read maps to the view role, which has neither; the issue asks them
+  of observe's role, which is the one that gained `pods/portforward`. A read template's check is unchanged.
+- **No port-forward probe.** An allowed forward needs a pod to forward to, and the check has none of its own; the live check
+  on a cluster (part 6) shows the forward.
+- **A rollback is fail-closed.** A build before part 5 checks only the reads of a migrated template: a template of observes
+  only fails that check, and its bastion waits.
+
+Tests (part 5): `test/sandbox/check-observe.test.ts` (the probes under observe, the observe credential minted, a credential
+that may exec and read Secrets fails, a read and an observe on one asset), `test/skills/template-preview.test.ts` (read and
+observe needs take the check), `test/sandbox/bastions.test.ts` (the bastion names its reaches),
+`test/store/tenant-migration-88.test.ts`.
 
 ## A comment ends the job's own wait (issue #2159, 2026-10-19)
 

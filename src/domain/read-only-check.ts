@@ -3,8 +3,19 @@
 // its tools, the sandbox flags — and each write must be refused, each read must work. The template takes no box and no
 // job until the check of its current version passed. The probes are a catalog (src/sandbox/probes.ts), so issue #715 can
 // add to it or replace it.
-import type { Asset, AssetKind, OperationProfile } from './access.ts';
+import type { Asset, AssetKind, Operation, OperationProfile } from './access.ts';
 import type { BoxTool } from './sandboxes.ts';
+
+/**
+ * The operations a check probes (issue #2146, part 5): those that change no asset. A read, and an observe, whose credential
+ * may port-forward too and must change nothing either.
+ */
+export type CheckedOperation = Extract<Operation, 'read' | 'observe'>;
+export const CHECKED_OPERATIONS: readonly CheckedOperation[] = ['read', 'observe'];
+/** Whether a need is one the check probes: a read or an observe. */
+export const checkedNeed = (p: { operation: string }): boolean => (CHECKED_OPERATIONS as readonly string[]).includes(p.operation);
+/** A template's needs that the check probes. */
+export const checkedNeeds = (profiles: readonly OperationProfile[] | undefined): OperationProfile[] => (profiles ?? []).filter(checkedNeed);
 
 /** What a probe expects: the write is refused (`denied`), or the read works (`allowed`). */
 export type ProbeExpect = 'denied' | 'allowed';
@@ -41,13 +52,16 @@ export interface Probe {
   rightRefusal?: RegExp;
   /** It probes the box, not an asset (issue #849): it runs once per check, for the first need of one of its kinds. */
   once?: true;
+  /** The needs' operations it runs under (issue #2146, part 5); absent: a read only. */
+  operations?: readonly CheckedOperation[];
 }
 
 /**
- * A probe for one asset: what the check runs. `kind` is the asset's kind: it picks the credential the probe runs with.
- * `vars`: more of its environment. `notRun`: why it is not run (issue #715); it does not pass then.
+ * A probe for one asset: what the check runs. `kind` is the asset's kind and `operation` its need's (absent: a read): they
+ * pick the credential the probe runs with. `vars`: more of its environment. `notRun`: why it is not run (issue #715); it
+ * does not pass then.
  */
-export interface ProbeRun { probe: Probe; kind: AssetKind; asset: string; vars?: Record<string, string>; notRun?: string; mark?: ProbeMark }
+export interface ProbeRun { probe: Probe; kind: AssetKind; asset: string; operation?: 'observe'; vars?: Record<string, string>; notRun?: string; mark?: ProbeMark }
 
 /**
  * A person's mark on one read probe of a template (issue #916): `expect-denied`, the read must be refused, as a credential
@@ -86,7 +100,7 @@ export const markRuns = (runs: readonly ProbeRun[], marks: ProbeMarks | undefine
  * The read credential a check box gets for one need (issue #797), minted for it: the environment its probes on that asset
  * run with (an AWS session, its region and STS), and a kubeconfig for a cluster or a namespace.
  */
-export interface CheckCredential { asset: Asset; env: Record<string, string>; kubeconfig?: string }
+export interface CheckCredential { asset: Asset; operation?: 'observe'; env: Record<string, string>; kubeconfig?: string }
 
 /** The probes for a template's needs. The default is the hopper's catalog; issue #715 passes its own. */
 export interface ProbeCatalog { runsFor(needs: readonly OperationProfile[]): ProbeRun[] }
@@ -101,6 +115,8 @@ export type ProbeOutcome = 'allowed' | 'denied' | 'error' | 'not-run' | 'skipped
 export interface ProbeResult {
   id: string;
   asset: string;
+  /** It ran under an observe need's credential (issue #2146, part 5); absent: a read's. */
+  operation?: 'observe';
   /** What it expected: its probe's, or `denied` when the template marks it `expect-denied`. */
   expect: ProbeExpect;
   /** The template's mark on it (issue #916). */
@@ -154,25 +170,28 @@ const NETWORK_ERROR = /\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|EPIP
 /** Whether each of these reasons is a network error only (issue #1468); false for none. */
 export const onlyNetworkErrors = (reasons: readonly string[]): boolean => reasons.length > 0 && reasons.every((r) => NETWORK_ERROR.test(r));
 
-/** Whether a template must pass a read-only check: one a job asked for with read needs only. */
+/** Whether a template must pass a read-only check: one a job asked for with read and observe needs only (issue #2146). */
 export interface CheckedTemplate {
   name: string; savedAt: string; readOnly?: boolean; check?: ReadOnlyCheck;
   /** Why its due check does not start now (issue #2236): kept in the hopper's memory by the check pass, never stored. */
   checkHeld?: string;
 }
 
+/** A probe result in words: `<id> on <asset>`, and ` under observe` for an observe need's (issue #2146, part 5). */
+export const probeOn = (p: Pick<ProbeResult, 'id' | 'asset' | 'operation'>): string => `${p.id} on ${p.asset}${p.operation ? ` under ${p.operation}` : ''}`;
+
 /** The marked probes of a check, in words: `<id> on <asset> (<mark>)`. */
-export const markedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => p.mark).map((p) => `${p.id} on ${p.asset} (${p.mark})`);
+export const markedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => p.mark).map((p) => `${probeOn(p)} (${p.mark})`);
 
 /** The check of the template's current version; undefined when there is none. */
 export const currentCheck = (t: CheckedTemplate): ReadOnlyCheck | undefined => (t.check?.version === t.savedAt ? t.check : undefined);
 
 /** The reads that passed as refused by a right credential (issue #1736), in words: `<id> on <asset>`. */
 export const refusedReads = (c: ReadOnlyCheck): string[] =>
-  c.probes.filter((p) => p.passed && p.expect === 'allowed' && p.outcome === 'denied').map((p) => `${p.id} on ${p.asset}`);
+  c.probes.filter((p) => p.passed && p.expect === 'allowed' && p.outcome === 'denied').map(probeOn);
 
 /** The probes that failed, in words: `<id> on <asset>`. */
-export const failedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => !p.passed).map((p) => `${p.id} on ${p.asset} (${p.outcome})`);
+export const failedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => !p.passed).map((p) => `${probeOn(p)} (${p.outcome})`);
 
 /** How soon a check that failed as the vault minted nothing for a need runs again by itself (issue #1845). */
 export const CHECK_UNMINTED_MS = 60 * 60_000;

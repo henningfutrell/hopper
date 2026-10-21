@@ -33,6 +33,7 @@ import { containerTargets } from './migration-container-target.ts';
 import { SKILL_LIBRARY_TABLE } from './skill-library.ts';
 import { originPendingOffered, originPendingStarted } from './migration-origin-pending.ts';
 import { INTAKE_ARRIVAL_TABLE } from './intake-arrivals.ts';
+import { observeTemplatesChecked } from './migration-observe-checked.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -157,4 +158,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 87: Intake arrivals (issue #2228): when each source first listed each item. A table only: the build before runs on it,
   // and never reads it.
   INTAKE_ARRIVAL_TABLE,
+  // 88: A template of read and observe needs only takes the read-only check (issue #2146, part 5): each stored one is marked
+  // `readOnly`. Rows only: the build before checks only its reads, so a template of observes only fails that check and
+  // waits, and its bastion with it.
+  (db) => { observeTemplatesChecked(db); },
 ];

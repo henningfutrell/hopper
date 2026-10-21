@@ -194,7 +194,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect((await stepBox(a, token, 'kube')).status).toBe(200);
     const no = await vault(a, token, { action: 'check-template', name: 'kube' });
     expect(no.status).toBe(400);
-    expect(no.body.error).toBe('kube takes no read-only check: only a template a job asked for with read needs only does');
+    expect(no.body.error).toBe('kube takes no read-only check: only a template a job asked for with read and observe needs only does');
     await a.app.sandboxes.check();
     expect(runtime.ran.size).toBe(0);
   });

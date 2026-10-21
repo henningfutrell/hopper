@@ -47,7 +47,7 @@ function bar(check: ReadOnlyCheck): string {
 }
 
 const result = (p: ProbeResult): string => (p.outcome === 'skipped' ? 'skip' : p.passed ? 'pass' : p.outcome === 'not-run' ? 'NOT RUN' : 'FAIL');
-const row = (p: ProbeResult): string => `<tr class="${p.passed ? 'ok' : 'bad'}"><td>${result(p)}</td><td>${escape(p.id)}</td><td>${escape(p.asset)}</td>`
+const row = (p: ProbeResult): string => `<tr class="${p.passed ? 'ok' : 'bad'}"><td>${result(p)}</td><td>${escape(p.id)}</td><td>${escape(p.operation ? `${p.asset} (${p.operation})` : p.asset)}</td>`
   + `<td>${p.expect}${p.mark ? ` (marked ${p.mark})` : ''}</td><td>${p.outcome}</td><td>${p.exit ?? 'did not run'}</td><td><pre>${escape(p.output)}</pre>${p.note ? `<p class="note">${escape(p.note)}</p>` : ''}</td></tr>`;
 
 /** The report of one ended check of the template. Pure. */
