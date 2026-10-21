@@ -44,6 +44,8 @@ export interface FakeGitLab {
   mergeRequests: FakeGitLabMergeRequest[];
   /** Projects whose issue reads fail with 500. */
   failing: Set<string>;
+  /** Projects whose issue label writes fail with 500 (issue #1892 part 17). */
+  failingWrites: Set<string>;
   requests: { path: string; token: string | undefined; method?: string; body?: unknown }[];
   /** Its git over HTTP (part 3), with `gitRoot`: each request with the token it carried as Basic auth's password. */
   gitRequests: { path: string; user: string; token: string }[];
@@ -58,7 +60,7 @@ export interface FakeGitLab {
 
 /** `gitRoot`: the bare repositories `<root>/<project>.git` its git serves, by git's own `git-http-backend`; absent: no git. */
 export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?: string } = {}): Promise<FakeGitLab> {
-  const fake: Omit<FakeGitLab, 'url' | 'close'> = { tokens: new Map(), refused: new Set(), issues: [...(o.issues ?? [])], mergeRequests: [], failing: new Set(), requests: [], gitRequests: [], ids: new Map(), defaultBranches: new Map() };
+  const fake: Omit<FakeGitLab, 'url' | 'close'> = { tokens: new Map(), refused: new Set(), issues: [...(o.issues ?? [])], mergeRequests: [], failing: new Set(), failingWrites: new Set(), requests: [], gitRequests: [], ids: new Map(), defaultBranches: new Map() };
   const idOf = (username: string): number => [...fake.tokens.values()].find((u) => u.username === username)?.id ?? fake.ids.get(username) ?? 900;
   const person = (username: string) => ({ id: idOf(username), username });
   const send = (res: ServerResponse, status: number, body: unknown, next?: string) => {
@@ -176,6 +178,7 @@ export async function createFakeGitLab(o: { issues?: FakeGitLabIssue[]; gitRoot?
         });
       }
       if (req.method === 'PUT') {
+        if (fake.failingWrites.has(project)) return send(res, 500, { message: '500 Internal Server Error' });
         const list = (v: unknown) => (typeof v === 'string' ? v.split(',').filter(Boolean) : []);
         issue.labels = [...issue.labels.filter((l) => !list(body?.remove_labels).includes(l)), ...list(body?.add_labels).filter((l) => !issue.labels.includes(l))];
         return send(res, 200, { iid, labels: issue.labels });
