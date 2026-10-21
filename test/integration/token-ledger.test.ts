@@ -1,7 +1,8 @@
 // The token ledger (issue #2302, part 1): the hopper reads what each job's agent spent from its agent session's log —
 // at each checkpoint, and once more as its run ends — and keeps the counts per session and model, never the log's text.
 // GET /api/jobs/:id/tokens answers a job's totals; GET /api/usage/tokens the rollups, split by a second group for the
-// Dashboard's tokens over time (part 2). Real daemon over the fake herdr, as
+// Dashboard's tokens over time (part 2); both say a job's waste signals and tokens per merged pull request (part 4). Real
+// daemon over the fake herdr, as
 // checkpoint.test.ts.
 import { homedir } from 'node:os';
 import { gzipSync } from 'node:zlib';
@@ -114,6 +115,48 @@ describe('the token ledger', () => {
     expect(byRepo.body.groups.flatMap((d) => d.parts.map((p) => p.key))).toEqual(['(none)', '(none)']);
     expect(JSON.stringify(byRepo.body)).not.toContain(SECRET_TEXT);
     expect((await a.api('GET', '/api/usage/tokens?by=day&split=colour')).status).toBe(400);
+  });
+
+  it('flags a job whose test runs fail again and again, and divides the spend by the pull requests merged (part 4)', async () => {
+    // Five test runs that failed, each a message of its own; the tool results' text is never kept.
+    const failing = Array.from({ length: 5 }, (_, i) => [
+      JSON.stringify({ type: 'assistant', timestamp: '2026-10-21T08:10:00.000Z', requestId: `r-t${i}`, message: { id: `t${i}`, model: 'claude-opus-5-5', content: [{ type: 'tool_use', id: `toolu_${i}`, name: 'Bash', input: { command: 'npx vitest run test/shed.test.ts' } }], usage: { input_tokens: 1, output_tokens: 1 } } }),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: SECRET_TEXT }] } }),
+    ]).flat();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE], repositories: [tree()], checkpoint: capture([...TWO, ...failing]) });
+    const a = await boot(herdr);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'finished');
+
+    const tokens = await a.api<JobTokens & { waste: { kind: string; why: string }[] }>('GET', `/api/jobs/${job.id}/tokens`);
+    expect(tokens.body.total).toMatchObject({ turns: 7, failedTests: 5 });
+    expect(tokens.body.waste).toEqual([{ kind: 'failing_tests', why: '5 test runs failed.' }]);
+    expect(JSON.stringify(tokens.body)).not.toContain(SECRET_TEXT);
+    expect(JSON.stringify(tokens.body)).not.toContain('vitest');
+
+    type Rollup = { total: TokenTotals; waste: { jobId: string; signals: { kind: string }[] }[]; perMerged: { pullRequests: number; tokens?: number; costUsd?: number } };
+    const before = await a.api<Rollup>('GET', '/api/usage/tokens');
+    expect(before.body.waste).toMatchObject([{ jobId: job.id, signals: [{ kind: 'failing_tests' }] }]);
+    expect(before.body.perMerged).toEqual({ pullRequests: 0 });
+
+    // Its pull request merged: the spend divided by one.
+    a.user().store.events.append({ type: 'job.pull_request_merged', jobId: job.id, data: { pullRequest: 'https://github.com/o/shed/pull/1', part: false } });
+    const after = await a.api<Rollup>('GET', '/api/usage/tokens');
+    const t = after.body.total;
+    expect(after.body.perMerged.pullRequests).toBe(1);
+    expect(after.body.perMerged.tokens).toBe(t.input + t.output + t.cacheRead + t.cacheWrite);
+    expect(after.body.perMerged.costUsd).toBeCloseTo(t.costUsd, 9);
+    // Another repository's filter counts no merge of this job.
+    expect((await a.api<Rollup>('GET', '/api/usage/tokens?repo=o/other')).body.perMerged).toEqual({ pullRequests: 0 });
+  });
+
+  it('flags no waste for a job that spent little', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE], repositories: [tree()], checkpoint: capture(TWO) });
+    const a = await boot(herdr);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'finished');
+    expect((await a.api<{ waste: unknown[] }>('GET', `/api/jobs/${job.id}/tokens`)).body.waste).toEqual([]);
+    expect((await a.api<{ waste: unknown[] }>('GET', '/api/usage/tokens')).body.waste).toEqual([]);
   });
 
   it('keeps none for a job whose machine reads no session', async () => {

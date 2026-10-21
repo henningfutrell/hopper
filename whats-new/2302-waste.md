@@ -1,0 +1,1 @@
+- A job's page now warns when the job uses tokens with no progress: many turns with no commit, tests that fail again and again, many restarts, or a cache that is written again and again. The dashboard shows these jobs, and the tokens used for each merged pull request.

@@ -1,7 +1,8 @@
 // The token ledger's words (issue #2302): token counts and an estimated cost as a person reads them, and the ledger by
-// day as the Dashboard's tokens over time stacks it (part 2); the token budget in Settings and Needs you (part 3). Pure.
+// day as the Dashboard's tokens over time stacks it (part 2); the token budget in Settings and Needs you (part 3); the waste
+// signals and tokens per merged pull request (part 4). Pure.
 import { goalOf } from './job.ts';
-import type { Job, TokenBudgetSettings, TokenRollupRow, TokenTotals } from './wire.ts';
+import type { Job, PerMergedPullRequest, TokenBudgetSettings, TokenRollupRow, TokenTotals, TokenWasteKind } from './wire.ts';
 
 /** A token count in short: 950, 12.3k, 2.4M. */
 export function tokenCount(n: number): string {
@@ -13,9 +14,19 @@ export function tokenCount(n: number): string {
 /** An estimated cost in US dollars; `~` before it when a model in it has no known price. */
 export const usd = (t: Pick<TokenTotals, 'costUsd' | 'costKnown'>): string => `${t.costKnown ? '' : '~'}$${t.costUsd.toFixed(2)}`;
 
-/** Its counts in one line: turns, input, output, cache read and cache write. */
+/** Its counts in one line: turns, input, output, cache read and cache write; its failed test runs when it has some. */
 export const tokenLine = (t: TokenTotals): string =>
-  `${t.turns} turns · ${tokenCount(t.input)} in · ${tokenCount(t.output)} out · ${tokenCount(t.cacheRead)} cache read · ${tokenCount(t.cacheWrite)} cache write`;
+  `${t.turns} turns · ${tokenCount(t.input)} in · ${tokenCount(t.output)} out · ${tokenCount(t.cacheRead)} cache read · ${tokenCount(t.cacheWrite)} cache write`
+  + (t.failedTests ? ` · ${t.failedTests} failed test run${t.failedTests === 1 ? '' : 's'}` : '');
+
+/** Each waste signal's name. */
+export const WASTE_NAMES: Record<TokenWasteKind, string> = { no_progress: 'No progress', failing_tests: 'Failing tests', resume_loop: 'Resume loop', cache_churn: 'Cache churn' };
+
+/** Tokens per merged pull request in one line, or that none was merged. */
+export const perMergedLine = (p: PerMergedPullRequest): string =>
+  p.pullRequests > 0 && p.tokens !== undefined
+    ? `${tokenCount(Math.round(p.tokens))} tokens · $${(p.costUsd ?? 0).toFixed(2)} per merged pull request (${p.pullRequests} merged)`
+    : 'No pull request merged in this range.';
 
 /** Every token of a row: input, output, cache read and cache write. */
 export const tokensOf = (t: Pick<TokenTotals, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): number => t.input + t.output + t.cacheRead + t.cacheWrite;
