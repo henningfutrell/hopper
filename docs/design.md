@@ -7756,6 +7756,9 @@ fragments, so `beta`, `stable` and the Pages link read one human file. A bullet 
 so the move brings no update news. The pull request check runs `node scripts/whats-new.ts check HEAD^1`
 (`problems`): a line added to `WHATS-NEW.md` that no fragment of the base had, a released line changed or
 removed, a line twice, or a fragment named wrongly fails it.
+The check reads What's new at a commit of the mirror with one `git cat-file --batch` for the file and every fragment
+(`GitMirror.readAll`, issue #2367), never a process per fragment: it runs every minute, and each process the daemon
+starts holds its event loop while it forks.
 Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
 not what changed for its users. **In this
 version** (issue #165): the newest 5 bullets of the install's own What's new (`installedWhatsNew`;

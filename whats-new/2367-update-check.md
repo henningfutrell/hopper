@@ -1,0 +1,1 @@
+- The hopper no longer pauses for seconds each minute while an update is ready to install.
