@@ -2,7 +2,7 @@
 // from GET /api/search — the same route the operator CLI and an agent use. Each hit links to its view (a job's, an
 // artifact's, Infra for a plan), its title and up to two snippets with the matched words marked (read as text, never
 // HTML); the facets count what matched and filter when picked; the page moves on by 20. When search is degraded or not set up it says why and shows no hits: nothing
-// else in the hopper waits on it.
+// else in the hopper waits on it. A long page (issue #2353): the header with the search form stays in view.
 import { AlertTriangle, ChevronLeft, ChevronRight, Search as SearchIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
@@ -106,9 +106,9 @@ export function Search() {
   const answer = current?.answer;
   const down = answer && answer.state !== 'ok' ? answer : undefined;
   return (
-    <Panel title="Search" icon={SearchIcon} count={answer && answer.state === 'ok' ? answer.total : undefined}>
+    <Panel title="Search" icon={SearchIcon} count={answer && answer.state === 'ok' ? answer.total : undefined}
+      sticky toolbar={<div className="px-4 pb-3"><SearchForm key={f.q} f={f} /></div>}>
       <div className="space-y-3">
-        <SearchForm key={f.q} f={f} />
         {current?.error && <p className="text-sm text-bad">Could not search: {current.error}</p>}
         {down && (
           <div data-slot="search-state" data-state={down.state} className="flex items-center gap-2 rounded-lg border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
