@@ -68,11 +68,12 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-export async function boot(view: PullRequestsView, role: 'viewer' | 'admin' = 'admin', checks: RepoChecksView = { repos: [] }, sources: SourceStatus[] = []) {
+/** `kept`: a reload, with what the browser kept (issue #2353); else a browser that kept nothing. */
+export async function boot(view: PullRequestsView, role: 'viewer' | 'admin' = 'admin', checks: RepoChecksView = { repos: [] }, sources: SourceStatus[] = [], kept = false) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#pull-requests';
-  localStorage.clear();
+  if (!kept) localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const daemon = fakeDaemon(view, role, checks, sources);
   vi.stubGlobal('fetch', daemon.fetch);

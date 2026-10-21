@@ -11,31 +11,44 @@
 // moves it to the tested branch. Not tracked (issue #1176): each open pull request of a job repository the hopper does not
 // track, with why; one whose issue is not in Intake has Take into Intake, which shows its GitHub write on the row (issue #1194).
 // Each card shows its change kind (issue #1076), why in its title. A card with a pull request, and a landing card — a batch's
-// culprit among them —, opens its diff in a code block (issue #1169).
-import { ExternalLink, GitBranch, GitMerge, GitPullRequest, Inbox, Loader2, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
+// culprit among them —, opens its diff in a code block (issue #1169). A long page (issue #2353): Cards or Rows — a row is
+// one line, its acts on the card —, each group folds, and a group past one page pages; the mode and the folds are kept
+// per browser, and the header with the mode stays in view.
+import { ExternalLink, GitMerge, GitPullRequest, LayoutList, List, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
 import { JobAct } from '@/components/job-act';
 import { PullRequestDiff } from '@/components/pull-request-diff';
 import { Empty, Panel } from '@/components/panel';
+import { ModeToggle, Pager, usePaged } from '@/components/pager';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, YoloBadge, type Tone } from '@/components/status';
 import { Textarea } from '@/components/ui/textarea';
 import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
+import { useGroupOpen, usePagePref } from '@/hooks/use-page-pref';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksProblemText, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
-import type { ChecksProblem, LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
-import { act, actFor } from '@/store';
-import { intakeRefusal } from '@/store/intake';
+import { CARDS_PER_PAGE, ROWS_PER_PAGE } from '@/model/page-prefs';
+import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksProblemText, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
+import type { ChecksProblem, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
+import { act } from '@/store';
 import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
 import { ACTING, actOnPullRequest, useActingOnPullRequest, type PullRequestAct } from '@/store/pull-request-acts';
 import { setPolled } from '@/store/polled';
+import { Landing, Untracked } from './pull-requests-landing';
 import { useCanOperate } from '@/store/selectors';
 
 const POLL_MS = 10_000;
+
+const MODES = [
+  { mode: 'cards', label: 'Cards', icon: LayoutList, title: 'Each pull request with its acts and its diff' },
+  { mode: 'rows', label: 'Rows', icon: List, title: 'One line per pull request' },
+] as const;
+type Mode = (typeof MODES)[number]['mode'];
+const MODE_NAMES: readonly Mode[] = MODES.map((m) => m.mode);
+const useMode = () => usePagePref<Mode>('pull-requests.mode', 'cards', MODE_NAMES);
 
 const STATE_TONE: Record<PullRequestCard['state'], Tone> = { open: 'busy', merged: 'ok', closed: 'bad' };
 const CHECKS_TONE: Record<PullRequestCard['checks'], string> = { passing: 'text-ok', pending: 'text-warn', failing: 'text-bad', none: '', unknown: '' };
@@ -106,6 +119,25 @@ function TendAgain({ c, onChanged }: { c: PullRequestCard; onChanged: () => void
       <Button size="sm" disabled={tending} onClick={() => void run()}><RotateCw />{tending ? PENDING.tend : 'Tend again'}</Button>
       <span className="text-xs text-muted-foreground">A new job takes the same step. Read why it failed first.</span>
     </div>
+  );
+}
+
+/** A pull request on one line (issue #2353): its number, what it closes, its state, checks, conflicts and what it waits on. */
+function Row({ c }: { c: PullRequestCard }) {
+  const now = useNow();
+  const age = c.openedAt ?? c.since;
+  return (
+    <li data-pull-request={c.jobId} data-slot="pr-row" className="flex h-8 min-w-0 items-center gap-3 px-4 text-xs text-muted-foreground">
+      {c.pullRequest
+        ? <GhLink url={c.pullRequest.url} className="shrink-0 text-sm font-medium text-foreground">#{c.pullRequest.number}</GhLink>
+        : <span className="shrink-0">not found yet</span>}
+      <span className="min-w-0 flex-1 truncate" title={closesText(c)}>{closesText(c)}</span>
+      <span data-slot="pr-state" className="shrink-0"><StatusBadge status={c.state} tone={STATE_TONE[c.state]} /></span>
+      <span data-slot="pr-checks" className={`hidden w-28 shrink-0 truncate sm:inline ${CHECKS_TONE[c.checks]}`}>{checksText(c)}</span>
+      <span data-slot="pr-mergeable" className={`hidden w-28 shrink-0 truncate md:inline ${c.mergeable === 'conflicts' ? 'text-bad' : ''}`}>{MERGEABLE_TEXT[c.mergeable]}</span>
+      <span data-slot="pr-waits" className={`hidden w-40 shrink-0 truncate lg:inline ${c.waits === 'ready' ? 'text-ok' : ''}`}>{c.waits ? waitsText(c) : ''}</span>
+      <span className="num hidden w-16 shrink-0 truncate text-right md:inline" title={age}>{age ? ago(age, now) : ''}</span>
+    </li>
   );
 }
 
@@ -185,9 +217,12 @@ function ChecksUnread({ p }: { p: ChecksProblem }) {
 }
 
 function RepoGroup({ group, checks, unread, onChanged }: { group: PullRequestsView['repos'][number]; checks?: RepoChecks; unread?: ChecksProblem; onChanged: () => void }) {
+  const [mode] = useMode();
+  const [open, toggle] = useGroupOpen(`pull-requests.group.${group.repo}`);
+  const page = usePaged(group.pullRequests, mode === 'rows' ? ROWS_PER_PAGE : CARDS_PER_PAGE, mode);
   return (
     <section data-repo={group.repo}>
-      <Panel title={group.repo} icon={GitPullRequest} count={group.pullRequests.length || ''} bodyClassName="p-0"
+      <Panel title={group.repo} icon={GitPullRequest} count={group.pullRequests.length || ''} bodyClassName="p-0" open={open} onToggle={toggle}
         action={<>
           {checks?.state === 'no checks' && <StatusBadge status="no-checks" label="no checks" tone="warn" />}
           <YoloBadge on={group.yolo} />
@@ -198,96 +233,9 @@ function RepoGroup({ group, checks, unread, onChanged }: { group: PullRequestsVi
         {unread && <ChecksUnread p={unread} />}
         {checks?.state === 'no checks' && <NoChecks r={checks} onChanged={onChanged} />}
         {group.pullRequests.length
-          ? <ul className="divide-y">{group.pullRequests.map((c) => <Card key={c.jobId} c={c} onChanged={onChanged} />)}</ul>
+          ? <ul className="divide-y">{page.shown.map((c) => (mode === 'rows' ? <Row key={c.jobId} c={c} /> : <Card key={c.jobId} c={c} onChanged={onChanged} />))}</ul>
           : <Empty>no pull request waits</Empty>}
-      </Panel>
-    </section>
-  );
-}
-
-const LANDING_TONE: Record<LandingCard['stage'], string> = {
-  waiting: 'text-muted-foreground', batch_run: 'text-warn', bisecting: 'text-warn', culprit: 'text-bad', reverted: 'text-bad', promoted: 'text-ok',
-};
-
-/** Landing (issue #1073): each job pull request merged into the landing branch, and where it stands on its way to the tested branch. */
-function Landing({ cards }: { cards: LandingCard[] }) {
-  const now = useNow();
-  return (
-    <section data-slot="landing">
-      <Panel title="Landing" icon={GitBranch} count={cards.length} bodyClassName="p-0">
-        <p className="border-b px-4 py-2 text-xs text-muted-foreground">
-          Merged into the landing branch. A batch run of the full test suite moves them to the tested branch. <a href="#settings/landing-batches" className="underline">Settings → Landing batches</a>
-        </p>
-        <ul className="divide-y">
-          {cards.map((c) => (
-            <li key={`${c.repo}#${c.pullRequest.number}`} data-landing={c.jobId ?? c.issue} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
-              <GhLink url={c.pullRequest.url} className="font-medium text-foreground">{c.repo}#{c.pullRequest.number}<ExternalLink className="size-3 opacity-60" /></GhLink>
-              <span data-slot="landing-stage" className={`text-xs ${LANDING_TONE[c.stage]}`}>{landingText(c)}</span>
-              {c.fixIssue && <GhLink url={c.fixIssue} className="text-xs">fix issue</GhLink>}
-              <span className="text-xs text-muted-foreground" title={c.since}>{ago(c.since, now)}</span>
-              <PullRequestDiff repo={c.repo} number={c.pullRequest.number} />
-            </li>
-          ))}
-        </ul>
-      </Panel>
-    </section>
-  );
-}
-
-const UNTRACKED_TONE: Record<UntrackedPullRequest['reason'], string> = {
-  no_issue: 'text-muted-foreground', issue_not_in_intake: 'text-warn', wrong_base: 'text-warn', second_pull_request: 'text-warn', not_by_a_job: 'text-muted-foreground',
-};
-
-/**
- * Take into Intake on one row (issue #1194): the daemon answers before its GitHub write. From the click on, the row says
- * the write runs and offers Take into Intake no more, until a list read after the click says how it ended: a failure, with
- * why, offers it again; the issue in Intake offers it no more. A write the daemon says runs shows the same.
- */
-function TakeIn({ u, reload }: { u: UntrackedPullRequest; reload: () => void }) {
-  const [sent, setSent] = useState<UntrackedPullRequest>();
-  const ended = sent !== undefined && u !== sent && (u.writeBehind?.state === 'failed' || u.offer !== 'take_in');
-  if (ended) setSent(undefined);
-  const running = (sent && !ended) || u.writeBehind?.state === 'running';
-  const failed = !running && u.writeBehind?.state === 'failed' ? u.writeBehind : undefined;
-  const takeIn = async () => {
-    setSent(u);
-    const key = u.issue!.url;
-    const r = await actFor(`/ui/api/sources/${encodeURIComponent(u.source!)}/intake`, { kind: 'take_in', keys: [key] }, `#${u.issue!.number}: taking into Intake`, intakeRefusal([key]));
-    if (!r.ok) setSent(undefined);
-    reload();
-  };
-  if (running) return <span data-write-behind="running" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />taking into Intake on GitHub</span>;
-  if (u.offer !== 'take_in' || !u.source || !u.issue) return null;
-  return (
-    <>
-      {failed && <span data-write-behind="failed" className="text-xs text-destructive">taking into Intake on GitHub failed: {failed.error}</span>}
-      <Button size="xs" variant="outline" title="Gives the issue the hopper label and assigns it to your GitHub account: Intake lists it as a request card for you to approve" onClick={() => void takeIn()}><Inbox />Take into Intake</Button>
-    </>
-  );
-}
-
-/**
- * Not tracked (issue #1176): each open pull request of a job repository that no job names and the ledger does not hold, with
- * why. One whose issue is not in Intake has Take into Intake for an operator: its source labels and assigns the issue.
- */
-function Untracked({ prs, reload }: { prs: UntrackedPullRequest[]; reload: () => void }) {
-  const operator = useCanOperate();
-  return (
-    <section data-slot="untracked">
-      <Panel title="Not tracked" icon={GitPullRequest} count={prs.length} bodyClassName="p-0">
-        <p className="border-b px-4 py-2 text-xs text-muted-foreground">
-          Open pull requests of your job repositories that the hopper does not rebase, land or close.
-        </p>
-        <ul className="divide-y">
-          {prs.map((u) => (
-            <li key={u.url} data-untracked={u.url} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
-              <GhLink url={u.url} className="font-medium text-foreground">{u.repo}#{u.url.split('/').pop()}<ExternalLink className="size-3 opacity-60" /></GhLink>
-              {u.title && <span className="text-muted-foreground">{u.title}</span>}
-              <span data-slot="untracked-reason" className={`text-xs ${UNTRACKED_TONE[u.reason]}`}>{untrackedText(u)}</span>
-              {operator && <TakeIn u={u} reload={reload} />}
-            </li>
-          ))}
-        </ul>
+        <Pager p={page} onPage={page.setPage} className="border-t px-4 py-2" />
       </Panel>
     </section>
   );
@@ -305,11 +253,14 @@ export function PullRequests() {
     if (Array.isArray(c?.repos)) setChecks(c);
   }, []);
   usePoll(load, POLL_MS);
+  const [mode, setMode] = useMode();
   const reload = () => { load().catch(() => {}); };
   if (!view) return <Panel title="Pull requests" icon={GitPullRequest}><Empty>loading</Empty></Panel>;
   return (
     <div className="space-y-3">
-      <Panel title="Pull requests" icon={GitPullRequest}>
+      {/* Sticky as a whole: a header sticks only inside its own card, and this card is short. */}
+      <div data-slot="pr-summary" className="sticky top-14 z-20">
+      <Panel title="Pull requests" icon={GitPullRequest} action={<ModeToggle slot="pr-mode" value={mode} choices={MODES} onPick={setMode} />}>
         <div className="space-y-1 text-sm">
           <p data-slot="pr-yolo-line">{yoloLine(view)}</p>
           <p data-slot="pr-waiting-line" className="text-muted-foreground">{waitingLine(view)}</p>
@@ -318,6 +269,7 @@ export function PullRequests() {
           {!hasCards(view) && <p data-slot="pr-empty" className="text-muted-foreground">No pull request waits.</p>}
         </div>
       </Panel>
+      </div>
       {view.landing && view.landing.length > 0 && <Landing cards={view.landing} />}
       {view.untracked && view.untracked.length > 0 && <Untracked prs={view.untracked} reload={reload} />}
       {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())}

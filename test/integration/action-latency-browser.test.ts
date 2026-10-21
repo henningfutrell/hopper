@@ -100,7 +100,7 @@ describe.skipIf(SKIP !== undefined)('the clicked card changes at once, in a brow
     await page.evaluate(() => { location.hash = '#jobs'; });
     await page.locator('[data-slot=jobs-mode-list]').click();
     const job = await waitFor(async () => (await jobs()).find((j) => j.source?.key === issue.url), { what: 'the approved job', timeoutMs: 20_000 });
-    await page.locator(`[data-slot=job-card][data-job-id="${job.id}"]`).first().waitFor({ state: 'visible', timeout: 20_000 });
+    await page.locator(`[data-slot=job-row][data-job-id="${job.id}"]`).first().waitFor({ state: 'visible', timeout: 20_000 });
     withinBudget(performance.now() - released, JOB_MS);
   });
 
