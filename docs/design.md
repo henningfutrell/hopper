@@ -31445,6 +31445,25 @@ that may exec and read Secrets fails, a read and an observe on one asset), `test
 observe needs take the check), `test/sandbox/bastions.test.ts` (the bastion names its reaches),
 `test/store/tenant-migration-88.test.ts`.
 
+**An errored probe is no allow (issue #2396).** A check on a cluster reported `observe.exec` and `observe.secret-read`
+allowed while `kube.get` erred: the cluster did not take the observe credential yet (an access entry not yet associated),
+and each request answered Unauthorized. The two probes ended 0 on any answer that was not Forbidden, so an error read as
+an allow.
+- **Allowed only on a positive answer** (`bothRefused`, `src/sandbox/probes.ts`): a request that went through, or answered
+  NotFound, which the API answers only after it allowed the request. **Refused** only when both requests are Forbidden: the
+  probe then prints `both refused: …`, its `denial` (`BOTH_REFUSED`), so a Forbidden in one request's output is no
+  refusal. Any other answer (Unauthorized, no connection, one Forbidden and one error) ends 2 with no such line: the outcome
+  is `error`, the probe fails, and the check fails, with each request's answer in the probe's output.
+- **No hub path under the standing rule.** The bastion's forward needs `pods/portforward` on the cluster's
+  `hopper-observe` role. Where the platform's rule gives no hopper role `pods/portforward`, `services/proxy`, a node
+  port or a tunnel, and the role has view only, that cluster has **no hopper metrics read**: the bastion's forward is
+  refused, and the hopper has no other path, by design (the owner's ruling above). The observability skill says so, and
+  a job that needs such a read waits with `on: outside: gated: pods/portforward for hopper-observe on <cluster>/<namespace>`.
+  Opening it is the cluster's RBAC change, a person's, not the hopper's.
+
+Tests: `test/sandbox/check-observe.test.ts` (a credential the cluster does not take errs on both probes and the check
+fails; one request Forbidden and the other errored is an error, not a refusal).
+
 **A person's stop.** A bastion is kept in memory and ends by itself, but a person must be able to end one now: a job that
 went wrong, a forward nobody needs any more.
 - **The list.** `GET /api/vault` carries `bastions` (`Bastions.list`): each bastion of the user's jobs that starts or runs

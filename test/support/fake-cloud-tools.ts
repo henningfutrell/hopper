@@ -60,7 +60,7 @@ const TOOLS: Record<string, string> = {
   *delete-*) exit 0 ;;
   *) if [ "$MODE" = read-only ]; then echo "An error occurred (AccessDenied) when calling the operation: User is not authorized to perform: $2:$3" >&2; exit 254; fi ;;
 esac`,
-  kubectl: `case "$MODE:$1" in unauthorized:*|get-unauthorized:get) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;; esac
+  kubectl: `case "$MODE:$1" in unauthorized:*|get-unauthorized:get) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;; get-unauthorized:*) MODE=read-only ;; esac
 case "$1" in
   # A view role reads no Secret and runs nothing in a pod (issue #2146, part 5). Allowed, the exec answers NotFound.
   get) case " $* " in *" secret"*|*"/exec"*)

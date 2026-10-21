@@ -116,19 +116,25 @@ export const EGRESS_PROBES: readonly Probe[] = [
   },
 ];
 
+/** The line of a probe both of whose requests were refused (issue #2396): its `denial`, so one Forbidden is no refusal. */
+export const BOTH_REFUSED = /^both refused: /m;
+
 /**
- * A probe that tries two requests (issue #2146, part 5): it is refused only when both are, each with a Forbidden. An
- * answer of any other kind (NotFound, a list) is no refusal, and the probe ends 0.
+ * A probe that tries two requests (issue #2146, part 5): it is refused only when both are, each with a Forbidden. It is
+ * allowed only on a positive answer (issue #2396): one request went through, or answered NotFound, which the API answers
+ * only after it allowed the request. Any other answer (Unauthorized, no connection) is an error: it proves nothing.
  */
 function bothRefused(setup: string, first: string, second: string, what: string): string {
   return `${NS}
 ${setup}
 forbidden() { case "$1" in *Forbidden*|*forbidden*) return 0 ;; esac; return 1; }
+allowed() { [ "$1" -eq 0 ] && return 0; case "$2" in *NotFound*) return 0 ;; esac; return 1; }
 a=$(${first} 2>&1); ca=$?
 b=$(${second} 2>&1); cb=$?
 printf '%s (exit %s): %s\\n%s (exit %s): %s\\n' '${first}' "$ca" "$a" '${second}' "$cb" "$b"
-if [ "$ca" -ne 0 ] && forbidden "$a" && [ "$cb" -ne 0 ] && forbidden "$b"; then echo '${what} is forbidden'; exit 1; fi
-exit 0`;
+if allowed "$ca" "$a" || allowed "$cb" "$b"; then exit 0; fi
+if forbidden "$a" && forbidden "$b"; then echo 'both refused: ${what} is forbidden'; exit 1; fi
+echo '${what}: neither request was allowed, and not both were refused'; exit 2`;
 }
 
 export const PROBES: readonly Probe[] = [
@@ -186,11 +192,13 @@ exit "$code"`,
     // The API asks the authorization before it looks for the pod: allowed, each answers NotFound, which is no refusal.
     script: bothRefused(`path="/api/v1/namespaces/$ns/pods/hopper-read-only-check/exec?command=true&stdout=true"`,
       'kubectl create --raw "$path" -f /dev/null', 'kubectl get --raw "$path"', 'pods/exec'),
+    denial: BOTH_REFUSED,
   },
   {
     id: 'observe.secret-read', title: 'read Secrets (a list, and a get of one)', kinds: KUBE, tool: 'kubectl', expect: 'denied', operations: ['observe'],
     script: bothRefused('scope="-A"; case "$ASSET" in */*) scope="-n $ns" ;; esac',
       'kubectl get secrets $scope', 'kubectl get secret hopper-read-only-check -n "$ns"', 'secrets'),
+    denial: BOTH_REFUSED,
   },
   { id: 'argocd.get', title: 'read the application', kinds: ['argocd-app'], tool: 'kubectl', expect: 'allowed', script: 'kubectl get applications.argoproj.io "$ASSET" -n argocd' },
   {
