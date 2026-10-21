@@ -1,0 +1,1 @@
+- You can now set a token or cost budget for each job in Settings. A job that reaches it pauses instead of being stopped, and shows under Needs you. Pick it up to let it go on.
