@@ -5,7 +5,7 @@
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
 // The sections' links are a left sub-nav in six groups that fold (issues #2353, #2373), and a jump list on a narrow screen.
-import { Activity, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, Cloud, Coins, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
+import { Activity, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, Cloud, Coins, Container, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -35,13 +35,14 @@ import { TldrSettings } from '@/views/tldr-settings';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 import { WindowsHosts } from '@/views/windows-hosts';
+import { PodmanHosts } from '@/views/podman-hosts';
 import { Clusters } from '@/views/clusters';
 import { YoloMode } from '@/views/yolo-mode';
 import { LandingBatches } from '@/views/landing-batches';
 import { IntakeActors } from '@/views/intake-actors';
 import { CloudLink } from '@/views/cloud-link';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'podman-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -54,6 +55,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   tldr: { label: 'TL;DR', icon: TextQuote, view: TldrSettings },
   'job-rules': { label: 'Job rules', icon: ListChecks, view: JobRules },
   'windows-hosts': { label: 'Windows hosts', icon: MonitorCog, view: WindowsHosts },
+  'podman-hosts': { label: 'Podman hosts', icon: Container, view: PodmanHosts },
   intake: { label: 'Intake', icon: UserCheck, view: IntakeActors },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
   'landing-batches': { label: 'Landing batches', icon: Layers, view: LandingBatches },
@@ -82,7 +84,7 @@ function Version() {
 /** The sections' links in groups (issues #2353, #2373): each group folds by its title, kept per browser; a folded group still
  * shows the link of the section open now. Every section is in one group, and no group holds one section only. */
 const GROUPS = [
-  { id: 'jobs', label: 'Jobs and agents', sections: ['token-budget', 'preemption', 'job-rules', 'routing', 'windows-hosts', 'clusters', 'artifacts'] },
+  { id: 'jobs', label: 'Jobs and agents', sections: ['token-budget', 'preemption', 'job-rules', 'routing', 'windows-hosts', 'podman-hosts', 'clusters', 'artifacts'] },
   { id: 'intake', label: 'Intake', sections: ['intake', 'questions', 'decider', 'thread-ask', 'tldr'] },
   { id: 'github', label: 'GitHub', sections: ['yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers'] },
   { id: 'security', label: 'Security and access', sections: ['sign-in', 'allowed-hosts', 'remote-access'] },

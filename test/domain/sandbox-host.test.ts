@@ -27,3 +27,11 @@ describe('the sandbox host (issue #2272)', () => {
     expect(sandboxHostOffline(['vm', 'local'])).toBe('sandbox hosts vm, local are offline');
   });
 });
+
+describe('a Podman host as the sandbox host (issue #2272 part 2)', () => {
+  it('takes a Podman host by its name, and refuses a name that is both a machine and a Podman host', () => {
+    expect(sandboxHostProblem(['box-vm', 'local'], MACHINES, known, ['box-vm'])).toBeUndefined();
+    expect(sandboxHostProblem(['vm'], MACHINES, known, ['vm'])).toBe('vm names both a machine and a Podman host: rename the Podman host');
+    expect(sandboxHostProblem(['box-vm'], MACHINES, known, [])).toBe('machine box-vm not found');
+  });
+});
