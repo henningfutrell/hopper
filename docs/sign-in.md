@@ -30,7 +30,7 @@ Every way of signing in ends the same: a **UI session** with a **UI role**, acti
 | One person, one machine | Nothing: sign in with GitHub, which every hopper offers ([GitHub](#github)). The first person to sign in with GitHub is the admin. There is [no bootstrap login](#no-bootstrap-login). |
 | One person, a few devices on a home LAN | `HOPPER_LAN_NAMES` / `HOPPER_LAN_PEERS` (`docs/design.md` "Reaching the UI across the LAN") and device links. |
 | Behind a proxy or network that already decides who gets in | [No sign-in](#no-sign-in), with a role. Everyone who reaches the UI acts with that role. |
-| A few people, no directory or identity provider | A [GitHub](#github) realm: each person signs in with their own GitHub account. The hopper keeps no username-and-password accounts of its own. |
+| A few people, no directory or identity provider | A [GitHub](#github) realm: each person signs in with their own GitHub account. Or [local accounts](#local-accounts): the hopper's own accounts, an email and a password or a passkey. |
 | A company directory (OpenLDAP, Active Directory, FreeIPA) | An [LDAP realm](#ldap-realm): people sign in with their directory username and password; directory groups grant roles. |
 | Behind an auth gateway that signs people in (Envoy Gateway with OIDC, oauth2-proxy, …) | A [gateway realm](#behind-an-auth-gateway): the gateway signs people in and forwards their token; the hopper checks the token, gives roles by its claims, and asks nobody to sign in. |
 | People whose work is on GitHub (the hopper's main way) | Nothing: every hopper has the [GitHub realm](#github). People sign in with a device code through the hopper's app, the first of them becomes admin, and that connection is what their jobs work through. Role rules name everyone after by username or id. |
@@ -274,7 +274,7 @@ public deploy.
 
 ## Local accounts
 
-The hopper's own accounts (issue #1380): an email and a password, for a hopper with no identity provider
+The hopper's own accounts (issue #1380): an email and a password, or a [passkey](#passkeys), for a hopper with no identity provider
 and no GitHub, and for its first admin. They are no realm of the sign-in config: they sign in through the
 reserved realm name `local-accounts`, and no realm may take that name. The username and password form
 tries them first, while there is one, then each LDAP realm that is on.
@@ -306,7 +306,24 @@ tries them first, while there is one, then each LDAP realm that is on.
 
 **Residual risk.** A password is only as strong as the person picks it, and the sign-in form answers
 anyone who reaches the UI: 20 attempts a minute per client (see "Rate limit" above); add a limit at the
-proxy for a public URL. There is no second factor yet (a passkey is planned, issue #1380).
+proxy for a public URL. A [passkey](#passkeys) signs in with no password at all.
+
+### Passkeys
+
+A local account can sign in with a passkey in place of its password (issue #1380): a WebAuthn credential on the
+person's device, checked by `@simplewebauthn/server`. The device must prove the person (a PIN or a biometric).
+
+- **Add one.** Sign in with the account, then open **Settings → Sign-in → Your passkeys** and select **Add passkey**.
+  Give it a name. The list shows each passkey's name, host name, when it was added and when it was last used.
+- **Sign in with it.** The sign-in page shows **Sign in with a passkey** under the password form, while some account
+  has one. It asks for no email: the passkey names its account.
+- **One host name each.** A passkey signs in only at the host name it was added at. A passkey added at `localhost` does
+  not sign in at the public URL: add one there too.
+- **The password stays.** A password change removes no passkey. Only the account's own session adds or removes its
+  passkeys; an admin who removes the account removes its passkeys too. Settings → Sign-in → Local accounts shows each
+  account's passkey count.
+- **What is kept.** The public key, the credential id, the host name, the signature counter and when it was used. No
+  secret.
 
 ## The source email match
 
@@ -745,8 +762,9 @@ name; Settings → Sign-in shows them for each realm):
 Sign-in starts and ends on the sign-in origin. A browser on another address (a LAN name) is pointed
 there first.
 
-**Behind a reverse proxy.** Set the public URL in `~/.config/hopper/daemon.env` (the unit's
-`EnvironmentFile`), then restart:
+**Behind a reverse proxy.** Give the hopper its public URL, then restart it. A container install gives it at
+launch (`export HOPPER_PUBLIC_URL=…` before `podman compose up -d`, `docs/deploy.md` "In containers, with Podman"); a host
+install puts it in `~/.config/hopper/daemon.env` (the unit's `EnvironmentFile`):
 
 ```sh
 HOPPER_PUBLIC_URL=https://hopper.example.com

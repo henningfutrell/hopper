@@ -61,7 +61,7 @@ Saved limits apply at once, with no restart. They win over `HOPPER_SOFT_LIMIT` a
 
 A usage reading marked informational never limits lanes. In the last hours before a week window resets (`HOPPER_BURN_WINDOW_HOURS`, default 18), that window stops limiting lanes unless it is spent.
 
-The reading that counts is the highest of a machine's limiting budgets (the session and the week). Each budget limits only its own agent's jobs. A job at the critical priority can take one lane past the cap, but never at the hard limit.
+The reading that counts is the highest of a machine's limiting budgets (the session and the week). The Usage view names the window that throttles each machine, for example `97% weekly`. It marks a week window in its burn window as `burning`. Each budget limits only its own agent's jobs. A job at the critical priority can take one lane past the cap, but never at the hard limit.
 
 ### Two machines on one account
 

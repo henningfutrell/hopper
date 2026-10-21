@@ -68,7 +68,7 @@ With rootless Podman, the hopper's port (4790) is served by a process that belon
 
 `bash hopper-service.sh install` makes the user service `hopper-compose.service`, and the service owns the stack:
 
-- It starts the stack with the master key. The key goes to compose only, never to a `.env`, a file or a volume. It takes the key from the first of these:
+- It starts the stack with the master key. The key goes to compose only, never to a file or a volume. It takes the key from the first of these:
   1. The systemd credential `hopper-master-key` (an encrypted credential, for example under the TPM).
   2. The key you give at launch: run `bash hopper-service.sh start-with-key`. It reads `HOPPER_MASTER_KEY`, or asks you for the key. The service does not keep the key: give it again at the next start.
   3. The key sealed to this host (`bash master-key.sh seal`). Sealing is optional.
@@ -92,7 +92,7 @@ Docker works the same: use `docker compose` in place of `podman compose`.
 
 ## Change settings
 
-Do not edit `compose.yaml`. Each update replaces it. Do not make a `.env` file: the hopper uses none. The hopper keeps its own settings and secrets, and you set them in the UI. Remote access, sign-in, webhooks and vault secrets are all in Settings.
+Do not edit `compose.yaml`. Each update replaces it. Do not put settings in a file beside `compose.yaml`: the hopper reads none. The hopper keeps its own settings and secrets, and you set them in the UI. Remote access, sign-in, webhooks and vault secrets are all in Settings.
 
 A setting that compose itself needs is given at launch, in the environment of the compose command:
 

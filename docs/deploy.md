@@ -202,8 +202,8 @@ podman-compose up -d --force-recreate --no-deps hopper
 podman-compose exec hopper hopper master-key status            # "previous": false
 ```
 
-Then delete the old key from your password manager, and from every place it was written (an old `.env.bak-*` backup
-too). A key given at launch does not reach a running container: `--force-recreate` does. A plain `restart` keeps the
+Then delete the old key from your password manager, and from every place it was written (an old backup file that
+an earlier update made too). A key given at launch does not reach a running container: `--force-recreate` does. A plain `restart` keeps the
 old environment.
 
 The connected account's tokens are among them: no new GitHub sign-in. A secret that neither key opens is named at
@@ -294,7 +294,7 @@ is only in the hopper's environment, given at launch.
   Claude's config in an empty home, so a job starts with no first-run screen. A job gets no GitHub token: its git
   and GitHub steps go through the hopper, with the connected account (docs/design.md "Git through the hopper"). Who jobs commit as: `git config --global` in the container, or the
   `GIT_AUTHOR_*`/`GIT_COMMITTER_*` variables in `compose.override.yaml`.
-- **No `.env`** (issue #894). Compose reads none, and nothing goes in one. The hopper keeps its settings and secrets
+- **No settings file** (issue #894). Compose reads no file of settings, and nothing goes in one. The hopper keeps its settings and secrets
   itself: set them in the UI; it keeps them in the database and the vault. What compose itself needs — a variable
   `compose.yaml` names, `${NAME:-default}` (`HOPPER_PORT`, `HOPPER_BIND`, `HOPPER_IMAGE`, `HOPPER_LAN_NAMES`,
   `HOPPER_LAN_PEERS`, `HOPPER_PUBLIC_URL`, `COMPOSE_PROFILES`, …) — is given at launch (`export HOPPER_BIND=0.0.0.0`,
@@ -487,7 +487,7 @@ bash hopper-service.sh uninstall     # stop the stack and remove the units; the 
 
 - **`hopper-compose.service`** (in `~/.config/systemd/user`, `Type=oneshot`, `RemainAfterExit=yes`) owns the stack: the
   containers' `conmon` and `rootlessport` processes are in its cgroup. Its start takes the stack down and starts it
-  again with the master key, for compose only: never a `.env`, a file of this folder or a volume. Its stop takes the
+  again with the master key, for compose only: never a file of this folder or a volume. Its stop takes the
   stack down; the volumes and the data stay. It uses the compose tool that started the stack (issue #1063), found at
   the install.
 - **The key as a file in memory** (issue #1487). The start never gives compose the key as a variable, so no container's
@@ -820,7 +820,7 @@ rollback` starts compose again.
 
 **The master key from a Secret you manage** (issue #1288). Set `masterKey.existingSecret` to a Secret with the key
 under `master-key`. The chart mounts it as files, and the hopper reads `HOPPER_MASTER_KEY_FILE`. A start with no
-`master-key` file there is refused: the pod restarts and its log says the file is missing. Nothing is in an `.env` file.
+`master-key` file there is refused: the pod restarts and its log says the file is missing.
 
 - **From an outside store**, with the External Secrets Operator (https://external-secrets.io) already in the cluster:
   set `masterKey.externalSecret.enabled=true`, `masterKey.externalSecret.secretStoreRef.name` (and `.kind`, default
@@ -1523,10 +1523,10 @@ What it does, and what it keeps out:
 **An install from before** issue #968, with an ngrok authtoken and domain pasted by hand: it goes on running as before.
 Turning it off keeps that authtoken and domain (the hopper made neither). To let the hopper make and remove them, paste an
 ngrok API key and save: the hopper then mints a new authtoken in place of the old one. **An install from before** issue
-#880 (`COMPOSE_PROFILES=tunnel`, `NGROK_AUTHTOKEN` and `HOPPER_PUBLIC_URL`, in an old `.env` or the launch environment):
+#880 (`COMPOSE_PROFILES=tunnel`, `NGROK_AUTHTOKEN` and `HOPPER_PUBLIC_URL`, in the launch environment):
 at its first start, the hopper moves the authtoken into its vault, takes the domain from `HOPPER_PUBLIC_URL` and turns
 remote access on, once (the log says so). Then remove `NGROK_AUTHTOKEN`, `HOPPER_TUNNEL_API` and `tunnel` from
-`COMPOSE_PROFILES`, in the launch environment or an old `.env`. Keep `HOPPER_PUBLIC_URL` only if a reverse proxy also
+`COMPOSE_PROFILES` in the launch environment. Keep `HOPPER_PUBLIC_URL` only if a reverse proxy also
 serves the UI at it.
 
 Residual risk, stated: callers behind one address (a NAT, a shared egress) share one count of each limit. The running
@@ -1967,7 +1967,7 @@ their own GitHub from the UI (issue #214, `README.md` "Connect GitHub"), whichev
 
 | deploy | variables | secret files | apply |
 |---|---|---|---|
-| containers (`compose.yaml`) | given at launch (`export …`) for a variable `compose.yaml` names; else in `compose.override.yaml` (`services.hopper.environment`). No `.env` (issue #894) | a `secrets:` entry in `compose.override.yaml`, then `<variable>_FILE=/run/secrets/<name>` there; or `<variable>: ${<variable>:-}` there and the value given at launch | `podman compose up -d` |
+| containers (`compose.yaml`) | given at launch (`export …`) for a variable `compose.yaml` names; else in `compose.override.yaml` (`services.hopper.environment`). No settings file (issue #894) | a `secrets:` entry in `compose.override.yaml`, then `<variable>_FILE=/run/secrets/<name>` there; or `<variable>: ${<variable>:-}` there and the value given at launch | `podman compose up -d` |
 | this host (systemd `--user`) | `~/.config/hopper/daemon.env` (mode 600) | `LoadCredential=<name>:<path>` in a drop-in (`systemctl --user edit hopper`), with `Environment=<variable>_FILE=%d/<name>` | `systemctl --user restart hopper` |
 | Kubernetes, or another platform | the container's environment (a ConfigMap) | a Secret volume, and `<variable>_FILE` naming the file in it | roll out the change |
 
@@ -2247,7 +2247,8 @@ database, and runs as hopper; `docs/design.md` "Rename from job-hopper" says wha
 - **This host, by hand:** run the curl install or `bash scripts/install.sh` from a clone, as for any
   upgrade. With a job holding a pane it stops, names the jobs, and leaves the old daemon running: run it
   again once they finish.
-- **A container:** rename every `JOB_HOPPER_*` variable in `deploy/hopper.env` to `HOPPER_*`; the daemon
+- **A container:** rename every `JOB_HOPPER_*` variable it is given (at launch, or in `compose.override.yaml`) to
+  `HOPPER_*`; the daemon
   refuses to start while the old names give its database. The bundled Postgres keeps its volume
   (`job-hopper_postgres`), so `docker compose -f deploy/compose.yaml down` with the old file, then `up` with
   the new one, finds the same data.

@@ -1,7 +1,8 @@
 // `npm run screenshots` (issue #353): starts the busy demo hopper (demo.ts), photographs its UI with
 // Playwright's Chromium, and writes every screenshot to docs/screenshots as WebP — the README, the install
 // docs and the Pages site's tour (site/tour.ts) show them. Re-run it when the UI changes.
-// Needs the built UI (`npm run build:ui`), Chromium for Playwright (`npx playwright install chromium`) and
+// Needs the built UI (`npm run build:ui`), Chromium for Playwright (`npx playwright install chromium`, or a Chromium
+// of the system named by SCREENSHOTS_CHROMIUM, for example /usr/bin/chromium) and
 // Postgres: HOPPER_TEST_POSTGRES_URL, else a throwaway container as `npm test` starts one (docker).
 // SHOTS=queue,job limits the run to those shots.
 import { mkdirSync } from 'node:fs';
@@ -51,12 +52,14 @@ const SHOTS: Shot[] = [
     name: 'question', viewport: { width: 1440, height: 760 },
     async go(page) {
       await view('#questions')(page);
-      await page.getByPlaceholder('Answer to type into the job').fill('Add the grace period: read both stores for a week, then drop the old table in a follow-up.');
+      await page.getByPlaceholder('Answer to type into the job').first().fill('Add the grace period: read both stores for a week, then drop the old table in a follow-up.');
       await settle(page, 300);
     },
   },
   { name: 'machines', viewport: { width: 1440, height: 960 }, go: view('#machines') },
   { name: 'sources', viewport: { width: 1440, height: 820 }, go: view('#sources') },
+  { name: 'needs-you', viewport: { width: 1440, height: 900 }, go: view('#needs-you') },
+  { name: 'usage', viewport: { width: 1440, height: 900 }, go: view('#usage') },
   { name: 'settings', go: view('#settings/routing') },
   { name: 'job-rules', go: view('#settings/job-rules') },
   { name: 'plugins', go: view('#settings/plugins') },
@@ -66,8 +69,18 @@ const SHOTS: Shot[] = [
   { name: 'phone-question', viewport: PHONE, scale: 2, go: view('#questions') },
 ];
 
-/** The page reaches the demo hopper and nothing else. */
-const sealed = (context: BrowserContext) => context.route((url) => url.hostname !== '127.0.0.1', (route) => route.abort());
+/**
+ * The page reaches the demo hopper and nothing else. The demo's scripted executor cannot park a job, where the agent
+ * executors of a real hopper can: its health says it can, so the lanes show Park as a real hopper's do.
+ */
+async function sealed(context: BrowserContext): Promise<void> {
+  await context.route((url) => url.hostname !== '127.0.0.1', (route) => route.abort());
+  await context.route((url) => url.pathname === '/api/health', async (route) => {
+    const response = await route.fetch();
+    const health = await response.json() as { parkingExecutors?: string[] };
+    await route.fulfill({ response, json: { ...health, parkingExecutors: [...(health.parkingExecutors ?? []), 'scripted'] } });
+  });
+}
 
 /** The Postgres the demo keeps its data in: HOPPER_TEST_POSTGRES_URL, else a throwaway container (as `npm test`). */
 async function postgres(): Promise<() => Promise<void>> {
@@ -124,7 +137,7 @@ const only = process.env.SHOTS?.split(',').filter(Boolean);
 mkdirSync(OUT, { recursive: true });
 const stopPostgres = await postgres();
 const demo = await startDemo({ log: (s) => console.log(s) });
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.env.SCREENSHOTS_CHROMIUM || undefined });
 try {
   const token = await demo.app.login();
   // The film first: the demo's short jobs end during it (demo.ts LIVE).
