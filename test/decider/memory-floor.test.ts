@@ -121,3 +121,24 @@ describe('a memory pause (issue #2291)', () => {
     expect(decide(inputs({ machines: [machine({ maxLanes: 8 })], ...two }), 'd1').memoryPause).toBeUndefined();
   });
 });
+
+describe('a wait release (issue #2303)', () => {
+  const session = (jobId: string, since: number, machineId = 'local') => ({ jobId, machineId, since: ago(since) });
+
+  it('a job that waits for memory ends the agents of the jobs on their own wait on that machine, the oldest first', () => {
+    const d = decide(inputs({ machines: [vm(3)], waiting: [job('new')], waitSessions: [session('w2', 5), session('w1', 30), session('far', 40, 'other')] }), 'd1');
+    expect(d.wait.map((w) => w.jobId)).toEqual(['new']);
+    expect(d.waitRelease).toEqual([
+      { jobId: 'w1', machineId: 'local', reason: 'releases the agent of w1 on local: a job waits for memory there, and w1 waits on its own since 30 min ago; it resumes its session when its wait ends' },
+      { jobId: 'w2', machineId: 'local', reason: 'releases the agent of w2 on local: a job waits for memory there, and w2 waits on its own since 5 min ago; it resumes its session when its wait ends' },
+    ]);
+    expect(d.reasons).toEqual(expect.arrayContaining(d.waitRelease!.map((r) => r.reason)));
+  });
+
+  it('releases nothing while every job fits the memory, or on a machine no job waits for memory on', () => {
+    expect(decide(inputs({ machines: [vm(11)], waiting: [job('new')], waitSessions: [session('w1', 30)] }), 'd1').waitRelease).toBeUndefined();
+    const two = [vm(3, { id: 'a' }), vm(3, { id: 'b' })];
+    const pinned = decide(inputs({ machines: two, waiting: [job('new', { machineId: 'a' })], waitSessions: [session('wa', 9, 'a'), session('wb', 9, 'b')] }), 'd1');
+    expect(pinned.waitRelease?.map((r) => r.jobId)).toEqual(['wa']);
+  });
+});

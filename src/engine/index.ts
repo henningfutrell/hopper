@@ -13,6 +13,7 @@ import { createCleanups } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
 import type { EngineContext, EngineOptions } from './context.ts';
 import { credentialHeldOf, decisionStep } from './decision-step.ts';
+import { releaseWait } from './wait-release.ts';
 import { createPaneAnswers } from './pane-answers.ts';
 import { askFor, createReviewHandlers, type ReviewHandlers } from './reviews.ts';
 import { createQueries, type Queries } from './queries.ts';
@@ -138,9 +139,10 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const { claims, preempts } = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks, preStart);
+    const { claims, preempts, releases } = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks, preStart);
     for (const claim of claims) runner.start(claim);
     for (const jobId of preempts) preemptRunning(c, runner, jobId);
+    for (const jobId of releases) void releaseWait(c, jobId);
   }, (e) => console.error('decision failed', e));
 
   const reachHolds = createReachHolds(o.clock); const laneHealth = createLaneHealth(o.clock);

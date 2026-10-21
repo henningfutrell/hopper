@@ -1,6 +1,7 @@
 // The token ledger (issue #2302, part 1): the hopper reads what each job's agent spent from its agent session's log —
 // at each checkpoint, and once more as its run ends — and keeps the counts per session and model, never the log's text.
-// GET /api/jobs/:id/tokens answers a job's totals; GET /api/usage/tokens the rollups. Real daemon over the fake herdr, as
+// GET /api/jobs/:id/tokens answers a job's totals; GET /api/usage/tokens the rollups, split by a second group for the
+// Dashboard's tokens over time (part 2). Real daemon over the fake herdr, as
 // checkpoint.test.ts.
 import { homedir } from 'node:os';
 import { gzipSync } from 'node:zlib';
@@ -87,6 +88,32 @@ describe('the token ledger', () => {
 
     expect((await a.api('GET', '/api/jobs/nope/tokens')).status).toBe(404);
     expect((await a.api('GET', '/api/usage/tokens?by=colour')).status).toBe(400);
+  });
+
+  it('answers tokens over time split by account and by repository, the parts reconciling with the ledger (part 2)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE], repositories: [tree()], checkpoint: capture(TWO) });
+    const a = await boot(herdr);
+    const job = await a.pull({}, item);
+    await a.waitForStatus(job.id, 'finished');
+    // A second session of the job, on another day, read with another account.
+    a.user().store.tokenLedger.put(job.id, 'other-session', { models: [{ model: 'claude-haiku-4-5', turns: 1, input: 7, output: 3, cacheRead: 0, cacheWrite: 0 }], last: '2026-10-22T09:00:00.000Z' },
+      { readAt: '2026-10-22T09:00:00.000Z', machineId: 'local', account: 'second@example.test' });
+
+    type Split = { total: TokenTotals; groups: (TokenRollupRow & { parts: TokenRollupRow[] })[] };
+    const ledger = await a.api<{ total: TokenTotals }>('GET', `/api/usage/tokens?job=${job.id}`);
+    const byAccount = await a.api<Split>('GET', `/api/usage/tokens?by=day&split=account&job=${job.id}`);
+    expect(byAccount.status).toBe(200);
+    expect(byAccount.body.groups.map((d) => d.key).sort()).toEqual(['2026-10-21', '2026-10-22']);
+    expect(byAccount.body.groups.find((d) => d.key === '2026-10-22')!.parts).toMatchObject([{ key: 'second@example.test', input: 7, output: 3 }]);
+    for (const d of byAccount.body.groups) expect(d.parts.reduce((n, p) => n + p.input + p.output + p.cacheRead + p.cacheWrite, 0)).toBe(d.input + d.output + d.cacheRead + d.cacheWrite);
+    expect(byAccount.body.groups.reduce((n, d) => n + d.costUsd, 0)).toBeCloseTo(ledger.body.total.costUsd, 9);
+    expect(byAccount.body.total).toEqual(ledger.body.total);
+
+    // The test job names no repository: its part is (none), and still sums to its day.
+    const byRepo = await a.api<Split>('GET', `/api/usage/tokens?by=day&split=repo&job=${job.id}`);
+    expect(byRepo.body.groups.flatMap((d) => d.parts.map((p) => p.key))).toEqual(['(none)', '(none)']);
+    expect(JSON.stringify(byRepo.body)).not.toContain(SECRET_TEXT);
+    expect((await a.api('GET', '/api/usage/tokens?by=day&split=colour')).status).toBe(400);
   });
 
   it('keeps none for a job whose machine reads no session', async () => {

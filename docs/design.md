@@ -12973,6 +12973,59 @@ pause: the newest job, at the floor nothing, one at a time, executors that canno
 2, the rest wait for memory while `/api/health` answers; below the floor the newest job is paused, queued again, and
 resumes its own session once the memory holds it).
 
+### Wait release: jobs on their own wait hold no agent while a job waits for memory (issue #2303, 2026-10-21)
+
+Reported from a real run: a queued job did not start for 40 minutes with no job running. Every machine said `waiting for
+memory`: 4.3 GiB available, a new job needs 3.8 GiB over its floor of 1.4 GiB. The VM held about 9.5 GB with nothing running:
+50 Claude processes, about 7.5 GiB in all, one for each of the 50 jobs on their own wait. A job on its own wait keeps its pane
+and agent ("A job's own wait"), so with the memory floor on, the waiting jobs alone held the memory that no new job got, and
+the queue moved only when waits ended by chance.
+
+- **The release** (the decider, step 7d, `waitReleases` in `src/decider/memory-floor.ts`; pure). A new input, `waitSessions`:
+  each job on its own wait whose agent the hopper may end (`waitSessionsOf`, `src/engine/wait-release.ts`) — not released
+  already, not stranded, with an agent session, an executor that parks, a machine to resume on (`resumeOn`), and a wait the
+  hopper ends by itself: what it waits on is the hopper's to see (`paneCarriesWait` false), or the job named a time to wake
+  at (`time_passed`). Never a wait on its own command or an outside event only its pane's background poll watches: ending
+  the pane would end the wait's only watch. On each machine a job **waits for memory** on (the machines it had a lane on,
+  `memoryShort` from step 7), the Decision names every such job there, the oldest wait first (`waitRelease`, with a
+  reason). All of them, not as many as the shortfall: what one agent holds is not read (about 150 MiB in the report, against
+  2 GiB or more a new job needs), and a released wait costs only a resume. The memory it frees is not counted in this
+  Decision: the next Decision reads it, so the job waiting for memory starts at the next tick once the reading shows it.
+- **Applied** (`recordWaitReleases`, in the Decision's transaction): the job stays `waiting_on`, marked `waitReleased: { at,
+  machineId }`, and `job.wait_released { reason }` (with its `machineId`). After the commit (`releaseWait`) its executor ends
+  its pane and agent on the Park button's path (`Executor.park`, its scratch dir kept) and its checkpoint is taken
+  (`releaseParked`), as auto-park does.
+- **While it waits.** What it waits on, its wait check, a comment, the hopper's answer or a person's End the wait still end
+  the wait as before. The pane probes skip it (`src/engine/pane-answers.ts`): it has no pane, its old pane id may name
+  another job's, and it is not taken for a stranded or lost-pane wait. Its job end reaps only, as a parked job's
+  (`cleanup`), and the lost-machine move does not take its old pane for its live one (`pane-left.ts`).
+- **Its resume.** Woken, it is queued with what it is told pending, pinned to its machine, and admitted by the memory floor as
+  any job resuming. herdr-claude reopens it as a parked job (`reopen`): what is left of it is reaped, a new pane opens in its
+  work tree, Claude resumes its agent session, told `RELEASED_NOTE` (`src/executors/herdr/restored.ts`) and then the note. Its
+  run's outcome clears `waitReleased`.
+- **Nothing running, a job waiting for memory** is stuck work: the cause `memory_starved` ("Jobs that wait for memory while no
+  job runs", `src/domain/stuck.ts`), first among the causes with no bulk action in Failures, with what a person does (free
+  memory, or lower the machine's `memoryFloorGiB` or `memoryPerJobGiB`). It shows while a queued job's wait reason is a
+  memory wait and no job is claimed or running.
+- **UI.** The Dashboard's wait row says "waiting: agent ended to free memory", with End the wait.
+- **The estimate.** The 3.8 GiB in the report is the job's expected memory peak, not the 2 GiB default: placement by expected
+  cost ("Job cost profiles") takes each run's highest sample of the machine's memory used over its idle baseline (samples with
+  no busy lane), split over the busy lanes, and the group's mean of those peaks. Memory of jobs on their own wait holds no
+  lane, so a waiting agent that started after the baseline counts as the running job's: with 50 agents resident, the expected
+  peaks grew with them. With waits released while a job waits for memory, that share falls away. The floor of 1.4 GiB is 10%
+  of the 14 GiB VM, as set. Not changed here: the expected peak still counts when it is more than the job's memory.
+- **Not built.** Releasing a wait before a job waits for memory (a wait keeps its agent while memory holds every job); a count
+  of each agent's memory.
+- **Persisted state.** No schema change: `waitReleased` is in the job's JSON, `waitSessions` and `waitRelease` in the
+  Decision's. A build before this ignores them: a released job's wait ends as a lost pane's does (issue #1508), or it is
+  marked stranded, and its resume opens a new pane (`resumeLostPane`).
+
+Verification: `test/decider/memory-floor.test.ts` (the oldest first, only on a machine a job waits for memory on, none while
+every job fits), `test/domain/stuck.test.ts` (`memory_starved` only while nothing runs), `test/ui/job-wait-view.test.ts`, and
+`test/integration/wait-release.test.ts` (the real daemon over the fake herdr: a job on a vault-grant wait, the memory short,
+a new job queued; the wait is released and its pane closed, not stranded, Failures shows `memory_starved`; the memory back,
+the new job finishes; End the wait resumes the first job's own session in a new pane with `RELEASED_NOTE`, and it finishes).
+
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
 **Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
@@ -16240,7 +16293,8 @@ person's question list as if it needed an answer), or ended failed though it was
   (`outcomeOf`); its session id is saved, as on a question.
 - **Recorded** (`src/engine/outcome.ts`): status `waiting_on`, `wait: { for, until?, since }` on the job, its lane freed,
   `resumeOn` its lane's machine, `job.waiting { for, until? }`. No question opens and none is counted; nothing is cleaned up:
-  its pane and agent stay. It is not in the decider's inputs (it is neither queued nor running), and holds no lane.
+  its pane and agent stay. (Issue #2303: while a job waits for memory on its machine, a wait the hopper ends by itself has its agent ended,
+  "Wait release".) It is not in the decider's inputs (it is neither queued nor running), and holds no lane.
 - **It goes on by itself** (`src/engine/pane-answers.ts`). On every tick the engine probes each `waiting_on` job's pane, as a
   job on a question's (`answeredInPane`): Claude past the wait — working again, text typed in the pane, or new output past
   `markersAfter` (a short turn may be over by the time it is looked at) — ends it. The job runs again on a lane of its machine
@@ -20114,7 +20168,16 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   `GET /api/usage/tokens` (`by` job, issue, repo, machine, lane, account, model or day; `job`, `repo`, `since`): the user's
   ledger summed per group, the costliest first, with the top spenders. `hopper usage tokens [--repo|--since|--by]` and
   `hopper usage tokens --job <id>` read them. The job view shows a **Tokens** panel.
-- **What it does not do yet** (later parts of #2302): the tokens-over-time graph beside the usage graph, waste signals,
+- **Tokens over time** (part 2). `split` (one of the same groups) gives each group `parts`: its rows summed per that second
+  group (`tokenRollup(…, split)`), which sum to it. The Dashboard's **Tokens over time** panel, beside the usage graph
+  (`ui/src/views/dashboard/token-history.tsx`, chart `ui/src/charts/token-days.tsx`, model `tokenDays` in
+  `ui/src/model/token-ledger.ts`), reads `by=day&split=repo` or `split=account` (the dashboard layout's `tokenSplit`) for the
+  last 30 UTC days and draws one stacked bar per day: every token (input, output, cache read, cache write), the five biggest
+  stacks of the range in their own colour and the rest as `other`, so each day still sums to the ledger. Its header line is
+  the ledger's total for the same days, so the graph reconciles with the job ledger. A session counts on the day of its last
+  counted message, as `by=day` does: the ledger keeps a session's totals, not each message's time. `hopper usage tokens
+  --split <group>` reads the same.
+- **What it does not do yet** (later parts of #2302): waste signals,
   tokens per merged pull request, budgets that pause a job, and print-mode agents (they keep no agent session; `claude -p`'s
   own JSON answer holds its usage). A subagent's own session file is not read.
 

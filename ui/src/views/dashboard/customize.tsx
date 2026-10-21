@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { useDragToPlace } from '@/hooks/use-drag-to-place';
 import { resetDashboardLayout, setDashboardLayout } from '@/hooks/use-dashboard-layout';
 import {
-  LIVE_EVENTS, PANEL_TITLES, PANEL_WIDTHS, THROUGHPUT_HOURS, TIMELINE_WINDOWS, WIDTH_NAMES,
+  LIVE_EVENTS, PANEL_TITLES, PANEL_WIDTHS, THROUGHPUT_HOURS, TIMELINE_WINDOWS, TOKEN_SPLITS, WIDTH_NAMES,
   movePanel, placePanel, setPanel, setSetting, type DashboardLayout, type DashboardSettings, type PanelId, type PanelPlacement,
 } from '@/model/dashboard-layout';
 import { cn } from '@/lib/utils';
@@ -46,6 +46,7 @@ function PanelSettings({ p, layout }: { p: PanelPlacement; layout: DashboardLayo
     case 'timeline': return <Choice label="window" caption options={TIMELINE_WINDOWS} value={s.timelineWindow} onChoose={set('timelineWindow')} />;
     case 'throughput': return <Choice label="last" caption options={THROUGHPUT_HOURS} value={s.throughputHours} onChoose={set('throughputHours')} name={(h) => `${h} h`} />;
     case 'live': return <Choice label="events" caption options={LIVE_EVENTS} value={s.liveEvents} onChoose={set('liveEvents')} />;
+    case 'tokenHistory': return <Choice label="stack by" caption options={TOKEN_SPLITS} value={s.tokenSplit} onChoose={set('tokenSplit')} name={(v) => (v === 'repo' ? 'repository' : 'account')} />;
     default: return null;
   }
 }

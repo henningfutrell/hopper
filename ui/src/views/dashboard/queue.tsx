@@ -182,6 +182,10 @@ function WaitBadge({ job }: { job: Job }) {
   if (job.wait?.strandedAt) {
     return <span data-slot="own-wait"><StatusBadge status="failed" label="stranded: its agent session ended" title="Its agent session ended while it waited, so its pane shows only a shell. It still goes on when what it waits on happens. End the wait to resume its session in a new pane now, or cancel it." /></span>;
   }
+  // Its agent ended to free memory for other jobs (issue #2303): its session resumes in a new pane when the wait ends.
+  if (job.waitReleased) {
+    return <span data-slot="own-wait"><StatusBadge status="waiting_on" label="waiting: agent ended to free memory" title="A job waited for memory on its machine, so the hopper ended this job's agent. Its wait, work tree and agent session are kept. When what it waits on happens, or you end the wait, it resumes its session in a new pane." /></span>;
+  }
   return <StatusBadge status="waiting_on" label="waiting" title="Waiting on something it named: no question, its lane is free, its pane stays on its machine. It goes on by itself when it happens, or when you end the wait." />;
 }
 

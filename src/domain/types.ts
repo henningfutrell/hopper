@@ -205,8 +205,8 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
-  /** `preempted`: a job of higher priority took its lane (issue #1525, design.md "Preemption"), kept until it runs again. `memoryPaused`: its machine's memory fell below the floor (issue #2291), kept until it runs again. */
-  continued?: { at: string } & ContinuedBy; preempted?: import('./preemption.ts').JobPreempted; memoryPaused?: import('./memory-floor.ts').JobMemoryPaused;
+  /** `preempted`: a job of higher priority took its lane (issue #1525, design.md "Preemption"), kept until it runs again. `memoryPaused`: its machine's memory fell below the floor (issue #2291), kept until it runs again. `waitReleased`: on its own wait, its agent was ended to free memory (issue #2303), kept until its resumed run records an outcome. */
+  continued?: { at: string } & ContinuedBy; preempted?: import('./preemption.ts').JobPreempted; memoryPaused?: import('./memory-floor.ts').JobMemoryPaused; waitReleased?: import('./memory-floor.ts').JobWaitReleased;
   /**
    * Its latest checkpoint (issue #921): its agent session and its work not pushed, copied from its machine while it ran.
    * The patch and the session are in the store's checkpoints.
@@ -420,8 +420,9 @@ export interface DecisionInputs {
    * `avoidLanes` (issue #2234): for a rerun of a job that failed for its lane's fault, that lane; it goes elsewhere when it can. Absent: none.
    * `parkingExecutors` (issue #2291): the executors that park, whose jobs a memory pause may name. Absent: none, and on Decisions stored before it.
    * `memoryPausedAt` (issue #2291): per machine, when this hopper last paused a job there for memory, as the paused job may be parked and not an input.
+   * `waitSessions` (issue #2303): the jobs on their own wait whose agent the hopper may end to free memory. Absent: none.
    */
-  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
+  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; waitSessions?: import('./memory-floor.ts').WaitSession[]; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 
@@ -478,8 +479,8 @@ export interface Decision {
   /** Admitted jobs no lane is free for: they stay queued (issue #381). Decisions recorded before it lack it. */
   wait: WaitPlan[];
   /** Divergences: jobs where the advice differs from the native verdict. */
-  /** `preempt`: running jobs to park so that a waiting job of higher priority takes their lanes (issue #1525). Absent: none. `memoryPause`: running jobs to park because their machine's memory is below its floor (issue #2291). Absent: none. */
-  advice: Divergence[]; preempt?: import('./preemption.ts').PreemptPlan[]; memoryPause?: import('./memory-floor.ts').MemoryPausePlan[];
+  /** `preempt`: running jobs to park so that a waiting job of higher priority takes their lanes (issue #1525). Absent: none. `memoryPause`: running jobs to park because their machine's memory is below its floor (issue #2291). Absent: none. `waitRelease`: jobs on their own wait whose agents end, a job waiting for memory on their machine (issue #2303). Absent: none. */
+  advice: Divergence[]; preempt?: import('./preemption.ts').PreemptPlan[]; memoryPause?: import('./memory-floor.ts').MemoryPausePlan[]; waitRelease?: import('./memory-floor.ts').WaitReleasePlan[];
   /** Plain-language reasons, in the order the decider reached them. */
   reasons: string[];
   inputs: DecisionInputs;
