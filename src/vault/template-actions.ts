@@ -5,7 +5,7 @@
 // of a person now (`askActions`), so the grant waits on Access requests beside the template, not partway through the
 // work. The answer's lines go to the job with the template's answer.
 import type { OperationProfile } from '../domain/access.ts';
-import { actionCheckLines, actionChecks, roleDenies, type ActionSimulator, type Simulated } from '../domain/action-check.ts';
+import { actionCheckLines, actionChecks, cannotRun, type ActionSimulator, type Simulated } from '../domain/action-check.ts';
 import { actionNeed, actionsOf } from '../domain/action-grants.ts';
 import { APPLY_STEP_OFF } from '../domain/infra-plans.ts';
 import type { UserStore } from '../domain/ports.ts';
@@ -31,7 +31,7 @@ export async function checkTemplateActions(o: TemplateActionsDeps, needs: readon
   const simulated = o.simulator ? await o.simulator.simulate(role, actions) : NO_SIMULATOR;
   const checks = actionChecks(role, actions, grantsNow(o.store, now), simulated);
   const lines = actionCheckLines(need.operation, checks);
-  if (roleDenies(checks).length > 0) {
+  if (cannotRun(checks).length > 0) {
     return { no: { status: 409, reason: `the session the vault mints for ${need.operation} on aws-role ${role} cannot do each action the change needs, so the hopper makes no template for it:\n${lines.join('\n')}` } };
   }
   const asked = checks.filter((c) => c.verdict === 'grant').map(({ action, resource }) => ({ action, resource }));

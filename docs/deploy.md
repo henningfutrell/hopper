@@ -1223,6 +1223,9 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   job names (the **action check**). It asks with a read session of the account's read role `hopper-read`, so that role
   needs `iam:SimulatePrincipalPolicy` (`ReadOnlyAccess` holds it as `iam:Simulate*`). Without it, the check says "not
   checked" and refuses nothing.
+  It reads the role first (`iam:GetRole`, which `ReadOnlyAccess` holds): when the account has no role of that name, the
+  check refuses the template request at once and names the role, so make `hopper-action` in each account a job may
+  change before a job asks for it.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Vault. A minting credential is never given to a box,
   and no template lists it in its scope.

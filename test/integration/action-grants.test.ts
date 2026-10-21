@@ -245,10 +245,7 @@ describe('action grants (issue #2206)', () => {
     expect(r.status, r.text).toBe(409);
     expect(r.text).toContain(`cannot: eks:UpdateNodegroupConfig on ${ARN} as aws-role ${SCOPE.role}: the role arn:aws:iam::${ACCOUNT}:role/hopper-action does not exist (IAM GetRole: NoSuchEntity)`);
     expect(simulations(b)).toEqual([]);
-    const v = await vaultOf(b);
-    expect(v.templates).toEqual([]);
-    expect(v.runs).toEqual([]);
-    expect(v.actionAsks).toEqual([]);
+    expect(await vaultOf(b)).toMatchObject({ templates: [], runs: [], actionAsks: [] });
     expect((await ofJob(b)).filter((e) => e.type === 'vault.action_asked')).toHaveLength(0);
   });
 

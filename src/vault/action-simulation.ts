@@ -2,9 +2,10 @@
 // policy simulation (`iam:SimulatePrincipalPolicy`, @aws-sdk/client-iam) of the role a change is minted as, one call per
 // action on its resource. It runs with a read session of the account's read role `hopper-read`, minted as topology
 // discovery mints one (no job, no template: the read role and the read session policy bound it); `ReadOnlyAccess`
-// allows `iam:Simulate*`, and the role must too. The simulation reads the role's own policies only: an organization's
+// allows `iam:Simulate*`, and the role must too. First it reads the role (`iam:GetRole`, issue #2387): a role the
+// account does not have is said so, as no session of it can be minted; a read IAM refuses goes on to the simulation. The simulation reads the role's own policies only: an organization's
 // service control policy or a resource policy can still refuse the call when it runs.
-import { IAMClient, SimulatePrincipalPolicyCommand } from '@aws-sdk/client-iam';
+import { GetRoleCommand, IAMClient, NoSuchEntityException, SimulatePrincipalPolicyCommand } from '@aws-sdk/client-iam';
 import type { Asset } from '../domain/access.ts';
 import type { ActionSimulator, Simulated } from '../domain/action-check.ts';
 import type { AwsAction } from '../domain/action-grants.ts';
@@ -36,6 +37,12 @@ export function createActionSimulator(o: { mint(asset: Asset): Promise<Discovery
         region: m.reach.region, ...(m.reach.stsEndpoint ? { endpoint: m.reach.stsEndpoint } : {}), maxAttempts: 2,
         credentials: { accessKeyId: s.AccessKeyId, secretAccessKey: s.SecretAccessKey, sessionToken: s.SessionToken },
       });
+      const roleArn = roleArnOf(role, actions[0]?.resource ?? '');
+      try {
+        await iam.send(new GetRoleCommand({ RoleName: role.split('/')[1] }));
+      } catch (e) {
+        if (e instanceof NoSuchEntityException) return { noRole: roleArn };
+      }
       const allowed: AwsAction[] = [], denied: AwsAction[] = [];
       try {
         for (const a of actions) {
