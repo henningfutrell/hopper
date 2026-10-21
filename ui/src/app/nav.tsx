@@ -1,26 +1,23 @@
-// The views, routed by URL hash so a link (#questions) and the back button work. A view may have
-// sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
-// Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
-// The Jobs view (issue #434) has a card per job. Needs you (issue #897) comes first: its badge counts every decision that waits on a
-// person. Intake (issue #897; it was Not taken, issue #798) is badged with the request cards waiting for approval, the labelled issues not assigned to the user (issue #1614) and the jobs a trust stamp holds for a person (issue #655), Access requests
-// with what jobs on boxes wait for. Tagged (issue #1141) with the open issues and pull requests that ask for the user's review,
-// mention the user or are assigned to the user. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
-// route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes, and is badged
-// with the plans that wait for a person to approve them and the out-of-band changes no one marked (issue #871); Pull requests with the ones the hopper gave up on (issues #897, #927).
-// The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. The Dashboard
-// (issue #951; it was the Overview, and #overview still opens it) and Needs you are pinned above them, never collapsed: the Dashboard
-// covers the whole system and is the landing page; Needs you's badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
-// its own (issue #897): it left Settings, which keeps configuration only. Ask hopper (issue #2375; it was Direct jobs, issue #901, and Direct queries, issue #2184, and #direct-jobs and #direct-queries still open it) submits a job with no GitHub issue (Run a job) or asks a question (Ask a question), and reads them back. Resources (issue #947) shows what every
-// container of the stack and its Postgres use now. Search (issue #945) finds jobs by their words: the header's search box opens it too.
-// Accounts (issue #1128), not under Settings: who each machine's agent tool is signed in as, badged with the machines signed in
-// as nobody; in Sources & machines, beside the machines it is about. Skills (issue #1911): the skills jobs get, and the choice
-// per kind of work; in Set up, with Settings. Topology (issue #1943) is its own entry in the Infra group, beside Infra: the
-// graph and the globe of the services in the AWS accounts and clusters. No group holds one entry only (issue #1943). Pending
-// approvals (issue #2088) is its own entry in Waiting on you, badged with the GitHub deployment approvals that wait on the
-// person; the header's in-flight badge does not count them. Plugins, Vault and Users & access (issue #2373) left Settings for entries of
-// their own in Set up: each is a workflow a person acts in, with one home; their old Settings hashes open them.
-import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LockKeyhole, LayoutGrid, ListOrdered, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Puzzle, Rocket, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, Users, type LucideIcon } from 'lucide-react';
-import { useState, useSyncExternalStore } from 'react';
+// The navigation: every view's entry and badge (the routes are routes.ts). Needs you (issue #897) comes first: its badge counts
+// every decision that waits on a person; it owns no workflow, its rows link to their homes. Each section (issue #543) is an
+// entry or a merged page's tab, and its badge follows the one section rule (useSectionBadges). Intake (issue #897) is badged
+// with the request cards waiting for approval, the labelled issues not assigned to the user (issue #1614) and the jobs a
+// trust stamp holds for a person (issue #655); Tagged (issue #1141) with the open issues and pull requests that ask for the
+// user's review, mention the user or are assigned to the user; Infra (issue #896) with the plans that wait for a person and
+// the out-of-band changes no one marked (issue #871); Pull requests with the ones the hopper gave up on (issues #897, #927).
+// The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one, and no
+// group holds one entry only (issue #1943). The Dashboard (issue #951) and Needs you are pinned above them, never collapsed:
+// the Dashboard covers the whole system and is the landing page; Needs you's badge already sums other entries', so no group
+// sums it again. One canonical home per workflow (issue #2374): Approvals holds Access requests (what jobs on boxes wait
+// for) and Pending approvals (GitHub deployment approvals, issue #2088); Failures holds Stuck work and Parked (issue #565);
+// Jobs holds the Queue order; Ask hopper (issue #2375) holds Run a job (Direct jobs, issue #901) and Ask a question (Direct queries, issue #2184); Activity holds
+// Events and Decisions; Machines holds Accounts (issue #1128) and Logins; Usage holds Resources (issue #947). A merged
+// page's entry badge sums its tabs', each tab showing its own (page-tabs.tsx). Search (issue #945) has no entry in the
+// sidebar: the header's search box opens it; on a phone, which has no search box, the drawer lists it after Needs you.
+// Your reports (issue #694) and Version history are in the user menu. Plugins, Vault and Users & access (issue #2373) left
+// Settings for entries of their own: Vault in Infra, Plugins and Users & access in Admin; their old Settings hashes open them.
+import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, LayoutDashboard, LockKeyhole, LayoutGrid, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Puzzle, Send, Server, Settings, ShieldQuestion, Telescope, Users, type LucideIcon } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
@@ -31,52 +28,32 @@ import { pendingApprovalsBadge } from '@/model/pending-approvals';
 import { changesUnmarked } from '@/model/out-of-band';
 import { signedOutMachines } from '@/model/tool-accounts';
 import { needsYouTotal } from '@/model/needs-you';
-import { SECTION_KINDS } from '@/model/sections';
 import { notAssignedWaiting, onTheBackburner, requestsWaiting } from '@/model/intake';
 import { trustHeldWaiting } from '@/model/trust';
-import { groupBadges, type NavBadge } from '@/model/nav-groups';
+import { groupBadges, mergedBadge, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'ask', 'intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'topology', 'skills', 'plugins', 'vault', 'users-access', 'usage', 'resources', 'settings'] as const;
-/** The routes: every view in the navigation, and the job view, which has no nav entry. */
-const ROUTES = [...VIEWS, 'job'] as const;
-export type View = (typeof ROUTES)[number];
-/** The views above the nav groups, always shown. */
-export const NAV_PINNED = ['dashboard', 'needs-you'] as const satisfies readonly (typeof VIEWS)[number][];
-/** The nav groups, in nav order, each with its entries in order. A view of the navigation neither pinned nor in a group, or a group of one entry, fails the typecheck. */
-export const NAV_GROUPS = [
-  { id: 'waiting', label: 'Waiting on you', views: ['intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS] },
-  { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'ask', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
-  { id: 'infra', label: 'Infra', views: ['infra', 'topology'] },
-  { id: 'sources-machines', label: 'Sources & machines', views: ['sources', 'machines', 'accounts', 'usage', 'resources'] },
-  { id: 'settings', label: 'Set up', views: ['skills', 'plugins', 'vault', 'users-access', 'settings'] },
-] as const satisfies readonly { id: string; label: string; views: readonly [(typeof VIEWS)[number], (typeof VIEWS)[number], ...(typeof VIEWS)[number][]] }[];
-const everyViewGrouped: Exclude<(typeof VIEWS)[number], (typeof NAV_GROUPS)[number]['views'][number] | (typeof NAV_PINNED)[number]> extends never ? true : never = true;
-void everyViewGrouped;
+import { NAV_GROUPS, NAV_PINNED, PAGE_TABS, type MergedPage, type Tab, type View } from './routes';
+
+export { NAV_GROUPS, NAV_PINNED, PAGE_TABS, VIEWS, useSection, useView, type View } from './routes';
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   dashboard: { label: 'Dashboard', icon: LayoutDashboard },
   'needs-you': { label: 'Needs you', icon: BellRing },
   search: { label: 'Search', icon: Search },
   jobs: { label: 'Jobs', icon: LayoutGrid },
-  queue: { label: 'Queue', icon: ListOrdered },
   ask: { label: 'Ask hopper', icon: Send },
   intake: { label: 'Intake', icon: CircleDashed },
   tagged: { label: 'Tagged', icon: AtSign },
-  'access-requests': { label: 'Access requests', icon: ShieldQuestion },
-  'pending-approvals': { label: 'Pending approvals', icon: Rocket },
+  approvals: { label: 'Approvals', icon: ShieldQuestion },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
   proposals: { label: 'Proposals', icon: FileCheck },
   research: { label: 'Research', icon: Telescope },
-  logins: { label: 'Logins', icon: KeyRound },
   failures: { label: 'Failures', icon: OctagonAlert },
-  parked: { label: 'Parked', icon: CirclePause },
   'pull-requests': { label: 'Pull requests', icon: GitPullRequest },
   artifacts: { label: 'Artifacts', icon: FolderOpen },
-  decisions: { label: 'Decisions', icon: Scale },
-  events: { label: 'Events', icon: ListTree },
+  activity: { label: 'Activity', icon: ListTree },
   reports: { label: 'Your reports', icon: Bug },
-  accounts: { label: 'Accounts', icon: UserRound },
   sources: { label: 'Sources', icon: Inbox },
   machines: { label: 'Machines', icon: Server },
   infra: { label: 'Infra', icon: FileDiff },
@@ -86,28 +63,16 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   vault: { label: 'Vault', icon: LockKeyhole },
   'users-access': { label: 'Users & access', icon: Users },
   usage: { label: 'Usage', icon: Gauge },
-  resources: { label: 'Resources', icon: Cpu },
   settings: { label: 'Settings', icon: Settings },
   job: { label: 'Job', icon: Briefcase },
 };
 
-const subscribe = (fn: () => void) => { window.addEventListener('hashchange', fn); return () => window.removeEventListener('hashchange', fn); };
-/** Old view names and the view each became, with the section it opens when it is one, so an old link still opens it. */
-const MOVED: Record<string, { view: View; section?: string }> = {
-  'not-taken': { view: 'intake' }, overview: { view: 'dashboard' }, 'direct-jobs': { view: 'ask' }, 'direct-queries': { view: 'ask', section: 'question' },
-};
-const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return MOVED[h]?.view ?? ((ROUTES as readonly string[]).includes(h) ? (h as View) : 'dashboard'); };
-export const useView = (): View => useSyncExternalStore(subscribe, read);
-/** The section after the view in the hash (#settings/routing → routing), or ''; an old view name's own section when it moved into one. */
-const readSection = (): string => { const [h, section] = window.location.hash.slice(1).split('/'); return MOVED[h!]?.section ?? section ?? ''; };
-export const useSection = (): string => useSyncExternalStore(subscribe, readSection);
-
-function Links({ view, onPick }: { view: View; onPick?: () => void }) {
+/** Every badge: each nav entry's, and each merged page's tab's (issue #2374). A merged page's entry sums its tabs'. */
+export function useNavBadges(): { entries: Partial<Record<View, NavBadge>>; tabs: Partial<Record<Tab, NavBadge>> } {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const requests = useHopper((s) => requestsWaiting(s.sources));
   const unassigned = useHopper((s) => notAssignedWaiting(s.sources));
   const trustHeld = useHopper((s) => trustHeldWaiting(s.jobs));
-  const backburner = useHopper((s) => onTheBackburner(s.sources));
   const sorting = useAwaitingSort();
   // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.
   const sections = useSectionBadges();
@@ -124,7 +89,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const tagged = n('tagged');
   const signedOut = signedOutMachines(useToolAccounts()?.accounts ?? []);
   const approvals = pendingApprovalsBadge(usePendingApprovals());
-  const badge: Partial<Record<View, NavBadge>> = {
+  const badge: Partial<Record<View | Tab, NavBadge>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job' : 'jobs'} waiting to be ordered` },
     'needs-you': { n: total.n, high: total.high, cls: 'bg-warn text-background', title: `${total.n} ${total.n === 1 ? 'decision waits' : 'decisions wait'} on you` },
     intake: { n: requests + unassigned + trustHeld, cls: 'bg-warn text-background', title: [
@@ -144,6 +109,13 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
     accounts: { n: signedOut, cls: 'bg-bad text-background', title: `${signedOut} ${signedOut === 1 ? 'machine is' : 'machines are'} signed in as nobody` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
+  const merged = Object.fromEntries((Object.keys(PAGE_TABS) as MergedPage[]).map((p) => [p, mergedBadge(PAGE_TABS[p].map((t) => badge[t.id]))]));
+  return { entries: { ...badge, ...merged }, tabs: badge };
+}
+
+function Links({ view, onPick, phone }: { view: View; onPick?: () => void; phone?: boolean }) {
+  const backburner = useHopper((s) => onTheBackburner(s.sources));
+  const badge = useNavBadges().entries;
   const collapsed = useNavCollapsed();
   const backburners: Partial<Record<View, number>> = { intake: backburner };
   const entry = (v: View) => {
@@ -152,7 +124,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
     const counted = b && b.n > 0 ? b : undefined;
     return (
       <a key={v} href={`#${v}`} onClick={onPick} aria-current={view === v ? 'page' : undefined}
-        className={cn('flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+        className={cn('flex items-center gap-2.5 rounded-md px-2.5 text-sm', phone ? 'h-9' : 'h-7', 'text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
           view === v && 'bg-muted text-foreground')}>
         <Icon className="size-4" />{label}
         {counted && <Count slot="nav-badge" b={counted} />}
@@ -161,16 +133,16 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
     );
   };
   return (
-    <nav className="grid gap-2">
-      <div className="grid gap-0.5">{NAV_PINNED.map((v) => entry(v))}</div>
+    <nav className="grid gap-0.5">
+      <div className="grid gap-px">{NAV_PINNED.map((v) => entry(v))}{phone && entry('search')}</div>
       {NAV_GROUPS.map((g) => {
         const open = !collapsed.includes(g.id);
         const holdsView = (g.views as readonly View[]).includes(view);
         const sum = groupBadges(g.views.map((v) => ({ view: v, label: ITEMS[v].label, badge: badge[v], backburner: backburners[v] })));
         return (
-          <div key={g.id} data-nav-group={g.id} className="grid gap-0.5">
+          <div key={g.id} data-nav-group={g.id} className="grid gap-px">
             <button type="button" data-slot="nav-group-toggle" aria-expanded={open} data-current={!open && holdsView ? true : undefined} onClick={() => toggleNavGroup(g.id)}
-              className={cn('flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground',
+              className={cn('flex h-5.5 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground',
                 !open && holdsView && 'text-foreground')}>
               <ChevronDown className={cn('size-3.5 transition-transform', !open && '-rotate-90')} aria-hidden />{g.label}
               {!open && sum.badge && <Count slot="nav-group-badge" b={sum.badge} />}
@@ -185,7 +157,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
 }
 
 /** A count badge: an entry's, or a collapsed group's sum of them; a high-priority item waiting marks it (issue #535). */
-function Count({ slot, b }: { slot: string; b: NavBadge }) {
+export function Count({ slot, b }: { slot: string; b: NavBadge }) {
   return (
     <span data-slot={slot} data-high={b.high ? b.high : undefined} title={b.title}
       className={cn('num ml-auto flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full px-1.5 text-[11px] font-semibold normal-case tracking-normal', b.cls, b.high && 'ring-2 ring-warn ring-offset-1 ring-offset-background')}>
@@ -204,7 +176,7 @@ function Backburner({ slot, n, alone }: { slot: string; n: number; alone: boolea
 }
 
 export function Sidebar({ view }: { view: View }) {
-  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 overflow-y-auto overscroll-contain border-r p-3 lg:block"><Links view={view} /></aside>;
+  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 overflow-y-auto overscroll-contain border-r px-3 py-2 lg:block"><Links view={view} /></aside>;
 }
 
 export function MobileNav({ view }: { view: View }) {
@@ -217,7 +189,7 @@ export function MobileNav({ view }: { view: View }) {
       <SheetContent side="left" className="max-h-dvh w-64 gap-0 p-0 pt-12">
         <SheetTitle className="sr-only">Navigation</SheetTitle>
         <div data-slot="nav-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <Links view={view} onPick={() => setOpen(false)} />
+          <Links view={view} onPick={() => setOpen(false)} phone />
         </div>
       </SheetContent>
     </Sheet>

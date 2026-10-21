@@ -219,7 +219,7 @@ export function FollowOns({ p }: { p: ReviewItemView }) {
             <span className={cn('min-w-0 break-words', !pick && 'line-through')}>{x.title}</span>
             {pick?.jobId && (
               <>
-                <a href="#queue" className="font-mono underline-offset-4 hover:underline">job {pick.jobId.slice(0, 8)}</a>
+                <a href="#jobs/queue" className="font-mono underline-offset-4 hover:underline">job {pick.jobId.slice(0, 8)}</a>
                 <span data-slot="follow-on-status"><StatusBadge status={statusOf(pick.jobId)} /></span>
               </>
             )}

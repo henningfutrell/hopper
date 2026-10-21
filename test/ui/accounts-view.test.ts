@@ -94,7 +94,7 @@ describe('the Accounts view', () => {
     await act(async () => { buttons[0]!.click(); });
     for (let i = 0; i < 3; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     expect(posts).toEqual([{ path: '/ui/api/tool-accounts/sign-in', body: { source: 'claude-server' } }]);
-    expect(window.location.hash).toBe('#logins');
+    expect(window.location.hash).toBe('#machines/logins');
   });
 
   it('a machine signed in as nobody names who it was last signed in as, or that none is known there (issue #1269)', async () => {

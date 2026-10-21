@@ -237,7 +237,7 @@ describe('after the selection', () => {
     const follow = list.querySelector('[data-slot="follow-ons"]')!;
     const rows = [...follow.querySelectorAll('[data-path]')] as HTMLElement[];
     expect(rows.map((r) => [r.getAttribute('data-path'), r.getAttribute('data-selected')])).toEqual([['1', 'true'], ['2', 'false'], ['3', 'true']]);
-    expect(rows[0]!.querySelector('a[href="#queue"]')!.textContent).toContain('f1');
+    expect(rows[0]!.querySelector('a[href="#jobs/queue"]')!.textContent).toContain('f1');
     expect(rows[0]!.querySelector('[data-slot="follow-on-status"]')!.textContent).toBe('running');
     expect(rows[2]!.querySelector('[data-slot="follow-on-status"]')!.textContent).toBe('finished');
     expect(rows[0]!.textContent).toContain('oil paint');

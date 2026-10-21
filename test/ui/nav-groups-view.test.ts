@@ -61,7 +61,8 @@ async function boot(collapsed?: string) {
 const group = (scope: string, id: string) => document.querySelector(`${scope} [data-nav-group="${id}"]`)!;
 const toggle = (scope: string, id: string) => group(scope, id).querySelector('[data-slot="nav-group-toggle"]') as HTMLButtonElement;
 const groupBadge = (scope: string, id: string) => group(scope, id).querySelector('[data-slot="nav-group-badge"]');
-const queueLink = (scope: string) => document.querySelector(`${scope} a[href="#queue"]`);
+// The Jobs entry: its badge sums its tabs', the Queue order's pre-sort count among them (issue #2374).
+const queueLink = (scope: string) => document.querySelector(`${scope} a[href="#jobs"]`);
 
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -94,7 +95,7 @@ describe('the nav groups', () => {
     expect(queueLink('aside')).toBeNull();
     const badge = groupBadge('aside', 'jobs')!;
     expect(badge.textContent).toBe('2');
-    expect(badge.getAttribute('title')).toBe('Queue: 2 jobs waiting to be ordered');
+    expect(badge.getAttribute('title')).toBe('Jobs: 2 jobs waiting to be ordered');
     expect(badge.className).toContain('bg-warn');
     expect(JSON.parse(localStorage.getItem('jh_nav_collapsed')!)).toEqual(['jobs']);
     await act(async () => toggle('aside', 'jobs').click());

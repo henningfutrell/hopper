@@ -169,7 +169,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
       </dl>
       {editing ? <TemplateForm t={t} secrets={secrets} shared={shared} busy={busy} send={send} onDone={() => setEditing(false)} /> : (
         <div className="flex flex-wrap gap-2">
-          {waiting && <a href="#access-requests" data-template-waits={t.name} className="inline-flex h-8 items-center text-sm text-warn hover:underline">Approve on Access requests →</a>}
+          {waiting && <a href="#approvals/access-requests" data-template-waits={t.name} className="inline-flex h-8 items-center text-sm text-warn hover:underline">Approve on Access requests →</a>}
           {t.approval && (
             <Confirm title={`Revoke the approval of ${t.name}?`} action="Revoke" onConfirm={() => void send({ action: 'revoke-template', name: t.name }, `${t.name}: approval revoked`)}
               description="Its boxes take no new job and get nothing from the vault until a person approves it again. Jobs that run there now keep running.">

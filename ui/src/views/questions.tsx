@@ -288,7 +288,7 @@ function SignInLink({ q }: { q: QuestionView }) {
   return (
     <div className="space-y-0.5">
       <div data-slot="sign-in-link" className="text-sm">
-        <a href="#accounts" className="font-medium underline">Sign Claude in on {raisedName(q.raisedBy)} from Accounts</a>
+        <a href="#machines/accounts" className="font-medium underline">Sign Claude in on {raisedName(q.raisedBy)} from Accounts</a>
         <span className="text-muted-foreground">: {then}</span>
       </div>
       {lastAccount && <div data-slot="last-account" className="text-sm">{lastAccount}</div>}

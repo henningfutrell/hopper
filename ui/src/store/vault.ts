@@ -13,7 +13,7 @@ import { useHopper } from './index';
 export function announceCredentialAsked(e: DomainEvent): void {
   toast(`A job asks for a ${String(e.data.skill)} credential`, {
     description: 'Give it, or decline, on Access requests.', duration: 15_000,
-    action: { label: 'Open', onClick: () => { location.hash = '#access-requests'; } },
+    action: { label: 'Open', onClick: () => { location.hash = '#approvals/access-requests'; } },
   });
 }
 

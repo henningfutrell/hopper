@@ -140,10 +140,10 @@ const badge = (hash: string) => navLink(hash)?.querySelector('[data-slot="nav-ba
 const buttons = (el: ParentNode) => [...el.querySelectorAll('button')].map((b) => b.textContent?.trim());
 const main = () => document.querySelector('main')!;
 
-describe('the nav: Dashboard, then Needs you, Intake and Access requests top-level, each with its count (issues #897, #951)', () => {
+describe('the nav: Dashboard, then Needs you, Intake and Approvals (Access requests) top-level, each with its count (issues #897, #951, #2374)', () => {
   it('the Dashboard is the first entry, Needs you the second, and Needs you counts every decision that waits', async () => {
     await boot('#dashboard');
-    await vi.waitFor(() => expect(badge('#access-requests')).toBe('3'));
+    await vi.waitFor(() => expect(badge('#approvals')).toBe('3'));
     expect([...document.querySelectorAll('nav a')].slice(0, 2).map((a) => a.getAttribute('href'))).toEqual(['#dashboard', '#needs-you']);
     expect(navLink('#dashboard')!.textContent).toBe('Dashboard');
     expect(navLink('#needs-you')!.textContent).toContain('Needs you');
@@ -197,7 +197,7 @@ describe('Needs you lists every kind with its count and links to its home (issue
     await vi.waitFor(() => expect(row('access')?.querySelector('[data-needs-you-count]')?.textContent).toBe('3'));
     expect(row('intake')!.querySelector('[data-needs-you-count]')!.textContent).toBe('1');
     expect(row('intake')!.querySelector('a')!.getAttribute('href')).toBe('#intake');
-    expect(row('access')!.querySelector('a')!.getAttribute('href')).toBe('#access-requests');
+    expect(row('access')!.querySelector('a')!.getAttribute('href')).toBe('#approvals/access-requests');
     expect(row('questions')!.querySelector('[data-needs-you-count]')!.textContent).toBe('0');
     await vi.waitFor(() => expect(row('plans')?.querySelector('[data-needs-you-count]')?.textContent).toBe('1'));
     expect(row('plans')!.querySelector('a')!.getAttribute('href')).toBe('#infra');
@@ -207,7 +207,7 @@ describe('Needs you lists every kind with its count and links to its home (issue
     expect(row('pull-requests')!.querySelector('[data-needs-you-detail]')!.textContent).toBe('octo-user/hopper#8: checks still fail after 3 fixes: a person must look at them');
     // Issue #1128: a signed-out tool shows as soon as its source reads it, and links to Accounts, where a person signs it in.
     await vi.waitFor(() => expect(row('accounts')?.querySelector('[data-needs-you-count]')?.textContent).toBe('1'));
-    expect(row('accounts')!.querySelector('a')!.getAttribute('href')).toBe('#accounts');
+    expect(row('accounts')!.querySelector('a')!.getAttribute('href')).toBe('#machines/accounts');
     expect(row('accounts')!.querySelector('[data-needs-you-detail]')!.textContent).toBe('Claude on Server: signed in as nobody — sign it in from Accounts');
   });
 });
@@ -269,7 +269,7 @@ describe('one home each: no Approve stays in Sources or Vault (issue #897)', () 
     await boot('#vault');
     await vi.waitFor(() => expect(main().textContent).toContain('ghcr.io/x/box:1'));
     for (const action of ['Approve', 'Grant', 'Give']) expect(buttons(main())).not.toContain(action);
-    expect(main().querySelector('a[href="#access-requests"]')).not.toBeNull();
+    expect(main().querySelector('a[href="#approvals/access-requests"]')).not.toBeNull();
   });
 
   it('Access requests: Approve on a waiting template posts its approval', async () => {
@@ -313,7 +313,7 @@ describe('one home each: the decider\'s picks, the question history and Your rep
     await vi.waitFor(() => expect(document.querySelector('[data-point="merge-order"]')).not.toBeNull());
     expect(document.querySelector('[data-pick]')).toBeNull();
     expect(buttons(main())).not.toContain('Override');
-    expect(main().querySelector('a[href="#decisions"]')).not.toBeNull();
+    expect(main().querySelector('a[href="#activity/decisions"]')).not.toBeNull();
   });
 
   it('Settings has no Question history and no Your reports', async () => {
@@ -329,10 +329,10 @@ describe('one home each: the decider\'s picks, the question history and Your rep
     await vi.waitFor(() => expect(document.querySelector('[data-slot="question-history"]')).not.toBeNull());
   });
 
-  it('Your reports is a top-level page; an old #settings/reports link opens it', async () => {
+  it('Your reports is a page of its own, linked from the user menu (issue #2374); an old #settings/reports link opens it', async () => {
     await boot('#settings/reports');
     await vi.waitFor(() => expect(window.location.hash).toBe('#reports'));
-    expect(navLink('#reports')!.textContent).toContain('Your reports');
+    expect(document.title).toBe('Your reports · hopper');
     await vi.waitFor(() => expect(document.querySelector('[data-slot="bug-reports"]')).not.toBeNull());
   });
 });

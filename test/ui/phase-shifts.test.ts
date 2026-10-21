@@ -162,7 +162,7 @@ describe('a fork on its question card (issue #570)', () => {
     const banners = await vi.waitFor(() => { const x = card('Question of j11')?.querySelectorAll<HTMLElement>('[data-slot="fork"]'); expect(x?.length).toBe(2); return [...x!]; });
     expect(banners[0]!.textContent).toContain('Research in progress');
     expect(banners[0]!.textContent).toContain('running');
-    expect(banners[0]!.querySelector('a')!.getAttribute('href')).toBe('#queue');
+    expect(banners[0]!.querySelector('a')!.getAttribute('href')).toBe('#jobs/queue');
     expect(banners[1]!.textContent).toContain('Proposal rejected: old');
   });
 
@@ -174,7 +174,7 @@ describe('a fork on its question card (issue #570)', () => {
     await vi.waitFor(() => expect(daemon.posts.some((p) => p.path === '/ui/api/questions/q-j12/propose')).toBe(true));
     await vi.waitFor(() => expect(document.body.textContent).toContain('Proposal forked'));
     const link = [...document.querySelectorAll<HTMLAnchorElement>('[data-sonner-toast] a')].find((a) => a.textContent?.includes('Open'));
-    expect(link?.getAttribute('href')).toBe('#queue');
+    expect(link?.getAttribute('href')).toBe('#jobs/queue');
   });
 });
 

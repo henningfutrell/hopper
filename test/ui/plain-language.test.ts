@@ -98,22 +98,22 @@ describe('Ask hopper (issue #2375)', () => {
     expect(labels).toContain('Ask hopper');
     expect(labels).not.toContain('Direct jobs');
     expect(labels).not.toContain('Direct queries');
-    const tabs = all('[data-slot="ask-nav"] a').map((a) => a.textContent);
+    const tabs = all('[data-slot="page-tabs"] a').map((a) => a.textContent);
     expect(tabs).toEqual(['Run a job', 'Ask a question']);
   });
 
   it.each([['#direct-jobs', 'Run a job'], ['#direct-queries', 'Ask a question'], ['#ask/question', 'Ask a question']])('%s opens Ask hopper on %s', async (hash, tab) => {
     await boot(hash, DIRECT);
     expect(document.querySelector('nav a[aria-current="page"]')?.textContent).toBe('Ask hopper');
-    expect(document.querySelector('[data-slot="ask-nav"] a[aria-current="page"]')?.textContent).toBe(tab);
+    expect(document.querySelector('[data-slot="page-tabs"] a[aria-current="page"]')?.textContent).toBe(tab);
   });
 });
 
 describe('Plain labels (issue #2375)', () => {
-  it('the Queue badge says the jobs wait to be ordered', async () => {
+  it('the Queue order badge says the jobs wait to be ordered', async () => {
     const waiting = [{ ...job(JOBS[0]!, 1), accepted: false }];
     await boot('#queue', { '/api/queue': { ...QUEUE['/api/queue'], waiting, gate: { mode: 'review', autoAcceptPerHour: null }, presort: { sorter: 'priority', jobIds: [JOBS[0]], reject: [] } } });
-    const badge = all('nav a').find((a) => a.getAttribute('href') === '#queue')!.querySelector('[data-slot="nav-badge"]')!;
+    const badge = all('nav a').find((a) => a.getAttribute('href') === '#jobs/queue')!.querySelector('[data-slot="tab-badge"]')!;
     expect(badge.getAttribute('title')).toBe('1 job waiting to be ordered');
     expect(document.body.textContent).not.toMatch(/pre-sort/i);
   });

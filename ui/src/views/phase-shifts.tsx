@@ -34,7 +34,7 @@ const FORK_NAME: Record<ReviewKind, string> = { research: 'Research', proposal: 
 const ITEM_STATUS: Record<string, string> = { open: 'in review', revising: 'being revised', accepted: 'accepted', rejected: 'rejected', cancelled: 'cancelled' };
 const JOB_STATUS: Record<string, string> = { waiting_answer: 'waiting on a question', queued: 'queued', running: 'running', held: 'held', parked: 'parked', waiting_on: 'on its own wait' };
 /** Where a fork is looked at: its item's review, or, before it wrote one, its job in the queue. */
-const forkLink = (kind: ReviewKind, itemId: string | undefined): string => (itemId ? `#${REVIEW_UI[kind].section}` : '#queue');
+const forkLink = (kind: ReviewKind, itemId: string | undefined): string => (itemId ? `#${REVIEW_UI[kind].section}` : '#jobs/queue');
 
 /** A fork made, the toast says so and links to it; the jobs and the review sections are read again. */
 async function shift(q: QuestionView, to: ReviewKind, body: { mode?: ShiftMode; note?: string }): Promise<boolean> {

@@ -29,7 +29,7 @@ function SignIn({ m }: { m: ToolAccountMachine }) {
     setBusy(false);
     if (!r.ok) return;
     await refreshLogins().catch(() => {});
-    window.location.hash = '#logins';
+    window.location.hash = '#machines/logins';
   };
   return (
     <Button data-sign-in={m.source} size="sm" variant={m.login === 'signed-out' ? 'default' : 'outline'} disabled={busy} onClick={() => void start()}>

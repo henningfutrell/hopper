@@ -2,9 +2,17 @@
 // the counts summed, the high-priority ones summed, the most urgent colour — so no badge is hidden by the grouping; which
 // groups are collapsed is read back from browser storage, never trusted.
 import { describe, expect, it } from 'vitest';
-import { badgeUrgency, groupBadges, parseCollapsed, toggleCollapsed, type NavEntry } from '../../ui/src/model/nav-groups.ts';
+import { badgeUrgency, groupBadges, mergedBadge, parseCollapsed, toggleCollapsed, type NavEntry } from '../../ui/src/model/nav-groups.ts';
 
 const entry = (view: string, n: number, cls: string, o: Partial<NavEntry> = {}): NavEntry => ({ view, label: view, badge: { n, cls, title: `${n} wait` }, ...o });
+
+describe('a merged page\'s badge (issue #2374)', () => {
+  it('sums its tabs\' badges like a group, each tab\'s title as it is; no tab with a count is no badge', () => {
+    expect(mergedBadge([{ n: 2, cls: 'bg-warn text-background', title: '2 access requests wait on you', high: 1 }, undefined, { n: 1, cls: 'bg-bad text-background', title: '1 deployment waits' }]))
+      .toEqual({ n: 3, high: 1, cls: 'bg-bad text-background', title: '2 access requests wait on you; 1 deployment waits' });
+    expect(mergedBadge([undefined, { n: 0, cls: 'bg-bad text-background' }])).toBeUndefined();
+  });
+});
 
 describe('a nav group\'s badge', () => {
   it('sums its entries\' counts and their high-priority ones; the most urgent colour wins', () => {
