@@ -22,6 +22,8 @@
 // already carries it (a post whose row a stop left `sending`) answers the send in place of a second one.
 // A send claims its rows (issue #1959, `OUTBOX_CLAIM_MS`), and renews the claim before each call: a second hopper on the
 // database sends none of them meanwhile. A row a stopped or killed hopper left `sending` is sent again once its claim ends.
+// A followed pull request's end (issue #1892 part 14) is rows too (act `follow`): the end labels of the state it moves the
+// item to, sent in the follow's own pass (`sendOf`), and by a later flush when GitHub refused them for now.
 import { createHash } from 'node:crypto';
 import type { ActingPerson } from '../../domain/failures.ts';
 import type { IntakeOutcome, IntakeWriteBehind } from '../../domain/intake.ts';
@@ -90,8 +92,8 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
   let round = 0;
   let flushing: Promise<{ due: number; wrote: string[] }> | undefined;
   let lastSentAt: string | undefined;
-  /** The rows the send under way claimed; `released`: the sync loop stopped, and the send makes no more calls. */
-  let claimed = new Set<number>();
+  /** The rows the sends under way claimed; `released`: the sync loop stopped, and the send makes no more calls. */
+  const claimed = new Set<number>();
   let released = false;
   const timings = createAfterAnswerTimings(() => clock.now());
   const now = () => clock.now().toISOString();
@@ -134,12 +136,12 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
     return left.filter((r) => permanent || r.attempts + 1 >= OUTBOX_ATTEMPTS);
   }
 
-  async function sendDue(send: OutboxSend, gaveUp?: OutboxGaveUp): Promise<{ due: number; wrote: string[] }> {
+  async function sendDue(send: OutboxSend, gaveUp?: OutboxGaveUp, only?: { key: string; act: OutboxAct }): Promise<{ due: number; wrote: string[] }> {
     if (o.connected?.() === false) return { due: 0, wrote: [] };
     if (released) return { due: 0, wrote: [] };
-    const due = rows.claim(o.source, now(), claimEnd());
+    const due = rows.claim(o.source, now(), claimEnd(), only);
     if (due.length === 0) return { due: 0, wrote: [] };
-    claimed = new Set(due.map((r) => r.id));
+    for (const r of due) claimed.add(r.id);
     const byId = new Map(due.map((r) => [r.id, r]));
     const wrote = new Set<string>();
     const plans = coalesce(due);
@@ -175,7 +177,7 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
         wrote.add(plan.repo);
       }
     }
-    claimed = new Set();
+    for (const r of due) claimed.delete(r.id);
     rows.prune(new Date(clock.now().getTime() - KEEP_SENT_MS).toISOString());
     return { due: due.length, wrote: [...wrote] };
   }
@@ -233,11 +235,19 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       return jobAct(key, repo, { op: 'give_back', act, jobId, ...(acting ? { acting } : {}), ...kept }, acting) as OutboxGiveBack;
     },
     /**
-     * A give-back moves the item (issue #1892): the label mirror's rows for `key` not sent yet were for the state it left,
-     * and sent after the give-back they would put back the label it took off. They are dropped; one being sent goes on.
+     * A give-back moves the item (issue #1892): the label mirror's and the follow's rows for `key` not sent yet were for the
+     * state it left, and sent after the give-back they would put back the label it took off. They are dropped; one being
+     * sent goes on.
      */
-    dropMirror(key: string): void {
-      rows.update(openOf(key).filter((r) => r.act === 'mirror' && r.state === 'pending').map((r) => r.id), { state: 'sent', sentAt: now() });
+    dropLabelRows(key: string): void {
+      rows.update(openOf(key).filter((r) => (r.act === 'mirror' || r.act === 'follow') && r.state === 'pending').map((r) => r.id), { state: 'sent', sentAt: now() });
+    },
+    /**
+     * Sends the rows of item `key` and `act` that are due now, apart from a flush (issue #1892 part 14): the follow's label
+     * change goes out in the follow's own pass. Rows another send claimed are not sent twice; a failed call waits its backoff.
+     */
+    sendOf(act: OutboxAct, key: string, send: OutboxSend): Promise<{ due: number; wrote: string[] }> {
+      return sendDue(send, undefined, { key, act });
     },
     /**
      * Sends the rows due, one batch, coalesced; answers how many were due and the repositories it wrote to. Each row
@@ -348,8 +358,8 @@ export function memoryGitHubOutbox(): GitHubOutboxRepository {
     add(input, at) { for (const r of input) { const id = next++; kept.set(id, { ...structuredClone(r), id, state: 'pending', attempts: 0, nextAt: at, createdAt: at }); } },
     open: (source) => list((r) => r.source === source && r.state !== 'sent'),
     of: (source, key) => list((r) => r.source === source && r.key === key),
-    claim(source, at, until) {
-      const mine = list((r) => r.source === source && (r.state === 'pending' || r.state === 'sending') && r.nextAt <= at);
+    claim(source, at, until, only) {
+      const mine = list((r) => r.source === source && (r.state === 'pending' || r.state === 'sending') && r.nextAt <= at && (!only || (r.key === only.key && r.act === only.act)));
       for (const r of mine) kept.set(r.id, { ...kept.get(r.id)!, state: 'sending', nextAt: until });
       return mine.map((r) => ({ ...r, state: 'sending' as const, nextAt: until }));
     },

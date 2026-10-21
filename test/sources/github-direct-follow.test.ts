@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeGitHub } from '../../src/sources/github/fake.ts';
 import { followDirectPullRequest } from '../../src/sources/github/direct-follow.ts';
-import type { FollowContext } from '../../src/sources/github/follow.ts';
+import type { PullRequestContext } from '../../src/sources/github/follow-context.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { jobFor, REPO } from './fixtures/github-support.ts';
 
@@ -20,7 +20,7 @@ const LONG_AGO = '2026-10-02T09:50:00.000Z';
 
 function setup(yolo: boolean) {
   const gh = createFakeGitHub();
-  const ctx: FollowContext = { api: gh, ensuredLabels: new Set(), clock: { now: () => new Date('2026-10-02T10:00:00.000Z') }, yoloMode: () => yolo };
+  const ctx: PullRequestContext = { api: gh, ensuredLabels: new Set(), clock: { now: () => new Date('2026-10-02T10:00:00.000Z') }, yoloMode: () => yolo };
   return { gh, ctx };
 }
 
