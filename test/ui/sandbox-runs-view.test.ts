@@ -2,7 +2,7 @@
 // Issue #991, rendered in happy-dom inside the whole app against a fake of the daemon's HTTP surface. Access requests,
 // Sandbox runs: a run a job asked for waits with its job and template; Approve posts it after the confirm; Decline posts
 // the reason; the approved runs are listed with who approved them; the nav badge counts the run that waits.
-// Settings → Vault, Sandbox approvals: the toggles post what changed, and YOLO posts both.
+// Vault, Sandbox approvals: the toggles post what changed, and YOLO posts both.
 // Issue #2197: one card per run. A template a job asked for waits on that job's run card, never on a card of its own;
 // Approve posts one approve-run, Decline one decline-run. A template card is left for a person's own template.
 // Issue #2206: a job's asks for an AWS action are on its run card, and its Approve grants them too.
@@ -156,9 +156,9 @@ describe('Access requests: sandbox runs (issue #991)', () => {
   });
 });
 
-describe('Settings → Vault: sandbox approvals (issue #991)', () => {
+describe('Vault: sandbox approvals (issue #991)', () => {
   it('says a person approves each; YOLO posts both on; a toggle posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const panel = approvals()!;
     expect(panel.textContent).toContain('Templates and runs of low blast radius are approved with no person. A person approves each other new template and sandbox run.');
     await act(async () => { panel.querySelector<HTMLButtonElement>('[aria-label="YOLO"]')!.click(); });
@@ -260,9 +260,9 @@ describe('approve several at once (issue #1018)', () => {
   });
 });
 
-describe('Settings → Vault: the auto-approve policy (issue #1001)', () => {
+describe('Vault: the auto-approve policy (issue #1001)', () => {
   it('shows low on and medium and high off by default; a level posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const sw = (level: string) => approvals()!.querySelector<HTMLButtonElement>(`[aria-label="Auto-approve ${level} radius"]`)!;
     expect(sw('low').getAttribute('aria-checked')).toBe('true');
     expect(sw('medium').getAttribute('aria-checked')).toBe('false');
@@ -273,9 +273,9 @@ describe('Settings → Vault: the auto-approve policy (issue #1001)', () => {
   });
 });
 
-describe('Settings → Vault: the standing read grant (issue #1472)', () => {
+describe('Vault: the standing read grant (issue #1472)', () => {
   it('shows it off by default; the switch posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const sw = approvals()!.querySelector<HTMLButtonElement>('[aria-label="Standing read grant"]')!;
     expect(sw.getAttribute('aria-checked')).toBe('false');
     await act(async () => { sw.click(); });
@@ -313,9 +313,9 @@ describe('cards that say what the sandbox is for (issue #1001)', () => {
   });
 });
 
-describe('Settings → Vault: remembered write approvals (issue #1001)', () => {
+describe('Vault: remembered write approvals (issue #1001)', () => {
   it('lists each remembered write with its end; Forget posts it; the time limit posts itself', async () => {
-    const daemon = await boot('#settings/vault', approvals);
+    const daemon = await boot('#vault', approvals);
     const row = approvals()!.querySelector<HTMLElement>('[data-remembered-write="write/aws-account/123456789012"]')!;
     expect(row.textContent).toContain('write on aws-account 123456789012');
     expect(row.textContent).toContain('Ada');

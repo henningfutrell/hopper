@@ -199,7 +199,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   from the `HOPPER_SIGN_IN_*` environment) and remote access's — each tunnel provider's credential and the tunnel token the hopper
   minted with it (issues #880, #968, set in Settings → Remote access, never in `.env`) — and the GitHub webhook secret (issue #1079, made in Settings → GitHub webhook) in the instance's vault — rows named `system/<name>`, sealed, written only
   through `SystemSecrets.keep` (src/vault/system.ts), each set, replace, rotation, removal, move and read an event with no
-  value, shown with its audit trail on Settings → Vault, and never given to a job, a machine or a box: OpenFGA
+  value, shown with its audit trail on Vault, and never given to a job, a machine or a box: OpenFGA
   (`system_secret#can_read`) denies them, and the vault refuses them whatever it answers. One kind is answered by a route: the
   tunnel token, to its provider's tunnel service alone (`GET /tunnel/agent` above), which holds it in its agent's environment
   only, never in a file. None is kept in clear: without

@@ -95,7 +95,7 @@ async function renderCard(p: Partial<CardProps>): Promise<{ el: Element; props: 
   return { el: document.getElementById('root')!, props };
 }
 
-describe('rotating the master key on Settings → Vault (#659)', () => {
+describe('rotating the master key on Vault (#659)', () => {
   it('the admin rotates after a confirm; a cancel rotates nothing', async () => {
     const { el, props } = await renderCard({});
     expect(el.textContent).toContain('0123456789abcdef');

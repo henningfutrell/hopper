@@ -13,6 +13,7 @@ import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MachineDrains } from './machines.ts';
+import type { SandboxHost } from './sandbox-host.ts';
 import type { CloudLinkSettings, CloudRegistrationCode } from './cloud-link.ts';
 import type { TelemetrySettings } from './telemetry-settings.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
@@ -65,6 +66,9 @@ export interface UserSettingsRepository {
   /** The drained machines (issue #1511); a machine absent: not drained. */
   getMachineDrains(): MachineDrains;
   setMachineDrains(drains: MachineDrains): void;
+  /** The sandbox host (issue #2272); absent: never set. `hosts` empty: cleared, sandboxes start where they did before. */
+  getSandboxHost(): SandboxHost | undefined;
+  setSandboxHost(host: SandboxHost): void;
   /** The priority lane settings the user saved (issue #535); absent: never saved, the defaults apply. */
   getPriorityLanes(): PriorityLaneSettings | undefined;
   setPriorityLanes(settings: PriorityLaneSettings): void;

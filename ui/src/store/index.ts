@@ -53,6 +53,8 @@ export interface HopperState {
   priorityLanes: PriorityLanesView | null;
   blastRadius: BlastRadiusView | null; // GET /api/blast-radius (issue #542); null until read
   machines: MachineView[]; windowsLink?: WindowsLink | undefined; // the keep-alive loop on Windows' last report (issue #712)
+  /** The sandbox host (issue #2272): the machines sandboxes start on, first first; absent: not set. */
+  sandboxHost?: string[] | undefined;
   decisions: Decision[];
   /** Open questions, every stage, each with its job's live priority (issue #535). */
   questions: QuestionView[];
@@ -216,8 +218,8 @@ export async function updateAct(body: { action: 'check' | 'apply' } | { action: 
   }
 }
 export async function refreshLive() {
-  const [queue, machines, usage] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[]; windowsLink?: WindowsLink }>('/api/machines'), get<UsageReport>('/api/usage')]);
-  set({ ...jobsOf(queue), machines: machines.machines, windowsLink: machines.windowsLink, usage });
+  const [queue, machines, usage] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[]; windowsLink?: WindowsLink; sandboxHost?: string[] }>('/api/machines'), get<UsageReport>('/api/usage')]);
+  set({ ...jobsOf(queue), machines: machines.machines, windowsLink: machines.windowsLink, sandboxHost: machines.sandboxHost, usage });
 }
 /** Usage and accounts change without an event (a usage source reads in the background): views poll this. */
 export async function refreshUsage() {
@@ -355,7 +357,7 @@ export async function load(): Promise<boolean> {
   if (mustSignIn(state())) return false;
   const since = encodeURIComponent(HISTORY_TYPES.join(','));
   const [health, queue, machines, decisions, events, history, subs, deliveries, questions, allQuestions, sources, usage, accounts] = await Promise.all([
-    get<Health>('/api/health'), get<Queue>('/api/queue'), get<{ machines: MachineView[]; windowsLink?: WindowsLink }>('/api/machines'),
+    get<Health>('/api/health'), get<Queue>('/api/queue'), get<{ machines: MachineView[]; windowsLink?: WindowsLink; sandboxHost?: string[] }>('/api/machines'),
     get<{ decisions: Decision[] }>('/api/decisions?limit=50'), get<{ events: DomainEvent[] }>('/api/events?limit=200'),
     get<{ events: DomainEvent[] }>(`/api/events?limit=${CAP.history}&types=${since}`),
     get<WebhooksView>('/api/webhooks'),
@@ -365,7 +367,7 @@ export async function load(): Promise<boolean> {
     get<UsageReport>('/api/usage'), get<{ accounts: PartAccount[] }>('/api/accounts'),
   ]);
   set({
-    loaded: true, loadError: null, health, ...jobsOf(queue), machines: machines.machines, windowsLink: machines.windowsLink, decisions: decisions.decisions,
+    loaded: true, loadError: null, health, ...jobsOf(queue), machines: machines.machines, windowsLink: machines.windowsLink, sandboxHost: machines.sandboxHost, decisions: decisions.decisions,
     events: events.events.slice().sort((a, b) => b.seq - a.seq), history: history.events.slice().sort((a, b) => a.seq - b.seq),
     subscriptions: subs.subscriptions, deliveries: deliveries.deliveries,
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,

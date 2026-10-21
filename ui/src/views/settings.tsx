@@ -4,15 +4,13 @@
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
-// The sections' links are in groups that fold, with a jump list (issue #2353).
-import { Activity, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, Cloud, Coins, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Grid3x3, Info, KeyRound, Layers, KeySquare, Link, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Network, Puzzle, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
+// The sections' links are a left sub-nav in six groups that fold (issues #2353, #2373), and a jump list on a narrow screen.
+import { Activity, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, Cloud, Coins, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { useGroupOpen } from '@/hooks/use-page-pref';
 import { cn } from '@/lib/utils';
-import { Access } from '@/views/access';
-import { ApiTokens } from '@/views/api-tokens';
 import { ArtifactSettings } from '@/views/artifact-settings';
 import { AllowedHosts } from '@/views/allowed-hosts';
 import { TelemetrySettings } from '@/views/telemetry-settings';
@@ -27,8 +25,6 @@ import { GitHubWatches } from '@/views/github-watches';
 import { ComponentWatchers } from '@/views/component-watchers';
 import { JobRules } from '@/views/job-rules';
 import { MinorDecisions } from '@/views/minor-decisions';
-import { PermissionMatrix } from '@/views/permission-matrix';
-import { Plugins } from '@/views/plugins';
 import { QuestionGates } from '@/views/question-gates';
 import { Realms } from '@/views/realms';
 import { RemoteAccess } from '@/views/remote-access';
@@ -36,8 +32,6 @@ import { HostLink } from '@/views/host-link';
 import { Routing } from '@/views/routing';
 import { ThreadAsk } from '@/views/thread-ask';
 import { TldrSettings } from '@/views/tldr-settings';
-import { Users } from '@/views/users';
-import { Vault } from '@/views/vault';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 import { WindowsHosts } from '@/views/windows-hosts';
@@ -47,7 +41,7 @@ import { LandingBatches } from '@/views/landing-batches';
 import { IntakeActors } from '@/views/intake-actors';
 import { CloudLink } from '@/views/cloud-link';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'clusters', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -76,31 +70,25 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'component-watchers': { label: 'Component watchers', icon: Radar, view: ComponentWatchers },
   artifacts: { label: 'Artifacts', icon: FolderOpen, view: ArtifactSettings },
   routing: { label: 'Routing', icon: Route, view: Routing },
-  plugins: { label: 'Plugins', icon: Puzzle, view: Plugins },
   webhooks: { label: 'Webhooks', icon: Webhook, view: Webhooks },
-  vault: { label: 'Vault', icon: LockKeyhole, view: Vault },
   clusters: { label: 'Clusters', icon: Boxes, view: Clusters },
-  users: { label: 'Users', icon: UsersIcon, view: Users },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
-  'api-tokens': { label: 'API tokens', icon: Ticket, view: ApiTokens },
-  access: { label: 'Access', icon: KeySquare, view: Access },
-  permissions: { label: 'Permission matrix', icon: Grid3x3, view: PermissionMatrix },
 };
 
 function Version() {
   return <div className="space-y-3"><section className="max-w-xl rounded-lg border p-4"><h2 className="mb-3 text-sm font-medium">Version and updates</h2><VersionDetails /></section><DisplayName /></div>;
 }
 
-/** The sections' links in groups (issue #2353): each group folds by its title, kept per browser; a folded group still shows
- * the link of the section open now. Every section is in one group. */
+/** The sections' links in groups (issues #2353, #2373): each group folds by its title, kept per browser; a folded group still
+ * shows the link of the section open now. Every section is in one group, and no group holds one section only. */
 const GROUPS = [
-  { id: 'general', label: 'General', sections: ['version', 'version-history', 'telemetry', 'cloud-link', 'artifacts'] },
-  { id: 'questions', label: 'Questions', sections: ['questions', 'decider', 'thread-ask', 'tldr'] },
-  { id: 'jobs', label: 'Jobs', sections: ['token-budget', 'preemption', 'job-rules', 'windows-hosts', 'clusters', 'routing', 'plugins'] },
-  { id: 'github', label: 'GitHub', sections: ['intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'webhooks'] },
-  { id: 'network', label: 'Network', sections: ['remote-access', 'allowed-hosts', 'host-link'] },
-  { id: 'access', label: 'Access', sections: ['vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] },
-] as const satisfies readonly { id: string; label: string; sections: readonly Section[] }[];
+  { id: 'jobs', label: 'Jobs and agents', sections: ['token-budget', 'preemption', 'job-rules', 'routing', 'windows-hosts', 'clusters', 'artifacts'] },
+  { id: 'intake', label: 'Intake', sections: ['intake', 'questions', 'decider', 'thread-ask', 'tldr'] },
+  { id: 'github', label: 'GitHub', sections: ['yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers'] },
+  { id: 'security', label: 'Security and access', sections: ['sign-in', 'allowed-hosts', 'remote-access'] },
+  { id: 'integrations', label: 'Integrations', sections: ['webhooks', 'cloud-link', 'telemetry'] },
+  { id: 'system', label: 'System', sections: ['version', 'version-history', 'host-link'] },
+] as const satisfies readonly { id: string; label: string; sections: readonly [Section, Section, ...Section[]] }[];
 type Group = { id: string; label: string; sections: readonly Section[] };
 /** A section in no group fails the typecheck. */
 const grouped: Exclude<Section, (typeof GROUPS)[number]['sections'][number]> extends never ? true : never = true;
@@ -110,9 +98,9 @@ function SectionLink({ s, current }: { s: Section; current: boolean }) {
   const { label, icon: Icon } = ITEMS[s];
   return (
     <a href={`#settings/${s}`} aria-current={current ? 'page' : undefined}
-      className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-        current && 'border-foreground/20 bg-muted text-foreground')}>
-      <Icon className="size-3.5" />{label}
+      className={cn('flex h-7 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+        current && 'bg-muted text-foreground')}>
+      <Icon className="size-3.5 shrink-0" /><span className="truncate">{label}</span>
     </a>
   );
 }
@@ -121,11 +109,11 @@ function NavGroup({ g, section }: { g: Group; section: Section }) {
   const [open, toggle] = useGroupOpen(`settings.group.${g.id}`);
   const shown = open ? g.sections : g.sections.filter((s) => s === section);
   return (
-    <div data-settings-group={g.id} className="flex min-w-0 flex-wrap items-center gap-1">
+    <div data-settings-group={g.id} className="grid gap-0.5">
       <button type="button" data-slot="settings-group-toggle" aria-expanded={open} onClick={toggle}
-        className="flex h-8 items-center gap-1 rounded px-1 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase hover:bg-muted/40">
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}{g.label}
-        {!open && <span className="num font-normal opacity-70">{g.sections.length}</span>}
+        className="flex h-7 items-center gap-1 rounded px-1 text-left text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase hover:bg-muted/40">
+        {open ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}{g.label}
+        {!open && <span className="num ml-auto font-normal opacity-70">{g.sections.length}</span>}
       </button>
       {shown.map((s) => <SectionLink key={s} s={s} current={s === section} />)}
     </div>
@@ -136,7 +124,7 @@ function NavGroup({ g, section }: { g: Group; section: Section }) {
 function Jump({ section }: { section: Section }) {
   return (
     <select data-slot="settings-jump" aria-label="Jump to a section" value={section} onChange={(e) => { window.location.hash = `#settings/${e.target.value}`; }}
-      className="h-8 rounded-md border bg-background px-2 text-sm">
+      className="h-8 w-full rounded-md border bg-background px-2 text-sm lg:hidden">
       {GROUPS.map((g) => <optgroup key={g.id} label={g.label}>{g.sections.map((s) => <option key={s} value={s}>{ITEMS[s].label}</option>)}</optgroup>)}
     </select>
   );
@@ -144,8 +132,18 @@ function Jump({ section }: { section: Section }) {
 
 /** Old section names and the section each moved to, so an old link still opens it. */
 const MOVED: Record<string, Section> = { 'minor-decisions': 'decider' };
-/** Old sections that left Settings (issue #897), and the hash of their one home now. */
-const LEFT: Record<string, string> = { history: '#questions/history', reports: '#reports' };
+/** Old sections that left Settings (issues #897, #2373), and the hash of their one home now; what follows the section in the
+ * old hash (a device grant's user code) follows the new one. */
+const LEFT: Record<string, string> = {
+  history: '#questions/history', reports: '#reports', plugins: '#plugins', vault: '#vault', users: '#users-access/users',
+  access: '#users-access/access', permissions: '#users-access/permissions', 'api-tokens': '#users-access/api-tokens',
+};
+const leftTo = (raw: string): string | undefined => {
+  const to = LEFT[raw];
+  if (!to) return undefined;
+  const rest = window.location.hash.slice(1).split('/').slice(2).join('/');
+  return rest ? `${to}/${rest}` : to;
+};
 const sectionOf = (s: string): Section => MOVED[s] ?? ((SECTIONS as readonly string[]).includes(s) ? (s as Section) : 'version');
 
 export function Settings() {
@@ -154,16 +152,17 @@ export function Settings() {
   useEffect(() => {
     const to = MOVED[raw];
     if (to) window.location.replace(`#settings/${to}`);
-    else if (LEFT[raw]) window.location.replace(LEFT[raw]);
+    else { const left = leftTo(raw); if (left) window.location.replace(left); }
   }, [raw]);
   const Current = ITEMS[section].view;
   return (
-    <div className="space-y-3">
-      <nav data-slot="settings-nav" aria-label="Settings sections" className="space-y-1">
+    <div className="gap-6 space-y-3 lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:space-y-0">
+      <nav data-slot="settings-nav" data-orientation="vertical" aria-label="Settings sections"
+        className="space-y-2 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:overscroll-contain">
         <Jump section={section} />
-        {GROUPS.map((g) => <NavGroup key={g.id} g={g} section={section} />)}
+        <div className="hidden space-y-2 lg:block">{GROUPS.map((g) => <NavGroup key={g.id} g={g} section={section} />)}</div>
       </nav>
-      <Current />
+      <div className="min-w-0"><Current /></div>
     </div>
   );
 }

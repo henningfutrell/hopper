@@ -7,7 +7,7 @@
 // repositories it is installed on — the panel lists them for each account it is installed on, with a link
 // to choose them; only where it is installed nowhere does it link to install it (issue #253). When GitHub
 // cannot say where it is installed, the panel says why and links to see the installs, never to install (#263). Signed in
-// with GitHub, the account is the sign-in: the panel offers Sign out, never a Disconnect, and points at Settings → Plugins
+// with GitHub, the account is the sign-in: the panel offers Sign out, never a Disconnect, and points at Plugins
 // to stop taking jobs from it while signed in. Signed in another way, Stop working through GitHub forgets the account and
 // its token and keeps the sign-in (issue #322). A connection that ended marks only this source as needing a new connection:
 // the session stays, signed in with GitHub or not, and Connect again is offered here to everyone (issue #1380). The connection's job source is shown in it, its sync under the
@@ -132,7 +132,7 @@ export function ConnectedAccountPanel({ provider, accountKey = provider, source,
           {source && <SourceSync s={source} addRepository={(repo) => send({ action: 'choose', repositories: [...s.jobRepositories.filter((r) => r !== repo), repo] })} />}
           {signedInWith
             ? <>
-              <div className="text-muted-foreground">To stop taking jobs from {name} and stay signed in, switch off its job source in <a className="underline" href="#settings/plugins">Settings → Plugins</a>.</div>
+              <div className="text-muted-foreground">To stop taking jobs from {name} and stay signed in, switch off its job source in <a className="underline" href="#plugins">Plugins</a>.</div>
               <Button size="xs" variant="outline" onClick={() => void logout()}><LogOut />Sign out</Button>
             </>
             : <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `Forgets the ${name} account and its token: its issues stop becoming jobs, and you stay signed in`} onClick={() => void act('disconnect')}><Unlink />Stop working through {name}</Button>}

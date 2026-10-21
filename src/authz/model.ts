@@ -1,4 +1,4 @@
-// The access model (issues #559, #581): OpenFGA's DSL, kept in the hopper's database and edited in Settings → Access.
+// The access model (issues #559, #581): OpenFGA's DSL, kept in the hopper's database and edited in Users & access → Access.
 // The default says a requester — a job, a machine or a user — may do an operation on an asset when it reaches a
 // template approved for the operation profile that grants it: a user owns a job, the job runs on a machine, the
 // machine is an instance of the template. The hopper writes those tuples from who is live, and removes them when a
@@ -29,7 +29,7 @@ type machine
     define owner: owns from runs_on
 
 # A kind of machine (the vault's templates, issue #558). A box is an instance of the template it joined as, until it
-# leaves. A check tried in Settings → Access tells a made-up job running from it, for that check only.
+# leaves. A check tried in Users & access → Access tells a made-up job running from it, for that check only.
 type template
   relations
     define running: [job]

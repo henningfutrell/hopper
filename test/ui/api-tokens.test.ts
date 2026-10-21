@@ -84,8 +84,8 @@ describe('API tokens model', () => {
     expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], days: null } }, 'admin')).toMatch(/^viewer · scopes \*:read · no fixed end · /);
     expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], jkt: 'k'.repeat(43) } }, 'admin')).toMatch(/^viewer · bound to the asking agent's key · scopes /);
     expect(deviceAskLine({ ...v, ask: { label: 'x', role: 'viewer', scopes: ['*:read'], limits: { repos: ['acme/app'] } } }, 'admin')).toMatch(/^viewer · scopes \*:read · only acme\/app · /);
-    expect(deviceCodeOfHash('#settings/api-tokens/BCDF-GHJK')).toBe('BCDF-GHJK');
-    expect(deviceCodeOfHash('#settings/api-tokens')).toBe('');
+    expect(deviceCodeOfHash('#users-access/api-tokens/BCDF-GHJK')).toBe('BCDF-GHJK');
+    expect(deviceCodeOfHash('#users-access/api-tokens')).toBe('');
   });
 
   it('the limits a person types: repositories and job sources, by commas or spaces (issue #892)', () => {

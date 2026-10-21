@@ -215,8 +215,8 @@ export function checkWait(t: CheckedTemplate): string | undefined {
   if (c.state === 'running') return `${wait}: it runs now, since ${c.at}`;
   const failed = [...failedProbes(c), ...(c.problem ? [c.problem] : [])];
   if (c.transient) return `${wait}: it failed on a network error (${failed.join('; ')}). The hopper runs it again in a few minutes`;
-  if (unmintedNeeds(t).length > 0) return `${wait}: it failed (${failed.join('; ')}). The hopper runs it again in an hour, or when a minting credential for its account or cluster is set. A person runs it again in Settings → Vault, or with hopper template check ${t.name}`;
-  return `${wait}: it failed (${failed.join('; ')}). A person runs it again in Settings → Vault, or with hopper template check ${t.name}`;
+  if (unmintedNeeds(t).length > 0) return `${wait}: it failed (${failed.join('; ')}). The hopper runs it again in an hour, or when a minting credential for its account or cluster is set. A person runs it again in Vault, or with hopper template check ${t.name}`;
+  return `${wait}: it failed (${failed.join('; ')}). A person runs it again in Vault, or with hopper template check ${t.name}`;
 }
 
 /**

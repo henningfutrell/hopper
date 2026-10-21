@@ -170,7 +170,7 @@ async function systemInBackend(
 export function knownTemplate<E extends { action: string; role?: string; options?: Record<string, unknown> }>(vault: Pick<Vault, 'view'>, edit: E): E {
   const template = (edit.action === 'options' || edit.action === 'add') && edit.role === 'machine-source' ? edit.options?.template : undefined;
   if (template !== undefined && !(typeof template === 'string' && holdsTemplate(vault, template))) {
-    throw new HttpError(404, `no template ${String(template)}: save it in Settings → Vault first`);
+    throw new HttpError(404, `no template ${String(template)}: save it in Vault first`);
   }
   return edit;
 }

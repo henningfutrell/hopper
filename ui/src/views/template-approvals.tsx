@@ -1,4 +1,4 @@
-// Access requests, Template approvals (issue #897; the approvals of issues #558 and #584, moved from Settings → Vault): each
+// Access requests, Template approvals (issue #897; the approvals of issues #558 and #584, moved from Vault): each
 // template that waits for a person — never approved, or a new image, secret or profile since — with what waits and its
 // blast radius. Approve approves it as it is, its read profiles with it; a write, sync or apply profile takes its own
 // explicit approval. A machine's box of a waiting template takes no job until then. Editing a template stays on Settings →
@@ -68,7 +68,7 @@ function Waiting({ t, asks, secrets, can }: { t: TemplateView; asks?: ProfileAsk
             </Confirm>
           )}
           <ApprovalState approval={approval} />
-          <a href="#settings/vault" className="inline-flex h-8 items-center text-sm text-muted-foreground hover:underline">Edit on Settings → Vault</a>
+          <a href="#vault" className="inline-flex h-8 items-center text-sm text-muted-foreground hover:underline">Edit on Vault</a>
         </div>
       ) : <p className="text-xs text-muted-foreground">An admin approves it here.</p>}
     </li>

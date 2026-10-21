@@ -82,7 +82,7 @@ function Source({ report, busy, act }: { report: PluginStoreReport; busy: boolea
   );
 }
 
-export function PluginStore() {
+export function PluginStore({ fold }: { fold?: string } = {}) {
   const authed = useCanAdminInstance();
   const [report, setReport] = useState<PluginStoreReport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -96,9 +96,11 @@ export function PluginStore() {
       .finally(() => setBusy(false));
   };
 
-  if (!report) return <Panel title="Plugin store" icon={Store}><Empty>loading…</Empty></Panel>;
+  if (!report) return <Panel title="Plugin store" icon={Store} fold={fold} summary="loading…"><Empty>loading…</Empty></Panel>;
+  const installed = report.plugins.filter((e) => e.installed).length;
   return (
-    <Panel title="Plugin store" icon={Store} count={report.plugins.length || ''} bodyClassName="space-y-2 text-xs"
+    <Panel title="Plugin store" icon={Store} count={report.plugins.length || ''} bodyClassName="space-y-2 text-xs" fold={fold}
+      summary={report.state === 'unavailable' ? 'not set up' : `${report.plugins.length} in the catalogue, ${installed} installed`}
       action={authed && report.repo && <Button size="sm" variant="outline" disabled={busy} onClick={() => act({ action: 'refresh' }, 'Plugin store read')}><RefreshCw />Refresh</Button>}>
       {/* Keyed by the setting: a new setting starts the field over. */}
       <Source key={`${report.source}:${report.repo ?? ''}`} report={report} busy={busy} act={act} />

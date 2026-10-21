@@ -138,7 +138,7 @@ export function createDirectJobs(o: {
       data: { id: d.id, by: by.person, via: by.via, labels: d.labels, authorizations: d.authorizations, ...(d.repo ? { repo: d.repo } : {}) },
     });
     const job = o.host().ingest(directItem(d, o.url(d.id)), SOURCE_REF) ?? undefined;
-    // The submitter's vault grant, as Grant on Settings → Vault keeps it: for the item, so Run again keeps it.
+    // The submitter's vault grant, as Grant on Vault keeps it: for the item, so Run again keeps it.
     const key = directKey(d.id);
     if (job && authorizesVault(d) && !store.vaultGrants.get(key)) {
       store.vaultGrants.put({ key, job: job.id, by: by.person, at: o.now() });

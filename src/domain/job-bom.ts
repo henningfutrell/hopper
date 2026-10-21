@@ -298,7 +298,7 @@ function infra(events: readonly DomainEvent[]): BomPart[] {
     } else if (e.type === 'infra.out_of_band_recorded') {
       out.push({ id: `drift:${str(d.change) ?? e.seq}`, group: 'infra', kind: 'drift', label: `Drift: ${str(d.target) ?? 'infrastructure'}`, status: 'open', at: e.at, href: '#infra', ...(str(d.what) ? { detail: str(d.what)! } : {}) });
     } else if (e.type === 'vault.grant_asked') {
-      out.push({ id: 'grant', group: 'infra', kind: 'grant', label: 'Vault grant asked', status: granted ? 'done' : 'waiting_on_you', at: e.at, href: '#settings/vault', ...(str(d.name) ? { detail: str(d.name)! } : {}) });
+      out.push({ id: 'grant', group: 'infra', kind: 'grant', label: 'Vault grant asked', status: granted ? 'done' : 'waiting_on_you', at: e.at, href: '#vault', ...(str(d.name) ? { detail: str(d.name)! } : {}) });
     }
   }
   return out;

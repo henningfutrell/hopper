@@ -1,5 +1,5 @@
 // Sandbox strictness (issue #655 part 8, design.md "Trust stamps"): brake 2 — which sandbox runs gate 2 may approve with
-// no person, per template and per blast radius level. An admin sets it in Settings → Vault; it is read at each ask, so a
+// no person, per template and per blast radius level. An admin sets it in Vault; it is read at each ask, so a
 // change applies at once and never needs a restart. It only takes approvals away: the toggles and policies
 // (sandbox-approvals.ts) still decide what is approved with no person where the brake lets them. A tightened brake also
 // stops a run approved before with no person from counting; a person's approval still counts. Pure.

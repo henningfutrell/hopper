@@ -170,7 +170,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         if (typeof read === 'string') return no(reply, 400, read);
         // Issue #655 part 16: a need above the job's trust is refused by policy before a template is made for it.
         const outside = who.t.sandboxRequests.outside(who.job.id, read);
-        if (outside) return no(reply, 403, `${MIN_TRUST_DECLINER} refuses this need step: ${outside}. An admin sets the minimum trust in Settings → Access. Find another way.`);
+        if (outside) return no(reply, 403, `${MIN_TRUST_DECLINER} refuses this need step: ${outside}. An admin sets the minimum trust in Users & access → Access. Find another way.`);
         // A need the vault mints nothing for is refused before any template is made for it.
         const unminted = read.find((p) => mintKindFor(p.asset.kind) === undefined);
         if (unminted) return no(reply, 400, `${unminted.operation}/${unminted.asset.kind}/${unminted.asset.name}: the hopper mints a credential for a step for an aws-role, a cluster or a namespace only: name aws-role/<account>/<role>, cluster/<name> or namespace/<cluster>/<ns>`);

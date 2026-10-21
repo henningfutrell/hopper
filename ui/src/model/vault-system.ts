@@ -1,4 +1,4 @@
-// The system scope on Settings → Vault (issue #658): what each of the hopper's own secrets is for, in words, and what an
+// The system scope on Vault (issue #658): what each of the hopper's own secrets is for, in words, and what an
 // entry of their audit trail says. Only metadata reaches the page: there is no value to show.
 import type { SystemSecretAudit, SystemSecretView } from './wire.ts';
 

@@ -89,16 +89,17 @@ afterEach(async () => {
 });
 
 describe('Settings', () => {
-  it('one navigation entry holds the configuration: version, version history, question gates, decider, token budget, preemption, issue thread, TL;DR, job rules, Windows hosts, intake, yolo mode, landing batches, GitHub rate limit, remote access, allowed hosts, telemetry, Contribution, GitHub watches, component watchers, artifacts, routing, plugins, webhooks, vault, users, sign-in, API tokens, access, permission matrix', async () => {
+  it('one navigation entry holds the configuration, in the six groups of its sub-nav (issue #2373); Plugins, Vault and Users & access are entries of their own', async () => {
     await boot();
     const main = document.querySelector('aside nav')!;
     const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
     expect(hrefs).toContain('#settings');
-    for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
+    for (const own of ['#plugins', '#vault', '#users-access']) expect(hrefs).toContain(own);
+    for (const gone of ['#routing', '#webhooks']) expect(hrefs).not.toContain(gone);
     const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
     expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
-      // In their groups (issue #2353): General, Questions, Jobs, GitHub, Network, Access.
-      .toEqual(['#settings/version', '#settings/version-history', '#settings/telemetry', '#settings/cloud-link', '#settings/artifacts', '#settings/questions', '#settings/decider', '#settings/thread-ask', '#settings/tldr', '#settings/token-budget', '#settings/preemption', '#settings/job-rules', '#settings/windows-hosts', '#settings/clusters', '#settings/routing', '#settings/plugins', '#settings/intake', '#settings/yolo-mode', '#settings/landing-batches', '#settings/github-rate-limit', '#settings/github-webhook', '#settings/contribution', '#settings/shrink-guard', '#settings/github-watches', '#settings/component-watchers', '#settings/webhooks', '#settings/remote-access', '#settings/allowed-hosts', '#settings/host-link', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/api-tokens', '#settings/access', '#settings/permissions']);
+      // In their groups: Jobs and agents, Intake, GitHub, Security and access, Integrations, System.
+      .toEqual(['#settings/token-budget', '#settings/preemption', '#settings/job-rules', '#settings/routing', '#settings/windows-hosts', '#settings/clusters', '#settings/artifacts', '#settings/intake', '#settings/questions', '#settings/decider', '#settings/thread-ask', '#settings/tldr', '#settings/yolo-mode', '#settings/landing-batches', '#settings/github-rate-limit', '#settings/github-webhook', '#settings/contribution', '#settings/shrink-guard', '#settings/github-watches', '#settings/component-watchers', '#settings/sign-in', '#settings/allowed-hosts', '#settings/remote-access', '#settings/webhooks', '#settings/cloud-link', '#settings/telemetry', '#settings/version', '#settings/version-history', '#settings/host-link']);
     expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
   });
 

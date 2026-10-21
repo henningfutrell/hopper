@@ -65,7 +65,7 @@ node scripts/cloud-acceptance.ts run \
 - Name at least one asset. Name the AWS role and the cluster to cover all four tools.
 - `--terraform-workspace` needs `--aws-role`: terraform's probes run with the AWS role's read session.
 - When the template waits for a person, the command says so. Approve it with `hopper template approve <template>`, or
-  on Settings → Vault. The command waits up to 30 minutes (`--wait <seconds>` changes it).
+  on Vault. The command waits up to 30 minutes (`--wait <seconds>` changes it).
 - Each step prints one line as it ends.
 
 The command writes `cloud-acceptance/report.md` and `cloud-acceptance/report.json` (`--out <dir>` changes the place).

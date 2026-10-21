@@ -1,4 +1,4 @@
-// Issue #658: the hopper's own secrets on Settings → Vault, the page's pure model. Each says what the hopper keeps it
+// Issue #658: the hopper's own secrets on Vault, the page's pure model. Each says what the hopper keeps it
 // for, its last 4 characters, who set it and when, how it is kept and where it is changed; each audit entry says what
 // happened to which secret and by whom. Nothing on the page is a value.
 import { describe, expect, it } from 'vitest';

@@ -3,7 +3,7 @@
 // subscription's row, the GitHub connection's tokens sealed by the token box in its row, a sign-in realm's client secret
 // in clear in the `sign-in` record. The first start of this build moves each into the vault — kept, opened again, the old
 // copy removed —, one `vault.secret_migrated` each, never a value; the next start changes nothing; and each keeps working
-// across the move. Settings → Vault shows them and their audit trail, never a value.
+// across the move. Vault shows them and their audit trail, never a value.
 //
 // Feature: the hopper's own secrets in the vault's system scope
 //   Scenario: a start moves every secret kept before into the vault; GitHub, the webhook and the realm keep working

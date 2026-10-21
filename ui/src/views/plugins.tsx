@@ -3,12 +3,13 @@
 // for a list role Add and Remove. Refreshes every 15 s unless a form holds unsaved edits. Every shipped
 // plugin of a list role has a switch that enables or disables it (issue #142). The escalation levels are
 // the exception (issue #444): shown read-only with a link to Question gates, their one editor, and no switch. A notifier shows its
-// actions (issue #378): Send test event, Send open questions.
+// actions (issue #378): Send test event, Send open questions. Its own view (issue #2373; it was Settings → Plugins): each block is
+// a card that folds to its title and a one-line summary, kept per browser, and Fold all folds or opens them at once.
 import { Inbox, Package, Puzzle, RefreshCw, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Empty, Panel } from '@/components/panel';
+import { Empty, FoldAll, Panel } from '@/components/panel';
 import { AddInstance, InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { SendAction } from '@/components/send-action';
 import { StatusBadge } from '@/components/status';
@@ -20,11 +21,16 @@ import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
 
+/** The page choice key each block folds under. */
+const foldOf = (block: string) => `plugins.${block}`;
+const instancesLine = (names: readonly string[]) => names.length ? `${names.length} ${names.length === 1 ? 'instance' : 'instances'}: ${names.join(', ')}` : 'none';
+
 /** The escalation levels, read-only (issue #444): edited in Question gates alone, linked from here. */
 function LevelsSummary({ report }: { report: PluginsReport }) {
   const levels = report.instances.filter((i) => i.role === 'escalation-level').map((i) => i.instance);
   return (
-    <Panel title={ROLE_TITLES['escalation-level']} icon={Puzzle} count={levels.length || ''} bodyClassName="space-y-2"
+    <Panel title={ROLE_TITLES['escalation-level']} icon={Puzzle} count={levels.length || ''} bodyClassName="space-y-2" fold={foldOf('role.escalation-level')}
+      summary={levels.length ? `${levels.length} ${levels.length === 1 ? 'level' : 'levels'}: ${levels.map((l) => l.name).join(', ')}` : 'none: questions go straight to the owner'}
       action={<a href="#settings/questions" className="text-xs underline underline-offset-2">Edit in Question gates</a>}>
       <div data-slot="escalation-levels-summary" className="space-y-1.5 text-xs">
         {levels.length
@@ -53,7 +59,8 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
   if (role === 'escalation-level') return <LevelsSummary report={report} />;
   const instances = report.instances.filter((i) => i.role === role);
   return (
-    <Panel title={ROLE_TITLES[role]} icon={Puzzle} count={instances.length || ''} bodyClassName="space-y-3"
+    <Panel title={ROLE_TITLES[role]} icon={Puzzle} count={instances.length || ''} bodyClassName="space-y-3" fold={foldOf(`role.${role}`)}
+      summary={role === 'router' ? `${report.router.active}, ${report.router.selection}` : instancesLine(instances.map((i) => i.instance.name))}
       action={role === 'router' ? <span className="text-xs text-muted-foreground">{report.router.selection}</span> : undefined}>
       {isSelectable(role) && <PluginSelector role={role} />}
       {isListRole(role) && <AddInstance role={role} />}
@@ -96,7 +103,8 @@ function ShippedPlugins({ report }: { report: PluginsReport }) {
     setBusy(null);
   };
   return (
-    <Panel title="Shipped plugins" icon={Package} count={shipped.filter((p) => p.enabled).length || ''} bodyClassName="divide-y">
+    <Panel title="Shipped plugins" icon={Package} count={shipped.filter((p) => p.enabled).length || ''} bodyClassName="divide-y" fold={foldOf('shipped')}
+      summary={`${shipped.filter((p) => p.enabled).length} of ${shipped.length} on`}>
       {shipped.map((p) => (
         <div key={`${p.role}:${p.id}`} className="flex items-start gap-3 py-2 first:pt-0 last:pb-0">
           <Switch className="mt-0.5" checked={p.enabled} aria-label={`${p.enabled ? 'Disable' : 'Enable'} ${p.id}`}
@@ -129,9 +137,13 @@ export function Plugins() {
   if (!report) return <Panel title="Plugins" icon={Puzzle}><Empty>{error ?? 'loading…'}</Empty></Panel>;
   const rescan = async () => { setBusy(true); await sendPluginsEdit({ action: 'rescan' }, 'Plugins rescanned'); setBusy(false); };
   const c = report.config;
+  const problems = [...c.warnings, ...report.warnings].length + report.errors.length + (c.error ? 1 : 0);
+  const folds = ['config', 'shipped', 'store', ...report.roles.map((r) => `role.${r}`)].map(foldOf);
   return (
-    <div className="space-y-3">
-      <Panel title="Plugins config" icon={Puzzle} bodyClassName="space-y-1.5 text-xs"
+    <div data-slot="plugins" className="space-y-3">
+      <div className="flex justify-end"><FoldAll keys={folds} /></div>
+      <Panel title="Plugins config" icon={Puzzle} bodyClassName="space-y-1.5 text-xs" fold={foldOf('config')}
+        summary={[c.source === 'stored' ? 'in the database' : 'built-in defaults', problems > 0 && `${problems} ${problems === 1 ? 'problem' : 'problems'}`].filter(Boolean).join(', ')}
         action={authed && <Button size="sm" variant="outline" disabled={busy} onClick={() => void rescan()}><RefreshCw />Rescan</Button>}>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={c.source === 'stored' ? 'in the database' : 'built-in defaults'} tone={c.source === 'stored' ? 'ok' : 'muted'} />
@@ -142,7 +154,7 @@ export function Plugins() {
         {report.errors.map((e) => <div key={e.path} className="text-bad">refused plugin {e.path}: {e.error}</div>)}
       </Panel>
       <ShippedPlugins report={report} />
-      <PluginStore />
+      <PluginStore fold={foldOf('store')} />
       <div className="grid gap-3 xl:grid-cols-2">{report.roles.map((r) => <RoleBlock key={r} role={r} report={report} />)}</div>
     </div>
   );

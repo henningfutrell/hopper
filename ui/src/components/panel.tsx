@@ -3,14 +3,16 @@
 // box (`list`) holds its list in a body of one height bound that scrolls past it (issue #84).
 // On a long page (issue #2353): a sticky panel keeps its header, and the toolbar under it (its filters), in view below the
 // app's header while its body scrolls with the page; a panel with `onToggle` folds, its title the toggle. A panel with
-// `fold` folds by itself, open or folded kept per browser under that page choice key (`usage.accounts`).
+// `fold` folds by itself, open or folded kept per browser under that page choice key (`usage.accounts`). Its `summary` (issue
+// #2373) is one line beside its title, so a folded panel still says what it holds; FoldAll folds or opens a page's panels at once.
 import { ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { useGroupOpen } from '@/hooks/use-page-pref';
+import { useGroupOpen, useGroupsOpen } from '@/hooks/use-page-pref';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export function Panel({ title, icon: Icon, count, action, toolbar, list, sticky, fold, open: openGiven = true, onToggle: toggleGiven, className, bodyClassName, children }: {
-  title: string; icon?: LucideIcon; count?: React.ReactNode; action?: React.ReactNode; toolbar?: React.ReactNode; list?: boolean;
+export function Panel({ title, icon: Icon, count, summary, action, toolbar, list, sticky, fold, open: openGiven = true, onToggle: toggleGiven, className, bodyClassName, children }: {
+  title: string; icon?: LucideIcon; count?: React.ReactNode; summary?: React.ReactNode; action?: React.ReactNode; toolbar?: React.ReactNode; list?: boolean;
   sticky?: boolean; fold?: string; open?: boolean; onToggle?: () => void; className?: string; bodyClassName?: string; children: React.ReactNode;
 }) {
   const [kept, toggleKept] = useGroupOpen(fold ?? '');
@@ -19,8 +21,9 @@ export function Panel({ title, icon: Icon, count, action, toolbar, list, sticky,
   const heading = <>
     {onToggle && (open ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />)}
     {Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
-    <h2 className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">{title}</h2>
+    <h2 className="shrink-0 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">{title}</h2>
     {count != null && count !== '' && <span className="num text-[11px] text-muted-foreground/70">{count}</span>}
+    {summary != null && summary !== '' && <span data-slot="panel-summary" className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>}
   </>;
   return (
     // A sticky header needs a card that clips without scrolling: overflow-hidden would make the card its scroll box.
@@ -40,6 +43,12 @@ export function Panel({ title, icon: Icon, count, action, toolbar, list, sticky,
       )}
     </Card>
   );
+}
+
+/** One button that folds every panel of `keys` (their `fold` keys) when any is open, else opens them all. */
+export function FoldAll({ keys }: { keys: readonly string[] }) {
+  const [anyOpen, setAll] = useGroupsOpen(keys);
+  return <Button type="button" size="sm" variant="outline" data-slot="fold-all" onClick={() => setAll(!anyOpen)}>{anyOpen ? 'Fold all' : 'Open all'}</Button>;
 }
 
 /** A page's section with a heading and a line under it (Sources' GitHub, GitLab): its heading folds it, kept as `fold`. */

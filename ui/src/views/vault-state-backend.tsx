@@ -1,4 +1,4 @@
-// A terraform workspace's state backend on Settings → Vault (issue #715, part 6): in a template's form, the bucket, region
+// A terraform workspace's state backend on Vault (issue #715, part 6): in a template's form, the bucket, region
 // and key prefix of each terraform-workspace profile — the read-only check pushes a state of its own to a key of its own
 // there, and the account must refuse it —; in the template's facts, each one, or that it has none.
 import { useState } from 'react';

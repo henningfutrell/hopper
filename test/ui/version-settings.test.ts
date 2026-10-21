@@ -58,10 +58,10 @@ describe('the version, without an update notice', () => {
     expect(link?.textContent).toBe('Version');
   });
 
-  it('Settings opens on Version, its first section, with Version history next (issue #363)', async () => {
+  it('Settings opens on Version, first in its System group, with Version history next (issues #363, #2373)', async () => {
     window.location.hash = '#settings';
     await render('../../ui/src/views/settings.tsx', 'Settings');
-    const hrefs = [...document.querySelectorAll<HTMLAnchorElement>('[data-slot="settings-nav"] a')].map((a) => a.getAttribute('href'));
+    const hrefs = [...document.querySelectorAll<HTMLAnchorElement>('[data-settings-group="system"] a')].map((a) => a.getAttribute('href'));
     expect(hrefs.slice(0, 2)).toEqual(['#settings/version', '#settings/version-history']);
     expect(document.querySelector('[data-slot="settings-nav"] a[aria-current="page"]')?.getAttribute('href')).toBe('#settings/version');
     expect(document.querySelector('[data-slot="version-details"]')).not.toBeNull();

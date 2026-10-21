@@ -82,8 +82,7 @@ export interface WorkItem {
   /** Its pull request's change kind (issue #1076), as `job.pull_request_classified` last said. */
   changeKind?: ChangeKind;
   /** `open` or `closed`, and why it closed (`completed`, `not_planned`, `duplicate`), as GitHub said. */
-  issueState?: string;
-  issueReason?: string;
+  issueState?: string; issueReason?: string;
   /** What it waits on, in plain words. */
   waitingOn?: string;
   /** The job whose failure it is, while `failed`. */
@@ -97,6 +96,10 @@ export interface WorkItem {
    * Run again it asks for. Kept until the item moves: Intake gives it no reason, so the next discover runs it again.
    */
   runAgainAsked?: string;
+  /** A person's Won't do dropped it (issue #1892): a blocked item's in Intake, or a hand-off's; kept while it stays dropped. */
+  wontDo?: true;
+  /** A person resolved its hand-off as Done by hand (issue #1892): its job's work is done, by them; kept while it stays done. */
+  doneByHand?: true;
   /** How many of its pull requests in a row were closed without a merge on GitHub (issue #1891); a merge ends the row. */
   closedWithoutMerge?: number;
   /** The jobs of it whose work was kept, not pushed (`job.work_kept`), until removed. */
@@ -113,9 +116,7 @@ export interface WorkItem {
 export interface LedgerJob { id: string; key: string; kind?: string; pullRequest?: string }
 
 /** What a read of GitHub said of an item's issue (the issue graph's node), or of a pull request. */
-export type LedgerRead =
-  | { kind: 'issue'; at: string; state: string; reason?: string }
-  | { kind: 'pull_request'; url: string; state: string };
+export type LedgerRead = { kind: 'issue'; at: string; state: string; reason?: string } | { kind: 'pull_request'; url: string; state: string };
 
 /** The events the ledger reads; every other event leaves every item as it is. */
 export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
@@ -182,7 +183,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const next: Base = { ...base, ...change, eventState, eventAt: event.at };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
     if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
-    delete next.runAgainAsked; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
+    delete next.runAgainAsked; if (change.wontDo !== true || next.eventState !== 'dropped') delete next.wontDo; if (change.doneByHand !== true || next.eventState !== 'done') delete next.doneByHand; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
     return settled(item, next, event.at);
   };
   const mark = (change: Partial<Base>): WorkItem => {
@@ -214,7 +215,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     return cause ? move('blocked', { blockedCause: cause, waitingOn: BLOCKED_WORDS[cause], ...(base.eventState === 'partly_done' ? { pullRequest: undefined, pullRequestState: undefined } : {}) }) : undefined;
   }
   // A person's Won't do on a blocked item (issue #1891): dropped. Only a blocked item.
-  if (event.type === 'work_item.dropped') return item?.eventState === 'blocked' ? move('dropped', { waitingOn: undefined }) : undefined;
+  if (event.type === 'work_item.dropped') return item?.eventState === 'blocked' ? move('dropped', { waitingOn: undefined, wontDo: true }) : undefined;
   // The one notice of a blocked item (issue #1891): its state stays; once. A move out of blocked, or to another cause, forgets it.
   if (event.type === 'work_item.person_asked') return item?.state === 'blocked' && item.personAsked !== true ? mark({ personAsked: true }) : undefined;
   // A label a person took off by hand (issue #1892): a Run again, asked while the item stays in the state it was seen in.
@@ -275,8 +276,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
       return move('queued', { waitingOn: undefined });
     case 'job.unparked':
       return d.to === 'waiting_answer' ? move('needs_you', { waitingOn: 'a question' }) : move('queued', { waitingOn: undefined });
-    case 'job.parked':
-      return move('needs_you', { waitingOn: 'a person to pick up the parked job' });
+    case 'job.parked': return move('needs_you', { waitingOn: 'a person to pick up the parked job' });
     case 'job.waiting': {
       const what = typeof d.for === 'string' ? d.for : 'something outside';
       return d.ownCommand === true ? move('working', { waitingOn: what }) : move('waiting_outside', { waitingOn: what });
@@ -294,14 +294,15 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     case 'handoff.opened':
       return move('needs_you', { waitingOn: HANDOFF_WAIT, failedJobId: job.id });
     case 'handoff.closed':
-      if (d.end === 'wont_do') return move('dropped', { waitingOn: undefined });
+      if (d.end === 'wont_do') return move('dropped', { waitingOn: undefined, wontDo: true });
+      if (d.end === 'done_by_hand') return base.eventState === 'needs_you' ? move('done', { waitingOn: undefined, failedJobId: undefined, doneByHand: true }) : undefined;
       // Its job live again (issue #1777): it works on, as after `job.continued`.
       if (d.end === 'resumed') return base.eventState === 'needs_you' ? move('working', { waitingOn: undefined, failedJobId: undefined }) : undefined;
       return base.eventState === 'needs_you' && ['cleared', 'superseded', 'item_closed', 'job_gone'].includes(String(d.end)) ? move('failed', { waitingOn: undefined }) : undefined;
     case 'job.finished': {
       if (typeof d.partlyDone === 'string') return move('pr_open', { pullRequest: d.partlyDone, pullRequestState: 'open', waitingOn: 'the merge of its part', failedJobId: undefined });
       const shipped = DONE_RESULTS.some((r) => resultText(d).startsWith(r)) || job.kind === 'direct';
-      if (shipped) return move('done', { waitingOn: undefined, failedJobId: undefined });
+      if (shipped) return move('done', { waitingOn: undefined, failedJobId: undefined, ...(base.eventState === 'done' && base.doneByHand ? { doneByHand: true as const } : {}) });
       return move('pr_open', { ...(job.pullRequest ? { pullRequest: job.pullRequest, pullRequestState: 'open' as const } : {}), waitingOn: prWait(job.pullRequest), failedJobId: undefined });
     }
     case 'job.pull_request_followed':

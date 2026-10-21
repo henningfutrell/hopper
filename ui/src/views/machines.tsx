@@ -106,7 +106,7 @@ export function Machines() {
   };
   const sparks = useCpuSparks();
   const ctx: Ctx = {
-    config, authed, busy, editing, setEditing, sparks,
+    config, authed, busy, editing, setEditing, sparks, boxes,
     attach: (e, done) => run(async () => setConfig(await post<MachinesConfig>('/ui/api/machines', e)), done),
     edit: (e, done) => run(async () => { await post('/ui/api/plugins', e); await load(); }, done),
   };

@@ -2,13 +2,13 @@
 // AuthorizationServer seam. A template's operation profiles and its credential scope feed its blast radius; a
 // high-radius profile (write, sync, apply) needs its own explicit approval at the vault's gate, which writes the access
 // approval; an approval for read does not approve write; a widening rates the template again and opens the gate again.
-// The rating and its reasons show next to the template on Settings → Vault and Settings → Access.
+// The rating and its reasons show next to the template on Vault and Users & access → Access.
 //
 // Feature: template scope and high-radius profiles feed blast radius
 //   Scenario: a template with only a read profile is rated low
 //     Given the template kube declares read on cluster x
 //     When an admin approves kube
-//     Then kube is rated low on Settings → Vault and on Settings → Access
+//     Then kube is rated low on Vault and on Users & access → Access
 //     And a read check for kube on cluster x is allowed
 //   Scenario: adding a write profile raises the rating, and the gate asks for an explicit approval
 //     Given kube is approved for read on cluster x
@@ -18,7 +18,7 @@
 //     And a write check is denied
 //     When an admin approves write on cluster x for kube, explicitly
 //     Then a write check is allowed
-//   Scenario: a revoke in Settings → Access opens the gate again; narrowing or removing a template revokes
+//   Scenario: a revoke in Users & access → Access opens the gate again; narrowing or removing a template revokes
 //   Scenario: a profile the model cannot hold, or an explicit approval of a profile kube does not declare, is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AccessDecisionRecord, AccessView, OperationProfile, TemplateView } from '../../src/domain/types.ts';
@@ -95,7 +95,7 @@ describe('template scope and high-radius profiles feed blast radius (issue #584)
     expect((await accessTemplate(a, token))!.radius.level).toBe('medium');
   });
 
-  it('a revoke in Settings → Access opens the gate again; narrowing or removing the template revokes its approvals', async () => {
+  it('a revoke in Users & access → Access opens the gate again; narrowing or removing the template revokes its approvals', async () => {
     const { a, token } = await boot();
     await save(a, token, [READ, WRITE]);
     await vault(a, token, { action: 'approve-template', name: 'kube' });

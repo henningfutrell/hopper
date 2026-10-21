@@ -1,7 +1,7 @@
 // Issue #559: access through the real daemon, store and HTTP server, with OpenFGA as a double at the
 // AuthorizationServer seam. Before every credential the vault (issue #558) mints or renews, the hopper asks
 // OpenFGA whether the job's template is approved for that operation on that asset (`decideMint`); the
-// approvals and the model are the hopper's, in its database, pushed to OpenFGA. Settings → Access shows each
+// approvals and the model are the hopper's, in its database, pushed to OpenFGA. Users & access → Access shows each
 // template's approvals with the relationship chain, revokes one, tries a check, and edits the model. Every
 // decision is recorded. When OpenFGA cannot be asked, or has not taken a change yet, nothing is allowed.
 import { afterEach, describe, expect, it } from 'vitest';
@@ -257,7 +257,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     const d = await check(third.a, third.token, 'read');
     expect(d.body.allowed).toBe(false);
     expect(d.body.reason).toMatch(/the access model lacks what the hopper writes or asks: .*job#owns/);
-    expect((await view(third.a, third.token)).status).toMatchObject({ state: 'unreachable', why: expect.stringMatching(/Settings → Access/) });
+    expect((await view(third.a, third.token)).status).toMatchObject({ state: 'unreachable', why: expect.stringMatching(/Users & access → Access/) });
     expect((await edit(third.a, third.token, { action: 'model', dsl: DEFAULT_ACCESS_MODEL, version: v.model.version })).status).toBe(200);
     expect((await check(third.a, third.token, 'read')).body.allowed).toBe(true);
   });

@@ -1,6 +1,6 @@
 // Unknown assets on Access requests (issue #2123): each template with a need on a cluster the vault cannot find (issue
 // #2067) — the ones its nav badge counts — with the reason, and what fixes it: a cluster override for the name, an edit
-// of the template's needs on Settings → Vault, or Remove. No approval makes such a template work, so it has no Approve.
+// of the template's needs on Vault, or Remove. No approval makes such a template work, so it has no Approve.
 // Issue #2168: one click points the template at a cluster: each candidate of an ambiguous short name here, and on a
 // template card the one cluster a short name resolves to (ShortClusters).
 import { Crosshair, Trash2, TriangleAlert } from 'lucide-react';
@@ -50,7 +50,7 @@ function Row({ t, can }: { t: TemplateView; can: boolean }) {
       )}
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <a href="#settings/clusters" className="underline">Add a cluster override</a>
-        <a href="#settings/vault" className="underline">Edit its needs on Settings → Vault</a>
+        <a href="#vault" className="underline">Edit its needs on Vault</a>
         {can && (
           <Confirm title={`Remove ${t.name}?`} action="Remove" onConfirm={() => void sendVault({ action: 'remove-template', name: t.name }, `${t.name}: removed`)}
             description="The template is deleted. A job that asks for it again makes a new one.">

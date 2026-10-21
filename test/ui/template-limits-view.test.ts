@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Issue #708, on the page: Settings → Vault: a template's form sets its limits, and the template shows them. Issue #1349:
+// Issue #708, on the page: Vault: a template's form sets its limits, and the template shows them. Issue #1349:
 // Add machine adds a computer only: a sandbox never joins as a machine.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -103,10 +103,10 @@ describe('Add machine (issue #1349)', () => {
   });
 });
 
-describe('Settings → Vault: a template\'s limits (issue #708)', () => {
+describe('Vault: a template\'s limits (issue #708)', () => {
   async function boot() {
     const daemon = setup();
-    window.location.hash = '#settings/vault';
+    window.location.hash = '#vault';
     vi.resetModules();
     const app = '../../ui/src/app/app.tsx';
     const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };

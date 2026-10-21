@@ -706,7 +706,7 @@ nobody can give stalled or failed it, and each new screen of Claude's was a new 
 is non-interactive by construction, and "A dialog before the send" below is the guaranteed fallback.
 
 *By construction.* Before `agent start`, with the instance **unattended** (option `unattended`, default on; set per
-instance in Settings → Plugins, stored in the `plugins` config record and applied without a restart, as every executor
+instance in Plugins, stored in the `plugins` config record and applied without a restart, as every executor
 option is), the pane's own shell seeds Claude's config where the machine has none: `$CLAUDE_CONFIG_DIR/.claude.json`,
 else `~/.claude.json`, written only when absent (noclobber, mode 600), never the user's existing one — onboarding done,
 the dark theme, `autoUpdates: false`; with `trustWorkdir`, trust and the external imports approval for the work tree,
@@ -3461,7 +3461,7 @@ command, and the levels' fail-closed contract and the risk rules (code, not opti
 | escalation level | stays in its place and escalates every question it gets (`/api/plugins` `escalationLevels[].active: null`, `reason`); fail safe: a broken level never answers and never hides the levels above |
 | executor | jobs naming it `held`, reason `executor <name> unavailable`; never failed or re-routed |
 | job source / notifier | dropped; error in `/api/plugins` |
-| vault backend | dropped; error in `/api/plugins` and on Settings → Vault; a vault secret kept in it is refused at delivery, saying why |
+| vault backend | dropped; error in `/api/plugins` and on Vault; a vault secret kept in it is refused at delivery, saying why |
 
 ### Persisted-state migrations
 
@@ -4122,7 +4122,7 @@ that lists it. herdr-claude and the print-mode executors refuse a container targ
 (`herdr-claude does not run on container target …`): it has no agent.
 
 **Preparing it:** nothing beyond the sandbox module's runtime ("Sandboxes the hopper starts" in
-docs/deploy.md). Add a `container` instance in Settings → Plugins. A machine edit can change a
+docs/deploy.md). Add a `container` instance in Plugins. A machine edit can change a
 container target's lanes, executors, label and image; adding one from the UI's Add machine form is
 not built (the add form attaches ssh targets).
 
@@ -5136,7 +5136,7 @@ deleted the home volume.
   each launch from what the runtime says of the hopper (`address.ts`), and the box's start check proves it before the
   launch answers. A box on a client target dials the URL that machine's client dialled in on (#695): an address the
   machine proved it reaches.
-- **On the page (part 5, 2026-10-11).** A template's form (Settings → Vault, `ui/src/views/vault-template-form.tsx`,
+- **On the page (part 5, 2026-10-11).** A template's form (Vault, `ui/src/views/vault-template-form.tsx`,
   `sandbox-limits.tsx`) sets its limits: a default and a max for CPUs, memory (GiB on the page, MiB on the wire) and
   the time limit (minutes), and whether the home volume stays; an empty pair is the hopper's default, and the form
   always sends `limits`, so emptying a pair puts the hopper's default back. The template shows them as a Limits row.
@@ -5243,7 +5243,7 @@ it, a person signed each box's agent in by hand (its home volume keeps the sign-
 stopped its first job at Claude's login screen.
 
 - **The source is the vault.** A template names one of its own secrets as its **agent credential**
-  (`Template.agentCredential`; `save-template` `agentCredential`, absent keeps it, `null` drops it; Settings → Vault, the
+  (`Template.agentCredential`; `save-template` `agentCredential`, absent keeps it, `null` drops it; Vault, the
   template's form; `hopper template save --agent-credential <secret>|none`). A name that is not one of its secrets, or a
   shared secret (`shared/<name>`), is refused (400): a shared secret's read is Access's decision per user, which a launch
   does not ask. The value is a Claude token, what `claude setup-token` prints (`sk-ant-oat…`).
@@ -5589,7 +5589,7 @@ for the next: before this, each job pod's Claude asked for a login. Now one sign
 every new job pod.
 
 - **The sign-in is a setup token in the vault.** The user runs `claude setup-token` once (it prints `sk-ant-oat…`, good for
-  a year) and keeps it as a vault secret of their own (Settings → Vault), named `CLAUDE_TOKEN` unless the kubernetes executor
+  a year) and keeps it as a vault secret of their own (Vault), named `CLAUDE_TOKEN` unless the kubernetes executor
   names another (option `agentCredential`). The same rule as a template's **agent credential**: only a setup token, never a
   `/login`'s credentials file, whose refresh token rotates — one pod renewing it signs every other pod out, and pods run at
   the same time. No pod renews a setup token, so any number share it.
@@ -5666,7 +5666,7 @@ job is not held. `test/plugins/claude-plan-client.test.ts` (a refusal runs no cl
 ### The hopper's Claude sign-in for pods (issue #1287, part 4, 2026-10-15)
 
 Before it, the token job pods and lane pods start with came from a person who ran `claude setup-token` on a machine of their
-own, copied what it printed, and set it in Settings → Vault. Now the hopper runs it, and the sign-in is one paste on Logins,
+own, copied what it printed, and set it in Vault. Now the hopper runs it, and the sign-in is one paste on Logins,
 naming the account.
 
 - **Started by an admin, naming the account.** Logins → **Claude sign-in for pods**: the Claude account (an email) and Sign
@@ -5688,7 +5688,7 @@ naming the account.
   /ui/api/logins/:id/code`, as a **tool sign-in**'s). The hopper reads the token out of what the CLI printed (its last
   `sk-ant-oat…`, checked as an **agent credential**), sets it as the user's vault secret `CLAUDE_TOKEN` (sealed,
   `vault.secret_set` with no value, by the admin who started it; a second sign-in replaces it), its scope
-  `Claude account <email>`, so Settings → Vault says whose it is; then, once the CLI ended, the login completes.
+  `Claude account <email>`, so Vault says whose it is; then, once the CLI ended, the login completes.
 - **Kept as soon as it is read** (issue #1610). The token goes to the vault the moment the CLI printed it whole (a character
   after it), not when the CLI ends: a stop or crash between the two would lose a minted credential that nothing revokes.
   Once kept, the login completes whatever the CLI's end; a token the vault refused fails the login with why. A wrong code fails the login with
@@ -6182,7 +6182,7 @@ available, not typed.
 part, each routed by hash so a link and the back button work: `#settings/version` what is running,
 its update channel and an available update — the first section and the default for `#settings` (issue
 #363) —, `#settings/version-history` next, `#settings/questions` the question gates, `#settings/history` the question history,
-`#settings/routing`, `#settings/plugins`, `#settings/webhooks` — the views that were their own
+`#settings/routing`, `#plugins`, `#settings/webhooks` — the views that were their own
 navigation entries before. The Questions view holds the open questions only. Machines, Sources and
 Usage stay their own views: each is mostly live state, with its configuration beside it. The view
 of a hash is the part before the slash (`useView`, `useSection` in `ui/src/app/nav.tsx`).
@@ -6742,7 +6742,7 @@ supersedes the special-login part of issue #238.
 Inputs, from `main` at `4520f86`: #238 had removed `hopper login-code` and `scripts/open-ui.sh`; #239
 recorded the first GitHub admin and granted their identity role `admin`; #241 added the totals across
 users, behind role `admin`. What was left: a login code signed in with role `admin`, and role `admin` was
-both the user's own configuration and the instance's. So a new user's login link (Settings → Users) made
+both the user's own configuration and the instance's. So a new user's login link (Users & access → Users) made
 its holder an admin of the instance — able to change sign-in, add users, apply updates and read the
 totals across users — without being the first GitHub user. Lowering the login link's role instead would
 take from added users the setup of their own environment, which #238 gives each user.
@@ -7756,6 +7756,9 @@ fragments, so `beta`, `stable` and the Pages link read one human file. A bullet 
 so the move brings no update news. The pull request check runs `node scripts/whats-new.ts check HEAD^1`
 (`problems`): a line added to `WHATS-NEW.md` that no fragment of the base had, a released line changed or
 removed, a line twice, or a fragment named wrongly fails it.
+The check reads What's new at a commit of the mirror with one `git cat-file --batch` for the file and every fragment
+(`GitMirror.readAll`, issue #2367), never a process per fragment: it runs every minute, and each process the daemon
+starts holds its event loop while it forks.
 Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
 not what changed for its users. **In this
 version** (issue #165): the newest 5 bullets of the install's own What's new (`installedWhatsNew`;
@@ -8343,7 +8346,7 @@ database and `HOPPER_MASTER_KEY` keeps every secret.
 
 #### Rotating the master key
 
-Issue #659 requirement 6. `POST /ui/api/master-key` `rotate` — the hopper's admin's; Settings → Vault → Master key, or
+Issue #659 requirement 6. `POST /ui/api/master-key` `rotate` — the hopper's admin's; Vault → Master key, or
 `hopper master-key rotate` — makes a new 32-byte key and hands the current key, its previous keys and the new key to
 `InstanceStore.rotateMasterKey` (`src/store/rotate-master-key.ts`). In one transaction on the instance's connection it
 seals again every value an old key sealed, in the instance's schema and every user's — each vault's rows (the vault
@@ -9078,7 +9081,7 @@ shares one database login.
 |------|------|--------------|
 | **A user's own — sensitive** | jobs (payload, prompt, title, source item, result, failure), questions and answers, events, decisions, lanes and what runs in them, job sources, machines and their ssh names, executors, escalation levels, the rules record, routing, the queue gate and order, usage sources and their accounts (email, plan, usage), webhook subscriptions and deliveries, the `plugins` record and every option in it, every CLI's config in the user work dir, the user's secret variables, the event stream, the user schema | that user's own sessions only — never an admin of the instance, never a request without a session once there is more than one user |
 | **The instance's** | the users list (id, name, when added), the sign-in config (realms, password accounts and the user each signs in as, role rules — never a hash), the plugin store and its installs, self-update and its status, the instance schema | an admin (`GET /api/users`, `/api/realms`: the instance admin only since issue #240; `/api/plugin-store`, `/api/update`); loopback without a session reads them as before |
-| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | the instance admin (`GET /api/instance`, Settings → Users; issue #240); never one user's share, nothing named — no account, source or machine |
+| **Instance totals** | users; jobs not ended by status (`queued`, `held`, `claimed`, `running`, `waiting_answer`); open questions; lanes open and busy; jobs ended in the last 24 hours by how they ended (issue #241); usage readings summed per unit and usage window, with how many readings each sum holds (issue #241) — summed over every user | the instance admin (`GET /api/instance`, Users & access → Users; issue #240); never one user's share, nothing named — no account, source or machine |
 
 What crosses from a user's side to the instance's is a **count**, never a name or an id. The instance's
 own events (`update.*`, `plugin.installed`, `plugin.removed`) go to every user's event log, so they
@@ -9754,7 +9757,7 @@ an admin's own GitHub App in particular environments, not a built-in beside the 
 - The `github-app` source is shown only where an admin set up an app: not while it is paused with `no GitHub
   App configured`; a set-up app that is broken (another pause reason) or in use stays, connected or not.
 - Not connected: gh and gh login show as before (#160), with the summary pointing at Connect GitHub.
-The instances stay in the plugins config (Settings → Plugins shows and edits them); only Sources stops
+The instances stay in the plugins config (Plugins shows and edits them); only Sources stops
 listing what is not a connection.
 
 **Verification:** `test/ui/sources.test.ts` (the model: connected shows no gh, gh login or unset app; an
@@ -9812,7 +9815,7 @@ wire or daemon change):
 - **Signed in with GitHub** — the session's realm (`SessionUser.realm`) is one of the GitHub realms on
   (`signIn.devices`): the panel says *Signed in with GitHub as …* and offers **Sign out** (the header's
   logout, `POST /ui/api/logout`). No disconnect. To stop taking jobs from GitHub while signed in, it points
-  at Settings → Plugins, where the `github-account` job source is switched off — what already exists, so no
+  at Plugins, where the `github-account` job source is switched off — what already exists, so no
   second control.
 - **Signed in another way** (the login code, SSO, SAML, a gateway), where the account was connected from
   Sources: **Stop working through GitHub** (`disconnect`, unchanged) forgets the account and its token; its
@@ -9940,7 +9943,7 @@ running jobs' panes (issue #350), so a restart is no way to apply a setting.
   refused removal while a job needs them (issues #142, #18); a job source, usage source or notifier change
   never touches a job.
 - **The UI says when.** A save answers once the change is in place; the toast says `applied at <time>`,
-  and Settings → Plugins shows `applied <time>` (`config.loadedAt`). The `changed — restart pending` badge
+  and Plugins shows `applied <time>` (`config.loadedAt`). The `changed — restart pending` badge
   and the per-instance `restart pending` state are gone; an instance not built yet shows `applying`.
 
 **What is live elsewhere** (each with its own test): escalation levels, the router and the queue sorter
@@ -10056,7 +10059,7 @@ in that step. Range tabs and a step select apply at once and are saved for the u
 **Privacy (issues #221, #241).** The samples live in the user schema; `GET /api/usage/history` reads the
 request's user only. The instance admin reads `GET /api/instance/usage-history`: each user's lines summed
 per unit, usage window and graph step (summed used over summed limit, and how many lines each point sums),
-nothing named — no account, source, machine or user. Shown in Settings → Users beside the instance
+nothing named — no account, source, machine or user. Shown in Users & access → Users beside the instance
 totals. The few-users residual risk of "What an admin sees" applies to it as to the totals.
 
 **Live (issue #356).** The retention is read at every prune; the view at every read. Nothing restarts.
@@ -10087,7 +10090,7 @@ machine. The instance totals sum per account too, so an account on two machines 
 
 **Open points, decided in the job.** Windows: kept both, a solid session and dashed week line per account in
 one colour (informational dotted, hidden until shown), so a per-window throttle stays visible. Whose accounts:
-each user sees their own (privacy of #221/#241 unchanged); the admin's summed graph in Settings → Users stays.
+each user sees their own (privacy of #221/#241 unchanged); the admin's summed graph in Users & access → Users stays.
 Grain: per day at the week. Controls: the range presets stay (the saved choice); the step select and the custom
 range are gone, replaced by zoom.
 
@@ -10286,7 +10289,7 @@ running daemon, under a session the CLI mints for the one call and drops after i
 - **Commands** (`src/cli-operator-vault.ts`):
   - `hopper vault` (the vault's view: secrets and templates, never a value), `vault set <name> [--scope <text>]` with
     the value on stdin only (never an argument: it would be in the shell history and the process list), `vault remove <name>`;
-    `vault set <name> --mints aws-account/<id>|cluster/<name>` marks a minting credential as Settings → Vault does
+    `vault set <name> --mints aws-account/<id>|cluster/<name>` marks a minting credential as Vault does
     (issues #791, #872: the same `mints` field, checked before the call and again by the vault), `--mints none` makes it a
     plain secret again, and a set without `--mints` keeps what it was; a shared secret takes no `--mints`;
   - `hopper template list`, `template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
@@ -10313,7 +10316,7 @@ template as a job does: `request-template`, `hopper template request` ("Template
 ## Templates on request (issue #716, item 1, 2026-10-10)
 
 Owner's model (issue #716): you ask the hopper to make the template a job needs, and the hopper makes it. Before it, a
-template was only what a person saved on Settings → Vault, or with `hopper template save`. Owner, issue #718: jobs do
+template was only what a person saved on Vault, or with `hopper template save`. Owner, issue #718: jobs do
 not get write access over the API; they still ask the hopper. So a job asks through the skill request it already has
 (`POST /job/skill`, "Skills: what the hopper can set up for a box"), and the hopper decides.
 
@@ -10331,18 +10334,18 @@ not get write access over the API; they still ask the hopper. So a job asks thro
 - **The read policy** (`ReadPolicy`, `src/domain/read-policy.ts`; the user's settings, key `readPolicy`, no migration).
   The assets the hopper approves read on with no person. Each entry is an asset as Access names it (`cluster/lab`), or
   one that ends in `*` (`aws-account/*`, `namespace/lab/*`): every asset of that kind whose name starts with what is before
-  it. At most 64 entries. An admin sets it on Settings → Vault (panel **Read policy**), with `POST /ui/api/vault`
+  it. At most 64 entries. An admin sets it on Vault (panel **Read policy**), with `POST /ui/api/vault`
   `set-read-policy` (`assets`; replaces it; empty clears it), or `hopper template read-policy set <entry>...`; each set is
   `vault.read_policy_set`. `GET /api/vault` answers it as `readPolicy`. Empty, or never set: the hopper approves nothing.
 - **The approval.** The hopper approves the template with no person only when it makes it now and every need is a
   `read` on an asset the policy holds: the vault's own `approveTemplate`, `by` **the read policy** (`vault.approved`,
   `template.profile_approved` with that `by`). All or nothing: one need outside the policy, or one write, sync or apply
-  need, and the whole template waits for a person on Settings → Vault, as a template a person saved does. The policy
+  need, and the whole template waits for a person on Vault, as a template a person saved does. The policy
   never approves a template again: one a person revoked waits for a person.
 - **A job never widens a template.** A template of that name whose profiles differ from the needs — a person changed it —
   is a 409: the job is told to ask a person. A job never approves, revokes or removes one.
   Issue #1468: the 409 names the needs the template holds now (`--needs "<them>"`), so a job can ask for those, and
-  where a person changed it: through the operator CLI (`savedBy` is `operator CLI`) or in Settings → Vault.
+  where a person changed it: through the operator CLI (`savedBy` is `operator CLI`) or in Vault.
 - **A read the check cannot mint for is refused at the ask** (issue #1468). A template of read needs only takes the
   read-only check, and the vault mints the check's read credentials for an `aws-role`, a `cluster` or a `namespace` only
   (a `terraform-workspace` takes the aws-role's). A read need on any other kind (`aws-account`, `argocd-app`) in such a
@@ -10353,7 +10356,7 @@ not get write access over the API; they still ask the hopper. So a job asks thro
   (a template of read needs only) its read-only check passed ("The read-only check"):
   its name, who approved it, how a person starts a box of it (Machines → Add machine, or `hopper sandbox launch
   --template <name>`), and the skill each need's asset loads on that box. Else 202 `waiting: template <name> waits for a
-  person in Settings → Vault: …`, with what waits and why the policy did not approve it; `--wait` opens a watch, and the
+  person in Vault: …`, with what waits and why the policy did not approve it; `--wait` opens a watch, and the
   job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again). While the
   check waits: 202 `waiting: template <name> is approved; waiting for the read-only check …`; `template.checked` asks again.
 
@@ -10413,7 +10416,7 @@ person or the CLI started the box (issue #769).
   default. The toggles are the user's settings (key `sandboxApprovals`, no migration): `POST /ui/api/sandbox-approvals`
   with `yolo`, `skipTemplateApproval`, `skipSandboxApproval` (absent keeps; a toggle named with `yolo` wins),
   `vault.sandbox_approvals_set`; the vault's view answers them (`sandboxApprovals`) and the requests of jobs at work
-  (`sandboxRequests`). Settings → Vault, panel **Sandbox approvals**.
+  (`sandboxRequests`). Vault, panel **Sandbox approvals**.
 - **Roles.** Both routes are `admin`, and both are box actions (`src/http/ui/box-actions.ts`): approving a request
   starts a box; the toggles approve work with no person. An API token needs a box grant for either.
 - **Manual creation is no longer the main path.** Machines → Add machine → A sandbox box stays, for a test; its hint says
@@ -10489,7 +10492,7 @@ pending, every other approval button on the page was disabled.
     takes its read-only check before its first box.
   - A run (`createSandboxRequests`): approved at once when the template's level is one the policy holds,
     `vault.sandbox_approved` `by` **the auto-approve policy** with `radius`.
-  - Set on Settings → Vault, panel **Sandbox approvals** (`Auto-approve low radius`, …), or `POST
+  - Set on Vault, panel **Sandbox approvals** (`Auto-approve low radius`, …), or `POST
     /ui/api/sandbox-approvals` with `autoApprove` (each level named sets itself). `vault.sandbox_approvals_set` carries
     the whole policy; the vault's view answers it in full. Sandbox YOLO stays the override.
 - **A template's approval covers its job's run.** A person who approves a template a job asked for (its `askedBy`), or one
@@ -10507,7 +10510,7 @@ pending, every other approval button on the page was disabled.
 
 **Residual risk, stated.** By default, any job at work may get a box that reads any asset it names, approved with no
 person. It holds no vault secret: each credential a skill on it needs is still asked of a person, or minted after
-Access. An admin turns low off on Settings → Vault to have a person approve each read again; the read policy then
+Access. An admin turns low off on Vault to have a person approve each read again; the read policy then
 decides as before.
 
 **Built since: part 2** below (remembered write approvals; cards that say what the sandbox is for).
@@ -10536,7 +10539,7 @@ approves or declines from the card alone, without opening the job.
   - **The time limit** (`SandboxApprovals.rememberWritesHours`): an admin's, in hours, 0 to 8760; 0 keeps each approval
     until forgotten; absent, 168. It counts from each approval's `at` at the moment of use, so a shorter limit takes effect
     at once. An approval that ended is left out of every use and of the view, and dropped at the next remember.
-  - **Forget**: an admin, on Settings → Vault, panel **Sandbox approvals**, or `POST /ui/api/sandbox-approvals`
+  - **Forget**: an admin, on Vault, panel **Sandbox approvals**, or `POST /ui/api/sandbox-approvals`
     `forgetWrite` (`operation`, `asset`): `vault.write_forgotten`. `rememberWritesHours` on the same route; both are box
     actions, as the route is. The vault's view answers `rememberedWrites`, each with `expiresAt` when it ends, and
     `sandboxApprovals.rememberWritesHours` in full.
@@ -10598,7 +10601,7 @@ secret scope is derived and shown for approval, never typed by hand. Before it, 
 (`sandbox-template`), an API caller's (`request-template`) or the CLI's (`hopper template request`); on the page, a
 person could only write a whole template by hand.
 
-- **The panel** (Settings → Vault, **Template request**, `ui/src/views/vault-template-request.tsx`). An admin writes the
+- **The panel** (Vault, **Template request**, `ui/src/views/vault-template-request.tsx`). An admin writes the
   needs, one per line, as a job writes them (`read/cluster/lab`). Other roles do not see the panel.
 - **Shown before it is made** (`POST /ui/api/vault` `preview-template`, `previewTemplate`, `src/skills/template-request.ts`).
   The answer is `preview`: the template's name, its image, the tools its needs use, the needs in words, `readOnly`, who
@@ -10709,7 +10712,7 @@ box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
   with all the template's tools. Before issue #1349 a launch could name fewer (`params.tools`, the tool toggles on the
   Add machine form, `hopper sandbox launch --tool <name>`), and the sandbox record kept the tools and the built image.
   Since issue #1349 there is no launch: Add machine adds a computer only, and a template's tools are set on its form
-  (Settings → Vault) or with `hopper template save --tool <name>`.
+  (Vault) or with `hopper template save --tool <name>`.
 - **A template made on request** gets the tools its needs use (`toolsForNeeds`): `cluster` and `namespace` → `kubectl`,
   `helm`; `argocd-app` → `kubectl`; `aws-account` and `aws-role` → `aws`; `terraform-workspace` → `terraform`, `aws`. The
   read policy approves them with the template, as it approves the box image: they are the hopper's own pinned software.
@@ -10756,7 +10759,7 @@ replaces them; test with doubles, and state the gap to a real environment.
   after it ended, with no person; issue #1736: one that failed only on probes the catalog passes now, from what each did —
   `helm.list` refused on secrets, judged before a right refusal passed it — runs again at the next pass, `judgedAgain`,
   so the jobs that wait on it go on): a
-  person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
+  person runs it again (`POST /ui/api/vault` `check-template`, Vault **Run the check again**, `hopper template
   check <name>`), which drops the check (`template.check_requested`) so the next pass runs one. The command says when
   that is, or why it is not yet: a template whose image is not approved waits for the approval (issue #2226).
 - **A check that does not end** (issue #2226). The pass runs one check at a time, so one check that hangs (a pull, a
@@ -10814,7 +10817,7 @@ replaces them; test with doubles, and state the gap to a real environment.
 - **The result** (`ReadOnlyCheck` on the template; a JSON body, no migration): `running`, then `passed` or `failed`, each
   probe's outcome (`allowed`, `denied`, or `error`: it failed some other way, or did not run), its exit code and the last
   500 characters of its output, and a `problem` when the box did not run. `template.checked` records each end, with the
-  probes that failed. Settings → Vault shows it on the template (**Read-only check**). A check that ran no probe fails.
+  probes that failed. Vault shows it on the template (**Read-only check**). A check that ran no probe fails.
 - **The script** (`checkScript`, `src/sandbox/check-script.ts`) writes each snippet to a file under `/tmp` (the box's only
   writable place) and runs it alone under `timeout` (300 s), with its asset in `$ASSET`. It prints one line per probe,
   `HOPPER-PROBE <n> <exit> <output in base64>`; `readResults` reads them, and a probe with no line did not run.
@@ -10831,7 +10834,7 @@ by the account. Now, before the check box starts, the vault mints the read crede
   minter: the check fails, saying so.
 - **Under Access** (`decideCheckMint`, `src/authz/service.ts`). The check runs no job, so Access is asked as for a live
   job of the template — a made-up job `running` the template, told as a contextual tuple, as a trial is — and the
-  decision is recorded with `check: {box}`; Settings → Access names it *read-only check <box>*. A deny (the template's
+  decision is recorded with `check: {box}`; Users & access → Access names it *read-only check <box>*. A deny (the template's
   read revoked) mints nothing.
 - **Where** (`src/vault/checks.ts`, `VaultService.mintForCheck`). In the hopper, or with the vault in a container of
   its own (#586) through the same `MintFrom` as a job's mint: the minting credential never leaves it. `MintFrom` now also
@@ -11030,10 +11033,10 @@ credential, but every probe failure failed the whole set, and the template took 
   `denied`: it passes only when it fails with a refusal (`DENIAL`). It fails when the read works (`allowed`) or fails for
   another reason (`error`). A probe marked `skip` is not in the check box's script; its result is `skipped` and passed.
   Every write probe runs as before, so a write that goes through still fails the check. The result carries the `mark`;
-  the check report and Settings → Vault name each marked probe.
+  the check report and Vault name each marked probe.
 - **How a person marks a probe.** Only a person, through a save of the template (`POST /ui/api/vault` `save-template`,
   admin role): `probeMarks`, an object of probe id → mark, replaces the marks; absent keeps them; `{}` drops them all. In
-  Settings → Vault, edit the template: each read probe its last check ran has a mark (**must work**, **expect-denied**,
+  Vault, edit the template: each read probe its last check ran has a mark (**must work**, **expect-denied**,
   **skip**). On the operator CLI: `hopper template save <name> --image <image> --mark helm.list=expect-denied`; each
   `--mark` changes one probe, `<probe>=none` drops its mark, and the other marks stay. A job's template request never
   sets or changes a mark.
@@ -11175,7 +11178,7 @@ only): no page showed each probe's output, and a person could not share it.
   that job's artifact of that name and adds a revision, with the check's state and time as the note ("One piece of work,
   one artifact"). A person who removed it gets a new one at the next check. The artifact's limits, retention, shares and
   Access are an artifact's: a revision past the retention goes, the latest stays.
-- **Named on the check.** `ReadOnlyCheck.artifact` and `template.checked`'s `artifact` carry its id; Settings → Vault
+- **Named on the check.** `ReadOnlyCheck.artifact` and `template.checked`'s `artifact` carry its id; Vault
   links **Check report** (`#artifacts/<id>`) in the template's **Read-only check** row.
 - **It never changes the check.** A report that cannot be kept (the job is gone, the user's artifacts are full) is logged
   (`… passed, but its report was not kept: …`), and the check is kept with no artifact: the gate reads the check, never
@@ -11221,7 +11224,7 @@ did not know a workspace's backend.
 
 - **The backend is on the need** (`OperationProfile.backend`, `StateBackend`, `src/domain/state-backend.ts`): the S3
   bucket, its region, and the key prefix the workspace's states are under. A person sets it on the template's
-  `terraform-workspace` profile — Settings → Vault (the template's form, **State backend**), `save-template`'s
+  `terraform-workspace` profile — Vault (the template's form, **State backend**), `save-template`'s
   `profiles[].backend`, or `hopper template save --backend <workspace>=<bucket>[/<key prefix>]@<region>`. It is no part
   of what is approved: Access tuples, `sameProfile` and a job's request (`sameNeeds`) read the operation and the asset
   only, so a backend set on a template the read policy approved leaves it approved. A save is a new version, so the check
@@ -11241,7 +11244,7 @@ did not know a workspace's backend.
   backend (`Probe.backend`) its variables (`HOPPER_STATE_BUCKET`, `HOPPER_STATE_REGION`, `HOPPER_STATE_KEY`), or, for a
   need with none, the reason it is not run. The script writes no step for it; `readResults` keeps it with `passed: false`
   and `not run: no backend configured. …`. So the check fails: a state write past the wrapper is unproven, and an
-  unproven write is not a pass. The check report says **NOT RUN** on its row; Settings → Vault shows each workspace's
+  unproven write is not a pass. The check report says **NOT RUN** on its row; Vault shows each workspace's
   backend, or that it has none, in the template's facts.
 
 Considered and not built: `state rm` against the workspace's real state (with a writable credential it removes a resource
@@ -14152,7 +14155,7 @@ goes through the hopper, which reads the token through the vault at each call.
 - **One audit trail.** `vault.secret_set` (`replaced`; `rotated` when the hopper made or renewed it), `vault.secret_removed`,
   `vault.secret_migrated`, `vault.secret_read` (`by: hopper`, `purpose`: at most once an hour per secret and process,
   `READ_EVENT_EVERY_MS`: the hopper reads the GitHub token at every source poll) and `vault.refused` (a job's ask). The
-  instance's events go to every user's log once the runtimes exist, as the update events do. Settings → Vault, panel
+  instance's events go to every user's log once the runtimes exist, as the update events do. Vault, panel
   **Hopper's own secrets** (`ui/src/views/vault-system.tsx`): each system secret, the user's and the whole hopper's,
   with what it is for, its last 4 characters, who set it and when, where it is changed, and why it
   cannot be opened; then the newest 50 audit entries (`GET /api/vault` `system`: `secrets`, `audit`). Never a value.
@@ -14209,7 +14212,7 @@ hopper reads its own secrets synchronously (`SystemSecrets.open`: the webhook si
 - **No stale or local copy.** A read that fails (the backend gone from the plugins config, unable to run, unreachable, or
   without the reference) drops the value held: the secret cannot be opened until a read succeeds. A webhook then has no
   secret to sign with (`secretProblem`), Jev is off. One warning per new reason, naming the secret, the backend and the
-  reference; Settings → Vault shows the same as its `problem`. Before its first read (the start), it cannot be opened
+  reference; Vault shows the same as its `problem`. Before its first read (the start), it cannot be opened
   either: "not read from vault backend … yet".
 - **The start check** (requirement 7's shape). Once the plugin host runs, each one kept in a backend is read; each that
   cannot be read logs `start check: system secret <name> cannot be read from vault backend <backend> at <reference>:
@@ -14217,7 +14220,7 @@ hopper reads its own secrets synchronously (`SystemSecrets.open`: the webhook si
 - **Set** (`POST /ui/api/vault` `system-in-backend`: `name`, `backend`, `reference`; admin, then Access
   `system_secret#can_change`). Refused (400) for another system secret, a backend the plugins config does not name, a
   reference its `check` refuses, or a value the backend cannot read now; 404 for a webhook that is not there. It is read
-  once, and only then kept: `vault.secret_set` with `backend`, never a value. Settings → Vault, panel **Hopper's own
+  once, and only then kept: `vault.secret_set` with `backend`, never a value. Vault, panel **Hopper's own
   secrets**: such a secret shows "kept in vault backend X at R, held in memory only" and its last 4 characters (from the
   value held), and a person changes or sets it with **Keep in a vault backend**.
 - **Rotation.** The hopper cannot rotate one a backend keeps: Webhooks → Rotate answers 409, "the signing secret is
@@ -14268,7 +14271,7 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
   `can_read: reader`). Its relations are checked apart (`sharedSecretGaps`): a model edited before them denies every
   shared secret, naming the gap, and still decides mints; a model the hopper wrote is replaced by this build's default.
 - **Seen by everyone.** `GET /api/vault` carries `shared` (each one's row name, scope, readers, who and when) for every
-  user, so a template can name one; Settings → Vault shows the panel **Shared secrets**, with **Share secret** and
+  user, so a template can name one; Vault shows the panel **Shared secrets**, with **Share secret** and
   **Remove** for the instance admin, and the template form offers the shared names beside the user's own secrets.
 - **One reseal.** `resealRows` (`src/vault/reseal.ts`) seals again, on a key rotation, the user vault's own rows, the
   system scope's and the shared secrets' (at start, with the instance's system secrets).
@@ -14311,7 +14314,7 @@ same one, `POST /ui/api/*`; the token is one more kind of session at it.
   `instance` guard) as for any session, then Access (`decideApiToken`): `user:<id>` must have, on `api_token:<user>/<id>`
   (the user told as its `owner` at each ask), the relation of the role the request needs — a read `can_view`, an
   operator's route `can_operate`, an admin's `can_administer`. The default gives each to the owner; a user narrows what
-  their tokens may do by editing the model in Settings → Access. OpenFGA out of reach: 503, never a 401 or 403. The
+  their tokens may do by editing the model in Users & access → Access. OpenFGA out of reach: 503, never a 401 or 403. The
   relations are checked apart (`apiTokenGaps`): a model edited before them denies every API token, naming the gap, and
   still decides mints; a model the hopper wrote is replaced by this build's default. A UI session is not asked of Access.
 - **Its role.** At most its minter's: the mint takes `role` (default the minter's) and refuses one above. A reconcile
@@ -14383,7 +14386,7 @@ When it must, a person gives it a short-lived box token.
 - **What a box token is.** An API token whose session row has `box` (`ui_sessions.box`, instance migration 36; every
   token from before is no box token). Minted with `{ action: 'mint', label, role?, minutes?, box: true }` at
   `POST /ui/api/api-tokens`, from a UI session only (an API token never mints one), or with the Box token box in
-  Settings → API tokens. The exchange (`POST /ui/auth/api-token`) refuses `box` (400): a sign-in the hopper only checks is
+  Users & access → API tokens. The exchange (`POST /ui/auth/api-token`) refuses `box` (400): a sign-in the hopper only checks is
   not a person at the UI. Listed with `box` (`GET /api/api-tokens`); the card says "box token". Its role, end and revoke
   are those of any API token.
 - **How it is decided.** At a box action with an API token, after the role (`apiTokenAnswer`,
@@ -14416,7 +14419,7 @@ Owner decision on the issue, which supersedes the one-hour, no-refresh limit of 
 rotation (RFC 6749, OAuth 2.0 Security BCP RFC 9700). UI sessions are unchanged.
 
 - **A grant.** Minted only by a person: `POST /ui/api/api-tokens` `{ action: 'mint', label, holder?, role?, scopes,
-  box?, days?, minutes? }` from a UI session (Settings → API tokens), or `hopper token mint` (the operator CLI's session).
+  box?, days?, minutes? }` from a UI session (Users & access → API tokens), or `hopper token mint` (the operator CLI's session).
   Never by an API token (403). Its role is at most its minter's; Access is asked for it (and for `can_run_on_box` when
   `box`) at the mint, which ends it again when refused. It lives `days` (1–365, default 90) at most, or with
   `days: null` has no fixed end — an admin's only, answered with a `warning` —, and dies `GRANT_IDLE_DAYS` (30) after its
@@ -14446,7 +14449,7 @@ rotation (RFC 6749, OAuth 2.0 Security BCP RFC 9700). UI sessions are unchanged.
 - **API tokens of a grant.** Opaque, a session row as any API token (the issue's "opaque with a hashed lookup"): no
   signing key, no `kid`, no denylist; revoking a grant drops its rows, so it stops at once, not after the lifetime.
   They live the **API-token lifetime**: the instance admin's setting, `POST /ui/api/api-tokens/settings
-  { tokenMinutes }` or Settings → API tokens, 5–15 minutes, default 10, a key of the instance settings; a change applies
+  { tokenMinutes }` or Users & access → API tokens, 5–15 minutes, default 10, a key of the instance settings; a change applies
   to the tokens issued after it (`api_tokens.settings_changed`). A grant may ask for less at its mint (`minutes`,
   5–15, never above the setting); the setting lowered below it wins. They are not listed apart: the grant is.
 - **Scopes** (`src/domain/token-scopes.ts`). Named from the route, so no route is left without one: `GET
@@ -14501,10 +14504,10 @@ repository and job source limits the third ("Grant limits" below).
 - **The ask.** `POST /ui/auth/device-grant`, with no credential: the grant the agent wants, in a mint's fields (`label`,
   `holder`, `role`, `scopes`, `preset`, `box`, `days`, `minutes`, `deny`). It answers a **device code** (`hopper_dc_` and
   64 hex digits, which the agent keeps) and a **user code** (`BCDF-GHJK`: eight letters of twenty, no vowels, so no word is
-  spelled and none reads as a digit), `verificationPath` (`/#settings/api-tokens`) and `verificationPathComplete` (with
+  spelled and none reads as a digit), `verificationPath` (`/#users-access/api-tokens`) and `verificationPathComplete` (with
   the code), `expiresAt` (`DEVICE_GRANT.minutes`, 10) and `interval` (5 s). Only the device code's SHA-256 is kept.
   The paths are the hopper's own: the agent knows the URL it called, and the hopper builds no URL from a Host header.
-- **The approval.** A signed-in person enters the user code in Settings → API tokens (Approve a device; case, spaces and
+- **The approval.** A signed-in person enters the user code in Users & access → API tokens (Approve a device; case, spaces and
   dashes do not count), or opens the link, which looks it up at once: `GET /api/api-tokens/device/:code` shows the ask and
   who sent it (as the sign-in limit counts callers), never the device code. Approve is `POST /ui/api/api-tokens`
   `{ action: 'approve-device', code }`: the ask is checked as that person's own mint (`checked`, the role at most theirs,
@@ -14591,7 +14594,7 @@ The third part of issue #892: beside its scopes, a grant may name what its token
 
 - **The mint.** `limits: { repos?, sources? }` on `POST /ui/api/api-tokens` `mint` and on a device grant request (`POST
   /ui/auth/device-grant`), at most `GRANT_LIMITS_MAX` (50) of each; `hopper token mint --repo <owner/name>... --source
-  <name>...`; in Settings → API tokens, two fields under the role. Kept in one form (`normalLimits`): repositories lower
+  <name>...`; in Users & access → API tokens, two fields under the role. Kept in one form (`normalLimits`): repositories lower
   case (GitHub's names do not care for case), each list sorted and once; two empty lists are no limits. A repository that
   is not `owner/name`, or a source name that is not letters, digits, `. _ : -`, is 400. The person who approves a device
   grant request sees its limits ("only acme/app") before they approve; the grant list shows them too.
@@ -14772,7 +14775,7 @@ store through the composition root (`AccessOptions.requesters`, the vault's `box
 is pushed with the approvals: within 2 s of a change (`REQUESTERS_CHECK_MS`: a job started or ended, a box joined or
 left) and before every check, which asks OpenFGA only once it holds who is live now. A requester that is not live is
 denied before OpenFGA is asked: a job not live, a machine that is no box of a template now, a user the hopper does not
-have. A check tried in Settings → Access still tells a made-up job `running` from the template as a contextual tuple.
+have. A check tried in Users & access → Access still tells a made-up job `running` from the template as a contextual tuple.
 Not built (later, #241, #242): admin roles; a template is named by its name alone, so two users' templates of one name
 share their approvals.
 
@@ -14793,7 +14796,7 @@ and an OpenFGA come back is found. One push at a time.
 refused what was pushed; a change is not pushed yet (a revoke OpenFGA has not taken: the next check pushes first,
 and denies when it cannot); the requester is not live; the model lacks a relation the hopper writes; the request names no template, operation or asset the model can
 hold. The status (`not-configured`, `connected`, `unreachable` with why) is logged once per change of reason and
-shown in Settings → Access.
+shown in Users & access → Access.
 
 **An outage is not a refusal** (issue #696). A check apart from mints (`checkOnce`: a system secret, an artifact, an
 item's new text) that OpenFGA could not answer — not set up, not reached, a change not pushed — is a deny marked
@@ -14809,7 +14812,7 @@ machine is an instance of the template → the template is approved for the prof
 the asset; for a tried check, the made-up job runs from the template. When a model edit allowed it another way, no path
 is given.
 
-**Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
+**Users & access → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
 status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
 (issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
@@ -14817,17 +14820,17 @@ decisions; a link to the **permission matrix** (below); and the model, saved aga
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
 API for the vault's gate (#558) to write; the UI offers no approve, since that is the gate.
 
-**Settings → Permission matrix** (`#settings/permissions`, the instance admin's alone): the same `GET /api/access`,
+**Users & access → Permission matrix** (`#users-access/permissions`, the instance admin's alone): the same `GET /api/access`,
 as a table of who may do what on which asset. Rows: each template — with its blast radius — followed by its boxes, then
 every user; switched, the live jobs (with their machine and template). The rows besides the templates are the
 **requesters** (issue #581, `AccessView.requesters`), each with the profiles it reaches and the path. Columns: the assets an
 approval names or a template waits on, grouped by kind. A cell holds the approved operations, and apart (dashed) the
 declared operation profiles of the row's template that wait for approval (issue #584). A click on a cell opens why: the
 relationship path (for a job, its owner first), who approved it and when, and **Revoke** (asked once, the same `revoke` as
-Settings → Access: the next check is denied). Filters: asset kind, operation, a name, only the rows with access; the header
+Users & access → Access: the next check is denied). Filters: asset kind, operation, a name, only the rows with access; the header
 rows and the first column stay in place on scroll. A cell is the hopper's reading of its own rows, as the requesters are: a
 model edit can allow more. The matrix model is pure (`ui/src/model/permission-matrix.ts`). It replaced the hover-only
-"Who may do what" table of #581 on Settings → Access.
+"Who may do what" table of #581 on Users & access → Access.
 
 **OpenFGA itself** is `HOPPER_OPENFGA_URL`, with the preshared key `HOPPER_OPENFGA_KEY` (or `_FILE`) from the
 runtime, read at each call (`src/authz/openfga.ts`, `@openfga/sdk`, no retries). Recommended, and in `compose.yaml`:
@@ -15305,7 +15308,7 @@ key service, minted short-lived credentials, per-operation profiles, boxes the h
 
 A **vault secret** is a name (a letter, then letters, digits, `_`, `.`, `-`; at most 64), an optional **scope** (one
 line, at most 200 characters: what it reaches, in the words of whoever set it) and a value (1 to 64 KiB). An admin sets,
-replaces or removes it in Settings → Vault (`POST /ui/api/vault`, `set` / `remove`). `GET /api/vault` and the edit's
+replaces or removes it in Vault (`POST /ui/api/vault`, `set` / `remove`). `GET /api/vault` and the edit's
 answer carry each secret's metadata — id, name, scope, who set it and when, who last changed it and when — and never a
 value, to any role; both are `cache-control: no-store`. The page's value field is a password field the browser does not
 fill in or remember.
@@ -15351,7 +15354,7 @@ in the vault, the store or the routes changed for it, and a value it cannot open
 A **template** (the glossary's, issue #559's `TEMPLATE_NAME`: lowercase letters, digits, `.`, `_`, `-`; at most 64; its
 boxes are `hopper-sandbox-<name>`) is, for the vault, an image
 (a full reference, as `podman run` takes it) and its **scope**: the vault secrets its boxes may ask for. An admin
-saves, removes or approves one on Settings → Vault (`POST /ui/api/vault`: `save-template`, `remove-template`,
+saves, removes or approves one on Vault (`POST /ui/api/vault`: `save-template`, `remove-template`,
 `approve-template`); `GET /api/vault` lists them under `templates`. Kept in the user schema's `templates` (tenant
 migration 29, a table only), the last approval in its body.
 
@@ -15367,7 +15370,7 @@ migration 29, a table only), the last approval in its body.
   the reason (the Dashboard's lanes). Machines says "waiting for template approval". `approve-template` opens it: the
   next Decision places jobs there (`vault.approved` wakes the engine). A widened scope does not close it: its boxes keep
   working on what was approved. A job resuming in its pane there returns to it; a job running there keeps running.
-- **Revoked at once.** `revoke-template` (`POST /ui/api/vault`, Settings → Vault → Revoke) drops the template's approval
+- **Revoked at once.** `revoke-template` (`POST /ui/api/vault`, Vault → Revoke) drops the template's approval
   and every access approval of its operation profiles (`vault.revoked`): the next Decision places no new job on its
   boxes, and they are given no vault secret, until a person approves it again.
 - **The scope is the template's.** Never a job's: nothing a job sends can name a template or a secret beyond it.
@@ -15390,7 +15393,7 @@ migration 29, a table only), the last approval in its body.
 
 **The vault mints only through Access** (issue #580, "Minting: short-lived credentials" below). It calls
 `Access.decideMint` before every mint and every renewal, and mints nothing on a deny: the request goes to the
-first-time gate (the profile waits for a person on Settings → Vault) or is refused, and the reason is on the job's
+first-time gate (the profile waits for a person on Vault) or is refused, and the reason is on the job's
 timeline. When a person approves a template at the gate, the vault writes the `approved_for` tuples through
 `Access.approve`; a widening needs a new approval and new tuples. The issuance audit (`vault.minted`) records the
 decision's id beside each mint. A vault secret's *delivery* (slice 3) is not a mint: the template's approval of its
@@ -15423,7 +15426,7 @@ ask for, and a high-radius operation profile takes its own explicit approval.
   the template removed, has its access approval revoked at once (`Access.revokeProfile`): access holds no approval the
   template does not declare. A profile approved in access but not declared is rated too.
 - **Approval is in access.** Access (issue #559) is the one record of which profiles are approved: `pending.profiles`
-  is what the template declares and access does not approve, and a revoke in Settings → Access makes a profile wait
+  is what the template declares and access does not approve, and a revoke in Users & access → Access makes a profile wait
   again. The vault reaches access through `TemplateApprovals` (`approvedProfiles`, `approve`, `revokeProfile`;
   `src/domain/access.ts`), given to each user's runtime by the composition root. `approve-template` approves the image,
   the secrets and every pending **read** profile. A **high-radius** profile — `write`, `sync` or `apply` — is approved
@@ -15437,20 +15440,20 @@ ask for, and a high-radius operation profile takes its own explicit approval.
   count unconfirmed as read). The level is the highest; the reasons are the lines that set it, a profile's saying
   whether it is approved or waits. Rated at every view: a widening (a profile or a secret added) rates it again at
   once, and the new profile waits for a person.
-- **Where it shows.** `GET /api/vault` and Settings → Vault: each template's `radius`, its badge and reasons, its
+- **Where it shows.** `GET /api/vault` and Vault: each template's `radius`, its badge and reasons, its
   profiles marked as waiting, Approve (the template and its read profiles) and one *Approve write on …* per waiting
-  high-radius profile. `GET /api/access` and Settings → Access: each template with an approval or a vault template of
+  high-radius profile. `GET /api/access` and Users & access → Access: each template with an approval or a vault template of
   its name, its `radius` beside its approvals, and what waits for approval on the Vault page. Access rates a template
   from every user's vault templates of that name (`VaultService.templateScopes`), each with its user's rules, and shows
   the highest.
 
 **Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
-discovered rating only. The permission matrix (#559, Settings → Permission matrix) shows each template's rating next to its row. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which denies what the gate has not approved.
+discovered rating only. The permission matrix (#559, Users & access → Permission matrix) shows each template's rating next to its row. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which denies what the gate has not approved.
 
 Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
 not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
 read profile rated low and its check allowed; a write profile added raises the rating, the template's approval does
-not approve it, its check is denied until `approve-profile`; a vault secret in the scope; a revoke in Settings → Access
+not approve it, its check is denied until `approve-profile`; a vault secret in the scope; a revoke in Users & access → Access
 makes it wait again; narrowing and removal revoke; refusals), `test/integration/access.test.ts`, `test/ui/vault.test.ts`.
 
 ### Delivery to the box (slice 3)
@@ -15511,13 +15514,13 @@ Kubernetes TokenRequest tokens — and asks Access (`decideMint`) before every m
 of the hopper's compose stack, as Postgres is, so this needs nothing outside it.
 
 **A minting credential** is a vault secret marked with what it mints for (`VaultSecret.mints`: an `aws-account` or a
-`cluster` asset; `set` with `mints`, *Mints for* on Settings → Vault; in its JSON body, so no migration). It is sealed
+`cluster` asset; `set` with `mints`, *Mints for* on Vault; in its JSON body, so no migration). It is sealed
 like any vault secret (or kept in a vault backend, issue #585), and it never leaves the vault: `deliver` refuses it, no template may list it in its scope, and
 the page leaves it out of a template's secrets. Its value is JSON (`mintingCredentialOf`, `src/domain/minting.ts`):
 for AWS `AccessKeyId`, `SecretAccessKey` (optional `SessionToken`, `Region`, `Endpoint`), for Kubernetes `server`,
 `token`, optional `certificateAuthorityData` (a `token` credential; its value names no `type`), or EKS sign-in (below).
 An AWS account's keys are one secret (issue #1761): `set` refuses an `aws-account` minting credential whose value is not
-that JSON, and *Value* on Settings → Vault shows the shape it takes. One secret mints for an asset: when several do,
+that JSON, and *Value* on Vault shows the shape it takes. One secret mints for an asset: when several do,
 every mint, check, need step and mint test for it is refused with all their names (`mintingCredentialFor`), and the
 vault never picks one; a person keeps one and clears *Mints for* on the others. A mint test that fails names the secret
 it used, as one that passes does (`credential`).
@@ -15641,7 +15644,7 @@ authenticated data.
 2. the profile is one the model can hold, and of an asset kind the form mints for;
 3. **Access**: `decideMint({ requester: { kind: 'job', … }, operation, asset })` — Access finds the template from the
    job's box (issue #581). A deny mints nothing. When the template declares
-   the profile and access does not approve it, the reason says it waits for a person's approval on Settings → Vault
+   the profile and access does not approve it, the reason says it waits for a person's approval on Vault
    (the first-time gate: `approve-template` for a read profile, `approve-profile` for a high-radius one); when the
    template does not declare it, that a person adds it first;
 4. a minting credential for the account or cluster, opened by the key provider;
@@ -15656,7 +15659,7 @@ minting one never. One kept in a vault backend is minted in the hopper, which ru
 
 **Audit.** `vault.minted`: the form, the profile, the template, the machine, the job, the minting credential's name,
 the expiry, `renewal` (the job had one for that profile before; kept in memory, so a restart counts the next as a
-first), and `decision` — the id of Access's decision, the row Settings → Access shows. The minting credential's
+first), and `decision` — the id of Access's decision, the row Users & access → Access shows. The minting credential's
 `lastUsed` says when it last minted. Never a credential, minted or minting.
 
 **Skills.** When the vault holds a minting credential for the asset's account or cluster, a link skill (#582) answers
@@ -15694,7 +15697,7 @@ the KMS is always optional. So the KMS is a second key provider, chosen by one r
   under the data key when the vault opens (`resealAll`). Two starts at once: the first to keep its data key wins
   (`INSERT … ON CONFLICT DO NOTHING`), the other opens that one.
 - **Fails closed.** A KMS that gives no data key (down, refused, a changed wrapped key) leaves the vault with no sealer
-  and a problem naming the KMS: Settings → Vault says it, nothing is stored, nothing delivered. In the hopper, a restart
+  and a problem naming the KMS: Vault says it, nothing is stored, nothing delivered. In the hopper, a restart
   asks again; the vault container asks again at the next request.
 - **Turning it off** is not built: a value sealed under the data key does not open without the KMS, and is said so.
   Set each secret again. A fold of users (issue #265) keeps the kept user's data key; the folded user's secrets sealed
@@ -15725,7 +15728,7 @@ src/vault/main.ts`. With `HOPPER_VAULT_URL` set, the hopper builds no vault of i
 asks the vault server (`src/vault/remote.ts`). Unset, the vault runs in the hopper, as before.
 
 - **The split.** The vault container holds the vault's key and the secret values: a secret set or removed, a delivery,
-  and whether the vault can be used now (`status`, shown as Settings → Vault's problem) go to it. The secrets' metadata
+  and whether the vault can be used now (`status`, shown as Vault's problem) go to it. The secrets' metadata
   and the templates — whose operation profiles are approved in access (issue #584), the hopper's — are read and changed
   in the hopper, by a vault service that holds no key. So is a secret kept in a vault backend (issue #585): its set and
   its delivery run in the hopper, which runs the backends; the vault container never sees one. The service is named
@@ -15807,7 +15810,7 @@ The catalog stays under 1100 characters (issues #1905 and #1909 added `topology`
 
 **Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
 (`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
-same row Settings → Access shows.
+same row Users & access → Access shows.
 
 **Minting** (#580): when the vault holds a minting credential for the asset's account or cluster, the link is the
 minted stanza ("Minting: short-lived credentials"); else the vault secret as it is, delivered just in time.
@@ -15835,7 +15838,7 @@ user prefers — 1Password, Bitwarden, HashiCorp Vault — as a **backend**, nev
 the hopper's compose stack is required; a backend is always optional, and the hopper works fully without one.
 
 **A plugin role.** A **vault backend** is a plugin of the role `vault-backend` ("Roles, plugins, instances"): 0..n
-instances in the plugins config's `vaultBackends`, added, edited and removed in Settings → Plugins, followed live. Port:
+instances in the plugins config's `vaultBackends`, added, edited and removed in Plugins, followed live. Port:
 `VaultBackend { name; check(reference); read(reference) }` (`src/domain/vault.ts`). `check` says why a reference is not
 one the backend reads, from its form alone (no network, no credential); `read` gives the value a reference points at,
 now, or throws saying why — never with a value. A built-in plugin is never written into a fresh store's plugins
@@ -15946,7 +15949,7 @@ timeline. Kept in the hopper's memory only: a request no job at work waits on is
 What survives a restart is the job's **watch** (issue #613), in the database: when the job subscribes again, the hopper
 asks the request again, and that opens it again. No table for the requests themselves.
 
-**The person's answer** (Settings → Vault, panel **Asked for**, while any request is open; a toast says when a job asks;
+**The person's answer** (Vault, panel **Asked for**, while any request is open; a toast says when a job asks;
 `POST /ui/api/vault` `give-credential` / `decline-credential`, admin). The card shows who waits and why, and how to get
 the credential. The admin picks the kind — the suggestions first, or something else with a line saying what it is —, a
 vault secret name (the skill's by default, or one the vault holds that was given for the skill or has its name: then
@@ -15971,7 +15974,7 @@ words has no asset kind in the access model, so it is loaded as `github` is, wit
 gate decides who gets the credential. Minting through `decideMint` is #580's.
 
 Taken conservatively, each one place to change: requests in memory (a table if they must outlive a restart); the
-request on Settings → Vault and a toast (no section badge); the giving approves only an approved template's widening by
+request on Vault and a toast (no section badge); the giving approves only an approved template's widening by
 the one secret; Helm, GitOps and Argo CD skills not built (a job asks for them in its own
 words until they are).
 
@@ -17239,7 +17242,7 @@ replaced by the machine's.
 - **A machine option, `workTrees`** (`local`, `ssh`, `client`; `workTreesOption`,
   `src/plugins/machine-source/attached.ts`): `{"owner/name": "<path>"}`, each path absolute or under `~`,
   each key a repository (`owner/name`), else the instance is refused. Command-bearing, as `workTree` is.
-  Carried to `MachineSnapshot.workTrees`. Edited in Settings → Plugins (a JSON field); the Machines Edit
+  Carried to `MachineSnapshot.workTrees`. Edited in Plugins (a JSON field); the Machines Edit
   forms keep it; the machine panel shows it (`work trees per repository`).
 - **Resolved per job** (`resolvePayload`, `src/executors/herdr/payload.ts`, herdr-claude and the print agents):
   the job's own `cwd` on the machine it is pinned to (a routing rule's) first; then the tree the machine maps the
@@ -18064,7 +18067,7 @@ approved card keeps the acts no trusted actor did too, so a person sees why it n
   whose stamp does not verify, and every job while there is no stamp key hold none. A level that changes (a deny, an edit,
   a quarantine) is pushed with the next change of who is live, within 2 s (`REQUESTERS_CHECK_MS`); a job that is no longer
   live loses them, as its other tuples.
-- **A minimum trust** on an operation profile (Settings → Access, panel **Minimum trust**; `POST /ui/api/access`
+- **A minimum trust** on an operation profile (Users & access → Access, panel **Minimum trust**; `POST /ui/api/access`
   `{ action: "min-trust", operation, asset, level }`, `level: null` clears it; least role admin, the instance admin's, as
   every edit of Access): the hopper keeps `trust:<level>#min_trust@operation_profile:<profile>` with who set it and when,
   one per profile, and writes `job:*#trust_gated` on that profile with it (`gateTuples`, never stored). The default model
@@ -18289,7 +18292,7 @@ approved scope, a launch's scope (issue #708), Access for a mint and for a share
 A Windows sandbox step's secret (issue #731, "Windows sandbox steps") passes the same grant: with none, the ask names the
 Windows host (`windowsHost`) in place of a box and template.
 
-**Granting** (Settings → Vault, panel **Vault grants**: each grant ask as a card — the job, its box and template, what it
+**Granting** (Vault, panel **Vault grants**: each grant ask as a card — the job, its box and template, what it
 asked for, the item — with **Grant**; each grant with who granted it and **Revoke**). `POST /ui/api/jobs/:id/grant-vault`
 and `POST /ui/api/jobs/:id/revoke-vault`, operator: a person's act through the UI session — a job's routes reach no
 `/ui/api/`, and its proxy token is no API token, so a job asks and never grants. **Access** decides first: OpenFGA
@@ -18348,7 +18351,7 @@ the **Vault grants** panel; the job's timeline shows the event.
 started), and every other job's ask is a grant ask for a person. A hopper restart forgets the jobs it granted: with the
 toggle off, such a job's next ask waits for a person — closed, never open.
 
-**The toggle** is in Settings → Vault, panel **Sandbox approvals**: `standingReadGrant` on `POST /ui/api/sandbox-approvals`
+**The toggle** is in Vault, panel **Sandbox approvals**: `standingReadGrant` on `POST /ui/api/sandbox-approvals`
 (admin, a box action), kept in the user's `sandboxApprovals` setting (absent: off, so no migration), recorded in
 `vault.sandbox_approvals_set`. YOLO does not set it. Tests: `test/integration/standing-read-grant.test.ts`,
 `test/domain/standing-read-grant.test.ts`.
@@ -19155,6 +19158,25 @@ tall with the demo data; the run graph on expand, no longer the default.
 
 Tests: `test/ui/jobs-table.test.ts` (the default mode, the columns, the toggle kept over a reload, a row's run graph).
 
+### Settings' sub-nav and the views that left it (issue #2373, 2026-10-21)
+
+Requirement: no horizontal strip of Settings links; every section in view at 1440x900; Settings keeps configuration only.
+
+- **Sub-nav.** Settings is two columns from the `lg` width: a left **sub-nav**, sticky under the app's header and
+  scrolling on its own, and the open section. The sub-nav has six groups: Jobs and agents, Intake, GitHub, Security and
+  access, Integrations, System. Each group folds by its title and keeps the open section's link when folded (issue
+  #2353). Below `lg` the jump list alone names the sections. A section in no group, or a group of one section, fails the
+  typecheck, as a nav group of one entry does (`NAV_GROUPS`, `ui/src/app/nav.tsx`).
+- **Views of their own.** Plugins (`#plugins`), Vault (`#vault`) and **Users & access** (`#users-access`, sections
+  `users`, `access`, `permissions`, `api-tokens`; `ui/src/views/users-access.tsx`) are workflows a person acts in, not
+  configuration. Each is an entry in Set up, its one home. Webhooks and Sign-in stay in Settings.
+- **Old hashes.** `#settings/plugins`, `#settings/vault`, `#settings/users`, `#settings/access`, `#settings/permissions`
+  and `#settings/api-tokens` are replaced by their new hash; what follows the section (a device grant's user code)
+  follows the new one. A device grant's `verificationPath` is `/#users-access/api-tokens`.
+- **Cards that fold.** On Plugins and Access each block is a Panel with `fold` and a `summary`: one line beside its
+  title, so a folded card still says what it holds (its instances, its approvals, its decisions denied). **Fold all**
+  (`FoldAll`) folds every card of the page, or opens them all when none is open. Each fold is a page choice.
+
 ## The isolation stop (issue #752, 2026-10-11)
 
 Issue #752 asks that a box cut off from the hopper degrade safely. This part is the box's own time limit: a client target
@@ -19500,7 +19522,7 @@ minted its credential at each ask, with nothing that tied the change to a review
 - **A job records one**: `POST /job/infra-plans`, with its proxy token, JSON (`file` in base64): 201 with its id; a plan
   that is not whole is a 400 that says why. `GET /job/infra-plans/:id` answers it with its approval; `?file=1` gives the
   plan file back as it was put, so terraform applies only the saved plan. `infra.plan_recorded` on the job's timeline.
-- **A person approves it**: Settings → Vault, panel **Infra changes** (every plan, newest first, with its state:
+- **A person approves it**: Vault, panel **Infra changes** (every plan, newest first, with its state:
   waits for approval, approved, stale), or `POST /ui/api/infra-plans` `{ action: "approve", plan }` (admin, a box
   action). The approval is a row of its own (`infra_plan_approvals`), so the plan does not change; a second is a 409.
   `infra.plan_approved` on the timeline of the job that recorded it. A job never approves a plan.
@@ -19694,7 +19716,7 @@ nothing recorded twice; marks once; refusals), `test/plugins/grokbot-intake.test
 
 ## The Infra page (issue #896, 2026-10-12)
 
-Before: plans (issue #870) and out-of-band changes (issue #871) were two panels at the bottom of Settings → Vault, and each
+Before: plans (issue #870) and out-of-band changes (issue #871) were two panels at the bottom of Vault, and each
 showed nothing when its list was empty or its read failed. The feature was invisible until a job recorded a plan.
 
 - **A top-level view, `#infra`** (`ui/src/views/infra.tsx`), in the navigation between Machines and Usage, on par with
@@ -20068,7 +20090,7 @@ repository fetched once in the pass; GitHub's answer outside a pass and with no 
 ## Needs you: one home per decision (issue #897, part 1, 2026-10-12)
 
 Owner report: decisions that wait on a person lived in odd corners — request cards inside each source's card in Sources;
-credential requests, vault grants and template approvals stacked at the bottom of Settings → Vault — and several panels
+credential requests, vault grants and template approvals stacked at the bottom of Vault — and several panels
 rendered nothing when empty, so a person could not tell the feature was there.
 
 **As built:**
@@ -20088,17 +20110,17 @@ rendered nothing when empty, so a person could not tell the feature was there.
   no Approve.
 - **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
   grants, and Template approvals (`template-approvals.tsx`: Approve, and Approve `<profile>` for a high-radius profile),
-  plus a pointer to Settings → API tokens for box tokens, and Bastions (issue #2146, "Bastions": each bastion of a job
+  plus a pointer to Users & access → API tokens for box tokens, and Bastions (issue #2146, "Bastions": each bastion of a job
   that runs now, with Stop). A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
   it was never approved or a new image, secret or profile waits. A template a job asked for (`askedBy`) counts in the
   badge and the Needs you row while its job has not ended (issue #2196), and a high-priority job's template or sandbox run
   marks them (`accessRequestsHigh`) and comes first in its panel. Since issue #2197 both are one **run card** ("One
-  approval per sandbox run"). Settings → Vault keeps Revoke, Check again, Edit and
+  approval per sandbox run"). Vault keeps Revoke, Check again, Edit and
   Remove, and links a waiting template here. The texts the hopper gives a job or a box for an approval or a grant name
   Access requests.
 - **One vault read.** `useVault` (`ui/src/store/vault.ts`) keeps one copy of `GET /api/vault`, read when first used and
   again after each `vault.*` or `template.*` event (`rereadsVault`; issue #2196: a job's template request records only
-  `template.saved`); the nav, Needs you, Access requests and Settings → Vault share it, and an edit's
+  `template.saved`); the nav, Needs you, Access requests and Vault share it, and an edit's
   answer replaces it. A read that fails is no count; Access requests says why and still renders its panels.
 - **Always rendered.** Needs you, Intake and each panel of Access requests render with nothing in them, and say what will
   show there.
@@ -20200,11 +20222,11 @@ A viewer reads the list and gets no form. Nothing the view sends goes to GitHub.
 
 **The vault authorization (part 3).** The authorization `vault` (`VAULT_AUTHORIZATION`) is the submitter's **vault
 grant** ("Vault grants") for the direct job's item, `direct:<id>`. The route fixes the id first, and Access decides the
-grant for that item as for Grant on Settings → Vault: OpenFGA `vault_grant#can_grant` for the person signed in, the user
+grant for that item as for Grant on Vault: OpenFGA `vault_grant#can_grant` for the person signed in, the user
 whose jobs these are as `owner`. Refused: 403; OpenFGA not asked: 503. Either way nothing is kept: no record, no
 `direct_job.submitted`, no job. Allowed: the submit's one transaction also keeps the grant (`by`: the submitter, `job`: its
 first job) and appends `vault.granted { job, key, by }`, so the audit names who authorized the vault, as for a person's
-Grant. Run again keeps it (the grant is the item's); Revoke on Settings → Vault takes it back. The template's approved
+Grant. Run again keeps it (the grant is the item's); Revoke on Vault takes it back. The template's approved
 scope still bounds what the job gets, and the job's box still asks through the vault's checks: the grant widens nothing.
 Its prompt says `vault: granted by the submitter`, or `vault: not granted`. Every other authorization stays words told to
 the job and recorded: the hopper has no grant to make of them. Why one reserved word, and no field of its own: a vault
@@ -22159,13 +22181,70 @@ on a person in Failures (`waitingOn` is `HANDOFF_WAIT`). Its job failed, so its 
   that time would not be seen as a Run again, and the ledger would keep the item out. Its labels decide until the grace
   ends, as before part 8.
 
-**Left to the labels:** a done item with no whole merge, dropped.
+**Left to the labels:** a done item with no whole merge, dropped (part 9 judges a drop by Won't do).
 
 **Verification:** `test/sources/github-label-needs-you.test.ts` (a hand-off whose failure was reported gets `hopper:failed`
 and the failed reason, and the label taken off by hand is one Run again; one not reported, or reported moments ago, is not
 judged), `test/integration/github.test.ts` and `test/integration/item-snapshot.test.ts` (a failed issue's `hopper:failed`
 taken off at once runs it again),
 `test/sources/github-item-labels.test.ts` (`labelsFor` of a hand-off).
+
+### An item dropped by Won't do carries hopper:rejected (issue #1892 part 9, 2026-10-21)
+
+Milestone 2, part 9: the dropped state, for the drop whose label is certain. A person's **Won't do** drops an item: on a
+blocked item in Intake (`work_item.dropped`, issue #1891), or as the resolution of a hand-off in Needs a person
+(`handoff.closed` with end `wont_do`, issue #551). Each act puts `hopper:rejected` on through the outbox, in place of the
+end labels before it. Before this part, Intake took such an item's reason from that label, and the mirror did not judge it.
+
+- **The ledger marks the drop.** Either act sets `wontDo` on the work item. Any later move of the item forgets it, also a
+  move to dropped another way. The field is in the item's JSON body: no migration. An item dropped before this part has no
+  mark until the ledger is rebuilt, so the labels decide for it, as before.
+- **`labelsFor` judges an item dropped by Won't do.** It wants `hopper:rejected`, and no other end label. The mirror
+  corrects a stale end label (for example a `hopper:pr-closed` left on).
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item the rejected reason (`REJECTED_LABEL`), whatever
+  end labels its issue carries.
+- **`hopper:rejected` taken off by hand is a Run again**, as the label's description says ("remove to offer it again"):
+  one `work_item.label_edited` with `from: dropped`. Intake takes the item again, as it did when the labels decided; the
+  event now records the person's act. The act's own label change is no label edit: the act moves the item first, and its
+  outbox rows are held until they are sent.
+- **Not judged: an item dropped any other way.** A cancelled or rejected job, a declined or withdrawn card, a dismissed
+  failure, a person's Close PR or an issue closed as not planned: what its issue carries then is not certain (a decline
+  takes the source label off; a cancel takes only the claim off). The labels decide for those.
+
+**Left to the labels:** a done item with no whole merge, an item dropped any way but Won't do.
+
+**Verification:** `test/sources/github-label-dropped.test.ts` (an item dropped by Won't do gets the rejected reason and
+`hopper:rejected` in place of a stale end label; the label taken off by hand is one Run again and is not put back; an item
+dropped another way is not judged), `test/domain/work-items-wont-do.test.ts` (both acts mark the drop; a cancel or a
+dismiss does not; a new job forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor` of a dropped item).
+
+### An item done by hand carries hopper:done (issue #1892 part 10, 2026-10-21)
+
+Milestone 2, part 10: the done state, for a done with no whole merge whose label is certain. A person resolves a hand-off in
+Needs a person with **Done** (`handoff.closed` with end `done_by_hand`, issue #551): they did the work. The resolution puts
+`hopper:done` on through the outbox, in place of `hopper:failed` and the claim, and its job ends finished ("done by hand").
+Before this part the ledger did not read the close: the job's finish made the item done, as any job's end, and the labels
+decided its Intake reason.
+
+- **The ledger marks the done.** The close moves a handed-off item to done and sets `doneByHand` on the work item; the
+  job's finish that follows keeps it. Any other move forgets it, also a new job of the item. The field is in the item's JSON
+  body: no migration. An item done by hand before this part has no mark until the ledger is rebuilt, so the labels decide
+  for it, as before.
+- **`labelsFor` judges an item done by hand.** It wants `hopper:done`, and no other end label. The mirror corrects a stale
+  end label (for example a `hopper:failed` left on).
+- **Intake reads the ledger for it.** `ledgerReason` gives it `DONE_OPEN`, whatever end labels its issue carries.
+- **`hopper:done` taken off by hand is a Run again**, as for a done item by a whole merge: one `work_item.label_edited`
+  with `from: done`.
+- **Not judged: any other done with no whole merge.** A direct job's end, operator-led work, an issue a job closed as
+  complete, or a read of GitHub that saw the issue closed: the report set the labels by what the issue said then.
+
+**Left to the labels:** a done item with no whole merge but done by hand, an item dropped any way but Won't do.
+
+**Verification:** `test/sources/github-label-done-by-hand.test.ts` (an item done by hand gets `DONE_OPEN` and `hopper:done`
+in place of a stale end label; the label taken off by hand is one Run again and is not put back; a done a job's end made
+is not judged), `test/domain/work-items-done-by-hand.test.ts` (the close marks the item, the finish keeps the mark, a new
+job forgets it; a job's own "done by hand" result does not mark it), `test/sources/github-item-labels.test.ts`
+(`labelsFor` of an item done by hand).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -23383,7 +23462,7 @@ the panes the hopper's jobs run in: the **job's terminal** (glossary).
 - **Who.** An operator (both routes), through a UI session or an API token whose scopes name the route (the Jobs section of the
   scope registry). Then Access: OpenFGA's `terminal#can_attach` (new type `terminal`, `owner: [user]`, `can_attach: owner`), the
   job's user told as its owner at each check. Fail closed, as every Access check: no OpenFGA, OpenFGA not reached, or a model that
-  lacks the type (`terminalGaps`; an edited model must add it in Settings → Access) is 403 with the reason. A job, a machine or a
+  lacks the type (`terminalGaps`; an edited model must add it in Users & access → Access) is 403 with the reason. A job, a machine or a
   box never attaches: the routes are the UI's.
 - **Audit.** A **terminal session** is one person's (and one way's: UI, API, CLI) on one job, kept in memory
   (`src/engine/terminal.ts`): it opens at their first read or input (`terminal.opened`, `sessionId`, `person`, `via`), and a new
@@ -24375,7 +24454,7 @@ secret**, kept as the TypeSafe API key is ("The TypeSafe API key in the vault's 
   `remove` drops it. Access (`system_secret#can_change`) decides each change, the user or an admin.
 - **A write-only field** on the app source's setup card in Sources posts the key once (`POST /ui/api/github-app-key`, least
   role operator); the field is cleared, and no route answers the key: `GET /api/github-app-key` says only whether one is
-  kept, who set it and when. It is listed on Settings → Vault in the system scope, and may be kept in a vault backend, as
+  kept, who set it and when. It is listed on Vault in the system scope, and may be kept in a vault backend, as
   the other values a person gives.
 - **Read by the old name.** The app source and its detection read the key through the user's runtime secrets by
   `GITHUB_APP_KEY_VARIABLE` (`GITHUB_APP_PRIVATE_KEY`); the user's runtime (`src/users/github-app-key.ts`) answers that name
@@ -25345,7 +25424,7 @@ saved and shown, but no box read them: a sandbox does one step and is burned wit
 
 - `TemplateLimits` (`src/domain/sandboxes.ts`) is `cpus` and `memoryMb` only. `save-template` refuses `ttlMinutes` and
   `keepHome` (400); `hopper template save` takes no `--ttl-minutes` or `--keep-home`; a template's form and its line in
-  Settings → Vault show CPUs and memory only.
+  Vault show CPUs and memory only.
 - Tenant migration 71 (`src/store/migration-template-limits.ts`) removes both from each stored template's limits, and
   the limits themselves when nothing is left. The build before reads both as absent.
 - Tests: `test/store/tenant-migration-71.test.ts`, `test/ui/sandbox-launch.test.ts`, `test/ui/template-limits-view.test.ts`,
@@ -25371,7 +25450,7 @@ saved and shown, but no box read them: a sandbox does one step and is burned wit
   closed), `test/store/sandbox-runs.test.ts` (`machineRemoved` kept).
 
 **Decided here.** The jobs that waited for days on template checks or approvals of `asked-…` templates are not changed
-by code. Those waits are a person's decision by design: a person approves or declines the template in Settings → Vault,
+by code. Those waits are a person's decision by design: a person approves or declines the template in Vault,
 or runs its read-only check again (`hopper template check <name>`). The issue lists them as what was seen, not as what is
 expected. With no sandbox as a machine, no such wait holds a machine's lane any more.
 
@@ -25602,7 +25681,7 @@ with a local account or SSO of the same email got a second, empty user, and thei
 - **An admin never takes another user's email** (issue #221). Settings → Sign-in refuses a new local account of an email
   another user is known by, as it refuses one linked to another user (409, `src/http/local-accounts.ts`). The operator CLI
   does not: it holds the database's credentials.
-- `GET /api/users` and Settings → Users show each user's email.
+- `GET /api/users` and Users & access → Users show each user's email.
 
 **Decisions:**
 - **Link at the sign-in, not in a migration.** The instance does not know a GitHub user's email until GitHub says it, and
@@ -25691,7 +25770,7 @@ So a new way to name a person needs no migration of tuples: the next push moves 
 - **A user with no email yet keeps `user:<id>`.** A GitHub-signed-in user from before part 7 has none until their next
   GitHub sign-in. An id holds no `@`, so it never names an email.
 - **The access records name the email.** A decision's path, a check's reason (`user:<email> may …`), a mint's reason
-  (`user <email> is not approved …`) and Settings → Access's permission matrix name the email.
+  (`user <email> is not approved …`) and Users & access → Access's permission matrix name the email.
 
 **Decisions:**
 - **Key at the boundary, not in each object.** The objects that hold a user id (`job:<user>/<job>`, `machine:<user>/…`,
@@ -25743,7 +25822,7 @@ the person (`identityName`: name, username, email or subject, the first the real
   the next act, with no session to end.
 
 **Residual risk.** The UI shows emails in timelines and settings history to everyone who reads that user's work. They
-were already shown in Settings → Users and Settings → Access.
+were already shown in Users & access → Users and Users & access → Access.
 
 **Left for later parts of issue #1380:** passkeys; more than one GitHub source per user, and sources from other forges.
 
@@ -26501,7 +26580,7 @@ With no master key, a link is 503 and writes nothing: none is kept in clear.
 of the one before, at once, and puts its public half in the record; 409 while not linked. An unlink drops the secret with
 the record. Each is a vault event with no value: `vault.secret_set` (with `rotated` for a rotation), `vault.secret_removed`.
 Neither restarts the daemon or touches a job or a lane. An unregistration at hopper.io keeps the key. UI: Settings →
-hopper.io shows the public half and Rotate key; Settings → Vault lists the private half as the whole hopper's.
+hopper.io shows the public half and Rotate key; Vault lists the private half as the whole hopper's.
 
 **Decisions:**
 - **The key comes now, before the agent.** Part 1 chose "no link keys until the agent". The threat model fixes the key's
@@ -28102,7 +28181,7 @@ no way to name another host. A person could not approve "this box may reach this
 - **The field** (`Template.egress`, `src/domain/vault.ts`). A list of `host:port`: a lowercase DNS name or an IPv4
   address, a port from 1 to 65535, no scheme and no wildcard (`egressHostProblem`). The vault saves it in lowercase,
   each host once, sorted. A save that leaves it out keeps the hosts the template has, as tools do; `[]` removes them. Set
-  in Settings → Vault (the template form), by `POST /ui/api/vault` `save-template` `egress`, or by
+  in Vault (the template form), by `POST /ui/api/vault` `save-template` `egress`, or by
   `hopper template save --egress <host>:<port>` (`none` removes them).
 - **Approved with the image.** `approve-template` keeps the hosts in the approval (`approval.egress`) and in
   `vault.approved`. A host not in the approval waits for a person (`pending.egress`, `egressPending`): the template gives
@@ -31146,7 +31225,7 @@ evidence and the guardrails are as before. The catalog line names the bastion.
   PromQL or LogQL on its data source in its place. A Grafana read through the bastion's box is a later part (part 6, the
   bastion read, below).
 
-**A template's bastion targets on Settings → Vault (part 8).** A template's card lists its bastion targets, each a
+**A template's bastion targets on Vault (part 8).** A template's card lists its bastion targets, each a
 person has not approved marked `(waits)`. Its form edits them in one field, split by spaces or commas, and Save sends
 them as `bastionTargets` with the rest of `save-template`; an empty field saves none. The form checks each word's shape
 (`BASTION_TARGET`, `ui/src/model/vault.ts`, the shape of `parseTargets`) and does not save while one is wrong; the save
@@ -31735,3 +31814,46 @@ is a preference, never a hold.
 **Verification.** `test/client/job-runtime.test.ts` (each step fits a line, the steps run for real),
 `test/herdr/executor-runtime.test.ts` (every typed command fits, the guards before the setup),
 `test/engine/lane-health.test.ts`, `test/decider/unhealthy-lanes.test.ts`, `test/ui/machine-unhealthy-lanes.test.ts`.
+
+## The sandbox host (issue #2272, 2026-10-21)
+
+**The gap.** A sandbox (a need or box step, a bastion, the read-only check, the warm pass) started beside the hopper when it
+had a runtime, else on the first of the user's client targets dialled in with one. A person could not say where sandboxes
+run: a step could land on a worker seat that runs coding lanes, and so the credentials minted for it reached that seat. A
+dedicated machine for sandboxes was not possible to point at.
+
+**The change, part 1** (`src/domain/sandbox-host.ts`; `src/engine/sandbox-host.ts`; `src/store/machine-drain-settings.ts`;
+`src/sandbox/runtime.ts` `createPlacements` `where`; `src/sandbox/service.ts` `hostOffline`; `src/sandbox/need-steps.ts`
+`hostWait`; `src/http/ui/sandbox-host.ts`; `src/cli-operator-machine.ts`; Machines, `ui/src/views/machine-sandbox-host.tsx`):
+- **The sandbox host** (glossary) is a user's setting: the machines the user's sandboxes start on, first first, at most 5.
+  `local` is the runtime beside the hopper; any other is a machine the hopper knows that runs **no coding lane** (its lanes are
+  0), so no minted credential reaches a worker seat. A machine with lanes is refused: set its lanes to 0 first.
+- **Placement.** While it is set, every sandbox starts only on the first machine of it whose runtime answers now (a client
+  target dialled in with a rootless runtime, or the runtime beside the hopper): never on another machine and never beside the
+  hopper when `local` is not named. None online: the sandbox does not start, and the reason is `sandbox host <name> is
+  offline` (`sandbox hosts <a>, <b> are offline` for a list). Not set: sandboxes start where they did before.
+- **A step waits.** A need or box step looks at the sandbox host before it mints anything: while it is offline, the step waits
+  (every 10 s), and its log says once `hopper: sandbox host <name> is offline: the step waits for it, and never starts on
+  another machine`. Once the host is back, it mints and runs. Its saga holds its lease meanwhile; a hopper that stops leaves the
+  step to wait again on any host. A step whose job stops meanwhile ends cancelled, with nothing minted. A read-only check
+  finds no place, and waits for its next pass; a bastion that cannot start says why.
+- **A change** is read at each sandbox: no restart, no redeploy. A sandbox that runs already ends where it started; the next one
+  starts on the new host. Kept in the user's settings (`sandboxHost`: the machines, who, the way, when), so a restart keeps it.
+- **Set** by an admin: `POST /ui/api/machines/sandbox-host {hosts}` (`[]` clears it), the Machines card's Use as sandbox host
+  (adds it last) and Stop as sandbox host, and `hopper machine sandbox-host [<machine>...|--clear]` (no machine: print it).
+  Each change records `machine.sandbox_host_set` with the list before and after, who and the way; one that changes nothing
+  records nothing. Not a box action: it starts and stops no work.
+- **Shown.** `GET /api/machines` carries `sandboxHost` (the list) and marks each machine of it with its place. The card has a
+  *sandbox host* badge, its place, and how many sandboxes run there now (its sandbox runs not ended).
+
+**Not changed.** Sandbox network rules: no API-server proxy, no port-forward RBAC, no new port or tunnel. A box step's vault
+secrets still go only into a need box beside the hopper (`NO_SECRET_COPY`).
+
+**Left for the next parts** (path 2 of the proposal): a **remote Podman host** record (`sandbox-hosts`, shaped as
+`windows-hosts`) reached over the hopper's own ssh key and pinned host key by `ssh -T <host> podman system dial-stdio`, a
+`SocketCall` over it under the unchanged Podman adapter, secrets copied into such a host's box (lifting `NO_SECRET_COPY` there);
+the host's CPU and memory and its totals on Machines; and on Kubernetes `local:<node>`, a box pod pinned by `nodeSelector`.
+
+Tests: `test/domain/sandbox-host.test.ts` (which machines can be the host), `test/sandbox/sandbox-host.test.ts` (placement, no
+fallback, offline, a change mid-run), `test/sandbox/need-step-host-wait.test.ts` (the wait), `test/integration/sandbox-host.test.ts`
+(the route, the event, a restart, the CLI), `test/ui/machine-sandbox-host.test.ts` (the card).

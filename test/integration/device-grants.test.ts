@@ -1,5 +1,5 @@
 // Issue #892: a grant minted by device approval. An agent with no credential asks for a grant and shows a user code; a
-// person enters the code in Settings → API tokens, sees what the agent asks for, and approves or denies; the agent polls
+// person enters the code in Users & access → API tokens, sees what the agent asks for, and approves or denies; the agent polls
 // with its device code and gets the grant's first pair once. Real daemon, real HTTP server; OpenFGA is a double at its port.
 //
 // Feature: grants by device approval
@@ -49,7 +49,7 @@ describe('grants by device approval (issue #892)', () => {
     const asked = await ask(a, { role: 'operator' });
     expect(asked.status, asked.text).toBe(200);
     const { deviceCode, userCode } = asked.body as { deviceCode: string; userCode: string };
-    expect(asked.body).toMatchObject({ verificationPath: '/#settings/api-tokens', verificationPathComplete: `/#settings/api-tokens/${userCode}`, interval: 5 });
+    expect(asked.body).toMatchObject({ verificationPath: '/#users-access/api-tokens', verificationPathComplete: `/#users-access/api-tokens/${userCode}`, interval: 5 });
 
     const waiting = await poll(a, deviceCode);
     expect(waiting.status, waiting.text).toBe(200);

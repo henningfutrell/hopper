@@ -80,6 +80,8 @@ export interface SandboxesOptions {
   cluster?: boolean;
   /** A user's client target by name, for a box on it (the remote runtime); absent: boxes start only beside the hopper. */
   clients?: ClientTargets;
+  /** The user's sandbox host, first first (issue #2272), read at each sandbox; empty or absent: none set. */
+  sandboxHost?: (userId: string) => readonly string[];
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
   /** The templates the read-only check reads, and where it keeps a check (issue #716). Absent: no check runs. */
@@ -108,6 +110,11 @@ export interface Sandboxes {
    * `offline`: a step whose box joins no network, which a Kubernetes pod cannot be.
    */
   stepProblem(userId: string, o?: { offline?: true }): Promise<string | undefined>;
+  /**
+   * Issue #2272: "sandbox host <name> is offline" while the user's sandbox host is set and none of its machines is online:
+   * a step waits for it, and never starts on another machine. Undefined: none set, or one is online.
+   */
+  hostOffline(userId: string): Promise<string | undefined>;
   /** One burn pass (burn-launched.ts): each box an older build launched, burned, and its record removed. */
   burnLaunched(): Promise<void>;
   /** The need boxes another live hopper runs now (`drivenElsewhere`), by name: their tokens stay bound too (issue #1954). */
@@ -130,7 +137,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   let buildsAt = -Infinity;
   const noRuntime = o.cluster ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME;
   const noPlace = (): string => `${noRuntime}; and no machine of the user's with a container runtime is dialled in`;
-  const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}), ...(o.egress ? { egress: o.egress } : {}) });
+  const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}), ...(o.egress ? { egress: o.egress } : {}), ...(o.sandboxHost ? { hosts: o.sandboxHost } : {}) });
 
   /**
    * Each client target to look on (issue #1349): every one dialled in now, and each one `also` names. One that cannot
@@ -312,8 +319,9 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const check = (): Promise<void> => Promise.all([sweep(), readOnlyChecks?.(), warm?.()]).then(() => undefined);
 
   const needStep: Sandboxes['needStep'] = async (userId, { offline, ...box }, io, run) => {
-    const at = await places.forCheck(userId);
+    const at = await places.where(userId);
     if (!at) return { exit: 125, problem: noPlace() };
+    if ('problem' in at) return { exit: 125, problem: at.problem };
     if (offline && at.runtime.kind === 'kubernetes') return { exit: 125, problem: NO_OFFLINE_POD };
     // A box step's vault secrets (issue #1875) never go to a machine of the user's: it may be the job's own.
     if (box.files?.secrets && Object.keys(box.files.secrets).length > 0 && at.machine !== LOCAL) return { exit: 125, problem: NO_SECRET_COPY };
@@ -352,9 +360,16 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     },
 
     async stepProblem(userId, s) {
-      const at = await places.forCheck(userId);
+      const at = await places.where(userId);
       if (!at) return noPlace();
+      if ('problem' in at) return at.problem;
       return s?.offline && at.runtime.kind === 'kubernetes' ? NO_OFFLINE_POD : at.runtime.problem();
+    },
+
+    async hostOffline(userId) {
+      if (!o.sandboxHost?.(userId).length) return undefined;
+      const at = await places.where(userId);
+      return at && 'offline' in at ? at.problem : undefined;
     },
 
     // A need box's run is the job's step `need_box` (issue #1486 part 9): the box runs with the step's trace context.

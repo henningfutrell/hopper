@@ -121,7 +121,7 @@ export interface DirectJob extends DirectJobInput {
 
 /**
  * The authorization that grants the direct job's item the vault (design.md "Direct jobs", part 3): the submitter's own
- * vault grant, made at submit after Access, as a person's Grant on Settings → Vault.
+ * vault grant, made at submit after Access, as a person's Grant on Vault.
  */
 export const VAULT_AUTHORIZATION = 'vault';
 

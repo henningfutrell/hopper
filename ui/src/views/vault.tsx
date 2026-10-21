@@ -1,4 +1,4 @@
-// Settings → Vault (issue #558): write-only secrets for jobs. Each is set once — a name, an optional scope saying what
+// Vault (issue #558): write-only secrets for jobs. Each is set once — a name, an optional scope saying what
 // it reaches, a value — and from then on only its metadata shows: no view, and no answer the page gets, holds a value.
 // Replace types a new value over it; Remove deletes it. Templates: an image and the secrets its boxes may ask for,
 // approved once by a person and again for a new secret or a new image. A template's operation profiles (issue #584)

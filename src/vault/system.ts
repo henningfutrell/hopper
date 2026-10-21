@@ -160,7 +160,7 @@ export function createSystemSecrets(o: {
   /** The value `at` points at, read in its backend now; or why not, without the backend's name. Never a value in the reason. */
   async function readIn(at: { name: string; reference: string }): Promise<{ value: string } | { problem: string }> {
     const b = (o.backends?.() ?? []).find((x) => x.name === at.name);
-    if (!b) return { problem: 'it is not in the plugins config: add it again in Settings → Plugins' };
+    if (!b) return { problem: 'it is not in the plugins config: add it again in Plugins' };
     if (!b.backend) return { problem: `it cannot run: ${b.problem ?? 'unknown'}` };
     try {
       return { value: await b.backend.read(at.reference) };
@@ -173,7 +173,7 @@ export function createSystemSecrets(o: {
     const refused = systemBackendRefusal(name);
     if (refused) return fail('invalid', refused);
     const b = (o.backends?.() ?? []).find((x) => x.name === backend);
-    if (!b) return fail('invalid', `no vault backend ${backend}: add it in Settings → Plugins first`);
+    if (!b) return fail('invalid', `no vault backend ${backend}: add it in Plugins first`);
     const bad = b.backend?.check(reference);
     if (bad) return fail('invalid', `${backend}: ${bad}`);
     const may = await allowed(name, who);

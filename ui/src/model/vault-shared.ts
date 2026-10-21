@@ -1,4 +1,4 @@
-// Shared secrets on Settings → Vault (issue #718): whose agents may read each one, who set it and when, and the readers
+// Shared secrets on Vault (issue #718): whose agents may read each one, who set it and when, and the readers
 // the hopper's admin types. Only metadata reaches the page: there is no value to show.
 import type { SharedSecretView } from './wire.ts';
 

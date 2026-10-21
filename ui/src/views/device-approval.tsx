@@ -1,4 +1,4 @@
-// Settings → API tokens: approve a device (issue #892). An agent that asks for a grant shows a user code; the person
+// Users & access → API tokens: approve a device (issue #892). An agent that asks for a grant shows a user code; the person
 // enters it here (or opens the link the agent shows, which holds it), sees what the agent asks for and who asked, and
 // approves or denies it. Approved, the grant is the person's own mint: its role at most theirs. The agent gets the grant's
 // first pair at its next poll; nothing is shown here.

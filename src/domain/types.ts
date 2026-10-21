@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving } from './machines.ts';
+import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving } from './machines.ts'; import type { MachineSandboxHost } from './sandbox-host.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
@@ -330,8 +330,8 @@ export interface Lane {
   idleSince?: string; pastCap?: true;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials, leaving, drained and unhealthy lanes: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving`, `MachineDrained`, `MachineLaneHealth` (src/domain/machines.ts). */
-export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving, MachineDrained, MachineLaneHealth {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr, infra credentials, leaving, drained and unhealthy lanes: `MachineHerdr`, `MachineInfraCredentials`, `MachineLeaving`, `MachineDrained`, `MachineLaneHealth` (src/domain/machines.ts); its place in the sandbox host, `MachineSandboxHost` (src/domain/sandbox-host.ts). */
+export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, MachineLeaving, MachineDrained, MachineLaneHealth, MachineSandboxHost {
   id: MachineId;
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */

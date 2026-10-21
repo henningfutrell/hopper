@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Issue #2146, on the page: Settings → Vault, a template's card lists its bastion targets, each a person has not approved
+// Issue #2146, on the page: Vault, a template's card lists its bastion targets, each a person has not approved
 // marked `(waits)`; its form edits them — each <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port> —, Save posts them as
 // `bastionTargets`, and a word that is no target stops the save.
 import { act, createElement } from 'react';
@@ -83,7 +83,7 @@ async function boot(t: Record<string, unknown>) {
   const daemon = fakeDaemon();
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
-  window.location.hash = '#settings/vault';
+  window.location.hash = '#vault';
   vi.resetModules();
   const app = '../../ui/src/app/app.tsx';
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
@@ -92,7 +92,7 @@ async function boot(t: Record<string, unknown>) {
   return daemon;
 }
 
-describe('Settings → Vault: a template\'s bastion targets (issue #2146)', () => {
+describe('Vault: a template\'s bastion targets (issue #2146)', () => {
   it('the card lists them and marks the one that waits', async () => {
     await boot(OBS);
     expect(item()!.textContent).toContain(`Bastion targets${GRAFANA} (waits), ${PROM}`);

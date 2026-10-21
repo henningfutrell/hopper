@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Access requests (issue #897; Settings → Vault until then), "Asked for" (issue #583), rendered in happy-dom inside the whole app against a fake of the daemon's
+// Access requests (issue #897; Vault until then), "Asked for" (issue #583), rendered in happy-dom inside the whole app against a fake of the daemon's
 // HTTP surface: a credential request a job on a box opened shows who waits and why, how to get the credential, and the
 // kinds the skill takes, the suggested one first; the value is a password field; Give posts the kind, the name and the
 // value; something else needs the person's words first; Decline posts the reason.

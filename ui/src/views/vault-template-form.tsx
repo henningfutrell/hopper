@@ -1,4 +1,4 @@
-// A template's form on Settings → Vault (issues #558, #584, #716, #708): its name (fixed once saved), its image, the
+// A template's form on Vault (issues #558, #584, #716, #708): its name (fixed once saved), its image, the
 // vault secrets, the tools and the operation profiles its boxes may ask for, its egress hosts and bastion targets (#2146), and the limits a launch of it may ask for
 // (sandbox-limits.tsx). A change of image, secrets, tools or profiles waits for approval; limits do not, they give a
 // box nothing.

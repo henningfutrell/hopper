@@ -1,9 +1,9 @@
 // Issue #655, part 15: a profile's minimum trust, through the real daemon, store and HTTP edge, with OpenFGA as a double
 // at the AuthorizationServer seam. The runtime tells Access each live job's trust level as its stamp verifies, and the
-// hopper writes it to OpenFGA. The instance admin sets a minimum trust on an operation profile in Settings → Access
+// hopper writes it to OpenFGA. The instance admin sets a minimum trust on an operation profile in Users & access → Access
 // (POST /ui/api/access, `min-trust`): no job below it gets that operation, whatever its template's approvals say.
 //
-// Feature: a minimum trust in Settings → Access
+// Feature: a minimum trust in Users & access → Access
 //   Scenario: a running job's trust is written to OpenFGA and shown on its matrix row
 //   Scenario: the admin sets and clears a minimum trust; a level that is no minimum is refused
 //   Scenario: a trial is told the level it names
@@ -34,7 +34,7 @@ const view = async (a: TestApp, token: string) => (await a.api<AccessView>('GET'
 const edit = <T = AccessView>(a: TestApp, token: string, body: unknown) => a.ui<T>('/ui/api/access', body, { token });
 const held = (server: FakeAuthorizationServer): string[] => [...server.storeTuples([...server.stores.keys()][0]!).keys()];
 
-describe('a minimum trust in Settings → Access (issue #655, part 15)', () => {
+describe('a minimum trust in Users & access → Access (issue #655, part 15)', () => {
   it('writes a running job\'s trust to OpenFGA, and shows it on the job\'s row', async () => {
     const { a, server, token } = await boot();
     const job = await a.pull({ op: 'sleep', ms: 60000 });

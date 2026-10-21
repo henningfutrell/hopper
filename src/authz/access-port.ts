@@ -71,7 +71,7 @@ export interface Access extends TemplateApprovals {
   decideApiToken(ask: ApiTokenAsk): Promise<AccessAnswer>;
   /** Whether the user's API token may do a box action (issue #795): OpenFGA's `api_token#can_run_on_box`, its owner told, and `box_runner` for a box token. Not recorded. */
   decideBoxAction(ask: ApiTokenBoxAsk): Promise<AccessAnswer>;
-  /** A check for a made-up live job of `template`, tried from Settings → Access; recorded as a trial by `by`. */
+  /** A check for a made-up live job of `template`, tried from Users & access → Access; recorded as a trial by `by`. */
   tryCheck(request: Omit<MintRequest, 'requester'> & { template: string; level?: TrustLevel }, by: string): Promise<AccessDecisionRecord>;
   /** A profile's minimum trust (issue #655, part 15), or none (`null`): no job below it is its requester. 400: the model lacks the trust relations. */
   setMinTrust(profile: OperationProfile, level: TrustLevel | null, by: string): Promise<void>;

@@ -1,0 +1,1 @@
+- When you press Done on a failed job in Needs a person, the hopper now keeps the issue's done label in step. Take the label off the issue to run the item again.

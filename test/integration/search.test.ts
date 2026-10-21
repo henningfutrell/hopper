@@ -226,7 +226,7 @@ describe('Search (issue #945)', () => {
     });
     await found(app, 'q=security&status=approved', [plan.id], 'the plan approved');
     expect((await app.api<SuggestAnswer>('GET', '/api/search/suggest?q=outa')).body.suggestions.map((x) => x.type).sort()).toEqual(['artifact', 'job']);
-  });
+  }, 60_000); // A job run and six index waits: past 15 s on a loaded CI shard, as part 4's (issue #2268).
 
   it('takes a removed artifact out of the index, and writes the artifacts and plans again on Reindex (part 3)', async () => {
     const { app } = await start();

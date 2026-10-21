@@ -83,4 +83,4 @@ const ROUTES = new Set(BOX_ACTIONS.map((b) => b.route));
 export const isBoxAction = (route: string | undefined): boolean => route !== undefined && ROUTES.has(route);
 
 /** Why an API token that is no box token is refused a box action. */
-export const NOT_A_BOX_TOKEN = 'this is a box action: it needs a box token, the API token of a grant a person mints with box: true from a UI session (Settings → API tokens, or POST /ui/api/api-tokens)';
+export const NOT_A_BOX_TOKEN = 'this is a box action: it needs a box token, the API token of a grant a person mints with box: true from a UI session (Users & access → API tokens, or POST /ui/api/api-tokens)';

@@ -25,7 +25,7 @@ import { BASTION_SKILL, bastionAsk, type BastionUser } from './bastion-skill.ts'
 import { isServedSkill, repoCopyOf, servedSkill, servedText } from './library.ts';
 
 /** What a job refused for its trust can do (issue #655 part 16): nothing it asks raises its trust. */
-const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the minimum trust in Settings → Access. Find another way.';
+const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the minimum trust in Users & access → Access. Find another way.';
 
 /** The skills whose `template` field names the sandbox itself, never the template a credential is asked for. */
 const SANDBOX_OWN: readonly string[] = [SANDBOX_SKILL, TEMPLATE_SKILL, BASTION_SKILL];
@@ -327,14 +327,14 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
         return no(403, `${machine ?? 'this machine'} is no box of a template: Access checks a box by the template it joined as, so the hopper sets up no link here. Find another way, or run on a box of a template.`);
       }
       const decision = await o.decide({ requester: { kind: 'job', userId: user.id, jobId: job.id }, operation: l.operation, asset });
-      if (!decision.allowed) return no(403, `Access denied it: ${decision.reason}. A person approves it in Settings → Access; until then, find another way.`, decision);
+      if (!decision.allowed) return no(403, `Access denied it: ${decision.reason}. A person approves it in Users & access → Access; until then, find another way.`, decision);
       if (user.mintsFor(l.form, asset)) return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${mintedLinkText(l.form, l.operation, said)}`, decision);
       // The secrets given for this skill (issue #583); else, as before it, every secret of the template given for none.
       const tagged = box.secrets.filter((x) => x.skill === s.name);
       const secrets = tagged.length > 0 ? tagged : box.secrets.filter((x) => x.skill === undefined);
       if (secrets.length === 0) {
         if (s.credential) return ask(s, s.credential, decision);
-        return no(403, `Access allows it, but template ${box.template} may be given no vault secret: a person adds one to the template in Settings → Vault and approves it.`, decision);
+        return no(403, `Access allows it, but template ${box.template} may be given no vault secret: a person adds one to the template in Vault and approves it.`, decision);
       }
       const notes = tagged.filter((x) => x.note).map((x) => `${x.name}: the user says: ${x.note}`).join('\n');
       return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${linkText(l.form, secrets)}${notes ? `\n${notes}` : ''}`, decision);
