@@ -228,6 +228,36 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(String(json(refused).error)).toContain('the hopper\'s GitHub connection may not read Actions logs');
   });
 
+  it('lists a branch\'s workflow runs, and a run\'s jobs, for the job (issue #2318)', async () => {
+    const t = await start();
+    const job = (id: number, name: string, conclusion: string | null) => ({ id, name, status: conclusion ? 'completed' : 'in_progress', conclusion, html_url: `${t.github.url}/octo/tools/actions/runs/41/job/${id}` });
+    t.github.workflowRuns = [
+      { repo: 'octo/tools', id: 41, name: 'Release', event: 'push', head_branch: 'dev', head_sha: 'sha-41', status: 'completed', conclusion: 'success', run_number: 12, created_at: '2026-10-20T10:00:00Z', jobs: [job(410, 'release', 'success'), job(411, 'notify', null)] },
+      { repo: 'octo/tools', id: 42, name: 'CI', event: 'pull_request', head_branch: 'dev', head_sha: 'sha-42', status: 'completed', conclusion: 'failure', run_number: 13, created_at: '2026-10-20T11:00:00Z', jobs: [] },
+      { repo: 'octo/tools', id: 43, name: 'Release', event: 'push', head_branch: 'main', head_sha: 'sha-43', status: 'queued', conclusion: null, run_number: 14, created_at: '2026-10-20T12:00:00Z', jobs: [] },
+    ];
+    const { env } = await running(t);
+    const ask = async (args: string[]) => {
+      const r = await hopperGh(t.root, env, [...args, '--repo', 'octo/tools']);
+      expect(r.stderr).toBe('');
+      expect(r.code).toBe(0);
+      return json(r);
+    };
+
+    expect(await ask(['run', 'list', '--branch', 'dev', '--event', 'push'])).toMatchObject({ ok: true, op: 'run.list', source: 'github', url: `${t.github.url}/octo/tools/actions`, total: 1, runs: [
+      { id: 41, name: 'Release', event: 'push', branch: 'dev', headSha: 'sha-41', status: 'completed', conclusion: 'success', runNumber: 12, createdAt: '2026-10-20T10:00:00Z' },
+    ] });
+    expect(t.github.requests.find((x) => x.path === '/api/v3/repos/octo/tools/actions/runs')?.query).toMatchObject({ branch: 'dev', event: 'push' });
+    expect((await ask(['run', 'list'])).runs).toHaveLength(3);
+    expect(await ask(['run', 'view', '41'])).toMatchObject({ ok: true, op: 'run.view', number: 41, url: `${t.github.url}/octo/tools/actions/runs/41`, name: 'Release', conclusion: 'success', jobs: [
+      { id: 410, name: 'release', status: 'completed', conclusion: 'success' }, { id: 411, name: 'notify', status: 'in_progress', conclusion: null },
+    ] });
+    expect(await ask(['run', 'list', '--branch', 'dev', '--event', 'push'])).toMatchObject({ source: 'cache' });
+
+    const missing = await hopperGh(t.root, env, ['run', 'view', '99', '--repo', 'octo/tools']);
+    expect(missing.code).toBe(1);
+  });
+
   it('closes the job\'s own issue as completed, and marks its pull request ready for review; another issue is refused (issue #652)', async () => {
     const t = await start();
     t.github.issues.push({ repo: 'octo/tools', number: 7, title: 'Nothing to change', body: 'Check it.', author: 'someone', labels: ['hopper'] });

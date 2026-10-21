@@ -312,3 +312,20 @@ describe('a job acts with the account of its repository (issue #1448)', () => {
     expect(sent).toEqual([{ as: 'ada-home', op: 'issue.create', repo: 'home/tools' }, { as: 'ada-work', op: 'issue.view', repo: 'else/where' }]);
   });
 });
+
+describe('a branch\'s workflow runs and a run\'s jobs (issue #2318)', () => {
+  it('lists runs by repository, with a branch and an event when named; views a run by its id', () => {
+    expect(proxyRequest.parse({ op: 'run.list', repo: 'o/r', branch: 'dev', event: 'push' })).toEqual({ op: 'run.list', repo: 'o/r', branch: 'dev', event: 'push' });
+    expect(proxyRequest.parse({ op: 'run.list', repo: 'o/r' })).toEqual({ op: 'run.list', repo: 'o/r' });
+    expect(proxyRequest.safeParse({ op: 'run.list', repo: 'o/r', event: 'push now' }).success).toBe(false);
+    expect(proxyRequest.parse({ op: 'run.view', repo: 'o/r', number: '37998997248' })).toEqual({ op: 'run.view', repo: 'o/r', number: 37998997248 });
+    expect(proxyRequest.safeParse({ op: 'run.view', repo: 'o/r' }).success).toBe(false);
+  });
+
+  it('are reads: a job, a direct query\'s job too, asks them on any repository its user\'s connection sees', () => {
+    for (const req of [{ op: 'run.list', repo: 'else/where', branch: 'dev' }, { op: 'run.view', repo: 'else/where', number: 1 }] as ProxyRequest[]) {
+      expect(checkRequest(req, { jobId: 'j', repo: 'octo/tools' }, ['octo/tools'])).toEqual({ ok: true });
+      expect(checkRequest(req, { jobId: 'j', repo: 'octo/tools', lookOnly: true }, ['octo/tools'])).toEqual({ ok: true });
+    }
+  });
+});

@@ -6,7 +6,7 @@
 // here beside the checks.
 import { createHash } from 'node:crypto';
 
-export { jobLogBlobRoute, jobLogsRoute, type JobLogsForge } from './fake-job-logs.ts';
+export { jobLogBlobRoute, jobLogsRoute, runsRoute, type JobLogsForge } from './fake-job-logs.ts';
 
 /** One branch's protection and rules (issue #652). `protection` absent: the branch has no branch protection. */
 export interface FakeBranch {
