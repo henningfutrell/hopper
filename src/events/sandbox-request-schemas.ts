@@ -1,6 +1,6 @@
 // Sandboxes jobs start (issue #991, design.md "Sandboxes jobs start"): the two toggles, and each sandbox request from
 // its ask to its box or its end, on the job's timeline. Issue #1001: the auto-approve policy with the toggles, and the
-// template's blast radius when the policy approved a run; the time limit of remembered write approvals, and one forgotten. Issue #2206: an action grant asked, granted, declined and revoked. Issue #655 part 8: sandbox strictness (brake 2) changed. Issue #2146: a bastion's start and end. Part of EVENT_SCHEMAS (schemas.ts).
+// template's blast radius when the policy approved a run; the time limit of remembered write approvals, and one forgotten. Issue #2206: an action grant asked, granted, declined and revoked. Issue #655 part 8: sandbox strictness (brake 2) changed. Issue #2146: a bastion's start and end, its relay connections and its reads. Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 import { ASSET_KINDS } from '../domain/access.ts';
 import { SANDBOX_STRICTNESS } from '../domain/sandbox-strictness.ts';
@@ -32,6 +32,6 @@ export const SANDBOX_REQUEST_EVENT_SCHEMAS = {
   'vault.action_declined': strict({ job: z.string(), ...action, reason: z.string().optional(), by: z.string() }),
   'vault.action_revoked': strict({ ...action, by: z.string() }),
   // Issue #2146: a bastion started for a job, and its end.
-  'bastion.started': strict({ bastion: z.string(), template: z.string(), box: z.string(), targets: z.array(z.string()), expiresAt: z.string() }),
-  'bastion.ended': strict({ bastion: z.string(), template: z.string(), box: z.string(), reason: z.enum(['stopped', 'expired', 'job-ended', 'failed']), by: z.string().optional(), problem: z.string().optional() }), 'bastion.relayed': strict({ bastion: z.string(), target: z.string(), openedAt: z.string(), ms: z.number().int().nonnegative() }), 'bastion.relay_refused': strict({ bastion: z.string(), target: z.string(), reason: z.string() }),
+  'bastion.started': strict({ bastion: z.string(), template: z.string(), box: z.string(), targets: z.array(z.string()), secrets: z.array(z.string()).optional(), expiresAt: z.string() }),
+  'bastion.ended': strict({ bastion: z.string(), template: z.string(), box: z.string(), reason: z.enum(['stopped', 'expired', 'job-ended', 'failed']), by: z.string().optional(), problem: z.string().optional() }), 'bastion.relayed': strict({ bastion: z.string(), target: z.string(), openedAt: z.string(), ms: z.number().int().nonnegative() }), 'bastion.relay_refused': strict({ bastion: z.string(), target: z.string(), reason: z.string() }), 'bastion.read': strict({ bastion: z.string(), target: z.string(), method: z.enum(['GET', 'POST']), path: z.string(), status: z.number().int().optional(), bytes: z.number().int().nonnegative().optional(), problem: z.string().optional(), ms: z.number().int().nonnegative() }),
 };

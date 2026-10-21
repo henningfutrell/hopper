@@ -246,6 +246,7 @@
         "bastion.ended",
         "bastion.relayed",
         "bastion.relay_refused",
+        "bastion.read",
         "vault.credential_asked",
         "vault.credential_given",
         "vault.agent_credential_given",

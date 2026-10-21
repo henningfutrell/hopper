@@ -4937,7 +4937,7 @@ Version 1 (`docs/schemas/vault.unbound.v1.json`). A sandbox ended, and the Secre
 
 ## `bastion.started`
 
-Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (issue #2146, design.md "Bastions"): one need box of `template` that holds `kubectl port-forward` to each of `targets` (`<cluster>/<namespace>/<kind>/<name>:<port>`) on 127.0.0.1 inside it, its kube tokens minted for its observe profiles (each a `vault.minted` with `box` as its machine) and minted again while it runs. It ends at `expiresAt` unless it is used before. Never a token.
+Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (issue #2146, design.md "Bastions"): one need box of `template` that holds `kubectl port-forward` to each of `targets` (`<cluster>/<namespace>/<kind>/<name>:<port>`) on 127.0.0.1 inside it, its kube tokens minted for its observe profiles (each a `vault.minted` with `box` as its machine) and minted again while it runs, and, part 6, the vault `secrets` it holds for bastion reads, by name (each a `vault.step_delivered` with `box` as its host). It ends at `expiresAt` unless it is used before. Never a token or a value.
 
 | field | type | required |
 |---|---|---|
@@ -4945,6 +4945,7 @@ Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (iss
 | `template` | string | yes |
 | `box` | string | yes |
 | `targets` | string[] | yes |
+| `secrets` | string[] | no |
 | `expiresAt` | string | yes |
 
 ```json
@@ -5017,6 +5018,33 @@ Version 1 (`docs/schemas/bastion.relay_refused.v1.json`). A job's relay connecti
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
   "target": "uat/monitoring/svc/grafana:80",
   "reason": "job:u1/j1 may not relay to uat/monitoring/svc/grafana:80"
+}
+```
+
+## `bastion.read`
+
+Version 1 (`docs/schemas/bastion.read.v1.json`). A bastion read ran (issue #2146 part 6, design.md "Bastions"): one HTTP `method` (GET, or a POST to Grafana's data source query) of `path` on `target`, run with curl in the bastion's box over a relay connection Access allowed, with a vault secret's header from its file there when the job named one. `status` and `bytes`: the target's answer; `problem`: why there was none (curl's words, or an answer over 2 MiB). `ms`: how long it took. Never the secret or the answer.
+
+| field | type | required |
+|---|---|---|
+| `bastion` | string | yes |
+| `target` | string | yes |
+| `method` | `GET` \| `POST` | yes |
+| `path` | string | yes |
+| `status` | integer | no |
+| `bytes` | integer | no |
+| `problem` | string | no |
+| `ms` | integer | yes |
+
+```json
+{
+  "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
+  "target": "uat/monitoring/svc/grafana:80",
+  "method": "GET",
+  "path": "/api/search?query=latency",
+  "status": 200,
+  "bytes": 512,
+  "ms": 120
 }
 ```
 

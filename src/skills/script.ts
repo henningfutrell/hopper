@@ -28,13 +28,16 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #     --needs TEXT       for sandbox and sandbox-template: what the work needs, as <operation>/<kind>/<asset> ...
 #                        (issues #716, #991)
 #     --template NAME    for sandbox, in place of --needs: a template the user has, as a brief names it (issue #1471)
-#     --secrets TEXT     for sandbox and sandbox-template: vault secrets its sandboxes get, by name (issue #1875)
+#     --secrets TEXT     for sandbox and sandbox-template: vault secrets its sandboxes get, by name (issue #1875);
+#                        for bastion: the vault secrets its box holds for reads; for bastion read: the one it uses
 #     --egress TEXT      for sandbox and sandbox-template: the hosts its sandboxes may reach, as host:port (issue #1875)
 #     --image NAME       for sandbox and sandbox-template: one of the hopper's box images, box or test (issue #1875)
 #     --tools TEXT       for sandbox and sandbox-template: box tools beside the ones its needs use (issue #2146)
 #     --targets TEXT     for bastion: what it forwards to, each <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>;
 #                        for sandbox and sandbox-template: the bastion targets its template names (issue #2146)
 #                        A request with --secrets or --egress needs no --needs, and a person always approves it.
+#     --path TEXT        for bastion read: the path of the target to read, as /api/search?query=x (issue #2146)
+#     --data JSON        for bastion read: a POST's body, to Grafana's /api/ds/query only (issue #2146)
 #     --actions TEXT     for sandbox-template: the AWS actions its one change on an aws-role does, each
 #                        <service:Action>=<resource ARN>; the hopper says which the minted session cannot do (issue #2206)
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
@@ -46,7 +49,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #      4: --wait reached its deadline with no answer.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--tools TEXT] [--targets TEXT] [--actions TEXT] [--wait [--timeout SECONDS]] [--repo-copy DIR]]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--tools TEXT] [--targets TEXT] [--path TEXT] [--data JSON] [--actions TEXT] [--wait [--timeout SECONDS]] [--repo-copy DIR]]' >&2; exit 2; }
 ${TRACE_HEADER_SH}
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
@@ -68,6 +71,8 @@ for a in "$@"; do
     --image) opt=image ;;
     --tools) opt=tools ;;
     --targets) opt=targets ;;
+    --path) opt=path ;;
+    --data) opt=data ;;
     --actions) opt=actions ;;
     --timeout) opt=timeout ;;
     --repo-copy) opt=copy ;;

@@ -30417,10 +30417,11 @@ curl on the HTTP APIs, or `promtool` and `logcli` when the machine has them; Ale
 evidence and the guardrails are as before. The catalog line names the bastion.
 - **Grafana's API is not in it.** A relay command runs on the job's machine, and a job gets no vault secret (only a box
   gets the vault's helper), so a Grafana Viewer token has no way to the command. The skill says so, and to run a panel's
-  PromQL or LogQL on its data source in its place. A Grafana read through the bastion's box is a later part.
+  PromQL or LogQL on its data source in its place. A Grafana read through the bastion's box is a later part (part 6, the
+  bastion read, below).
 
-**Not built (the later parts).** Part 6: the live check on a cluster. A Grafana API read with a Viewer token that stays
-in a box. Editing a template's bastion targets in the Settings → Vault form.
+**Not built (the later parts).** Part 7: the live check on a cluster (it was named part 6 before the bastion read took
+that number). Editing a template's bastion targets in the Settings → Vault form.
 
 **Persisted state.** No schema change: a bastion is kept in memory, its run is a row of the sandbox runs ledger, and its
 events are new types a build before this one ignores. A model with the observe relations is the default's next version.
@@ -30506,6 +30507,49 @@ Tests (the stop): `test/sandbox/bastions.test.ts` (the list: the bastions that r
 and a stopped one leaves it), `test/integration/bastion.test.ts` (the real daemon: the vault's view lists the job's
 bastion, never its token; a person's stop ends it, its box goes, `bastion.ended` names the person, a second stop is a
 404), `test/ui/bastions-view.test.ts` (the panel, its Stop), `test/ui/needs-you.test.ts` (`rereadsVault`).
+
+**The bastion read (part 6).** Grafana's API needs a token, and a relay command runs where the job runs, which gets no
+vault secret. So the token goes into the bastion's box, and the hopper runs the read there for the job.
+- **The bastion's secrets** (`sh "$HOPPER_SKILL" bastion … --secrets "<vault secret> ..."`, `Bastions.start`). Each must be
+  one the template gives now (`gives`: in its scope and approved), else a 403 that names the template request to make. Each
+  is read for the bastion's box through the vault's `forStep`, as a box step's secret (issue #1875): after the job's vault
+  grant (none: a grant ask and a 403 that says so), `vault.step_delivered` with the box as its host. It goes into the box as
+  a vault secret file, `$HOME/.hopper-need/secrets/read-<name>`, mode 600, holding the line `Authorization: Bearer <value>`;
+  never in its environment, never to the job. The bastion's view and `bastion.started` name the secrets, never a value.
+  Other secrets than the bastion that runs are a 409, as other targets are.
+- **The read** (`sh "$HOPPER_SKILL" bastion read --targets T --path P [--secrets S] [--data JSON]`, `parseRead`,
+  `Bastions.read`, `src/sandbox/bastion-read.ts`). A GET of the path, or, with `--data` (JSON, at most 64 KiB), a POST to
+  Grafana's data source query (`/api/ds/query`) only. It is a relay connection (`Bastions.relay` with its own command):
+  Access decides it (`bastion#can_relay`), it renews the TTL, and it is a `bastion.relayed`. The command (`readCommand`)
+  is curl in the box to 127.0.0.1 at the target's port, with no proxy and a 30 s limit, its header read from the secret's
+  file (`-H @file`, never on a command line), a POST's body on its stdin. Its output is the body and the HTTP status. The
+  hopper answers the body when the status is 2xx; another status is a 502 with the target's words; an answer over 2 MiB is a
+  413. Each read is a `bastion.read`: the target, method, path, status and size, or the problem, and how long it took;
+  never the secret or the answer.
+- **The skill** (`OBSERVABILITY_TEXT`): the secret named in the template request and at the bastion's start, then a search,
+  a dashboard by uid, and a panel's query through `/api/ds/query`. The catalog line names Grafana.
+
+**Decisions (part 6):**
+- **The hopper runs the read in the box, not an HTTP proxy that adds the header.** The relay stays a byte pipe; a read is
+  one command per request, as a relay connection is. curl is in the box image; the hopper adds no binary.
+- **A GET, or a POST to `/api/ds/query` only.** Grafana's API changes things with POST, PUT and DELETE; its data source
+  query is the one read that is a POST. Read-only past that is the token's own role (Viewer): the hopper does not parse
+  Grafana's answers.
+- **The vault's `forStep`, as a box step's secret.** The same grant, the same events, the same refusal of a minting
+  credential, a system secret or a shared secret. The token is read once, at the bastion's start, and is not renewed.
+- **A header file, not the bare value.** curl reads a header line from a file, so the token is never in an argument or in
+  the box's environment. The relay's other commands do not read it.
+- **The answer, not a file.** The job keeps it as its evidence (`> out/dashboards.json`), as it does a relay query's.
+
+**Residual risk (part 6).** A job may read any GET path of a target its bastion forwards to, with the token: what the
+Viewer role lets it read, it reads. A Viewer token can read the data sources' data through `/api/ds/query`.
+
+Tests (part 6): `test/sandbox/bastion-read.test.ts` (the ask as the hopper reads it; the command under `sh` with this
+machine's curl and a server on 127.0.0.1: the header from the file, a POST's body, the target's status, no curl),
+`test/sandbox/bastion-reads.test.ts` (the secrets read for the box after the grant, as header files, never in its
+environment; a secret the template does not give or the vault refuses; the read's command, its stdin, its noes, Access,
+the event), `test/skills/bastion-skill.test.ts` (`--secrets` and `bastion read`), `test/skills/observability.test.ts`
+(the Grafana asks parse as the hopper reads them).
 
 ## A comment ends the job's own wait (issue #2159, 2026-10-19)
 

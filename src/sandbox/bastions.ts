@@ -8,7 +8,8 @@
 // connection to one of its bastion's targets is a byte pipe to a command the hopper starts in the box for it, which
 // connects to that target's forward on 127.0.0.1 there (relayCommand); the connection ends with the bastion. Part 3: a
 // bastion starts only to targets approved with its template, Access decides each connection, and each connection, or
-// its refusal, is an event on the job's timeline.
+// its refusal, is an event on the job's timeline. Part 6: a bastion holds the vault secrets the job names, each a header
+// file in its box, and a bastion read runs one HTTP read of a target there with one of them (bastion-read.ts).
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,6 +19,8 @@ import type { Job, NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import type { BoxPipe } from '../domain/sandboxes.ts';
 import type { BastionEnd, BastionView } from '../domain/bastions.ts';
+import type { StepSecretAsk } from '../vault/step-delivery.ts';
+import { readAnswer, readCommand, readHeader, readSecretName, READ_MAX_BYTES, type BastionRead } from './bastion-read.ts';
 import type { NeedBox, NeedBoxIo, NeedBoxResult, RunningNeedBox } from './need-box.ts';
 import {
   bastionEnv, bastionTokens, placeTargets, relayCommand, targetsOutside, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
@@ -36,6 +39,8 @@ export interface BastionsOptions {
   mint(ask: { template: string; step: string; job: string; profile: OperationProfile }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
   /** The bastion's box ended: each token minted for it stops working (the vault's `releaseMints`). Never rejects. */
   release(box: string): Promise<void>;
+  /** A vault secret for the bastion's box (part 6), after the job's vault grant: the vault's `forStep`, as a box step's. */
+  secret?: (ask: StepSecretAsk) => Promise<{ value: string } | { refused: string }>;
   /** Runs the bastion's box (the sandbox module's `needStep`); absent: this hopper runs no sandbox. */
   run?: (box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: Omit<NeedBoxIo, 'phases'>, run: { jobId: string; step: string; template: string }) => Promise<NeedBoxResult>;
   /**
@@ -59,9 +64,10 @@ export interface BastionsOptions {
 export interface Bastions {
   /**
    * Starts the job's bastion of `template` to `targets` (the template ready, its runs approved for the job: the caller
-   * checks), or answers the one it has with the same template and targets; a no with its HTTP status.
+   * checks), or answers the one it has with the same template, targets and secrets; a no with its HTTP status. `secrets`
+   * (part 6): vault secrets the template gives, each a header file in the box for bastion reads.
    */
-  start(job: Job, template: TemplateView, targets: readonly BastionTarget[]): Promise<BastionView | { status: number; no: string }>;
+  start(job: Job, template: TemplateView, targets: readonly BastionTarget[], secrets?: readonly string[]): Promise<BastionView | { status: number; no: string }>;
   /** The job's bastion: the one that runs, else the last one that ended. */
   of(jobId: string): BastionView | undefined;
   /** Each bastion that starts or runs now, oldest first: what a person sees, to stop one. */
@@ -73,8 +79,11 @@ export interface Bastions {
   /**
    * A connection to `target` of the job's bastion that runs (the relay, part 2): a byte pipe to 127.0.0.1 at its port in
    * the box. Its TTL starts again, and it does not expire while a connection is open. A no with its HTTP status.
+   * `command`: the command started for it, from the target's port (a bastion read's); else the connect command.
    */
-  relay(jobId: string, target: string): Promise<BoxPipe | { status: number; no: string }>;
+  relay(jobId: string, target: string, command?: (local: number) => string[]): Promise<BoxPipe | { status: number; no: string }>;
+  /** One HTTP read of a target of the job's bastion that runs, in its box (part 6): the status and body, or a no. */
+  read(jobId: string, r: BastionRead): Promise<{ status: number; body: Buffer } | { status: number; no: string }>;
   /** Stops every bastion and waits for their boxes to go: the hopper stops. */
   stopAll(): Promise<void>;
 }
@@ -150,7 +159,10 @@ export function createBastions(o: BastionsOptions): Bastions {
   };
 
   return {
-    async start(job, template, targets) {
+    async start(job, template, targets, secrets) {
+      const names = [...new Set(secrets ?? [])].sort();
+      const ungiven = names.filter((n) => !template.gives.includes(n));
+      if (ungiven.length) return { status: 403, no: `template ${template.name} does not give ${ungiven.join(', ')} now: ask for a template with --secrets "${ungiven.join(' ')}", which a person approves` };
       const placing = placeTargets(targets, template.profiles);
       if (typeof placing === 'string') return { status: 400, no: placing };
       const outside = targetsOutside(template, targets);
@@ -158,7 +170,7 @@ export function createBastions(o: BastionsOptions): Bastions {
       const asked = placing.placed.map(targetText);
       const running = live.get(job.id);
       if (running) {
-        if (running.view.template === template.name && sameTargets(running.view.targets.map((t) => t.target), asked)) return viewOf(job.id)!;
+        if (running.view.template === template.name && sameTargets(running.view.targets.map((t) => t.target), asked) && sameTargets(running.view.secrets ?? [], names)) return viewOf(job.id)!;
         return { status: 409, no: `this job's bastion ${running.view.id} runs: stop it first (sh "$HOPPER_SKILL" bastion stop), then ask for the new one` };
       }
       const run = o.run;
@@ -166,9 +178,10 @@ export function createBastions(o: BastionsOptions): Bastions {
       const id = newId();
       const box = `hopper-bastion-${template.name}-${id.slice(0, 8)}`;
       const credentials = await mintAll({ template: template.name, box, jobId: job.id }, placing.observes);
-      if (typeof credentials === 'string') {
+      const held = typeof credentials === 'string' ? credentials : await secretsFor({ template: template.name, box, jobId: job.id }, names);
+      if (typeof credentials === 'string' || typeof held === 'string') {
         await o.release(box).catch(() => undefined);
-        return { status: 403, no: credentials };
+        return { status: 403, no: typeof credentials === 'string' ? credentials : String(held) };
       }
       // A second ask while the first one minted: the first one is the bastion.
       if (live.has(job.id)) {
@@ -178,13 +191,13 @@ export function createBastions(o: BastionsOptions): Bastions {
       const at = now();
       const l: Live = {
         view: {
-          id, jobId: job.id, template: template.name, box, targets: placing.placed.map((t) => ({ target: targetText(t), local: t.local })), state: 'starting',
+          id, jobId: job.id, template: template.name, box, targets: placing.placed.map((t) => ({ target: targetText(t), local: t.local })), ...(names.length ? { secrets: names } : {}), state: 'starting',
           startedAt: at.toISOString(), expiresAt: new Date(at.getTime() + ttlMs).toISOString(), log: '',
         },
         placed: placing.placed, observes: placing.observes, stop: new AbortController(), open: new Set(), timers: [], done: Promise.resolve(),
       };
       live.set(job.id, l);
-      o.record({ type: 'bastion.started', jobId: job.id, data: { bastion: id, template: template.name, box, targets: asked, expiresAt: l.view.expiresAt } });
+      o.record({ type: 'bastion.started', jobId: job.id, data: { bastion: id, template: template.name, box, targets: asked, ...(names.length ? { secrets: names } : {}), expiresAt: l.view.expiresAt } });
       const renewing = ({ renew, pipe }: RunningNeedBox): void => {
         l.view.state = 'running';
         if (pipe) l.pipe = pipe;
@@ -205,7 +218,7 @@ export function createBastions(o: BastionsOptions): Bastions {
       l.done = run({
         name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.egress?.length ? { egress: t.egress } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
         // Part 5: a read-only template's box runs behind the egress proxy, which lets its tokens' cluster through.
-        env: bastionEnv(l.placed, credentials), reaches: credentials.map((c) => c.reach), timeoutMs: BASTION_MAX_MS, dir: join(o.dir, id), files: { secrets: bastionTokens(credentials) },
+        env: bastionEnv(l.placed, credentials), reaches: credentials.map((c) => c.reach), timeoutMs: BASTION_MAX_MS, dir: join(o.dir, id), files: { secrets: { ...bastionTokens(credentials), ...held } },
       }, {
         log: (chunk) => { l.view.log = (l.view.log + chunk).slice(-LOG_TAIL); }, signal: l.stop.signal, running: renewing,
       }, { jobId: job.id, step: id, template: template.name }).then((r) => ended(l, r), (e: unknown) => ended(l, { exit: 125, problem: e instanceof Error ? e.message : String(e) }));
@@ -225,35 +238,8 @@ export function createBastions(o: BastionsOptions): Bastions {
 
     touch: (jobId) => used(live.get(jobId)),
 
-    async relay(jobId, target) {
-      const l = live.get(jobId);
-      if (!l || l.why) return { status: 404, no: 'this job has no bastion that runs: ask for one with sh "$HOPPER_SKILL" bastion --template NAME --targets "..." --why "..."' };
-      const t = l.placed.find((x) => targetText(x) === target);
-      if (!t) return { status: 404, no: `the job's bastion forwards to ${l.view.targets.map((x) => x.target).join(', ')}; not to ${target}` };
-      if (l.view.state !== 'running') return { status: 409, no: `the job's bastion ${l.view.id} is ${l.view.state}: ask again in a few seconds` };
-      if (!l.pipe) return { status: 503, no: 'the container runtime of the bastion\'s box starts no command in it: no relay reaches it' };
-      const said = await o.mayRelay({ jobId, template: l.view.template, target }).catch((e: unknown) => ({ allowed: false, reason: `Access could not be asked: ${e instanceof Error ? e.message : String(e)}` }));
-      if (!said.allowed) {
-        o.record({ type: 'bastion.relay_refused', jobId, data: { bastion: l.view.id, target, reason: said.reason } });
-        return { status: 403, no: `Access denies the relay to ${target}: ${said.reason}` };
-      }
-      let pipe: BoxPipe;
-      try {
-        pipe = await l.pipe(relayCommand(t.local));
-      } catch (e) {
-        return { status: 502, no: `the relay did not reach ${target} in the box: ${e instanceof Error ? e.message : String(e)}` };
-      }
-      if (l.why) { pipe.destroy(); return { status: 404, no: `the job's bastion ${l.view.id} ended` }; }
-      l.open.add(pipe);
-      used(l);
-      const opened = now();
-      pipe.once('close', () => {
-        l.open.delete(pipe);
-        used(l);
-        o.record({ type: 'bastion.relayed', jobId, data: { bastion: l.view.id, target, openedAt: opened.toISOString(), ms: now().getTime() - opened.getTime() } });
-      });
-      return pipe;
-    },
+    relay,
+    read,
 
     async stopAll() {
       const all = [...live.values()];
@@ -261,4 +247,71 @@ export function createBastions(o: BastionsOptions): Bastions {
       await Promise.allSettled(all.map((l) => l.done));
     },
   };
+
+  /** Each vault secret named, as its header file for reads, or why one was not given. */
+  async function secretsFor(b: { template: string; box: string; jobId: string }, names: readonly string[]): Promise<Record<string, string> | string> {
+    const out: Record<string, string> = {};
+    for (const name of names) {
+      const r = o.secret ? await o.secret({ name, job: b.jobId, host: b.box, template: b.template }) : { refused: 'the hopper gives no vault secret to a bastion here' };
+      if ('refused' in r) return `the vault gave no ${name}: ${r.refused}`;
+      out[readSecretName(name)] = readHeader(r.value);
+    }
+    return out;
+  }
+
+  async function relay(jobId: string, target: string, command?: (local: number) => string[]): Promise<BoxPipe | { status: number; no: string }> {
+    const l = live.get(jobId);
+    if (!l || l.why) return { status: 404, no: 'this job has no bastion that runs: ask for one with sh "$HOPPER_SKILL" bastion --template NAME --targets "..." --why "..."' };
+    const t = l.placed.find((x) => targetText(x) === target);
+    if (!t) return { status: 404, no: `the job's bastion forwards to ${l.view.targets.map((x) => x.target).join(', ')}; not to ${target}` };
+    if (l.view.state !== 'running') return { status: 409, no: `the job's bastion ${l.view.id} is ${l.view.state}: ask again in a few seconds` };
+    if (!l.pipe) return { status: 503, no: 'the container runtime of the bastion\'s box starts no command in it: no relay reaches it' };
+    const said = await o.mayRelay({ jobId, template: l.view.template, target }).catch((e: unknown) => ({ allowed: false, reason: `Access could not be asked: ${e instanceof Error ? e.message : String(e)}` }));
+    if (!said.allowed) {
+      o.record({ type: 'bastion.relay_refused', jobId, data: { bastion: l.view.id, target, reason: said.reason } });
+      return { status: 403, no: `Access denies the relay to ${target}: ${said.reason}` };
+    }
+    let pipe: BoxPipe;
+    try {
+      pipe = await l.pipe(command ? command(t.local) : relayCommand(t.local));
+    } catch (e) {
+      return { status: 502, no: `the relay did not reach ${target} in the box: ${e instanceof Error ? e.message : String(e)}` };
+    }
+    if (l.why) { pipe.destroy(); return { status: 404, no: `the job's bastion ${l.view.id} ended` }; }
+    l.open.add(pipe);
+    used(l);
+    const opened = now();
+    pipe.once('close', () => {
+      l.open.delete(pipe);
+      used(l);
+      o.record({ type: 'bastion.relayed', jobId, data: { bastion: l.view.id, target, openedAt: opened.toISOString(), ms: now().getTime() - opened.getTime() } });
+    });
+    return pipe;
+  }
+
+  async function read(jobId: string, r: BastionRead): Promise<{ status: number; body: Buffer } | { status: number; no: string }> {
+    const v = live.get(jobId)?.view;
+    if (v && r.secret && !(v.secrets ?? []).includes(r.secret)) return { status: 404, no: `the job's bastion holds no vault secret ${r.secret}: stop it, then ask for one with --secrets "${r.secret}"` };
+    const started = now();
+    const pipe = await relay(jobId, r.target, (local) => readCommand(local, r));
+    if ('no' in pipe) return pipe;
+    const got = await new Promise<{ out: Buffer } | { tooBig: true }>((resolve) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      pipe.on('data', (d: Buffer) => {
+        size += d.length;
+        if (size > READ_MAX_BYTES + 8) { pipe.destroy(); resolve({ tooBig: true }); } else chunks.push(d);
+      });
+      pipe.once('close', () => resolve({ out: Buffer.concat(chunks) }));
+      pipe.once('error', () => undefined);
+      pipe.end(r.data ?? '');
+    });
+    const a = 'tooBig' in got ? { problem: `its answer is over ${READ_MAX_BYTES} bytes: narrow the query` } : readAnswer(got.out, pipe.stderr());
+    o.record({
+      type: 'bastion.read', jobId,
+      data: { bastion: v!.id, target: r.target, method: r.method, path: r.path.slice(0, 500), ...('status' in a ? { status: a.status, bytes: a.body.length } : { problem: a.problem }), ms: now().getTime() - started.getTime() },
+    });
+    if ('problem' in a) return { status: 'tooBig' in got ? 413 : 502, no: `the read of ${r.target}${r.path} in the box gave no answer: ${a.problem}` };
+    return a;
+  }
 }
