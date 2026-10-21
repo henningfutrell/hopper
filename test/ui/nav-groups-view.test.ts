@@ -94,7 +94,7 @@ describe('the nav groups', () => {
     expect(queueLink('aside')).toBeNull();
     const badge = groupBadge('aside', 'jobs')!;
     expect(badge.textContent).toBe('2');
-    expect(badge.getAttribute('title')).toBe('Queue: 2 jobs wait on the pre-sort');
+    expect(badge.getAttribute('title')).toBe('Queue: 2 jobs waiting to be ordered');
     expect(badge.className).toContain('bg-warn');
     expect(JSON.parse(localStorage.getItem('jh_nav_collapsed')!)).toEqual(['jobs']);
     await act(async () => toggle('aside', 'jobs').click());

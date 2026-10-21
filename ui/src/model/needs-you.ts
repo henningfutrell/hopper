@@ -78,7 +78,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   checks: { label: 'Checks', href: '#pull-requests', what: 'repositories whose pull request checks the hopper may not read: give its connection the permissions' },
   landing: { label: 'Landing', href: '#settings/landing-batches', what: 'landing passes that failed the same way several times in a row: nothing moves to the tested branch until you restart the batch or fix the cause' },
   tagged: { label: 'Tagged', href: '#tagged', what: 'issues and pull requests that ask for your review, mention you, or are assigned to you' },
-  sorting: { label: 'Pre-sort', href: '#queue', what: 'jobs that wait on the pre-sort before a lane takes them' },
+  sorting: { label: 'Waiting to be ordered', href: '#queue', what: 'jobs waiting to be ordered before a lane takes them' },
 };
 
 export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {

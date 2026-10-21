@@ -45,7 +45,7 @@ describe('the vault forgets ended jobs (issue #1402)', () => {
     const mint = createMinting({
       store: store as never, userId: 'u1', clock, minted,
       targets: () => [{ name: 'box-a', key: 'ka', template: 'kube' }], holds: (p) => holdsProxyToken(link.privateKey, p),
-      access: { decideMint: async () => ({ allowed: true, id: 'd1' }), approvedProfiles: () => [] } as never,
+      access: { decideMint: async () => ({ allowed: true, id: 'd1' }), approvedProfiles: () => new Map() } as never,
     });
     const from = async () => ({ minted: { kind: 'kube' as const, token: 't', expirationTimestamp: '2026-10-16T13:00:00Z' }, reach: { kind: 'kube' } as never });
     const ask = (job: string) => ({ mint: 'kube' as const, operation: 'read', asset: 'cluster/lab', token: proxyToken(link.privateKey, 'u1', job) });

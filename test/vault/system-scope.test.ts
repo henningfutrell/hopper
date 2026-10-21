@@ -44,7 +44,7 @@ function vaultWith(allow: boolean, extra: VaultSecret[] = []) {
     settings: { getBlastRadius: () => undefined },
   };
   const access = {
-    approvedProfiles: () => [], revokeProfile: async () => {}, approve: async () => {}, decideMint: async () => { throw new Error('not here'); },
+    approvedProfiles: () => new Map(), revokeProfile: async () => {}, approve: async () => {}, decideMint: async () => { throw new Error('not here'); },
     decideSystemSecret: async (ask: SystemSecretAsk) => { asks.push(ask); return allow ? { allowed: true, reason: 'allowed' } : { allowed: false, reason: 'job:u1/j1 may not read system_secret:u1/typesafe-api-key' }; },
   } as unknown as VaultAccess;
   const vault = createVaultService({

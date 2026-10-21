@@ -6,7 +6,7 @@
 // the apply gate too (issue #870): no change without an approved, current plan. Each mint is `vault.minted` (the need box
 // as its machine), each refusal `vault.mint_refused`; never a credential. A Kubernetes token is bound to a Secret of its
 // own (issue #1371), held for the need box until its step ends (bindings.ts). A change narrowed to granted actions (issue
-// #2206) is minted only while a person's action grant covers each of them still.
+// #2206) is minted only while a person's action grant covers each of them still, and needs no plan (issue #2370).
 import type { UserStore } from '../domain/ports.ts';
 import { changesAsset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
@@ -59,7 +59,10 @@ export function needMinting(store: Pick<UserStore, 'vault' | 'events' | 'tx' | '
       const decision = await o.access.decideCheckMint({ template, check: step, operation: profile.operation, asset: profile.asset });
       if (!decision.allowed) return refuse(`Access denied it: ${decision.reason}`, decision.id);
       // No change without a plan (issue #870): a write, sync or apply changes infrastructure; a read or an observe does not.
-      const planNo = o.plans ? await o.plans.gate(profile, plan) : changesAsset(profile) ? 'no apply without a plan: this hopper keeps no plans' : undefined;
+      // Issue #2370: a change narrowed to granted actions needs none, as the person's grant of each action on its resource
+      // approves exactly that change. A plan the step names is still checked.
+      const granted = actions?.length && plan === undefined;
+      const planNo = granted ? undefined : o.plans ? await o.plans.gate(profile, plan) : changesAsset(profile) ? 'no apply without a plan: this hopper keeps no plans' : undefined;
       if (planNo) return refuse(planNo, decision.id);
       const clusters = readClusters(store.config), known = readKnownClusters(store.topology);
       const found = mintSourceFor(vault.list(), target, profile.operation, clusters, known);

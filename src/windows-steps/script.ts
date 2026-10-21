@@ -140,6 +140,7 @@ and the outputs. This job stays on this machine and goes on with its work.
                        give, and the resource it acts on (eks:UpdateNodegroupConfig=arn:aws:eks:…:nodegroup/C/G/*).
                        A person grants each once, on Access requests; the session then reads, and does only the
                        granted actions. Use the account's ${ACTION_ROLE} role for it. Repeat for more (at most 10).
+                       The grant approves the change: it needs no --plan-id. Name the exact call and its undo in --plan.
     --command TEXT     sh to run in the need box's work directory (at most 4 KiB). The tools are there: aws, kubectl,
                        helm, terraform, as the needs ask.
     --script FILE      a script of this machine's to run instead (with sh)
@@ -171,8 +172,8 @@ Example: list the pods of a namespace, and bring a report back.
   sh "$HOPPER_STEP" need "read/namespace/lab/web" --why "Find the pod that restarts" --command "kubectl get pods -o wide > pods.txt" --output pods.txt
 Example: apply an approved terraform plan (record it first: POST /job/infra-plans, with the saved plan file).
   sh "$HOPPER_STEP" need "apply/aws-role/123456789012/deploy" --why "Add the rule the plan holds" --plan-id PLAN_ID --input infra --command "cd infra && terraform init -input=false && terraform apply -auto-approve"
-Example: an action the deploy role cannot do, as the plan applies it (a person grants it once).
-  sh "$HOPPER_STEP" need "apply/aws-role/123456789012/${ACTION_ROLE}" --action "eks:UpdateNodegroupConfig=arn:aws:eks:us-west-1:123456789012:nodegroup/prod/nodes/*" --why "Scale the node group to 6 nodes" --plan-id PLAN_ID --input infra --command "cd infra && terraform init -input=false && terraform apply -auto-approve"`;
+Example: an action the deploy role cannot do, with no infra plan (a person grants it once; the grant approves it).
+  sh "$HOPPER_STEP" need "apply/aws-role/123456789012/${ACTION_ROLE}" --action "eks:UpdateNodegroupConfig=arn:aws:eks:us-west-1:123456789012:nodegroup/prod/nodes/*" --why "Scale the node group to 6 nodes" --plan "aws eks update-nodegroup-config --cluster-name prod --nodegroup-name nodes --scaling-config desiredSize=6; undone by the same call with desiredSize=3" --command "aws eks update-nodegroup-config --cluster-name prod --nodegroup-name nodes --scaling-config desiredSize=6"`;
 
 /** The script. The token goes to curl on stdin, never on a command line; every value in a URL is percent-encoded. */
 export const STEP_SCRIPT = `#!/bin/sh

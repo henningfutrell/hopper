@@ -51,7 +51,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-/** `kept`: a reload, with what the browser kept; else a browser that kept nothing, in list mode. */
+/** `kept`: a reload, with what the browser kept; else a browser that kept nothing, in list mode (the default). */
 async function boot(mode: 'list' | 'kept' = 'list') {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   act(() => root?.unmount());
@@ -66,10 +66,7 @@ async function boot(mode: 'list' | 'kept' = 'list') {
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
   await vi.waitFor(() => expect(document.querySelector('[data-slot="jobs-mode-list"]')).not.toBeNull());
-  if (mode === 'list') {
-    await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-list"]')!);
-    await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 30)));
-  }
+  if (mode === 'list') await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 30)));
 }
 
 async function click(el: HTMLElement | SVGElement) {
@@ -97,7 +94,7 @@ describe('the Jobs view as a long page (issue #2353)', () => {
     jobs = Array.from({ length: 200 }, (_, n) => pointed(n, STATUSES[n % STATUSES.length]!));
     await boot();
     expect(document.querySelector('[data-slot="jobs-list"] [data-slot="job-card"]')).toBeNull();
-    expect(cards().every((r) => r.tagName === 'LI' && r.querySelectorAll('div').length === 0)).toBe(true);
+    expect(cards().every((r) => r.tagName === 'TR' && r.querySelectorAll('div').length === 0)).toBe(true);
     const range = () => document.querySelector('[data-slot="pager-range"]')?.textContent;
     expect(range()).toBe('1–30 of 200');
     const first = cards().map((r) => r.dataset.jobId);

@@ -12,7 +12,7 @@ import { templateRadius, type TemplateScope } from '../blast-radius/template.ts'
 import type { Access, LiveShare } from './access-port.ts';
 import {
   profileProblem, type RadiusRules,
-  type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
+  type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset, type OperationProfile,
 } from '../domain/types.ts';
 import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, bastionGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, gitlabIntakeGaps, intakeGaps, itemGaps, modelGaps, machineTerminalGaps, observeGaps, observeKept, searchHitGaps, sharedSecretGaps, systemSecretGaps, terminalGaps, trustGaps, vaultGrantGaps, type ModelJson } from './model.ts';
 import { belowMinimum, gateTuples, holderTuples, minTrusts, setMinTrust, trustedPath, trustTuples } from './trust.ts';
@@ -249,7 +249,7 @@ export function createAccess(o: AccessOptions): Access {
     decideIntakeActor: (userId, login, actors) => { const c = intakeActorCheck(userId, login, actors); return checkOnce('intake', intakeGapsOf(model().dsl), c.tuple, c.contextual, (allowed) => `${login} is${allowed ? '' : ' not'} a trusted actor`); },
     // On GitLab (issue #1448): a GitLab user by its GitLab and id, the user's GitLab account told as the trusted actor.
     decideGitLabIntakeActor: (userId, actor, actors) => { const c = gitlabIntakeActorCheck(userId, actor, actors); return checkOnce('intake on GitLab', gitlabIntakeGapsOf(model().dsl), c.tuple, c.contextual, (allowed) => `GitLab user ${actor.userId} is${allowed ? '' : ' not'} a trusted actor`); },
-    approvedProfiles: (template) => approvals().filter((a) => a.template === template).map((a) => a.profile),
+    approvedProfiles: () => approvals().reduce((by, a) => by.set(a.template, [...by.get(a.template) ?? [], a.profile]), new Map<string, OperationProfile[]>()),
     async revokeProfile(template, profile, by) {
       const { approval } = approvalTuples(template, profile);
       const live = o.repo.liveTuples().find((t) => t.relation === 'approved_for' && t.subject === approval.subject && t.object === approval.object);

@@ -6,21 +6,24 @@
 // plan's commit. An admin turns auto-approve on: the hopper then approves a low-risk uat plan when it is kept, and it is
 // still shown here. A job never approves one, and nothing here changes a plan. The page loads the plans (infra.tsx).
 // An admin names the environment watchers (part 4): the notifiers name them with each plan, approval and apply.
+// A person rejects a plan that waits (issue #2368), with a note: it is never approved after, and a job that waits on it is
+// told the note.
 import { LogBlock } from '@/components/log-block';
-import { Check } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { applyLine, askedLine, planApprove, planExplainer, planHeadline, planState, watchersFrom, watchersText } from '@/model/infra-plans';
+import { applyLine, askedLine, planApprove, planExplainer, planHeadline, planReject, planState, watchersFrom, watchersText } from '@/model/infra-plans';
 import type { InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useServerNow } from '@/store/selectors';
 
-const TONE = { waiting: 'text-warn', approved: 'text-ok', stale: 'text-muted-foreground', failed: 'text-destructive' } as const;
+const TONE = { waiting: 'text-warn', approved: 'text-ok', rejected: 'text-destructive', stale: 'text-muted-foreground', failed: 'text-destructive' } as const;
 const LEVEL = { low: 'text-ok', high: 'text-warn' } as const;
 
 function refused(e: unknown, role: string): void {
@@ -102,6 +105,19 @@ export function Watchers({ watchers, onWatchers }: { watchers: InfraWatchers; on
   );
 }
 
+/** Reject, with why (issue #2368): the note is required, and the job that waits on the plan is told it. */
+function RejectPlan({ busy, onReject }: { busy: boolean; onReject: (note: string) => void }) {
+  const [note, setNote] = useState('');
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <Input className="h-8 max-w-xs" aria-label="Why you reject the plan" placeholder="Why you reject it" maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
+      <Confirm title="Reject this plan?" action="Reject" description="Nobody can approve it after this. The job that waits on it is told your note." onConfirm={() => onReject(note.trim())}>
+        <Button size="sm" variant="outline" disabled={busy || !note.trim()}><X />Reject</Button>
+      </Confirm>
+    </span>
+  );
+}
+
 /** The plans, each with its applies; `onPlan` takes a plan an approval changed; `picked` (issue #2205): the plan a link named, marked and scrolled to. */
 export function PlanList({ plans, applies, onPlan, picked }: { plans: PlanView[]; applies: PlanApply[]; onPlan: (p: PlanView) => void; picked?: string }) {
   const can = { operate: useCanOperate(), admin: useCanAdmin() };
@@ -115,6 +131,17 @@ export function PlanList({ plans, applies, onPlan, picked }: { plans: PlanView[]
       const { plan } = await post<{ plan: PlanView }>('/ui/api/infra-plans', { action: 'approve', plan: id });
       onPlan(plan);
       toast.success(`plan ${id.slice(0, 8)} approved`);
+    } catch (e) {
+      refused(e, 'an operator or an admin');
+    }
+    setBusy(false);
+  };
+  const reject = async (id: string, note: string): Promise<void> => {
+    setBusy(true);
+    try {
+      const { plan } = await post<{ plan: PlanView }>('/ui/api/infra-plans', { action: 'reject', plan: id, note });
+      onPlan(plan);
+      toast.success(`plan ${id.slice(0, 8)} rejected`);
     } catch (e) {
       refused(e, 'an operator or an admin');
     }
@@ -138,6 +165,7 @@ export function PlanList({ plans, applies, onPlan, picked }: { plans: PlanView[]
             {offer.show && (offer.confirm
               ? <Confirm title="Approve this high-risk plan?" action="Approve" description={offer.confirm} onConfirm={() => void approve(p.id)}>{button}</Confirm>
               : button)}
+            {planReject(p, now, can) && <RejectPlan busy={busy} onReject={(note) => void reject(p.id, note)} />}
           </div>
           {p.asked && state.kind === 'waiting' && <p data-slot="infra-plan-asked" className="text-xs text-warn break-words">{askedLine(p.asked)}</p>}
           {mine.length > 0 && (

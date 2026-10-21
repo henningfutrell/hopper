@@ -2,7 +2,7 @@
 // changes, the asset an apply of it is minted a credential for, and the commit it was made at — its state now, who it
 // waits for, and its explainer: the summary in plain words, the risk callouts, the blast radius and the checks — and
 // whether this person may approve it: by its risk (part 3), an operator a low-risk plan in uat only, an admin any other,
-// nobody a plan that failed a check. One line per apply, and the applies and drift timeline: plans, approvals, applies and
+// nobody a plan that failed a check; a plan a person rejected (issue #2368) says who and why, and waits for nobody. One line per apply, and the applies and drift timeline: plans, approvals, applies and
 // out-of-band changes, newest first, each with what it touched (issue #1781: the topology links it to its nodes). The environment watchers (part 4) as a person types them: one environment a line.
 import type { InfraWatchers, Job, OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
 import { changeHeadline } from './out-of-band.ts';
@@ -14,10 +14,11 @@ export const planHref = (id: string): string => `#infra/${encodeURIComponent(id)
 export const planHeadline = (p: Omit<PlanView, 'approval'>): string =>
   `${p.tool}: ${p.target}, applied as ${p.asset.kind} ${p.asset.name}, from ${p.repo} ${p.ref} at ${p.commit.slice(0, 12)}${p.pullRequest !== undefined ? ` (pull request ${p.pullRequest})` : ''}`;
 
-export type PlanState = { kind: 'waiting' | 'approved' | 'stale' | 'failed'; words: string };
+export type PlanState = { kind: 'waiting' | 'approved' | 'rejected' | 'stale' | 'failed'; words: string };
 
-/** Failed a check, waiting for a person, approved, or stale at `now` (ms): a failed or stale plan is applied by nothing. */
+/** Rejected by a person (issue #2368), failed a check, waiting for a person, approved, or stale at `now` (ms): a failed or stale plan is applied by nothing. */
 export function planState(p: PlanView, now: number): PlanState {
+  if (p.rejection) return { kind: 'rejected', words: `Rejected by ${p.rejection.by}: ${p.rejection.note}. Nobody approves it` };
   if (p.summary?.failed) return { kind: 'failed', words: 'Failed its checks: nobody approves it. The job fixes the code and plans again' };
   const left = Date.parse(p.expiresAt) - now;
   if (left <= 0) return { kind: 'stale', words: 'Stale: the job plans again' };
@@ -37,6 +38,9 @@ export function planApprove(p: PlanView, now: number, can: { operate: boolean; a
   if (p.approver.who !== 'admin' || p.summary?.level !== 'high') return { show: true };
   return { show: true, confirm: `${p.summary.words}. This plan is ${p.approver.why}. Once you approve it, the vault mints a credential that changes infrastructure for an apply of it, until it is stale.` };
 }
+
+/** Whether to offer this person Reject (issue #2368): a plan that waits, to an operator or an admin, whatever its risk. */
+export const planReject = (p: PlanView, now: number, can: { operate: boolean }): boolean => can.operate && planState(p, now).kind === 'waiting';
 
 /** The plans that wait for a person at `now` (issue #897: Needs you, the Infra badge); none for an answer with no plans. */
 export const plansWaiting = (v: { plans?: PlanView[] } | undefined, now: number): number => waitingPlans(v, now).length;
@@ -77,7 +81,7 @@ export const applyLine = (a: PlanApply): string =>
 /** What an entry touched (issue #1781): a plan's or an apply's asset, or an out-of-band change's target. */
 export type TimelineSubject = { asset: PlanApply['asset'] } | { target: string };
 
-export interface TimelineEntry { at: string; kind: 'plan' | 'approved' | 'apply' | 'drift' | 'out-of-band' | 'marked'; words: string; subject?: TimelineSubject }
+export interface TimelineEntry { at: string; kind: 'plan' | 'approved' | 'rejected' | 'apply' | 'drift' | 'out-of-band' | 'marked'; words: string; subject?: TimelineSubject }
 
 const DRIFT: readonly OutOfBandView['source'][] = ['gitops', 'terraform-plan'];
 
@@ -88,6 +92,7 @@ export function infraTimeline(plans: PlanView[], applies: PlanApply[], changes: 
     ...plans.flatMap((p): TimelineEntry[] => [
       { at: p.createdAt, kind: 'plan', words: `Plan ${short(p.id)} recorded: ${planHeadline(p)}`, subject: { asset: p.asset } },
       ...(p.approval ? [{ at: p.approval.at, kind: 'approved' as const, words: `Plan ${short(p.id)} approved by ${p.approval.by}`, subject: { asset: p.asset } }] : []),
+      ...(p.rejection ? [{ at: p.rejection.at, kind: 'rejected' as const, words: `Plan ${short(p.id)} rejected by ${p.rejection.by}: ${p.rejection.note}`, subject: { asset: p.asset } }] : []),
     ]),
     ...applies.map((a): TimelineEntry => ({ at: a.at, kind: 'apply', words: `Applied plan ${short(a.plan)}: ${applyLine(a)}`, subject: { asset: a.asset } })),
     ...changes.flatMap((c): TimelineEntry[] => [

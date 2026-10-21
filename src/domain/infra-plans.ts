@@ -6,7 +6,7 @@
 import { changesAsset, profileProblem, type Asset, type OperationProfile } from './access.ts';
 import type { PlanRisk, PlanSummary } from './infra-plan-summary.ts';
 import { roleAllows, type UiRole } from './sign-in.ts';
-import { profileInWords } from './minting.ts';
+import { ACTION_ROLE, profileInWords } from './minting.ts';
 
 /** What made the plan: `terraform plan -out`, `helm diff`, or a GitOps (Argo CD) diff. */
 export const PLAN_TOOLS = ['terraform', 'helm', 'gitops'] as const;
@@ -70,6 +70,14 @@ export interface InfraPlan extends Omit<PlanInput, 'asset' | 'json'> {
  */
 export interface PlanApproval { plan: string; by: string; at: string; auto?: true }
 
+/**
+ * A person's rejection of a plan (issue #2368): a row of its own, as an approval is, and terminal. A rejected plan is never
+ * approved, and the vault mints nothing for it. `note`: why, which the job that waits on the plan is told.
+ */
+export interface PlanRejection { plan: string; by: string; at: string; note: string }
+/** The most characters a rejection's note keeps. */
+export const REJECTION_NOTE_MAX = 1000;
+
 /** Who approves a plan, by its risk (issue #870 part 3): an operator (or an admin), an admin only, or nobody. */
 export type PlanApprover = 'operator' | 'admin' | 'nobody';
 
@@ -83,6 +91,8 @@ export const AUTO_APPROVER = 'the hopper';
 /** A plan as the hopper shows it: the plan, without its text, its approval, and who may approve it and why. */
 export interface PlanView extends Omit<InfraPlan, 'text'> {
   approval?: PlanApproval;
+  /** Issue #2368: a person rejected it; it is never approved. */
+  rejection?: PlanRejection;
   approver: { who: PlanApprover; why: string };
   /** Issue #909: an API token asked to approve it, and a person is to confirm it; only while it waits. */
   asked?: { asker: string; at: string };
@@ -101,6 +111,8 @@ export interface InfraPlanRepository {
   list(limit: number): KeptPlanView[];
   approve(a: PlanApproval): void;
   approval(id: string): PlanApproval | undefined;
+  reject(r: PlanRejection): void;
+  rejection(id: string): PlanRejection | undefined;
 }
 
 /** Why a job's plan input is not one the hopper keeps, or undefined. */
@@ -142,7 +154,7 @@ const sameAsset = (a: Asset, b: Asset): boolean => a.kind === b.kind && a.name =
  */
 export function applyRefusal(profile: OperationProfile, planId: string | undefined, plan: InfraPlan | undefined, approval: PlanApproval | undefined, now: Date): string | undefined {
   if (!changesAsset(profile)) return undefined;
-  const plan_again = 'Record a plan (POST /job/infra-plans), have a person approve it, then ask with --plan <id>';
+  const plan_again = `Record a plan (POST /job/infra-plans), have a person approve it, then ask with --plan <id>${profile.asset.kind === 'aws-role' ? `. For AWS actions with no terraform, helm or gitops plan, ask for apply/aws-role/<account>/${ACTION_ROLE} with --action <service:Action>=<resource ARN> and no plan: a person's grant of each action approves the change` : ''}`;
   if (planId === undefined) return `no apply without a plan: ${profileInWords(profile)} changes infrastructure, and the ask names no plan. ${plan_again}`;
   if (!plan) return `no plan ${planId}: ${plan_again}`;
   if (!sameAsset(plan.asset, profile.asset)) return `plan ${plan.id} is a plan for ${plan.asset.kind} ${plan.asset.name}, not ${profile.asset.kind} ${profile.asset.name}`;
@@ -194,6 +206,10 @@ export function approverOf(plan: Pick<InfraPlan, 'summary'>): { who: PlanApprove
   if (s.environments.length > 0 && s.environments.every((e) => e === 'uat')) return { who: 'operator', why: 'low risk, in uat only' };
   return { who: 'admin', why: `low risk, but not in uat only: ${s.environments.length > 0 ? `in ${s.environments.join(', ')}` : 'environment not named'}` };
 }
+
+/** What a job or a person is told of a rejected plan (issue #2368): who rejected it, why, and that it is never approved. */
+export const rejectedWords = (planId: string, r: Pick<PlanRejection, 'by' | 'note'>): string =>
+  `plan ${planId} was rejected by ${r.by}: ${r.note}. It is never approved: change course, or plan again and record a new plan`;
 
 /** Why a person of `role` may not approve the plan, or undefined. */
 export function approveRefusal(plan: Pick<InfraPlan, 'id' | 'summary'>, role: UiRole): string | undefined {

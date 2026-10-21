@@ -197,15 +197,17 @@ export function createVaultService(o: {
     return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t).filter((n) => !isSystemSecret(n)) : [] };
   }
 
-  const approvedOf = (name: string): OperationProfile[] => o.access?.approvedProfiles(name) ?? [];
+  const approvedOf = (name: string): OperationProfile[] => o.access?.approvedProfiles().get(name) ?? [];
   const rules = (): RadiusRules => (o.store.settings.getBlastRadius() ?? DEFAULT_BLAST_RADIUS_SETTINGS).rules;
+  /** The vault's secrets, read once, then the shared ones: every store call blocks the event loop (issue #2367). */
+  const heldNow = (): ((n: string) => VaultSecret | undefined) => { const kept = new Map(vault.list().map((s) => [s.name, s])); return (n) => kept.get(n) ?? o.shared?.(n); };
   /** What the rating reads of a template: its secrets' names and scope lines, never a value, and its profiles. */
-  const held = (n: string): VaultSecret | undefined => vault.get(n) ?? o.shared?.(n);
-  const scopeOfTemplate = (t: Template): TemplateScope => ({
+  const scopeOfTemplate = (t: Template, held = heldNow()): TemplateScope => ({
     secrets: t.secrets.filter((n) => !isSystemSecret(n)).map((n) => { const s = held(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
     profiles: t.profiles ?? [], ...(t.egress ? { egress: t.egress } : {}),
   });
-  const viewOf = (t: Template): TemplateView => { const approved = approvedOf(t.name); return templateView(t, approved, rateTemplate(scopeOfTemplate(t), approved, rules())); };
+  /** The templates' views: access's approvals, the rules and the secrets read once for them all, not once for each (issue #2367). */
+  const viewsOf = (ts: readonly Template[]): TemplateView[] => { const approvals = o.access?.approvedProfiles(), r = rules(), held = heldNow(); return ts.map((t) => { const approved = approvals?.get(t.name) ?? []; return templateView(t, approved, rateTemplate(scopeOfTemplate(t, held), approved, r)); }); }, viewOf = (t: Template): TemplateView => viewsOf([t])[0]!;
   const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
   const declares = (t: Template, p: OperationProfile): boolean => (t.profiles ?? []).some((x) => keyOf(x) === keyOf(p));
   const approveIn = async (t: Template, p: OperationProfile, by: string): Promise<void> => {
@@ -216,7 +218,7 @@ export function createVaultService(o: {
 
   return {
     view: () => ({
-      secrets: vault.list().filter((s) => !isSystemSecret(s.name)), templates: vault.templates().map(viewOf), backends: (o.backends?.() ?? []).map(backendView),
+      secrets: vault.list().filter((s) => !isSystemSecret(s.name)), templates: viewsOf(vault.templates()), backends: (o.backends?.() ?? []).map(backendView),
       ...(sealer ? {} : { problem: unavailable() }),
     }),
 
@@ -265,7 +267,7 @@ export function createVaultService(o: {
       const scope = [...new Set(secrets)];
       const system = scope.filter(isSystemSecret);
       if (system.length) return fail('invalid', `${system.join(', ')} is in the vault's system scope: the hopper keeps it for its own use, so it is in no template's scope`);
-      const missing = scope.filter((n) => !held(n));
+      const held = heldNow(), missing = scope.filter((n) => !held(n));
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
       const minting = scope.filter((n) => vault.get(n)?.mints);
       if (minting.length) return fail('invalid', `${minting.join(', ')} is a minting credential: the hopper mints from it and never gives it out, so it is in no template's scope`);
@@ -345,7 +347,7 @@ export function createVaultService(o: {
     boxRadius: (machine) => { const name = scopeOf(machine).template, t = name === undefined ? undefined : vault.template(name); return t ? { name: t.name, radius: viewOf(t).radius } : undefined; },
     boxes: () => (o.targets?.() ?? []).flatMap((m) => (m.template !== undefined && vault.template(m.template) ? [{ machine: m.name, template: m.template }] : [])),
 
-    templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
+    templateScopes: () => { const r = rules(), held = heldNow(); return vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t, held), rules: r })); },
 
     async deliver(ask, machineKey) {
       const box = boxAsk({ ...o, job: (id) => o.store.jobs.get(id), holdsTemplate: (t) => vault.template(t) !== undefined }, ask.token, machineKey);

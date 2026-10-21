@@ -29,7 +29,7 @@ export type IntakeGroupKind = NotTakenGroup | 'taken';
 
 /** Each group's heading. A Record of every group, so a group added in the daemon and not here fails the UI typecheck. */
 export const INTAKE_GROUP_LABEL: Record<IntakeGroupKind, string> = {
-  request: 'Needs approval', 'not-assigned': 'Not assigned to you', backburner: 'On the backburner',
+  request: 'Needs approval', 'not-assigned': 'Not assigned to you', backburner: 'Later',
   'pr-waiting': 'Pull request waits for review', 'partly-done': 'Partly done', declined: 'Declined', other: 'Other reasons', taken: 'Taken',
 };
 const ORDER = Object.keys(INTAKE_GROUP_LABEL) as IntakeGroupKind[];

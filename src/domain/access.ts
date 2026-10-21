@@ -182,7 +182,8 @@ export type AccessEdit =
  * for now, an approval, and a revoke. Access is the one record of which profiles are approved.
  */
 export interface TemplateApprovals {
-  approvedProfiles(template: string): OperationProfile[];
+  /** Each template's approved profiles, by template name, from one read of access (issue #2367): a template with none is absent. */
+  approvedProfiles(): ReadonlyMap<string, OperationProfile[]>;
   approve(template: string, profile: OperationProfile, by: string): Promise<void>;
   /** Revokes the template's live approval of the profile; nothing when there is none. */
   revokeProfile(template: string, profile: OperationProfile, by: string): Promise<void>;

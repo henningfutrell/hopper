@@ -126,7 +126,7 @@ describe('Direct jobs', () => {
 
   it('says so when there are no direct jobs', async () => {
     await render('operator', []);
-    expect(document.body.textContent).toContain('No direct jobs yet');
+    expect(document.body.textContent).toContain('No jobs run here yet');
   });
 
   it('leaves the direct queries out: they have a view of their own (issue #2184)', async () => {

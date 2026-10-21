@@ -7264,6 +7264,33 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A plan of an infrastruct
 }
 ```
 
+## `infra.plan_rejected`
+
+Version 1 (`docs/schemas/infra.plan_rejected.v1.json`). A person rejected a plan of an infrastructure change (issue #2368), on Infra or with `hopper infra reject`: it is never approved after, and the vault mints nothing for an apply that names it. `by`, who; `note`, why. A job that waits on the plan is woken, told who rejected it and the note. On the timeline of the job that recorded it.
+
+| field | type | required |
+|---|---|---|
+| `plan` | string | yes |
+| `tool` | `terraform` \| `helm` \| `gitops` | yes |
+| `asset` | object | yes |
+| `target` | string | yes |
+| `by` | string | yes |
+| `note` | string | yes |
+
+```json
+{
+  "plan": "0b7e5a3c-0000-4000-8000-000000000870",
+  "tool": "terraform",
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/deploy"
+  },
+  "target": "prod-identity",
+  "by": "Ada",
+  "note": "Keep the statefulset: we move the database another way"
+}
+```
+
 ## `infra.out_of_band_recorded`
 
 Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A read-only check — a job's, or an outside collector's with an API token (part 2) — reported an infrastructure change that did not come through IaC or GitOps (issue #871): drift (`gitops`: an app out of sync; `terraform-plan`: a non-empty plan on unchanged code) or an audit-log write (`cloudtrail`, `kube-audit`) by a principal that is no controller identity and no plan-bound apply credential. What changed (`target`), the action in the source's words (`what`), who (`who`), when (`at`), the signal's own id (`key`), and who reported it: the job whose check did and its issue, or the collector (`reporter`, its API token's label), then on no job's timeline. Never the signal's detail. On Infra until a person marks it; the notifiers send it.

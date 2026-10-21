@@ -75,10 +75,10 @@ afterEach(async () => {
 });
 
 describe('Queue badge', () => {
-  it('the Queue nav entry counts the jobs waiting on the pre-sort', async () => {
+  it('the Queue nav entry counts the jobs waiting to be ordered', async () => {
     await boot([job('a1', true), job('n1', false), job('n2', false)]);
     await vi.waitFor(() => expect(queueLink().querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
-    expect(queueLink().querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('2 jobs wait on the pre-sort');
+    expect(queueLink().querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('2 jobs waiting to be ordered');
   });
 
   it('no badge when every waiting job is accepted', async () => {

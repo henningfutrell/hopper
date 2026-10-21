@@ -124,12 +124,8 @@ describe('Event lines link to the job', () => {
     await vi.waitFor(() => expect(line(6)).not.toBeNull());
     expect(line(4)!.querySelector('a')?.getAttribute('href')).toBe('#job/ask1');
     expect(line(1)!.querySelector('a')).toBeNull();
-    // Issue #1169: the stream is a code block of lines, with a wrap toggle and Copy.
-    expect(line(4)!.closest('[data-slot="code-block"]')).not.toBeNull();
-    expect(line(4)!.getAttribute('data-slot')).toBe('code-block-line');
-    const block = line(4)!.closest('[data-slot="code-block"]')!;
-    expect(block.querySelector('[data-slot="code-block-copy-button"]')).not.toBeNull();
-    expect(block.querySelector('button[aria-label="Wrap long lines"]')).not.toBeNull();
+    // Issue #2375: the stream is a table of rows (it was a code block, issue #1169).
+    expect(line(4)!.closest('[data-slot="events-table"]')).not.toBeNull();
   });
 });
 

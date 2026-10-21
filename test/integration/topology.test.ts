@@ -6,11 +6,14 @@
 //   Scenario: a check reports an AWS account and a Kubernetes cluster; the graph holds both, and the links between them
 //   Scenario: a cluster out of reach keeps its last good snapshot, says why, and the rest of the graph is read again
 //   Scenario: a grant without the scope topology:report is refused; a report that is not whole is refused, with why
+//   Scenario: Infra reads only the nodes its changes can touch (issue #2367), and they link the same nodes as the whole graph
 import { afterEach, describe, expect, it } from 'vitest';
 import { awsTopology, kubeTopology } from '../../src/domain/topology-discover.ts';
 import type { TopologyGraph } from '../../src/domain/topology.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { aws, CLUSTER, kube, ROLE } from '../support/topology-answers.ts';
+import { aws, CLUSTER, DB_HOST, kube, ROLE } from '../support/topology-answers.ts';
+import type { TimelineEntry } from '../../ui/src/model/infra-plans.ts';
+import { entryNodes, topologyPathFor } from '../../ui/src/model/topology.ts';
 
 let t: TestApp | undefined;
 const cleanups: (() => void)[] = [];
@@ -80,6 +83,29 @@ describe('the infrastructure topology', () => {
       reporter: 'topology collector',
       sources: [{ key: 'aws/111111111111/eu-west-1', ok: true, nodes: g.sources[0]!.lastGood!.nodes, links: g.sources[0]!.lastGood!.links }, { key: `kubernetes/${CLUSTER}`, ok: false, error: 'the API server did not answer' }],
     });
+  });
+
+  // Issue #2367: the whole graph was 2 MB on each Infra visit, read only to name the nodes of its timeline.
+  it('Infra reads only the nodes its changes can touch, and they link the same nodes as the whole graph', async () => {
+    const { a, session, mint } = await boot();
+    const token = await mint(['topology:report']);
+    expect((await send(a, token, { sources: [{ source: AWS_SOURCE, ok: true, ...awsTopology(aws) }, { source: KUBE_SOURCE, ok: true, ...kubeTopology(kube) }] })).status).toBe(200);
+    const whole = await graph(a, session);
+    const entry = (subject: TimelineEntry['subject']): TimelineEntry => ({ at: '2026-10-21T00:00:00Z', kind: 'plan', words: 'a change', ...(subject ? { subject } : {}) });
+    const timeline = [
+      entry({ target: DB_HOST }), entry({ target: ROLE.toUpperCase() }), entry({ asset: { kind: 'aws-account', name: '111111111111' } }),
+      entry({ asset: { kind: 'aws-role', name: '222222222222/orders-irsa' } }), entry({ asset: { kind: 'cluster', name: 'prod' } }),
+      entry({ asset: { kind: 'namespace', name: 'prod/shop' } }), entry({ asset: { kind: 'argocd-app', name: 'shop' } }), entry(undefined),
+    ];
+    const path = topologyPathFor(timeline)!;
+    expect(path).toMatch(/^\/api\/topology\?touching=/);
+    const touched = (await a.api<TopologyGraph>('GET', path, undefined, { 'x-hopper-session': session })).body;
+    expect(touched.nodes.length).toBeLessThan(whole.nodes.length);
+    expect(touched.links).toEqual([]);
+    for (const e of timeline) expect(entryNodes(touched, e), JSON.stringify(e.subject)).toEqual(entryNodes(whole, e));
+    expect(timeline.slice(0, 6).every((e) => entryNodes(whole, e).length > 0)).toBe(true);
+    // No changes: nothing to read.
+    expect(topologyPathFor([])).toBeUndefined();
   });
 
   it('refuses a grant without the scope, a report that is not whole, and a source named twice', async () => {

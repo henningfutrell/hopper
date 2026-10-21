@@ -108,7 +108,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
   /** Why Access's deny stops the mint: waiting at the first-time gate, or not declared at all. */
   const denied = (template: string, profile: OperationProfile, d: MintDecision): string => {
     const declared = (vault.template(template)?.profiles ?? []).some((p) => sameProfile(p, profile));
-    const approved = (o.access?.approvedProfiles(template) ?? []).some((p) => sameProfile(p, profile));
+    const approved = (o.access?.approvedProfiles().get(template) ?? []).some((p) => sameProfile(p, profile));
     if (declared && !approved) return `Access denied it: ${d.reason}. ${profileInWords(profile)} waits for a person's approval on Access requests (the first-time gate)`;
     if (!declared) return `Access denied it: ${d.reason}. ${template} does not declare ${profileInWords(profile)}: a person adds it to the template on Settings → Vault, then approves it`;
     return `Access denied it: ${d.reason}`;

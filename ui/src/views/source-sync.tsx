@@ -22,7 +22,7 @@ interface OutboxFailed { key: string; repo: string; act: string; error: string; 
 
 /** What a failed row's act did, in plain words. */
 const ACT: Record<string, string> = {
-  assign: 'Assign to me', release: 'Release claim', approve: 'Approve', unbackburner: 'Take off the backburner',
+  assign: 'Assign to me', release: 'Release claim', approve: 'Approve', unbackburner: 'Take out of Later',
   take_in: 'Take into Intake', resolve: 'Hand-off resolution', merge: 'Merge now', close: 'Close PR',
   rerun: 'Run again', rework: 'Rework', retry: 'Retry', continue: 'Continue', fixed: 'I fixed it', push: 'Push it', tend: 'Tend again',
 };

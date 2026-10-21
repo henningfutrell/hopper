@@ -6,8 +6,8 @@ import type { TimelineEntry } from '@/model/infra-plans';
 import { entryNodes } from '@/model/topology';
 import type { TopologyGraph } from '../../../src/domain/types.ts';
 
-export const KIND = { plan: 'Plan', approved: 'Approved', apply: 'Apply', drift: 'Drift', 'out-of-band': 'Out of band', marked: 'Marked' } as const;
-export const KIND_TONE = { plan: 'text-muted-foreground', approved: 'text-ok', apply: 'text-ok', drift: 'text-warn', 'out-of-band': 'text-warn', marked: 'text-muted-foreground' } as const;
+export const KIND = { plan: 'Plan', approved: 'Approved', rejected: 'Rejected', apply: 'Apply', drift: 'Drift', 'out-of-band': 'Out of band', marked: 'Marked' } as const;
+export const KIND_TONE = { plan: 'text-muted-foreground', approved: 'text-ok', rejected: 'text-destructive', apply: 'text-ok', drift: 'text-warn', 'out-of-band': 'text-warn', marked: 'text-muted-foreground' } as const;
 
 /** The most nodes one entry links to; the rest are counted. */
 const LINKED_MAX = 3;
