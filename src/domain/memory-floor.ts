@@ -1,0 +1,31 @@
+// The memory floor (issue #2291, design.md "The memory floor"): a machine takes a new job, or a job back, only while its
+// memory available, less what the jobs it started lately have yet to take and what the new job needs, stays at or above
+// its floor. Below the floor the decider pauses the job that started there last, on the Park button's path, one at a time.
+import type { JobId, LaneId, MachineId } from './types.ts';
+
+/** A machine's own memory floor (its `memoryFloorGiB` and `memoryPerJobGiB` options). Absent fields: the defaults. A floor of 0: off. */
+export interface MemoryFloor { floorGiB?: number; perJobGiB?: number }
+
+/** The default floor: this share of the machine's memory, in percent, and at least `MEMORY_FLOOR_MIN_GIB`. */
+export const MEMORY_FLOOR_PERCENT = 10;
+export const MEMORY_FLOOR_MIN_GIB = 1;
+/** The default memory a new job needs, in GiB: room for an agent and a JVM build. */
+export const MEMORY_PER_JOB_GIB = 2;
+/** A job that started (or resumed) less than this ago has not taken its memory yet: it still reserves a job's memory. */
+export const MEMORY_RAMP_MS = 10 * 60_000;
+/** After a memory pause on a machine, no other there for this long: the park frees memory, and the next reading shows it. */
+export const MEMORY_PAUSE_EVERY_MS = 2 * 60_000;
+
+/** A running job the decider pauses because its machine's memory is below the floor. */
+export interface MemoryPausePlan {
+  jobId: JobId;
+  laneId: LaneId;
+  machineId: MachineId;
+  /** The memory available the decider read, and the floor, in bytes. */
+  availableBytes: number;
+  floorBytes: number;
+  reason: string;
+}
+
+/** Set on a job when a memory pause names it; kept while it is parked and queued again, cleared when it runs again. */
+export interface JobMemoryPaused { at: string; machineId: MachineId; availableBytes: number; floorBytes: number }

@@ -1,4 +1,5 @@
 // Preemption (issue #1525, design.md "Preemption"): a Decision preempted a running job, and an admin changed the setting.
+// A memory pause (issue #2291, design.md "The memory floor"): a Decision paused a running job, its machine's memory below the floor.
 // Part of EVENT_SCHEMAS (schemas.ts), with its docs (docs.ts) and examples (examples.ts).
 import { z } from 'zod';
 
@@ -6,17 +7,20 @@ const settings = z.strictObject({ enabled: z.boolean(), minRunMinutes: z.number(
 
 export const PREEMPTION_EVENT_SCHEMAS = {
   'job.preempted': z.strictObject({ by: z.string(), byPriority: z.number(), priority: z.number(), reason: z.string() }),
+  'job.memory_paused': z.strictObject({ availableBytes: z.number().min(0), floorBytes: z.number().positive(), reason: z.string() }),
   'preemption.settings_changed': z.strictObject({ from: settings, to: settings, by: z.string() }),
 } as const;
 
 /** Its part of the event reference (docs.ts). */
 export const PREEMPTION_EVENT_DOCS = {
   'job.preempted': 'A Decision preempted this running job (issue #1525): job `by`, of priority `byPriority`, waits for a lane, every lane it may use is busy, and this job has the lower priority `priority`. It is parked next (`job.parked`), its lane frees, and it is queued again (`job.unparked`) to resume where it stopped. `reason`: the Decision\'s.',
+  'job.memory_paused': 'A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job started there last. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision\'s.',
   'preemption.settings_changed': 'An admin changed the preemption settings (issue #1525): whether a job of higher priority takes the lane of a running job of lower priority (`enabled`), and how many minutes a job runs before it may be preempted (`minRunMinutes`). `from` and `to`.',
 } as const;
 
 /** Its examples (examples.ts). */
 export const PREEMPTION_EVENT_EXAMPLES = {
   'job.preempted': { by: 'j-high', byPriority: 75, priority: 50, reason: 'preempts j-low (priority 50, running 42 min) on laptop/lane-2: job j-high of priority 75 waits and every lane it may use is busy' },
+  'job.memory_paused': { availableBytes: 1073741824, floorBytes: 1503238554, reason: 'pauses j-new on laptop/lane-6: laptop has 1 GiB available, below its floor of 1.4 GiB; j-new started there last' },
   'preemption.settings_changed': { from: { enabled: true, minRunMinutes: 10 }, to: { enabled: true, minRunMinutes: 20 }, by: 'admin' },
 } as const;

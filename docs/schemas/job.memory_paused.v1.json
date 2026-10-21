@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "availableBytes": {
+      "type": "number",
+      "minimum": 0
+    },
+    "floorBytes": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "availableBytes",
+    "floorBytes",
+    "reason"
+  ],
+  "additionalProperties": false
+}

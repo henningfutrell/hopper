@@ -88,8 +88,8 @@ interface AttachedBase {
   workTrees?: Record<string, string>;
   /** When its disk is low (issue #410); absent fields take the defaults. Never on a container target. */
   diskLow?: DiskThresholds;
-  /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. */
-  sweep?: SweepSettings;
+  /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. `memoryFloor`: its memory floor (issue #2291); absent fields take the defaults. */
+  sweep?: SweepSettings; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
   /** Lanes kept for jobs pinned to it (issue #372). */
   reservedLanes?: number;
   /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */

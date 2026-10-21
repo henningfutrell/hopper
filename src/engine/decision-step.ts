@@ -41,7 +41,8 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const avoidLanes = avoidLanesOf(waiting, (id) => c.store.jobs.get(id));
     const credentialHeld = credentialHeldOf(c, machines);
     const sandboxesHeld = c.sandboxesHeld(waiting);
-    const preemption = preemptionInput(preemptionSettings(c.store), c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined));
+    const parkingExecutors = c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined);
+    const preemption = preemptionInput(preemptionSettings(c.store), parkingExecutors);
     const strictness = c.store.settings.getIntakeStrictness() ?? DEFAULT_INTAKE_STRICTNESS;
     // Jev's trust check (issue #655 part 4) and kind check: asked after this Decision's transaction; active, a job waits for them.
     const checking = checks.trust.of(waiting);
@@ -70,7 +71,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(signedOut.length ? { signedOut } : {}),
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
-      ...(preemption ? { preemption } : {}),
+      ...(preemption ? { preemption } : {}), parkingExecutors,
       ...(stampHeld.length ? { stampHeld } : {}),
       policy: policyOf(c),
     };
@@ -91,7 +92,7 @@ function expectedOf(waiting: readonly Job[], expected: ExpectedCostOf): Record<s
 
 /** A Decision that changes nothing is not recorded (design.md "The decider"). */
 export function isNoOp(d: Decision): boolean {
-  if (d.start.length > 0 || (d.preempt?.length ?? 0) > 0) return false;
+  if (d.start.length > 0 || (d.preempt?.length ?? 0) > 0 || (d.memoryPause?.length ?? 0) > 0) return false;
   if (d.lanes.some((p) => p.open > 0 || p.close.length > 0 || p.drain.length > 0)) return false;
   const byId = new Map(d.inputs.waiting.map((j) => [j.id, j]));
   return d.hold.every((h) => byId.get(h.jobId)?.holdReason === h.reason)
@@ -157,6 +158,17 @@ function apply(c: EngineContext, d: Decision): Applied {
     store.events.append({
       type: 'job.preempted', jobId: p.jobId, laneId: p.laneId, machineId: p.machineId, decisionId: d.id,
       data: { by: p.by, byPriority: p.byPriority, priority: p.priority, reason: p.reason },
+    });
+    preempts.push(p.jobId);
+  }
+  // A memory pause (issue #2291): marked here, and parked by the runner after the commit on the preemption's path.
+  for (const p of d.memoryPause ?? []) {
+    const job = store.jobs.get(p.jobId);
+    if (job?.status !== 'running' || job.laneId !== p.laneId || preempts.includes(p.jobId)) continue;
+    store.jobs.update(p.jobId, { memoryPaused: { at: d.at, machineId: p.machineId, availableBytes: p.availableBytes, floorBytes: p.floorBytes } });
+    store.events.append({
+      type: 'job.memory_paused', jobId: p.jobId, laneId: p.laneId, machineId: p.machineId, decisionId: d.id,
+      data: { availableBytes: p.availableBytes, floorBytes: p.floorBytes, reason: p.reason },
     });
     preempts.push(p.jobId);
   }

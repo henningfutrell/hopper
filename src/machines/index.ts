@@ -3,7 +3,7 @@
 // ssh targets ~/.ssh/config names.
 import { homedir, hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
-import type { DiskReading, DiskThresholds, SweepSettings } from '../domain/machines.ts';
+import type { DiskReading, DiskThresholds, SweepSettings } from '../domain/machines.ts'; import type { MemoryFloor } from '../domain/memory-floor.ts';
 import type { UsageLimitPair } from '../domain/usage.ts';
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { diskAt, judged } from './disk.ts';
@@ -47,6 +47,8 @@ export function createLocalMachineSource(o: {
   diskLow?: () => DiskThresholds | undefined;
   /** How the sweep treats it (issue #410), read at every list(); default every 10 minutes, scratch dirs after 24 hours. */
   sweep?: () => SweepSettings | undefined;
+  /** Its memory floor (issue #2291), read at every list(); absent: the defaults. */
+  memoryFloor?: () => MemoryFloor | undefined;
 }): MachineSource {
   const disk = o.disk ?? (() => diskAt(homedir()));
   const resources = o.resources ?? createResourceMeter();
@@ -87,7 +89,7 @@ export function createLocalMachineSource(o: {
       const read = disk();
       const d = read && judged(read, o.diskLow?.());
       const res = resources();
-      const sweep = o.sweep?.();
+      const sweep = o.sweep?.(); const memoryFloor = o.memoryFloor?.();
       check();
       return [
         {
@@ -107,7 +109,7 @@ export function createLocalMachineSource(o: {
           ...(res ? { resources: res } : {}),
           // Its jobs start with this environment (issue #1248): a token variable in it is theirs.
           infraCredentials: infraCredentialsAt(homedir(), scrubbedEnv()),
-          ...(sweep ? { sweep } : {}),
+          ...(sweep ? { sweep } : {}), ...(memoryFloor ? { memoryFloor: { ...memoryFloor } } : {}),
           ...(workTreeProblem ? { workTreeProblem } : {}),
         },
       ];

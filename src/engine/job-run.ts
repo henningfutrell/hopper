@@ -247,7 +247,7 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
         if (!job) return { gone: true };
         if (d.launch !== 'run' || job.status === 'running') return {};
         // A preempted job runs again (issue #1525): its mark goes, and its minimum run time counts from now.
-        const j = store.jobs.update(job.id, { status: 'running', startedAt: nowIso(c), preempted: undefined });
+        const j = store.jobs.update(job.id, { status: 'running', startedAt: nowIso(c), preempted: undefined, memoryPaused: undefined });
         store.events.append({ type: 'job.started', jobId: job.id, laneId: d.laneId, data: { attempts: j.attempts } });
         return {};
       });

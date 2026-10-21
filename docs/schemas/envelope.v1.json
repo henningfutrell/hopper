@@ -191,6 +191,7 @@
         "job.work_skill_chosen",
         "job.conditional_skills_chosen",
         "job.preempted",
+        "job.memory_paused",
         "github_rate_limiter.settings_changed",
         "remote_access.changed",
         "allowed_hosts.changed",
