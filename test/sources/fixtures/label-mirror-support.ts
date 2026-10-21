@@ -25,10 +25,11 @@ export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { 
     rerunnable: (keys: string[]) => new Set(keys.filter((k) => o.rerunnable?.includes(k))),
     intake: {
       holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: LONG_AGO, changes: [] }), migrated: () => {},
-      // The ledger folds the person's event into the item: its Run again is asked, its state stays.
+      // The ledger folds the person's event into the item: its Run again is asked, its state stays; a card withdrawn is dropped.
       record: (type, data) => {
         recorded.push({ type, data });
         if (type === 'work_item.label_edited') items[String(data.key)] = { ...items[String(data.key)], runAgainAsked: String(data.label) };
+        if (type === 'source.request_withdrawn') items[String(data.key)] = { ...items[String(data.key)], state: 'dropped', eventState: 'dropped', waitingOn: undefined, requestSource: undefined };
       },
       requestOpened: () => false, requestsWaiting: () => [],
       workItem: (key) => (items[key] ? itemOf(key, items[key]) : undefined),

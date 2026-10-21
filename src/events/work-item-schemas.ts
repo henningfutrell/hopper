@@ -12,7 +12,7 @@ const via = z.enum(['delivery', 'read']);
 
 export const WORK_ITEM_EVENT_SCHEMAS = {
   'job.pull_request_seen': strict({ pullRequest: z.string(), wait: z.enum(PULL_REQUEST_WAITS) }),
-  'source.request_withdrawn': strict({ source: z.string(), key: z.string() }),
+  'source.request_withdrawn': strict({ source: z.string(), key: z.string(), label: z.string().optional() }),
   // `landing` (issue #1232): the hopper closed it itself, done by a pull request its batch run promoted.
   'work_item.issue_closed': strict({ key: z.string(), reason: z.string().optional(), via: z.enum([...via.options, 'landing']) }),
   'work_item.issue_reopened': strict({ key: z.string(), via }),
