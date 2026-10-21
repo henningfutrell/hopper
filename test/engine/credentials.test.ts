@@ -40,7 +40,7 @@ const fresh = { id: 'job-1' } as Job;
 const started = { id: 'job-1', agentSession: 'session-1' } as Job;
 const continued = { ...started, continued: { at: '2026-10-20T15:13:00.000Z', handoffId: 'h-1' } } as Job;
 const parked = { ...started, parked: { at: '2026-10-20T15:13:00.000Z' } } as Job;
-const elsewhere = { ...started, parked: { at: '2026-10-20T15:13:00.000Z', elsewhere: { at: '2026-10-20T15:13:00.000Z', from: 'seat-2' } } } as Job;
+const elsewhere = { ...started, parked: { at: '2026-10-20T15:13:00.000Z', elsewhere: { at: '2026-10-20T15:13:00.000Z', checkpointAt: '2026-10-20T15:13:00.000Z', from: 'seat-2' } } } as Job;
 
 describe('placeCredentials (issues #563, #2040)', () => {
   it('keeps the files on the machine and gives the variables that point there', async () => {

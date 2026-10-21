@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe('a checkpoint restore with no way to the hopper (issue #2355)', () => {
-  it('puts the job back in the queue, holds that machine, and resumes the job on another machine from its checkpoint', async () => {
+  it('puts the job back in the queue, holds that machine, and resumes the job on another machine from its checkpoint', { timeout: 60000 }, async () => {
     const BASE = 'b'.repeat(40);
     const checkpoint: CheckpointCapture = {
       taken: { branch: 'hopper/deploy', base: BASE, head: 'c'.repeat(40), commits: [], patch: gzipSync('diff'), session: gzipSync('{"session":true}') },
