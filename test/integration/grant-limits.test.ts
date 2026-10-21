@@ -73,11 +73,11 @@ describe('grant limits (issue #892)', () => {
   it('a limited grant may not use a route that names no repository or source; a grant with no limits may', async () => {
     const a = await boot();
     const limited = await mint(a, { limits: { sources: ['manual'] } });
-    const refused = await post(a, '/ui/api/auto-park', {}, limited.body.token);
+    const refused = await post(a, '/ui/api/preemption', {}, limited.body.token);
     expect(refused.status, refused.text).toBe(403);
     expect(refused.body.error).toMatch(/names no repository or job source/);
     const free = await mint(a, {});
-    expect((await post(a, '/ui/api/auto-park', {}, free.body.token)).status).not.toBe(403);
+    expect((await post(a, '/ui/api/preemption', {}, free.body.token)).status).not.toBe(403);
   });
 
   it('a job source limit places a job by its source; intake by its source and its items\' repositories', async () => {

@@ -4,7 +4,7 @@
 // session with it, on its own. The policy is a setting (GET /api/thread-ask, POST /ui/api/thread-ask) read at each sync.
 // Real daemon over the fake herdr and the in-memory fake GitHub.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DomainEvent, Job, Question, ThreadAskSettings } from '../../src/domain/types.ts';
+import { AUTO_PARK_WHY, WAIT_RELEASE_AFTER_MS, type DomainEvent, type Job, type Question, type ThreadAskSettings } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -123,13 +123,11 @@ describe('the hopper label means full automation', () => {
     expect((await questionOf(a, job.id)).answeredBy).toBe('thread:maintainer');
   });
 
-  it('picked up with its question still open, it waits the park timeout from the pick-up, not one tick (issue #1006)', async () => {
+  it('picked up with its question still open, it waits a few seconds from the pick-up, not one tick (issues #1006, #2335)', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
     const gh = createFakeGitHub();
     const a = await boot(herdr, gh);
     const token = await a.login();
-    // 1.2 s, in minutes.
-    await a.ui('/ui/api/auto-park', { minutes: 0.02 }, { token });
     const { job } = await blocked(a, gh, OWN);
     await a.waitForStatus(job.id, 'parked', 5000);
 
@@ -137,8 +135,8 @@ describe('the hopper label means full automation', () => {
     expect(r.body.status).toBe('waiting_answer');
     await new Promise((done) => setTimeout(done, 600));
     expect((await a.job(job.id)).status).toBe('waiting_answer');
-    const again = await a.waitForStatus(job.id, 'parked', 5000);
-    expect(again.parked).toMatchObject({ auto: true, why: 'Parked automatically: the question waited 1.2 s.' });
+    const again = await a.waitForStatus(job.id, 'parked', WAIT_RELEASE_AFTER_MS + 10_000);
+    expect(again.parked).toMatchObject({ auto: true, why: AUTO_PARK_WHY });
   });
 
   it('off: the question stays with the hopper, nothing is posted and the job does not park for it', async () => {
