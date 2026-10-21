@@ -16,7 +16,7 @@
 // command written since takes it again.
 //
 // Intake reads the ledger (issue #1892): for an issue whose work item is in a state the label mirror judges (a job at work,
-// PR open, blocked, failed as reported, done by a whole merge, partly done with parts left, needs you, a hand-off as reported, a request card; `labelsFor`), its end-label reason is the ledger's (`ledgerReason`), whatever end labels the issue
+// PR open, blocked, failed as reported, done by a whole merge, partly done with parts left, needs you, a hand-off as reported, a request card, dropped by Won't do; `labelsFor`), its end-label reason is the ledger's (`ledgerReason`), whatever end labels the issue
 // carries — the mirror corrects them. The labels decide only for an issue the hopper does not know, or a state the mirror
 // does not judge yet. An item a person asked to run again by taking its end label off (`runAgainAsked`, or `edited` in this
 // pass) has no such reason, so it is taken again.
@@ -114,7 +114,7 @@ export const isAssignedTo = (i: Pick<GitHubIssue, 'assignees'>, login: string): 
 
 /**
  * Intake's end-label reason from the ledger (issue #1892), for an item in a state the label mirror judges: PR open, its pull
- * request (or its part) waits for review; blocked, why; failed or handed off, as its failure was reported; done, its issue still open. `{}`: no such reason (a job at work, a part merged with parts left, or a person's Run again).
+ * request (or its part) waits for review; blocked, why; failed or handed off, as its failure was reported; done, its issue still open; dropped by Won't do, rejected. `{}`: no such reason (a job at work, a part merged with parts left, or a person's Run again).
  * Undefined: the ledger does not decide (no item, or a state the mirror does not judge), so the labels do.
  */
 export function ledgerReason(item: WorkItem | undefined, facts: LabelFacts): { reason?: string } | undefined {
@@ -123,6 +123,7 @@ export function ledgerReason(item: WorkItem | undefined, facts: LabelFacts): { r
   if (item.state === 'pr_open') return { reason: facts.part ? PARTLY_DONE : PR_READY };
   if (item.state === 'failed' || (item.state === 'needs_you' && item.waitingOn === HANDOFF_WAIT)) return { reason: FAILED };
   if (item.state === 'done') return { reason: DONE_OPEN };
+  if (item.state === 'dropped') return { reason: REJECTED_LABEL };
   if (item.state === 'blocked') return { reason: item.blockedCause === 'pr_closed' ? PR_CLOSED : item.blockedCause === 'stale' ? BLOCKED_STALE : BLOCKED };
   return {};
 }

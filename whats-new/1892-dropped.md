@@ -1,0 +1,1 @@
+- When you choose Won't do for an item, the hopper now keeps its rejected label in step. Take the label off the issue to run the item again.
