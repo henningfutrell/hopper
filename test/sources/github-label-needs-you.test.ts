@@ -1,7 +1,7 @@
 // An item that needs a person carries no end label (issue #1892, milestone 2). Its job waits on a question, a proposal, a
 // research report or a person to pick up the parked job: the job is still the item's, and no report wrote an end label. The
-// ledger says so, not the labels: the label mirror takes an end label left on off. A hand-off is not judged: its job failed,
-// and its report may have put `hopper:failed` on; the labels decide, as before.
+// ledger says so, not the labels: the label mirror takes an end label left on off. A hand-off's job failed: once its
+// failure was reported as failed, `hopper:failed` is its label, as a failed item's (part 3); before, the labels decide.
 import { describe, expect, it } from 'vitest';
 import { FAILED, PR_READY } from '../../src/sources/github/discover.ts';
 import { HANDOFF_WAIT, type WorkItem } from '../../src/domain/work-items.ts';
@@ -26,7 +26,33 @@ describe('an item that needs a person: no end label (issue #1892)', () => {
     expect(edits()).toEqual([]);
   });
 
-  it('a hand-off: not judged, its hopper:failed stays and the labels decide', async () => {
+  it('a hand-off whose failure was reported: hopper:failed is its label, Intake says failed, and taking it off is a Run again', async () => {
+    const { gh, source, reason, edits, later } = setup({ [url(1)]: { ...waiting(1, HANDOFF_WAIT), failedJobId: 'job-1' }, [url(2)]: { ...waiting(2, HANDOFF_WAIT), failedJobId: 'job-2' } }, { reported: [url(1), url(2)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:failed'] });
+    await source.discover();
+    expect(reason(1)?.reason).toBe(FAILED);
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:failed']);
+    gh.removeLabel(REPO, 2, 'hopper:failed');
+    later(60_000);
+    await source.discover();
+    expect(edits()).toEqual([expect.objectContaining({ key: url(2), from: 'needs_you', label: 'hopper:failed', means: 'run_again' })]);
+  });
+
+  it('a hand-off reported moments ago: not judged yet, the labels decide, so hopper:failed taken off then is a Run again', async () => {
+    const handoff = { ...waiting(1, HANDOFF_WAIT), failedJobId: 'job-1', eventAt: '2026-10-18T11:59:30.000Z' };
+    const { gh, source, reason, later } = setup({ [url(1)]: handoff }, { reported: [url(1)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:failed'] });
+    await source.discover();
+    expect(reason(1)?.reason).toBe(FAILED);
+    gh.removeLabel(REPO, 1, 'hopper:failed');
+    later(10_000);
+    await source.discover();
+    expect(reason(1)?.reason).not.toBe(FAILED);
+  });
+
+  it('a hand-off whose failure was not reported: not judged, the labels decide', async () => {
     const { gh, source, reason, edits } = setup({ [url(1)]: { ...waiting(1, HANDOFF_WAIT), failedJobId: 'job-1' } });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:failed'] });
     await source.discover();

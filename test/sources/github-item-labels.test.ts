@@ -50,6 +50,14 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff({ state: 'needs_you', waitingOn: 'a question' }, ['hopper', 'hopper:pr-ready'], ['hopper'])).toBeUndefined();
   });
 
+  it('a hand-off (issue #1892): hopper:failed once its job\'s failure was reported as failed; not judged before', () => {
+    const handoff = { state: 'needs_you', eventState: 'needs_you', waitingOn: HANDOFF_WAIT } as const;
+    expect(labelsFor(handoff, { failureReported: true })).toEqual({ allowed: ['hopper:failed'], add: 'hopper:failed' });
+    expect(labelsFor(handoff)).toBeUndefined();
+    expect(labelDrift(handoff, ['hopper', 'hopper:pr-ready'], { failureReported: true })).toEqual({ remove: ['hopper:pr-ready'], add: ['hopper:failed'] });
+    expect(labelTakenOff(handoff, ['hopper', 'hopper:failed'], ['hopper'], { failureReported: true })).toBe('hopper:failed');
+  });
+
   it('a request card (issue #1892): no end label, and none to take off', () => {
     expect(labelsFor({ state: 'waiting_for_approval' })).toEqual({ allowed: [] });
     expect(labelDrift({ state: 'waiting_for_approval' }, ['hopper', 'hopper:done'])).toEqual({ remove: ['hopper:done'], add: [] });

@@ -3,7 +3,7 @@
 // the discover already listed, and the ledger: no call of its own. A drift is logged once and counted. It is corrected:
 // the labels change through the GitHub outbox (act `mirror`, tagged with the state), coalesced, once, so `hopper:pr-ready`
 // comes off an item the item reconciler blocked, an end label comes off an item a job works, PR open gets its waiting
-// label, a failed item whose failure was reported as failed gets `hopper:failed` (`failureReported`, issue #1892), a partly done item with parts left loses its end labels (`partsLeft`), and so does an item whose job waits on a person (not a hand-off). A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
+// label, a failed item whose failure was reported as failed gets `hopper:failed` (`failureReported`, issue #1892), a partly done item with parts left loses its end labels (`partsLeft`), and so does an item whose job waits on a person; a hand-off whose failure was reported gets `hopper:failed`. A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
 // last moments, that has outbox rows not sent, or that is given back now or was in the last moments (`busy`), is not judged:
 // the move's own writes are on their way. The source passes no issue its discover takes as a new job (issue #1954): that job
 // moves the item.
@@ -59,7 +59,7 @@ export function createLabelMirror(o: {
   let edited = new Set<string>();
   /** What the item's labels are judged by besides its state: asked only for the state that needs it. */
   const facts = (key: string, item: WorkItem): LabelFacts =>
-    item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' ? { failureReported: o.failureReported?.(key) ?? false }
+    item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' || item.state === 'needs_you' ? { failureReported: o.failureReported?.(key) ?? false }
       : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : {};
   return {
     start(listed, at) {
