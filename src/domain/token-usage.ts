@@ -82,3 +82,72 @@ export function sumTokenUse(uses: readonly ModelTokenUse[]): TokenTotals {
   }
   return total;
 }
+
+/**
+ * One row of the token ledger: one model's use in one agent session of one job, as last read. `machineId`, `laneId`: where
+ * it was read last; `account`: who that machine's agent tool was last read signed in as, then (the label only, never a token).
+ */
+export interface TokenLedgerEntry extends ModelTokenUse { jobId: string; session: string; readAt: string; machineId?: string; laneId?: string; account?: string; first?: string; last?: string }
+
+/** Where and when a session's use was read: its machine and lane, and that machine's account then. */
+export interface TokenReadAt { readAt: string; machineId?: string | undefined; laneId?: string | undefined; account?: string | undefined }
+
+export interface TokenLedgerRepository {
+  /** A session's use, in place of the one read before: the log only grows, so the last read is the whole session. */
+  put(jobId: string, session: string, use: SessionTokenUse, at: TokenReadAt): void;
+  /** The rows of one job, or of the sessions whose last counted message is at or after `since`; oldest first. */
+  list(q?: { jobId?: string; since?: string }): TokenLedgerEntry[];
+}
+
+/** What a rollup groups the ledger by. `day`: the UTC day of a session's last counted message. */
+export const TOKEN_GROUPS = ['job', 'issue', 'repo', 'machine', 'lane', 'account', 'model', 'day'] as const;
+export type TokenGroup = (typeof TOKEN_GROUPS)[number];
+
+/** One group of a rollup: its key (`(none)` when the ledger does not say), its totals and how many jobs it holds. */
+export interface TokenRollupRow extends TokenTotals { key: string; jobs: number }
+
+/** What a rollup needs to know of a job: its repository and its issue (`owner/name#N`). */
+export interface JobTokenFacts { repo?: string | undefined; issue?: string | undefined }
+
+const NONE = '(none)';
+
+/** The ledger's rows summed per group, the costliest first, then by key. */
+export function tokenRollup(entries: readonly TokenLedgerEntry[], by: TokenGroup, facts: (jobId: string) => JobTokenFacts | undefined): TokenRollupRow[] {
+  const keyOf = (e: TokenLedgerEntry): string | undefined => {
+    switch (by) {
+      case 'job': return e.jobId;
+      case 'issue': return facts(e.jobId)?.issue;
+      case 'repo': return facts(e.jobId)?.repo;
+      case 'machine': return e.machineId;
+      case 'lane': return e.laneId;
+      case 'account': return e.account;
+      case 'model': return e.model;
+      case 'day': return (e.last ?? e.readAt).slice(0, 10);
+    }
+  };
+  const groups = new Map<string, { uses: ModelTokenUse[]; jobs: Set<string> }>();
+  for (const e of entries) {
+    const key = keyOf(e) ?? NONE;
+    const g = groups.get(key) ?? { uses: [], jobs: new Set<string>() };
+    g.uses.push(e);
+    g.jobs.add(e.jobId);
+    groups.set(key, g);
+  }
+  return [...groups].map(([key, g]) => ({ key, ...sumTokenUse(g.uses), jobs: g.jobs.size }))
+    .sort((a, b) => b.costUsd - a.costUsd || a.key.localeCompare(b.key));
+}
+
+/** A job's token use, as its page and `GET /api/jobs/:id/tokens` show it: totals, per model, and where it was read. */
+export interface JobTokenView { jobId: string; total: TokenTotals; models: (TokenTotals & { model: string })[]; sessions: number; machines: string[]; accounts: string[]; first?: string; last?: string }
+
+/** One job's ledger rows as its view. */
+export function jobTokenView(jobId: string, entries: readonly TokenLedgerEntry[]): JobTokenView {
+  const firsts = entries.flatMap((e) => (e.first ? [e.first] : [])).sort(), lasts = entries.flatMap((e) => (e.last ? [e.last] : [])).sort();
+  const distinct = (xs: (string | undefined)[]): string[] => [...new Set(xs.filter((x): x is string => x !== undefined))].sort();
+  return {
+    jobId, total: sumTokenUse(entries), sessions: new Set(entries.map((e) => e.session)).size,
+    models: tokenRollup(entries, 'model', () => undefined).map(({ key, jobs: _, ...t }) => ({ model: key, ...t })),
+    machines: distinct(entries.map((e) => e.machineId)), accounts: distinct(entries.map((e) => e.account)),
+    ...(firsts[0] ? { first: firsts[0] } : {}), ...(lasts.length > 0 ? { last: lasts.at(-1)! } : {}),
+  };
+}
