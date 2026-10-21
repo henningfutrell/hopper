@@ -21951,6 +21951,31 @@ Milestone 2, part 3: the first of the states part 1 left to the labels. Before i
 corrected; `hopper:failed` taken off by hand is one Run again; a failure not reported as failed, or a reverted culprit, is
 not judged), `test/sources/github-item-labels.test.ts` (`labelsFor` of a failed item).
 
+### A done item's label mirrors the ledger (issue #1892 part 4, 2026-10-21)
+
+Milestone 2, part 4: the done state. Before it, a done item's Intake reason (`DONE_OPEN`, "done, but the issue is still
+open") came from `hopper:done` on its issue, and the mirror did not judge it.
+
+- **`labelsFor` judges a done item once its pull request merged as the whole item.** The item wants `hopper:done`, and no
+  other end label. It is judged only when its pull request merged (`pullRequestState: merged`) as the whole item
+  (`wholeMerged`): the follow put `hopper:done` on with that merge. A done item that a job's end made done (a direct job,
+  an issue closed as complete, done by hand, operator-led work), or that a read of GitHub made done, is not judged: its
+  report set its labels by what the issue said then. A merged part is partly done, not done, and is not judged either.
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item `DONE_OPEN`, whatever end labels its issue carries;
+  the mirror corrects them (a stale `hopper:pr-ready` comes off, a missing `hopper:done` goes on). So `origin.ts`
+  (`awaitingBatch`, `closePromoted`, the reopened card) and `batch-wait.ts` start from the ledger's reason for such an
+  item, not from the label.
+- **`hopper:done` taken off by hand is a Run again**, as for the other judged states: one `work_item.label_edited` with
+  `from: done`, Intake takes the item again, and the label is not put back. Before, a person who took `hopper:done` off
+  made the issue a candidate again too; now it is a person's event, recorded. The hopper's own removal (the Approve of a
+  reopened card) is no label edit: the card moved the item out of done first.
+
+**Left to the labels:** a done item with no whole merge, dropped, partly done, needs you, waiting for approval.
+
+**Verification:** `test/sources/github-label-edit.test.ts` (a done item's reason from the ledger and its labels corrected;
+`hopper:done` taken off by hand is one Run again; a done item with no whole merge is not judged),
+`test/sources/github-item-labels.test.ts` (`labelsFor` of a done item).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

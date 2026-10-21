@@ -26,6 +26,13 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff({ state: 'failed', eventState: 'failed' }, ['hopper', 'hopper:failed'], ['hopper'], { failureReported: true })).toBe('hopper:failed');
   });
 
+  it('done (issue #1892): hopper:done once its pull request merged as the whole item; not judged else', () => {
+    expect(labelsFor({ state: 'done', pullRequestState: 'merged', wholeMerged: true })).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
+    expect(labelsFor({ state: 'done', pullRequestState: 'merged' })).toBeUndefined();
+    expect(labelsFor({ state: 'done', wholeMerged: true })).toBeUndefined();
+    expect(labelTakenOff({ state: 'done', pullRequestState: 'merged', wholeMerged: true }, ['hopper', 'hopper:done'], ['hopper'])).toBe('hopper:done');
+  });
+
   it('the other states are not judged', () => {
     for (const state of ['waiting_for_approval', 'needs_you', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(labelsFor({ state })).toBeUndefined();
   });

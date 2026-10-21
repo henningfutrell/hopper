@@ -5,10 +5,12 @@
 // `hopper:pr-ready`, or `hopper:partly-done` for a part (either is allowed; the one to add follows `part`, issue #1933); a blocked item carries `hopper:blocked`, or `hopper:pr-closed`
 // when its pull request was closed without a merge; a failed item carries `hopper:failed` once its job's failure was reported
 // as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits, and not a
-// culprit whose merge was reverted (failed by its landing, not by its job). Every other state is not judged. Pure: no I/O, no clock.
+// culprit whose merge was reverted (failed by its landing, not by its job); a done item carries `hopper:done` once its pull
+// request merged as the whole item (`wholeMerged`): the follow put it on with the merge. Not a done item a job's end or a read
+// of GitHub made done: its report set the labels by what the issue said then. Every other state is not judged. Pure: no I/O, no clock.
 import type { BlockedCause } from '../../domain/item-lifecycle.ts';
 import type { WorkItem, WorkItemState } from '../../domain/work-items.ts';
-import { END_LABELS, LABEL_BLOCKED, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
+import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 
 /** The end labels an item's state allows, and the one to add when none of them is on (absent: none is needed). */
 export interface WantedLabels { allowed: readonly string[]; add?: string }
@@ -19,8 +21,8 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
  */
 export interface LabelFacts { part?: boolean; failureReported?: boolean }
 
-/** What the labels of an item are judged by: its state, its block's cause, and whether its events alone put it there. */
-export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState'>>;
+/** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, and its merge. */
+export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged'>>;
 
 /** The end labels `item`'s state wants on its issue; undefined: the state is not judged. */
 export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLabels | undefined {
@@ -32,6 +34,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       return { allowed: [label], add: label };
     }
     case 'failed': return item.eventState === 'failed' && facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
+    case 'done': return item.pullRequestState === 'merged' && item.wholeMerged === true ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     default: return undefined;
   }
 }
