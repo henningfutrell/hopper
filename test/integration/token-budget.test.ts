@@ -47,11 +47,12 @@ describe('the token budget', () => {
   it('is off by default; an admin changes it, and the change is an event', async () => {
     const a = await boot(createFakeHerdrClient({ session: 'jh-test', turns: [] }));
     const token = await a.login();
-    expect((await a.api('GET', '/api/token-budget')).body).toEqual({ jobTokens: 0, jobCostUsd: 0 });
+    const off = { jobTokens: 0, jobCostUsd: 0, dayTokens: 0, dayCostUsd: 0, repoDayTokens: 0, repoDayCostUsd: 0 };
+    expect((await a.api('GET', '/api/token-budget')).body).toEqual(off);
     const r = await setBudget(a, token, { jobCostUsd: 5 });
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ jobTokens: 0, jobCostUsd: 5 });
-    expect((await a.api('GET', '/api/token-budget')).body).toEqual({ jobTokens: 0, jobCostUsd: 5 });
+    expect(r.body).toEqual({ ...off, jobCostUsd: 5 });
+    expect((await a.api('GET', '/api/token-budget')).body).toEqual({ ...off, jobCostUsd: 5 });
     expect((await a.events('types=token_budget.settings_changed'))[0]!.data).toMatchObject({ from: { jobTokens: 0, jobCostUsd: 0 }, to: { jobTokens: 0, jobCostUsd: 5 } });
     expect((await setBudget(a, token, { jobTokens: -1 })).status).toBe(400);
     expect((await setBudget(a, token, {})).status).toBe(400);
@@ -102,5 +103,57 @@ describe('the token budget', () => {
     await waitFor(() => herdr.prompts.length > 0, { what: 'the prompt sent' });
     await a.user().engine.checkpoints.take(job.id);
     expect((await a.job(job.id)).status).toBe('running');
+  });
+});
+
+// Part 5: the day budgets. What the user's jobs spent today (UTC), in all or per repository, is read in each Decision; a
+// waiting job is held while a day cap is reached, and starts once an admin raises it. The spend is put in the ledger as a
+// checkpoint puts it.
+describe('the day budgets', () => {
+  const testItem = (repo: string) => ({ repo });
+  /** A job of a repository whose run ended: it waits for its pull request (`finished`). */
+  const ran = (a: TestApp, id: string) => a.waitForStatus(id, 'finished', 5000);
+  /** 1,610 tokens of today, in the ledger of a job of owner/a that ended. */
+  async function spent(a: TestApp): Promise<void> {
+    const job = await a.pull({ op: 'echo' }, testItem('owner/a'));
+    await ran(a, job.id);
+    const now = new Date().toISOString();
+    a.user().store.tokenLedger.put(job.id, 'session-1', { models: [{ model: 'claude-opus-5-5', turns: 1, input: 10, output: 100, cacheRead: 1000, cacheWrite: 500 }], first: now, last: now }, { readAt: now });
+  }
+
+  it('the settings keep each day cap; a setting from before them reads them off', async () => {
+    const a = await boot(createFakeHerdrClient({ session: 'jh-test', turns: [] }));
+    const token = await a.login();
+    const off = { jobTokens: 0, jobCostUsd: 0, dayTokens: 0, dayCostUsd: 0, repoDayTokens: 0, repoDayCostUsd: 0 };
+    expect((await a.api('GET', '/api/token-budget')).body).toEqual(off);
+    const r = await setBudget(a, token, { dayTokens: 9, repoDayCostUsd: 1.5 });
+    expect(r.body).toEqual({ ...off, dayTokens: 9, repoDayCostUsd: 1.5 });
+    expect((await a.events('types=token_budget.settings_changed'))[0]!.data).toMatchObject({ from: off, to: { ...off, dayTokens: 9, repoDayCostUsd: 1.5 } });
+    expect((await setBudget(a, token, { repoDayTokens: 1.5 })).status).toBe(400);
+  });
+
+  it('holds every waiting job once the day\'s token budget is used; raised, they start', async () => {
+    const a = await boot(createFakeHerdrClient({ session: 'jh-test', turns: [] }));
+    const token = await a.login();
+    await spent(a);
+    await setBudget(a, token, { dayTokens: 1000 });
+    const job = await a.pull({ op: 'echo' }, testItem('owner/b'));
+    const held = await a.waitForStatus(job.id, 'held', 5000);
+    expect(held.holdReason).toMatch(/^Held by the token budget: the jobs used the day's token budget of 1,000 tokens on \d{4}-\d{2}-\d{2} \(UTC\)\./);
+    await setBudget(a, token, { dayTokens: 2000 });
+    await ran(a, job.id);
+  });
+
+  it('holds only the jobs of a repository whose day\'s budget is used', async () => {
+    const a = await boot(createFakeHerdrClient({ session: 'jh-test', turns: [] }));
+    const token = await a.login();
+    await spent(a);
+    await setBudget(a, token, { repoDayTokens: 1000 });
+    const same = await a.pull({ op: 'echo' }, testItem('owner/a'));
+    const other = await a.pull({ op: 'echo' }, testItem('owner/b'));
+    await ran(a, other.id);
+    expect((await a.waitForStatus(same.id, 'held', 5000)).holdReason).toMatch(/^Held by the token budget: the jobs of owner\/a used its day's token budget of 1,000 tokens on /);
+    await setBudget(a, token, { repoDayTokens: 0 });
+    await ran(a, same.id);
   });
 });

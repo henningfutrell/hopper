@@ -99,6 +99,12 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
       continue;
     }
+    const budget = inputs.budgetHeld?.find((h) => h.jobId === job.id);
+    if (budget) {
+      // Issue #2302 part 5: a day budget reached holds what starts and what goes on, until the next UTC day or a raise.
+      hold.push({ jobId: job.id, reason: budget.reason });
+      continue;
+    }
     const sandboxes = job.pendingAnswer === undefined ? inputs.sandboxesHeld?.find((h) => h.jobId === job.id) : undefined;
     if (sandboxes) {
       // Issue #1471: a job starts only once the sandboxes its prompt names are approved and ready, never to stop mid-run.
