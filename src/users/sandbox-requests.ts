@@ -26,6 +26,8 @@ export interface SandboxLauncher {
   needStep: Sandboxes['needStep'];
   /** Why no step can run for the user now; a container target is offline while it is so (issue #865). */
   stepProblem: Sandboxes['stepProblem'];
+  /** "sandbox host <name> is offline" while none of the user's sandbox host is online (issue #2272): a step waits. */
+  hostOffline: Sandboxes['hostOffline'];
   steps: NeedStepRepository;
   ran(step: string): boolean;
   /** The need boxes another live hopper runs now, by name (issue #1954): the vault's reconcile pass leaves their tokens bound. */

@@ -21,6 +21,7 @@ export function machineBadges(m: MachineView, now: number): MachineBadge[] {
     ...warn(m.template?.waiting, 'waiting for template approval'),
     ...warn(m.leaving, 'leaving'),
     ...warn(m.drained, 'drained'),
+    ...(m.sandboxHost !== undefined ? [{ status: 'sandbox host', tone: 'muted' as const }] : []),
     ...warn(unhealthyLaneLines(m, now).length > 0, 'unhealthy lane'),
     ...warn(offNetwork(m), 'off-network'),
     ...warn(m.herdrProblem, 'herdr outdated'),

@@ -5,9 +5,12 @@
 //   pods in a namespace, through the Kubernetes API, with no socket.
 // - On a client target: the remote runtime (remote.ts), that machine's own Podman (else Docker) through its client.
 //   The box is on that machine's network.
+// - With a sandbox host set (issue #2272, src/domain/sandbox-host.ts): only on the first of its machines that is online,
+//   never on another one; none online is "sandbox host <name> is offline".
 import { statSync } from 'node:fs';
 import type { ContainerRuntime, RuntimeKind, RuntimeRelay } from '../domain/sandboxes.ts';
 import type { Egress } from './egress.ts';
+import { sandboxHostOffline } from '../domain/sandbox-host.ts';
 import { createDockerRuntime } from './docker.ts';
 import { createKubernetesRuntime } from './kubernetes.ts';
 import { createPodmanRuntime } from './podman.ts';
@@ -92,25 +95,53 @@ export interface Placements {
    * on the first of the user's client targets dialled in now with a runtime there. Undefined: nowhere now. `egress`: a
    * read-only box there joins its internal network and reaches out through its proxy (issue #849); only beside the hopper.
    */
-  forCheck(userId: string): Promise<{ machine: string; runtime: ContainerRuntime; network: string; egress?: Egress } | undefined>;
+  forCheck(userId: string): Promise<Placed | undefined>;
+  /**
+   * Where a sandbox of the user starts now, or why none can. With a sandbox host set (issue #2272): the first of its
+   * machines whose runtime answers, never another; none, `offline` says so. Not set: as `forCheck`.
+   */
+  where(userId: string): Promise<Placed | { problem: string; offline?: true } | undefined>;
 }
 
-export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; clients?: ClientTargets; egress?: Egress }): Placements {
+/** Where a box starts: the machine, its runtime and network, and beside the hopper the egress of a read-only box. */
+export interface Placed { machine: string; runtime: ContainerRuntime; network: string; egress?: Egress }
+
+/** `hosts`: the user's sandbox host, first first (issue #2272); empty or absent: none set. */
+export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; clients?: ClientTargets; egress?: Egress; hosts?: (userId: string) => readonly string[] }): Placements {
   // Made at each look: a machine that joined again under the same name has a new link key.
   const remote = (userId: string, machine: string): ContainerRuntime | undefined => {
     const target = o.clients?.(userId, machine);
     return target && createRemoteRuntime(machine, target.relay);
   };
+  const beside = (runtime: ContainerRuntime): Placed => ({ machine: LOCAL, runtime, network: o.network, ...(o.egress ? { egress: o.egress } : {}) });
+  /** The first machine of the sandbox host whose runtime answers now; none: offline. */
+  const onHost = async (userId: string, hosts: readonly string[]): Promise<Placed | { problem: string; offline: true }> => {
+    for (const machine of hosts) {
+      const runtime = machine === LOCAL ? o.local : o.clients?.dialledIn(userId).includes(machine) ? remote(userId, machine) : undefined;
+      if (runtime && (await runtime.problem()) === undefined) return machine === LOCAL ? beside(runtime) : { machine, runtime, network: REMOTE_NETWORK };
+    }
+    return { problem: sandboxHostOffline(hosts), offline: true };
+  };
+  const forCheck = async (userId: string): Promise<Placed | undefined> => {
+    const hosts = o.hosts?.(userId) ?? [];
+    if (hosts.length > 0) {
+      const at = await onHost(userId, hosts);
+      return 'problem' in at ? undefined : at;
+    }
+    if (o.local) return beside(o.local);
+    for (const machine of o.clients?.dialledIn(userId) ?? []) {
+      const runtime = remote(userId, machine);
+      if (runtime && (await runtime.problem()) === undefined) return { machine, runtime, network: REMOTE_NETWORK };
+    }
+    return undefined;
+  };
   return {
     local: o.local,
     runtimeOf: (userId, machine) => (machine === LOCAL ? o.local : remote(userId, machine)),
-    async forCheck(userId) {
-      if (o.local) return { machine: LOCAL, runtime: o.local, network: o.network, ...(o.egress ? { egress: o.egress } : {}) };
-      for (const machine of o.clients?.dialledIn(userId) ?? []) {
-        const runtime = remote(userId, machine);
-        if (runtime && (await runtime.problem()) === undefined) return { machine, runtime, network: REMOTE_NETWORK };
-      }
-      return undefined;
+    forCheck,
+    async where(userId) {
+      const hosts = o.hosts?.(userId) ?? [];
+      return hosts.length > 0 ? onHost(userId, hosts) : forCheck(userId);
     },
   };
 }
