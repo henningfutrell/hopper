@@ -16,7 +16,7 @@
 // command written since takes it again.
 //
 // Intake reads the ledger (issue #1892): for an issue whose work item is in a state the label mirror judges (a job at work,
-// PR open, blocked, failed as reported, done by a whole merge; `labelsFor`), its end-label reason is the ledger's (`ledgerReason`), whatever end labels the issue
+// PR open, blocked, failed as reported, done by a whole merge, partly done with parts left, needs you but a hand-off; `labelsFor`), its end-label reason is the ledger's (`ledgerReason`), whatever end labels the issue
 // carries — the mirror corrects them. The labels decide only for an issue the hopper does not know, or a state the mirror
 // does not judge yet. An item a person asked to run again by taking its end label off (`runAgainAsked`, or `edited` in this
 // pass) has no such reason, so it is taken again.
@@ -102,6 +102,8 @@ export interface DiscoverScope {
   part?: (key: string) => boolean;
   /** Whether a failed item's failure was reported to its issue as failed (`hopper:failed`). */
   failureReported?: (key: string) => boolean;
+  /** Whether a partly done item's merged part leaves parts to run: no end label, so Intake takes it again. */
+  partsLeft?: (key: string) => boolean;
   /** The issues whose end label a person took off by hand, found in this pass (`work_item.label_edited`): no reason from the ledger. */
   edited?: ReadonlySet<string>;
 }
@@ -112,7 +114,7 @@ export const isAssignedTo = (i: Pick<GitHubIssue, 'assignees'>, login: string): 
 
 /**
  * Intake's end-label reason from the ledger (issue #1892), for an item in a state the label mirror judges: PR open, its pull
- * request (or its part) waits for review; blocked, why; failed, as its failure was reported; done, its issue still open. `{}`: no such reason (a job at work, or a person's Run again).
+ * request (or its part) waits for review; blocked, why; failed, as its failure was reported; done, its issue still open. `{}`: no such reason (a job at work, a part merged with parts left, or a person's Run again).
  * Undefined: the ledger does not decide (no item, or a state the mirror does not judge), so the labels do.
  */
 export function ledgerReason(item: WorkItem | undefined, facts: LabelFacts): { reason?: string } | undefined {
@@ -217,7 +219,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
   const reasons = new Map<string, { reason: string; action?: IntakeOutcome['action'] }>();
   const candidates: GitHubIssue[] = [];
   for (const i of issues) {
-    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false });
+    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false, partsLeft: scope.partsLeft?.(i.url) ?? false });
     const byLabel = labelReason(i, config.hopperName, ledger);
     if (byLabel) reasons.set(i.url, { reason: byLabel, ...(LABEL_ACTION[byLabel] ? { action: LABEL_ACTION[byLabel] } : {}) });
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });
