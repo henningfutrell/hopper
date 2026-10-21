@@ -419,8 +419,9 @@ export interface DecisionInputs {
    * Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it.
    * `avoidLanes` (issue #2234): for a rerun of a job that failed for its lane's fault, that lane; it goes elsewhere when it can. Absent: none.
    * `parkingExecutors` (issue #2291): the executors that park, whose jobs a memory pause may name. Absent: none, and on Decisions stored before it.
+   * `memoryPausedAt` (issue #2291): per machine, when this hopper last paused a job there for memory, as the paused job may be parked and not an input.
    */
-  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
+  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 

@@ -105,6 +105,9 @@ describe('a memory pause (issue #2291)', () => {
     expect(decide(inputs({ machines: [vm(1)], ...two, waiting: [older] }), 'd1').memoryPause?.map((p) => p.jobId)).toEqual(['r2']);
     const inFlight = { ...two, running: [run('r1', 1, 30), run('r2', 2, 5, { memoryPaused: { at: ago(1), machineId: 'local', availableBytes: GIB, floorBytes: 1.4 * GIB } })] };
     expect(decide(inputs({ machines: [vm(1)], ...inFlight }), 'd1').memoryPause).toBeUndefined();
+    // Parked and not queued again yet, the paused job is no input: the hopper's own record of the pause counts.
+    expect(decide(inputs({ machines: [vm(1)], ...two, memoryPausedAt: { local: ago(1) } }), 'd1').memoryPause).toBeUndefined();
+    expect(decide(inputs({ machines: [vm(1)], ...two, memoryPausedAt: { local: ago(3) } }), 'd1').memoryPause).toHaveLength(1);
   });
 
   it('never a job whose executor cannot park, or one with no agent session to resume', () => {

@@ -70,7 +70,7 @@ export function memoryWait(states: readonly { machine: MachineSnapshot; memory?:
  */
 export function memoryPauses(
   machines: readonly MachineSnapshot[], lanes: readonly Lane[], running: readonly Job[], waiting: readonly Job[],
-  parking: readonly string[] | undefined, atIso: string, taken: ReadonlySet<JobId>,
+  parking: readonly string[] | undefined, atIso: string, taken: ReadonlySet<JobId>, pausedAt: Readonly<Record<string, string>> = {},
 ): MemoryPausePlan[] {
   if (!parking?.length) return [];
   const at = Date.parse(atIso);
@@ -78,7 +78,8 @@ export function memoryPauses(
   for (const m of machines) {
     const f = floorOf(m);
     if (!f || !m.online || f.availableBytes >= f.floorBytes) continue;
-    if ([...running, ...waiting].some((j) => j.memoryPaused?.machineId === m.id && at - Date.parse(j.memoryPaused.at) < MEMORY_PAUSE_EVERY_MS)) continue;
+    const recent = (iso: string | undefined): boolean => iso !== undefined && at - Date.parse(iso) < MEMORY_PAUSE_EVERY_MS;
+    if (recent(pausedAt[m.id]) || [...running, ...waiting].some((j) => j.memoryPaused?.machineId === m.id && recent(j.memoryPaused.at))) continue;
     const options = running.flatMap((j) => {
       if (j.status !== 'running' || j.startedAt === undefined || j.agentSession === undefined || j.preempted !== undefined || taken.has(j.id) || !parking.includes(j.spec.executor)) return [];
       const lane = lanes.find((l) => l.jobId === j.id && l.state === 'busy' && l.machineId === m.id);

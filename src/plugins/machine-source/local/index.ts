@@ -15,7 +15,7 @@ import { createLocalMachineSource } from '../../../machines/index.ts';
 import { ensureHerdrSession, sessionProblem } from '../../../executors/herdr/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 import { diskLowOf, diskLowShape, memoryFloorOf, memoryFloorShape, elbowInsOption, reservedLanesOption, sweepOf, sweepShape, usageLimitsOf, usageLimitsOption, windowsOf, windowsOption, workTreeOption, workTreesOption } from '../attached.ts';
-import type { UsageLimitPair } from '../../../domain/usage.ts';
+import type { UsageLimitPair } from '../../../domain/usage.ts'; import type { ResourceReading } from '../../../domain/types.ts';
 
 export interface LocalOptions {
   lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors?: string[]; session?: string; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
@@ -27,8 +27,8 @@ export type StartSession = (session: string, userEnv: Readonly<Record<string, st
 
 export const startHerdrSession: StartSession = (session, userEnv) => ensureHerdrSession({ bin: 'herdr', session, userEnv });
 
-/** The plugin. `start` (tests, `UserSeams.herdrSession`) replaces starting the herdr session. */
-export function localPlugin(start: StartSession = startHerdrSession): PluginDefinition<'machine-source', LocalOptions> {
+/** The plugin. `start` (tests, `UserSeams.herdrSession`) replaces starting the herdr session; `resources` (`UserSeams.localResources`) the meter. */
+export function localPlugin(start: StartSession = startHerdrSession, resources?: () => ResourceReading | undefined): PluginDefinition<'machine-source', LocalOptions> {
   return {
     id: 'local',
     role: 'machine-source',
@@ -52,7 +52,7 @@ export function localPlugin(start: StartSession = startHerdrSession): PluginDefi
       id: ctx.instanceName, maxLanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
       ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), ...usageLimitsOf(o), ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
       ...(o.workTrees !== undefined ? { workTrees: o.workTrees } : {}),
-      diskLow: () => diskLowOf(o), sweep: () => sweepOf(o), memoryFloor: () => memoryFloorOf(o), logger: ctx.logger,
+      diskLow: () => diskLowOf(o), sweep: () => sweepOf(o), memoryFloor: () => memoryFloorOf(o), logger: ctx.logger, ...(resources ? { resources } : {}),
       executors: o.executors ? () => ctx.executors().filter((x) => o.executors!.includes(x)) : ctx.executors,
       ...(o.session ? {
         session: o.session,

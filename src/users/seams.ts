@@ -51,6 +51,8 @@ export interface UserSeams {
   hostKeyOffer?: (ssh: string) => Promise<HostKeyOffer>;
   /** Replaces starting this machine's herdr session (issue #260): when it is added, and while it is a machine. */
   herdrSession?: (session: string) => Promise<void>;
+  /** Replaces this machine's resource meter (issue #2291): the memory the memory floor reads. */
+  localResources?: () => import('../domain/types.ts').ResourceReading | undefined;
   /** The job stream (issue #613): above how many bytes an event goes out as a pointer (default INLINE_MAX). */
   jobStream?: { inlineMax?: number };
   /** Replaces the TL;DR's model (issue #569; default Claude Haiku through the `claude` CLI). */
@@ -74,7 +76,7 @@ export function withSeams(seams: UserSeams, outbound: Outbound) {
     if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr, seams.herdrSessions);
     if (p.id === 'kubernetes' && seams.kubernetes) return kubernetesPlugin({ pods: seams.kubernetes, ...(seams.herdr ? { herdr: seams.herdr } : {}) });
     if (p.id === 'kubernetes-cluster' && seams.kubernetes) return kubernetesMachinePlugin(seams.kubernetes);
-    if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
+    if (p.id === 'local' && (seams.herdrSession || seams.localResources)) return localPlugin(seams.herdrSession, seams.localResources);
     if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
     if (p.id === 'grokbot-routine') return grokbotRoutinePlugin({ ...seams.grokbot, outbound });
     return p;

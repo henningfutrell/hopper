@@ -145,7 +145,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   plans.push(...gone.map((id) => planGoneLanes(id, lanes)));
   const drained = new Set(plans.flatMap((p) => p.drain));
   const preempts = preempt(ordered, placed.wait, inputs.running, lanes, states, drained, inputs.preemption, inputs.at, inputs.priorityLanes);
-  const pauses = memoryPauses(machines, lanes, inputs.running, inputs.waiting, inputs.parkingExecutors, inputs.at, new Set(preempts.map((p) => p.jobId)));
+  const pauses = memoryPauses(machines, lanes, inputs.running, inputs.waiting, inputs.parkingExecutors, inputs.at, new Set(preempts.map((p) => p.jobId)), inputs.memoryPausedAt);
 
   reasons.push(
     `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held, ${placed.wait.length} waiting for a lane`,
