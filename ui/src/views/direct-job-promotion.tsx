@@ -154,7 +154,7 @@ export function JobPromotion({ directJobId }: { directJobId: string }) {
   if (!d) return null;
   return (
     <div data-slot="job-promotion" className="grid gap-1.5 border-t pt-2">
-      <p className="text-xs text-muted-foreground">Direct job: <a className="underline" href="#direct-jobs">{d.title}</a></p>
+      <p className="text-xs text-muted-foreground">Direct job: <a className="underline" href="#ask">{d.title}</a></p>
       <Promotion d={d} canOperate={canOperate} onChanged={() => { void load(); }} />
     </div>
   );

@@ -19115,6 +19115,28 @@ Part 1: Jobs, Pull requests, Events, Failures, Search. Part 2:
   shows the open section's link. A **jump list** above them names every section by its group. A section in no group
   fails the typecheck.
 
+### Plain language in the UI (issue #2375, 2026-10-21)
+
+Requirement: Decisions, Events and Questions read without the hopper's internals; labels a new reader does not know are
+plain words. The terms stay in the glossary and the code; only the UI words change.
+
+- **Decisions** is a table: time, the job it is about (its issue and title, `+N more` when it is about more), its kind
+  (what woke the decider: `regular check` for a tick, else the trigger's words) and the **outcome** as a sentence
+  (`ui/src/model/decisions.ts`: "started 1 job, held 3: awaiting acceptance"; the reason when the holds share one, else
+  how many reasons). The raw ids, starts, holds, lane plans, divergences, reasons and raw inputs open below the row.
+- **Events** is a table: time, job, event type and message (`detailOf`), 30 rows to a page. **Filter chips** by event
+  type — its family, the part before the dot, each with its count (`ui/src/model/event-families.ts`) — beside the text
+  filter. A row opens its detail: the ids and the data, in monospace. Copy takes every event the filters show.
+- **Questions**: a card's escalation trail is folded behind "N model answers"; the reason banner, the question and the
+  answer box stay in view.
+- **Ask hopper** (`#ask`, `ui/src/views/ask.tsx`) is one nav entry in place of Direct jobs and Direct queries, with two
+  tabs: Run a job (`#ask`) and Ask a question (`#ask/question`). `#direct-jobs` and `#direct-queries`, with or without an
+  id after them, still open the matching tab (`MOVED` in `ui/src/app/nav.tsx`), so links already sent keep working.
+- **Waiting to be ordered** in place of the pre-sort: the Queue badge, the Queue column and its button (Accept this
+  order), the Needs you row.
+- **Later** in place of the backburner: the Intake group, its tooltip names the `hopper:backburner` label; the action
+  is Take out of Later; the nav badge and the Queue link say "for later".
+
 ### The Jobs table (issue #2372, 2026-10-21)
 
 Requirement: Jobs opens as a table, one row per job, at least 20 rows in view at 1440×900, the page at most 1.5 screens
@@ -20168,7 +20190,7 @@ end as of any job's. The operator CLI: `hopper job submit --title … (--brief �
 webhook subscription to `job.queued` delivers it to the subscriber. The authorizations are told to the job and recorded;
 the one that makes a vault grant is part 3, below.
 
-**In the UI (part 2).** The view Direct jobs (`#direct-jobs`, in the Jobs nav group; `ui/src/views/direct-jobs.tsx`,
+**In the UI (part 2).** The view Direct jobs (`#direct-jobs`, in the Jobs nav group; since issue #2375 the Run a job tab of Ask hopper, `#ask`; `ui/src/views/direct-jobs.tsx`,
 `ui/src/model/direct-jobs.ts`) has the submit form, for an operator or admin only: title, brief, labels (split at commas),
 authorizations (one per line), repository and priority. It sends `POST /ui/api/direct-jobs` through the UI session, so the
 record says `via: ui`. Below it, every direct job from `GET /api/direct-jobs`, read when shown and every 15 s: its state
@@ -20240,7 +20262,7 @@ jobs"). What a query adds:
 - **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
   artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
   direct job ("Promote to GitHub").
-- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, `ui/src/views/direct-queries.tsx`), in the Jobs
+- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, since issue #2375 the Ask a question tab of Ask hopper, `#ask/question`; `ui/src/views/direct-queries.tsx`), in the Jobs
   group beside Direct jobs, not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
   its callback, its hints, its open questions (a link to Questions), its answer, its error and its evidence (the job's
   artifacts). An operator asks a question there (a request id the page makes, `ui-<32 hex>`, from
@@ -24425,7 +24447,7 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   | an item | `work_item.issue_closed`: its issue, in `repo` or the job's own repository | `<url> was closed` |
   | a question | `question.answered`, `question.closed`, `question.dismissed`, `question.expired` | `question <id> was answered` |
   | a vault grant | `vault.granted`, `vault.grant_denied` for this job | `a vault grant was given` |
-  | an infra plan (issue #2205) | `infra.plan_approved` of that plan | `infra plan <id> was approved by <who>` |
+  | an infra plan (issue #2205) | `infra.plan_approved` of that plan; `infra.plan_rejected` of it (issue #2368) | `infra plan <id> was approved by <who>`; `infra plan <id> was rejected by <who>: <note>. …` |
 
   An approval is not woken here: a job asks for one through a skill request, whose watch ends its wait with the answer when
   it is ready (issue #998, `src/skills/waits.ts`), the box started, not only the template approved. A wake on the approval
@@ -31445,6 +31467,30 @@ already was.
 **Not built here.** A plan that goes stale while a job waits on it does not end the wait: the job is woken only by the
 approval, a person, or its own poll. The plans of other users are not shown to an admin: each user's Infra lists that
 user's own plans, as before.
+
+## Rejecting an infra plan (issue #2368, 2026-10-21)
+
+Before: a plan had one decision, Approve. A plan a person decided against waited until it went stale, an hour after it was
+made, and an admin could still approve it meanwhile. The job that waited on it waited for that hour, then planned again.
+
+- **Reject, with a note.** `POST /ui/api/infra-plans` takes `action: 'reject'`, `plan` and `note` (1 to 1000 characters,
+  `REJECTION_NOTE_MAX`); Infra shows Reject beside Approve on a plan that waits, with a field for the note and a confirm;
+  `hopper infra reject <plan> --note <why>` does the same by its id or short id. Any operator or admin rejects any plan:
+  a rejection takes a power away, so its risk needs no higher role. The route stays a box action, as it was for Approve.
+- **A row of its own, terminal** (`infra_plan_rejections`, tenant migration 91; `PlanRejection`: `plan`, `by`, `at`,
+  `note`). The plan itself does not change, as with an approval. `infra.plan_rejected` (`by`, `note`) goes on the
+  timeline of the job that recorded the plan, and Applies and drift shows it.
+- **Never approved after.** `approve` reads the rejection in its own transaction and answers 409 with who rejected the
+  plan and the note; a reject reads the approval the same way, so one plan has at most one of the two. A plan approved
+  already is not rejected (409): its apply may be under way. The apply gate refuses a rejected plan before anything else.
+- **The job goes on at once.** `infra.plan_rejected` settles a wait on that plan (`settledBy`): the job is told
+  `infra plan <id> was rejected by <who>: <note>. It is never approved: change course, or plan again and record a new
+  plan`. A job that starts to wait on a plan rejected already is told the same at once (`planWaitEnd`).
+- **The state.** Rejected comes before every other state (`planState`, the CLI's `stateOf`): a rejected plan waits for
+  nobody, Needs you does not count it, and it is offered no Approve and no Reject.
+
+**Not built here.** A job withdraws no plan of its own: a person rejects it, and the job, told so, records a new one. The
+notifiers do not send `infra.plan_rejected`; webhook subscribers get it as any event.
 
 Tests: `test/domain/wait-on-plan.test.ts` (the kind read from each way a job writes it, its wake, and how it ends as it
 starts), `test/ui/infra-plan-needs-you.test.ts` (the count, the lines, the high mark, the link),

@@ -345,6 +345,7 @@
         "issue_draft.filed",
         "infra.plan_recorded",
         "infra.plan_approved",
+        "infra.plan_rejected",
         "infra.out_of_band_recorded",
         "infra.out_of_band_marked",
         "infra.controllers_changed",

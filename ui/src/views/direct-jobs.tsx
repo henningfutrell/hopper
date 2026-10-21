@@ -1,9 +1,9 @@
-// Direct jobs (issue #901, design.md "Direct jobs"), a view of its own (#direct-jobs): a person submits a job straight to
+// Direct jobs (issue #901, design.md "Direct jobs"), the Run a job tab of Ask hopper (#ask, issue #2375; ask.tsx): a person submits a job straight to
 // the hopper — a title, a brief, routing labels, what they authorize, and the one repository its work may open a pull
 // request on —, with no GitHub issue behind it. The list reads each direct job back, newest first, with its job's state,
 // its open questions (answered in Questions), its result, its error and its artifacts. The brief and the results stay in
 // the hopper until a person promotes them to GitHub (issue #946, direct-job-promotion.tsx); one offered for promotion is
-// pinned at the top. A direct query (issue #2184) is left out: it has a view of its own (direct-queries.tsx). The form only for an operator or admin: the daemon refuses the rest. Read when shown, and every 15 s.
+// pinned at the top. A direct query (issue #2184) is left out: it is the Ask a question tab (direct-queries.tsx). The form only for an operator or admin: the daemon refuses the rest. Read when shown, and every 15 s.
 import { LogBlock } from '@/components/log-block';
 import { Send, Zap } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -53,7 +53,7 @@ function SubmitForm({ onSubmitted }: { onSubmitted: () => void }) {
     setBusy(false);
   };
   return (
-    <Panel title="Submit a job" icon={Send}>
+    <Panel title="Run a job" icon={Send}>
       <form data-slot="direct-job-form" className="grid gap-3" onSubmit={(e) => { e.preventDefault(); if (!problem) void submit(); }}>
         <p className="text-sm text-muted-foreground">
           The job goes straight to the hopper, with no GitHub issue. Its brief and results stay in the hopper. It passes the same gates as any job.
@@ -136,11 +136,11 @@ export function DirectJobs() {
   return (
     <div className="grid max-w-3xl gap-3">
       {canOperate && <SubmitForm onSubmitted={() => { load().catch(() => {}); }} />}
-      <Panel title="Direct jobs" icon={Zap} count={list?.length}>
+      <Panel title="Jobs run" icon={Zap} count={list?.length}>
         {list === null
           ? <Empty>loading</Empty>
           : list.length === 0
-            ? <Empty>No direct jobs yet.</Empty>
+            ? <Empty>No jobs run here yet.</Empty>
             : <ul>{offeredFirst(list).map((d) => <Row key={d.id} d={d} canOperate={canOperate} onChanged={() => { load().catch(() => {}); }} />)}</ul>}
       </Panel>
     </div>

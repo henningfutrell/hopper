@@ -5,14 +5,15 @@
 // an operator approves a low-risk uat plan, or the hopper does when the plan is kept and auto-approve is on; an admin
 // approves any other; nobody approves a plan that failed a check. The environment watchers (part 4): who the notifiers
 // name for each plan, approval and apply, by the plan's environments; an admin names them. A plan's read credential (part
-// 5): the one a plan names is one the vault minted for its job.
+// 5): the one a plan names is one the vault minted for its job. A person rejects a plan (issue #2368): terminal, with a note;
+// it is never approved after, and the gate refuses it.
 import { createHash, randomUUID } from 'node:crypto';
 import { changesAsset, type Asset, type OperationProfile } from '../domain/access.ts';
 import { changesOf } from '../domain/infra-plan-changes.ts';
 import { summarize } from '../domain/infra-plan-summary.ts';
 import {
   applyRefusal, approveRefusal, approverOf, AUTO_APPROVER, DEFAULT_INFRA_PLAN_SETTINGS, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, readProfileOf, readRefusal,
-  type InfraPlan, type InfraPlanSettings, type KeptPlanView, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
+  rejectedWords, REJECTION_NOTE_MAX, type InfraPlan, type InfraPlanSettings, type KeptPlanView, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
 } from '../domain/infra-plans.ts';
 import { normalWatchers, watchersProblem, type InfraWatchers } from '../domain/infra-watchers.ts';
 import type { UiRole } from '../domain/sign-in.ts';
@@ -36,6 +37,8 @@ export interface InfraPlans {
   approval(id: string): PlanApproval | undefined;
   /** A person of `role` approves the plan: a 403 when its risk needs a higher role (approverOf). */
   approve(id: string, by: string, role: UiRole): PlanView | PlanRefusal;
+  /** Issue #2368: a person rejects the plan, with a note: it is never approved after. A 409 once approved or rejected. */
+  reject(id: string, by: string, note: string): PlanView | PlanRefusal;
   settings(): InfraPlanSettings;
   setSettings(to: InfraPlanSettings, by: string): InfraPlanSettings;
   watchers(): InfraWatchers;
@@ -61,7 +64,8 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
   const viewOf = (p: InfraPlan): PlanView => {
     const { text: _text, ...view } = p;
     const approval = plans.approval(p.id);
-    return withApprover({ ...view, ...(approval ? { approval } : {}) });
+    const rejection = plans.rejection(p.id);
+    return withApprover({ ...view, ...(approval ? { approval } : {}), ...(rejection ? { rejection } : {}) });
   };
   const settings = (): InfraPlanSettings => o.store.settings.getInfraPlans() ?? DEFAULT_INFRA_PLAN_SETTINGS;
   /** The approval row and its event, in the caller's transaction. */
@@ -131,11 +135,32 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
     approve(id, by, role) {
       const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
       if (!plan) return { status: 404, no: `no plan ${id}` };
-      if (plans.approval(id)) return { status: 409, no: `plan ${id} is approved already` };
-      const no = approveRefusal(plan, role);
-      if (no) return { status: approverOf(plan).who === 'nobody' ? 409 : 403, no };
-      o.store.tx(() => approveNow(plan, { plan: id, by, at: o.clock.now().toISOString() }));
-      return viewOf(plan);
+      // In the tx: a rejection (issue #2368) or an approval kept meanwhile is read with the approval's own write.
+      const refused = o.store.tx((): PlanRefusal | undefined => {
+        const rejected = plans.rejection(id);
+        if (rejected) return { status: 409, no: rejectedWords(id, rejected) };
+        if (plans.approval(id)) return { status: 409, no: `plan ${id} is approved already` };
+        const no = approveRefusal(plan, role);
+        if (no) return { status: approverOf(plan).who === 'nobody' ? 409 : 403, no };
+        approveNow(plan, { plan: id, by, at: o.clock.now().toISOString() });
+        return undefined;
+      });
+      return refused ?? viewOf(plan);
+    },
+    reject(id, by, said) {
+      const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
+      if (!plan) return { status: 404, no: `no plan ${id}` };
+      const note = said.trim();
+      if (!note || note.length > REJECTION_NOTE_MAX) return { status: 400, no: `note must say why the plan is rejected, in 1 to ${REJECTION_NOTE_MAX} characters` };
+      const late = o.store.tx(() => {
+        const rejected = plans.rejection(id);
+        if (rejected) return `plan ${id} is rejected already, by ${rejected.by}`;
+        if (plans.approval(id)) return `plan ${id} is approved already: a plan is rejected only before it is approved`;
+        plans.reject({ plan: id, by, at: o.clock.now().toISOString(), note });
+        o.store.events.append({ type: 'infra.plan_rejected', jobId: plan.job, data: { plan: id, tool: plan.tool, asset: plan.asset, target: plan.target, by, note } });
+        return undefined;
+      });
+      return late ? { status: 409, no: late } : viewOf(plan);
     },
     settings,
     setSettings(to, by) {
@@ -162,6 +187,8 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
     },
     async gate(profile, planId) {
       const plan = planId !== undefined && PLAN_ID.test(planId) ? plans.get(planId) : undefined;
+      const rejected = plan && changesAsset(profile) ? plans.rejection(plan.id) : undefined;
+      if (rejected) return rejectedWords(plan!.id, rejected);
       const no = applyRefusal(profile, planId, plan, plan ? plans.approval(plan.id) : undefined, o.clock.now());
       if (no || !changesAsset(profile) || !plan) return no;
       let head: string;

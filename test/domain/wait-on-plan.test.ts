@@ -56,4 +56,14 @@ describe('a wait on an infra plan (issue #2205)', () => {
     const failed = { ...plan, summary: { failed: true, checks: [{ ok: false, words: 'aws_instance.a has no map-migrated tag' }] } } as unknown as typeof plan;
     expect(planWaitEnd(ID, failed, undefined, now)).toEqual({ told: expect.stringContaining('failed its checks, so nobody approves it: aws_instance.a has no map-migrated tag') });
   });
+
+  it('the plan\'s rejection wakes the jobs that wait on it, with its note (issue #2368)', () => {
+    const s = settledBy({ type: 'infra.plan_rejected', jobId: 'recorder', data: { plan: ID, by: 'Ada (ada@example.com)', note: 'Keep the statefulset' } });
+    expect(s).toEqual({ kind: 'plan', planId: ID, note: expect.stringContaining(`infra plan ${ID} was rejected by Ada (ada): Keep the statefulset`) });
+    expect(s!.note).toContain('never approved');
+  });
+
+  it('a plan rejected already ends the wait at once, and the job is told who rejected it and why (issue #2368)', () => {
+    expect(planWaitEnd(ID, plan, undefined, now, { by: 'Ada', note: 'Keep the statefulset' })).toEqual({ told: expect.stringContaining(`infra plan ${ID} was rejected by Ada: Keep the statefulset`) });
+  });
 });

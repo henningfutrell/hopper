@@ -54,7 +54,7 @@ describe('Intake: the issues a source listed, grouped by why (issues #798, #897)
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     await click(button(row(view()!, url(9)), 'Approve'));
-    await click(button(row(view()!, url(4)), 'Take off the backburner'));
+    await click(button(row(view()!, url(4)), 'Take out of Later'));
     await vi.waitFor(() => expect(posts).toHaveLength(2));
     expect(posts).toEqual([
       { path: '/ui/api/sources/github-account/intake', body: { kind: 'approve', keys: [url(9)], hash: request(9).hash } },
@@ -134,7 +134,7 @@ describe('the backburner is always visible (issue #808)', () => {
   it('the nav entry also counts the issues on the backburner, apart from the requests', async () => {
     await boot('#dashboard');
     await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
-    expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues for later (on the backburner: the hopper:backburner label)');
     expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3');
   });
 
@@ -173,7 +173,7 @@ describe('the backburner is always visible (issue #808)', () => {
     const link = () => document.querySelector<HTMLAnchorElement>('[data-slot="queue-backburner"]');
     await vi.waitFor(() => expect(link()).not.toBeNull());
     expect(link()!.getAttribute('href')).toBe('#intake');
-    expect(link()!.textContent).toContain('2 issues on the backburner');
+    expect(link()!.textContent).toContain('2 issues for later');
   });
 });
 

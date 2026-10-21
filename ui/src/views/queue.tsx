@@ -31,7 +31,7 @@ import { TextChangeCard } from '@/components/text-change';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 
 const MODE_TEXT: Record<QueueGateMode, string> = {
-  'auto-accept': 'Auto-accept — the pre-sort lets new jobs in as they arrive, and turns away what it rejects.',
+  'auto-accept': 'Auto-accept — the queue sorter orders new jobs and lets them in as they arrive, and turns away what it rejects.',
   review: 'Review — every new job waits here until you move it into your order, or reject it.',
 };
 
@@ -44,7 +44,7 @@ function GatePanel({ gate, presort }: { gate: QueueGate; presort: PreSort | null
   return (
     <Panel title="Queue gate" icon={ShieldCheck} bodyClassName="space-y-3">
       <div data-slot="queue-sorter" className="flex flex-wrap items-center gap-2 text-sm">
-        <span>Pre-sorted by the queue sorter</span>
+        <span>Ordered by the queue sorter</span>
         {presort && <span className="font-mono">{presort.sorter}</span>}
         <Button asChild size="sm" variant="outline" className="sm:ml-auto">
           <a data-slot="queue-sorter-link" href="#settings/routing"><SlidersHorizontal />Set up the sorter</a>
@@ -153,7 +153,7 @@ export function Queue() {
       <div className="flex flex-wrap items-center justify-end gap-2">
         {backburner > 0 && (
           <a data-slot="queue-backburner" href="#intake" className="mr-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline">
-            <Flame className="size-3.5" aria-hidden />{backburner} {backburner === 1 ? 'issue' : 'issues'} on the backburner: not taken until you take {backburner === 1 ? 'it' : 'them'} off
+            <Flame className="size-3.5" aria-hidden />{backburner} {backburner === 1 ? 'issue' : 'issues'} for later: not taken until you take {backburner === 1 ? 'it' : 'them'} out of Later
           </a>
         )}
         <Button size="xs" variant="outline" data-slot="cards-toggle-all" onClick={() => setCards(setAllCards(!allOpen))}>
@@ -161,13 +161,13 @@ export function Queue() {
         </Button>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
-        <Panel title="Pre-sorted" icon={Sparkles} count={presorted.length || ''} list bodyClassName="divide-y p-0"
+        <Panel title="Waiting to be ordered" icon={Sparkles} count={presorted.length || ''} list bodyClassName="divide-y p-0"
           action={operate && presorted.length > 0 && (
-            <Button size="xs" onClick={() => act('/ui/api/queue/accept-presort', {}, 'Pre-sort accepted')}><Check />Accept pre-sort</Button>
+            <Button size="xs" onClick={() => act('/ui/api/queue/accept-presort', {}, 'Order accepted')} title="Accept the queue sorter's order: it rejects what it rejects and accepts the rest"><Check />Accept this order</Button>
           )}>
           {presorted.length ? presorted.map(({ job, reject }, i) => (
             <Row key={job.id} job={job} position={i + 1} {...card(job.id)}
-              note={reject && <span className="text-warn" title={reject}>pre-sort rejects: {reject}</span>}>
+              note={reject && <span className="text-warn" title={reject}>the sorter rejects: {reject}</span>}>
               {operate && <>
                 <Button size="xs" variant="outline" onClick={() => post(accepting(order, job.id), 'Job accepted')}><ChevronsRight />Accept</Button>
                 <Button size="xs" variant="outline" onClick={() => post(accepting(order, job.id, 'top'), 'Job accepted at the top')}><ArrowUpToLine />Accept at the top</Button>
