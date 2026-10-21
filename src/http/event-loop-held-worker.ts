@@ -1,7 +1,7 @@
 // The thread that sees the event loop held while it is held (event-loop-held.ts, issue #1383). The main thread writes a
 // beat each tick into shared memory; when no beat came for `heldMs`, the main thread is held: this thread pauses it
 // through the inspector, reads where it runs, resumes it at once, logs that and posts it to the main thread, which names
-// it with the stall when the loop is free again. Once a held spell, at most `samples` times, `heldMs` apart.
+// it with the stall when the loop is free again. Once a held spell, at most `samples` times, `sampleMs` apart.
 // Given a port, it also answers the health port (event-loop-held.ts): from the beat alone, so it answers while the main
 // thread is held.
 import { writeSync } from 'node:fs';
@@ -62,7 +62,7 @@ session.on('Debugger.paused', (m) => {
 const timer = setInterval(() => {
   const last = Atomics.load(beat, 0), now = Date.now();
   if (last !== spell) { spell = last; taken = 0; }
-  if (!inspector || pausing || taken >= d.samples || now - Number(last) < d.heldMs || now - lastTaken < d.heldMs) return;
+  if (!inspector || pausing || taken >= d.samples || now - Number(last) < d.sampleMs || now - lastTaken < d.sampleMs) return;
   pausing = true;
   taken++;
   lastTaken = now;
