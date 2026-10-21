@@ -28,7 +28,6 @@
       },
       "required": [
         "defaultMode",
-        "forkParent",
         "levels"
       ],
       "additionalProperties": false
@@ -59,7 +58,6 @@
       },
       "required": [
         "defaultMode",
-        "forkParent",
         "levels"
       ],
       "additionalProperties": false

@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, SessionRejected } from '@/lib/api';
 import { REVIEW_UI } from '@/model/reviews';
-import type { ForkParent, Job, PhaseShiftSettings, PhaseShiftSettingsView, QuestionFork, QuestionView, ReviewKind, ShiftMode } from '@/model/wire';
+import type { Job, PhaseShiftSettings, PhaseShiftSettingsView, QuestionFork, QuestionView, ReviewKind, ShiftMode } from '@/model/wire';
 import { refreshLiveSoon, refreshQuestions, useHopper } from '@/store';
 import { refreshReviewsSoon } from '@/store/reviews';
 
@@ -156,17 +156,14 @@ export function ShiftActions({ q, busy }: { q: QuestionView; busy: boolean }) {
   );
 }
 
-const FORK_PARENT_LABEL: Record<ForkParent, string> = { wait: 'waits on its question', park: 'is parked (where its executor can park)' };
-
 function SettingsForm({ view, onSaved }: { view: PhaseShiftSettingsView; onSaved: (v: PhaseShiftSettingsView) => void }) {
   const [defaultMode, setDefaultMode] = useState<ShiftMode>(view.defaultMode);
-  const [forkParent, setForkParent] = useState<ForkParent>(view.forkParent);
   const [levels, setLevels] = useState<string[]>(view.levels.filter((l) => view.choices.levels.includes(l)));
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     try {
-      const body: PhaseShiftSettings = { defaultMode, forkParent, levels };
+      const body: PhaseShiftSettings = { defaultMode, levels };
       onSaved(await post<PhaseShiftSettingsView>('/ui/api/phase-shifts', body));
       toast.success('Phase-shift settings saved');
     } catch (e) {
@@ -183,15 +180,6 @@ function SettingsForm({ view, onSaved }: { view: PhaseShiftSettingsView; onSaved
           <label key={m} className="flex items-start gap-2">
             <input type="radio" name="defaultMode" value={m} checked={defaultMode === m} disabled={busy} onChange={() => setDefaultMode(m)} className="mt-1" />
             <span><span className="font-medium">{MODE[m].label}</span><span className="text-muted-foreground"> — {MODE[m].help('the research or the proposal')}</span></span>
-          </label>
-        ))}
-      </fieldset>
-      <fieldset className="grid gap-1">
-        <legend className="text-xs text-muted-foreground">While its fork runs, the job</legend>
-        {(['wait', 'park'] as const).map((p) => (
-          <label key={p} className="flex items-center gap-2">
-            <input type="radio" name="forkParent" value={p} checked={forkParent === p} disabled={busy} onChange={() => setForkParent(p)} />
-            <span>{FORK_PARENT_LABEL[p]}</span>
           </label>
         ))}
       </fieldset>

@@ -19,17 +19,14 @@ export type JobPhase = typeof JOB_PHASES[number];
 export const SHIFT_MODES = ['fork', 'switch'] as const;
 export type ShiftMode = typeof SHIFT_MODES[number];
 
-/** What a parent does while its fork runs: waits on its question, or is parked (where its executor can park). */
-export const FORK_PARENT = ['wait', 'park'] as const;
-export type ForkParent = typeof FORK_PARENT[number];
-
 /** What a switched job does once its report or proposal is accepted: back to work, end, or on to a proposal (research only). */
 export const SHIFT_THEN = ['work', 'end', 'proposal'] as const;
 export type ShiftThen = typeof SHIFT_THEN[number];
 
 /** The phase-shift settings, the user's, in the database and read at each shift. `levels`: the escalation levels that may shift a job themselves. */
-export interface PhaseShiftSettings { defaultMode: ShiftMode; forkParent: ForkParent; levels: string[] }
-export const DEFAULT_PHASE_SHIFT_SETTINGS: PhaseShiftSettings = { defaultMode: 'fork', forkParent: 'wait', levels: [] };
+// A fork's parent always parks while its fork runs (issue #2335): the `forkParent` setting is gone.
+export interface PhaseShiftSettings { defaultMode: ShiftMode; levels: string[] }
+export const DEFAULT_PHASE_SHIFT_SETTINGS: PhaseShiftSettings = { defaultMode: 'fork', levels: [] };
 
 /** The settings, with what may be chosen for them: the escalation levels there are now. */
 export interface PhaseShiftSettingsView extends PhaseShiftSettings { choices: { levels: string[] } }

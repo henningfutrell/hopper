@@ -1,8 +1,8 @@
 // The engine's side of phase shifts (issue #548, design.md "Phase shifts"). A question is answered with Research this
 // or Propose this, as a fork or a switch. A fork is a new job, accepted at once (a person or an allowed level asked for
 // it), with the parent's spec, priority and work tree, asked for the one special job; it has no source of its own, so
-// the sync never reports it to the parent's item. Its parent waits on its question, or is parked where the settings say
-// so and its executor can park. A switch answers the question with what the job is to do now and moves the job into the
+// the sync never reports it to the parent's item. Its parent is parked where its executor can park (issue #2335: no job
+// that waits keeps its agent). A switch answers the question with what the job is to do now and moves the job into the
 // phase. Each is one transaction with the question; the settings are read at each shift, so a change applies at once.
 // A fork shows on its question (issue #570), and a second fork of its kind waits until it ends. Answered without it,
 // the question's answer is kept on the fork, which is told it at its next start; its parent is told the fork still runs.
@@ -75,7 +75,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
   }
 
   /** Inside a tx: a new job asked for `to` about the aspect, with the parent's spec, priority and work tree. */
-  function forkJob(q: Question, parent: Job, to: ReviewKind, note: string | undefined, by: string): { fork: Job; parked: boolean } {
+  function forkJob(q: Question, parent: Job, to: ReviewKind, note: string | undefined, by: string): { fork: Job; parked: boolean; paneless: boolean } {
     const { proposal: _p, research: _r, ...rest } = parent.spec;
     const spec: JobSpec = { ...rest, [REVIEW_SECTIONS[to].specFlag]: true };
     const source = sourceItemOf(parent);
@@ -89,13 +89,15 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
     // A person or an allowed level asked for it: it passes the queue gate at once, pinned where its parent's work tree is.
     const fork = store.jobs.update(created.id, { accepted: true, forkOf, phase: to });
     store.jobs.update(parent.id, { forks: [...(parent.forks ?? []), fork.id] });
-    const park = settings().forkParent === 'park' && parent.status === 'waiting_answer' && parkRefusal(c, parent) === undefined;
+    // Issue #2335: the parent parks while its fork runs, its agent ended, as every job that waits.
+    const park = parent.status === 'waiting_answer' && parkRefusal(c, parent) === undefined;
     if (park) recordPark(c, store.jobs.get(parent.id)!, 'waiting_answer');
     store.events.append({
       type: 'job.forked', jobId: parent.id, questionId: q.id,
       data: { forkId: fork.id, to, mode: 'fork', questionId: q.id, ...(note ? { note } : {}), by, parent: park || parent.status === 'parked' ? 'parked' : 'waiting', ...priorityTagOf(c, parent.id) },
     });
-    return { fork, parked: park };
+    // Picked up with its question open (issue #692): its pane ended at its last park.
+    return { fork, parked: park, paneless: parent.parked !== undefined };
   }
 
   return {
@@ -119,7 +121,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
       return why ? { modes: [], defaultMode, refusal: why } : { modes: ['fork', 'switch'], defaultMode };
     },
     shift(questionId, req, by) {
-      let parked: Job | undefined;
+      let parked: { job: Job; paneless: boolean } | undefined;
       const result = store.tx((): ShiftResult => {
         const q = store.questions.get(questionId);
         if (!q) throw new EngineError('not_found', `question ${questionId} not found`);
@@ -132,10 +134,10 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
           return { question: store.questions.get(q.id)!, job: next };
         }
         const f = forkJob(q, job, req.to, req.note, by.person);
-        if (f.parked) parked = store.jobs.get(job.id);
+        if (f.parked) parked = { job: store.jobs.get(job.id)!, paneless: f.paneless };
         return { question: store.questions.get(q.id)!, job: store.jobs.get(job.id)!, fork: f.fork };
       });
-      if (parked) void releaseParked(c, parked);
+      if (parked) void releaseParked(c, parked.job, parked.paneless);
       return result;
     },
     byLevel(q, suggest, level) {
@@ -145,7 +147,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
       if (s.defaultMode === 'switch') switchJob(q, job, suggest.to, suggest.note, level, level);
       else {
         const f = forkJob(q, job, suggest.to, suggest.note, level);
-        if (f.parked) setImmediate(() => { if (!c.stopping()) void releaseParked(c, store.jobs.get(job.id)!); }); // a stop and the store's close can come first (issue #828)
+        if (f.parked) setImmediate(() => { if (!c.stopping()) void releaseParked(c, store.jobs.get(job.id)!, f.paneless); }); // a stop and the store's close can come first (issue #828)
       }
       return s.defaultMode;
     },

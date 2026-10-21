@@ -2,7 +2,7 @@
 // them (WAIT_RELEASE_AFTER_MS), the way the Park button does — the lane frees, the session and work tree are kept. Time at
 // the escalation levels does not count. The answer re-queues the job, which resumes its saved session; with the checkpoint
 // taken after its agent ended, on any machine. No setting: a job on a question holds no agent. A question a risk rule sent to
-// a person parks too, and so does a job on its proposal at the human stage. Real daemon over the fake herdr, as park.test.ts.
+// a person parks too, and so does a job on its proposal at the human stage, and a job a fork of its question works for. Real daemon over the fake herdr, as park.test.ts.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EscalationLevel, LevelReply } from '../../src/domain/ports.ts';
 import { homedir } from 'node:os';
@@ -223,6 +223,21 @@ describe('auto-park', () => {
     expect(host.restores).toHaveLength(1);
     expect(host.agentStarts.at(-1)!.args).toEqual(expect.arrayContaining(['--resume', session!]));
     expect(host.prompts.at(-1)!.text).toContain('Blue.');
+  });
+
+  it('a job whose question a fork works for parks at once: its pane closes while the fork runs (issue #2335)', async () => {
+    const REPORT = { output: ['● Question: what colours last?', '  Findings: blue lasts.', '  HOPPER_RESEARCH_REPORT'] };
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, REPORT] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await a.pull({}, item);
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    const r = await a.ui(`/ui/api/questions/${q.id}/research`, { mode: 'fork', note: 'which colours last' }, { token });
+    expect(r.status).toBe(200);
+    expect((await a.job(job.id)).status).toBe('parked');
+    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.forked')!.data).toMatchObject({ mode: 'fork', parent: 'parked' });
+    await waitFor(() => herdr.closed.length === 1, { what: 'the parent\'s pane closed' });
+    expect((await a.questionsOf(job.id))[0]!.status).toBe('open');
   });
 
   it('a job waiting on a login is running, not on a question: it never parks by itself', async () => {

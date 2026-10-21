@@ -13106,7 +13106,7 @@ resumes from its checkpoint on any machine.
 - **Not built (later parts).** A wait only its pane carries — a job's own command, a background poll for what the hopper
   watches nothing of — still keeps its agent (issue #2335 gap 2): a hopper-side check of the condition (a command exit
   recorded by the hopper, a time) replaces the pane's poll. A parent of a fork (`forkParent: wait`) keeps its agent while the
-  fork runs.
+  fork runs. (Both: part 2, below.)
 - **Persisted state.** No schema change: `parked.checkpointAt` is in the job's JSON. A build before this reads a parked job
   with it as before, and pins its pick up to its machine. A stored `autoPark` setting row stays, unread.
 
@@ -13115,6 +13115,56 @@ question too; a job on its proposal parks 5 s after it reached the human stage, 
 machines over the fake herdr, the answer resumes a parked job on the other machine from the checkpoint marked on its park,
 with the same session, and its terminal is refused while it is parked), `test/integration/wait-release.test.ts` (a released
 wait's terminal is refused), `test/integration/thread-ask.test.ts` (picked up with its question open, it parks again 5 s later).
+
+### Part 2: a wait the pane carried, rechecked by the hopper; a fork's parent parked (issue #2335, 2026-10-21)
+
+Gap 2 of issue #2335: a job on its own wait on an outside event the hopper watches nothing of (no item, no run, no time
+named) kept its agent and its pane, as only a background poll in its pane could end the wait (issue #1508). The owner's
+direction: a hopper-side deterministic check, not a pane-side poll, wakes the job; only a truly running build or test of the
+job keeps its session.
+
+- **The recheck** (`recheck`, `conditionOf` in `src/domain/wait-checks.ts`). Such a wait (an `outside` wait, or one with
+  nothing recorded, that names nothing `watchedOf` reads) gets the condition `recheck { at }`: the check-in the job named on
+  its `check:` line (`in 20m`, kept to 1..30 minutes), else `RECHECK_MS` (30 minutes) after the wait began. A time the job
+  named (`check: after|at`) stays `time_passed`; an approval, a grant or a plan stays `none` (the event that settles it wakes
+  the job). The check is first tested at that time, not before. Met (`recheckOutcome`), the wait ends (`job.wait_ended
+  { by: hopper, check: 'recheck:<at>' }`) and the job is told that the hopper cannot see what it waits on, to look again, and
+  to end with `HOPPER_WAITING` again if it did not happen yet — naming what the hopper can check where it can.
+- **Every wait released but its own command.** `waitSessionsOf` (`src/engine/wait-release.ts`) names every job on its own
+  wait whose condition is not `command_exited`: an outside wait with a recheck is released 5 seconds after it began, as every
+  other wait (issue #2326), its pane and agent ended, its checkpoint marked; its recheck, or any other wake, resumes it on any
+  machine. A wait on its own command (`own command`, `until: own command <id> ends`) keeps its agent: the command is a build
+  or a test run of the job that runs in its pane. The memory floor's `waitSessions` input reads the same list.
+- **The wait rule** (`WAIT_LINE`, the job rules' protocol): it no longer asks for a background poll. It says the session ends
+  while the job waits (but on its own command), that a command left in the background ends with it, so never to start a poll,
+  and to name `on:` what the hopper can check; for an outside event the hopper cannot see, it wakes the job after 30 minutes,
+  or at its `check:` time.
+- **A fork's parent parks.** `forkJob` (`src/engine/phase-shifts.ts`) parks the parent at the fork, where its executor can
+  park, and its checkpoint is marked (part 1), so the fork's result resumes it on any machine. Auto-park no longer skips a job
+  a fork of its question works for. The `forkParent` phase-shift setting is gone (`GET /api/phase-shifts`,
+  `POST /ui/api/phase-shifts`, the Questions settings form): a stored value is not read; a recorded
+  `phase_shifts.settings_changed` with it stays valid (`forkParent` optional in its schema).
+- **UI.** The job card's wait check says `the hopper cannot see it: it wakes the job at <time> to look again`.
+- **What stays.** A wait on its own command keeps its agent, as the issue allows. A wait that ends a few seconds after it
+  began is released all the same (part 1). Gap 5 needs no change (part 1).
+- **Persisted state.** No schema change: `recheck` is a new condition kind in the job's JSON (`wait.check`). A build before
+  this cannot test it: its sweeper logs that the check failed and tries again at the next pass, so the wait ends by its other
+  wakes (a comment, a person's End the wait). A stored `phaseShifts` row with `forkParent` is read without it.
+
+**Decisions:**
+- **A recheck wakes the model, not a model-free poll of the outside.** The hopper cannot read what the job waits on, so only
+  the job can look. 30 minutes is the longest time between checks (`MAX_EVERY_MS`); a job that wants it sooner names
+  `check: in <time>`.
+- **Own command keeps its session.** The issue names a running build or test of the job as the one exception.
+- **No `forkParent` setting.** With every waiting job parked, `wait` would be a dead control (repository rule: no backwards
+  compatibility for contracts).
+
+Verification: `test/engine/wait-sessions.test.ts` (each wait type released but its own command),
+`test/domain/wait-checks.test.ts` and `test/engine/wait-checks.test.ts` (the recheck: its time, its check-in, another hopper
+ends it at its time and the job is told to look again), `test/ui/board.test.ts`, `test/integration/wait-release.test.ts`
+(two machines over the fake herdr: an outside wait naming nothing has its pane closed and no lane, its checkpoint marked; at
+its recheck it resumes on the other machine with the same session, told to look again), `test/integration/auto-park.test.ts`
+(a fork's parent parks at the fork and its pane closes), `test/integration/phase-shifts.test.ts`, `test/ui/phase-shifts.test.ts`.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
@@ -13892,8 +13942,8 @@ for it) — the orchestration loop of #537 / #538. It has **no source of its own
 parent's item (labels, completion), and `getBySourceKey` never takes it for the item's job. `forkOf` carries the parent
 job and question, the kind, the note, the question's text (it is told it, after its job rules: `forkBrief`) and the
 parent's source (where it came from in the sections, the repository its work tree holds, the connection it acts through).
-The parent records it (`forks`), keeps waiting on its question — which holds no lane and does not expire while a fork of it
-runs — or is parked (`forkParent: park`, where its executor can park). Its priority follows the parent's while it runs
+The parent records it (`forks`) and is parked where its executor can park (issue #2335; else it keeps waiting on its question
+— which holds no lane and does not expire while a fork of it runs). Its priority follows the parent's while it runs
 (`job.reprioritized`), and the usage limits apply to it as to any job. Accepted, its document answers the parent's
 question while that is open (`settleWith`, answered by `fork:<id>`, `forkAnswer`: the document and the notes, "use it
 as the answer, or as context"); rejected, the question stays open and waits on a person again, its timeout from now.
@@ -13920,7 +13970,7 @@ who may still answer it first.
 the test executor, herdr-claude, the print-mode agents; `GET /api/health` `reviewingExecutors`); the question's
 `shifts` (`QuestionView`) lists the modes the server takes now, or none with the refusal, and the card offers exactly
 those. The settings (`GET /api/phase-shifts`, `POST /ui/api/phase-shifts`, admin; settings row `phaseShifts`, read at
-each shift; `phase_shifts.settings_changed`): `defaultMode` (`fork`), `forkParent` (`wait`), `levels` (none). No schema
+each shift; `phase_shifts.settings_changed`): `defaultMode` (`fork`), `levels` (none); `forkParent` is gone (issue #2335). No schema
 change: the job's new fields are in its body, the settings a settings row.
 
 **Open decisions, as taken** (defaults, all live settings or per-decision choices): D1 the default mode is Fork — it
