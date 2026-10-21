@@ -6,7 +6,8 @@
 // timeline of everything that happened, newest first (the parts list's events and the ones the UI holds); and the parts
 // as a filterable table. A new event of the job reads the parts list again. A direct job's job shows its promotion to
 // GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997). Its
-// transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169). Its facts name the GitHub
+// transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169), then its token use and estimated
+// cost (issue #2302). Its facts name the GitHub
 // identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account; for a
 // GitLab job (issue #1448 part 3), the GitLab username its pushes named, else its user's GitLab account. A held
 // job says why it is held (issue #874), a gate hold with the machines' names. File an issue beside its state opens with
@@ -34,6 +35,7 @@ import { JobPromotion } from './direct-job-promotion';
 import { JobNotes } from './job-notes';
 import { JobTerminal } from './job-terminal';
 import { JobTranscript } from './job-transcript';
+import { JobTokens } from './job-tokens';
 import { JobTrust } from './job-trust';
 import { JobCritical } from './job-critical';
 import { BomGraph, BomTable, JobHeader, useJobBom, WaitingPinned } from './job-bom';
@@ -161,6 +163,7 @@ export function JobView() {
       </Panel>
       {read.state === 'found' && <JobTerminal job={read.job} />}
       {read.state === 'found' && <JobTranscript job={read.job} />}
+      {read.state === 'found' && <JobTokens job={read.job} />}
       {read.state === 'found' && <JobNotes job={read.job} />}
       {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
       <Panel title="Timeline" count={events.length}>

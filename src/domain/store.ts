@@ -548,7 +548,8 @@ export interface UserStore {
   settings: UserSettingsRepository;
   /** Where the hopper's app is installed, as last read for the connected account (issue #1250), with its answers' ETags. */
   connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
-  usageHistory: UsageHistoryRepository;
+  /** The token ledger (issue #2302): each model's token use in each agent session of each job. */
+  usageHistory: UsageHistoryRepository; tokenLedger: import('./token-usage.ts').TokenLedgerRepository;
   machineHistory: MachineHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
