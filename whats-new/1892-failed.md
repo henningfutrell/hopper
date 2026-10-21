@@ -1,0 +1,1 @@
+- When you take the hopper's failed label off an issue by hand, the hopper runs that issue again, and Intake shows a failed issue as failed even when its labels are old.

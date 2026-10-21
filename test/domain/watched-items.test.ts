@@ -124,11 +124,15 @@ describe('waking on what it watches (issue #1508)', () => {
   });
 });
 
-describe('a wait its pane carries (issue #1508)', () => {
-  it('its own command, an outside event that names nothing watched, or nothing recorded', () => {
+describe('a wait its pane carries (issues #1508, #2338)', () => {
+  it('its own command only', () => {
     expect(paneCarriesWait(waiting('a', { for: 'tests', on: { kind: 'own_command' } }))).toBe(true);
-    expect(paneCarriesWait(waiting('b', { for: 'background poll bqehqv96k', on: { kind: 'outside', what: 'background poll bqehqv96k' } }))).toBe(true);
-    expect(paneCarriesWait(waiting('c', { for: 'legacy' }))).toBe(true);
+  });
+
+  it('not an outside event that names nothing watched, or a wait with nothing recorded: a person ends it, not its pane (issue #2338)', () => {
+    expect(paneCarriesWait(waiting('b', { for: 'background poll bqehqv96k', on: { kind: 'outside', what: 'background poll bqehqv96k' } }))).toBe(false);
+    expect(paneCarriesWait(waiting('c', { for: 'the apply', on: { kind: 'outside', what: 'the apply', why: 'gated' } }))).toBe(false);
+    expect(paneCarriesWait(waiting('d', { for: 'legacy' }))).toBe(false);
   });
 
   it('not a wait the hopper settles itself', () => {

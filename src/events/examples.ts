@@ -155,7 +155,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'thread_ask.settings_changed': { from: { ownRepos: 'post', otherRepos: 'review' }, to: { ownRepos: 'post', otherRepos: 'off' }, by: 'admin' },
   'tldr.written': { kind: 'question', id: 'q1', text: 'The job asks which branch to rebase onto: dev or main.', model: 'claude-haiku-4-5' },
   'tldr.settings_changed': { from: { enabled: true }, to: { enabled: false }, by: 'admin' },
-  'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },
+  'phase_shifts.settings_changed': { from: { defaultMode: 'fork', levels: [] }, to: { defaultMode: 'switch', levels: ['opus'] } },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'minor_decision.picked': {
     pickId: 'p1', point: 'question-answer', by: 'jev', options: [{ id: '1', label: 'Yes, proceed' }, { id: '2', label: 'No' }],

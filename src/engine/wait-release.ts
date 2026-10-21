@@ -5,15 +5,15 @@
 // and agent on the Park button's path and its checkpoint is taken (`releaseWait`). It stays on its wait: what it waits on,
 // its wait check or a person still ends it. With that checkpoint kept (`waitReleased.checkpointAt`), its wake queues it to
 // resume on any machine with room (src/engine/wait.ts); else its claim resumes its agent session in a new pane on its own
-// machine. A wait only its pane carries (its own command, a background poll for
-// what the hopper watches nothing of) is never released: ending the pane would end the wait's only watch. A wait with a
-// time to wake at (`time_passed`) is the hopper's to end.
+// machine. Every wait is released but one on its own command: a build or a test run of the job runs in its pane, and ending
+// the pane would end it. An outside event the hopper watches nothing of (once a background poll in the pane) is released too:
+// a person ends it, or the check-in the job named rechecks it (issues #2335, #2338).
 import type { Decision, Job, JobId, WaitReleasePlan, WaitSession } from '../domain/types.ts';
-import { paneCarriesWait } from '../domain/watched-items.ts';
+import { conditionOf } from '../domain/wait-checks.ts';
 import type { EngineContext } from './context.ts';
 
-/** Whether the hopper ends the job's wait by itself, with no pane: what it waits on, or a time it named, is the hopper's to see. */
-const hopperEnds = (job: Job): boolean => !job.wait?.ownCommand && (!paneCarriesWait(job) || job.wait?.check?.condition.kind === 'time_passed');
+/** Whether the hopper ends the job's wait by itself, with no pane: every wait but one on its own command (issue #2335). */
+const hopperEnds = (job: Job): boolean => conditionOf(job).kind !== 'command_exited';
 
 /** The jobs on their own wait whose agent may end to free memory: live, with a session to resume, an executor that parks, and a machine. */
 export function waitSessionsOf(c: Pick<EngineContext, 'store'>, parking: readonly string[]): WaitSession[] {

@@ -97,6 +97,15 @@ The source reads them at each sync, at most once for each intake sync interval, 
 
 Select **Dismiss** to take a row off the list. Nothing changes on GitHub. The row comes back only when it is listed for a new reason: for example, someone asks for your review again after you reviewed it. The source shows how many rows you dismissed.
 
+To work on a row, select one of these. One select starts a job at once, with no Intake card: your select is the approval.
+
+- **Research**: a job reads the item, its discussion, its diff, the issues it links and its checks, and writes a research report. For a review request, the report has a review summary, the risks and the comments it suggests. The report is on **Research**.
+- **Propose**: a job writes a proposal for the item. You accept or decline it on **Proposals**.
+- **Start work**: for an issue, a job does the work and opens a pull request that closes the issue. For a pull request, a job reviews it and writes the review as a draft in its result.
+- **Fix its branch** (pull requests only): a job makes the change the pull request needs and pushes it to the branch of the pull request.
+
+The job gets the link to the item, why it is on Tagged, and the repository. It posts nothing on GitHub in your name: a review, a comment or a reply is a draft for you to send. After you start a job, the row shows a link to it in place of the buttons, and the row is not counted in **Needs you**. A second select on the same row starts no second job.
+
 Issues with the hopper label are not on Tagged: they are on **Intake**. Your own pull requests are not on Tagged: they are on **Pull requests**. Only a GitHub source of a connected account reads tagged items.
 
 Each new review request records the event `source.review_requested`. Your webhooks get it, as they get every event.
@@ -165,7 +174,7 @@ Every count comes from the same reads the UI makes, with the same scopes:
 | Unknown clusters | `GET /api/vault`: the templates with `unknownAssets`. |
 | Infra plans | `GET /api/infra-plans`: the plans with no `approval`, no failed check (`summary.failed`), and an `expiresAt` still to come. |
 | Pull requests | `GET /api/pull-requests`: the cards with `state: "open"` and `mergeable: "conflicts"`. |
-| Tagged | `GET /api/sources`: `detail.tagged` of each source. **Dismiss** is `POST /ui/api/sources/<name>/intake` with `kind: "dismiss"`. |
+| Tagged | `GET /api/sources`: `detail.tagged` of each source. **Dismiss** is `POST /ui/api/sources/<name>/intake` with `kind: "dismiss"`. **Research**, **Propose**, **Start work** and **Fix its branch** are `POST /ui/api/sources/<name>/tagged-start` with `key` and `start` (`research`, `propose` or `work`), and `work: "fix"` for **Fix its branch**. |
 | Questions, proposals, research, logins, failures, pre-sort | `GET /api/questions`, `GET /api/proposals`, `GET /api/research`, `GET /api/logins`, `GET /api/failures`. The pre-sort: `GET /api/queue`. |
 
 The yolo mode in the top bar is `GET /api/yolo-mode`. Each action is the same `POST /ui/api/*` route the page uses. See [The operator CLI and the API](cli-and-api.md).

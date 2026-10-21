@@ -14,7 +14,7 @@ import type { AutoApproval, IntakeAutoApproval } from './intake-auto-approve.ts'
 import type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts';
 import type { ActingPerson } from './failures.ts';
 import type { JobStatus } from './types.ts';
-import type { TaggedRecord } from './tagged.ts';
+import type { TaggedRecord, TaggedStarted } from './tagged.ts';
 import type { WorkItem } from './work-items.ts';
 
 /** What became of one open item in a source's scope. */
@@ -87,8 +87,10 @@ export type NotTakenGroup = typeof NOT_TAKEN_GROUPS[number];
  * census listed closes, the source's label and assign it to the user's connected account, so the next sync lists it in
  * Intake. `retry_outbox` (issue #1238, a Retry on Sources): send the item's failed rows of the GitHub outbox again.
  * `wont_do` (issue #1891): drop an item the ledger holds blocked; its blocked label goes and `hopper:rejected` comes on.
+ * `tagged_start` (issue #2342): keep the job a person started on a **tagged item** (`started`), so it is not started twice;
+ * the Tagged route submits the job first, and no intake route takes this kind.
  */
-export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss' | 'take_in' | 'retry_outbox' | 'wont_do';
+export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss' | 'take_in' | 'retry_outbox' | 'wont_do' | 'tagged_start';
 
 export interface IntakeAction {
   kind: IntakeActionKind;
@@ -99,6 +101,8 @@ export interface IntakeAction {
   acting?: ActingPerson;
   /** `decline` (issue #1710): close the issue or leave it open; absent: the user's default for the card. */
   choice?: DeclineChoice;
+  /** `tagged_start` (issue #2342): the job started on the one item named. */
+  started?: TaggedStarted;
 }
 
 export interface IntakeActionResult {
@@ -169,6 +173,11 @@ export interface IntakeContext {
   workItem?(key: string): WorkItem | undefined;
   /** Whether the open pull request of an item in PR open is a part (issue #1933): its waiting label is then `hopper:partly-done`. */
   partOpen?(key: string): boolean;
+  /**
+   * Whether the failure of a failed item's job was reported to its issue as failed (issue #1892): `hopper:failed` is then its
+   * label. Not while the hopper fixes it itself (issue #1230), or its report waits.
+   */
+  failureReported?(key: string): boolean;
 }
 
 /**

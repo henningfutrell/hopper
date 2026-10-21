@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
 import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
 import { memoryListings } from '../../src/sources/github/listing.ts';
-import { BLOCKED, BLOCKED_STALE, FAILED, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
+import { BLOCKED, BLOCKED_STALE, DONE_OPEN, FAILED, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 import { RECONCILE_GRACE_MS } from '../../src/domain/item-lifecycle.ts';
 import { REPO, githubConfig, jobForIssue, testTrust } from './fixtures/github-support.ts';
@@ -20,7 +20,7 @@ const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string } = {}) {
+function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string } = {}) {
   const gh = o.gh ?? createFakeGitHub();
   let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -39,6 +39,7 @@ function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; 
       requestOpened: () => false, requestsWaiting: () => [],
       workItem: (key) => (items[key] ? itemOf(key, items[key]) : undefined),
       partOpen: (key) => o.parts?.includes(key) ?? false,
+      failureReported: (key) => o.reported?.includes(key) ?? false,
     },
   });
   const edits = () => recorded.filter((r) => r.type === 'work_item.label_edited').map((r) => r.data);
@@ -82,6 +83,89 @@ describe('Intake reads the ledger (issue #1892)', () => {
     await source.discover();
     expect(reason(1)?.reason).toBe(PR_READY);
     expect(reason(2)?.reason).toBe(FAILED);
+  });
+});
+
+describe('a failed item: hopper:failed mirrors the ledger once its failure was reported (issue #1892)', () => {
+  it('Intake\'s reason is the ledger\'s, and the mirror corrects the labels: hopper:failed on, any other end label off', async () => {
+    const reported = [url(1), url(2)];
+    const { gh, source, reason } = setup({ [url(1)]: { state: 'failed', jobId: 'job-1', failedJobId: 'job-1' }, [url(2)]: { state: 'failed', jobId: 'job-2', failedJobId: 'job-2' } }, { reported, rerunnable: reported });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
+    expect(await source.discover()).toEqual([]);
+    expect(reason(1)?.reason).toBe(FAILED);
+    expect(reason(2)?.reason).toBe(FAILED);
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:failed']);
+    expect(gh.issue(REPO, 2).labels).toEqual(['hopper', 'hopper:failed']);
+  });
+
+  it('hopper:failed taken off by hand is its Run again: recorded once, the discover runs it, the label is not put back', async () => {
+    const { gh, source, edits, later } = setup({ [url(1)]: { state: 'failed', jobId: 'job-1', failedJobId: 'job-1' } }, { reported: [url(1)], rerunnable: [url(1)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:failed'] });
+    expect(await source.discover()).toEqual([]);
+    gh.removeLabel(REPO, 1, 'hopper:failed');
+    later(60_000);
+    expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
+    expect(edits()).toEqual([{ source: 'github', key: url(1), jobId: 'job-1', from: 'failed', label: 'hopper:failed', means: 'run_again' }]);
+    expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+  });
+
+  it('a failure not reported as failed (the hopper fixes it, or its report waits), or a reverted culprit: not judged, the labels decide', async () => {
+    const { gh, source, reason, edits } = setup({
+      [url(1)]: { state: 'failed', jobId: 'job-1', failedJobId: 'job-1' },
+      [url(2)]: { state: 'failed', eventState: 'done', jobId: 'job-2' },
+    }, { reported: [url(2)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:claimed'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:done'] });
+    await source.discover();
+    expect(reason(1)?.reason).not.toBe(FAILED);
+    expect(reason(2)?.reason).toBe(DONE_OPEN);
+    expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    expect(edits()).toEqual([]);
+  });
+});
+
+describe('a done item: hopper:done mirrors the ledger once its pull request merged as the whole item (issue #1892)', () => {
+  const merged = (n: number): Partial<WorkItem> => ({ state: 'done', jobId: `job-${n}`, pullRequest: `https://github.com/${REPO}/pull/${n + 10}`, pullRequestState: 'merged', wholeMerged: true });
+
+  it('Intake\'s reason is the ledger\'s, and the mirror corrects the labels: hopper:done on, any other end label off', async () => {
+    const { gh, source, reason } = setup({ [url(1)]: merged(1), [url(2)]: merged(2) });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
+    expect(await source.discover()).toEqual([]);
+    expect(reason(1)?.reason).toBe(DONE_OPEN);
+    expect(reason(2)?.reason).toBe(DONE_OPEN);
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.issue(REPO, 2).labels).toEqual(['hopper', 'hopper:done']);
+  });
+
+  it('hopper:done taken off by hand is its Run again: recorded once, the discover runs it, the label is not put back', async () => {
+    const { gh, source, edits, later } = setup({ [url(1)]: merged(1) }, { rerunnable: [url(1)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:done'] });
+    expect(await source.discover()).toEqual([]);
+    gh.removeLabel(REPO, 1, 'hopper:done');
+    later(60_000);
+    expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
+    expect(edits()).toEqual([{ source: 'github', key: url(1), jobId: 'job-1', from: 'done', label: 'hopper:done', means: 'run_again' }]);
+    expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+  });
+
+  it('done by a job\'s end with no merge, or by a pull request merged as a part: not judged, the labels decide', async () => {
+    const { gh, source, reason, edits } = setup({
+      [url(1)]: { state: 'done', jobId: 'job-1' },
+      [url(2)]: { state: 'done', jobId: 'job-2', pullRequest: `https://github.com/${REPO}/pull/12`, pullRequestState: 'merged' },
+    });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:blocked'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
+    await source.discover();
+    expect(reason(1)?.reason).toBe(BLOCKED);
+    expect(reason(2)?.reason).toBe(PR_READY);
+    expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    expect(edits()).toEqual([]);
   });
 });
 

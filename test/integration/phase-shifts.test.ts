@@ -180,14 +180,14 @@ describe('phase-shift settings and refusals', () => {
     resume: async (_ctx, answer): Promise<ExecutionOutcome> => ({ kind: 'finished', result: { answer } }),
   };
 
-  it('the settings live in the database and apply at once: the default mode, the parent under a fork, the levels that may shift', async () => {
+  it('the settings live in the database and apply at once: the default mode and the levels that may shift', async () => {
     const level = createFakeLevel({ name: 'low', script: () => ({ escalate: true, reason: 'no' }) });
     const a = await start({ seams: { levels: [level] } });
     const token = await a.login();
-    expect((await a.api('GET', '/api/phase-shifts')).body).toEqual({ defaultMode: 'fork', forkParent: 'wait', levels: [], choices: { levels: ['low'] } });
+    expect((await a.api('GET', '/api/phase-shifts')).body).toEqual({ defaultMode: 'fork', levels: [], choices: { levels: ['low'] } });
     expect((await a.ui('/ui/api/phase-shifts', { levels: ['nobody'] }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/phase-shifts', {}, { token })).status).toBe(400);
-    expect((await a.ui('/ui/api/phase-shifts', { defaultMode: 'switch', levels: ['low'] }, { token })).body).toMatchObject({ defaultMode: 'switch', forkParent: 'wait', levels: ['low'] });
+    expect((await a.ui('/ui/api/phase-shifts', { defaultMode: 'switch', levels: ['low'] }, { token })).body).toEqual({ defaultMode: 'switch', levels: ['low'], choices: { levels: ['low'] } });
     expect((await a.events()).some((e) => e.type === 'phase_shifts.settings_changed')).toBe(true);
     const job = await a.pull(ask());
     const q = await openQuestion(a, job.id);

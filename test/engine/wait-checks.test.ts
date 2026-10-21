@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecutorRegistry, UserStore } from '../../src/domain/ports.ts';
 import type { Job, JobWait } from '../../src/domain/types.ts';
 import type { WatchedEnd, WatchedRef } from '../../src/domain/watched-items.ts';
-import { DEADLINE_MS, FIRST_CHECK_MS, type WaitedChecks, type WaitedReviews } from '../../src/domain/wait-checks.ts';
+import { DEADLINE_MS, FIRST_CHECK_MS, MAX_EVERY_MS, type WaitedChecks, type WaitedReviews } from '../../src/domain/wait-checks.ts';
 import { createWaitChecks, LEASE_MS, type WaitReads } from '../../src/engine/wait-checks.ts';
 import { openDb } from '../../src/store/db.ts';
 import { openUserStore } from '../../src/store/user-store.ts';
@@ -231,6 +231,18 @@ describe('a wait check (issue #1694)', () => {
     expect(again.wait!.check).toMatchObject({ overdueAt: new Date(now).toISOString() });
     expect(ended(a.store, job.id)).toHaveLength(1);
     expect(a.store.events.recent(50, ['job.wait_overdue'], job.id)).toHaveLength(1);
+  });
+
+  it('a recheck (issues #2335, #2338): an outside event with a check-in ends at it, and the job is told to look again', async () => {
+    const url = testDatabaseUrl(), a = hopper(url, reads()), b = hopper(url, reads());
+    const job = waitingJob(a.store, { for: 'the deploy to finish', on: { kind: 'outside', what: 'the deploy to finish' }, checkLine: 'in 30m' }), at = new Date(T0 + MAX_EVERY_MS).toISOString();
+    await a.checks.run();
+    expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({ condition: { kind: 'recheck', at }, nextCheckAt: at });
+    // Another hopper on the same database ends it at its time.
+    now = T0 + MAX_EVERY_MS;
+    await b.checks.run();
+    expect(b.store.jobs.get(job.id)).toMatchObject({ status: 'queued', pendingAnswer: expect.stringContaining('cannot see what you wait on (the deploy to finish)') });
+    expect(ended(b.store, job.id)[0]!.data).toMatchObject({ by: 'hopper', check: `recheck:${at}` });
   });
 
   it('a time the job named: a wait the hopper cannot test ends at it, and not before (part 2)', async () => {

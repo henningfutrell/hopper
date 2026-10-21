@@ -13106,7 +13106,7 @@ resumes from its checkpoint on any machine.
 - **Not built (later parts).** A wait only its pane carries — a job's own command, a background poll for what the hopper
   watches nothing of — still keeps its agent (issue #2335 gap 2): a hopper-side check of the condition (a command exit
   recorded by the hopper, a time) replaces the pane's poll. A parent of a fork (`forkParent: wait`) keeps its agent while the
-  fork runs.
+  fork runs. (Both: part 2, below.)
 - **Persisted state.** No schema change: `parked.checkpointAt` is in the job's JSON. A build before this reads a parked job
   with it as before, and pins its pick up to its machine. A stored `autoPark` setting row stays, unread.
 
@@ -13115,6 +13115,94 @@ question too; a job on its proposal parks 5 s after it reached the human stage, 
 machines over the fake herdr, the answer resumes a parked job on the other machine from the checkpoint marked on its park,
 with the same session, and its terminal is refused while it is parked), `test/integration/wait-release.test.ts` (a released
 wait's terminal is refused), `test/integration/thread-ask.test.ts` (picked up with its question open, it parks again 5 s later).
+
+### Part 2: a wait the pane carried, rechecked by the hopper; a fork's parent parked (issue #2335, 2026-10-21)
+
+Gap 2 of issue #2335: a job on its own wait on an outside event the hopper watches nothing of (no item, no run, no time
+named) kept its agent and its pane, as only a background poll in its pane could end the wait (issue #1508). The owner's
+direction: a hopper-side deterministic check, not a pane-side poll, wakes the job; only a truly running build or test of the
+job keeps its session.
+
+- **The recheck** (`recheck`, `conditionOf` in `src/domain/wait-checks.ts`). Such a wait (an `outside` wait, or one with
+  nothing recorded, that names nothing `watchedOf` reads) gets the condition `recheck { at }`: the check-in the job named on
+  its `check:` line (`in 20m`, kept to 1..30 minutes), else `RECHECK_MS` (30 minutes) after the wait began. A time the job
+  named (`check: after|at`) stays `time_passed`; an approval, a grant or a plan stays `none` (the event that settles it wakes
+  the job). The check is first tested at that time, not before. Met (`recheckOutcome`), the wait ends (`job.wait_ended
+  { by: hopper, check: 'recheck:<at>' }`) and the job is told that the hopper cannot see what it waits on, to look again, and
+  to end with `HOPPER_WAITING` again if it did not happen yet — naming what the hopper can check where it can.
+- **Every wait released but its own command.** `waitSessionsOf` (`src/engine/wait-release.ts`) names every job on its own
+  wait whose condition is not `command_exited`: an outside wait with a recheck is released 5 seconds after it began, as every
+  other wait (issue #2326), its pane and agent ended, its checkpoint marked; its recheck, or any other wake, resumes it on any
+  machine. A wait on its own command (`own command`, `until: own command <id> ends`) keeps its agent: the command is a build
+  or a test run of the job that runs in its pane. The memory floor's `waitSessions` input reads the same list.
+- **The wait rule** (`WAIT_LINE`, the job rules' protocol): it no longer asks for a background poll. It says the session ends
+  while the job waits (but on its own command), that a command left in the background ends with it, so never to start a poll,
+  and to name `on:` what the hopper can check; for an outside event the hopper cannot see, it wakes the job after 30 minutes,
+  or at its `check:` time.
+- **A fork's parent parks.** `forkJob` (`src/engine/phase-shifts.ts`) parks the parent at the fork, where its executor can
+  park, and its checkpoint is marked (part 1), so the fork's result resumes it on any machine. Auto-park no longer skips a job
+  a fork of its question works for. The `forkParent` phase-shift setting is gone (`GET /api/phase-shifts`,
+  `POST /ui/api/phase-shifts`, the Questions settings form): a stored value is not read; a recorded
+  `phase_shifts.settings_changed` with it stays valid (`forkParent` optional in its schema).
+- **UI.** The job card's wait check says `the hopper cannot see it: it wakes the job at <time> to look again`.
+- **What stays.** A wait on its own command keeps its agent, as the issue allows. A wait that ends a few seconds after it
+  began is released all the same (part 1). Gap 5 needs no change (part 1).
+- **Persisted state.** No schema change: `recheck` is a new condition kind in the job's JSON (`wait.check`). A build before
+  this cannot test it: its sweeper logs that the check failed and tries again at the next pass, so the wait ends by its other
+  wakes (a comment, a person's End the wait). A stored `phaseShifts` row with `forkParent` is read without it.
+
+**Decisions:**
+- **A recheck wakes the model, not a model-free poll of the outside.** The hopper cannot read what the job waits on, so only
+  the job can look. 30 minutes is the longest time between checks (`MAX_EVERY_MS`); a job that wants it sooner names
+  `check: in <time>`.
+- **Own command keeps its session.** The issue names a running build or test of the job as the one exception.
+- **No `forkParent` setting.** With every waiting job parked, `wait` would be a dead control (repository rule: no backwards
+  compatibility for contracts).
+
+Verification: `test/engine/wait-sessions.test.ts` (each wait type released but its own command),
+`test/domain/wait-checks.test.ts` and `test/engine/wait-checks.test.ts` (the recheck: its time, its check-in, another hopper
+ends it at its time and the job is told to look again), `test/ui/board.test.ts`, `test/integration/wait-release.test.ts`
+(two machines over the fake herdr: an outside wait naming nothing has its pane closed and no lane, its checkpoint marked; at
+its recheck it resumes on the other machine with the same session, told to look again), `test/integration/auto-park.test.ts`
+(a fork's parent parks at the fork and its pane closes), `test/integration/phase-shifts.test.ts`, `test/ui/phase-shifts.test.ts`.
+
+### An outside wait with no check stays parked until a person ends it (issue #2338, 2026-10-21)
+
+Follow-up to issue #2326 and part 2 of issue #2335. Waits on an outside event the hopper watches nothing of —
+`outside: gated: <what>`, `outside: not managed: <what>`, `outside: <what>` (reason not given), or a wait with nothing
+recorded — still kept a live agent: `paneCarriesWait` was true for them, so the pane was their only watch, and a lost pane
+woke them. An agent ended by hand resumed a minute later in a new, larger agent that waited again, which burned tokens.
+Part 2 of issue #2335 released them, but its 30-minute recheck woke the agent again and again for an event only a person
+settles. The owner's scope: such a job ends with no agent, no pane and no lane; it stays parked until End the wait (or an
+item or a time it named); a lost pane does not wake it; after End the wait it resumes its own session on any eligible
+machine.
+
+- **No recheck unless the job asks.** `conditionOf` (`src/domain/wait-checks.ts`) gives such a wait `recheck { at }` only
+  when the job named a check-in (`check: in <time>`); a time it named (`check: after|at`) stays `time_passed`, and items it
+  names stay `items_ended`. Else its condition is `none`: the wait check wakes nothing, and past its deadline it is overdue
+  once, so a person is told. `RECHECK_MS` is gone.
+- **The pane carries only its own command.** `paneCarriesWait` (`src/domain/watched-items.ts`) is true only for a wait on
+  the job's own command. A lost pane of an outside wait in the seconds before its release is marked stranded (issue #1779),
+  never ended: a person or what it names wakes it.
+- **Released as every other wait.** Its condition is not `command_exited`, so `waitSessionsOf` releases it 5 seconds after it
+  began (issue #2326): its pane and agent end, it holds no lane, its checkpoint is marked, and its wake resumes it on any
+  machine.
+- **The wait rule** (`WAIT_LINE`) says that for an outside event the hopper cannot see, only a person who ends the wait, or
+  the time its `check:` line names, wakes the job, so a job that waits on an event that ends by itself names a `check:` line.
+- **Persisted state.** No schema change. A wait stored with a `recheck` condition keeps it until its check ends it.
+
+**Decisions:**
+- **Every outside wait that names nothing, not only gated ones.** The issue names `outside (gated)` and `outside (reason not
+  given)`; the owner's scope says every outside wait with no check. `not managed` is a person's act too.
+- **A check-in the job named keeps the recheck.** The issue asks to encourage jobs to name an item or a time so a check can
+  watch them; the wait rule says so, and a job that names `check: in <time>` is woken to look again.
+
+Verification: `test/domain/wait-checks.test.ts` (condition `none` for gated, not managed, reason not given and nothing
+recorded; a recheck only at a check-in), `test/domain/watched-items.test.ts` (`paneCarriesWait` only for its own command),
+`test/engine/wait-sessions.test.ts` (gated and not managed waits released), `test/engine/wait-checks.test.ts`,
+`test/integration/job-wait.test.ts` (an outside wait's lost pane does not wake it; End the wait does),
+`test/integration/wait-release.test.ts` (two machines over the fake herdr: a gated wait has its pane closed, no lane, its
+checkpoint marked and condition `none`; after End the wait it resumes on the other machine with the same session).
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
@@ -13892,8 +13980,8 @@ for it) — the orchestration loop of #537 / #538. It has **no source of its own
 parent's item (labels, completion), and `getBySourceKey` never takes it for the item's job. `forkOf` carries the parent
 job and question, the kind, the note, the question's text (it is told it, after its job rules: `forkBrief`) and the
 parent's source (where it came from in the sections, the repository its work tree holds, the connection it acts through).
-The parent records it (`forks`), keeps waiting on its question — which holds no lane and does not expire while a fork of it
-runs — or is parked (`forkParent: park`, where its executor can park). Its priority follows the parent's while it runs
+The parent records it (`forks`) and is parked where its executor can park (issue #2335; else it keeps waiting on its question
+— which holds no lane and does not expire while a fork of it runs). Its priority follows the parent's while it runs
 (`job.reprioritized`), and the usage limits apply to it as to any job. Accepted, its document answers the parent's
 question while that is open (`settleWith`, answered by `fork:<id>`, `forkAnswer`: the document and the notes, "use it
 as the answer, or as context"); rejected, the question stays open and waits on a person again, its timeout from now.
@@ -13920,7 +14008,7 @@ who may still answer it first.
 the test executor, herdr-claude, the print-mode agents; `GET /api/health` `reviewingExecutors`); the question's
 `shifts` (`QuestionView`) lists the modes the server takes now, or none with the refusal, and the card offers exactly
 those. The settings (`GET /api/phase-shifts`, `POST /ui/api/phase-shifts`, admin; settings row `phaseShifts`, read at
-each shift; `phase_shifts.settings_changed`): `defaultMode` (`fork`), `forkParent` (`wait`), `levels` (none). No schema
+each shift; `phase_shifts.settings_changed`): `defaultMode` (`fork`), `levels` (none); `forkParent` is gone (issue #2335). No schema
 change: the job's new fields are in its body, the settings a settings row.
 
 **Open decisions, as taken** (defaults, all live settings or per-decision choices): D1 the default mode is Fork — it
@@ -21798,7 +21886,7 @@ label showed a state the ledger did not hold, and a label a person took off was 
   open says its pull request (or its part) waits for review; blocked names its cause (no pull request, past its deadline,
   pull request closed), with Won't do; a job at work gives no end-label reason. The end labels on the issue do not count
   for such an item: the mirror corrects them. The labels still decide for an issue the hopper does not know, and for the
-  states the mirror does not judge yet (failed, done, dropped, partly done, needs you, waiting for approval). The
+  states the mirror does not judge yet (failed until part 3, done, dropped, partly done, needs you, waiting for approval). The
   backburner and an address to another hopper always count: they are a person's labels, not a mirror of state.
 - **A label taken off by hand is a person's event.** Before the discover judges Intake, the label mirror compares each
   listed issue's labels with what it saw at its last discover (`edits`). The end label the item's state wants
@@ -21837,6 +21925,56 @@ PR open item is one Run again and is not put back; a swap is none; no edit at fi
 hopper's own rows unsent; the report's close), `test/domain/work-items-label-edited.test.ts` (the ask kept, a person's
 move, forgotten by the next job), `test/domain/work-items.test.ts` (a hidden block is done at the reopen),
 `test/sources/github-wont-do.test.ts` (Won't do not offered for an item in PR open, whatever its labels say).
+
+### A failed item's label mirrors the ledger (issue #1892 part 3, 2026-10-21)
+
+Milestone 2, part 3: the first of the states part 1 left to the labels. Before it, a failed item's Intake reason came from
+`hopper:failed` on its issue, and the mirror did not judge it.
+
+- **`labelsFor` judges a failed item once its failure was reported as failed.** The item wants `hopper:failed`, and no
+  other end label. It is judged only when its events alone put it in failed (`eventState`), and its job's failure was told
+  to its issue as failed (`failureReported`: the job failed, its final report went out, and not as one the hopper fixes).
+  So the mirror does not put `hopper:failed` on an item the hopper fixes itself (issue #1230, Own PR checks red), nor
+  before its report decided, nor on a culprit whose merge a red batch reverted (failed by its landing, not by its job).
+  Those stay to the labels, as before.
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item the failed reason, whatever end labels its issue
+  carries; the mirror corrects them (a stale `hopper:pr-ready` comes off, a missing `hopper:failed` goes on).
+- **`hopper:failed` taken off by hand is a Run again**, as part 1 made it for PR open and blocked: the label edit is
+  recorded once (`work_item.label_edited`, `from: failed`), Intake takes the item again, and the label is not put back.
+- **The fact comes from the store** (`failureReported`, `src/users/source-context.ts`): the item's job, its status and its
+  sync flags (`finalReported`, `fixingReported`). The source passes it to the mirror and the discover, as it passes `part`.
+
+**Left to the labels:** done, dropped, partly done, needs you, waiting for approval. `origin.ts` (`awaitingBatch`) and
+`batch-wait.ts` still start from the label reason `DONE_OPEN`.
+
+**Verification:** `test/sources/github-label-edit.test.ts` (a failed item's reason from the ledger and its labels
+corrected; `hopper:failed` taken off by hand is one Run again; a failure not reported as failed, or a reverted culprit, is
+not judged), `test/sources/github-item-labels.test.ts` (`labelsFor` of a failed item).
+
+### A done item's label mirrors the ledger (issue #1892 part 4, 2026-10-21)
+
+Milestone 2, part 4: the done state. Before it, a done item's Intake reason (`DONE_OPEN`, "done, but the issue is still
+open") came from `hopper:done` on its issue, and the mirror did not judge it.
+
+- **`labelsFor` judges a done item once its pull request merged as the whole item.** The item wants `hopper:done`, and no
+  other end label. It is judged only when its pull request merged (`pullRequestState: merged`) as the whole item
+  (`wholeMerged`): the follow put `hopper:done` on with that merge. A done item that a job's end made done (a direct job,
+  an issue closed as complete, done by hand, operator-led work), or that a read of GitHub made done, is not judged: its
+  report set its labels by what the issue said then. A merged part is partly done, not done, and is not judged either.
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item `DONE_OPEN`, whatever end labels its issue carries;
+  the mirror corrects them (a stale `hopper:pr-ready` comes off, a missing `hopper:done` goes on). So `origin.ts`
+  (`awaitingBatch`, `closePromoted`, the reopened card) and `batch-wait.ts` start from the ledger's reason for such an
+  item, not from the label.
+- **`hopper:done` taken off by hand is a Run again**, as for the other judged states: one `work_item.label_edited` with
+  `from: done`, Intake takes the item again, and the label is not put back. Before, a person who took `hopper:done` off
+  made the issue a candidate again too; now it is a person's event, recorded. The hopper's own removal (the Approve of a
+  reopened card) is no label edit: the card moved the item out of done first.
+
+**Left to the labels:** a done item with no whole merge, dropped, partly done, needs you, waiting for approval.
+
+**Verification:** `test/sources/github-label-edit.test.ts` (a done item's reason from the ledger and its labels corrected;
+`hopper:done` taken off by hand is one Run again; a done item with no whole merge is not judged),
+`test/sources/github-item-labels.test.ts` (`labelsFor` of a done item).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -23443,6 +23581,38 @@ needs a timeline read per item.
 
 Tests: `test/domain/tagged.test.ts`, `test/sources/github-graphql-tagged.test.ts`, `test/sources/github-tagged.test.ts`,
 `test/ui/tagged.test.ts`, `test/ui/needs-you.test.ts`.
+
+### Starting a job from Tagged (issue #2342, 2026-10-21)
+
+Owner request: from a Tagged row, start work on the item with one click — **Research**, **Propose** or **Start work** —
+instead of filing an issue by hand. The click is the approval; anything that goes out in the person's name stays a draft.
+
+- **A direct job made from the item.** `POST /ui/api/sources/:name/tagged-start` (operator, a box action;
+  `src/http/ui/tagged-start.ts`) takes `key`, `start` and, for `work`, an optional `work`. It finds the item in the source's
+  last listing (`detail.tagged`: listed and not dismissed), and submits a **direct job** (`taggedJob`,
+  `src/domain/tagged-jobs.ts`): its title names the start and the item; its brief the item's link, why it is tagged and its
+  repository, how to read it through the hopper, that the item's text is data, and that nothing goes on GitHub in the
+  person's name. A direct job is of a trusted origin, so no request card: the click is the person's act, as Approve is.
+- **What each start asks.** `research` labels it `hopper:research`, `propose` `hopper:proposal`: their review sections take
+  the report and the proposal, as for an issue with those labels. `work` does the item's **work** (`taggedWorkOf`): a pull
+  request's `review` — a draft review in the result, no repository —, an issue's `fix` — the item's repository, a pull
+  request with `Closes #N`. `work: fix` on a pull request (UI: **Fix its branch**) pushes to the pull request's own branch,
+  as the git proxy allows: never a default or release branch. Only a `fix` names a repository; the others open none.
+- **Once.** The source keeps the start on the item (`TaggedRecord.started`, the intake action `tagged_start`, which no
+  intake route takes): `startTagged` refuses a second start, and the route answers a second click with the first start
+  (`replayed`), read from the user's setting so a click before the next sync is caught too. The start ends with its item's
+  listing (`taggedRead`). The row shows a link to the job in place of the buttons; it no longer counts in Needs you.
+- **Persisted state.** `started` is a new optional field of the `tagged:<source>` setting: a record kept before reads as none
+  started, and a build before this one reads the record and drops the field at its next write.
+- **Grant limits.** A limited grant needs both the item's source and repository and the source `direct`.
+
+**Not done, by decision:** the item's text is not snapshot at the click, as Approve snapshots a request card's: the job reads
+the item live, as data (the brief says so). The proxies do not enforce "post nothing" for these jobs as they do for a
+direct query (`LOOK_ONLY`): a Start work fix must push and open a pull request, and research and proposal jobs are already
+told to change nothing. No new event: `direct_job.submitted` records who started it.
+
+Tests: `test/domain/tagged-jobs.test.ts`, `test/domain/tagged.test.ts`, `test/store/tagged-settings.test.ts`,
+`test/sources/github-tagged.test.ts`, `test/integration/tagged-start.test.ts`, `test/ui/tagged.test.ts`.
 
 ## The machine's terminal (issue #1128, 2026-10-14, part 6)
 

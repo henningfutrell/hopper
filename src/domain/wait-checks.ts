@@ -5,7 +5,10 @@
 // tries again later, the time between doubling. Past its deadline the wait is overdue once, and a person is told. Part 2:
 // the job names its next check-in, or a time to wake it at, on a `check:` line after HOPPER_WAITING (`checkAskOf`), and a
 // wait on a pull request's checks is tested on its checks (`checksOutcome`). Part 3: a wait on a pull request's review is
-// tested on its reviews (`reviewOutcome`). Pure.
+// tested on its reviews (`reviewOutcome`). Issue #2335: a wait on an outside event the hopper watches nothing of — once a
+// background poll in the job's pane — gets a recheck when the job named a check-in: at it, the hopper wakes the job to look
+// again (`recheckOutcome`), so its agent can end while it waits. Issue #2338: with no check-in, nothing wakes it but a
+// person (end-wait) or a time it named. Pure.
 import type { ChecksState } from './pull-requests.ts';
 import type { Job, JobWait } from './types.ts';
 import { waitOnLabel } from './wait-on.ts';
@@ -22,6 +25,8 @@ export type WaitCondition =
   | { kind: 'time_passed'; at: string }
   // Part 3: a pull request got a review after the wait began, or it ended.
   | { kind: 'pr_review_ended'; repo: string; number: number }
+  // Issue #2335: an outside event the hopper watches nothing of; at `at`, the job is woken to look again.
+  | { kind: 'recheck'; at: string }
   | { kind: 'none' };
 
 /** A job's wait check: its condition, its next check, the time between checks, its deadline, and what the last check found. */
@@ -88,11 +93,20 @@ export function checkAskOf(line: string, sinceMs: number): CheckAsk | undefined 
 /** What the job named on its wait's `check:` line, if anything. */
 const askOf = (w: Pick<JobWait, 'checkLine' | 'since'> | undefined): CheckAsk | undefined => (w?.checkLine ? checkAskOf(w.checkLine, Date.parse(w.since)) : undefined);
 
-/** What the hopper can test of `job`'s wait. A wait it cannot test, with a time the job named: that time. */
+/**
+ * What the hopper can test of `job`'s wait. A wait it cannot test, with a time the job named: that time. An outside event it
+ * watches nothing of (or a wait with nothing recorded), with a check-in the job named: a recheck at it (issue #2335). Else
+ * `none`: an approval, a grant or a plan is woken by the event that settles it, and an outside event by a person who ends
+ * the wait (issue #2338), so the job holds no agent and is not woken to look again and again.
+ */
 export function conditionOf(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>): WaitCondition {
   const c = baseCondition(job);
+  if (c.kind !== 'none') return c;
   const ask = askOf(job.wait);
-  return c.kind === 'none' && ask && 'at' in ask ? { kind: 'time_passed', at: ask.at } : c;
+  if (ask && 'at' in ask) return { kind: 'time_passed', at: ask.at };
+  const on = job.wait?.on;
+  if ((on && on.kind !== 'outside') || !ask) return c;
+  return { kind: 'recheck', at: iso(Date.parse(job.wait!.since) + ask.inMs) };
 }
 
 function baseCondition(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>): WaitCondition {
@@ -119,7 +133,8 @@ export function conditionKey(c: WaitCondition): string {
     case 'question_settled': return `question_settled:${c.questionId}`;
     case 'pr_checks_ended':
     case 'pr_review_ended': return `${c.kind}:${c.repo.toLowerCase()}#${c.number}`;
-    case 'time_passed': return `time_passed:${c.at}`;
+    case 'time_passed':
+    case 'recheck': return `${c.kind}:${c.at}`;
     default: return c.kind;
   }
 }
@@ -140,7 +155,7 @@ export function newCheck(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, no
   const everyMs = ask && 'inMs' in ask ? ask.inMs : FIRST_CHECK_MS;
   const wake = ask && 'at' in ask ? Date.parse(ask.at) : undefined;
   // A time the hopper only waits for is checked at that time, not before.
-  const next = w.stuckAt ? nowMs : condition.kind === 'time_passed' ? wake! : Math.min(since + everyMs, wake ?? Infinity);
+  const next = w.stuckAt ? nowMs : condition.kind === 'time_passed' ? wake! : condition.kind === 'recheck' ? Date.parse(condition.at) : Math.min(since + everyMs, wake ?? Infinity);
   const deadline = Math.max(since + (condition.kind === 'command_exited' ? COMMAND_DEADLINE_MS : DEADLINE_MS), (wake ?? 0) + OVERDUE_EVERY_MS);
   const repeat = condition.kind === 'items_ended' && wokenFor === conditionKey(condition);
   return {
@@ -156,8 +171,10 @@ export function afterCheck(check: WaitCheck, result: string, nowMs: number, over
   const cap = check.condition.kind === 'command_exited' ? COMMAND_MAX_EVERY_MS : MAX_EVERY_MS;
   const wait = past ? OVERDUE_EVERY_MS : Math.min(check.everyMs, cap);
   const everyMs = past ? OVERDUE_EVERY_MS : Math.min(check.everyMs * 2, cap);
-  const wake = check.wakeAt ? Date.parse(check.wakeAt) : check.condition.kind === 'time_passed' ? Date.parse(check.condition.at) : undefined;
-  const nextMs = wake !== undefined && wake > nowMs ? Math.min(nowMs + wait, wake) : nowMs + wait;
+  const c = check.condition;
+  const wake = check.wakeAt ? Date.parse(check.wakeAt) : c.kind === 'time_passed' || c.kind === 'recheck' ? Date.parse(c.at) : undefined;
+  // A recheck has nothing to test before its time.
+  const nextMs = wake !== undefined && wake > nowMs ? (c.kind === 'recheck' ? wake : Math.min(nowMs + wait, wake)) : nowMs + wait;
   const next: WaitCheck = {
     ...check, attempts: check.attempts + 1, checkedAt: iso(nowMs), result, nextCheckAt: iso(nextMs), everyMs,
     ...(overdue ? { overdueAt: iso(nowMs) } : {}),
@@ -168,6 +185,16 @@ export function afterCheck(check: WaitCheck, result: string, nowMs: number, over
 /** What the job is told when its check ends its wait. */
 export const checkEndedNote = (w: Pick<JobWait, 'for' | 'on'> | undefined, note: string): string =>
   `[hopper] The hopper ended your wait (${w?.on ? waitOnLabel(w.on) : w?.for ?? 'what you waited on'}): ${note}. Check it, then go on with the job.`;
+
+/** A recheck (issue #2335): met at its time, and the job is told to look again and how to wait again. */
+export function recheckOutcome(c: Extract<WaitCondition, { kind: 'recheck' }>, w: Pick<JobWait, 'for' | 'on'>, nowMs: number): CheckOutcome {
+  if (nowMs < Date.parse(c.at)) return { met: false, result: `it looks again at ${c.at}` };
+  const what = w.on?.kind === 'outside' ? w.on.what : w.for;
+  return {
+    met: true, note: `the hopper cannot see what the job waits on; it woke the job to look again (${iso(nowMs)})`,
+    told: `[hopper] The hopper cannot see what you wait on (${what}), so it woke you to look again. Your session ended while you waited, with any command you left in the background. Check it now. If it did not happen yet, end your turn with HOPPER_WAITING again: on: names what the hopper can check where you can (pr <number> merge or checks, issue <number>, job <id>), and check: in <time> says when to look again. Else go on with the job.`,
+  };
+}
 
 /** What a job on its own command is told when the hopper ends that wait. */
 const commandNote = (why: string): string =>

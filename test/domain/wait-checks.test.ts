@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Job, JobWait } from '../../src/domain/types.ts';
 import {
-  afterCheck, checkAskOf, checksOutcome, commandOutcome, conditionKey, conditionOf, newCheck, reviewOutcome, type WaitedChecks, type WaitedReviews, COMMAND_DEADLINE_MS, DEADLINE_MS, FIRST_CHECK_MS, MAX_EVERY_MS, OVERDUE_EVERY_MS,
+  afterCheck, checkAskOf, checksOutcome, commandOutcome, conditionKey, conditionOf, newCheck, recheckOutcome, reviewOutcome, type WaitedChecks, type WaitedReviews, COMMAND_DEADLINE_MS, DEADLINE_MS, FIRST_CHECK_MS, MAX_EVERY_MS, OVERDUE_EVERY_MS,
 } from '../../src/domain/wait-checks.ts';
 
 const SINCE = '2026-10-17T10:00:00.000Z';
@@ -30,7 +30,7 @@ describe('what a wait check tests (conditionOf)', () => {
     expect(conditionOf(outside)).toEqual({ kind: 'items_ended', refs: [{ kind: 'run', repo: 'octo/platform', runId: 37998997248 }, { kind: 'issue', repo: 'octo/identity', number: 199 }] });
   });
 
-  it('a job, a question, its own command; and none for what the hopper cannot test', () => {
+  it('a job, a question, its own command; none for an approval, a grant or an outside event it watches nothing of: a person ends it (issue #2338)', () => {
     expect(conditionOf(waiting({ on: { kind: 'job', jobId: 'j9' } }))).toEqual({ kind: 'job_ended', jobId: 'j9' });
     expect(conditionOf(waiting({ on: { kind: 'question', questionId: 'q1' } }))).toEqual({ kind: 'question_settled', questionId: 'q1' });
     expect(conditionOf(waiting({ on: { kind: 'own_command' }, ownCommand: true }))).toEqual({ kind: 'command_exited' });
@@ -38,6 +38,9 @@ describe('what a wait check tests (conditionOf)', () => {
     expect(conditionOf(waiting({ on: { kind: 'grant' } }))).toEqual({ kind: 'none' });
     expect(conditionOf(waiting({ on: { kind: 'approval', of: 'sandbox' } }))).toEqual({ kind: 'none' });
     expect(conditionOf(waiting({ on: { kind: 'outside', what: 'write access to the repository' } }))).toEqual({ kind: 'none' });
+    expect(conditionOf(waiting({ on: { kind: 'outside', what: 'the apply', why: 'gated' } }))).toEqual({ kind: 'none' });
+    expect(conditionOf(waiting({ on: { kind: 'outside', what: 'the release', why: 'not_managed' } }))).toEqual({ kind: 'none' });
+    expect(conditionOf(waiting({}))).toEqual({ kind: 'none' });
   });
 
   it('the key names the condition, the same for the same items in any order', () => {
@@ -139,6 +142,24 @@ describe('the check a job names (checkAskOf, issue #1694 part 2)', () => {
     const item = newCheck(waiting({ on: { kind: 'item', number: 9 }, checkLine: 'after 2h' }), at(0));
     expect(item).toMatchObject({ condition: { kind: 'items_ended' }, wakeAt: wake, nextCheckAt: new Date(at(FIRST_CHECK_MS)).toISOString() });
     expect(conditionKey({ kind: 'time_passed', at: wake })).toBe(`time_passed:${wake}`);
+  });
+
+  it('a recheck (issues #2335, #2338): only at the check-in the job named; met at it, and the job is told to look again', () => {
+    const outside = waiting({ on: { kind: 'outside', what: 'the deploy to finish' }, checkLine: 'in 30m' });
+    const at30 = new Date(at(30 * 60_000)).toISOString();
+    expect(newCheck(outside, at(0))).toMatchObject({ condition: { kind: 'recheck', at: at30 }, nextCheckAt: at30 });
+    const asked = waiting({ on: { kind: 'outside', what: 'the apply', why: 'gated' }, checkLine: 'in 10m' });
+    expect(newCheck(asked, at(0))).toMatchObject({ condition: { kind: 'recheck', at: new Date(at(10 * 60_000)).toISOString() } });
+    expect(newCheck(waiting({ on: { kind: 'outside', what: 'the apply', why: 'gated' } }), at(0)).condition).toEqual({ kind: 'none' });
+    expect(conditionKey({ kind: 'recheck', at: at30 })).toBe(`recheck:${at30}`);
+    // A check before its time, as after a restart, finds it not met and tries at its time.
+    const early = afterCheck(newCheck(outside, at(0)), 'it rechecks at its time', at(60_000));
+    expect(early.check.nextCheckAt).toBe(at30);
+    expect(recheckOutcome({ kind: 'recheck', at: at30 }, outside.wait!, at(60_000))).toEqual({ met: false, result: `it looks again at ${at30}` });
+    const met = recheckOutcome({ kind: 'recheck', at: at30 }, outside.wait!, at(30 * 60_000));
+    expect(met).toMatchObject({ met: true });
+    expect(met.met && met.told).toContain('cannot see what you wait on (the deploy to finish)');
+    expect(met.met && met.told).toContain('HOPPER_WAITING');
   });
 
   it('a check-in sets the first check and the time between checks', () => {

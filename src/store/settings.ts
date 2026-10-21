@@ -179,10 +179,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getPhaseShifts() {
       const text = read('phaseShifts');
-      return text === undefined ? undefined : JSON.parse(text) as PhaseShiftSettings;
+      if (text === undefined) return undefined;
+      // A record from before issue #2335 has `forkParent`: no longer read.
+      const { defaultMode, levels } = JSON.parse(text) as PhaseShiftSettings;
+      return { defaultMode, levels };
     },
     setPhaseShifts(settings) {
-      write('phaseShifts', JSON.stringify({ defaultMode: settings.defaultMode, forkParent: settings.forkParent, levels: [...settings.levels] }));
+      write('phaseShifts', JSON.stringify({ defaultMode: settings.defaultMode, levels: [...settings.levels] }));
     },
     getAutoAnswer() {
       const text = read('autoAnswer');
