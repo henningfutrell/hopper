@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { storeCallsBetween, watchEventLoop, type EventLoopStall } from '../../src/http/event-loop.ts';
-import { frameOf, watchHeld, type HeldWatch } from '../../src/http/event-loop-held.ts';
+import { frameOf, HELD_MS, HELD_SAMPLE_MS, watchHeld, type HeldWatch } from '../../src/http/event-loop-held.ts';
 import { createSlowCalls } from '../../src/store/slow-calls.ts';
 
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -143,7 +143,7 @@ describe('the event loop read while it is held (issue #1383)', () => {
   afterEach(async () => { for (const h of helds.splice(0)) await h.end(); });
 
   it('a stall names the code the loop ran while it was held', async () => {
-    const held = watchHeld({ heldMs: 300, checkMs: 50, log: false })!;
+    const held = watchHeld({ sampleMs: 300, checkMs: 50, log: false })!;
     helds.push(held);
     const s = setup({ raise: true, held });
     s.app.get('/long', async () => {
@@ -160,6 +160,24 @@ describe('the event loop read while it is held (issue #1383)', () => {
     expect(stall.held![0]!.frames.join(' ')).toContain('test/http/event-loop.test.ts:');
     expect(s.raised[0]?.held).toEqual(stall.held);
     expect(s.lines[0]).toMatch(/; it ran at \d\.\d s: .*test\/http\/event-loop\.test\.ts:\d+/);
+  });
+
+  // Issue #2367: stalls of 2–4 s every minute named no code, as the reads began only at the health port's 5 s.
+  it('reads a stall shorter than the health port\'s held line, and the health port still answers 200 then', async () => {
+    expect(HELD_SAMPLE_MS).toBeLessThan(HELD_MS);
+    expect(HELD_SAMPLE_MS).toBeLessThanOrEqual(2_000);
+    const held = watchHeld({ sampleMs: 300, heldMs: 10_000, checkMs: 50, log: false })!;
+    helds.push(held);
+    const s = setup({ raise: true, held });
+    s.app.get('/short', async () => {
+      const end = Date.now() + 1200;
+      while (Date.now() < end) { /* holds the event loop */ }
+      return { ok: true };
+    });
+    await tick(300);
+    await s.app.inject({ url: '/short' });
+    await tick(200);
+    expect(s.watch.last()!.held!.length).toBeGreaterThan(0);
   });
 
   it('answers how long the loop was held since a moment, the stall going on included', async () => {
