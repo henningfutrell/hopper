@@ -31608,6 +31608,32 @@ step with no template asks for both in one visit, and runs once both are approve
 not; one `decline-run` declines the action too), `test/ui/sandbox-runs-view.test.ts` (the action on the card and in its
 confirm), `test/cli/sandbox-actions.test.ts`.
 
+**No plan for a granted action (issue #2370, 2026-10-21).** Seen on a hopper: a run card for a node-group scale
+(`eks:UpdateNodegroupConfig`) was approved, and the step was still refused: the mint asked for an approved infra plan, and
+a plan is terraform, helm or gitops only. No plan of those tools records one AWS CLI call, so the card could never apply,
+and the job parked on a recheck that could not clear. A person ran the command by hand.
+
+- **The grant approves the change.** A need step's change narrowed to granted actions (`--action`, each covered by a live
+  grant at the mint) is minted with no `--plan-id` (`src/vault/need-mint.ts`): the person granted exactly that action on
+  that resource for that role, which is what a plan's approval says of a plan. The step's `--plan` text names the exact
+  call and its undo, and the run card shows it before the click.
+- **A plan named is still checked.** With `--plan-id`, the plan gate runs as before (a current, approved plan of the asset).
+- **The refusal says the other way.** A change on an aws-role with no plan is refused as before, and the words now say
+  to ask on the action role with `--action` and no plan (`applyRefusal`).
+- **The record.** `vault.minted` names the actions and no plan. The Infra changes feed lists plan-bound applies only, so
+  this apply is not there; it is on the job's timeline (`vault.action_granted`, `vault.minted`). The out-of-band rule
+  (issue #871) reads only a plan-bound credential as in band, so its write shows as out of band: it is, until the
+  infrastructure code is changed to match.
+
+**Decided here.** No `aws` plan type. A plan is a saved file a tool applies and the hopper checks against the code; an
+AWS CLI call has neither, and the action grant already holds its scope (one action, one resource, one role). A box step
+and a change with no `--action` still need a plan.
+
+**Migration.** None: no stored shape changes.
+
+Tests: `test/integration/action-grants.test.ts` (a node-group scale card with no plan goes from one `approve-run` to
+applied, `vault.minted` naming the action and no plan; a plan the step names is still checked).
+
 ## Unhealthy lanes (issue #2234, 2026-10-20)
 
 **What happened.** The hopper's sandbox box `hopper-sandbox-claude` failed every job it took for two hours, 11 of 11,
