@@ -1,5 +1,5 @@
 // A template's form on Settings → Vault (issues #558, #584, #716, #708): its name (fixed once saved), its image, the
-// vault secrets, the tools and the operation profiles its boxes may ask for, and the limits a launch of it may ask for
+// vault secrets, the tools and the operation profiles its boxes may ask for, its egress hosts and bastion targets (#2146), and the limits a launch of it may ask for
 // (sandbox-limits.tsx). A change of image, secrets, tools or profiles waits for approval; limits do not, they give a
 // box nothing.
 import { Plus, X } from 'lucide-react';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FIELD } from '@/components/plugin-form';
 import { Label } from '@/components/vault-fields';
-import { highRadius, profileText, DEFAULT_BOX_IMAGE, EGRESS_HOST, egressOf } from '@/model/vault';
+import { highRadius, profileText, DEFAULT_BOX_IMAGE, EGRESS_HOST, egressOf, BASTION_TARGET, bastionTargetsOf } from '@/model/vault';
 import { limitsDraft, templateLimits } from '@/model/sandbox-launch';
 import type { AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultSecret } from '@/model/wire';
 import { LimitsInput } from './sandbox-limits';
@@ -70,17 +70,19 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
   const [profiles, setProfiles] = useState<OperationProfile[]>(t?.profiles ?? []);
   const [tools, setTools] = useState<string[]>(t?.tools ?? []);
   const [egress, setEgress] = useState((t?.egress ?? []).join(' '));
+  const [targets, setTargets] = useState((t?.bastionTargets ?? []).join(' '));
   const [limits, setLimits] = useState(limitsDraft(t?.limits));
   const [credential, setCredential] = useState(t?.agentCredential ?? '');
   const [marks, setMarks] = useState<Record<string, string>>(t?.probeMarks ?? {});
   const saved = templateLimits(limits);
   const hosts = egressOf(egress), badHost = hosts.find((h) => !EGRESS_HOST.test(h));
+  const forwards = bastionTargetsOf(targets), badTarget = forwards.find((x) => !BASTION_TARGET.test(x));
   const toggle = (n: string) => setScope(scope.includes(n) ? scope.filter((x) => x !== n) : [...scope, n]);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
-      if (!saved.ok || badHost) return;
-      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, egress: hosts, limits: saved.limits, agentCredential: agentCredentialOf(credential, scope), ...(t?.readOnly ? { probeMarks: marks } : {}) }, `${name.trim()}: saved`)) onDone();
+      if (!saved.ok || badHost || badTarget) return;
+      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, egress: hosts, bastionTargets: forwards, limits: saved.limits, agentCredential: agentCredentialOf(credential, scope), ...(t?.readOnly ? { probeMarks: marks } : {}) }, `${name.trim()}: saved`)) onDone();
     }}>
       {!t && (
         <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
@@ -107,13 +109,18 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
           placeholder="auth.example.com:443" aria-invalid={badHost !== undefined} onChange={(e) => setEgress(e.target.value)} />
         {badHost && <span className="block text-xs text-destructive">{badHost} is not host:port: a DNS name or an address, no scheme, no wildcard.</span>}
       </label>
+      <label className="block space-y-1"><Label>Bastion targets — what a bastion of it may forward to, each on a cluster or namespace it has an observe on</Label>
+        <Input aria-label="Bastion targets" className="h-9 font-mono text-sm" value={targets} maxLength={8000} autoCapitalize="off" autoCorrect="off" spellCheck={false} disabled={busy}
+          placeholder="uat/monitoring/svc/prometheus-server:9090" aria-invalid={badTarget !== undefined} onChange={(e) => setTargets(e.target.value)} />
+        {badTarget && <span className="block text-xs text-destructive">{badTarget} is not &lt;cluster&gt;/&lt;namespace&gt;/&lt;svc|pod|deploy&gt;/&lt;name&gt;:&lt;port&gt;.</span>}
+      </label>
       <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
       <BackendsInput key={profiles.filter((p) => p.asset.kind === 'terraform-workspace').map((p) => p.asset.name).join(' ')} profiles={profiles} busy={busy} onChange={setProfiles} />
       {t?.readOnly && <ProbeMarksInput t={t} marks={marks} busy={busy} onChange={setMarks} />}
       <LimitsInput draft={limits} busy={busy} problem={saved.ok ? undefined : saved.error} onChange={setLimits} />
-      <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools, a new egress host or a new profile waits for your approval before any box gets it. A profile you remove loses its approval. Limits apply to the next box with no approval: they give a box nothing.</p>
+      <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools, a new egress host, a new bastion target or a new profile waits for your approval before any box gets it. A profile you remove loses its approval. Limits apply to the next box with no approval: they give a box nothing.</p>
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !name.trim() || !image.trim() || !saved.ok || badHost !== undefined}>Save template</Button>
+        <Button type="submit" disabled={busy || !name.trim() || !image.trim() || !saved.ok || badHost !== undefined || badTarget !== undefined}>Save template</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>

@@ -1,0 +1,1 @@
+- You can now change which monitoring services a sandbox template may reach through its bastion, in the template's form on Settings → Vault.
