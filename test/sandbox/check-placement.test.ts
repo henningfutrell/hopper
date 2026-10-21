@@ -39,7 +39,7 @@ describe('where the read-only check runs (issue #708)', () => {
   it('beside the hopper when it is given a runtime; else the first client target dialled in with one; else nowhere', async () => {
     const local = createFakeContainerRuntime();
     const beside = createPlacements({ local, network: 'hopper_default', clients });
-    expect(await beside.forCheck('u')).toEqual({ machine: 'local', runtime: local, network: 'hopper_default' });
+    expect(await beside.forCheck('u')).toEqual({ machine: 'local', runtime: local, network: 'hopper_default', secrets: true });
 
     const none = createPlacements({ local: undefined, network: 'hopper_default', clients });
     const at = await none.forCheck('u');
