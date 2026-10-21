@@ -3576,7 +3576,7 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 
 ## `token_budget.settings_changed`
 
-Version 1 (`docs/schemas/token_budget.settings_changed.v1.json`). An admin changed the token budget (issue #2302): the most one job may spend before it is paused, in tokens (`jobTokens`: input, output, cache read and cache write) and in estimated cost (`jobCostUsd`, US dollars); 0 turns a cap off. `from` and `to`.
+Version 1 (`docs/schemas/token_budget.settings_changed.v1.json`). An admin changed the token budget (issue #2302): the most one job may spend before it is paused, in tokens (`jobTokens`: input, output, cache read and cache write) and in estimated cost (`jobCostUsd`, US dollars); and (part 5) the most the jobs may spend in one UTC day before a waiting job is held, in all (`dayTokens`, `dayCostUsd`) and per repository (`repoDayTokens`, `repoDayCostUsd`; absent in an event from before them: off); 0 turns a cap off. `from` and `to`.
 
 | field | type | required |
 |---|---|---|
@@ -3588,11 +3588,19 @@ Version 1 (`docs/schemas/token_budget.settings_changed.v1.json`). An admin chang
 {
   "from": {
     "jobTokens": 0,
-    "jobCostUsd": 0
+    "jobCostUsd": 0,
+    "dayTokens": 0,
+    "dayCostUsd": 0,
+    "repoDayTokens": 0,
+    "repoDayCostUsd": 0
   },
   "to": {
     "jobTokens": 5000000,
-    "jobCostUsd": 10
+    "jobCostUsd": 10,
+    "dayTokens": 0,
+    "dayCostUsd": 40,
+    "repoDayTokens": 0,
+    "repoDayCostUsd": 0
   },
   "by": "admin"
 }

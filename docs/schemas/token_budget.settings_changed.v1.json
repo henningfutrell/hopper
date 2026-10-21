@@ -12,6 +12,22 @@
         "jobCostUsd": {
           "type": "number",
           "minimum": 0
+        },
+        "dayTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "dayCostUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "repoDayTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "repoDayCostUsd": {
+          "type": "number",
+          "minimum": 0
         }
       },
       "required": [
@@ -28,6 +44,22 @@
           "minimum": 0
         },
         "jobCostUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "dayTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "dayCostUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "repoDayTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "repoDayCostUsd": {
           "type": "number",
           "minimum": 0
         }

@@ -20206,8 +20206,20 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   token and the estimated cost the range holds divided by them. The range is `since`, else the ledger's first counted
   message, so merges from before the ledger do not count. Every job's spend counts, a failed one's too: it is the cost of
   what was merged. The Dashboard's Tokens over time shows it for its 30 days.
-- **What it does not do yet** (later parts of #2302): budgets per repository or per day, budgets as an input of the lane and
-  admission decisions, and print-mode agents (they keep no agent session; `claude -p`'s
+- **Day budgets** (part 5), an input of admission. `TokenBudgetSettings` also has `dayTokens` and `dayCostUsd` (the most all
+  the user's jobs may spend in one UTC day) and `repoDayTokens` and `repoDayCostUsd` (the most the jobs of each repository may
+  spend in one UTC day, the same cap for each repository), 0 for no cap, off by default; a setting stored before them reads
+  them off (`tokenBudgetOf`), so no record changes. A day counts as the ledger's `day` group counts it: the rows whose
+  session's last counted message is on that UTC day (`daySpendOf`), so a held job and the Dashboard's tokens over time agree.
+  A job's repository is its item's (`source.repo`), as the `repo` group's. In each Decision, while a day cap is on and a job
+  waits, the engine reads the day's ledger (`budgetHeldOf`, `src/engine/token-budget.ts`) and names each waiting job a
+  reached cap covers in the Decision's `budgetHeld` input, with why (`dayBudgetHold`); the decider holds it (`job.held`,
+  `holdReason`) as it holds a job for its sandboxes or its stamp, after the origin, stamp, text and queue-gate checks. The
+  hold covers a new job and a job that goes on — after a question, a pick up or a preemption —, as the budget counts what is
+  spent, not what is new. Its words name the cap and the day, not the spend, so a held job is held once, not again at each
+  checkpoint. A running job runs on: its own cap still pauses it. The hold ends by itself on the next UTC day, or when an
+  admin raises or turns off the cap (the next Decision reads it). With every day cap off, no Decision reads the ledger.
+- **What it does not do yet** (later parts of #2302): print-mode agents (they keep no agent session; `claude -p`'s
   own JSON answer holds its usage). A subagent's own session file is not read.
 
 Verification of part 3: `test/domain/token-budget.test.ts` (the caps, the words, counted from a go-on),
@@ -20221,6 +20233,13 @@ kept; each waste signal and its threshold; tokens per merged pull request), `tes
 real daemon: a job whose test runs fail again and again is flagged on both routes; a merged pull request divides the spend;
 a job that spent little is not flagged), `test/ui/job-tokens-view.test.ts` (the job view's waste signals),
 `test/ui/token-history.test.ts` (the Dashboard's tokens per merged pull request and flagged jobs).
+
+Verification of part 5: `test/domain/token-budget.test.ts` (the day's spend in all and per repository, other days left out;
+each day cap and its words), `test/decider/token-budget.test.ts` (a job `budgetHeld` names is held, new or going on; the
+queue gate first), `test/integration/token-budget.test.ts` (the real daemon: the settings keep each day cap; with the day's
+token budget used a waiting job is held with why and starts once it is raised; with a repository's used, only that
+repository's job is held), `test/ui/token-budget.test.ts` (Settings), `test/cli/usage-tokens.test.ts` (`hopper usage budget
+set --day-tokens …`).
 
 ## Stack resources (issue #947, 2026-10-12)
 

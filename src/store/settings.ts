@@ -194,8 +194,9 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getAutoPark: () => { const text = read('autoPark'); return text === undefined ? undefined : JSON.parse(text) as AutoParkSettings; },
     setAutoPark: (settings) => write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes })),
-    getTokenBudget: () => { const text = read('tokenBudget'); return text === undefined ? undefined : JSON.parse(text) as TokenBudgetSettings; },
-    setTokenBudget: (settings) => write('tokenBudget', JSON.stringify({ jobTokens: settings.jobTokens, jobCostUsd: settings.jobCostUsd })),
+    getTokenBudget: () => { const text = read('tokenBudget'); return text === undefined ? undefined : JSON.parse(text) as Partial<TokenBudgetSettings>; },
+    setTokenBudget: (s) => write('tokenBudget', JSON.stringify({
+      jobTokens: s.jobTokens, jobCostUsd: s.jobCostUsd, dayTokens: s.dayTokens, dayCostUsd: s.dayCostUsd, repoDayTokens: s.repoDayTokens, repoDayCostUsd: s.repoDayCostUsd })),
     getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
     setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
     getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; },
