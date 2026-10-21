@@ -7,7 +7,7 @@ import { laneSlots } from './priority-lanes.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
 import { laneEffect, machinePolicy, placementPressure } from './usage.ts';
 import { signedOutNote } from './signed-out.ts';
-import { preempt } from './preempt.ts';
+import { preempt } from './preempt.ts'; import { memoryPauses, memoryRoom, type MemoryRoom } from './memory-floor.ts';
 import { numberNewLanes, outAt, outReason, withoutOut } from './lane-health.ts';
 
 /** A machine's own usage limits (issue #1860) and soft lanes (issue #2091), as its usage reason names them; nothing when the user's apply. */
@@ -16,6 +16,9 @@ const ownLimits = (m: MachineSnapshot): string =>
     ? `, its own usage limits ${Math.round(m.usageLimits.soft * 100)}% / ${Math.round(m.usageLimits.hard * 100)}%`
       + (m.usageLimits.softLanes === undefined ? '' : `, ${m.usageLimits.softLanes} soft lanes`)
     : '');
+
+/** A machine state's memory room (issue #2291), when one is counted. */
+const memoryOf = (memory: MemoryRoom | undefined): { memory?: MemoryRoom } => (memory ? { memory } : {});
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
@@ -53,7 +56,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }
     return {
-      machine, cap, band, usedFrac, assigned: 0, overCap: 0, placed: { memoryBytes: 0, cpu: 0 },
+      machine, cap, band, usedFrac, assigned: 0, overCap: 0, placed: { memoryBytes: 0, cpu: 0 }, ...memoryOf(memoryRoom(machine, lanes, inputs.running, inputs.at)),
       occupied: held.length,
       problems: (inputs.problems ?? []).filter((b) => b.machineId === undefined || b.machineId === machine.id),
       // A lane whose job is unknown counts as unpinned: the reserve stays free (issue #372).
@@ -142,14 +145,15 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   plans.push(...gone.map((id) => planGoneLanes(id, lanes)));
   const drained = new Set(plans.flatMap((p) => p.drain));
   const preempts = preempt(ordered, placed.wait, inputs.running, lanes, states, drained, inputs.preemption, inputs.at, inputs.priorityLanes);
+  const pauses = memoryPauses(machines, lanes, inputs.running, inputs.waiting, inputs.parkingExecutors, inputs.at, new Set(preempts.map((p) => p.jobId)), inputs.memoryPausedAt);
 
   reasons.push(
     `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held, ${placed.wait.length} waiting for a lane`,
     ...advice.map((d) => `advice ${d.advice} on ${d.jobId}: native ${d.native}, with advice ${d.withAdvice}`),
-    ...preempts.map((p) => p.reason),
+    ...preempts.map((p) => p.reason), ...pauses.map((p) => p.reason),
   );
   return {
     id: decisionId, at: inputs.at, trigger: inputs.trigger,
-    lanes: plans, start: placed.start, hold, wait: placed.wait, advice, ...(preempts.length ? { preempt: preempts } : {}), reasons, inputs,
+    lanes: plans, start: placed.start, hold, wait: placed.wait, advice, ...(preempts.length ? { preempt: preempts } : {}), ...(pauses.length ? { memoryPause: pauses } : {}), reasons, inputs,
   };
 }

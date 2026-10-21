@@ -66,9 +66,16 @@ describe('placement by expected cost', () => {
     expect(d.start).toEqual([expect.objectContaining({ machineId: 'a' })]);
   });
 
-  it('the jobs placed in the same Decision count: a second job that no longer fits anywhere is placed as before, and says so', () => {
+  it('the jobs placed in the same Decision count: a second job whose memory peak no machine holds waits for memory (issue #2291)', () => {
     const d = decide(inputs({ machines: two(res(4), res(12)), waiting: [job('j1'), job('j2')], expectedCosts: { j1: cost(6), j2: cost(6) } }), 'd1');
-    expect(d.start.map((s) => [s.jobId, s.machineId])).toEqual([['j1', 'b'], ['j2', 'a']]);
-    expect(d.start[1]!.reason).toContain('expected cost (repo o/r, 3 jobs): memory peak 6 GiB, CPU 10%, fits no machine');
+    expect(d.start.map((s) => [s.jobId, s.machineId])).toEqual([['j1', 'b']]);
+    expect(d.wait.map((w) => w.jobId)).toEqual(['j2']);
+    expect(d.wait[0]!.reason).toMatch(/^waiting for memory: a has 4 GiB available; a new job needs 6 GiB over its floor of 1.6 GiB; b has 12 GiB available, 6 GiB of it kept for 1 job started lately/);
+  });
+
+  it('a job whose CPU fits no machine is placed as before, and says so', () => {
+    const d = decide(inputs({ machines: two(res(12, 0.85), res(12, 0.85)), waiting: [job('j')], expectedCosts: { j: cost(1, 0.1) } }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['a']);
+    expect(d.start[0]!.reason).toContain('expected cost (repo o/r, 3 jobs): memory peak 1 GiB, CPU 10%, fits no machine');
   });
 });

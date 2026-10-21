@@ -1,0 +1,123 @@
+// Issue #2291: the memory floor. A machine takes a new job, or a job back, only while its memory available, less the
+// memory each job it started lately has yet to take and the memory the new job needs, stays at or above its floor. Below
+// the floor the decider pauses the job that started last there (parked, its work kept, queued again), one at a time.
+import { describe, expect, it } from 'vitest';
+import { decide } from '../../src/decider/index.ts';
+import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
+import { NOW, busy, inputs, job, machine } from './support.ts';
+
+const GIB = 1024 ** 3;
+const MINUTE = 60_000;
+const ago = (minutes: number): string => new Date(new Date(NOW).getTime() - minutes * MINUTE).toISOString();
+/** A machine of 14 GiB, as a WSL VM with that cap, with `available` GiB available. */
+const vm = (available: number, over: Partial<MachineSnapshot> = {}): MachineSnapshot =>
+  machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: available * GIB }, ...over });
+const burst = (n: number): Job[] => Array.from({ length: n }, (_, i) => job(`j${i + 1}`));
+const run = (id: string, n: number, startedMinutesAgo: number, over: Partial<Job> = {}): Job =>
+  job(id, { status: 'running', startedAt: ago(startedMinutesAgo), agentSession: `session-${id}`, laneId: `local/lane-${n}`, ...over });
+
+describe('the memory floor (issue #2291)', () => {
+  it('a burst of 7 jobs starts only as many as the memory holds; the rest wait for memory', () => {
+    // 11 GiB available, the floor 1.4 GiB (10% of 14), 2 GiB a job: 4 jobs fit, a 5th would leave 1.4 - 0.4.
+    const d = decide(inputs({ machines: [vm(11)], waiting: burst(7) }), 'd1');
+    expect(d.start.map((s) => s.jobId)).toEqual(['j1', 'j2', 'j3', 'j4']);
+    expect(d.wait.map((w) => w.jobId)).toEqual(['j5', 'j6', 'j7']);
+    expect(d.wait[0]!.reason).toBe('waiting for memory: local has 11 GiB available, 8 GiB of it kept for 4 jobs started lately; a new job needs 2 GiB over its floor of 1.4 GiB');
+  });
+
+  it('counts the jobs it started lately: their memory is not taken yet', () => {
+    const lately = [run('r1', 1, 3), run('r2', 2, 9)];
+    const d = decide(inputs({ machines: [vm(11)], lanes: [busy(1, 'r1'), busy(2, 'r2')], running: lately, waiting: burst(7) }), 'd1');
+    expect(d.start.map((s) => s.jobId)).toEqual(['j1', 'j2']);
+  });
+
+  it('a job that started over 10 minutes ago has taken its memory: it reserves none', () => {
+    const settled = [run('r1', 1, 11), run('r2', 2, 40)];
+    const d = decide(inputs({ machines: [vm(11)], lanes: [busy(1, 'r1'), busy(2, 'r2')], running: settled, waiting: burst(7) }), 'd1');
+    expect(d.start).toHaveLength(4);
+  });
+
+  it('below the floor plus one job, nothing starts there, and a job resuming there waits too', () => {
+    const d = decide(inputs({ machines: [vm(3)], waiting: [job('new'), job('back', { pendingAnswer: 'go on', resumeOn: 'local' })] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait.map((w) => w.jobId).sort()).toEqual(['back', 'new']);
+  });
+
+  it('a job goes to the machine whose memory holds it', () => {
+    const d = decide(inputs({ machines: [vm(2, { id: 'a' }), vm(12, { id: 'b' })], waiting: [job('j')] }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['b']);
+  });
+
+  it('a machine\'s own floor and memory for a job count; a floor of 0 turns it off', () => {
+    const own = decide(inputs({ machines: [vm(11, { memoryFloor: { floorGiB: 3, perJobGiB: 4 } })], waiting: burst(7) }), 'd1');
+    expect(own.start).toHaveLength(2);
+    const off = decide(inputs({ machines: [vm(1, { memoryFloor: { floorGiB: 0 } })], waiting: burst(3) }), 'd1');
+    expect(off.start).toHaveLength(3);
+  });
+
+  it('a machine with no memory reading takes jobs as before', () => {
+    const d = decide(inputs({ machines: [machine({ maxLanes: 8 })], waiting: burst(7) }), 'd1');
+    expect(d.start).toHaveLength(7);
+  });
+
+  it('a job whose expected memory peak is more than the memory for a job reserves its peak', () => {
+    const expectedCosts = { j1: { group: 'repo' as const, key: 'o/r', jobs: 5, memoryBytes: { avg: 3 * GIB, peak: 5 * GIB } } };
+    const d = decide(inputs({ machines: [vm(9)], waiting: burst(3), expectedCosts }), 'd1');
+    // 9 - 1.4 = 7.6 GiB: j1 takes 5, j2 takes 2, j3 waits.
+    expect(d.start.map((s) => s.jobId)).toEqual(['j1', 'j2']);
+  });
+
+  it('on WSL, Windows\' free memory counts when it is lower', () => {
+    const wsl = vm(11, { resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 11 * GIB, wsl: true, hostMemFreeBytes: 4 * GIB, hostMemTotalBytes: 32 * GIB } });
+    const d = decide(inputs({ machines: [wsl], waiting: burst(7) }), 'd1');
+    expect(d.start).toHaveLength(1);
+  });
+
+  it('a job of higher priority that waits for memory preempts nothing', () => {
+    const d = decide(inputs({
+      machines: [vm(2, { maxLanes: 1 })], lanes: [busy(1, 'r1')], running: [run('r1', 1, 30)],
+      waiting: [job('high', { priority: 75 })], preemption: { minRunMs: 0, parkingExecutors: ['test'] },
+    }), 'd1');
+    expect(d.preempt).toBeUndefined();
+  });
+});
+
+describe('a memory pause (issue #2291)', () => {
+  const two = { lanes: [busy(1, 'r1'), busy(2, 'r2')], running: [run('r1', 1, 30), run('r2', 2, 5)], parkingExecutors: ['test'] };
+
+  it('below the floor, the job that started last there is paused', () => {
+    const d = decide(inputs({ machines: [vm(1)], ...two }), 'd1');
+    expect(d.memoryPause).toEqual([{
+      jobId: 'r2', laneId: 'local/lane-2', machineId: 'local', availableBytes: 1 * GIB, floorBytes: 1.4 * GIB,
+      reason: 'pauses r2 on local/lane-2: local has 1 GiB available, below its floor of 1.4 GiB; r2 started there last',
+    }]);
+    expect(d.reasons).toContain(d.memoryPause![0]!.reason);
+  });
+
+  it('at or above the floor, nothing is paused', () => {
+    expect(decide(inputs({ machines: [vm(1.5)], ...two }), 'd1').memoryPause).toBeUndefined();
+  });
+
+  it('one at a time: no second pause there while one is less than 2 minutes old', () => {
+    const recent = job('p', { status: 'queued', resumeOn: 'local', memoryPaused: { at: ago(1), machineId: 'local', availableBytes: GIB, floorBytes: 1.4 * GIB } });
+    expect(decide(inputs({ machines: [vm(1)], ...two, waiting: [recent] }), 'd1').memoryPause).toBeUndefined();
+    const older = { ...recent, memoryPaused: { ...recent.memoryPaused!, at: ago(3) } };
+    expect(decide(inputs({ machines: [vm(1)], ...two, waiting: [older] }), 'd1').memoryPause?.map((p) => p.jobId)).toEqual(['r2']);
+    const inFlight = { ...two, running: [run('r1', 1, 30), run('r2', 2, 5, { memoryPaused: { at: ago(1), machineId: 'local', availableBytes: GIB, floorBytes: 1.4 * GIB } })] };
+    expect(decide(inputs({ machines: [vm(1)], ...inFlight }), 'd1').memoryPause).toBeUndefined();
+    // Parked and not queued again yet, the paused job is no input: the hopper's own record of the pause counts.
+    expect(decide(inputs({ machines: [vm(1)], ...two, memoryPausedAt: { local: ago(1) } }), 'd1').memoryPause).toBeUndefined();
+    expect(decide(inputs({ machines: [vm(1)], ...two, memoryPausedAt: { local: ago(3) } }), 'd1').memoryPause).toHaveLength(1);
+  });
+
+  it('never a job whose executor cannot park, or one with no agent session to resume', () => {
+    expect(decide(inputs({ machines: [vm(1)], ...two, parkingExecutors: [] }), 'd1').memoryPause).toBeUndefined();
+    const noSession = { ...two, running: [run('r1', 1, 30), run('r2', 2, 5, { agentSession: undefined })] };
+    expect(decide(inputs({ machines: [vm(1)], ...noSession }), 'd1').memoryPause?.map((p) => p.jobId)).toEqual(['r1']);
+  });
+
+  it('a floor of 0, or no reading, pauses nothing', () => {
+    expect(decide(inputs({ machines: [vm(1, { memoryFloor: { floorGiB: 0 } })], ...two }), 'd1').memoryPause).toBeUndefined();
+    expect(decide(inputs({ machines: [machine({ maxLanes: 8 })], ...two }), 'd1').memoryPause).toBeUndefined();
+  });
+});

@@ -3781,6 +3781,24 @@ Version 1 (`docs/schemas/job.preempted.v1.json`). A Decision preempted this runn
 }
 ```
 
+## `job.memory_paused`
+
+Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job started there last. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision's.
+
+| field | type | required |
+|---|---|---|
+| `availableBytes` | number | yes |
+| `floorBytes` | number | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "availableBytes": 1073741824,
+  "floorBytes": 1503238554,
+  "reason": "pauses j-new on laptop/lane-6: laptop has 1 GiB available, below its floor of 1.4 GiB; j-new started there last"
+}
+```
+
 ## `github_rate_limiter.settings_changed`
 
 Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), how many polls run at once in a batch (`batchSize`), and how many calls intake leaves for job work (`intakeReserve`, issue #983), how often intake lists the job repositories, in minutes (`intakeSyncMinutes`, issue #985), and how often the in-motion cycle reads the pull requests in motion, in minutes (`prCycleMinutes`, issue #985); each absent from a change made before it. `from` and `to`. An instance event: in every user's log.
