@@ -9,6 +9,7 @@ import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/i
 import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
 import { BLOCKED, BLOCKED_STALE, FAILED, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
+import { RECONCILE_GRACE_MS } from '../../src/domain/item-lifecycle.ts';
 import { REPO, githubConfig, jobForIssue, testTrust } from './fixtures/github-support.ts';
 
 const LONG_AGO = '2026-10-18T10:00:00.000Z';
@@ -131,6 +132,21 @@ describe('a label edited by hand on GitHub is a person\'s event (issue #1892)', 
     expect(unsent()).toEqual([]);
     await source.flushOutbox!();
     expect(gh.issue(REPO, 1).labels).not.toContain('hopper:pr-closed');
+  });
+
+  it('a discover just after a Run again, before the new job moves the item: the mirror puts back no label the give-back took off', async () => {
+    const outbox = memoryGitHubOutbox();
+    const { gh, source, later } = setup({ [url(1)]: { blockedCause: 'pr_closed', closedWithoutMerge: 2, jobId: 'job-1' } }, { outbox });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-closed'] });
+    await source.rerun!(jobForIssue(1, { id: 'job-1', status: 'finished', result: 'ok' }));
+    expect(gh.issue(REPO, 1).labels).not.toContain('hopper:pr-closed');
+    const unsent = () => outbox.of('github', url(1)).filter((r) => r.state !== 'sent').map((r) => r.act);
+    await source.discover();
+    expect(unsent()).toEqual([]);
+    // No new job came: after the grace the item is judged again, and its label put back.
+    later(RECONCILE_GRACE_MS + 1);
+    await source.discover();
+    expect(unsent()).toEqual(['mirror']);
   });
 
   it('an item that moved since the label was seen, or with the hopper\'s own writes on their way: no edit', async () => {
