@@ -1,4 +1,4 @@
-// The system scope on Settings → Vault (issue #658, design.md "The vault's system scope"): the hopper's own secrets, the
+// The system scope on Vault (issue #658, design.md "The vault's system scope"): the hopper's own secrets, the
 // user's and the whole hopper's, as metadata — kind, last 4 characters, who set it and when, whether it can be opened —
 // and the one audit trail of them: every set, replace, rotation, removal, move, read by the hopper and refused ask of a
 // job, from the user's event log. Never a value.

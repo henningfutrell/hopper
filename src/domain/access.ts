@@ -150,7 +150,7 @@ export interface AccessModelView {
   writtenAt: string;
 }
 
-/** GET /api/access: Settings → Access. */
+/** GET /api/access: Users & access → Access. */
 export interface AccessView {
   status: AccessStatus;
   model: AccessModelView;

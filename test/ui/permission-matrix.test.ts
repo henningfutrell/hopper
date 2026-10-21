@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Permission matrix (issue #559): who may do what on which asset, read from GET /api/access. Rows are the
+// Users & access → Permission matrix (issue #559): who may do what on which asset, read from GET /api/access. Rows are the
 // templates, each followed by its boxes, then the users — or, switched, the live jobs; the rows besides the templates
 // are the requesters (issue #581). Columns are the assets, grouped by kind; each cell the operations approved, and apart
 // those of the row's template that wait for approval (issue #584). A click on a cell says why — the relationship path,
@@ -160,7 +160,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('Settings → Permission matrix', () => {
+describe('Users & access → Permission matrix', () => {
   it('is a settings section: rows with each template\'s radius, assets grouped by kind, the operations in each cell, the waiting ones apart', async () => {
     await boot();
     expect(document.querySelector('[data-slot="users-access-nav"] a[href="#users-access/permissions"]')?.textContent).toBe('Permission matrix');

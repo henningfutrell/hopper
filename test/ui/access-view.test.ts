@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Access (issue #559), rendered in happy-dom inside the whole app against a fake of the daemon's HTTP
+// Users & access → Access (issue #559), rendered in happy-dom inside the whole app against a fake of the daemon's HTTP
 // surface: whether OpenFGA can be asked, and why not; each template's approvals with the relationship chain from the
 // template to the asset, each with Revoke (asked once, then POST /ui/api/access); a check tried for a template, an
 // operation and an asset, with its answer and path; the newest decisions; and the model, saved against its version.

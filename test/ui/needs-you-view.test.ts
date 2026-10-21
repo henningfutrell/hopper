@@ -2,7 +2,7 @@
 // Issue #897 in the UI, against a fake of the daemon's HTTP surface: every decision that waits on a person has one top-level
 // home, and Needs you, the first nav entry, gathers them with a count each. Intake holds the request cards (no Approve stays
 // in Sources); Access requests holds what jobs on boxes wait for — credentials, vault grants, template approvals — (no
-// Approve stays in Settings → Vault). Every one of these pages renders when nothing waits, and says what would show there.
+// Approve stays in Vault). Every one of these pages renders when nothing waits, and says what would show there.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { countStates } from '../../src/domain/work-items.ts';
@@ -247,7 +247,7 @@ describe('empty states: every page renders when nothing waits (issue #897)', () 
   });
 });
 
-describe('one home each: no Approve stays in Sources or Settings → Vault (issue #897)', () => {
+describe('one home each: no Approve stays in Sources or Vault (issue #897)', () => {
   it('Intake has the request card with Approve', async () => {
     await boot('#intake');
     const item = () => document.querySelector<HTMLElement>(`[data-intake-item="${url(9)}"]`);
@@ -265,7 +265,7 @@ describe('one home each: no Approve stays in Sources or Settings → Vault (issu
     expect(document.querySelector('[data-intake-item]')).toBeNull();
   });
 
-  it('Settings → Vault offers no Approve and no Grant, and links a waiting template to Access requests', async () => {
+  it('Vault offers no Approve and no Grant, and links a waiting template to Access requests', async () => {
     await boot('#vault');
     await vi.waitFor(() => expect(main().textContent).toContain('ghcr.io/x/box:1'));
     for (const action of ['Approve', 'Grant', 'Give']) expect(buttons(main())).not.toContain(action);

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #2123: the Access requests badge counted the templates with an unknown asset (issue #2067), but the page showed
 // no row for them. Each one counted now renders on Access requests, with its reason and what fixes it: a cluster
-// override, an edit on Settings → Vault, or Remove. Issue #2168: one click points a template at the cluster a short name
+// override, an edit on Vault, or Remove. Issue #2168: one click points a template at the cluster a short name
 // matched: each candidate of an ambiguous name, or the one cluster a short name resolves to.
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

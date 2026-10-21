@@ -1,4 +1,4 @@
-// A template's blast radius (issue #584), as Settings → Vault and Settings → Access show it next to the template: its
+// A template's blast radius (issue #584), as Vault and Users & access → Access show it next to the template: its
 // level, then the reasons that set it — its operation profiles, approved or waiting, and its vault secrets.
 import { StatusBadge } from '@/components/status';
 import { levelTone } from '@/model/blast-radius';

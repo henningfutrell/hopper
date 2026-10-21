@@ -1,9 +1,9 @@
-// Settings → Permission matrix (issue #559): who may do what on which asset, from GET /api/access. Rows are the
+// Users & access → Permission matrix (issue #559): who may do what on which asset, from GET /api/access. Rows are the
 // templates (with their blast radius, issue #584) each followed by its boxes, then the users — or the live jobs: the
 // requesters of issue #581. Columns are the assets, grouped by kind; each cell the approved operations, and apart those
 // that wait for approval. A click on a cell says why — the relationship path, who approved it and when — and revokes.
 // Filters keep it readable with dozens of rows and columns; headers and the first column stay in place on scroll. The
-// instance admin's alone, as Settings → Access.
+// instance admin's alone, as Users & access → Access.
 import { Grid3x3 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';

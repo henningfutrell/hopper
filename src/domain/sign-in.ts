@@ -22,7 +22,7 @@ export type SessionKind = 'ui' | 'api';
 /** An API token starts with this, so the API door never takes it for a GitHub token and sends it to GitHub. */
 export const API_TOKEN_PREFIX = 'hopper_at_';
 /**
- * How long an API token lives (issue #881): the admin's setting (Settings → API tokens), from `min` to `max` minutes,
+ * How long an API token lives (issue #881): the admin's setting (Users & access → API tokens), from `min` to `max` minutes,
  * `default` until set. A grant may ask for less at its mint, never more than the setting.
  */
 export const API_TOKEN_MINUTES = { min: 5, max: 15, default: 10 } as const;

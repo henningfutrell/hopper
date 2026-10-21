@@ -29,7 +29,7 @@ describe('Settings sub-nav (issue #2373)', () => {
   it('groups its sections in six groups, each with more than one section, and no section that left it', async () => {
     await boot('#settings');
     const nav = document.querySelector('[data-slot="settings-nav"]')!;
-    expect(nav.getAttribute('aria-orientation')).toBe('vertical');
+    expect(nav.getAttribute('data-orientation')).toBe('vertical');
     const groups = all('[data-settings-group]');
     expect(groups.map((g) => g.querySelector('[data-slot="settings-group-toggle"]')?.textContent?.replace(/\d+$/, ''))).toEqual(
       ['Jobs and agents', 'Intake', 'GitHub', 'Security and access', 'Integrations', 'System']);
@@ -78,7 +78,7 @@ describe('Plugins as folding cards (issue #2373)', () => {
       expect(c.querySelector('[data-slot="panel-toggle"]')).not.toBeNull();
       expect(c.querySelector('[data-slot="panel-summary"]')?.textContent).not.toBe('');
     }
-    const executors = cards.find((c) => c.textContent?.includes('Executors'))!;
+    const executors = cards.find((c) => c.querySelector('h2')?.textContent === 'Executors')!;
     expect(executors.querySelector('[data-slot="panel-summary"]')?.textContent).toBe('1 instance: test');
     await click([...document.querySelectorAll('button')].find((b) => b.textContent === 'Fold all'));
     for (const c of all('[data-slot="plugins"] [data-open]')) {

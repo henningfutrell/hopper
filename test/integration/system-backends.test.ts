@@ -7,7 +7,7 @@
 // Feature: a system secret kept in a vault backend
 //   Scenario: a webhook's signing secret kept in HashiCorp Vault signs each delivery
 //     Given a vault backend my-vault (hashicorp-vault) and a value at hooks/rx#secret in it
-//     When the owner keeps the webhook's signing secret in my-vault at hooks/rx#secret on Settings → Vault
+//     When the owner keeps the webhook's signing secret in my-vault at hooks/rx#secret on Vault
 //     Then a delivery is signed with the value Vault holds, and the hopper's database holds no value for it
 //     And the vault's view shows where it is kept, and no value
 //   Scenario: a rotation is refused, pointing at the backend

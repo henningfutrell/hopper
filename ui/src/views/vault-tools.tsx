@@ -1,4 +1,4 @@
-// A template's tools on Settings → Vault (issue #716, design.md "Tools assembled per run"): the tools the hopper adds to
+// A template's tools on Vault (issue #716, design.md "Tools assembled per run"): the tools the hopper adds to
 // its image, each pinned and checked. One button per tool; a change waits for approval, as a new image does.
 import { Label } from '@/components/vault-fields';
 import { BOX_TOOLS } from '@/model/vault';

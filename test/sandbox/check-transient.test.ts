@@ -55,7 +55,7 @@ describe('a read-only check that fails on a network error (issue #1468)', () => 
   });
 
   it('any other failure waits for a person', async () => {
-    const s = setup(['no minting credential mints for aws-account 123456789012: a person adds one on Settings → Vault']);
+    const s = setup(['no minting credential mints for aws-account 123456789012: a person adds one on Vault']);
     await s.pass();
     expect(s.template().check).toMatchObject({ state: 'failed' });
     expect(s.template().check!.transient).toBeUndefined();

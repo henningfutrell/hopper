@@ -122,7 +122,8 @@ describe('escalation levels have one editor (issue #444)', () => {
     expect(summary()!.querySelector('a[href="#settings/questions"]')).not.toBeNull();
     expect(levelForms()).toHaveLength(0);
     expect(document.querySelector('select[name="add-plugin-escalation-level"]')).toBeNull();
-    expect(buttons(/level-|claude-cli|anthropic-api/)).toEqual([]);
+    // A card's fold toggle names its levels in its summary (issue #2373): it is no edit control.
+    expect(buttons(/level-|claude-cli|anthropic-api/).filter((b) => b.getAttribute('data-slot') !== 'panel-toggle')).toEqual([]);
     expect(document.querySelector('[role="switch"][aria-label$="claude-cli"]')).toBeNull();
     expect(document.querySelector('[role="switch"][aria-label$="anthropic-api"]')).toBeNull();
     // The other list roles keep their editors and switches.

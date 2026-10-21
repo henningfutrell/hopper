@@ -205,7 +205,7 @@ export function approvalTuples(template: string, p: OperationProfile): { grant: 
   };
 }
 
-/** The tuple a check tried in Settings → Access adds for its made-up job: the job is running from the template. */
+/** The tuple a check tried in Users & access → Access adds for its made-up job: the job is running from the template. */
 export const runningTuple = (job: string, template: string): RelationshipTuple => ({ subject: job, relation: 'running', object: templateObject(template) });
 
 const same = (a: RelationshipTuple, b: RelationshipTuple) => a.subject === b.subject && a.relation === b.relation && a.object === b.object;

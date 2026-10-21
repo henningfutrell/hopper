@@ -263,7 +263,7 @@ describe('Sources view: GitHub', () => {
     await vi.waitFor(() => expect(panel()?.textContent).toContain('Signed in with GitHub as octo-user.'));
     expect(panel()!.textContent).not.toContain('Connected as');
     expect(panel()!.textContent).not.toMatch(/disconnect/i);
-    expect(panel()!.textContent).toContain('Settings → Plugins');
+    expect(panel()!.textContent).toContain('Plugins');
     expect(buttons()).toEqual(['Refresh', 'Sign out', 'Add with a token']); // Refresh reads where the app is installed again (issue #1250); Add with a token adds another GitHub account (issue #1448)
     const f = fetch as unknown as ReturnType<typeof vi.fn>;
     await act(async () => { [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Sign out')!.click(); });

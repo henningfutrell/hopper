@@ -206,7 +206,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   },
   'vault.check_mint_refused': {
     mint: { kind: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'lab' } }, template: 'asked-0afb8cc6', check: 'hopper-check-asked-0afb8cc6-mgk2x0',
-    reason: 'no minting credential mints for cluster lab: a person adds one on Settings → Vault', decision: '6c1d2e3f-0000-4000-8000-000000000005',
+    reason: 'no minting credential mints for cluster lab: a person adds one on Vault', decision: '6c1d2e3f-0000-4000-8000-000000000005',
   },
   'vault.mint_tested': {
     asset: { kind: 'aws-role', name: '123456789012/diag' }, credential: 'AWS_LAB', sessionName: 'hopper-mint-test',
@@ -300,5 +300,5 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'step.finished': { step: '5f0c1d2e-0000-4000-8000-000000000731', host: 'build-host', exit: 0, seconds: 94, outputsBytes: 1048576 },
   'step.refused': { reason: 'the hopper has no Windows host build. It has: build-host.', host: 'build' },
   'vault.step_delivered': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
-  'vault.step_refused': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again' }, ...LANDING_BATCH_EXAMPLES, ...MACHINE_DISK_EVENT_EXAMPLES, ...MACHINE_DRAIN_EVENT_EXAMPLES, ...SANDBOX_HOST_EVENT_EXAMPLES, ...TERMINAL_EVENT_EXAMPLES, ...CHANGE_KIND_EVENT_EXAMPLES, ...KEPT_WORK_EVENT_EXAMPLES, ...GIVE_BACK_EVENT_EXAMPLES, ...PREEMPTION_EVENT_EXAMPLES, ...SKILL_LIBRARY_EVENT_EXAMPLES, ...GITLAB_EVENT_EXAMPLES, ...ISSUE_DRAFT_EVENT_EXAMPLES,
+  'vault.step_refused': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page, then ask again' }, ...LANDING_BATCH_EXAMPLES, ...MACHINE_DISK_EVENT_EXAMPLES, ...MACHINE_DRAIN_EVENT_EXAMPLES, ...SANDBOX_HOST_EVENT_EXAMPLES, ...TERMINAL_EVENT_EXAMPLES, ...CHANGE_KIND_EVENT_EXAMPLES, ...KEPT_WORK_EVENT_EXAMPLES, ...GIVE_BACK_EVENT_EXAMPLES, ...PREEMPTION_EVENT_EXAMPLES, ...SKILL_LIBRARY_EVENT_EXAMPLES, ...GITLAB_EVENT_EXAMPLES, ...ISSUE_DRAFT_EVENT_EXAMPLES,
 };

@@ -101,7 +101,7 @@ describe('the read-only check script (issue #716)', () => {
     const { results, fake } = await run('read-only', [read('terraform-workspace', 'shop-prod')]);
     expect(results.find((r) => r.id === 'terraform.state-push-direct')).toEqual({
       id: 'terraform.state-push-direct', asset: 'shop-prod', expect: 'denied', outcome: 'not-run', passed: false,
-      output: 'not run: no backend configured. A person sets the state backend of terraform-workspace shop-prod (its bucket, region and key prefix) in Settings → Vault',
+      output: 'not run: no backend configured. A person sets the state backend of terraform-workspace shop-prod (its bucket, region and key prefix) in Vault',
     });
     // The other probes run as before; nothing asked the account to push a state.
     expect(results.filter((r) => r.id !== 'terraform.state-push-direct').every((r) => r.passed)).toBe(true);

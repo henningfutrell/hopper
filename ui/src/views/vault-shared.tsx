@@ -1,4 +1,4 @@
-// Settings → Vault, shared secrets (issue #718): secrets the hopper's admin shares with every user's agents, or with
+// Vault, shared secrets (issue #718): secrets the hopper's admin shares with every user's agents, or with
 // the users named, in place of a copy in each user's vault. Every user sees each one's name — what a template puts in
 // its scope —, whose agents may read it, and who set it; never a value. Only the hopper's admin shares, replaces (sharing
 // the same name again) or removes one. A job gets it only from a box of an approved template that names it.

@@ -1,4 +1,4 @@
-// The template request on Settings → Vault (issue #708, part 9): a person writes what the box must do — its needs — and the panel
+// The template request on Vault (issue #708, part 9): a person writes what the box must do — its needs — and the panel
 // shows the template the hopper makes from them before it is made. The hopper derives the template; the page only says it.
 import type { TemplatePreview } from './wire.ts';
 

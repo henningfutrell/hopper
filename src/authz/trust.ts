@@ -44,7 +44,7 @@ export function minTrusts(stored: readonly StoredTuple[]): MinTrust[] {
 export function setMinTrust(repo: AccessRepository, profile: OperationProfile, level: TrustLevel | null, o: { by: string; at: string; gaps: readonly string[] }): boolean {
   const problem = profileProblem(profile);
   if (problem) throw new AccessEditError(400, problem);
-  if (o.gaps.length > 0 && level !== null) throw new AccessEditError(400, `the access model lacks what a minimum trust needs: ${o.gaps.join(', ')}: add it in Settings → Access`);
+  if (o.gaps.length > 0 && level !== null) throw new AccessEditError(400, `the access model lacks what a minimum trust needs: ${o.gaps.join(', ')}: add it in Users & access → Access`);
   const { by, at } = o, object = profileObject(profile);
   const had = repo.liveTuples().filter((t) => isMin(t) && t.object === object);
   if (level !== null && had.length === 1 && had[0]!.subject === trustObject(level)) return false;

@@ -109,7 +109,7 @@ function uncheckable(needs: readonly OperationProfile[]): string | undefined {
 }
 
 /** Where a person changed a template (issue #1468): the operator CLI keeps its own name as the saver. */
-const changedWhere = (t: TemplateView): string => (t.savedBy === OPERATOR_CLI_NAME ? 'through the operator CLI' : 'in Settings → Vault');
+const changedWhere = (t: TemplateView): string => (t.savedBy === OPERATOR_CLI_NAME ? 'through the operator CLI' : 'in Vault');
 
 const sameNeeds = (a: readonly OperationProfile[], b: readonly OperationProfile[]): boolean => {
   const x = a.map(keyOf).sort(), y = b.map(keyOf).sort();
@@ -320,7 +320,7 @@ export async function requestTemplate(u: TemplateRequestUser, ask: TemplateAsk, 
     const now = (was.profiles ?? []).map(keyOf).join(' ');
     return {
       status: 409,
-      reason: `a person changed template ${name} ${changedWhere(was)} since it was asked for: a request does not change it back. ${now ? `It holds these needs now: ask for them with --needs "${now}".` : 'It holds no need now.'} Else ask a person in Settings → Vault, or find another way.`,
+      reason: `a person changed template ${name} ${changedWhere(was)} since it was asked for: a request does not change it back. ${now ? `It holds these needs now: ask for them with --needs "${now}".` : 'It holds no need now.'} Else ask a person in Vault, or find another way.`,
     };
   }
   if (!reused && !was) {

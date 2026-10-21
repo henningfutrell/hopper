@@ -1,4 +1,4 @@
-// Settings → API tokens (issues #718, #881): a person mints a **grant** once for an agent that acts for them over the API —
+// Users & access → API tokens (issues #718, #881): a person mints a **grant** once for an agent that acts for them over the API —
 // the routes its scopes name, with a role no higher than theirs — and the agent keeps acting unattended: it trades the
 // grant's refresh token for short-lived API tokens, each time for a new refresh token. Both are shown once, here, right
 // after the mint. The list shows each live grant: holder, scopes, when it was made, last used and from where, and when it

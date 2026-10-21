@@ -3,7 +3,7 @@
 // say they saved it; then it says to give it as HOPPER_MASTER_KEY at the next launch. A key a rotation made is shown in it
 // the same way, once, from the rotation's answer. A hopper without its key does not start (issue #1296), so no banner
 // says one is missing. Not dismissable: each state ends only by what it asks. The rotation itself is the hopper's
-// admin's, on Settings → Vault (MasterKeyRotation); a key sealed to the host is rotated on the host. Banner and panel
+// admin's, on Vault (MasterKeyRotation); a key sealed to the host is rotated on the host. Banner and panel
 // share one state.
 import { KeyRound, RefreshCw } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -97,7 +97,7 @@ export function MasterKeyNotice() {
 }
 
 /**
- * Rotate the master key (Settings → Vault), the hopper's admin's: after a confirm, a new key, every secret sealed again
+ * Rotate the master key (Vault), the hopper's admin's: after a confirm, a new key, every secret sealed again
  * under it in one transaction; the banner shows the new key once. A key the host sealed (issue #1296) is rotated on the
  * host, which seals the new key in the same step: the card says how, and offers no button.
  */

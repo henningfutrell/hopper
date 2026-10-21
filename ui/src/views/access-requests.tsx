@@ -1,6 +1,6 @@
 // Access requests (issue #897): the one home of what jobs on boxes wait on a person for — the credentials they asked for
 // (Asked for, issue #583), the vault grants they wait for (issue #652), the templates that wait for approval (issues
-// #558, #584), and the sandbox runs jobs asked for (issue #991). Always rendered: each panel says what will show there when nothing waits. Settings → Vault keeps the
+// #558, #584), and the sandbox runs jobs asked for (issue #991). Always rendered: each panel says what will show there when nothing waits. Vault keeps the
 // configuration. Its nav badge, and its row in Needs you, count what waits for approval (accessRequestsWaiting) and nothing
 // else (issue #2168). The templates with an unknown asset (unknownAssetTemplates) show here too (issue #2123), counted in
 // Needs you's Unknown clusters row, never as an approval.
@@ -80,7 +80,7 @@ export function AccessRequests() {
       <Bastions view={view} can={canOperate} />
       {can && <DelegateApprovers />}
       <Panel title="Box tokens" icon={Ticket}>
-        <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>
+        <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#users-access/api-tokens" className="underline">Users & access → API tokens</a>.</p>
       </Panel>
     </div>
   );

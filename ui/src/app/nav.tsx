@@ -17,8 +17,9 @@
 // per kind of work; in Set up, with Settings. Topology (issue #1943) is its own entry in the Infra group, beside Infra: the
 // graph and the globe of the services in the AWS accounts and clusters. No group holds one entry only (issue #1943). Pending
 // approvals (issue #2088) is its own entry in Waiting on you, badged with the GitHub deployment approvals that wait on the
-// person; the header's in-flight badge does not count them.
-import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Rocket, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
+// person; the header's in-flight badge does not count them. Plugins, Vault and Users & access (issue #2373) left Settings for entries of
+// their own in Set up: each is a workflow a person acts in, with one home; their old Settings hashes open them.
+import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LockKeyhole, LayoutGrid, ListOrdered, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Puzzle, Rocket, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, Users, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -37,20 +38,20 @@ import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'ask', 'intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'topology', 'skills', 'usage', 'resources', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'ask', 'intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'topology', 'skills', 'plugins', 'vault', 'users-access', 'usage', 'resources', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
 /** The views above the nav groups, always shown. */
 export const NAV_PINNED = ['dashboard', 'needs-you'] as const satisfies readonly (typeof VIEWS)[number][];
-/** The nav groups, in nav order, each with its entries in order. A view of the navigation neither pinned nor in a group fails the typecheck. */
+/** The nav groups, in nav order, each with its entries in order. A view of the navigation neither pinned nor in a group, or a group of one entry, fails the typecheck. */
 export const NAV_GROUPS = [
   { id: 'waiting', label: 'Waiting on you', views: ['intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS] },
   { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'ask', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
   { id: 'infra', label: 'Infra', views: ['infra', 'topology'] },
   { id: 'sources-machines', label: 'Sources & machines', views: ['sources', 'machines', 'accounts', 'usage', 'resources'] },
-  { id: 'settings', label: 'Set up', views: ['skills', 'settings'] },
-] as const satisfies readonly { id: string; label: string; views: readonly (typeof VIEWS)[number][] }[];
+  { id: 'settings', label: 'Set up', views: ['skills', 'plugins', 'vault', 'users-access', 'settings'] },
+] as const satisfies readonly { id: string; label: string; views: readonly [(typeof VIEWS)[number], (typeof VIEWS)[number], ...(typeof VIEWS)[number][]] }[];
 const everyViewGrouped: Exclude<(typeof VIEWS)[number], (typeof NAV_GROUPS)[number]['views'][number] | (typeof NAV_PINNED)[number]> extends never ? true : never = true;
 void everyViewGrouped;
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
@@ -81,6 +82,9 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   infra: { label: 'Infra', icon: FileDiff },
   topology: { label: 'Topology', icon: Network },
   skills: { label: 'Skills', icon: BookOpen },
+  plugins: { label: 'Plugins', icon: Puzzle },
+  vault: { label: 'Vault', icon: LockKeyhole },
+  'users-access': { label: 'Users & access', icon: Users },
   usage: { label: 'Usage', icon: Gauge },
   resources: { label: 'Resources', icon: Cpu },
   settings: { label: 'Settings', icon: Settings },

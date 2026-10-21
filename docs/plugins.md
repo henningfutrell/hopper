@@ -11,7 +11,7 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
 - Loaded at daemon start. A broken plugin is refused with its error in `/api/plugins`; the daemon
   still starts. A custom id equal to a built-in id is refused.
 - It runs only once the plugins config names it. The plugins config is a config record in the
-  database, edited in the UI: Settings → Plugins → the role → **Add** an instance of it (a list role)
+  database, edited in the UI: Plugins → the role → **Add** an instance of it (a list role)
   or select it (a one-instance role), then set its options in the instance form. Every option is
   edited there, command-bearing ones too. An instance is `{ "name": <instance>, "plugin": <id>,
   "options": { … } }` in the role's section (`router`, `queueSorter`, `escalationLevels`,

@@ -135,7 +135,7 @@ describe('an EKS minting credential whose kubeconfig is gone (issue #1845)', () 
     expect(r).toMatchObject({
       tested: {
         credential: 'MINTER_UAT', account: UAT, region: 'us-east-2',
-        warning: 'the minting credential eks-uat: it names the kubeconfig kube-config, and the vault holds no secret of that name. The vault passed over it and found the cluster in the AWS accounts: fix or remove eks-uat on Settings → Vault',
+        warning: 'the minting credential eks-uat: it names the kubeconfig kube-config, and the vault holds no secret of that name. The vault passed over it and found the cluster in the AWS accounts: fix or remove eks-uat on Vault',
       },
     });
     expect(events).toEqual([{ type: 'vault.mint_tested', data: expect.objectContaining({ credential: 'MINTER_UAT' }) }]);

@@ -1,4 +1,4 @@
-// Grants and API tokens on Settings → API tokens (issues #718, #881): what each listed grant and token says, the roles a
+// Grants and API tokens on Users & access → API tokens (issues #718, #881): what each listed grant and token says, the roles a
 // person may mint one with, and the scopes a person ticks (issue #909): every scope of the registry is a box, a preset
 // ticks its boxes, and a wildcard a preset holds (`*:read`, `*`) stays one until a box it ticks is cleared. The tokens
 // themselves are shown once, right after the mint; the list never holds them.
@@ -80,7 +80,7 @@ export const boxPermissions = (patterns: readonly string[], registry: ScopeRegis
 export const presetOfScopes = (patterns: readonly string[], registry: ScopeRegistry): string | undefined =>
   registry.presets.find((p) => p.scopes.length === patterns.length && p.scopes.every((s) => patterns.includes(s)))?.id;
 
-/** The user code a link to Settings → API tokens holds (issue #892): `#settings/api-tokens/BCDF-GHJK` → `BCDF-GHJK`; '' when none. */
+/** The user code a link to Users & access → API tokens holds (issue #892): `#users-access/api-tokens/BCDF-GHJK` → `BCDF-GHJK`; '' when none. */
 export const deviceCodeOfHash = (hash: string): string => decodeURIComponent(hash.replace(/^#/, '').split('/')[2] ?? '');
 
 /**

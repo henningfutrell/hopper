@@ -1,4 +1,4 @@
-// Access in plain words (issues #559, #581): a relationship tuple and a chain of them, as Settings → Access shows an
+// Access in plain words (issues #559, #581): a relationship tuple and a chain of them, as Users & access → Access shows an
 // approval and the path that allowed a decision, a job's trust and a profile's minimum trust (issue #655) too; a
 // requester by its kind and name. Pure.
 import type { Requester, RelationshipTuple } from './wire.ts';

@@ -1,4 +1,4 @@
-// Settings → Vault, sandbox strictness (issue #655 part 8, brake 2), an admin's: which sandbox runs need a person — by
+// Vault, sandbox strictness (issue #655 part 8, brake 2), an admin's: which sandbox runs need a person — by
 // default, for a blast radius level, or for a template. Standard by default. A change applies at once: a run approved
 // with no person no longer counts where a person is now asked.
 import { Gauge, Info } from 'lucide-react';

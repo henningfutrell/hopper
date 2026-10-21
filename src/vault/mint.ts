@@ -2,7 +2,7 @@
 // operation on an asset; the vault mints a short-lived one — an AWS role session, a Kubernetes token — from the minting
 // credential for that account or cluster, and only after Access (`decideMint`) allows the box's template the operation
 // on the asset. Every mint and every renewal asks Access again. A deny mints nothing: the profile waits at the
-// first-time gate (Settings → Vault) when the template declares it, else it is refused; the reason is on the job's
+// first-time gate (Vault) when the template declares it, else it is refused; the reason is on the job's
 // timeline. The audit (`vault.minted`) carries Access's decision id beside each mint. The minting credential is opened
 // (or read in its vault backend) in memory, for the one call, and never leaves the hopper.
 import type { Clock, UserStore } from '../domain/ports.ts';
@@ -90,7 +90,7 @@ export async function mintPassingOver<S extends { name: string }>(
   if (typeof other === 'string') return passed(other);
   const second = await from(fromOf(other), target, jobId, identify);
   if ('refused' in second) return passed(second.refused);
-  const warning = `${made.refused}. The vault passed over it and found the cluster in the AWS accounts: fix or remove ${skip} on Settings → Vault`;
+  const warning = `${made.refused}. The vault passed over it and found the cluster in the AWS accounts: fix or remove ${skip} on Vault`;
   return { source: other, made: { ...second, warning } };
 }
 
@@ -110,7 +110,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     const declared = (vault.template(template)?.profiles ?? []).some((p) => sameProfile(p, profile));
     const approved = (o.access?.approvedProfiles().get(template) ?? []).some((p) => sameProfile(p, profile));
     if (declared && !approved) return `Access denied it: ${d.reason}. ${profileInWords(profile)} waits for a person's approval on Access requests (the first-time gate)`;
-    if (!declared) return `Access denied it: ${d.reason}. ${template} does not declare ${profileInWords(profile)}: a person adds it to the template on Settings → Vault, then approves it`;
+    if (!declared) return `Access denied it: ${d.reason}. ${template} does not declare ${profileInWords(profile)}: a person adds it to the template on Vault, then approves it`;
     return `Access denied it: ${d.reason}`;
   };
 

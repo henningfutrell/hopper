@@ -14,13 +14,13 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | | where |
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
-| Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job holds no GitHub token: its `git` and GitHub steps go through the hopper, which uses the connected account's token (docs/design.md "Git through the hopper"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
-| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, or as a mounted Secret file (`HOPPER_MASTER_KEY_FILE`), never from a volume of the hopper's own: "The master key" below. |
+| Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job holds no GitHub token: its `git` and GitHub steps go through the hopper, which uses the connected account's token (docs/design.md "Git through the hopper"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
+| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Vault and never given to a job. Given at launch as a variable, or as a mounted Secret file (`HOPPER_MASTER_KEY_FILE`), never from a volume of the hopper's own: "The master key" below. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (seeds the plugin store setting on a hopper that never had one set; the plugin store is set in the UI, Plugins → Plugin store, and defaults to the one the Pages site publishes: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
-| Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
+| Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
 | GitHub | each user's GitHub sign-in, the **connected account** (sign in with GitHub, or Sources → Connect GitHub, then choose the job repositories in Sources): the one way the hopper reads and writes GitHub. No GitHub App private key is given to a hopper (issue #1377); no gh CLI source and no gh login since issue #359. Setting it up: `README.md` "Connect GitHub". |
-| Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in the plugins config's machine sources (Settings → Plugins → Machine sources, or the Machines view) — `client` targets (a computer or a sandbox box, joined with one line), `ssh` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
+| Where jobs run | machines: this host's herdr session (`hopper-herdr`; not in a container, issue #141), and attached machines, instances in the plugins config's machine sources (Plugins → Machine sources, or the Machines view) — `client` targets (a computer or a sandbox box, joined with one line), `ssh` targets, `docker` container targets. Setting each one up, step by step: `README.md` "Add machines". |
 
 `hopper` is the operator CLI (`hopper config …`, `hopper users`, `hopper user add`, `hopper user transfer`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
 
@@ -154,7 +154,7 @@ If either count is not 0, rotate the key now (below). Deleting the log lines is 
 **A key sealed to the host** (issue #1296): `bash master-key.sh rotate` in the compose folder, then
 `bash master-key.sh run podman compose up -d --force-recreate --no-deps hopper` ("The master key sealed to the host").
 
-**With one command** (issue #659): the hopper's admin rotates the key from Settings → Vault → Master key → **Rotate the
+**With one command** (issue #659): the hopper's admin rotates the key from Vault → Master key → **Rotate the
 master key**, or from the operator CLI: `hopper master-key rotate` (in compose:
 `podman compose exec hopper hopper master-key rotate`). The hopper makes a new key and seals every secret it keeps
 again under it, in one transaction: if anything fails, nothing changes. The running hopper goes on under the new key,
@@ -207,7 +207,7 @@ an earlier update made too). A key given at launch does not reach a running cont
 old environment.
 
 The connected account's tokens are among them: no new GitHub sign-in. A secret that neither key opens is named at
-start (`start check: system secret <name> cannot be opened: …`) and on Settings → Vault.
+start (`start check: system secret <name> cannot be opened: …`) and on Vault.
 Keep using the same key with this database: a hopper on the database with neither key reads the connection as
 *cannot be read* and asks for the key back. Connecting again instead makes another GitHub grant (docs/design.md
 "One grant per connection").
@@ -783,7 +783,7 @@ OIDC realm set up at launch ("Sign-in set up at launch") works the same way in a
 kubectl --namespace hopper exec -i deploy/hopper -c hopper -- hopper local-account add admin@example.com < password-file
 ```
 
-An agent then acts for a person through a **grant** the person mints in Settings → API tokens (`docs/design.md` "Grants
+An agent then acts for a person through a **grant** the person mints in Users & access → API tokens (`docs/design.md` "Grants
 and refresh tokens"), whatever realm they signed in through: the agent trades its refresh token for API tokens at
 `POST /ui/auth/token/refresh`. GitHub is a source a person attaches after the sign-in (Sources → Connect GitHub), not a
 requirement of the install.
@@ -1003,7 +1003,7 @@ check's local account after `hopper local-account password admin@example.com`) a
 
 Access (OpenFGA) decides each mint and each renewal, each shared-secret read and each vault grant (issue #559,
 docs/design.md "Access: OpenFGA decides each mint"). With no OpenFGA, or one the hopper cannot reach, the vault mints
-nothing, gives no shared secret, and nobody can grant a job the vault; Settings → Access says why. Intake asks it too (`intake#can_start_jobs`): without
+nothing, gives no shared secret, and nobody can grant a job the vault; Users & access → Access says why. Intake asks it too (`intake#can_start_jobs`): without
 OpenFGA no login is a trusted actor, every issue is a request card, and Approve and Accept the new text are refused.
 
 - **In containers** it is set up: `compose.yaml` runs `docker.io/openfga/openfga` as `openfga-migrate` and `openfga`,
@@ -1053,7 +1053,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   `create` on `serviceaccounts/token` for those service accounts, and `create` and `delete` on `secrets` in the same
   namespaces (issue #1371): each token a sandbox gets is bound to an empty Secret the hopper makes, labelled
   `io.hopper.mint`, and deleting that Secret when the sandbox ends stops the token at once. Without these rights, a
-  sandbox gets no Kubernetes token. In Settings → Vault, set a secret with *Mints for*
+  sandbox gets no Kubernetes token. In Vault, set a secret with *Mints for*
   `cluster/<name>` and the value `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`.
   Each token the hopper mints lives 10 minutes at most, and a sandbox's token ends with its sandbox. For read on a whole cluster, this sets up both service accounts in the
   namespace `hopper` (for a namespace, put `hopper-read` and its binding in that namespace, and let the role below
@@ -1102,7 +1102,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
      or an aws-auth mapping to a group bound to `view`. Its trust policy lets the AWS minting identity assume it, as
      for any read role below.
   2. The AWS minting credential for the role's account (*Mints for* `aws-account/<id>`, below).
-  3. In Settings → Vault, a secret with *Mints for* `cluster/<name>` and the value
+  3. In Vault, a secret with *Mints for* `cluster/<name>` and the value
      `{"type": "eks", "roleArn": "arn:aws:iam::<id>:role/eks-view", "cluster": "<EKS name>", "region": "<region>", "server": "https://….eks.amazonaws.com", "certificateAuthorityData": "<base64 PEM>"}`.
      When the vault already holds a kubeconfig that signs in with `aws eks get-token`, name it in place of the cluster:
      `{"type": "eks", "roleArn": "…", "kubeconfig": "<its vault name>"}` (and `"context": "<name>"` when it is not the
@@ -1144,7 +1144,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
      aws iam create-access-key --user-name hopper-minter
      ```
 
-  3. In Settings → Vault, set a secret with *Mints for* `aws-account/<id>` and the access key as its value, as above.
+  3. In Vault, set a secret with *Mints for* `aws-account/<id>` and the access key as its value, as above.
   4. Check it: `hopper vault mint-test aws-role/<id>/hopper-read`.
 
   The hopper's topology discovery (issue #1781, docs/design.md "The infrastructure topology") reads each account set up so
@@ -1172,7 +1172,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   `src/sandbox/tools.ts`, and no other. A workspace that needs another provider, or pins another AWS provider version in
   its `.terraform.lock.hcl` or its version constraint, cannot `init` there.
 
-  **The workspace's state backend** (issue #715, part 6). Set it on the workspace's profile: Settings → Vault, **Edit**
+  **The workspace's state backend** (issue #715, part 6). Set it on the workspace's profile: Vault, **Edit**
   the template, **State backend** (bucket, region, key prefix); or
   `hopper template save <name> --image <image> --backend <workspace>=<bucket>[/<key prefix>]@<region>`. The read-only check
   then runs `terraform.state-push-direct`: past the wrapper, `init` with that S3 backend at the key
@@ -1224,10 +1224,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   needs `iam:SimulatePrincipalPolicy` (`ReadOnlyAccess` holds it as `iam:Simulate*`). Without it, the check says "not
   checked" and refuses nothing.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
-  `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
+  `aws-role/<id>/<role>`), and a person approves them on Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
 - **A vault grant** is needed too: a job gets a minted credential only after a person grants it the vault
-  (Settings → Vault, Vault grants).
+  (Vault, Vault grants).
 - **The read-only check** (issue #797) uses the same minting credentials: before a check box of a template of read
   needs starts, the hopper mints a read session for each `aws-role` and a `hopper-read` token for each cluster or
   namespace, and the box's probes run with them. A need with no minting credential fails the check and says which one
@@ -1279,7 +1279,7 @@ sync (`argocd app sync --core`, or a patch of the Application's `operation`). To
 
 4. **Take sync away from people and other tools** in Argo CD's own RBAC (`argocd-rbac-cm`): no role but an admin's for
    break-glass may `sync` a gated application. The hopper cannot see a sync it did not mint for, other than as drift.
-5. **The template** declares `sync` on `argocd-app/<cluster>/<app>`, and a person approves it on Settings → Vault.
+5. **The template** declares `sync` on `argocd-app/<cluster>/<app>`, and a person approves it on Vault.
 ## Search
 
 Search (issue #945, docs/design.md "Search") finds your jobs, artifacts, infra plans, and the issues and pull requests your job sources see by their words, filters and facets: `GET /api/search`,
@@ -1404,7 +1404,7 @@ into `compose.yaml` (issue #894):
 | That, with a local KMS | `COMPOSE_PROFILES=hopper-vault,kms`, `HOPPER_VAULT_URL=http://hopper-vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
 | A local KMS, with the vault in the hopper | `COMPOSE_PROFILES=kms` and `HOPPER_KMS_URL=http://kms:8080` |
 
-Check: Settings → Vault (http://127.0.0.1:4790/#settings/vault) shows no problem. `podman compose ps` lists
+Check: Vault (http://127.0.0.1:4790/#vault) shows no problem. `podman compose ps` lists
 `hopper-vault` and `kms` as running. To turn a service off, give the settings without it at launch (after an update,
 they override the defaults written into `compose.yaml`) and run `podman compose up -d --remove-orphans`.
 
@@ -1418,7 +1418,7 @@ preshared key `HOPPER_VAULT_KEY`. The `postgres` service makes that key on its f
 recreates `postgres` once.
 
 - The vault keeps its write-only rule and every check of a delivery (docs/design.md "The vault in a container of its own").
-- When the vault container is not running, the hopper still works. Settings → Vault says the vault is not reachable,
+- When the vault container is not running, the hopper still works. Vault says the vault is not reachable,
   a change answers 503, and a box's ask is refused.
 - Its key: the master key, or the KMS's data key when `HOPPER_KMS_URL` or `HOPPER_KMS_REGION` is set. `HOPPER_MASTER_KEY_PREVIOUS` given at launch
   reaches it too (key rotation, "Rotating the master key").
@@ -1438,7 +1438,7 @@ first ask. Its keys are in the `kms` volume.
 - **Turn it off**: a value sealed under the data key does not open without the KMS. Set each vault secret again.
 - **Keep the `kms` volume.** Removing it (`podman compose down -v`) loses every value sealed under a data key. Back it
   up with the database.
-- When the KMS is down, the vault stores and delivers nothing and Settings → Vault says why. The vault container asks
+- When the KMS is down, the vault stores and delivers nothing and Vault says why. The vault container asks
   the KMS again at the next request; a vault in the hopper asks again at the next restart.
 - local-kms checks no credentials. For AWS KMS itself, set `HOPPER_KMS_REGION` (and `HOPPER_KMS_KEY`, a key you made:
   the hopper makes none in AWS); the vault uses AWS's own credential chain. In a cluster: "On Kubernetes, with Helm".
@@ -1516,7 +1516,7 @@ What it does, and what it keeps out:
 - **Grok Bot is told.** While the tunnel is up, the Grok Bot routine gets `hopper.reachable` with the URL: at start,
   when the tunnel comes back, and every 5 minutes (docs/design.md "Grok Bot routine webhook").
 - **No box action without a box grant.** The token an agent gets for its own sign-in reads, holds and cancels. To let it
-  start jobs, answer questions, merge, update or change a machine, mint a grant for it in Settings → API tokens (tick
+  start jobs, answer questions, merge, update or change a machine, mint a grant for it in Users & access → API tokens (tick
   Box grant), with only the scopes it needs. It refreshes its own API tokens through the tunnel, at
   `/ui/auth/token/refresh` (docs/design.md "Grants and refresh tokens").
 
@@ -1540,7 +1540,7 @@ changes"). Something must look for them on a schedule: `scripts/out-of-band-coll
 for that. It runs outside the hopper, on any machine with Node 24 or later, a checkout of this repository, and the read
 credentials of what it checks. It needs no `npm install`.
 
-1. Mint a grant for it: Settings → API tokens (http://127.0.0.1:4790/#settings/api-tokens), label `drift collector`, role
+1. Mint a grant for it: Users & access → API tokens (http://127.0.0.1:4790/#users-access/api-tokens), label `drift collector`, role
    operator, scope `out-of-band:signals`. Or on the hopper's host: `hopper token mint --label "drift collector" --holder
    cron --role operator --scope out-of-band:signals`. Copy the refresh token (`hopper_rt_…`). It is shown once.
 2. Run it once by hand, with the sources you have, to keep the refresh token in its state file:
@@ -1807,7 +1807,7 @@ to the pods' join step only.
 3. Keep the agent's sign-in in your vault once: on Logins, under **Claude sign-in for pods**, type the Claude account and
    select **Sign in**. Open the URL on its card, sign in as that account, and paste the code the page shows into the card.
    The hopper runs `claude setup-token` itself and keeps the token as the vault secret `CLAUDE_TOKEN`. (Or run
-   `claude setup-token` on any machine and set what it prints, `sk-ant-oat…`, as `CLAUDE_TOKEN` in Settings → Vault.)
+   `claude setup-token` on any machine and set what it prints, `sk-ant-oat…`, as `CLAUDE_TOKEN` in Vault.)
    Each job on a lane pod starts signed in with
    it, also after a pod starts again with a new volume. A `claude-plan` usage source that names a lane pod reads it with
    the token too. The token is not kept in a pod's volume, its spec or a ConfigMap.
@@ -1887,9 +1887,9 @@ None is needed: without one the hopper starts and its own vault works.
 - **HashiCorp Vault in the compose stack**: `podman compose --profile vault up -d` starts the `vault` service beside the
   hopper. Its first start sets Vault up and makes a read-only token for the hopper, which the hopper reads as
   `VAULT_TOKEN_FILE`. Then:
-  1. Settings → Plugins → Vault backends → add `hashicorp-vault`. Its defaults reach the service.
+  1. Plugins → Vault backends → add `hashicorp-vault`. Its defaults reach the service.
   2. Write a secret: `podman compose exec vault sh -c 'VAULT_TOKEN=$(cat /vault/keys/root_token) vault kv put secret/apps/db password=...'`.
-  3. Settings → Vault → Add secret → Kept in: the backend, reference `apps/db#password`. Add it to a template and approve it.
+  3. Vault → Add secret → Kept in: the backend, reference `apps/db#password`. Add it to a template and approve it.
 
   The unseal key and the root token are in the `vault-keys` volume, beside Vault's data: whoever can read that volume
   can open it. Keep a copy of `root_token` elsewhere if you need it. To stop using it: remove the backend in Settings →

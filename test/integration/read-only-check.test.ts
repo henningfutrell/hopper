@@ -138,7 +138,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
 
     const refused = await stepBox(a, token, t.name);
     expect(refused.status).toBe(409);
-    expect(refused.body.error).toContain(`it failed (${failed.join('; ')}). A person runs it again in Settings → Vault, or with hopper template check ${t.name}`);
+    expect(refused.body.error).toContain(`it failed (${failed.join('; ')}). A person runs it again in Vault, or with hopper template check ${t.name}`);
     const told = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     expect(told.code).toBe(3);
     expect(told.stdout).toContain(`waiting: template ${t.name} is approved; waiting for the read-only check of ${t.name}: it failed`);

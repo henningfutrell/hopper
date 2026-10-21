@@ -1,4 +1,4 @@
-// A template's agent credential on Settings → Vault (issue #708, part 10, design.md "The agent credential"): one of its
+// A template's agent credential on Vault (issue #708, part 10, design.md "The agent credential"): one of its
 // own secrets, a Claude token that `claude setup-token` prints, which its boxes start with, signed in. The server
 // checks the same rules and stays the authority.
 

@@ -1,4 +1,4 @@
-// Settings → Vault, sandbox strictness (issue #655 part 8, brake 2, design.md "Trust stamps"): which sandbox runs gate 2
+// Vault, sandbox strictness (issue #655 part 8, brake 2, design.md "Trust stamps"): which sandbox runs gate 2
 // may approve with no person — by default, per blast radius level and per template. Standard by default. Read at each
 // ask, so a change applies at once. Least role to change: admin; a box action, since a looser brake lets runs through
 // with no person.

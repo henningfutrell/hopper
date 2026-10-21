@@ -1,4 +1,4 @@
-// Issue #708, part 9: the template request on Settings → Vault, the page's pure model. The panel shows the template the needs make
+// Issue #708, part 9: the template request on Vault, the page's pure model. The panel shows the template the needs make
 // before a person asks for it: who approves it and why, whether it is there already, and what a box of it is given.
 import { describe, expect, it } from 'vitest';
 import { REQUEST_SECRETS, requestApproval, requestExists } from '../../ui/src/model/vault-template-request.ts';

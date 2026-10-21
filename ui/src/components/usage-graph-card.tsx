@@ -2,7 +2,7 @@
 // a stretch zoomed to — at the graph step the hopper picks for it, and a legend that names each line and
 // toggles it. Zoom in and out by the buttons, a pinch, Ctrl/⌘ + scroll, or a drag across; Reset goes back
 // to the preset. New samples redraw it as the stream tells of them (SSE usage.recorded), and once a minute
-// besides. The Dashboard's shows the user's own accounts and saves the preset for them; Settings → Users
+// besides. The Dashboard's shows the user's own accounts and saves the preset for them; Users & access → Users
 // shows the instance admin the lines summed over every user. The resource graphs (issue #560) use it too, with
 // their own lines (`linesOf`), redrawn as the stream tells of new machine samples (SSE machine.recorded); so does the
 // stack's (issue #947), read again once a minute only. A read fails after its time (issue #1182): the card then says

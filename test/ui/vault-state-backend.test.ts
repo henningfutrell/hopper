@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Issue #715, part 6, on the page: Settings → Vault, a template's form sets the state backend of each terraform workspace
+// Issue #715, part 6, on the page: Vault, a template's form sets the state backend of each terraform workspace
 // profile — its bucket, region and key prefix —, which the read-only check pushes a state of its own to; Save posts it
 // on that profile. The template shows it.
 import { act, createElement } from 'react';
@@ -91,7 +91,7 @@ async function boot(t: Record<string, unknown>) {
   return daemon;
 }
 
-describe('Settings → Vault: a terraform workspace\'s state backend (issue #715)', () => {
+describe('Vault: a terraform workspace\'s state backend (issue #715)', () => {
   it('the form sets the backend of a terraform workspace profile, and Save posts it on that profile', async () => {
     const daemon = await boot(TF);
     expect(item()!.textContent).toContain('shop-prod: no state backend');

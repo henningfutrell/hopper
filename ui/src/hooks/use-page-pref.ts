@@ -31,3 +31,11 @@ export function useGroupOpen(key: string, openFirst = true): [boolean, () => voi
   const [v, set] = usePagePref(key, openFirst ? 'open' : 'closed', OPEN);
   return [v === 'open', () => set(v === 'open' ? 'closed' : 'open')];
 }
+
+/** Whether any of the groups `keys` is open, and a setter that opens or folds them all (issue #2373). */
+export function useGroupsOpen(keys: readonly string[], openFirst = true): [boolean, (open: boolean) => void] {
+  const p = usePrefs();
+  const fallback = openFirst ? 'open' : 'closed';
+  const anyOpen = keys.some((k) => prefOf(p, k, fallback, OPEN) === 'open');
+  return [anyOpen, (open: boolean) => { for (const k of keys) setPagePref(k, open ? 'open' : 'closed'); }];
+}

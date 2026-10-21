@@ -3,7 +3,7 @@
 // issue. Its job is queued at once from the `direct` job source. The reads answer each submission with its job's status,
 // result and open questions, so an agent that submitted one reads its result back. Least role: operator. A box action:
 // it starts a job. The authorization `vault` is the submitter's vault grant for the job's item: Access decides it first,
-// as for Grant on Settings → Vault (OpenFGA `vault_grant#can_grant`); refused or not asked, nothing is kept.
+// as for Grant on Vault (OpenFGA `vault_grant#can_grant`); refused or not asked, nothing is kept.
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';

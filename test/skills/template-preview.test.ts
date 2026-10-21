@@ -1,4 +1,4 @@
-// Issue #708, part 9: the template request on Settings → Vault. A person writes what the box must do — its needs — and the hopper
+// Issue #708, part 9: the template request on Vault. A person writes what the box must do — its needs — and the hopper
 // shows the template it would make from them before it makes it: its name, its image, the tools its needs use, that it
 // holds no vault secret, and who approves it (the read policy, or a person, and why). The same derivation as a job's
 // request (issue #716, design.md "Templates on request"); nothing is saved. Pure.
