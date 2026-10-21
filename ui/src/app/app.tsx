@@ -15,8 +15,7 @@ import { Tagged } from '@/views/tagged';
 import { Artifacts } from '@/views/artifacts';
 import { BugReports } from '@/views/bug-reports';
 import { Decisions } from '@/views/decisions';
-import { DirectJobs } from '@/views/direct-jobs';
-import { DirectQueries } from '@/views/direct-queries';
+import { AskHopper } from '@/views/ask';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
 import { Infra } from '@/views/infra';
@@ -61,7 +60,7 @@ const VIEW: Record<View, () => React.ReactNode> = {
   approvals: tabs('approvals', { 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals }),
   failures: tabs('failures', { failures: Failures, parked: Parked }),
   jobs: tabs('jobs', { jobs: Jobs, queue: Queue }),
-  ask: tabs('ask', { 'direct-jobs': DirectJobs, 'direct-queries': DirectQueries }),
+  ask: AskHopper,
   activity: tabs('activity', { events: Events, decisions: Decisions }),
   machines: tabs('machines', { machines: Machines, accounts: Accounts, logins: Logins }),
   usage: tabs('usage', { usage: Usage, resources: Resources }),

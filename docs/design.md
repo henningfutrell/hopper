@@ -19161,7 +19161,7 @@ plain words. The terms stay in the glossary and the code; only the UI words chan
   filter. A row opens its detail: the ids and the data, in monospace. Copy takes every event the filters show.
 - **Questions**: a card's escalation trail is folded behind "N model answers"; the reason banner, the question and the
   answer box stay in view.
-- **Ask hopper** (`#ask`) is one nav entry in place of Direct jobs and Direct queries, a merged page (issue #2374) with two
+- **Ask hopper** (`#ask`, `ui/src/views/ask.tsx`) is one nav entry in place of Direct jobs and Direct queries, a merged page (issue #2374) with two
   tabs: Run a job (`#ask/direct-jobs`) and Ask a question (`#ask/direct-queries`; `#ask/question` still opens it). `#direct-jobs` and `#direct-queries`, with or without an
   id after them, still open the matching tab (`MOVED` in `ui/src/app/routes.ts`), so links already sent keep working.
 - **Waiting to be ordered** in place of the pre-sort: the Queue badge, the Queue column and its button (Accept this
