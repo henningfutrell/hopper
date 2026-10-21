@@ -2,7 +2,8 @@
 // `checkpoint` runs on the job's machine — this machine, over ssh, or as a client target's `POST /checkpoint` —, never
 // typed into a pane, where the agent works. It reads the job's worktree and copies nothing into it: the patch from a
 // commit on the remote to the work tree as it is (uncommitted and untracked files too, through an index of its own, so
-// the job's own index is never locked; a node_modules link to shared dependencies left out), the commits not pushed, and the agent session's file. It prints them, gzip and
+// the job's own index is never locked; a node_modules link to shared dependencies left out), the commits not pushed, and the agent session's file
+// (with its subagents' logs, for the token ledger only, issue #2302). It prints them, gzip and
 // base64, between two marks. Imports nothing of hopper but its own directory: it is installed as plain files.
 
 /** The most a checkpoint may hold, its patch and session compressed: printed as base64, it stays under 16 MiB of output. */
@@ -40,10 +41,14 @@ const SCRIPT = [
   'if [ -n "$f" ]; then gzip -c < "$f" > "$t/s.gz" || none "gzip failed"; fi;',
   'n=$(cat "$t"/*.gz | wc -c | tr -d " ");',
   '[ "$n" -le "$max" ] || none "too large: $n bytes compressed, more than $max";',
+  // The session's subagent logs (issue #2302): counted only, never kept, so they are left out when they do not fit.
+  'if [ -n "$f" ] && [ -d "${f%.jsonl}/subagents" ]; then for g in "${f%.jsonl}"/subagents/*.jsonl; do [ -f "$g" ] && { cat "$g"; echo; }; done | gzip -c > "$t/a.z" || rm -f "$t/a.z";',
+  '[ -s "$t/a.z" ] && [ $((n + $(wc -c < "$t/a.z"))) -le "$max" ] || rm -f "$t/a.z"; fi;',
   'echo hopper-checkpoint-begin; echo "branch $b"; echo "base $base"; echo "head $head";',
   'git log -n 50 --format="commit %h %s" "$base..HEAD";',
   'printf "patch "; base64 < "$t/p.gz" | tr -d "\\n"; echo;',
   'if [ -f "$t/s.gz" ]; then printf "session "; base64 < "$t/s.gz" | tr -d "\\n"; echo; fi;',
+  'if [ -f "$t/a.z" ]; then printf "subagents "; base64 < "$t/a.z" | tr -d "\\n"; echo; fi;',
   'echo hopper-checkpoint-end',
 ].join(' ');
 
@@ -76,7 +81,7 @@ export function checkpointOf(body: unknown): string[] | string {
 
 /** What the script printed. */
 export type ReadCheckpoint =
-  | { taken: { branch?: string; base: string; head: string; commits: string[]; patch: Buffer; session?: Buffer } }
+  | { taken: { branch?: string; base: string; head: string; commits: string[]; patch: Buffer; session?: Buffer; subagents?: Buffer } }
   | { none: string };
 
 /** The checkpoint the script printed, or why it took none; undefined when it printed neither (it did not finish). */
@@ -87,7 +92,7 @@ export function readCheckpoint(stdout: string): ReadCheckpoint | undefined {
   const from = lines.indexOf(CHECKPOINT_BEGIN);
   const to = lines.indexOf(CHECKPOINT_END, from + 1);
   if (from < 0 || to < 0) return undefined;
-  const got: { branch?: string; base?: string; head?: string; commits: string[]; patch?: Buffer; session?: Buffer } = { commits: [] };
+  const got: { branch?: string; base?: string; head?: string; commits: string[]; patch?: Buffer; session?: Buffer; subagents?: Buffer } = { commits: [] };
   for (const line of lines.slice(from + 1, to)) {
     const at = line.indexOf(' ');
     const [key, value] = at < 0 ? [line, ''] : [line.slice(0, at), line.slice(at + 1)];
@@ -97,9 +102,10 @@ export function readCheckpoint(stdout: string): ReadCheckpoint | undefined {
     else if (key === 'commit') got.commits.push(value);
     else if (key === 'patch') got.patch = Buffer.from(value, 'base64');
     else if (key === 'session' && value) got.session = Buffer.from(value, 'base64');
+    else if (key === 'subagents' && value) got.subagents = Buffer.from(value, 'base64');
   }
   if (!got.base || !got.head || !got.patch) return undefined;
-  return { taken: { ...(got.branch ? { branch: got.branch } : {}), base: got.base, head: got.head, commits: got.commits, patch: got.patch, ...(got.session ? { session: got.session } : {}) } };
+  return { taken: { ...(got.branch ? { branch: got.branch } : {}), base: got.base, head: got.head, commits: got.commits, patch: got.patch, ...(got.session ? { session: got.session } : {}), ...(got.subagents ? { subagents: got.subagents } : {}) } };
 }
 
 // ---- Restore: typed into the new pane's shell, in the job's new worktree, before its agent resumes -----------------

@@ -2,7 +2,8 @@
 // tens of MiB, and unpacking it, masking it line by line and packing it again held the hopper's one event loop for
 // seconds, every CHECKPOINT_EVERY_MS for each job at work. The scrub runs in a worker thread of its own
 // (checkpoint-scrub-worker.ts), one a checkpoint, which ends with it. The same unpack counts the session's token use
-// (issue #2302, the token ledger): counts only, read before the scrub, so a mask never hides a count.
+// (issue #2302, the token ledger): counts only, read before the scrub, so a mask never hides a count. The session's subagent
+// logs are counted with it, and never kept.
 import { Worker } from 'node:worker_threads';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { sessionTokenUse, type SessionTokenUse } from '../domain/token-usage.ts';
@@ -21,7 +22,7 @@ export interface CheckpointParts { patch: Buffer; session?: Buffer; use?: Sessio
  * What a scrub is given: the parts, and the values of the vault secrets delivered to the job (issue #1957), masked by
  * value. `countOnly`: only the session's token use is wanted, nothing scrubbed or kept (the read as a run ends).
  */
-export interface ScrubAsk { patch: Uint8Array; session?: Uint8Array | undefined; held?: readonly string[] | undefined; countOnly?: boolean }
+export interface ScrubAsk { patch: Uint8Array; session?: Uint8Array | undefined; subagents?: Uint8Array | undefined; held?: readonly string[] | undefined; countOnly?: boolean }
 
 const unpacked = (gz: Uint8Array, encoding: BufferEncoding): string => gunzipSync(gz, { maxOutputLength: MAX_UNPACKED }).toString(encoding);
 
@@ -29,7 +30,8 @@ const unpacked = (gz: Uint8Array, encoding: BufferEncoding): string => gunzipSyn
 export function scrubParts(t: ScrubAsk): CheckpointParts {
   const held = t.held ?? [];
   const log = t.session ? unpacked(t.session, 'utf8') : undefined;
-  const use = log !== undefined ? { use: sessionTokenUse(log) } : {};
+  // A subagent's message ids are its own; one it shares with the session counts once.
+  const use = log !== undefined ? { use: sessionTokenUse(t.subagents ? `${log}\n${unpacked(t.subagents, 'utf8')}` : log) } : {};
   if (t.countOnly) return { patch: Buffer.alloc(0), ...use };
   // `latin1` keeps a patch's bytes as they were.
   const patch = gzipSync(Buffer.from(scrubPatch(unpacked(t.patch, 'latin1'), held), 'latin1'));
@@ -39,7 +41,7 @@ export function scrubParts(t: ScrubAsk): CheckpointParts {
 const asBuffer = (u: Uint8Array): Buffer => Buffer.from(u.buffer, u.byteOffset, u.byteLength);
 
 /** The parts scrubbed in a worker thread; rejects with the worker's error. */
-export function scrubCheckpoint(t: Omit<CheckpointParts, 'use'> & Pick<ScrubAsk, 'held' | 'countOnly'>): Promise<CheckpointParts> {
+export function scrubCheckpoint(t: Omit<CheckpointParts, 'use'> & Pick<ScrubAsk, 'subagents' | 'held' | 'countOnly'>): Promise<CheckpointParts> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./checkpoint-scrub-worker.ts', import.meta.url), { workerData: t });
     let answered = false;

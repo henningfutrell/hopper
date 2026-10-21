@@ -1,4 +1,4 @@
-// Which pull requests a job may edit or close through the GitHub proxy (issues #1734, #2127, #2151, #2227), from the user's
+// Which pull requests a job may edit or close through the GitHub proxy (issues #1734, #2127, #2151, #2227, #2319), from the user's
 // store; the rule itself is checkRequest's (src/github-proxy/policy.ts).
 import { issueText, namesItem } from '../domain/linked-pulls.ts';
 import type { UserStore } from '../domain/ports.ts';
@@ -9,14 +9,16 @@ import { isPullRequest, type ProxyOp } from '../github-proxy/index.ts';
 const OWNED_READ = 1000;
 
 /**
- * A pull request the job opened through the proxy, or its work item's — one an earlier job of the item opened (issue #1734) —,
+ * A pull request the job or an earlier job of its item opened through the proxy (issue #2319), or its work item's — one an
+ * earlier job of the item opened (issue #1734) —,
  * or the one it was started to tend (issue #2127): `job.pull_request_tended` of the job it reruns names it the next job.
  * An edit also of one its issue's title or body names (issue #2151; issue #2227: the item's approved text, every name of
  * it): the job was told to update it. Else why not, for the refusal.
  */
 export function ownsPullRequest(store: UserStore, job: Job, repo: string, number: number, op: ProxyOp): true | string {
-  const opened = store.events.recent(OWNED_READ, ['github_proxy.done'], job.id)
-    .some((e) => e.data.op === 'pr.create' && e.data.number === number && typeof e.data.repo === 'string' && e.data.repo.toLowerCase() === repo.toLowerCase());
+  // This job, or an earlier job of its item (issue #2319: an earlier part's, in any repository), opened it through the proxy.
+  const opened = (job.source ? store.jobs.idsOfItem(job.source.key) : [job.id]).some((id) => store.events.recent(OWNED_READ, ['github_proxy.done'], id)
+    .some((e) => e.data.op === 'pr.create' && e.data.number === number && typeof e.data.repo === 'string' && e.data.repo.toLowerCase() === repo.toLowerCase()));
   const itemPr = job.source ? store.workItems.get(job.source.key)?.pullRequest : undefined;
   const tends = job.rerunOf !== undefined && store.events.recent(OWNED_READ, ['job.pull_request_tended'], job.rerunOf)
     .some((e) => e.data.nextJobId === job.id && typeof e.data.pullRequest === 'string' && isPullRequest(e.data.pullRequest, repo, number));

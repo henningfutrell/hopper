@@ -8,6 +8,7 @@ import { contextFor, jobWith, setup } from './support.ts';
 
 const ASK = { output: ['● Which colour?', '  HOPPER_QUESTION'] };
 const DONE = { output: ['● Done.', '  HOPPER_DONE'] };
+const VARS = { HOPPER_URL: 'http://hopper.test', HOPPER_GH: '/w/.worktrees/@scratch/j/credentials/gh' };
 
 describe('herdr-claude executor: a pane lost while its job waited (issue #1508)', () => {
   it('the answer goes to Claude resumed in a new pane, told why', async () => {
@@ -26,6 +27,24 @@ describe('herdr-claude executor: a pane lost while its job waited (issue #1508)'
     expect(herdr.agentStarts[1]!.paneId).not.toBe(state.paneId);
     expect(herdr.prompts.at(-1)!.text).toBe(`${LOST_NOTE}\n\nBlue.`);
     expect(again.progress.map((p) => p.message).join('\n')).toMatch(/pane was lost while it waited/);
+  });
+
+  it('the lost pane is closed before Claude resumes in the new one, so herdr cannot resume Claude there without the job\'s variables (issue #2320)', async () => {
+    const { herdr, executor } = setup({ turns: [ASK, DONE] });
+    const first = contextFor(jobWith({ prompt: 'go' }));
+    await executor.run(first.ctx);
+    const state = first.saved.at(-1) as unknown as PaneState;
+    herdr.killAgent(state.agentName);
+
+    const again = contextFor(jobWith({ prompt: 'go' }, { executorState: { ...state }, agentSession: first.sessions[0]! }));
+    again.ctx.credentials = async () => VARS;
+    expect(await executor.resume!(again.ctx, 'Blue.')).toMatchObject({ kind: 'finished' });
+    expect(herdr.closed).toContain(state.paneId);
+    const tabs = herdr.calls.filter((call) => call.method === 'createTab').map((call) => call.args[0] as { env: Record<string, string> });
+    expect(tabs.at(-1)!.env).toMatchObject(VARS);
+    const closed = herdr.calls.findIndex((call) => call.method === 'closePane' && call.args[0] === state.paneId);
+    const resumed = herdr.calls.findIndex((call) => call.method === 'startAgent' && (call.args[0] as { paneId: string }).paneId !== state.paneId);
+    expect(closed).toBeLessThan(resumed);
   });
 
   it('with no agent session recorded, the job fails: pane lost', async () => {

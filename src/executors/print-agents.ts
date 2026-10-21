@@ -3,6 +3,8 @@
 // and omp print JSON events, one per line. The shapes are the real CLIs' (cursor-agent 2026.10, codex-cli 0.160,
 // opencode 1.18, omp 18.7, claude 2.1.292). Only the call and the reading differ; the turn is print-agent.ts's.
 
+import { printTurnTokenUse, type SessionTokenUse } from '../domain/token-usage.ts';
+
 /** The agent CLIs a print-mode executor runs, by the id of its executor plugin. */
 export const PRINT_AGENTS = ['cursor-agent', 'codex', 'opencode', 'omp', 'claude'] as const;
 export type PrintAgent = (typeof PRINT_AGENTS)[number];
@@ -21,6 +23,8 @@ export type TurnSaid = { text: string; session?: string } | { error: string } | 
 
 export interface Dialect {
   argv(c: TurnCall): string[];
+  /** The token use the turn's output says, by its session (issue #2302, part 6); absent: the CLI says none the hopper reads. */
+  usage?(stdout: string, at: { first: string; last: string }): { session: string; use: SessionTokenUse } | undefined;
   /** The answer and the session to resume: a job's turn. */
   read(stdout: string): TurnAnswer;
   /** The answer, with its session when it names one. */
@@ -75,10 +79,19 @@ const cursor = dialect(
  * `claude -p --output-format json` (issue #533): Claude Code in print mode shows no screen — no onboarding, no trust
  * dialog, nothing to press — so a fresh home runs it as it is. It works in its cwd, the job's work tree.
  */
-const claude = dialect(
-  (c) => [c.bin, '-p', '--output-format', 'json', ...c.args, ...model(c), ...(c.session ? ['--resume', c.session] : []), '--', c.text],
-  readResult, 'chat id',
-);
+const claude: Dialect = {
+  ...dialect(
+    (c) => [c.bin, '-p', '--output-format', 'json', ...c.args, ...model(c), ...(c.session ? ['--resume', c.session] : []), '--', c.text],
+    readResult, 'chat id',
+  ),
+  // Its result's `modelUsage`, an error's too: the tokens were spent.
+  usage(stdout, at) {
+    let r: Json;
+    try { r = obj(JSON.parse(stdout.trim())); } catch { return undefined; }
+    const session = str(r.session_id), use = printTurnTokenUse(r, at);
+    return session && use ? { session, use } : undefined;
+  },
+};
 
 
 /** `codex exec --json`: `thread.started` names the thread; each `agent_message` item is a message; `turn.failed` ends it. */

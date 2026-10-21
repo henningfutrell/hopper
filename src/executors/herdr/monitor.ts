@@ -7,7 +7,7 @@ import { hideCodes, recogniseDeviceCode } from '../../logins/recognise.ts';
 import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
 import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '../../domain/task-count.ts';
 import type { HerdrClient } from './client.ts';
-import { restoredByHerdr, type PaneRestored } from './restored.ts';
+import { outsideItsPane, type PaneRestored } from './restored.ts';
 import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
@@ -182,7 +182,7 @@ async function watch(w: TurnWatch): Promise<Watched> {
       const agent = await herdr.getAgent(w.agentName);
       if (ctx.signal.aborted) continue;
       if (!agent) return { kind: 'failed', error: await exitedError(w) };
-      if (restoredByHerdr(agent, w.terminal)) return { paneRestored: true };
+      if (outsideItsPane(agent, w)) return { paneRestored: true, agentPane: agent.paneId };
       let recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
       if (isScrolledUp(recent)) {
         // The reply sits below the viewport (seen after long prompts): scroll, then read again.

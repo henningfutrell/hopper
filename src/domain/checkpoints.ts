@@ -35,9 +35,12 @@ export interface ParkedElsewhere { at: string; checkpointAt: string; from?: Mach
 /** At most this many commits are named on a checkpoint. */
 export const CHECKPOINT_COMMITS = 50;
 
-/** What a machine's checkpoint script gave: the checkpoint, compressed (gzip), or why it took none. */
+/**
+ * What a machine's checkpoint script gave: the checkpoint, compressed (gzip), or why it took none. `subagents`: the
+ * session's subagent logs (issue #2302), counted in the token ledger only, never kept.
+ */
 export type CheckpointCapture =
-  | { taken: Omit<JobCheckpoint, 'at' | 'machineId' | 'bytes' | 'session'> & { patch: Buffer; session?: Buffer } }
+  | { taken: Omit<JobCheckpoint, 'at' | 'machineId' | 'bytes' | 'session'> & { patch: Buffer; session?: Buffer; subagents?: Buffer } }
   | { none: string };
 
 /** The parts of a checkpoint a job reads back when it resumes elsewhere. */

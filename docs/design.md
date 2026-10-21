@@ -14905,8 +14905,10 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    with its oldest user's connection for every job, and another user's job could only file an issue.);
 4. the GitHub connection of the job's own user (issue #1380 part 5): none, or its sign-in ended — **503** saying so;
    A job edits a pull request's title or body (`pr edit N [--title T] [--body-file F]`, op `pr.edit`) or closes it with
-   no merge (`pr close N`, op `pr.close`) only when it opened that pull request through the proxy (a `github_proxy.done`
-   of `pr.create` on its timeline) or the pull request is its **work item**'s, one an earlier job of the item opened
+   no merge (`pr close N`, op `pr.close`) only when it or an earlier job of its item opened that pull request through the
+   proxy (a `github_proxy.done` of `pr.create` on the timeline of a job of its item; issue #2319: an earlier part opened a
+   pull request in another repository, which is not the work item's, and the next part, or the job resumed, could not
+   edit it) or the pull request is its **work item**'s, one an earlier job of the item opened
    (issue #1734: a job whose body lacked a block the repository's plan check reads had to open a second pull request),
    or it is the **tend job** of that pull request — the `job.pull_request_tended` of the job it reruns names it the next
    job (issue #2127: a tend job that found nothing left to merge could not close the pull request it was started to tend).
@@ -20219,8 +20221,24 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   spent, not what is new. Its words name the cap and the day, not the spend, so a held job is held once, not again at each
   checkpoint. A running job runs on: its own cap still pauses it. The hold ends by itself on the next UTC day, or when an
   admin raises or turns off the cap (the next Decision reads it). With every day cap off, no Decision reads the ledger.
-- **What it does not do yet** (later parts of #2302): print-mode agents (they keep no agent session; `claude -p`'s
-  own JSON answer holds its usage). A subagent's own session file is not read.
+- **Subagents** (part 6). Claude Code writes each subagent's messages to a log of its own, beside the session's:
+  `<config>/projects/<dir>/<session>/subagents/agent-<id>.jsonl`, not into the session's file. The checkpoint script
+  (`src/client/checkpoint.ts`) now also prints them, one after the other, gzip, as `subagents`; the scrub worker counts them
+  with the session (`scrubParts`), and `sessionTokenUse` counts a message both hold once (by message and request id). They
+  are counted only: no checkpoint keeps them, nothing scrubs them, and a resume elsewhere does not need them. They do not
+  count against the checkpoint's size: when the session and the patch fit and the subagents do not, the checkpoint leaves
+  them out, and their tokens are not counted. A client release before this one prints no `subagents`, so it counts as before.
+- **Print-mode Claude** (part 6). A `claude` print-mode job ("Print-mode agent executors") keeps no `agentSession`, so no
+  checkpoint reads its log. Each turn's JSON result says what the turn spent: `modelUsage`, per model, its subagents' too.
+  The `claude` dialect reads it (`Dialect.usage`, `printTurnTokenUse` in `src/domain/token-usage.ts`), whatever the turn
+  answered, and the executor gives it to the run's `tokenUse` (`ExecutionContext.tokenUse`, `src/domain/ports.ts`), by the
+  turn's session id. The engine adds it to what the ledger holds of that session (`keepTokenUse(…, turn)`,
+  `withTurnUse`), since a result counts its own turn only; the session's first and last counted message are when its turns
+  started and ended. The result gives no turns per model: `num_turns` goes to the model that wrote most. The one-hour
+  cache write is the result's `usage.cache_creation`, given only to a turn of one model. The budget pause does not park a
+  print-mode job, which has no park; the day budgets count its spend as any other.
+- **What it does not do**: the other print-mode CLIs (cursor-agent, codex, opencode, omp) are not read: their answers name
+  no Claude model with a list price, and the issue asks for Claude's.
 
 Verification of part 3: `test/domain/token-budget.test.ts` (the caps, the words, counted from a go-on),
 `test/integration/token-budget.test.ts` (the real daemon over the fake herdr: the setting and its event; a running job that
@@ -20240,6 +20258,14 @@ queue gate first), `test/integration/token-budget.test.ts` (the real daemon: the
 token budget used a waiting job is held with why and starts once it is raised; with a repository's used, only that
 repository's job is held), `test/ui/token-budget.test.ts` (Settings), `test/cli/usage-tokens.test.ts` (`hopper usage budget
 set --day-tokens …`).
+
+Verification of part 6: `test/domain/token-turns.test.ts` (a print-mode turn's `modelUsage` per model, with no text kept;
+a turn added to its session's rows), `test/client/checkpoint.test.ts` (the script prints the subagent logs and leaves
+them out when they do not fit), `test/engine/checkpoint-scrub.test.ts` (counted with the session, once, and not kept),
+`test/adapters/print-agent-executors.test.ts` (the `claude` executor reports each turn's use by its session),
+`test/integration/token-ledger.test.ts` (the real daemon: a checkpoint's subagents counted, the kept checkpoint without
+them), `test/integration/token-ledger-print.test.ts` (the real daemon and the `claude` executor: a question and its
+answer count both turns in one session).
 
 ## Stack resources (issue #947, 2026-10-12)
 
@@ -25439,6 +25465,19 @@ session recorded fails with the reason: a fresh session would lose what it did.
 
 **Not changed.** A pane saved before this change has no terminal and is not checked. The hopper does not change herdr's
 config: `resume_agents_on_restore` is the machine owner's, and herdr reads one config for the whole server.
+
+**Claude resumed in another pane (issue #2320, 2026-10-21).** A job whose pane was lost resumed in a new pane, and then
+ran with no `HOPPER_URL`, `HOPPER_GH`, `HOPPER_TOKEN_FILE` or git credentials, while its credentials dir still held its
+files. Every pane the hopper opens gets the job's variables at `tab create`; a shell herdr restores gets none. Two ways
+let a herdr-resumed Claude stay the job's: the hopper compared only the terminal, so Claude in **another pane** (its
+saved pane's terminal unknown, or herdr's resume racing the hopper's) was taken as the job's and the answer went to it;
+and the restart closed only the pane the hopper had saved, never the pane Claude ran in, so that Claude went on, with the
+job's agent name, outside the job's scope, which the reap does not stop. Now `outsideItsPane`
+(`src/executors/herdr/restored.ts`) is the one test, in the watch, the resume and the wait's lost-pane probe: Claude in
+another pane, or in the same pane in another terminal. The restart closes the pane Claude runs in as well as the saved
+one. A lost pane's resume closes the saved pane first, as at a park (the reap without the scratch dir), so herdr resumes
+no Claude there later. The new pane is set up as at the start: `placeCredentials` builds the job's variables there as at
+a first start.
 
 **Decisions:**
 - **Detect and start again, not prevent.** Turning `resume_agents_on_restore` off would need a write to the machine's herdr

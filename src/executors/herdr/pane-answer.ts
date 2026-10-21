@@ -9,7 +9,7 @@ import type { HerdrClient } from './client.ts';
 import { RECENT_LINES } from './monitor.ts';
 import { lastLineOf, paneStateOf } from './panes.ts';
 import { backgroundWork, readTurn, typedAfterQuestion } from './screen.ts';
-import { restoredByHerdr } from './restored.ts';
+import { outsideItsPane } from './restored.ts';
 import type { PaneState, TurnAnchor } from './start.ts';
 
 /**
@@ -88,7 +88,7 @@ export function paneLostProbe(herdrOn: (s: PaneState) => HerdrClient): Required<
       if (!s) return true;
       try {
         const agent = await herdrOn(s).getAgent(s.agentName);
-        return !agent || agent.paneId !== s.paneId || restoredByHerdr(agent, s.terminal);
+        return !agent || outsideItsPane(agent, s);
       } catch {
         return null;
       }
