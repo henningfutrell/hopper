@@ -30200,7 +30200,8 @@ the monitoring services only, and a Grafana Viewer token — is the platform's, 
   software and give a box no access, so they change nothing of who approves: the read policy approves a read template
   with them, as it approves the needs' tools. A template approved for the request is reused when it has at least the tools
   asked for.
-- **The observability skill** (`src/skills/catalog.ts`, `sh "$HOPPER_SKILL" observability`). Text only: ask for a sandbox
+- **The observability skill** (`src/skills/catalog.ts`, `sh "$HOPPER_SKILL" observability`; since the bastion path's part 4
+  it says the bastion and the relay in place of this, "Bastions"). Text only: ask for a sandbox
   with `--tools "jq promtool logcli"` and, for Grafana, `--secrets` with the vault secret of a Viewer token (a person
   approves it, as every secret); run each query as a box step under `hopper-port-forward`; a PromQL instant and range query
   (the HTTP API or `promtool query`), a LogQL query (`logcli`), a Grafana search, dashboard and panel query (the token read
@@ -30357,9 +30358,19 @@ not limit ports. Read-only past the forward is the target's own credential (a Gr
 role); nothing in the bastion enforces it. The relay reaches only the job's own bastion, whose every target was
 approved as an observe and as a bastion target of its template (part 3).
 
-**Not built (the later parts).** Part 4: the observability skill text on the bastion and the
-relay. Part 5: the read-only check's probes under observe (`kubectl exec` and a Secret read refused). Part 6: the live
-check on a cluster. A person's stop of a bastion in the UI.
+**The observability skill on the bastion (part 4).** `sh "$HOPPER_SKILL" observability` (`OBSERVABILITY_TEXT`,
+`src/skills/catalog.ts`) now says the bastion path, in place of part 1's box steps under `hopper-port-forward` (a read's
+credential cannot forward): find the services with a need step (`kubectl get svc` under a read of the namespace); ask once
+for a template with an observe on the namespace and each service as a bastion target; start the bastion; reach a target
+with `sh "$HOPPER_RELAY" TARGET -- COMMAND`. The queries run where the job runs: PromQL instant and range and LogQL with
+curl on the HTTP APIs, or `promtool` and `logcli` when the machine has them; Alertmanager's and Tempo's read APIs. The
+evidence and the guardrails are as before. The catalog line names the bastion.
+- **Grafana's API is not in it.** A relay command runs on the job's machine, and a job gets no vault secret (only a box
+  gets the vault's helper), so a Grafana Viewer token has no way to the command. The skill says so, and to run a panel's
+  PromQL or LogQL on its data source in its place. A Grafana read through the bastion's box is a later part.
+
+**Not built (the later parts).** Part 6: the live check on a cluster. A Grafana API read with a Viewer token that stays
+in a box. Editing a template's bastion targets in the Settings → Vault form.
 
 **Persisted state.** No schema change: a bastion is kept in memory, its run is a row of the sandbox runs ledger, and its
 events are new types a build before this one ignores. A model with the observe relations is the default's next version.
@@ -30385,7 +30396,8 @@ target allowed, another denied; a model without bastions denies every relay and 
 wait for a person with the template, the approval names them, a new one waits again, a bad one is refused),
 `test/skills/template-request-targets.test.ts` (`--targets` in a template request), `test/skills/bastion-skill.test.ts`
 and `test/sandbox/bastions.test.ts` (a target not named or not approved; Access asked for each connection; both events),
-and `test/integration/bastion.test.ts` (each connection a `bastion.relayed`).
+and `test/integration/bastion.test.ts` (each connection a `bastion.relayed`). Part 4: `test/skills/observability.test.ts`
+(the asks it names parse as the hopper reads them; the relay queries; no `hopper-port-forward`; Grafana's API not reached).
 
 **The read-only check under observe (part 5).** An observe credential may port-forward to the monitoring pods, so the
 hopper proves it can do nothing more before a bastion of its template starts.

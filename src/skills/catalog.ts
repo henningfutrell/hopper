@@ -74,28 +74,31 @@ Pick it up: the same, with "act":"pick-up". It waits on a decision again, as bef
 You park only an item whose job waits on it. You pick up only an item a job parked: a person's park stays.
 A parked item gets no review and no decision. A decision is a person's: you never take one.`;
 
-// Issue #2146: how a job reads a cluster's metrics, logs and dashboards in a sandbox: the observability tools, the
-// port-forward helper (src/sandbox/port-forward-helper.ts) and a Grafana Viewer token the template's vault secrets give.
-const OBSERVABILITY_TEXT = `observability: read the live metrics, logs and dashboards of a cluster (Prometheus, Loki, Grafana; Alertmanager and Tempo when it has them). Read only.
+// Issue #2146: how a job reads a cluster's metrics and logs through its bastion (part 4 of the bastion path,
+// design.md "Bastions"): the template with an observe and its targets, the bastion, and the relay (src/sandbox/relay-script.ts).
+const OBSERVABILITY_TEXT = `observability: read the live metrics and logs of a cluster (Prometheus, Loki; Alertmanager and Tempo when it has them) through a bastion. Read only.
 
-1. Ask for a sandbox once. --secrets names the vault secret that holds a Grafana Viewer token; a person approves it:
-   sh "$HOPPER_SKILL" sandbox --why "<why>" --needs "read/cluster/NAME" --tools "jq promtool logcli" [--secrets GRAFANA_TOKEN] --wait
-2. Run each query as a box step, and bring back what it wrote: sh "$HOPPER_STEP" box TEMPLATE --command '<the query>' --output out
-   The cluster is the current kubectl context. Each step gets a new sandbox, which ends with the step.
-3. Forward a port only for the command that needs it. The forward stops when the command ends:
-   hopper-port-forward [-n NAMESPACE] svc/NAME LOCAL[:REMOTE] -- COMMAND
-   Find the service first: kubectl get svc -A -l app.kubernetes.io/name=prometheus (or grafana, loki, alertmanager).
+1. Find the services once: sh "$HOPPER_STEP" need "read/namespace/CLUSTER/monitoring" --why "<why>" --command 'kubectl get svc'
+2. Ask once for a template with an observe on that namespace, and each service as a target, <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>.
+   A person approves it and its targets, then its read-only check runs:
+   sh "$HOPPER_SKILL" sandbox-template --why "<why>" --needs "observe/namespace/CLUSTER/monitoring" --targets "CLUSTER/monitoring/svc/prometheus:9090 CLUSTER/monitoring/svc/loki:3100" --wait
+3. Start the bastion. Its box holds kubectl port-forward to each target, and its tokens, which you never get:
+   sh "$HOPPER_SKILL" bastion --template TEMPLATE --targets "<the same targets>" --why "<why>" --wait
+   sh "$HOPPER_SKILL" bastion says where it stands. It ends an hour after its last use, when this job ends, or with: sh "$HOPPER_SKILL" bastion stop
+4. Reach a target from here through the hopper's relay. It holds a local port while the command runs, then closes it:
+   sh "$HOPPER_RELAY" TARGET -- COMMAND   (the command finds the port in $HOPPER_RELAY_PORT; put a long command in a script file)
 
-PromQL, instant: mkdir -p out && hopper-port-forward -n monitoring svc/prometheus 9090 -- curl -sSfG http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=up' -o out/up.json
-PromQL, range: curl -sSfG http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=<PromQL>' --data-urlencode "start=$(date -u -d '-1 hour' +%s)" --data-urlencode "end=$(date -u +%s)" --data-urlencode step=60
-  Or: promtool query instant http://127.0.0.1:9090 'up'; promtool query range --start=<RFC 3339> --end=<RFC 3339> --step=1m http://127.0.0.1:9090 '<PromQL>'
-LogQL: logcli --addr=http://127.0.0.1:3100 query --since=1h --limit=200 --output=jsonl '{namespace="NS"} |= "error"' > out/logs.jsonl
-Grafana: read the token only in the command that uses it: curl -sSf -H "Authorization: Bearer $("$HOPPER_SECRET" get GRAFANA_TOKEN)" 'http://127.0.0.1:3000/api/search?query=NAME'
-  A dashboard: /api/dashboards/uid/UID. A panel: take its targets from the dashboard JSON, and run them on its data source with POST /api/ds/query.
+PromQL, instant: mkdir -p out && sh "$HOPPER_RELAY" CLUSTER/monitoring/svc/prometheus:9090 -- sh -c 'curl -sSfG http://127.0.0.1:$HOPPER_RELAY_PORT/api/v1/query --data-urlencode query=up -o out/up.json'
+PromQL, range: curl -sSfG http://127.0.0.1:$HOPPER_RELAY_PORT/api/v1/query_range --data-urlencode "query=<PromQL>" --data-urlencode start=<unix time> --data-urlencode end=<unix time> --data-urlencode step=60
+  Or, when this machine has promtool: promtool query range --start=<RFC 3339> --end=<RFC 3339> --step=1m http://127.0.0.1:$HOPPER_RELAY_PORT '<PromQL>'
+LogQL: curl -sSfG http://127.0.0.1:$HOPPER_RELAY_PORT/loki/api/v1/query_range --data-urlencode 'query={namespace="NS"} |= "error"' --data-urlencode since=1h --data-urlencode limit=200 -o out/logs.json
+  Or, when this machine has logcli: logcli --addr=http://127.0.0.1:$HOPPER_RELAY_PORT query --since=1h --limit=200 --output=jsonl '<LogQL>'
+Alertmanager: GET /api/v2/alerts. Tempo: GET /api/search.
+Grafana: Grafana's own API needs a token, which a job does not get. Run a panel's PromQL or LogQL on Prometheus or Loki in its place.
 Evidence: keep the JSON, and make a short table of it with jq (jq -r '.data.result[] | [.metric.job, .value[1]] | @tsv' out/up.json). Put both in the pull request or report, or show them as an artifact (sh "$HOPPER_SKILL" artifacts).
 
-Read only: no kubectl exec, no Secret reads, no change in Grafana (no dashboard or alert edits), no silence in Alertmanager. Never print the token.
-If the cluster refuses the forward (Forbidden: pods/portforward or services/proxy), its role does not allow it. Say so; do not look for another credential.`;
+Read only: no kubectl exec, no Secret reads, no change in Grafana (no dashboard or alert edits), no silence in Alertmanager. Never print a token.
+If the bastion is refused (Forbidden: pods/portforward), the cluster's role for the observe does not allow it. Say so; do not look for another credential.`;
 
 export const SKILLS: readonly Skill[] = [
   {
@@ -163,9 +166,9 @@ export const SKILLS: readonly Skill[] = [
     text: NEED_STEP_HELP,
   },
   {
-    // Issue #2146: PromQL, LogQL and Grafana queries in a sandbox; text only, as the sandbox skill gives the access.
+    // Issue #2146: PromQL and LogQL queries through the job's bastion; text only, as the bastion ask gives the access.
     name: 'observability',
-    line: 'PromQL, LogQL and Grafana queries in a sandbox',
+    line: 'PromQL and LogQL queries through a bastion',
     text: OBSERVABILITY_TEXT,
   },
   {
