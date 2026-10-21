@@ -305,11 +305,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return reportToGitHub(reportContext(), r);
     },
     async rerun(job) {
+      if (job.source) outbox.dropMirror(job.source.key);
       const issue = await takeBack(reportContext(), config.label, job, o.assignee());
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), o.assignee());
     },
     async rework(job) {
+      if (job.source) outbox.dropMirror(job.source.key);
       const back = await sendBack(reportContext(), config.label, job, o.assignee());
       const projects = await readProjects(api, config, [back.issue]);
       const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), o.assignee());

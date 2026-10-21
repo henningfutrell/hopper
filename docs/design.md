@@ -21715,6 +21715,11 @@ label showed a state the ledger did not hold, and a label a person took off was 
 - **A missing label is never read back as state.** A label not on the issue when the mirror first sees it is no edit: the
   mirror puts it back, and the item stays where the ledger has it. What the mirror saw is kept in memory, so after a start
   the first discover only looks. An edit made while the hopper is stopped is put back; the person takes it off again.
+- **A give-back drops the mirror's unsent rows.** Run again and Rework move the item, so the source drops the label
+  mirror's outbox rows for that issue that are not sent yet (`dropMirror`, `src/sources/github/outbox.ts`): they were for
+  the state the item left. Without it, a hopper killed between the reconciler's give-back and the new job left the next
+  hopper's mirror to put `hopper:pr-closed` back (it is missing at its first sight), and that row went out after the
+  reconciler's second give-back took the label off (the crash tests' `give-back:rerun-by-reconciler:after-give`).
 - **The report tells the ledger of a close it finds.** A job that ends on an issue already closed puts `hopper:done` on it
   (`report.ts`), and now also records `work_item.issue_closed` (`via: read`) when the ledger does not hold the close. Before,
   the ledger blocked such an item for want of a pull request until the fallback read came, and Intake (now reading the
