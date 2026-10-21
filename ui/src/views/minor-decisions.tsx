@@ -197,7 +197,7 @@ export function DeciderPicks() {
   const labelOf = (point: string) => view?.points.find((p) => p.point === point)?.label ?? point;
   return (
     <div data-decider-picks>
-      <Panel title="Decider picks" icon={Scale} count={view?.recent.length || ''} list
+      <Panel title="Decider picks" icon={Scale} count={view?.recent.length || ''}
         action={<a href="#settings/decider" className="text-xs underline underline-offset-2">Decider settings</a>}>
         {!view ? <Empty>loading</Empty> : view.recent.length ? (
           <ul>{view.recent.map((p) => <PickRow key={`${p.pickId}:${p.actual ?? ''}`} p={p} label={labelOf(p.point)} onSaved={reload} />)}</ul>
