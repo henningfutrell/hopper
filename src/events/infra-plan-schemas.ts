@@ -1,5 +1,5 @@
 // The infra plans' events (issue #870, design.md "Infra plans: no apply without a plan"): a plan a job recorded, its
-// approval (a person's, or the hopper's with auto-approve on), an admin turning auto-approve on or off, and the environment
+// approval (a person's, or the hopper's with auto-approve on), a person's rejection (issue #2368), an admin turning auto-approve on or off, and the environment
 // watchers an admin named (part 4). On the job's
 // timeline. Part of EVENT_SCHEMAS (schemas.ts). Never the plan's text or file.
 // Out-of-band changes (issue #871, design.md "Out-of-band changes"): a change a job's check reported, a person's mark on
@@ -24,6 +24,8 @@ export const INFRA_PLAN_EVENT_SCHEMAS = {
   }),
   // `auto` and `level` (part 3, approval by risk): the hopper approved it itself; the plan's risk level, when it has a summary.
   'infra.plan_approved': strict({ plan: z.string(), tool: z.enum(PLAN_TOOLS), asset, target: z.string(), by: z.string(), auto: z.literal(true).optional(), level: z.enum(['low', 'high']).optional() }),
+  // Issue #2368: a person rejected it, with why; it is never approved after.
+  'infra.plan_rejected': strict({ plan: z.string(), tool: z.enum(PLAN_TOOLS), asset, target: z.string(), by: z.string(), note: z.string() }),
   'infra.applies_changed': strict({ on: z.boolean(), by: z.string() }),
   'infra.settings_changed': strict({ from: strict({ autoApprove: z.boolean() }), to: strict({ autoApprove: z.boolean() }), by: z.string() }),
   // Part 4: an admin named who watches each environment; `from` and `to` are the whole lists.

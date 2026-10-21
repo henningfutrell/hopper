@@ -22,10 +22,13 @@ Each plan shows what it changes in plain words, its risk (*low* or *high*), its 
 | **Approved** | Until it is stale, the vault mints the credential for an apply that names it, while its branch is still at the plan's commit. |
 | **Stale** | A plan is stale one hour after it was made. Nothing applies it. The job plans again. |
 | **Failed its checks** | Nobody approves it. The job fixes the code and plans again. |
+| **Rejected** | A person rejected it, with a note. Nobody can approve it after this. |
 
 Under each plan, each apply shows the operation, the asset, the job that asked, and until when the credential is valid. The hopper never shows the credential.
 
 A job that waits on a plan's approval links to the plan here: the link opens this page with that plan marked. When a person approves the plan, the job goes on by itself. From a terminal, `hopper infra plans` lists the plans that wait, and `hopper infra approve <plan>` approves one.
+
+To stop a plan that you decided against, write why in the field beside **Reject**, then click **Reject**. An operator or an admin can reject any plan that waits. Nobody can approve a rejected plan, and the vault mints nothing for it. A job that waits on the plan goes on at once and gets your note. From a terminal: `hopper infra reject <plan> --note "<why>"`.
 
 An admin can turn on **Auto-approve**. Then the hopper approves a low-risk uat plan when the job records it. The plan still shows on this page and on the job's timeline.
 

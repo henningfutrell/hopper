@@ -24407,7 +24407,7 @@ whether to act, and nothing could wake them when the thing came. A job's own wai
   | an item | `work_item.issue_closed`: its issue, in `repo` or the job's own repository | `<url> was closed` |
   | a question | `question.answered`, `question.closed`, `question.dismissed`, `question.expired` | `question <id> was answered` |
   | a vault grant | `vault.granted`, `vault.grant_denied` for this job | `a vault grant was given` |
-  | an infra plan (issue #2205) | `infra.plan_approved` of that plan | `infra plan <id> was approved by <who>` |
+  | an infra plan (issue #2205) | `infra.plan_approved` of that plan; `infra.plan_rejected` of it (issue #2368) | `infra plan <id> was approved by <who>`; `infra plan <id> was rejected by <who>: <note>. …` |
 
   An approval is not woken here: a job asks for one through a skill request, whose watch ends its wait with the answer when
   it is ready (issue #998, `src/skills/waits.ts`), the box started, not only the template approved. A wake on the approval
@@ -31427,6 +31427,30 @@ already was.
 **Not built here.** A plan that goes stale while a job waits on it does not end the wait: the job is woken only by the
 approval, a person, or its own poll. The plans of other users are not shown to an admin: each user's Infra lists that
 user's own plans, as before.
+
+## Rejecting an infra plan (issue #2368, 2026-10-21)
+
+Before: a plan had one decision, Approve. A plan a person decided against waited until it went stale, an hour after it was
+made, and an admin could still approve it meanwhile. The job that waited on it waited for that hour, then planned again.
+
+- **Reject, with a note.** `POST /ui/api/infra-plans` takes `action: 'reject'`, `plan` and `note` (1 to 1000 characters,
+  `REJECTION_NOTE_MAX`); Infra shows Reject beside Approve on a plan that waits, with a field for the note and a confirm;
+  `hopper infra reject <plan> --note <why>` does the same by its id or short id. Any operator or admin rejects any plan:
+  a rejection takes a power away, so its risk needs no higher role. The route stays a box action, as it was for Approve.
+- **A row of its own, terminal** (`infra_plan_rejections`, tenant migration 91; `PlanRejection`: `plan`, `by`, `at`,
+  `note`). The plan itself does not change, as with an approval. `infra.plan_rejected` (`by`, `note`) goes on the
+  timeline of the job that recorded the plan, and Applies and drift shows it.
+- **Never approved after.** `approve` reads the rejection in its own transaction and answers 409 with who rejected the
+  plan and the note; a reject reads the approval the same way, so one plan has at most one of the two. A plan approved
+  already is not rejected (409): its apply may be under way. The apply gate refuses a rejected plan before anything else.
+- **The job goes on at once.** `infra.plan_rejected` settles a wait on that plan (`settledBy`): the job is told
+  `infra plan <id> was rejected by <who>: <note>. It is never approved: change course, or plan again and record a new
+  plan`. A job that starts to wait on a plan rejected already is told the same at once (`planWaitEnd`).
+- **The state.** Rejected comes before every other state (`planState`, the CLI's `stateOf`): a rejected plan waits for
+  nobody, Needs you does not count it, and it is offered no Approve and no Reject.
+
+**Not built here.** A job withdraws no plan of its own: a person rejects it, and the job, told so, records a new one. The
+notifiers do not send `infra.plan_rejected`; webhook subscribers get it as any event.
 
 Tests: `test/domain/wait-on-plan.test.ts` (the kind read from each way a job writes it, its wake, and how it ends as it
 starts), `test/ui/infra-plan-needs-you.test.ts` (the count, the lines, the high mark, the link),
