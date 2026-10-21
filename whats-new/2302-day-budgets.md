@@ -1,0 +1,1 @@
+- You can now set a token or cost budget for each day in Settings, for all jobs or for each repository. When the jobs reach it, no job starts or goes on until the next day or until you raise the budget. Each waiting job says why.
