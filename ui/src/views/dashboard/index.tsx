@@ -16,6 +16,7 @@ import { Customize } from './customize';
 import { KpiRow } from './kpis';
 import { LanesPanel } from './lanes';
 import { EndedPanel, WaitingPanel } from './queue';
+import { TokenHistoryPanel } from './token-history';
 import { UsageHistoryPanel } from './usage-history';
 
 // Literal class names, so Tailwind finds them.
@@ -33,6 +34,7 @@ function DashboardPanel({ id, layout }: { id: PanelId; layout: DashboardLayout }
     case 'throughput': return <ThroughputPanel hours={s.throughputHours} />;
     case 'usage': return <UsagePanel source={s.usageSource} onSource={(n) => setDashboardLayout(setSetting(layout, 'usageSource', n))} />;
     case 'usageHistory': return <UsageHistoryPanel />;
+    case 'tokenHistory': return <TokenHistoryPanel split={s.tokenSplit} onSplit={(v) => setDashboardLayout(setSetting(layout, 'tokenSplit', v))} />;
     case 'live': return <LivePanel count={s.liveEvents} />;
   }
 }

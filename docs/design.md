@@ -20168,7 +20168,16 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   `GET /api/usage/tokens` (`by` job, issue, repo, machine, lane, account, model or day; `job`, `repo`, `since`): the user's
   ledger summed per group, the costliest first, with the top spenders. `hopper usage tokens [--repo|--since|--by]` and
   `hopper usage tokens --job <id>` read them. The job view shows a **Tokens** panel.
-- **What it does not do yet** (later parts of #2302): the tokens-over-time graph beside the usage graph, waste signals,
+- **Tokens over time** (part 2). `split` (one of the same groups) gives each group `parts`: its rows summed per that second
+  group (`tokenRollup(…, split)`), which sum to it. The Dashboard's **Tokens over time** panel, beside the usage graph
+  (`ui/src/views/dashboard/token-history.tsx`, chart `ui/src/charts/token-days.tsx`, model `tokenDays` in
+  `ui/src/model/token-ledger.ts`), reads `by=day&split=repo` or `split=account` (the dashboard layout's `tokenSplit`) for the
+  last 30 UTC days and draws one stacked bar per day: every token (input, output, cache read, cache write), the five biggest
+  stacks of the range in their own colour and the rest as `other`, so each day still sums to the ledger. Its header line is
+  the ledger's total for the same days, so the graph reconciles with the job ledger. A session counts on the day of its last
+  counted message, as `by=day` does: the ledger keeps a session's totals, not each message's time. `hopper usage tokens
+  --split <group>` reads the same.
+- **What it does not do yet** (later parts of #2302): waste signals,
   tokens per merged pull request, budgets that pause a job, and print-mode agents (they keep no agent session; `claude -p`'s
   own JSON answer holds its usage). A subagent's own session file is not read.
 

@@ -1,0 +1,1 @@
+- The dashboard now shows the tokens used each day over the last month, stacked by repository or by account, with the estimated cost of each day when you point at it.

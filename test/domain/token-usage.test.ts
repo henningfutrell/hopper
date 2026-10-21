@@ -1,7 +1,7 @@
 // Issue #2302, part 1: the token ledger. A job's token use read from its agent session's log — the usage block of each
 // assistant message, the same data ccusage reads — summed per model, with an estimated cost. Pure.
 import { describe, expect, it } from 'vitest';
-import { estimatedCostUsd, sessionTokenUse, sumTokenUse, type ModelTokenUse } from '../../src/domain/token-usage.ts';
+import { estimatedCostUsd, sessionTokenUse, sumTokenUse, tokenRollup, type ModelTokenUse, type TokenLedgerEntry } from '../../src/domain/token-usage.ts';
 
 const line = (o: object): string => JSON.stringify(o);
 const assistant = (id: string, request: string, model: string, usage: object, at = '2026-10-21T08:00:00.000Z'): string =>
@@ -57,5 +57,40 @@ describe('the token use of an agent session (issue #2302)', () => {
     expect(total).toMatchObject({ turns: 3, input: 3, output: 6, cacheRead: 9, cacheWrite: 12 });
     expect(total.costUsd).toBeGreaterThan(0);
     expect(total.costKnown).toBe(false);
+  });
+});
+
+// Issue #2302, part 2: tokens over time, stacked by repository or account — the rollup by day, each day split by a second
+// group. The parts sum to their day, and the days to the ledger.
+describe('a token rollup split by a second group (issue #2302)', () => {
+  const row = (jobId: string, account: string, last: string, input: number): TokenLedgerEntry =>
+    ({ jobId, session: `s-${jobId}`, model: 'claude-opus-5-5', readAt: last, account, last, turns: 1, input, output: 0, cacheRead: 0, cacheWrite: 0 });
+  const entries = [
+    row('j1', 'work', '2026-10-20T10:00:00.000Z', 100), row('j2', 'work', '2026-10-20T11:00:00.000Z', 200),
+    row('j3', 'personal', '2026-10-20T12:00:00.000Z', 400), row('j4', 'personal', '2026-10-21T08:00:00.000Z', 800),
+  ];
+  const repos: Record<string, string> = { j1: 'o/a', j2: 'o/b', j3: 'o/a', j4: 'o/a' };
+  const facts = (jobId: string) => ({ repo: repos[jobId] });
+
+  it('splits each day by repository, and each part sums its rows', () => {
+    const days = tokenRollup(entries, 'day', facts, 'repo').sort((a, b) => a.key.localeCompare(b.key));
+    expect(days.map((d) => [d.key, d.input, d.parts?.map((p) => [p.key, p.input, p.jobs])])).toEqual([
+      ['2026-10-20', 700, [['o/a', 500, 2], ['o/b', 200, 1]]],
+      ['2026-10-21', 800, [['o/a', 800, 1]]],
+    ]);
+  });
+
+  it('splits by account too, and the parts reconcile with their day and with the ledger', () => {
+    const days = tokenRollup(entries, 'day', facts, 'account');
+    for (const d of days) {
+      expect(d.parts!.reduce((n, p) => n + p.input, 0)).toBe(d.input);
+      expect(d.parts!.reduce((n, p) => n + p.costUsd, 0)).toBeCloseTo(d.costUsd, 9);
+    }
+    expect(days.reduce((n, d) => n + d.input, 0)).toBe(sumTokenUse(entries).input);
+    expect(days.find((d) => d.key === '2026-10-20')!.parts!.map((p) => p.key).sort()).toEqual(['personal', 'work']);
+  });
+
+  it('gives no parts when it is not split', () => {
+    expect(tokenRollup(entries, 'day', facts)[0]).not.toHaveProperty('parts');
   });
 });
