@@ -169,6 +169,11 @@ export interface IntakeContext {
   workItem?(key: string): WorkItem | undefined;
   /** Whether the open pull request of an item in PR open is a part (issue #1933): its waiting label is then `hopper:partly-done`. */
   partOpen?(key: string): boolean;
+  /**
+   * Whether the failure of a failed item's job was reported to its issue as failed (issue #1892): `hopper:failed` is then its
+   * label. Not while the hopper fixes it itself (issue #1230), or its report waits.
+   */
+  failureReported?(key: string): boolean;
 }
 
 /**

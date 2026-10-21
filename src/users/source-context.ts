@@ -49,6 +49,13 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
         const job = id === undefined ? undefined : store.jobs.get(id);
         return job?.partlyDone !== undefined || job?.sourceState?.source?.part === true;
       },
+      // Its job's failure reported as failed (issue #1892): `hopper:failed` is its label, not while the hopper fixes it (issue #1230).
+      failureReported: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const job = id === undefined ? undefined : store.jobs.get(id);
+        const sync = (job?.sourceState?.sync ?? {}) as { finalReported?: boolean; fixingReported?: boolean };
+        return job?.status === 'failed' && sync.finalReported === true && sync.fixingReported !== true;
+      },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
