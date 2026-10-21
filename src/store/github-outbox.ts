@@ -37,9 +37,10 @@ export function createGitHubOutboxRepository(c: StoreContext): GitHubOutboxRepos
     open: (source) => c.db.all("SELECT id, body FROM github_outbox WHERE source = ? AND state <> 'sent' ORDER BY id", source).map(rowOf),
     of: (source, key) => c.db.all('SELECT id, body FROM github_outbox WHERE source = ? ORDER BY id', source).map(rowOf).filter((r) => r.key === key),
     // One UPDATE: Postgres checks the state and `next_at` of a row another send claimed meanwhile again, so it is skipped.
-    claim: (source, at, until) => c.db.all(
+    claim: (source, at, until, only) => c.db.all(
       `UPDATE github_outbox SET state = 'sending', next_at = ?, body = jsonb_set(jsonb_set(body::jsonb, '{state}', '"sending"'), '{nextAt}', to_jsonb(?::text))::text
-       WHERE source = ? AND state IN ('pending', 'sending') AND next_at <= ? RETURNING id, body`, until, until, source, at,
+       WHERE source = ? AND state IN ('pending', 'sending') AND next_at <= ?${only ? " AND body::jsonb->>'key' = ? AND body::jsonb->>'act' = ?" : ''} RETURNING id, body`,
+      until, until, source, at, ...(only ? [only.key, only.act] : []),
     ).map(rowOf).sort((a, b) => a.id - b.id),
     update(ids, patch) {
       c.tx(() => {

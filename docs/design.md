@@ -22054,7 +22054,7 @@ label showed a state the ledger did not hold, and a label a person took off was 
   hopper was stopped is a label edit too, when the item did not move since that listing. An issue the cache does not
   hold is first seen at that discover.
 - **A give-back drops the mirror's unsent rows.** Run again and Rework move the item, so the source drops the label
-  mirror's outbox rows for that issue that are not sent yet (`dropMirror`, `src/sources/github/outbox.ts`): they were for
+  mirror's outbox rows for that issue that are not sent yet (`dropMirror`, `dropLabelRows` since part 14, `src/sources/github/outbox.ts`): they were for
   the state the item left. Without it, a hopper killed between the reconciler's give-back and the new job left the next
   hopper's mirror to put `hopper:pr-closed` back (it is missing at its first sight), and that row went out after the
   reconciler's second give-back took the label off (the crash tests' `give-back:rerun-by-reconciler:after-give`). A row
@@ -22383,6 +22383,38 @@ from needs you to queued; a park with no move waits on a person; the owners), `t
 busy-machine move stopped after its park, or before its pane ended, finished by the next hopper's pass, once; a signed-out
 move finished with no sign-out read; a new start; a job a person parked or picked up left as it is),
 `test/engine/busy-move.test.ts` (`move` on `job.parked`).
+
+### The follow's labels come from the ledger, through the outbox (issue #1892 part 14, 2026-10-21)
+
+Milestone 3: "The labelling in `follow.ts` moves behind the saga." Before it, the follow of a job's pull request picked its
+end labels by hand at each end and wrote them to GitHub with its own calls. A call that failed failed the follow, and the
+labels it picked were a second copy of what `labelsFor` says.
+
+- **Each end names a state, and `labelsFor` names its labels.** `followLabels` (`src/sources/github/item-labels.ts`) maps
+  how a follow ends for its item to the state the end moves it to: merged as the whole item (or its last part, or done
+  by another pull request) is done with a whole merge (`hopper:done`); a part merged with parts left is partly done with
+  parts left (no end label); closed without a merge is blocked, `pr_closed` (`hopper:pr-closed`); a blocked item whose pull
+  request is found open is PR open (`hopper:pr-ready`, or `hopper:partly-done` for a part). The change is that state's
+  drift from the labels the issue carries (`labelDrift`), so every end label the state does not allow comes off. A merge
+  recorded as the whole item before issue #721 that was a part is a part merged too. Abandoned (closed as not planned) is
+  dropped, a state the ledger does not judge: its waiting labels come off, and none goes on, as before.
+- **The change is GitHub outbox rows (act `follow`), sent in the follow's pass.** The follow keeps the rows, tagged with
+  its end, and the source sends that item's `follow` rows at once (`sendOf`, `src/sources/github/outbox.ts`): the claim
+  takes only that item's rows of that act, so a flush under way, or a Merge now row whose act runs the follow, is not
+  waited on or claimed. A refusal for now leaves the rows to wait their backoff: the follow still ends and is recorded,
+  and a later flush sends them. While they wait the item is held: a discover does not take it, and the label mirror does
+  not judge it. A follow of the same end again, after a stop before its record, keeps no second set: rows of that end on
+  their way are sent again, from their first attempt, and rows of it sent since the last discover are not kept again.
+- **A give-back drops them too.** Run again and Rework drop the `follow` rows not sent yet with the mirror's
+  (`dropLabelRows`, named `dropMirror` before): they were for the state the item left.
+- **A direct job's follow has no labels.** It has no issue, so its context (`PullRequestContext`,
+  `src/sources/github/follow-context.ts`) has no label sink; the follow of a job's issue (`FollowContext`) does.
+
+Left: GitLab's follow (`src/gitlab/follow.ts`) still writes its labels with its own calls: the GitLab source has no outbox.
+
+**Verification:** `test/sources/github-follow-labels.test.ts` (each end's labels from `labelsFor`; a merge's change is one
+remove and one add with nothing left on the way; GitHub refuses it for now, the follow ends, the rows wait, and a follow
+again sends them once).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

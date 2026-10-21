@@ -32,7 +32,8 @@ import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, part
 import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
 import { endedWatched, waitedChecks, waitedReviews } from './watched.ts';
-import { endedPullRequests, followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
+import type { FollowContext } from './follow-context.ts';
+import { endedPullRequests, followPullRequest, housekeepStrays, tendStartedOn } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
 import { pullRequestCensus } from './census.ts';
@@ -44,7 +45,7 @@ import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, u
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
-import { createLabelMirror } from './label-mirror.ts'; import { handoffSettling } from './item-labels.ts';
+import { createLabelMirror } from './label-mirror.ts'; import { handoffSettling, type LabelDrift } from './item-labels.ts';
 import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import { priorityOf, readProjects } from './priority.ts';
@@ -148,7 +149,16 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.intake ? { holder: o.intake.holder } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
-    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}) });
+    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: followLabelRows });
+  /** A follow's label change (issue #1892 part 14): outbox rows, once per end, sent in the follow's pass. */
+  const followLabelRows = async (key: string, repo: string, change: LabelDrift, tag: string): Promise<void> => {
+    if (outbox.sent('follow', key, tag)) return;
+    outbox.queue('follow', key, repo, [
+      ...(change.remove.length ? [{ change: { op: 'remove_labels' as const, labels: change.remove } }] : []),
+      ...(change.add.length ? [{ change: { op: 'add_labels' as const, labels: change.add } }] : []),
+    ], { tag });
+    await outbox.sendOf('follow', key, outboxSend(api, approvals.readComments, (r, labels) => ensureLabels(reportContext(), r, labels)));
+  };
 
   /**
    * The issue's declared parts and how many are done (issue #729). Its merged parts cannot be read now: the ticked ones
@@ -203,7 +213,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const giving = async <T>(job: { source?: { key: string } }, give: () => Promise<T>): Promise<T> => {
     const key = job.source?.key;
     if (key === undefined) return give();
-    outbox.dropMirror(key);
+    outbox.dropLabelRows(key);
     givenBack.set(key, Infinity);
     try { return await give(); } finally { givenBack.set(key, o.clock.now().getTime()); }
   };

@@ -45,51 +45,40 @@
 // leaves the pull request merged on GitHub: read merged with the marker on it at that head, it is the hopper's merge, so
 // the issue is closed as above, once, and who merged it is recorded. Seen open, or ended, the marker goes. A stop after
 // the close and before its comment (issue #1959): the close is made again, and the comment only when the issue lacks it.
+// The labels follow the ledger (issue #1892 part 14): each end names the state it moves the item to (`followLabels`,
+// item-labels.ts), `labelsFor` that state names the end labels, and the change is GitHub outbox rows (act `follow`), kept
+// before they are sent, so a refusal for now is sent again later and a follow again sends nothing twice.
 
 import {
   classifyChange, contentNeeded, DEFAULT_CHANGE_RULE, mergesOnReady, pullRequestRepo, rechecksMerge, readyToMerge, ruleKey,
   type ActingPerson, type ChangeClass, type ChangeKind, type ChangeRule, type EndedPullRequest, type FollowAt, type FollowUp, type Job, type MergeMarker, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep,
 } from '../../domain/types.ts';
-import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
-import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type PullRequestState, type ReferencingPullRequest } from './api.ts';
+import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type ReferencingPullRequest } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
 import { closesByKeyword, fromReleaseBranch, isClosedAsCompleted, isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
-import { LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
+import { followLabels, type FollowEnd } from './item-labels.ts';
+import { LABEL_BLOCKED } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
 import { closedByMerge, closesIssue, mergedByMarker, type OwnMerge } from './own-merge.ts';
-import { relabel, type ReportContext } from './report.ts';
+import type { FollowContext, PullRequestContext } from './follow-context.ts';
 import { killPoint } from '../../sagas/kill-points.ts';
 
 /** `mention`: the pull request only mentions the issue, with no "Part of #N" (issue #1891): followed as a part all the same. */
 interface Followed { pullRequest?: string; follow?: string; part?: boolean; mention?: boolean; seen?: PullRequestSeen; mergeChecked?: boolean }
 
-/**
- * What following a pull request needs beyond the report's: whether the hopper may merge in a repository (yolo mode), and
- * the clock for the no-checks grace window (issue #677; absent: the system clock).
- */
-export interface FollowContext extends ReportContext {
-  yoloMode?: (repo: string) => boolean;
-  /** A repository's landing branch (issue #1143, its landing batch setting); absent or undefined: no pull request is moved. */
-  landingBranch?: (repo: string) => string | undefined;
-  /** The change rule of a repository (issue #1076); absent: the built-in rule. */
-  changeRule?: (repo: string) => ChangeRule;
-  clock?: Clock;
-  /** The batch's answer for pull request `number` of `repo`, taken once (issue #985); absent or undefined: read GitHub. */
-  batched?: (repo: string, number: number) => PullRequestState | undefined;
-  /**
-   * Why the hopper does not merge job `job`'s ready pull request `url` of `repo` itself (issue #1924 part 3): its done criteria
-   * not met now, or a person merges it. Absent or undefined: it merges.
-   */
-  mergeHold?: (job: Job, repo: string, url: string) => Promise<string | undefined>;
+/** The label change of the follow's `end` on the issue that carries `carried`, through the outbox; none when it carries what the end's state wants. */
+async function endLabels(ctx: FollowContext, key: string, repo: string, f: FollowEnd, carried: readonly string[]): Promise<void> {
+  const change = followLabels(f, carried);
+  if (change) await ctx.labels(key, repo, change, f.end === 'found_open' ? `found_open:${f.part ? 'part' : 'whole'}` : f.end);
 }
 
 type PullState = 'open' | 'merged' | 'closed';
 
-const ruleOf = (ctx: FollowContext, repo: string): ChangeRule => ctx.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE;
+const ruleOf = (ctx: PullRequestContext, repo: string): ChangeRule => ctx.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE;
 /** Whether the hopper merges a ready pull request of `repo` of this kind (issue #1076): its gate, yolo mode for `yolo`. */
-const merges = (ctx: FollowContext, repo: string, kind: ChangeKind | undefined): boolean =>
+const merges = (ctx: PullRequestContext, repo: string, kind: ChangeKind | undefined): boolean =>
   mergesOnReady(ruleOf(ctx, repo), ctx.yoloMode?.(repo) ?? false, kind);
 
 export const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
@@ -102,7 +91,7 @@ const pushedAtOf = (pr: { createdAt: string; headCommittedAt?: string }): string
  * undefined: read it from GitHub. The batch reads the newest run of each check (issue #2129), so its pending is the
  * checks' own state: a failed check that runs again on the same head is pending, not failing (issue #2230).
  */
-function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): PullRequestSeen | undefined {
+function seenFromBatch(ctx: PullRequestContext, job: Job, s: Followed, url: string): PullRequestSeen | undefined {
   const { repo, number } = job.source as { repo: string; number: number };
   const before = s.seen;
   const b = repoOfPull(url).toLowerCase() === repo.toLowerCase() ? ctx.batched?.(repo, numberOf(url)) : undefined;
@@ -189,7 +178,7 @@ async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed
  * of the files whose content can change it. The same files, head and rule as `before`: `before`'s kind, nothing read.
  * Its files not known, or not all of them: `before`'s kind while its head is the same, else none.
  */
-async function classified(ctx: FollowContext, repo: string, pr: OpenPullRequest, number: number, pushedAt: string, before: PullRequestSeen | undefined): Promise<ChangeClass | undefined> {
+async function classified(ctx: PullRequestContext, repo: string, pr: OpenPullRequest, number: number, pushedAt: string, before: PullRequestSeen | undefined): Promise<ChangeClass | undefined> {
   const rule = ruleOf(ctx, repo);
   const same = before?.change && before.pushedAt === pushedAt && before.change.rule === ruleKey(rule);
   if (!pr.files || pr.filesCut) return same ? before.change : undefined;
@@ -220,7 +209,7 @@ export const tendStartedOn = (api: GitHubApi) => async (job: Job, pullRequest: s
  * it (never GitHub's default branch, issue #1142), when its base is another branch that is no open pull request's head (a
  * stack, issue #900). Undefined: it stays, and so does every pull request of a repository with no landing batches.
  */
-async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequest): Promise<string | undefined> {
+async function retargetTo(ctx: PullRequestContext, repo: string, pr: NumberedPullRequest): Promise<string | undefined> {
   const to = ctx.landingBranch?.(repo);
   if (!to || !pr.base || pr.base === to) return undefined;
   const stacked = (await ctx.api.openPullRequests(repo)).some((p) => p.headRef === pr.base);
@@ -228,7 +217,7 @@ async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequ
 }
 
 /** `mark`, when given, keeps the merge marker with the head it merges, before the merge call (issue #1588). */
-export async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct, mark?: (head: string | undefined) => void):
+export async function waiting(ctx: PullRequestContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct, mark?: (head: string | undefined) => void):
   Promise<{ ended: 'merged' | 'closed'; superseded?: string; seen?: PullRequestSeen } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
   // Its own repository's (issue #1778): read, merged and moved there, under that repository's yolo mode and rules.
   const repo = pullRequestRepo(url, job.source!.repo!);
@@ -279,7 +268,7 @@ export async function waiting(ctx: FollowContext, job: Job, url: string, before:
  * Housekeeping of the open pull request `url` (issue #1143): off the landing branch, it is moved there; with no commit its
  * base lacks, nothing is left to land, and it is closed. Each said on it. Undefined: it stays as it is.
  */
-async function housekeep(ctx: FollowContext, repo: string, url: string, pr: NumberedPullRequest):
+async function housekeep(ctx: PullRequestContext, repo: string, url: string, pr: NumberedPullRequest):
   Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {
   if (pr.state !== 'open') return undefined;
   const to = await retargetTo(ctx, repo, pr);
@@ -300,7 +289,7 @@ async function housekeep(ctx: FollowContext, repo: string, url: string, pr: Numb
  * the job that holds it is no longer shown with it open. A repository GitHub does not answer for, or a stray whose
  * housekeeping throws, is logged and asked again at the next round.
  */
-export async function housekeepStrays(ctx: FollowContext, strays: Stray[]): Promise<StrayHousekept[]> {
+export async function housekeepStrays(ctx: PullRequestContext, strays: Stray[]): Promise<StrayHousekept[]> {
   const own = strays.filter((s) => s.job.source?.repo && s.job.source.number && repoOfPull(s.pullRequest).toLowerCase() === s.job.source.repo.toLowerCase());
   if (own.length === 0) return [];
   const open = await ctx.api.openPullRequestsIn([...new Set(own.map((s) => s.job.source!.repo!))]);
@@ -320,12 +309,12 @@ export async function housekeepStrays(ctx: FollowContext, strays: Stray[]): Prom
 }
 
 /** A stray not among its repository's open pull requests (issue #1420): how it ended on GitHub; undefined: open after all. */
-async function endedStray(ctx: FollowContext, s: Stray): Promise<{ ended: 'merged' | 'closed' } | undefined> {
+async function endedStray(ctx: PullRequestContext, s: Stray): Promise<{ ended: 'merged' | 'closed' } | undefined> {
   const state = (await ctx.api.pullRequest(s.job.source!.repo!, numberOf(s.pullRequest)))?.state;
   return state === 'merged' || state === 'closed' ? { ended: state } : undefined;
 }
 
-async function housekeepStray(ctx: FollowContext, s: Stray): Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {
+async function housekeepStray(ctx: PullRequestContext, s: Stray): Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {
   const { repo, number } = s.job.source as { repo: string; number: number };
   const issue = await ctx.api.getIssue(repo, number);
   if (issue.state === 'closed' && issue.stateReason === 'not_planned') return undefined;
@@ -372,20 +361,20 @@ async function supersededBy(api: GitHubApi, repo: string, number: number, issue:
 
 /**
  * A merge recorded as the whole item before issue #721, checked once: closed by it, it is marked checked; else it was a
- * part — `hopper:done` comes off, so the issue is offered again and its next part runs.
+ * part — its end labels come off (`hopper:done`), so the issue is offered again and its next part runs.
  */
-async function recheckMerge(api: GitHubApi, repo: string, number: number, s: Followed & Record<string, unknown>): Promise<FollowUp> {
+async function recheckMerge(ctx: FollowContext, key: string, repo: string, number: number, s: Followed & Record<string, unknown>): Promise<FollowUp> {
   const url = s.pullRequest ?? '';
-  if (!s.pullRequest || await closedByMerge(api, repo, number, s.pullRequest)) {
+  if (!s.pullRequest || await closedByMerge(ctx.api, repo, number, s.pullRequest)) {
     return { outcome: 'checked', pullRequest: url, part: false, state: { ...s, mergeChecked: true } };
   }
-  await api.removeLabels(repo, number, [LABEL_DONE]);
+  await endLabels(ctx, key, repo, { end: 'part_merged' }, (await ctx.api.getIssue(repo, number)).labels);
   return { outcome: 'merged', pullRequest: url, part: true, state: { ...s, part: true } };
 }
 
 /** The item closed as not planned upstream (issue #428): the follow ends abandoned; the waiting labels come off. */
-async function abandon(ctx: FollowContext, repo: string, issue: GitHubIssue, s: Followed & Record<string, unknown>, url: string | undefined): Promise<FollowUp> {
-  await relabel(ctx, repo, issue.number, { remove: [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED, LABEL_BLOCKED], carried: issue.labels });
+async function abandon(ctx: FollowContext, key: string, repo: string, issue: GitHubIssue, s: Followed & Record<string, unknown>, url: string | undefined): Promise<FollowUp> {
+  await endLabels(ctx, key, repo, { end: 'abandoned' }, issue.labels);
   const pullRequest = url ?? s.pullRequest ?? '';
   return { outcome: 'abandoned', pullRequest, part: s.part === true, state: { ...s, ...(pullRequest ? { pullRequest } : {}), follow: 'abandoned' } };
 }
@@ -398,11 +387,11 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
   // The marker an earlier follow kept (issue #1588); no state this follow keeps carries it on.
   const { merging: marker, ...kept } = (job.sourceState?.source ?? {}) as Followed & Record<string, unknown> & { merging?: MergeMarker };
   let s: Followed & Record<string, unknown> = kept;
-  const { repo, number } = job.source ?? {};
-  if (!repo || !number) return undefined;
+  const { repo, number, key } = job.source ?? {};
+  if (!repo || !number || !key) return undefined;
   try {
     if (act && s.follow !== 'open') throw new SourceError('its pull request is not open', true);
-    if (rechecksMerge(job)) return await recheckMerge(ctx.api, repo, number, s);
+    if (rechecksMerge(job)) return await recheckMerge(ctx, key, repo, number, s);
     if (s.follow !== 'open') return undefined;
     if (!s.pullRequest) {
       const open = await openPullRequestOf(ctx.api, repo, number);
@@ -410,7 +399,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}), ...('mention' in found && found.mention ? { mention: true } : {}) };
       // Blocked for want of a pull request (issue #1891), one found open: its issue waits on it, as a report says.
       const carried = open ? (await ctx.api.getIssue(repo, number)).labels : [];
-      if (open && carried.includes(LABEL_BLOCKED)) await relabel(ctx, repo, number, { remove: [LABEL_BLOCKED], add: [open.part ? LABEL_PARTLY_DONE : LABEL_PR_READY], carried });
+      if (open && carried.includes(LABEL_BLOCKED)) await endLabels(ctx, key, repo, { end: 'found_open', part: open.part === true }, carried);
     }
     const batched = !act && s.pullRequest ? seenFromBatch(ctx, job, s, s.pullRequest) : undefined;
     if (batched) {
@@ -419,7 +408,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     }
     let now = await stateOf(ctx.api, repo, number, s);
     const issue = !act && (!now || now.state === 'open') ? await ctx.api.getIssue(repo, number) : undefined;
-    if (issue?.state === 'closed' && issue.stateReason === 'not_planned') return await abandon(ctx, repo, issue, s, now?.url);
+    if (issue?.state === 'closed' && issue.stateReason === 'not_planned') return await abandon(ctx, key, repo, issue, s, now?.url);
     if (!now && act) throw new SourceError('no pull request is found for it yet', true);
     if (!now) return undefined;
     const part = s.part === true;
@@ -463,9 +452,8 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     const parts = now.state === 'merged' && shipsPart ? await partsOf(ctx.api, await ctx.api.getIssue(repo, number), now.url) : undefined;
     // A failed job's followed pull request (issue #786) ends its `hopper:failed` too. Only what the issue carries changes
     // (issue #1154): the issue as read in this follow, else read now.
-    const add = doneElsewhere ? LABEL_DONE : now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart && !allPartsDone(parts) ? undefined : LABEL_DONE;
-    const carried = (issue ?? await ctx.api.getIssue(repo, number)).labels;
-    await relabel(ctx, repo, number, { remove: [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED, LABEL_BLOCKED], ...(add ? { add: [add] } : {}), carried });
+    const end: FollowEnd['end'] = doneElsewhere ? 'merged' : now.state === 'closed' ? 'closed' : shipsPart && !allPartsDone(parts) ? 'part_merged' : 'merged';
+    await endLabels(ctx, key, repo, { end }, (issue ?? await ctx.api.getIssue(repo, number)).labels);
     const after = { ...s, pullRequest: now.url, follow: now.state, ...(shipsPart ? { part: true } : {}), ...(whole ? { mergeChecked: true } : {}), ...(parts ? { parts } : {}) };
     return {
       outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper && !superseded ? { byHopper } : {}), ...(acting ? { acting } : {}),
