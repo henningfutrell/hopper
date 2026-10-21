@@ -23440,8 +23440,15 @@ answer, the same `github_proxy.done` event, which records `wait`:
   GitHub). Its checks ended, or it is merged or closed: `wait: settled`. Else `wait: none` — nothing would tell the hopper
   when the checks end — with `waitOn`, the `on:` line `pr OWNER/NAME#N checks`, and a `note` that says to end the turn
   with HOPPER_WAITING and that line: the wait check reads the pull request on GitHub in any repository ("Wait checks",
-  `pr_checks_ended`) and wakes the job when its checks end (issue #1731; `unfollowedWait`, `pr-status.ts`). `hopper-gh`
-  exits 3. Only for `--for checks`: `--for mergeable` answers `wait: none` alone.
+  `pr_checks_ended`) and wakes the job when its checks end (issue #1731; `unwatchedWait`, `pr-status.ts`). `hopper-gh`
+  exits 3. Only for `--for checks`: `--for mergeable` answers `wait: none` alone. A running job's own pull request is one
+  the hopper does not follow yet: the Pull requests list holds only the pull requests of ended jobs;
+- **no checks is not settled** (issue #2322). Right after a push GitHub has not made the head commit's check runs yet, so
+  a read says `none`; a moment later they are there, `queued`, which the read counts as running (`pending`). So `checks:
+  none` on an open pull request never settles a wait on its checks (`prSettled`), whether the hopper follows it or not.
+  No event tells the hopper when checks start, so it opens no watch: it answers `wait: none` with `waitOn` and the note,
+  as above. The wait check holds while checks run, or while none started within two minutes of the head commit
+  (`checksOutcome`, `NO_CHECKS_MS`), and then wakes the job: a repository with no checks costs the job those minutes.
 
 **Pushed, not polled.** The watch is answered again from the user's records — never GitHub, never on a timer — when an
 event says what the hopper saw of a pull request changed (`job.pull_request_seen`: following it saw its wait change, as
