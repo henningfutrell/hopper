@@ -104,6 +104,16 @@ sh "$HOPPER_SKILL" kube-diagnostics                       # a skill the hopper k
 sh "$HOPPER_SKILL" SERVICE --credential "an API token, read-only" --why "read the build logs" --wait
 ```
 
+A job that runs on no box asks for the template of its approved sandbox runs. The credential then goes to the box steps of that template:
+
+```sh
+sh "$HOPPER_SKILL" sandbox --template NAME --why "deploy the web service" --wait     # first: the sandbox runs, approved
+sh "$HOPPER_SKILL" SERVICE --template NAME --credential "an API token" --why "deploy the web service" --wait
+sh "$HOPPER_STEP" box NAME --command 'TOKEN="$("$HOPPER_SECRET" get SERVICE)" ./deploy.sh'
+```
+
+A template request cannot name a vault secret that does not exist yet. Ask for the template without it, then ask for the credential as above.
+
 The request shows on **Access requests**, panel **Asked for**. The card says which jobs wait, why, and how to get the credential. An admin then:
 
 - picks what to give (the first kind is the hopper's suggestion; any kind works, also one in your own words),

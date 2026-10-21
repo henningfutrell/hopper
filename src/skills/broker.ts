@@ -27,6 +27,9 @@ import { isServedSkill, repoCopyOf, servedSkill, servedText } from './library.ts
 /** What a job refused for its trust can do (issue #655 part 16): nothing it asks raises its trust. */
 const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the minimum trust in Settings → Access. Find another way.';
 
+/** The skills whose `template` field names the sandbox itself, never the template a credential is asked for. */
+const SANDBOX_OWN: readonly string[] = [SANDBOX_SKILL, TEMPLATE_SKILL, BASTION_SKILL];
+
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
@@ -38,6 +41,11 @@ export interface SkillUser extends Pick<BastionUser, 'bastions'> {
   record(event: NewEvent): void;
   /** The template `machine` joined as, and the vault secrets it may be given now (metadata, never a value). */
   box(machine: string): { template?: string; secrets: BoxSecret[] };
+  /**
+   * Issue #2356: the template of the job's approved sandbox runs, named by a job off a box, and the vault secrets it may be
+   * given now; undefined when the job has no approved sandbox runs of it. Its box steps get what it gives.
+   */
+  runsOf?(job: Job, template: string): { template: string; secrets: BoxSecret[] } | undefined;
   /** Whether the vault holds a minting credential for the account or cluster `asset` is in (issue #580): then the link is minted. */
   mintsFor(form: LinkForm, asset: Asset): boolean;
   /** The vault asks a person for a credential the box's template does not give (issue #583): waiting, or declined. */
@@ -137,7 +145,11 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     const said = field(body, 'asset');
     const why = field(body, 'why');
     const own = field(body, 'credential');
-    const box = machine === undefined ? { secrets: [] } : user.box(machine);
+    const onBox: { template?: string; secrets: BoxSecret[] } = machine === undefined ? { secrets: [] } : user.box(machine);
+    // Issue #2356: a job off a box names the template of its approved sandbox runs for a credential its box steps use.
+    const named = field(body, 'template');
+    const runs = !onBox.template && named !== undefined && !SANDBOX_OWN.includes(name ?? '') ? user.runsOf?.(job, named) : undefined;
+    const box = runs ?? onBox;
     const at = { requestId, ...(machine ? { machine } : {}), ...(box.template ? { template: box.template } : {}), ...(name ? { skill: name } : {}), ...(said ? { asset: said } : {}) };
     const record = (type: 'skill.listed' | 'skill.loaded' | 'skill.refused', data: Record<string, unknown> = {}): void => {
       user.record({ type, jobId: job.id, data: { ...at, ...data } });
@@ -221,12 +233,16 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     if (skill.link) return link(skill, skill.link);
     if (!skill.credential) return loaded(skill.text);
     const given = box.secrets.filter((s) => s.skill === skill.name);
-    return given.length > 0 ? loaded(`${skill.text}\n\n${given.map((s) => credentialText(skill.credential!, s)).join('\n')}`) : ask(skill, skill.credential);
+    const inSteps = runs ? `\nThis job runs on no box: read it in a box step of template ${runs.template}, as sh "$HOPPER_STEP" box ${runs.template} --command '<the command>'.` : '';
+    return given.length > 0 ? loaded(`${skill.text}\n\n${given.map((s) => credentialText(skill.credential!, s)).join('\n')}${inSteps}`) : ask(skill, skill.credential);
 
     /** No credential for the skill on this box (issue #583): the vault asks a person; the job waits, or is told they declined. */
     function ask(s: Skill, c: SkillCredential, decision?: MintDecision): SkillAnswer {
+      if (!onBox.template && named !== undefined && !runs) {
+        return no(403, `this job has no approved sandbox runs of template ${named}. Ask for them first: sh "$HOPPER_SKILL" sandbox --template ${named} --why "<why the job needs it>" --wait. Then ask for the credential again.`, decision);
+      }
       if (!box.template || machine === undefined) {
-        return no(403, `${machine ?? 'this machine'} is no box of a template: the vault gives a credential only to a box of a template, so the hopper asks nobody for one here. Find another way, or run on a box of a template.`, decision);
+        return no(403, `${machine ?? 'this machine'} is no box of a template: the vault gives a credential only to a box of a template, so the hopper asks nobody for one here. Name the template of this job's approved sandbox runs with --template NAME: its box steps get the credential. Else find another way.`, decision);
       }
       const r = user.need({
         skill: s.name, title: s.name, known: known !== undefined, kinds: c.kinds.map((k) => ({ id: k.id, title: k.title })), setup: c.setup, ...(why ? { why } : {}),
@@ -307,7 +323,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       if (!said) return no(400, `${s.name} sets up a link to ${kindsInWords(l.kinds)}: name it, as ${how}`);
       const asset = assetOf(said);
       if (!asset || !l.kinds.includes(asset.kind)) return no(400, `${s.name} sets up a link to ${kindsInWords(l.kinds)}, not ${said}: name it, as ${how}`);
-      if (!box.template) {
+      if (!onBox.template) {
         return no(403, `${machine ?? 'this machine'} is no box of a template: Access checks a box by the template it joined as, so the hopper sets up no link here. Find another way, or run on a box of a template.`);
       }
       const decision = await o.decide({ requester: { kind: 'job', userId: user.id, jobId: job.id }, operation: l.operation, asset });
