@@ -77,7 +77,10 @@ export function createJobTerminal(o: { store: Pick<UserStore, 'jobs' | 'events'>
     if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
     const executor = o.executors.get(job.spec.executor);
     if (!executor?.paneScreen || !executor.typeInPane) return { ok: false, reason: 'no_pane', message: `job ${jobId} runs on ${job.spec.executor}, which has no terminal` };
-    if (!holdsPane(job)) return { ok: false, reason: 'no_pane', message: `job ${jobId} is ${job.status}: only a job at work or waiting holds its pane` };
+    if (!holdsPane(job)) {
+      const why = PANE_STATUSES.includes(job.status) ? 'its pane ended while it waits' : 'only a job at work or waiting holds its pane';
+      return { ok: false, reason: 'no_pane', message: `job ${jobId} is ${job.status}: ${why}` };
+    }
     return { job, executor };
   };
 
@@ -113,7 +116,11 @@ export function createJobTerminal(o: { store: Pick<UserStore, 'jobs' | 'events'>
   };
 }
 
-/** Whether the job holds its pane now: at work, or waiting with it. */
-export const holdsPane = (job: Pick<Job, 'status'>): boolean => PANE_STATUSES.includes(job.status);
+/**
+ * Whether the job holds its pane now: at work, or waiting with it. Not once its pane ended while it waited (issue #2335): its
+ * agent released on its wait, or picked up with its question open after a park. Its pane id may name another job's pane by now.
+ */
+export const holdsPane = (job: Pick<Job, 'status' | 'waitReleased' | 'parked'>): boolean => PANE_STATUSES.includes(job.status)
+  && !(job.status === 'waiting_on' && job.waitReleased) && !(job.status === 'waiting_answer' && job.parked);
 
 const where = (job: Job): TerminalPlace => ({ jobId: job.id, ...(job.laneId ? { laneId: job.laneId } : {}) });

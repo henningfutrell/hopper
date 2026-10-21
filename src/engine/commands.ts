@@ -177,10 +177,11 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
         const now = existing(c, id);
         const late = parkRefusal(c, now);
         if (late) throw new EngineError('conflict', late);
-        return recordPark(c, now, 'waiting_answer', undefined, undefined, ask);
+        // Picked up with its question open (issue #692): its pane ended at its last park, and the executor is not asked.
+        return { job: recordPark(c, now, 'waiting_answer', undefined, undefined, ask), paneless: now.parked !== undefined };
       });
-      void releaseParked(c, parked);
-      return parked;
+      void releaseParked(c, parked.job, parked.paneless);
+      return parked.job;
     },
 
     requeue(id, o = {}) {

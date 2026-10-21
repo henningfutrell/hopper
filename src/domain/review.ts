@@ -314,7 +314,8 @@ export type ParkedItem = { at: string } & ParkAsk;
  * section's open list and counts: no reviewer level reviews it, and no decision is taken on it, until its job is picked up.
  */
 export function parkedItemOf(job: Pick<Job, 'status' | 'parked' | 'proposalId' | 'researchId'> | undefined, p: Pick<ReviewItem, 'id' | 'kind' | 'status'>): ParkedItem | undefined {
-  if (job?.status !== 'parked' || !job.parked || job[REVIEW_SECTIONS[p.kind].jobField] !== p.id || !REVIEW_OPEN_STATUSES.includes(p.status)) return undefined;
+  // Auto-park's (issue #2335) sets nothing aside: the item stays in review, and its decision picks the job up.
+  if (job?.status !== 'parked' || !job.parked || job.parked.auto || job[REVIEW_SECTIONS[p.kind].jobField] !== p.id || !REVIEW_OPEN_STATUSES.includes(p.status)) return undefined;
   return { at: job.parked.at, ...parkAskOf(job.parked) };
 }
 
