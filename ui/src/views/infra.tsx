@@ -3,13 +3,14 @@
 // minted against it, and the environment watchers (part 4). Infra applies (infra-applies.tsx, issue #1722): off, changes go through CI.
 // Applies and drift (infra-timeline.tsx): one timeline of plans recorded and approved, applies, drift and out-of-band
 // writes, newest first. Out-of-band changes (out-of-band.tsx). The topology has its own page (topology-page.tsx, issue
-// #1943): a line here links to it, and each timeline entry links to the nodes it touched there; the page reads the graph
-// only to name those nodes. Every panel always shows: loading, an error with Try again, or an empty list that says how a
+// #1943): a line here links to it, and each timeline entry links to the nodes it touched there; the page reads only the
+// nodes its entries can touch (issue #2367), only to name them. Every panel always shows: loading, an error with Try again, or an empty list that says how a
 // job fills it. `#infra/<plan id>` (issue #2205: a job's wait on a plan links so) picks that plan, or says it is not recorded.
 import { FileDiff, History, ShieldAlert } from 'lucide-react';
 import { Empty, Panel } from '@/components/panel';
 import { useSection } from '@/app/nav';
 import { infraTimeline, plansWaiting } from '@/model/infra-plans';
+import { topologyPathFor } from '@/model/topology';
 import type { InfraPlanSettings, InfraWatchers, PlanApply, PlanView } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
 import { AutoApprove, PlanList, Watchers } from './infra-plans';
@@ -26,13 +27,14 @@ export function Infra() {
   const picked = useSection() || undefined;
   const [plans, changePlans, reloadPlans] = useLoad<Plans>('/api/infra-plans');
   const [changes, changeChanges, reloadChanges] = useLoad<OutOfBandList>('/api/out-of-band');
-  const [topology] = useLoad<TopologyGraph>('/api/topology');
   const pickNode = (id: string) => { window.location.hash = `#topology/${encodeURIComponent(id)}`; };
   const onPlan = (plan: PlanView) => changePlans((d) => ({ ...d, plans: d.plans.map((p) => (p.id === plan.id ? plan : p)) }));
   const onSettings = (settings: InfraPlanSettings) => changePlans((d) => ({ ...d, settings }));
   const onWatchers = (watchers: InfraWatchers) => changePlans((d) => ({ ...d, watchers }));
   const waiting = plansWaiting(plans.kind === 'ok' ? plans.data : undefined, now);
   const timeline = plans.kind === 'ok' && changes.kind === 'ok' ? infraTimeline(plans.data.plans, plans.data.applies, changes.data.changes) : [];
+  // Only the nodes the timeline can touch, once it is in (issue #2367): the whole graph is megabytes.
+  const [topology] = useLoad<TopologyGraph>(topologyPathFor(timeline));
   return (
     <div className="max-w-3xl space-y-3">
       <p className="text-sm text-muted-foreground">No apply without a plan. A job records the plan of each infrastructure change; the vault mints a credential that changes infrastructure only for an approved plan, made at the commit its branch is at now, and less than an hour old. An operator approves a low-risk plan in uat only; an admin approves any other plan. A plan that adds an AWS resource without the MAP tag fails, and nobody approves it. Each plan, approval and apply is sent to the notifiers, with the watchers of its environments.</p>

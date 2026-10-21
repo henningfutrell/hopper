@@ -51,6 +51,29 @@ export function neighbours(g: TopologyGraph, id: string): Neighbour[] {
 const namesOf = (n: GraphNode): Set<string> =>
   new Set([n.id, n.name, ...(n.aliases ?? []).map((a) => a.replace(/^(dns|url):/, '')), ...Object.values(n.attrs ?? {})].map((s) => s.toLowerCase()));
 
+/** The most names Infra's topology read takes (issue #2367): `TOUCHING_MAX` in src/domain/topology.ts. More read the whole graph. */
+const TOUCHING_MAX = 100;
+
+/** The names an entry's nodes are found by: its target, or its asset's name and each end of it (`<account>/<role path>`, `<cluster>/<namespace>`). */
+function entryNames(e: TimelineEntry): string[] {
+  const s = e.subject;
+  if (!s) return [];
+  if ('target' in s) return [s.target];
+  const parts = s.asset.name.split('/');
+  return [s.asset.name, parts[0]!, parts[parts.length - 1]!];
+}
+
+/**
+ * The topology read that names the nodes of Infra's timeline (issue #2367): only the nodes its entries can touch, not the
+ * whole graph (megabytes); undefined when no entry names a node.
+ */
+export function topologyPathFor(timeline: readonly TimelineEntry[]): string | undefined {
+  const names = [...new Set(timeline.flatMap(entryNames).filter((n) => n !== '').map((n) => n.toLowerCase()))].sort();
+  if (names.length === 0) return undefined;
+  if (names.length > TOUCHING_MAX) return '/api/topology';
+  return `/api/topology?${names.map((n) => `touching=${encodeURIComponent(n)}`).join('&')}`;
+}
+
 /**
  * The nodes an Infra changes entry touched (issue #1781). An out-of-band change or drift: each node its target names. A
  * plan, its approval or an apply, by its asset: an AWS account; an AWS role and the account it writes in; a cluster by its

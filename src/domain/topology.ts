@@ -29,6 +29,8 @@ export type SourceKind = (typeof SOURCE_KINDS)[number];
 export const NODES_MAX = 20_000;
 export const LINKS_MAX = 50_000;
 export const SOURCES_MAX = 100;
+/** The most names one read of the nodes Infra's changes touch takes (issue #2367): `GET /api/topology?touching=`. */
+export const TOUCHING_MAX = 100;
 const TEXT_MAX = 512;
 const ATTRS_MAX = 32;
 const ERROR_MAX = 2000;
@@ -234,4 +236,20 @@ export interface TopologyRepository {
   list(): TopologySource[];
   /** Forgets a source (issue #1864: one discovery reported that never held a snapshot). */
   remove(key: string): void;
+}
+
+/** Every name a change's target may give a node, lower case: as Infra matches them (ui/src/model/topology.ts `namesOf`). */
+const namesOf = (n: GraphNode): string[] => [n.id, n.name, ...(n.aliases ?? []).map((a) => a.replace(ALIAS, '')), ...Object.values(n.attrs ?? {})].map((x) => x.toLowerCase());
+
+/** The nodes always kept for Infra: an asset names an account, a cluster or a namespace by fields, not by one name. */
+const BY_ASSET: readonly NodeKind[] = ['aws-account', 'cluster', 'namespace'];
+
+/**
+ * What Infra reads to name the nodes its changes touched (issue #2367), in place of the whole graph: each account, cluster
+ * and namespace node, each node of an account `touching` names, and each node one of them names. No links: Infra draws none.
+ */
+export function touchingGraph(g: TopologyGraph, touching: readonly string[]): TopologyGraph {
+  const names = new Set(touching.map((t) => t.toLowerCase()));
+  const kept = (n: GraphNode): boolean => BY_ASSET.includes(n.kind) || (n.account !== undefined && names.has(n.account.toLowerCase())) || namesOf(n).some((x) => names.has(x));
+  return { nodes: g.nodes.filter(kept), links: [], sources: g.sources };
 }

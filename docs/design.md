@@ -24941,11 +24941,12 @@ said what did not hold the loop, never what did.
 
 - **A worker thread reads where the loop runs while it is held** (`src/http/event-loop-held.ts`,
   `event-loop-held-worker.ts`). The watchdog's tick writes a beat (ms since the epoch) into shared memory. The worker
-  looks at it each second; when no beat came for 5 s (`HELD_MS`), it opens the inspector on the main thread
+  looks at it each second; when no beat came for 2 s (`HELD_SAMPLE_MS`, below the health port's 5 s `HELD_MS`, so the
+  stalls of 2–4 s that came each minute name their code too, issue #2367), it opens the inspector on the main thread
   (`Session.connectToMainThread`), pauses it (`Debugger.pause`, which V8 takes as an interrupt, so a busy loop is
   paused where it runs, and a synchronous native call at the JavaScript that called it), reads the top 8 frames,
-  and resumes it at once. At most three reads a held spell, 5 s apart. Each read is logged by the worker at once, on
-  stderr, so the log says the loop is held while it is: `hopper: the event loop is held for 5.0 s now; it runs list
+  and resumes it at once. At most four reads a held spell, 2 s apart. Each read is logged by the worker at once, on
+  stderr, so the log says the loop is held while it is: `hopper: the event loop is held for 2.0 s now; it runs list
   (src/store/jobs.ts:88) ← …`. The watchdog names the reads with the stall when the loop is free (`held`: `afterMs`,
   `frames`), in its log line, in `/api/health`'s `eventLoopStall`, in `hopper.event_loop_stalled` (additive, still v1)
   and in the **stalled** badge's title. A frame names its function and its file in the hopper's tree (`src/…`,
