@@ -64,6 +64,14 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff({ state: 'waiting_for_approval' }, ['hopper', 'hopper:done'], ['hopper'])).toBeUndefined();
   });
 
+  it('dropped by a person\'s Won\'t do (issue #1892): hopper:rejected, and taking it off is a label edit; not judged else', () => {
+    const wontDo = { state: 'dropped', eventState: 'dropped', wontDo: true } as const;
+    expect(labelsFor(wontDo)).toEqual({ allowed: ['hopper:rejected'], add: 'hopper:rejected' });
+    expect(labelsFor({ state: 'dropped', eventState: 'dropped' })).toBeUndefined();
+    expect(labelDrift(wontDo, ['hopper', 'hopper:blocked'])).toEqual({ remove: ['hopper:blocked'], add: ['hopper:rejected'] });
+    expect(labelTakenOff(wontDo, ['hopper', 'hopper:rejected'], ['hopper'])).toBe('hopper:rejected');
+  });
+
   it('the other states are not judged', () => {
     for (const state of ['needs_you', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(labelsFor({ state })).toBeUndefined();
   });

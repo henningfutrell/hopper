@@ -22159,13 +22159,42 @@ on a person in Failures (`waitingOn` is `HANDOFF_WAIT`). Its job failed, so its 
   that time would not be seen as a Run again, and the ledger would keep the item out. Its labels decide until the grace
   ends, as before part 8.
 
-**Left to the labels:** a done item with no whole merge, dropped.
+**Left to the labels:** a done item with no whole merge, dropped (part 9 judges a drop by Won't do).
 
 **Verification:** `test/sources/github-label-needs-you.test.ts` (a hand-off whose failure was reported gets `hopper:failed`
 and the failed reason, and the label taken off by hand is one Run again; one not reported, or reported moments ago, is not
 judged), `test/integration/github.test.ts` and `test/integration/item-snapshot.test.ts` (a failed issue's `hopper:failed`
 taken off at once runs it again),
 `test/sources/github-item-labels.test.ts` (`labelsFor` of a hand-off).
+
+### An item dropped by Won't do carries hopper:rejected (issue #1892 part 9, 2026-10-21)
+
+Milestone 2, part 9: the dropped state, for the drop whose label is certain. A person's **Won't do** drops an item: on a
+blocked item in Intake (`work_item.dropped`, issue #1891), or as the resolution of a hand-off in Needs a person
+(`handoff.closed` with end `wont_do`, issue #551). Each act puts `hopper:rejected` on through the outbox, in place of the
+end labels before it. Before this part, Intake took such an item's reason from that label, and the mirror did not judge it.
+
+- **The ledger marks the drop.** Either act sets `wontDo` on the work item. Any later move of the item forgets it, also a
+  move to dropped another way. The field is in the item's JSON body: no migration. An item dropped before this part has no
+  mark until the ledger is rebuilt, so the labels decide for it, as before.
+- **`labelsFor` judges an item dropped by Won't do.** It wants `hopper:rejected`, and no other end label. The mirror
+  corrects a stale end label (for example a `hopper:pr-closed` left on).
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item the rejected reason (`REJECTED_LABEL`), whatever
+  end labels its issue carries.
+- **`hopper:rejected` taken off by hand is a Run again**, as the label's description says ("remove to offer it again"):
+  one `work_item.label_edited` with `from: dropped`. Intake takes the item again, as it did when the labels decided; the
+  event now records the person's act. The act's own label change is no label edit: the act moves the item first, and its
+  outbox rows are held until they are sent.
+- **Not judged: an item dropped any other way.** A cancelled or rejected job, a declined or withdrawn card, a dismissed
+  failure, a person's Close PR or an issue closed as not planned: what its issue carries then is not certain (a decline
+  takes the source label off; a cancel takes only the claim off). The labels decide for those.
+
+**Left to the labels:** a done item with no whole merge, an item dropped any way but Won't do.
+
+**Verification:** `test/sources/github-label-dropped.test.ts` (an item dropped by Won't do gets the rejected reason and
+`hopper:rejected` in place of a stale end label; the label taken off by hand is one Run again and is not put back; an item
+dropped another way is not judged), `test/domain/work-items-wont-do.test.ts` (both acts mark the drop; a cancel or a
+dismiss does not; a new job forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor` of a dropped item).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
