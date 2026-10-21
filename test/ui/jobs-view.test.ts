@@ -210,6 +210,23 @@ describe('the Jobs view (issue #434)', () => {
     expect(details.textContent).toContain('continues in');
   });
 
+  it('fits each tree to the panel width by default, with a toggle for actual size (issue #2354)', async () => {
+    jobs = [pointed(1, 'running')];
+    await boot('graph');
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="job-tree-graph"]')).not.toBeNull());
+    const svg = () => document.querySelector<SVGSVGElement>('[data-slot="job-tree-graph"]')!;
+    const frame = () => svg().closest<HTMLElement>('[data-slot="fit-graph"]')!;
+    expect(svg().getAttribute('viewBox')).toBe(`0 0 ${svg().getAttribute('width')} ${svg().getAttribute('height')}`);
+    expect(frame().dataset.size).toBe('fit');
+    expect(svg().getAttribute('class')).toMatch(/\bmax-w-full\b/);
+    expect(svg().getAttribute('class')).toMatch(/\bh-auto\b/);
+    expect(svg().parentElement!.className).not.toMatch(/overflow/);
+    await click([...frame().querySelectorAll('button')].find((b) => b.textContent === 'Actual size')!);
+    expect(frame().dataset.size).toBe('actual');
+    expect(svg().getAttribute('class')).not.toMatch(/max-w-full/);
+    expect(svg().parentElement!.className).toMatch(/overflow-x-auto/);
+  });
+
   it('shows an open question as a node of its job that blocks the root, and links its details to the job', async () => {
     jobs = [pointed(1, 'waiting_answer')];
     questions = [{ id: 'q1', jobId: 'job-1', text: 'Which store should the cache use?', since: '2026-10-01T02:00:00Z' }];
