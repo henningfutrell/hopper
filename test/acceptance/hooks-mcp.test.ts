@@ -56,13 +56,13 @@ describe('the real claude CLI with the MCP server and the hook its plugin gives 
     const from = server.requests.length;
     const ex = createPrintAgentExecutor({ agent: 'claude', name: 'claude', bin: bin!, args: argsFor(hookFile), sshAuth: () => { throw new Error('no ssh'); } });
     const job: Job = {
-      id: `job-hooks-mcp-${process.pid}`, spec: { executor: 'agent', payload: { prompt: 'Call the echo tool.', cwd, model: claude.model, timeoutMs: TURN_MS, env: claude.env(server.url) }, machineId: HERE.id },
+      id: `job-hooks-mcp-${process.pid}`, spec: { executor: 'agent', payload: { prompt: 'Call the echo tool.', cwd, model: claude.model, timeoutMs: TURN_MS, env: { ...claude.env(server.url), ENABLE_TOOL_SEARCH: 'false' } }, machineId: HERE.id },
       priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1,
     };
     const ctx: ExecutionContext = { job, laneId: 'local/lane-1', machine: HERE, signal: new AbortController().signal, progress() {}, saveState() {}, workTree() {} };
 
     expect(await ex.run(ctx)).toMatchObject({ kind: 'finished', result: { summary: 'The echo answered.' } });
-    // The MCP server's tool was offered to the model, under the name Claude Code gives it.
+    // The MCP server's tool was offered to the model, under the name Claude Code gives it (tool search off: it defers MCP tools).
     const turns = server.requests.slice(from).filter((r) => r.step);
     const tools = (turns[0]!.body.tools as { name: string }[]).map((t) => t.name);
     expect(tools).toContain('mcp__double__echo');
