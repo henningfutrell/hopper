@@ -12795,7 +12795,8 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   badge counts the parked jobs, marked when high priority, quiet (muted): a reminder, not an alarm.
 - **A login it waits on** (issue #476) fails when it is parked, as for any job that no longer runs (`the job
   ended`); the resumed session meets its tool again and reports a new one.
-- **Auto-park** (issue #650). A question that waits on a person longer than the **park timeout** parks its job by
+- **Auto-park** (issue #650; the timeout replaced by issue #2335, "Every job that waits on a person parked" below: a
+  job parks 5 s after its question reached a person, with no setting). A question that waits on a person longer than the **park timeout** parks its job by
   itself, so a night of unanswered questions does not keep panes and agents live on the machines. The engine checks
   on each tick (`src/engine/auto-park.ts`): a `waiting_answer` job whose question is open at the human stage, waited
   at least the timeout since `escalatedToHumanAt` (time at the escalation levels, Jev and the fixed answers does not
@@ -13052,6 +13053,7 @@ once, the wait check wakes it, and it does not need to start again on the machin
 - **UI.** The Dashboard's wait row says `parked (waiting on <what it waits on>)`, with End the wait.
 - **Not built.** A job parked on a question (the Park button, auto-park) keeps its pin to its machine; the busy-machine move
   and a person's pick up elsewhere still move it. A wait that ends a few seconds after it began is released all the same.
+  (A job on a question: issue #2335, below.)
 - **Persisted state.** No schema change: `waitReleased.checkpointAt` is in the job's JSON. A build before this reads a woken
   job as one picked up to resume elsewhere, as after a busy-machine move.
 
@@ -13060,6 +13062,59 @@ Verification: `test/decider/memory-floor.test.ts` (every wait released, on every
 `test/ui/job-wait-view.test.ts`, and `test/integration/wait-release.test.ts` (two machines over the fake herdr: a job on a
 vault-grant wait with nothing queued has its pane closed and its checkpoint marked; its machine drained, End the wait
 resumes it on the other machine from its checkpoint, with the same session and `WAIT_RELEASED_NOTE`).
+
+### Every job that waits on a person parked, and its pick up on any machine (issue #2335 part 1, 2026-10-21)
+
+Follow-up to issue #2326: a job on a question, or on its proposal or research report, still kept its agent, its pane and
+its pin to its machine while a person had not answered; auto-park parked it only after a timeout (30 minutes by default). The
+owner's direction: a waiting job never stays a live Claude session; a hopper-side check, not the pane, wakes it, and it
+resumes from its checkpoint on any machine.
+
+- **Every job on a person, parked.** Auto-park (`src/engine/auto-park.ts`) parks a `waiting_answer` job, on the Park button's
+  path, `WAIT_RELEASE_AFTER_MS` (5 seconds) after its question reached a person (`escalatedToHumanAt`), or after it began to
+  wait on one again (`waitRestartedAt`, issue #692); a job on its proposal or research report as long after that item reached
+  the human stage (its newest version, or a level's last review). A question a risk rule or the consequential guard sent to a person (`keptBy`) parks too. `why`: `AUTO_PARK_WHY`. A
+  question on the issue thread parks at once, as before. Still not parked by it: a job with no agent session (issue #530),
+  and one a fork of its question still works for (issue #548). Time at the escalation levels does not count, as before: a
+  level answers with no agent of the job's.
+- **No setting.** The park timeout is gone: `GET /api/auto-park`, `POST /ui/api/auto-park`, Settings → Auto-park and
+  `hopper auto-park` are removed. A stored `autoPark` setting is no longer read; `auto_park.settings_changed` stays a known
+  event for the ones recorded, and is no longer written.
+- **The item stays in review.** A job auto-park parked on its proposal or research report sets nothing aside (`parkedItemOf`
+  is only a person's park, issue #2167): the item stays in its section, levels review it, and a person decides it. Its decision
+  or a send back picks the job up (`requeue` in `src/engine/reviews.ts` → `recordUnpark`), as the answer to a question does.
+- **Its checkpoint, marked.** `releaseParked` (`src/engine/park.ts`) still takes the checkpoint after the executor ended the
+  agent; a checkpoint with the session is now marked on the park (`parked.checkpointAt`), for every park — a person's,
+  auto-park's, a preemption, a memory pause, a budget pause.
+- **Its pick up, on any machine.** `recordUnpark` queues a parked job whose marked checkpoint is still its checkpoint, with
+  its agent session and no machine pin of its spec, as picked up to resume elsewhere (issue #921, `recordElsewhere`):
+  `resumeOn` cleared, `parked.elsewhere` set, `job.unparked` `{ to: 'queued', elsewhere: true }`. Every pick up takes it: the
+  answer, the decision, a person's Pick up, a preempted or memory-paused job's re-queue. Admission control places it on any
+  machine with room; herdr-claude restores the checkpoint there (`relocate`) and resumes the same session. A job parked
+  before its checkpoint is marked resumes on its own machine, as before.
+- **A pane that ended is no pane.** A job on its own wait whose agent was released (`waitReleased`), or a job picked up with
+  its question still open after a park (`waiting_answer` with `parked`), holds no pane: its pane id may name another job's
+  pane by now. `holdsPane` (`src/engine/terminal.ts`) says so, so the job's terminal and the machine terminal's job of a pane
+  refuse it (`no_pane`, 409). A park of a job picked up with its question open (auto-park, or the Park button) asks no
+  executor to end its pane (`releaseParked` with `paneless`): it has none.
+- **Lanes.** A parked or waiting job holds no lane in the store already (its `laneId` is cleared when it parks or waits); its
+  `executorState` keeps the lane and pane of its last run as the record of where its work tree is, which the sweep and the
+  cleanup read (`machineRanOn`). Its next run on any machine replaces it.
+- **The checkpoint on every machine.** The checkpoint is kept in the user's schema (`job_checkpoints`, issue #921): the session
+  file, the patch from a commit the remote has, and the commits not pushed (as uncommitted changes when it is restored). No
+  machine but the one that restores it needs to be reached.
+- **Not built (later parts).** A wait only its pane carries — a job's own command, a background poll for what the hopper
+  watches nothing of — still keeps its agent (issue #2335 gap 2): a hopper-side check of the condition (a command exit
+  recorded by the hopper, a time) replaces the pane's poll. A parent of a fork (`forkParent: wait`) keeps its agent while the
+  fork runs.
+- **Persisted state.** No schema change: `parked.checkpointAt` is in the job's JSON. A build before this reads a parked job
+  with it as before, and pins its pick up to its machine. A stored `autoPark` setting row stays, unread.
+
+Verification: `test/integration/auto-park.test.ts` (a question parks its job 5 s after it reached a person; a risk-rule
+question too; a job on its proposal parks 5 s after it reached the human stage, stays in Proposals and its send back resumes its session; on two
+machines over the fake herdr, the answer resumes a parked job on the other machine from the checkpoint marked on its park,
+with the same session, and its terminal is refused while it is parked), `test/integration/wait-release.test.ts` (a released
+wait's terminal is refused), `test/integration/thread-ask.test.ts` (picked up with its question open, it parks again 5 s later).
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 

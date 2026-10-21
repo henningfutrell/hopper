@@ -17,7 +17,7 @@ import type { CloudLinkSettings, CloudRegistrationCode } from './cloud-link.ts';
 import type { TelemetrySettings } from './telemetry-settings.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
 } from './types.ts';
 
@@ -116,8 +116,6 @@ export interface UserSettingsRepository {
   getAutoAnswer(): AutoAnswerSettings | undefined;
   setAutoAnswer(settings: AutoAnswerSettings): void;
   /** Auto-park (issue #650): how long a question waits on a person before its job parks by itself; absent: never set. */
-  getAutoPark(): AutoParkSettings | undefined;
-  setAutoPark(settings: AutoParkSettings): void;
   /** The token budget (issue #2302, part 3): the most one job may spend before it is paused; absent: never set (no cap). */
   getTokenBudget(): Partial<import('./token-budget.ts').TokenBudgetSettings> | undefined;
   setTokenBudget(settings: import('./token-budget.ts').TokenBudgetSettings): void;

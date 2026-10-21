@@ -6,8 +6,10 @@
 // recorded no agent session (one started before #510) parks the same way; its re-queue, confirmed by the person, starts a
 // fresh session in its kept work tree, told the task, its question and the answer (issue #530). A job with a checkpoint
 // that holds its agent session may instead be picked up to resume elsewhere (issue #921): not pinned to its machine,
-// its claim rebuilds its work tree from the checkpoint wherever it runs, and the agent is told so (`elsewhereBrief`).
+// its claim rebuilds its work tree from the checkpoint wherever it runs, and the agent is told so (`elsewhereBrief`). Issue
+// #2335: once the checkpoint taken after its park is marked, every re-queue of it does so, a person's or the hopper's.
 import type { Job, LaneId } from '../domain/types.ts';
+import type { JobCheckpoint } from '../domain/checkpoints.ts';
 import { parkAskOf, type ParkAsk } from '../domain/park-ask.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -68,18 +70,36 @@ export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waitin
 
 /**
  * After the commit: the executor ends the job's pane and agent, then its checkpoint is taken (issue #921), its agent
- * session whole now. Never throws; what it cannot reach, the sweep stops, and the last checkpoint stands.
+ * session whole now. A checkpoint with the session is marked on the park (`parked.checkpointAt`, issue #2335): its re-queue
+ * then resumes it on any machine. `paneless`: its pane ended at an earlier park, and its id may name another job's pane
+ * by now, so the executor is not asked. Never throws; what it cannot reach, the sweep stops, and the last checkpoint stands.
  */
-export async function releaseParked(c: Pick<EngineContext, 'executors' | 'stopping' | 'checkpoints'>, job: Job): Promise<void> {
+export async function releaseParked(c: Pick<EngineContext, 'executors' | 'stopping' | 'checkpoints' | 'store'>, job: Job, paneless = false): Promise<void> {
   try {
-    await c.executors.get(job.spec.executor)?.park?.(job);
+    if (!paneless) await c.executors.get(job.spec.executor)?.park?.(job);
   } catch (e) {
     if (!c.stopping()) console.warn(`hopper: job ${job.id} parked, but its machine could not be reached to end its agent: ${(e as Error).message}; the sweep stops it`);
     return;
   }
   // Not waited on: the runner that parked the job ends now; the checkpoint lands when it is read.
-  if (c.checkpoints && !c.stopping()) void c.checkpoints.take(job.id);
+  if (c.checkpoints && !c.stopping()) void c.checkpoints.take(job.id).then((k) => markParked(c, job, k), () => undefined);
 }
+
+/** The checkpoint taken after the park, marked on it while the job is still parked from that park. */
+function markParked(c: Pick<EngineContext, 'store'>, job: Job, k: JobCheckpoint | string): void {
+  if (typeof k === 'string' || !k.session) return;
+  c.store.tx(() => {
+    const now = c.store.jobs.get(job.id);
+    if (now?.status === 'parked' && now.parked?.at === job.parked?.at) c.store.jobs.update(job.id, { parked: { ...now.parked!, checkpointAt: k.at } });
+  });
+}
+
+/**
+ * Whether the parked job resumes on any machine (issue #2335): the checkpoint taken after its park, with its agent session,
+ * is still its checkpoint, and its spec pins it to no machine.
+ */
+const unpinned = (job: Job): boolean => job.parked?.checkpointAt !== undefined && job.checkpoint?.at === job.parked.checkpointAt
+  && job.checkpoint.session && job.agentSession !== undefined && job.spec.machineId === undefined;
 
 /** Why the job cannot resume elsewhere (issue #921), or undefined: parked, with a checkpoint that holds its agent session. */
 export function elsewhereRefusal(job: Job): string | undefined {
@@ -137,6 +157,8 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
     store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'waiting_answer', ...by } });
     return next;
   }
+  // Its checkpoint marked after its park (issue #2335): on any machine with room, not only its own.
+  if (unpinned(job)) return recordElsewhere(c, store.jobs.get(id)!, by);
   const next = store.jobs.update(id, { status: 'queued', pendingAnswer: job.pendingAnswer ?? PARKED_RESUME, holdReason: undefined, waitReason: undefined });
   store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'queued', ...by } });
   return next;
