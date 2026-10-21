@@ -115,6 +115,9 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
       const r = c.db.get('SELECT id, xmin::text AS v FROM jobs WHERE source_key = ? ORDER BY created_at DESC, seq DESC LIMIT 1', key);
       return r ? bodies([r])[0] : undefined;
     },
+    idsOfItem(key) {
+      return c.db.all('SELECT id FROM jobs WHERE source_key = ? ORDER BY created_at DESC, seq DESC', key).map((r) => String(r.id));
+    },
     getMany(ids) {
       const rows = chunks([...new Set(ids)]).flatMap((part) => c.db.all(`SELECT id, xmin::text AS v FROM jobs WHERE id IN (${marks(part)})`, ...part));
       return new Map(bodies(rows).map((j) => [j.id, j]));

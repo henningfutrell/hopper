@@ -135,4 +135,17 @@ describe('reads of many jobs in one pass (issue #1411)', () => {
     expect(newest.has('gone')).toBe(false);
     db.close();
   });
+
+  it('idsOfItem answers the id of every job of the item, newest first, and reads no body (issue #2319)', () => {
+    const { jobs, db, bodies } = openJobs();
+    const older = jobs.create(spec, 1, src('one'));
+    const newer = jobs.create(spec, 1, src('one'));
+    jobs.create(spec, 1, src('two'));
+    jobs.create(spec, 1);
+    bodies.n = 0;
+    expect(jobs.idsOfItem('one')).toEqual([newer.id, older.id]);
+    expect(jobs.idsOfItem('gone')).toEqual([]);
+    expect(bodies.n).toBe(0);
+    db.close();
+  });
 });

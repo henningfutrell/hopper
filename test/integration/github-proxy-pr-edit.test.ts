@@ -111,6 +111,27 @@ describe('a job edits or closes its own pull request (issue #1734)', () => {
     expect(json(edit)).toMatchObject({ ok: true, op: 'pr.edit', number: n });
   });
 
+  it('edits and closes a pull request an earlier job of its item opened, which is not the work item\'s; another item\'s stays refused (issue #2319)', async () => {
+    const t = await start();
+    const n = await openElsewhere(t.github, 'issue-7-part-1');
+    const other = await openElsewhere(t.github, 'issue-9-other');
+    const store = t.app.user(ADMIN_ID).store;
+    // An earlier part's job of the same item opened n through the hopper; a job of another item opened `other`.
+    const earlier = store.jobs.create(t.job.spec, 1, t.job.source);
+    const stranger = store.jobs.create(t.job.spec, 1, { ...t.job.source!, key: `${t.github.url}/octo/tools/issues/9`, number: 9 });
+    const opened = (jobId: string, number: number) => store.events.append({ type: 'github_proxy.done', jobId, data: { requestId: `r-${number}`, op: 'pr.create', repo: 'octo/tools', number, url: `${t.github.url}/octo/tools/pull/${number}` } });
+    opened(earlier.id, n);
+    opened(stranger.id, other);
+
+    const edit = await hopperGh(t.root, t.env, ['pr', 'edit', String(n), '--repo', 'octo/tools', '--body', 'Part of #7']);
+    expect(json(edit)).toMatchObject({ ok: true, op: 'pr.edit', number: n });
+    const close = await hopperGh(t.root, t.env, ['pr', 'close', String(n), '--repo', 'octo/tools']);
+    expect(json(close)).toMatchObject({ ok: true, op: 'pr.close', number: n, state: 'closed' });
+    const refused = await hopperGh(t.root, t.env, ['pr', 'edit', String(other), '--repo', 'octo/tools', '--body', 'x']);
+    expect(refused.code).toBe(1);
+    expect(patches(t.github)).toHaveLength(2);
+  });
+
   it('closes the pull request it was started to tend, which it did not open and is not its work item\'s (issue #2127)', async () => {
     const t = await start();
     const n = await openElsewhere(t.github, 'issue-3-same-fix');
