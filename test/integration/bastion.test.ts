@@ -8,6 +8,7 @@
 //   Scenario: under YOLO, a job's template with an observe and its bastion start with no person; the bastion's box holds
 //     the forward and its token as a file, never in its environment, the job's answer, or an event; the job stops it,
 //     its box goes, its token's Secret is deleted, and its start and end are on the job's timeline
+//   Scenario (part 5): the template waits for its read-only check, which runs with the observe minted for it and passes
 //   Scenario (part 2): the job's `hopper-relay` holds a local port joined to a target of its bastion through the hopper's
 //     relay, a command in the box that reaches the forward; a target the bastion does not forward to is refused
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
@@ -46,7 +47,9 @@ function bastionBoxes(b: Booted): (name: string) => string {
   writeFileSync(join(bin, 'kubectl'), FAKE_KUBECTL);
   chmodSync(join(bin, 'kubectl'), 0o755);
   const running = new Map<string, ChildProcess>();
-  b.runtime.runScript = (spec) => new Promise((resolve) => {
+  // A check box (part 5) runs the check's script with the fake cloud tools, as in the read-only check's tests.
+  const check = b.runtime.runScript;
+  b.runtime.runScript = (spec) => (spec.name.startsWith('hopper-check-') && check ? check(spec) : new Promise((resolve) => {
     const child = spawn('sh', ['-c', spec.script ?? ''], { env: { ...spec.env, HOME: homeOf(spec.name), PATH: `${bin}:${process.env.PATH}` }, detached: true });
     running.set(spec.name, child);
     children.push(child);
@@ -54,7 +57,7 @@ function bastionBoxes(b: Booted): (name: string) => string {
     child.stdout.on('data', (d: Buffer) => { output += d.toString(); });
     child.stderr.on('data', (d: Buffer) => { output += d.toString(); });
     child.on('exit', (code) => resolve({ exit: code ?? 143, output }));
-  });
+  }));
   b.runtime.copyIn = async (id, dir, tar) => {
     const c = [...b.runtime.boxes.values()].find((x) => x.id === id)!;
     const to = dir.replace(HOME, homeOf(c.spec.name));
@@ -71,6 +74,23 @@ function bastionBoxes(b: Booted): (name: string) => string {
   return homeOf;
 }
 
+/**
+ * The job asks for a template with an observe on lab/monitoring. It waits for the template's read-only check (part 5),
+ * which the check pass runs with the observe minted for it: exec and a Secret read are refused, so it passes.
+ */
+async function observeTemplate(b: Booted, creds: string): Promise<VaultView['templates'][number]> {
+  const made = await skill(b.a, creds, ['sandbox-template', '--why', 'Read the lab dashboards', '--plan', 'port-forward to grafana, read only', '--needs', 'observe/namespace/lab/monitoring']);
+  expect(made.stdout + made.stderr).toContain('waiting for the read-only check of asked-');
+  await b.a.app.sandboxes.check();
+  const t = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates.find((x) => x.name.startsWith('asked-'))!;
+  expect(t.readOnly).toBe(true);
+  expect(t.check, JSON.stringify(t.check)).toMatchObject({ state: 'passed' });
+  expect(t.check!.probes.filter((p) => p.id.startsWith('observe.')).map((p) => [p.id, p.operation, p.outcome])).toEqual([
+    ['observe.exec', 'observe', 'denied'], ['observe.secret-read', 'observe', 'denied'],
+  ]);
+  return t;
+}
+
 describe('bastions (issue #2146)', () => {
   it('under YOLO a job starts a bastion of its observe template; the token stays in the box; the job stops it', async () => {
     const b = await boot([]);
@@ -79,10 +99,7 @@ describe('bastions (issue #2146)', () => {
     const creds = await runningJob(b.a);
     const jobId = b.a.user().store.jobs.list({ status: ['running'] }).at(-1)!.id;
 
-    const made = await skill(b.a, creds, ['sandbox-template', '--why', 'Read the lab dashboards', '--plan', 'port-forward to grafana, read only', '--needs', 'observe/namespace/lab/monitoring']);
-    expect(made.code, made.stdout + made.stderr).toBe(0);
-    const t = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates.find((x) => x.name.startsWith('asked-'))!;
-    expect(t.readOnly).toBeFalsy();
+    const t = await observeTemplate(b, creds);
     expect(t).toMatchObject({ tools: expect.arrayContaining(['kubectl']), profiles: [{ operation: 'observe', asset: { kind: 'namespace', name: 'lab/monitoring' } }] });
 
     const asked = await skill(b.a, creds, ['bastion', '--template', t.name, '--targets', 'lab/monitoring/svc/grafana:3000', '--why', 'Read the lab dashboards']);
@@ -145,9 +162,7 @@ describe('bastions (issue #2146)', () => {
     const creds = await runningJob(b.a);
     writeFileSync(join(creds, 'relay'), RELAY_SCRIPT, { mode: 0o700 });
     writeFileSync(join(creds, 'relay.mjs'), RELAY_CLIENT, { mode: 0o600 });
-    const made = await skill(b.a, creds, ['sandbox-template', '--why', 'Read the lab dashboards', '--plan', 'port-forward to grafana, read only', '--needs', 'observe/namespace/lab/monitoring']);
-    expect(made.code, made.stdout + made.stderr).toBe(0);
-    const t = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates.find((x) => x.name.startsWith('asked-'))!;
+    const t = await observeTemplate(b, creds);
     const asked = await skill(b.a, creds, ['bastion', '--template', t.name, '--targets', 'lab/monitoring/svc/grafana:3000', '--why', 'Read the lab dashboards']);
     expect(asked.code, asked.stdout + asked.stderr).toBe(0);
     await waitFor(async () => (await skill(b.a, creds, ['bastion'])).stdout.includes('is running'), { timeoutMs: 10_000 });

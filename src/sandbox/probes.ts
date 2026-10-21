@@ -64,6 +64,8 @@ export const HELM_LIST_REFUSAL = /\bsecrets is forbidden: .*cannot list resource
 
 const AWS = ['aws-account', 'aws-role'] as const;
 const KUBE = ['cluster', 'namespace'] as const;
+/** A kube probe that runs under an observe need too (issue #2146, part 5): its credential must change nothing either. */
+const READ_OBSERVE = ['read', 'observe'] as const;
 /** The namespace a probe on a `namespace` asset acts in; a cluster's probes act in `default`. */
 const NS = 'ns=default; case "$ASSET" in */*) ns="${ASSET#*/}" ;; esac';
 
@@ -105,7 +107,7 @@ export const EGRESS_PROBES: readonly Probe[] = [
     ),
   },
   {
-    id: 'egress.kube', title: `reach ${EGRESS_PROBE_URL}, not on the allowlist, past the egress proxy and through it (kubectl)`, kinds: [...KUBE, 'argocd-app'], tool: 'kubectl', expect: 'denied', once: true,
+    id: 'egress.kube', title: `reach ${EGRESS_PROBE_URL}, not on the allowlist, past the egress proxy and through it (kubectl)`, kinds: [...KUBE, 'argocd-app'], tool: 'kubectl', expect: 'denied', once: true, operations: READ_OBSERVE,
     denial: EGRESS_DENIAL,
     script: egressProbe(
       `kubectl --kubeconfig=/dev/null --server=${EGRESS_PROBE_URL} --token=hopper-egress-probe --insecure-skip-tls-verify --request-timeout=10s get --raw /`,
@@ -113,6 +115,21 @@ export const EGRESS_PROBES: readonly Probe[] = [
     ),
   },
 ];
+
+/**
+ * A probe that tries two requests (issue #2146, part 5): it is refused only when both are, each with a Forbidden. An
+ * answer of any other kind (NotFound, a list) is no refusal, and the probe ends 0.
+ */
+function bothRefused(setup: string, first: string, second: string, what: string): string {
+  return `${NS}
+${setup}
+forbidden() { case "$1" in *Forbidden*|*forbidden*) return 0 ;; esac; return 1; }
+a=$(${first} 2>&1); ca=$?
+b=$(${second} 2>&1); cb=$?
+printf '%s (exit %s): %s\\n%s (exit %s): %s\\n' '${first}' "$ca" "$a" '${second}' "$cb" "$b"
+if [ "$ca" -ne 0 ] && forbidden "$a" && [ "$cb" -ne 0 ] && forbidden "$b"; then echo '${what} is forbidden'; exit 1; fi
+exit 0`;
+}
 
 export const PROBES: readonly Probe[] = [
   { id: 'aws.caller-identity', title: 'read who the session is', kinds: AWS, tool: 'aws', expect: 'allowed', script: 'aws sts get-caller-identity' },
@@ -138,10 +155,10 @@ export const PROBES: readonly Probe[] = [
     id: 'aws.sts-assume-role', title: 'assume another role in the account', kinds: AWS, tool: 'aws', expect: 'denied',
     script: 'account=$(aws sts get-caller-identity --query Account --output text) || exit 1\naws sts assume-role --role-arn "arn:aws:iam::$account:role/hopper-read-only-check-admin" --role-session-name hopper-read-only-check',
   },
-  { id: 'kube.get', title: 'list namespaces, or pods in the namespace', kinds: KUBE, tool: 'kubectl', expect: 'allowed', script: `${NS}\ncase "$ASSET" in */*) kubectl get pods -n "$ns" ;; *) kubectl get ns ;; esac` },
-  { id: 'kube.create-namespace', title: 'make a namespace (a server dry run)', kinds: KUBE, tool: 'kubectl', expect: 'denied', script: 'kubectl create namespace hopper-read-only-check --dry-run=server' },
+  { id: 'kube.get', title: 'list namespaces, or pods in the namespace', kinds: KUBE, tool: 'kubectl', expect: 'allowed', operations: READ_OBSERVE, script: `${NS}\ncase "$ASSET" in */*) kubectl get pods -n "$ns" ;; *) kubectl get ns ;; esac` },
+  { id: 'kube.create-namespace', title: 'make a namespace (a server dry run)', kinds: KUBE, tool: 'kubectl', expect: 'denied', operations: READ_OBSERVE, script: 'kubectl create namespace hopper-read-only-check --dry-run=server' },
   {
-    id: 'kube.delete-pod', title: 'delete a pod (a server dry run)', kinds: KUBE, tool: 'kubectl', expect: 'denied',
+    id: 'kube.delete-pod', title: 'delete a pod (a server dry run)', kinds: KUBE, tool: 'kubectl', expect: 'denied', operations: READ_OBSERVE,
     // Allowed, it answers NotFound: that is not a refusal.
     script: `${NS}\nkubectl delete pod hopper-read-only-check -n "$ns" --dry-run=server`,
   },
@@ -161,6 +178,19 @@ out=$(kubectl create -n "$ns" --dry-run=server -f chart.yaml 2>&1); code=$?
 printf '%s\\n' "$out"
 case "$out" in *'(server dry run)'*) exit 0 ;; esac
 exit "$code"`,
+  },
+  // Issue #2146, part 5: an observe credential may port-forward to the monitoring pods, and nothing more. It must not
+  // run a command in a pod, nor read a Secret.
+  {
+    id: 'observe.exec', title: 'run a command in a pod (pods/exec, by its create and its get)', kinds: KUBE, tool: 'kubectl', expect: 'denied', operations: ['observe'],
+    // The API asks the authorization before it looks for the pod: allowed, each answers NotFound, which is no refusal.
+    script: bothRefused(`path="/api/v1/namespaces/$ns/pods/hopper-read-only-check/exec?command=true&stdout=true"`,
+      'kubectl create --raw "$path" -f /dev/null', 'kubectl get --raw "$path"', 'pods/exec'),
+  },
+  {
+    id: 'observe.secret-read', title: 'read Secrets (a list, and a get of one)', kinds: KUBE, tool: 'kubectl', expect: 'denied', operations: ['observe'],
+    script: bothRefused('scope="-A"; case "$ASSET" in */*) scope="-n $ns" ;; esac',
+      'kubectl get secrets $scope', 'kubectl get secret hopper-read-only-check -n "$ns"', 'secrets'),
   },
   { id: 'argocd.get', title: 'read the application', kinds: ['argocd-app'], tool: 'kubectl', expect: 'allowed', script: 'kubectl get applications.argoproj.io "$ASSET" -n argocd' },
   {
@@ -236,16 +266,16 @@ function backendOf(n: OperationProfile): Pick<ProbeRun, 'vars' | 'notRun'> {
   return { vars: { HOPPER_STATE_BUCKET: b.bucket, HOPPER_STATE_REGION: b.region, HOPPER_STATE_KEY: stateProbeKey(b) } };
 }
 
-/** A catalog of these probes: for each read need, every probe of its asset's kind, once per asset. */
+/** A catalog of these probes: for each read or observe need, every probe of its asset's kind and its operation, once per need. */
 export function probeCatalog(probes: readonly Probe[]): ProbeCatalog {
   return {
     runsFor(needs: readonly OperationProfile[]): ProbeRun[] {
       const seen = new Set<string>();
-      return needs.flatMap((n) => probes.filter((p) => p.kinds.includes(n.asset.kind)).flatMap((probe) => {
-        const key = probe.once ? probe.id : `${probe.id} ${n.asset.kind} ${n.asset.name}`;
+      return needs.flatMap((n) => probes.filter((p) => p.kinds.includes(n.asset.kind) && (p.operations ?? ['read']).some((op) => op === n.operation)).flatMap((probe) => {
+        const key = probe.once ? probe.id : `${probe.id} ${n.operation} ${n.asset.kind} ${n.asset.name}`;
         if (seen.has(key)) return [];
         seen.add(key);
-        return [{ probe, kind: n.asset.kind, asset: n.asset.name, ...(probe.backend ? backendOf(n) : {}) }];
+        return [{ probe, kind: n.asset.kind, asset: n.asset.name, ...(n.operation === 'observe' ? { operation: 'observe' as const } : {}), ...(probe.backend ? backendOf(n) : {}) }];
       }));
     },
   };

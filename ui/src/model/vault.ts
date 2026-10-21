@@ -254,7 +254,7 @@ export function giveProblem(g: { name: string; kind: string; note: string; value
  * The read-only check of a template in words (issue #716): none when it takes none; else whether the check of its
  * current version passed, failed (with the probes that failed), runs, or has not run. `waits`: its boxes wait for it.
  */
-export function checkText(t: { readOnly?: boolean; savedAt: string; check?: { version: string; state: string; probes: { id: string; asset: string; outcome: string; passed: boolean; mark?: string }[]; problem?: string; artifact?: string } }): { text: string; waits: boolean; report?: string } | undefined {
+export function checkText(t: { readOnly?: boolean; savedAt: string; check?: { version: string; state: string; probes: { id: string; asset: string; operation?: string; outcome: string; passed: boolean; mark?: string }[]; problem?: string; artifact?: string } }): { text: string; waits: boolean; report?: string } | undefined {
   if (!t.readOnly) return undefined;
   const c = t.check?.version === t.savedAt ? t.check : undefined;
   if (!c) return { text: 'not run on this version yet: it runs once the template is approved', waits: true };
@@ -262,9 +262,11 @@ export function checkText(t: { readOnly?: boolean; savedAt: string; check?: { ve
   // Its report, an artifact of the job that asked for the template (issue #715).
   const report = c.artifact ? { report: `#artifacts/${c.artifact}` } : {};
   // Probes a person marked (issue #916): a read that must be refused, or one not run.
-  const marked = c.probes.filter((p) => p.mark).map((p) => `${p.id} on ${p.asset} (${p.mark})`);
+  // A probe under an observe need's credential (issue #2146, part 5) says so.
+  const on = (p: { id: string; asset: string; operation?: string }): string => `${p.id} on ${p.asset}${p.operation ? ` under ${p.operation}` : ''}`;
+  const marked = c.probes.filter((p) => p.mark).map((p) => `${on(p)} (${p.mark})`);
   if (c.state === 'passed') return { text: `passed: ${c.probes.length} probes, every write refused, every read worked${marked.length ? `, as the template marks ${marked.join('; ')}` : ''}`, waits: false, ...report };
-  const failed = c.probes.filter((p) => !p.passed).map((p) => `${p.id} on ${p.asset} (${p.outcome})`);
+  const failed = c.probes.filter((p) => !p.passed).map((p) => `${on(p)} (${p.outcome})`);
   return { text: `failed: ${[...failed, ...(c.problem ? [c.problem] : [])].join('; ')}`, waits: true, ...report };
 }
 

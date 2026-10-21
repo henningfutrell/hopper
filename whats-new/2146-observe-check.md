@@ -1,0 +1,1 @@
+- A job's long-lived sandbox that reaches the monitoring services now waits for a check that shows its access reads only: it cannot run a command in a pod or read a secret.

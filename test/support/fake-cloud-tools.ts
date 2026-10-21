@@ -8,6 +8,7 @@
 // terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out. With the wrapper, the image's
 // provider mirror is there too: TF_CLI_CONFIG_FILE names it, and init finds only the providers it holds (`MIRRORED_PROVIDERS`), as the real terraform does.
 // After an init with -backend-config (an S3 backend), a state push writes to the bucket: refused under a read-only credential.
+// Issue #2146, part 5: kubectl refuses a Secret read and an exec under a read-only credential.
 // Issue #849: aws and kubectl sent to a host off the allowlist (the egress probes) answer as the real tools do. `limited`
 // (the default): it cannot be reached, past the proxy or through it; `open`: it is reached either way; `proxy-open`: the
 // proxy lets it through, but the box has no route of its own.
@@ -56,7 +57,12 @@ const TOOLS: Record<string, string> = {
   *) if [ "$MODE" = read-only ]; then echo "An error occurred (AccessDenied) when calling the operation: User is not authorized to perform: $2:$3" >&2; exit 254; fi ;;
 esac`,
   kubectl: `case "$1" in
-  get) echo 'NAME STATUS' ;;
+  # A view role reads no Secret and runs nothing in a pod (issue #2146, part 5). Allowed, the exec answers NotFound.
+  get) case " $* " in *" secret"*|*"/exec"*)
+      if [ "$MODE" = read-only ]; then echo "Error from server (Forbidden): $2 is forbidden: User \\"system:serviceaccount:hopper:hopper\\" cannot get" >&2; exit 1; fi
+      case " $* " in *"/exec"*) echo 'Error from server (NotFound): pods "hopper-read-only-check" not found' >&2; exit 1 ;; esac ;;
+    esac
+    echo 'NAME STATUS' ;;
   *) if [ "$MODE" = read-only ]; then echo "Error from server (Forbidden): $2 is forbidden: User \\"system:serviceaccount:hopper:hopper\\" cannot $1" >&2; exit 1; fi
      [ "$1" = delete ] && { echo 'Error from server (NotFound): pods "hopper-read-only-check" not found' >&2; exit 1; }
      [ "$1" = create ] && case " $* " in *" --dry-run=server "*) echo 'deployment.apps/hopper-read-only-check-chart created (server dry run)' ;; esac ;;

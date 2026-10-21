@@ -30,7 +30,7 @@ import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type Asset, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { OPERATOR_CLI_NAME } from '../domain/failures.ts';
 import { mintKindFor } from '../domain/minting.ts';
-import { checkWait, currentCheck, unmintedNeeds, type Unminted } from '../domain/read-only-check.ts';
+import { checkedNeed, checkWait, currentCheck, unmintedNeeds, type Unminted } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
 import { AUTO_APPROVER, autoApproves, NO_SKIPS, SKIP_TEMPLATE_APPROVER, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
@@ -139,7 +139,8 @@ const toolsOf = (r: ReadAsk): string[] => toolSet([...toolsForNeeds(r.needs), ..
 
 /** Whether a template is what the request asks for: the same needs, and the same extras when it names any. */
 const sameAsk = (t: TemplateView, r: ReadAsk): boolean => sameNeeds(t.profiles, r.needs) && (!hasExtras(r.extras) || sameExtras(t, r.extras, r.image));
-const readOnlyOf = (needs: readonly OperationProfile[]): boolean => needs.length > 0 && needs.every((p) => p.operation === 'read');
+/** Whether the template takes the read-only check: no need changes its asset (a read or an observe; issue #2146, part 5). */
+const readOnlyOf = (needs: readonly OperationProfile[]): boolean => needs.length > 0 && needs.every(checkedNeed);
 
 type Result = { ok: true } | { ok: false; code: string; error: string };
 

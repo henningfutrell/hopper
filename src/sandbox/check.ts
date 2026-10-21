@@ -24,10 +24,13 @@
 // Issue #2236: up to `CHECKS_AT_ONCE` checks run at once, and each pass starts the due ones that do not run yet: a check
 // that does not end holds its own template, not every template after it. A due check that cannot start (no place, or as
 // many checks run) is held with the reason (`CheckTemplates.held`), which its template's wait says (`checkWait`).
+// Issue #2146, part 5: an observe changes no asset, so a template of read and observe needs takes the check too. The vault
+// mints each observe for the check box as it mints a read, and the probes under it (exec and a Secret read refused) run
+// with that credential: a read and an observe on one asset each have their own.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ProbeRun, ReadOnlyCheck, Unminted } from '../domain/read-only-check.ts';
-import { CHECK_UNMINTED_MS, currentCheck, markRuns, onlyNetworkErrors, unmintedNeeds, workspaceRole } from '../domain/read-only-check.ts';
+import { CHECK_UNMINTED_MS, checkedNeeds, currentCheck, markRuns, onlyNetworkErrors, unmintedNeeds, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
@@ -121,9 +124,9 @@ export function dueForCheck(t: Template, now: Date): boolean {
 export function judgedAgain(t: Template, probes: ProbeCatalog): boolean {
   const c = currentCheck(t);
   if (t.readOnly !== true || !imageApproved(t) || c?.state !== 'failed' || c.problem !== undefined || c.probes.length === 0) return false;
-  const runs = markRuns(probes.runsFor((t.profiles ?? []).filter((p) => p.operation === 'read')), t.probeMarks);
+  const runs = markRuns(probes.runsFor(checkedNeeds(t.profiles)), t.probeMarks);
   return c.probes.filter((p) => !p.passed).every((p) => {
-    const run = runs.find((r) => r.probe.id === p.id && r.asset === p.asset);
+    const run = runs.find((r) => r.probe.id === p.id && r.asset === p.asset && r.operation === p.operation);
     return run !== undefined && p.exit !== undefined && judge(run, p.exit, p.output).passed;
   });
 }
@@ -132,7 +135,7 @@ export function judgedAgain(t: Template, probes: ProbeCatalog): boolean {
 export function checkCredentialOf(profile: OperationProfile, minted: Minted, reach: MintReach): CheckCredential {
   if (minted.kind === 'aws' && reach.kind === 'aws') {
     return {
-      asset: profile.asset,
+      asset: profile.asset, ...observeOf(profile),
       env: {
         AWS_ACCESS_KEY_ID: minted.AccessKeyId, AWS_SECRET_ACCESS_KEY: minted.SecretAccessKey, AWS_SESSION_TOKEN: minted.SessionToken,
         AWS_REGION: reach.region, AWS_DEFAULT_REGION: reach.region, ...(reach.stsEndpoint ? { AWS_ENDPOINT_URL_STS: reach.stsEndpoint } : {}),
@@ -146,21 +149,24 @@ export function checkCredentialOf(profile: OperationProfile, minted: Minted, rea
       clusters: [{ name: 'hopper-check', cluster }], users: [{ name: 'hopper-check', user: { token: minted.token } }],
       contexts: [{ name: 'hopper-check', context: { cluster: 'hopper-check', user: 'hopper-check' } }],
     };
-    return { asset: profile.asset, env: {}, kubeconfig: JSON.stringify(kubeconfig) };
+    return { asset: profile.asset, ...observeOf(profile), env: {}, kubeconfig: JSON.stringify(kubeconfig) };
   }
   throw new Error(`a ${minted.kind} credential minted with a ${reach.kind} reach`);
 }
 
-/** A need's asset, as a key: a probe run on it has the same (`runKey`). */
-const assetKey = (a: { kind: string; name: string }): string => `${a.kind}\0${a.name}`;
-const runKey = (r: ProbeRun): string => `${r.kind}\0${r.asset}`;
+/** An observe need's mark on what is made for it (issue #2146, part 5); a read's is none. */
+const observeOf = (p: OperationProfile): { operation?: 'observe' } => (p.operation === 'observe' ? { operation: 'observe' } : {});
+
+/** A need, as a key: its operation and its asset. A probe run for it has the same (`runKey`). */
+const needKey = (n: OperationProfile): string => `${n.operation}\0${n.asset.kind}\0${n.asset.name}`;
+const runKey = (r: ProbeRun): string => `${r.operation ?? 'read'}\0${r.kind}\0${r.asset}`;
 
 /** What the check box is given: the credential of each need that has one, and why each other need has none (issue #873). */
 interface Given {
   credentials: CheckCredential[];
   /** The reach of each credential minted, for the egress proxy (issue #849). */
   reaches: MintReach[];
-  /** Why the check box gets no credential for a need, by its asset (`assetKey`). */
+  /** Why the check box gets no credential for a need, by the need (`needKey`). */
   missing: Map<string, string>;
   /** Whether each refusal was a network error only (issue #1468), so the check runs again with no person. */
   transient: boolean;
@@ -180,7 +186,7 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
   const refusals: string[] = [];
   const unminted: Unminted[] = [];
   let other = false;
-  const noCredential = (need: OperationProfile, why: string): void => { missing.set(assetKey(need.asset), `not run: the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${why}`); };
+  const noCredential = (need: OperationProfile, why: string): void => { missing.set(needKey(need), `not run: the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${why}`); };
   for (const need of needs.filter((n) => n.asset.kind !== 'terraform-workspace')) {
     const r = await c.credentials.credential(userId, t.name, name, need);
     if ('refused' in r) {
@@ -193,7 +199,7 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
   for (const workspace of needs.filter((n) => n.asset.kind === 'terraform-workspace')) {
     const role = workspaceRole(needs);
     if (typeof role === 'string') { noCredential(workspace, role); other = true; continue; }
-    const session = credentials.find((x) => x.asset.kind === role.asset.kind && x.asset.name === role.asset.name);
+    const session = credentials.find((x) => x.asset.kind === role.asset.kind && x.asset.name === role.asset.name && !x.operation);
     if (session) credentials.push({ ...session, asset: workspace.asset });
     else noCredential(workspace, `the aws-role ${role.asset.name} it is read with gets none`);
   }
@@ -205,7 +211,8 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
  * removed after it.
  */
 export async function runCheck(c: CheckContext, userId: string, t: Template, name: string): Promise<ReadOnlyCheck> {
-  const needs = (t.profiles ?? []).filter((p) => p.operation === 'read');
+  // Issue #2146, part 5: an observe need is checked as a read is, with its own credential and the probes under observe.
+  const needs = checkedNeeds(t.profiles);
   // A person's marks on its read probes (issue #916): an expected refusal, or a probe not run.
   const runs = markRuns(c.probes.runsFor(needs), t.probeMarks);
   let unminted: Unminted[] = [];

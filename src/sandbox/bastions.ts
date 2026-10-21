@@ -213,7 +213,8 @@ export function createBastions(o: BastionsOptions): Bastions {
       mkdirSync(join(o.dir, id), { recursive: true, mode: 0o700 });
       l.done = run({
         name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.egress?.length ? { egress: t.egress } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
-        env: bastionEnv(l.placed, credentials), timeoutMs: BASTION_MAX_MS, dir: join(o.dir, id), files: { secrets: bastionTokens(credentials) },
+        // Part 5: a read-only template's box runs behind the egress proxy, which lets its tokens' cluster through.
+        env: bastionEnv(l.placed, credentials), reaches: credentials.map((c) => c.reach), timeoutMs: BASTION_MAX_MS, dir: join(o.dir, id), files: { secrets: bastionTokens(credentials) },
       }, {
         log: (chunk) => { l.view.log = (l.view.log + chunk).slice(-LOG_TAIL); }, signal: l.stop.signal, running: renewing,
       }, { jobId: job.id, step: id, template: template.name }).then((r) => ended(l, r), (e: unknown) => ended(l, { exit: 125, problem: e instanceof Error ? e.message : String(e) }));
