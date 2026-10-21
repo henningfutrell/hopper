@@ -5,12 +5,12 @@
 // Idempotent: a check is written only by the lease's holder, and only while the job is on the same wait. A hopper that stops
 // mid-check holds its lease until it ends (`LEASE_MS`); then any hopper on the same database takes the check. Part 2: a
 // time the job named ends the wait at it, whatever its condition says; a wait on a pull request's checks reads them. Part 3:
-// a wait on a pull request's review reads its reviews.
+// a wait on a pull request's review reads its reviews. Issue #2335: a recheck wakes the job at its time to look again.
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import type { Clock, ExecutorRegistry, UserStore } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
-import { afterCheck, checkEndedNote, checksOutcome, commandOutcome, conditionKey, newCheck, refLabel, reviewOutcome, type CheckOutcome, type WaitCheck, type WaitedChecks, type WaitedReviews } from '../domain/wait-checks.ts';
+import { afterCheck, checkEndedNote, checksOutcome, commandOutcome, conditionKey, newCheck, recheckOutcome, refLabel, reviewOutcome, type CheckOutcome, type WaitCheck, type WaitedChecks, type WaitedReviews } from '../domain/wait-checks.ts';
 import { waitOnLabel } from '../domain/wait-on.ts';
 import { endedBeforeWait, endedNote, NOT_FOUND, watchKey, type WatchedEnd, type WatchedRef } from '../domain/watched-items.ts';
 import { recordEndWait } from './wait.ts';
@@ -124,6 +124,8 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
       }
       case 'time_passed':
         return nowMs() >= Date.parse(cond.at) ? { met: true, note: `the time you named passed (${iso(nowMs())})` } : { met: false, result: `it waits until ${cond.at}` };
+      case 'recheck':
+        return recheckOutcome(cond, job.wait!, nowMs());
       case 'none':
         return { met: false, result: `the hopper has no check for ${job.wait?.on ? waitOnLabel(job.wait.on) : 'this wait'}` };
     }

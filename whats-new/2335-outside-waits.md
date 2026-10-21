@@ -1,0 +1,1 @@
+- A job that waits on something the hopper cannot see no longer keeps its agent running: the hopper ends it, and wakes the job after half an hour, or at the time the job named, to look again on any machine with room. A job whose question a research or proposal job works on now also stops while it waits.

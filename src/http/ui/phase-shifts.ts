@@ -4,7 +4,7 @@
 // escalation levels that may shift a job themselves. Read at each shift, so they apply without a restart.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { FORK_PARENT, SHIFT_MODES, withPhase, type ReviewKind } from '../../domain/types.ts';
+import { SHIFT_MODES, withPhase, type ReviewKind } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { questionView } from '../questions.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -21,9 +21,8 @@ export const shiftBody = z.strictObject({
 /** Any part, or several; a part left out keeps its value. */
 export const phaseShiftSettingsBody = z.strictObject({
   defaultMode: z.enum(SHIFT_MODES).optional(),
-  forkParent: z.enum(FORK_PARENT).optional(),
   levels: z.array(z.string().min(1)).max(16).optional(),
-}).refine((b) => b.defaultMode !== undefined || b.forkParent !== undefined || b.levels !== undefined, { message: 'name defaultMode, forkParent or levels' });
+}).refine((b) => b.defaultMode !== undefined || b.levels !== undefined, { message: 'name defaultMode or levels' });
 
 /** The route of each shift: the same words as asking a job that has not started (src/domain/review.ts askPath). */
 const SHIFTS: readonly [string, ReviewKind][] = [['research', 'research'], ['propose', 'proposal']];

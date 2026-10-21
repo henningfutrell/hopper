@@ -3488,12 +3488,10 @@ Version 1 (`docs/schemas/phase_shifts.settings_changed.v1.json`). An admin saved
 {
   "from": {
     "defaultMode": "fork",
-    "forkParent": "wait",
     "levels": []
   },
   "to": {
     "defaultMode": "switch",
-    "forkParent": "wait",
     "levels": [
       "opus"
     ]

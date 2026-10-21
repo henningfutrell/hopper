@@ -47,6 +47,7 @@ export function waitCheckText(check: WaitCheck, nowMs: number): { what: string; 
     : c.kind === 'pr_checks_ended' ? `the hopper checks whether the checks of ${c.repo}#${c.number} ended`
     : c.kind === 'pr_review_ended' ? `the hopper checks whether ${c.repo}#${c.number} got a review`
     : c.kind === 'time_passed' ? `the hopper wakes it at ${utc(c.at)}`
+    : c.kind === 'recheck' ? `the hopper cannot see it: it wakes the job at ${utc(c.at)} to look again`
     : 'the hopper has no check for it: only its deadline counts';
   const mins = Math.round((Date.parse(check.nextCheckAt) - nowMs) / 60_000);
   const next = mins <= 0 ? 'next check now' : mins < 60 ? `next check in ${mins} min` : `next check in ${Math.round(mins / 60)} h`;
