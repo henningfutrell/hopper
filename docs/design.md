@@ -21976,6 +21976,30 @@ open") came from `hopper:done` on its issue, and the mirror did not judge it.
 `hopper:done` taken off by hand is one Run again; a done item with no whole merge is not judged),
 `test/sources/github-item-labels.test.ts` (`labelsFor` of a done item).
 
+### A partly done item's labels mirror the ledger (issue #1892 part 5, 2026-10-21)
+
+Milestone 2, part 5: the partly done state. Before it, Intake took a partly done item's reason from its labels, and the
+mirror did not judge it. After a part merged, the follow takes `hopper:partly-done` off, so Intake takes the issue again and
+the next part runs. A stale `hopper:partly-done` (or `hopper:pr-ready`) on the issue kept the next part from running.
+
+- **`labelsFor` judges a partly done item once its merged part leaves parts to run.** The item wants no end label. It is
+  judged only when its events alone put it in partly done (`eventState`) and the fact `partsLeft` holds: its job's follow
+  recorded the merge of a part (`follow: merged`, `part: true`), and not every declared part is done (`allPartsDone`,
+  `parts.ts`). The fact comes from the store (`partsLeft`, `src/users/source-context.ts`), as `failureReported` does.
+- **Intake reads the ledger for it.** `ledgerReason` gives such an item no end-label reason, whatever end labels its issue
+  carries, so the discover takes it again as it takes any ended item. When the discover does not take it yet (its job's
+  report waits), the mirror takes the end labels off.
+- **No label edit.** The state wants no label, so there is no label for a person to take off: no `work_item.label_edited`.
+- **Not judged:** a last part that made every declared part done (the follow put `hopper:done` on with that merge, issue
+  #729), and a partly done item whose job's follow did not record the merge. The labels decide for those, as before.
+
+**Left to the labels:** a done item with no whole merge, dropped, needs you, waiting for approval.
+
+**Verification:** `test/sources/github-label-partly-done.test.ts` (no reason from a stale label, so the next part is taken;
+the mirror takes the end labels off an item not taken yet, with no label edit; a last part and a merge not recorded are not
+judged), `test/sources/github-item-labels.test.ts` (`labelsFor` of a partly done item),
+`test/users/source-context-parts-left.test.ts` (the store's fact).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

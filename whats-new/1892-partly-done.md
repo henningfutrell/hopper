@@ -1,0 +1,1 @@
+- When part of an issue merged and the hopper's old label stayed on the issue, the hopper now runs the next part anyway and takes the old label off.
