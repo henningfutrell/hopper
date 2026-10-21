@@ -6,12 +6,13 @@
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { PassThrough } from 'node:stream';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ContainerSpec } from '../../src/domain/ports.ts';
 import type { OperationProfile } from '../../src/domain/access.ts';
 import { HOME } from '../../src/sandbox/flags.ts';
-import { runNeedBox, type SecretsRenewal } from '../../src/sandbox/need-box.ts';
+import { runNeedBox, type RunningNeedBox, type SecretsRenewal } from '../../src/sandbox/need-box.ts';
 import {
   bastionCommand, bastionEnv, bastionKubeconfig, bastionTokens, parseTargets, placeTargets, BASTION_FIRST_PORT, BASTION_TARGETS_MAX, type BastionCredential,
 } from '../../src/sandbox/bastion.ts';
@@ -140,17 +141,23 @@ done
     const creds = [credential(MONITORING, 'first-token')];
     const stop = new AbortController();
     let renew: SecretsRenewal | undefined;
+    let pipe: RunningNeedBox['pipe'];
+    const piped: [string, readonly string[]][] = [];
+    r.pipe = async (id, cmd) => { piped.push([id, cmd]); return Object.assign(new PassThrough(), { stderr: () => '' }); };
     const lines: string[] = [];
     const ran = runNeedBox(r, {
       name: 'hopper-bastion-1', userId: 'u1', instanceId: 'i1', network: 'hopper_default', template: { image: 'ghcr.io/henningfutrell/hopper:box' },
       env: bastionEnv(placed, creds), timeoutMs: 30_000, dir: temp('bastion-dir-'), files: { secrets: bastionTokens(creds) },
-    }, { log: (l) => lines.push(l), signal: stop.signal, pollMs: 10, running: (f) => { renew = f; } });
+    }, { log: (l) => lines.push(l), signal: stop.signal, pollMs: 10, running: (box) => { renew = box.renew; pipe = box.pipe; } });
     const log = join(home, 'kubectl.log');
     await until(() => existsSync(log) && readFileSync(log, 'utf8').includes('token=first-token'));
     expect(readFileSync(log, 'utf8')).toContain('kubectl --context uat-monitoring --namespace monitoring port-forward --address 127.0.0.1 svc/grafana 20000:80 token=first-token');
     // The kubeconfig in the box holds no token: only where its file is.
     expect(readFileSync(join(home, '.kube', 'config'), 'utf8')).not.toContain('first-token');
     expect(renew).toBeDefined();
+    // The relay's way in (part 2): a command started in this box, by its id.
+    await pipe!(['true']);
+    expect(piped).toEqual([[r.boxes.get('hopper-bastion-1')!.id, ['true']]]);
     await renew!(bastionTokens([credential(MONITORING, 'second-token')]));
     await until(() => readFileSync(log, 'utf8').includes('token=second-token'));
     expect(r.boxes.get('hopper-bastion-1')?.spec.env).not.toHaveProperty('KUBECONFIG');
