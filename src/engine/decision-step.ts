@@ -18,6 +18,7 @@ import { autoAccept } from './queue-gate.ts';
 import { preemptionSettings } from './preemption.ts';
 import { queueOrder } from './queue-order.ts';
 import { recordWaitReleases, waitSessionsOf } from './wait-release.ts';
+import { budgetHeldOf } from './token-budget.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
 
@@ -42,6 +43,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
     const avoidLanes = avoidLanesOf(waiting, (id) => c.store.jobs.get(id));
     const credentialHeld = credentialHeldOf(c, machines);
     const sandboxesHeld = c.sandboxesHeld(waiting);
+    const budgetHeld = budgetHeldOf(c, waiting);
     const parkingExecutors = c.executors.names().filter((n) => c.executors.get(n)?.park !== undefined);
     const preemption = preemptionInput(preemptionSettings(c.store), parkingExecutors);
     const waitSessions = waitSessionsOf(c, parkingExecutors);
@@ -75,6 +77,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
       ...(preemption ? { preemption } : {}), parkingExecutors, ...memoryPausedAtOf(c, nowIso(c)), ...(waitSessions.length ? { waitSessions } : {}),
       ...(stampHeld.length ? { stampHeld } : {}),
+      ...(budgetHeld.length ? { budgetHeld } : {}),
       policy: policyOf(c),
     };
   } };

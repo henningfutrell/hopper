@@ -111,7 +111,7 @@ const reviewKind = z.enum(REVIEW_KINDS);
 const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()), changeKinds: changeKinds.optional(), push: z.array(z.string()).optional() });
 // `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
 const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
-const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) }); const tokenBudgetSettings = strict({ jobTokens: z.number().min(0), jobCostUsd: z.number().min(0) });
+const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) }); const tokenBudgetSettings = strict({ jobTokens: z.number().min(0), jobCostUsd: z.number().min(0), dayTokens: z.number().min(0).optional(), dayCostUsd: z.number().min(0).optional(), repoDayTokens: z.number().min(0).optional(), repoDayCostUsd: z.number().min(0).optional() });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
 export const EVENT_SCHEMAS = {

@@ -414,6 +414,7 @@ export interface DecisionInputs {
    * machine with infra credentials that is not named takes jobs. Absent: none. `sandboxesHeld` (issue #1471): the waiting jobs
    * the sandboxes their prompt names hold (src/domain/sandboxes-before-start.ts), with why. Absent: none. `stampHeld`
    * (issue #655): the waiting jobs whose trust stamp is missing, does not verify, or is below the dispatch minimum, with why. Absent: none.
+   * `budgetHeld` (issue #2302, part 5): the waiting jobs a day budget holds — the day's, or their repository's, is reached —, with why. Absent: none.
    */
   /**
    * Preemption (issue #1525): the minimum run time and the executors that park. Absent: off, and on Decisions stored before it.
@@ -422,7 +423,7 @@ export interface DecisionInputs {
    * `memoryPausedAt` (issue #2291): per machine, when this hopper last paused a job there for memory, as the paused job may be parked and not an input.
    * `waitSessions` (issue #2303): the jobs on their own wait whose agent the hopper may end to free memory. Absent: none.
    */
-  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; waitSessions?: import('./memory-floor.ts').WaitSession[]; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[];
+  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; waitSessions?: import('./memory-floor.ts').WaitSession[]; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[]; budgetHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 

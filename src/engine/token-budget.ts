@@ -2,9 +2,10 @@
 // a job whose spend reached the user's token budget is parked as the Park button parks it — its lane freed, its pane and
 // agent ended, its work tree and agent session kept —, marked `budgetPaused` with why, so Needs you lists it. Not killed:
 // a person's pick up lets it go on, and its budget then counts from what it had spent (`budgetFrom`, set by the unpark).
-import { budgetReached, spendOf, tokenBudgetOf, type JobBudgetPaused, type TokenSpend } from '../domain/token-budget.ts';
+import { budgetReached, dayBudgetHold, dayBudgetOn, daySpendOf, spendOf, tokenBudgetOf, type JobBudgetPaused, type TokenSpend } from '../domain/token-budget.ts';
 import { sumTokenUse } from '../domain/token-usage.ts';
 import type { UserStore } from '../domain/ports.ts';
+import type { Job, JobId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
 /** What the job has spent in all, as its token ledger holds it. */
@@ -38,4 +39,19 @@ export function pauseForBudget(c: Pick<EngineContext, 'store' | 'clock'>, jobId:
   } catch (e) {
     console.warn(`hopper: the token budget of job ${jobId} could not be checked: ${(e as Error).message}`);
   }
+}
+
+/**
+ * Part 5: the waiting jobs a day budget holds, with why — a Decision's input, so admission holds them as it holds a job for
+ * its usage or memory. Reads the ledger only while a day cap is on and a job waits. A job's repository is its item's.
+ */
+export function budgetHeldOf(c: Pick<EngineContext, 'store' | 'clock'>, waiting: readonly Job[]): { jobId: JobId; reason: string }[] {
+  if (waiting.length === 0) return [];
+  const budget = tokenBudgetOf(c.store.settings.getTokenBudget());
+  if (!dayBudgetOn(budget)) return [];
+  const day = nowIso(c).slice(0, 10);
+  const entries = c.store.tokenLedger.list({ since: `${day}T00:00:00.000Z` });
+  const jobs = c.store.jobs.getMany([...new Set(entries.map((e) => e.jobId))]);
+  const spend = daySpendOf(entries, day, (id) => jobs.get(id)?.source?.repo);
+  return waiting.flatMap((j) => { const reason = dayBudgetHold(j.source?.repo, spend, budget); return reason ? [{ jobId: j.id, reason }] : []; });
 }
