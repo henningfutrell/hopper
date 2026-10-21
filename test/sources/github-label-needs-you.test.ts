@@ -40,6 +40,18 @@ describe('an item that needs a person: no end label (issue #1892)', () => {
     expect(edits()).toEqual([expect.objectContaining({ key: url(2), from: 'needs_you', label: 'hopper:failed', means: 'run_again' })]);
   });
 
+  it('a hand-off reported moments ago: not judged yet, the labels decide, so hopper:failed taken off then is a Run again', async () => {
+    const handoff = { ...waiting(1, HANDOFF_WAIT), failedJobId: 'job-1', eventAt: '2026-10-18T11:59:30.000Z' };
+    const { gh, source, reason, later } = setup({ [url(1)]: handoff }, { reported: [url(1)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:failed'] });
+    await source.discover();
+    expect(reason(1)?.reason).toBe(FAILED);
+    gh.removeLabel(REPO, 1, 'hopper:failed');
+    later(10_000);
+    await source.discover();
+    expect(reason(1)?.reason).not.toBe(FAILED);
+  });
+
   it('a hand-off whose failure was not reported: not judged, the labels decide', async () => {
     const { gh, source, reason, edits } = setup({ [url(1)]: { ...waiting(1, HANDOFF_WAIT), failedJobId: 'job-1' } });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:failed'] });
