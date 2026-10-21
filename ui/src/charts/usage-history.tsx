@@ -3,7 +3,8 @@
 // middle of its graph step. A gap breaks a line; a reset of a usage window is a short tick at the axis foot in the
 // line's colour; a marked moment (issue #688: a lane change) is a dotted line down the graph in its line's colour;
 // hovering (or a tap) reads every shown line at that step, and names the marks there. Pinch, Ctrl/⌘ + scroll and a drag across
-// zoom (use-graph-zoom.ts). d3 does the maths; React draws the SVG.
+// zoom (use-graph-zoom.ts). d3 does the maths; React draws the SVG. Its height follows its width (issue #2354): shorter on
+// a narrow panel, taller on a wide one, between MIN_HEIGHT and MAX_HEIGHT, unless a caller sets one.
 import { area, curveMonotoneX, line, scaleLinear, scaleTime, timeFormat } from 'd3';
 import { Fragment, useId, useMemo, useRef } from 'react';
 import { useGraphZoom } from '@/hooks/use-graph-zoom';
@@ -13,17 +14,22 @@ import { GridY, TimeAxis } from './axis';
 
 const M = { top: 10, right: 16, bottom: 22, left: 34 };
 const DAY = 86_400_000;
+const MIN_HEIGHT = 170;
+const MAX_HEIGHT = 300;
+/** The graph's height for its width: a share of it, between the bounds. */
+export const heightFor = (width: number) => Math.round(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, width * 0.4)));
 const clock = timeFormat('%H:%M');
 const weekdayClock = timeFormat('%a %H:%M');
 const day = timeFormat('%b %d');
 const dayClock = timeFormat('%b %d %H:%M');
 
-export function UsageGraph({ lines, hidden, from, to, stepMs, maxMs, onZoom, height = 240 }: {
+export function UsageGraph({ lines, hidden, from, to, stepMs, maxMs, onZoom, height: fixed }: {
   lines: readonly GraphLine[]; hidden: ReadonlySet<string>; from: number; to: number; stepMs: number;
   /** The widest stretch zooming out reaches: the history kept. */
   maxMs: number; onZoom?: (s: Stretch) => void; height?: number;
 }) {
   const [ref, { width }] = useSize<HTMLDivElement>();
+  const height = fixed ?? heightFor(width);
   const plot = useRef<SVGRectElement>(null);
   const id = useId();
   const iw = Math.max(0, width - M.left - M.right);
@@ -88,7 +94,7 @@ export function UsageGraph({ lines, hidden, from, to, stepMs, maxMs, onZoom, hei
               </g>
             ))}
             </g>
-            <TimeAxis scale={x} y={ih} ticks={width < 500 ? 4 : 8} format={format} />
+            <TimeAxis scale={x} y={ih} ticks={width < 400 ? 3 : width < 500 ? 4 : 8} format={format} />
             {drag && <rect data-slot="usage-graph-selection" x={Math.min(x(drag.from), x(drag.to))} y={0} width={Math.abs(x(drag.to) - x(drag.from))} height={ih} className="fill-foreground/10" />}
             {hoverT !== null && !drag && <line x1={x(hoverT)} x2={x(hoverT)} y1={0} y2={ih} className="stroke-foreground/30" />}
             <rect ref={plot} x={0} y={0} width={iw} height={ih} fill="transparent" className={onZoom ? 'cursor-crosshair' : undefined} {...handlers} />

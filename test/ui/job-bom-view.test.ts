@@ -98,6 +98,19 @@ describe('the drill-in job page (issue #935)', () => {
     expect(nodes).toEqual(expect.arrayContaining(['question:q1', 'issue:acme/app#7', `pr:${PR}`]));
   });
 
+  it('fits the graph to the panel width by default, with a toggle for actual size (issue #2354)', async () => {
+    await boot();
+    const svg = () => document.querySelector<SVGSVGElement>('[data-slot="bom-graph"]')!;
+    const frame = () => svg().closest<HTMLElement>('[data-slot="fit-graph"]')!;
+    expect(svg().getAttribute('viewBox')).toBe(`0 0 ${svg().getAttribute('width')} ${svg().getAttribute('height')}`);
+    expect(frame().dataset.size).toBe('fit');
+    expect(svg().getAttribute('class')).toMatch(/\bmax-w-full\b/);
+    expect(svg().parentElement!.className).not.toMatch(/overflow/);
+    await act(async () => { [...frame().querySelectorAll('button')].find((b) => b.textContent === 'Actual size')!.click(); });
+    expect(frame().dataset.size).toBe('actual');
+    expect(svg().parentElement!.className).toMatch(/overflow-x-auto/);
+  });
+
   it('shows the parts as a table filtered by group and by text', async () => {
     await boot();
     expect(rows()[0]!.dataset.partId).toBe('question:q1');

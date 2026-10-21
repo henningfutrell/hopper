@@ -149,7 +149,7 @@ export function Parked() {
   const rows = useMemo(() => parkedOrder(parked, threshold), [parked, threshold]);
   const openQuestion = (job: Job) => questions.find((q) => q.id === job.questionId && q.status === 'open');
   return (
-    <Panel title="Parked" icon={CirclePause} count={rows.length || ''} list bodyClassName="divide-y p-0">
+    <Panel title="Parked" icon={CirclePause} count={rows.length || ''} bodyClassName="divide-y p-0">
       {rows.length ? rows.map((job) => <ParkedRow key={job.id} job={job} q={openQuestion(job)} />) : <Empty>no parked jobs</Empty>}
     </Panel>
   );

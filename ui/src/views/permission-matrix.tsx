@@ -147,7 +147,7 @@ export function PermissionMatrix() {
           <Filters filter={filter} onChange={setFilter} />
           {columns.length === 0 ? <Empty>No asset is approved or waits for approval{filter.kind !== ALL || filter.operation !== ALL ? ' for this filter' : ''}.</Empty>
             : m.rows.length === 0 ? <Empty>No row matches the filter.</Empty> : (
-              <div className="max-h-[70vh] overflow-auto rounded-lg border">
+              <div className="overflow-x-auto rounded-lg border">
                 <table className="border-separate border-spacing-0 text-xs">
                   <thead>
                     <tr>

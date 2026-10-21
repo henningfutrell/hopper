@@ -161,14 +161,14 @@ export function Artifacts() {
   return (
     <div className="grid gap-3 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
       <div className="space-y-3">
-        <Panel title="Artifacts" icon={FolderOpen} count={view.artifacts.length} list>
+        <Panel title="Artifacts" icon={FolderOpen} count={view.artifacts.length}>
           {view.artifacts.length === 0
             ? <Empty>No artifacts yet. An artifact is how a job presents its work: a live page with flowcharts, charts or interactive views, which you open, use and share. A job puts one with hopper-artifact put FILE.</Empty>
             : <div className="grid gap-1.5">{view.artifacts.map((a) => <Row key={a.id} a={a} open={a.id === id} />)}</div>}
           <p className="mt-2 text-xs text-muted-foreground">{bytesInWords(view.usedBytes)} of {bytesInWords(view.settings.userBytes)} used.</p>
         </Panel>
         {view.shared.length > 0 && (
-          <Panel title="Shared with you" icon={UserPlus} count={view.shared.length} list>
+          <Panel title="Shared with you" icon={UserPlus} count={view.shared.length}>
             <div className="grid gap-1.5">{view.shared.map((a) => <Row key={a.id} a={a} open={a.id === id} />)}</div>
           </Panel>
         )}

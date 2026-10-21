@@ -15,6 +15,7 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { useSection } from '@/app/nav';
 import { GhLink } from '@/components/job';
 import { NodeTends } from '@/components/node-tends';
+import { FitGraph } from '@/components/fit-graph';
 import { Empty, Panel } from '@/components/panel';
 import { ModeToggle, Pager, usePaged } from '@/components/pager';
 import { COLOR, StatusBadge, TEXT, type Tone } from '@/components/status';
@@ -87,8 +88,7 @@ function TreeGraph({ graph, tree, selected, onSelect }: { graph: JobGraph; tree:
   const edges = useMemo(() => graph.edges.filter((e) => at.has(e.from) && at.has(e.to)), [graph, at]);
   const PAD = 8;
   return (
-    <div className="overflow-x-auto">
-      <svg data-slot="job-tree-graph" width={layout.width + 2 * PAD} height={layout.height + 2 * PAD} className="block" role="group" aria-label="job tree">
+    <FitGraph slot="job-tree-graph" label="job tree" width={layout.width + 2 * PAD} height={layout.height + 2 * PAD}>
         <g transform={`translate(${PAD},${PAD})`}>
           {edges.map((e) => {
             const a = at.get(e.from)!;
@@ -110,8 +110,7 @@ function TreeGraph({ graph, tree, selected, onSelect }: { graph: JobGraph; tree:
             <NodeBox key={p.id} node={byId.get(p.id)!} x={p.x} y={p.y} blocking={blocking.has(p.id)} selected={selected === p.id} onSelect={onSelect} />
           ))}
         </g>
-      </svg>
-    </div>
+    </FitGraph>
   );
 }
 

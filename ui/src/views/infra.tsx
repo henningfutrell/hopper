@@ -50,7 +50,7 @@ export function Infra() {
         )}
         {plans.kind === 'ok' && plans.data.plans.length > 0 && <PlanList plans={plans.data.plans} applies={plans.data.applies} onPlan={onPlan} picked={picked} />}
       </Panel>
-      <Panel title="Applies and drift" icon={History} count={timeline.length || ''} list>
+      <Panel title="Applies and drift" icon={History} count={timeline.length || ''}>
         {plans.kind !== 'ok' ? <NotYet state={plans} what="plans" retry={reloadPlans} />
           : changes.kind !== 'ok' ? <NotYet state={changes} what="out-of-band changes" retry={reloadChanges} />
           : <InfraTimeline timeline={timeline} g={topology.kind === 'ok' ? topology.data : undefined} onNode={pickNode} />}

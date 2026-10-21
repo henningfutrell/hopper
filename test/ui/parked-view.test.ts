@@ -197,3 +197,29 @@ describe('the Parked section', () => {
     expect(row('later').querySelector('[aria-label="Cancel job"]')).toBeNull();
   });
 });
+
+describe('the Parked page scrolls as one page (issue #2354)', () => {
+  const many = Array.from({ length: 28 }, (_, i) => job(`p${i}`, 100 + i, 50, `Parked ${i}`, parked('2026-10-09T08:00:00.000Z')));
+  const scrollBoxes = (el: Element) => {
+    const boxes: string[] = [];
+    for (let e: Element | null = el.parentElement; e && e !== document.body; e = e.parentElement) {
+      if (/(^|\s)(max-h-|overflow-(y-)?(auto|scroll))/.test(e.className)) boxes.push(e.className);
+    }
+    return boxes;
+  };
+
+  it('30 parked jobs and an expanded row: no scroll box holds the list, so the page scrolls it', async () => {
+    await boot('admin', '#parked', { parked: many });
+    expect(document.querySelectorAll('[data-parked-job]')).toHaveLength(30);
+    await act(async () => { row('later').querySelector('button')!.click(); });
+    const body = row('later').closest<HTMLElement>('[data-slot="panel-body"]')!;
+    expect(body.dataset.listBox).toBeUndefined();
+    expect(scrollBoxes(row('later'))).toEqual([]);
+  });
+
+  it('the Queue page keeps its bounded Parked box', async () => {
+    await boot('admin', '#queue', { parked: many });
+    const panel = [...document.querySelectorAll('[data-slot="panel-body"]')].find((b) => b.previousElementSibling?.textContent?.startsWith('Parked'));
+    expect((panel as HTMLElement).dataset.listBox).toBe('');
+  });
+});

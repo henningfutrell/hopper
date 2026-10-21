@@ -5958,6 +5958,17 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   one height bound (`max-h-96`, at every screen width) and scrolls past it, so one long list does not
   stretch its row and leave its neighbours ragged. `Panel` `list` in `ui/src/components/panel.tsx`.
   Tested through the rendered app: `test/ui/dashboard-list-boxes.test.ts`.
+- **A page's list scrolls with the page** (issue #2354). A list box is only for a list that shares the
+  screen with others (the Dashboard, the Queue). A list that is the page (Parked, Artifacts, Stuck, Work not
+  pushed, Decider picks, Infra's Applies and drift) is no list box: its panel grows with it and the page scrolls,
+  so there is one scrollbar and an expanded row is never cut. No region nested in a page scrolls but a log
+  or code block, and a wide table or graph across. The permission matrix scrolls only across. The job tree
+  and parts graphs fit their panel's width by default (`FitGraph`, `ui/src/components/fit-graph.tsx`: a
+  `viewBox`, scaled down only), and **Actual size** draws them at their layout's size, scrolled across. The
+  lane timeline draws at most 12 lanes, the lanes that ran in the window first, until **Show all**;
+  **Hide idle lanes** drops the lanes that ran nothing; on a narrow panel its label column takes at most
+  30% of the width. The usage graph's height follows its width (170–300px). Tested:
+  `test/ui/page-lists.test.ts`, `test/ui/graph-scaling.test.ts`, `test/ui/parked-view.test.ts`.
 - **Dismissed notices** (issue #83). Each Attention item and the update notice has a Dismiss button
   (X); toasts have a close button. A dismissed notice is kept per browser like the dashboard layout
   (`localStorage` `jh_dismissed`, `ui/src/model/dismissed.ts` pure, `ui/src/hooks/use-dismissed.ts`):
