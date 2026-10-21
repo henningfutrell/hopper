@@ -65,7 +65,7 @@ const eventsOf = (store: UserStore, id: string) => store.events.recent(50, undef
 
 describe('the busy-machine move (issue #1977)', () => {
   it('a job picked up on a full machine resumes elsewhere from its checkpoint after the wait, not before', async () => {
-    const { store, move, parked, triggers } = hopper();
+    const { store, move, parked, taken, triggers } = hopper();
     const job = resuming(store);
     await move();
     now += RESUME_WAIT_MS - 1;
@@ -77,11 +77,12 @@ describe('the busy-machine move (issue #1977)', () => {
     expect(moved).toMatchObject({ status: 'queued', pendingAnswer: 'Use the blue paint.', agentSession: 'session-1' });
     expect(moved.resumeOn).toBeUndefined();
     expect(moved.parked?.elsewhere).toMatchObject({ from: 'l2' });
-    // Its pane ended at its park: nothing to end now.
+    // Its pane ended at its park: nothing to end now, and its checkpoint is not taken again.
     expect(parked).toEqual([]);
+    expect(taken).toEqual([job.id]);
     const why = 'every lane of l2 was in use for 5 min, and l1, l3 have room: it resumes elsewhere';
     expect(eventsOf(store, job.id).slice(-2)).toEqual([
-      { type: 'job.parked', data: { from: 'running', machineId: 'l2', auto: true, why } },
+      { type: 'job.parked', data: { from: 'running', machineId: 'l2', auto: true, why, move: 'busy_machine' } },
       { type: 'job.unparked', data: { to: 'queued', elsewhere: true } },
     ]);
     expect(triggers).toContain('busy_machine.move');

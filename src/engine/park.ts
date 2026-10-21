@@ -9,7 +9,7 @@
 // its claim rebuilds its work tree from the checkpoint wherever it runs, and the agent is told so (`elsewhereBrief`). Issue
 // #2335: once the checkpoint taken after its park is marked, every re-queue of it does so, a person's or the hopper's.
 import type { Job, LaneId } from '../domain/types.ts';
-import type { JobCheckpoint } from '../domain/checkpoints.ts';
+import type { JobCheckpoint, ParkedMove } from '../domain/checkpoints.ts';
 import { parkAskOf, type ParkAsk } from '../domain/park-ask.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -51,19 +51,20 @@ export function freshStartBrief(c: Pick<EngineContext, 'store'>, job: Job, answe
 /**
  * Inside a tx: the job parked from `from`, its lane (if any) freed. Its question, if open, stays open. `why`: auto-park
  * parked it (issue #650), and this says why. `ask` (issue #2167): who parked it and why; a running job's comes from its
- * `parkAsk`, kept when the person asked.
+ * `parkAsk`, kept when the person asked. `move` (issue #1892): the hopper parks it to move it off its machine, kept on the
+ * job until its pick up and named on `job.parked`, so its item goes back to the queue, not to a person.
  */
-export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waiting_answer', laneId?: LaneId, why?: string, ask?: ParkAsk): Job {
+export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waiting_answer', laneId?: LaneId, why?: string, ask?: ParkAsk, move?: ParkedMove): Job {
   const { store } = c;
   const at = nowIso(c);
   const lane = laneId ? store.lanes.list().find((l) => l.id === laneId) : undefined;
   const machineId = lane?.machineId ?? job.resumeOn ?? job.spec.machineId;
   const by = why ? {} : parkAskOf(ask ?? store.jobs.get(job.id)?.parkAsk);
   const parked = store.jobs.update(job.id, {
-    status: 'parked', laneId: undefined, parked: { at, from, ...(why ? { auto: true as const, why } : {}), ...by }, ...(machineId ? { resumeOn: machineId } : {}),
+    status: 'parked', laneId: undefined, parked: { at, from, ...(why ? { auto: true as const, why } : {}), ...by, ...(move ? { move } : {}) }, ...(machineId ? { resumeOn: machineId } : {}),
     holdReason: undefined, waitReason: undefined, parkAsk: undefined,
   });
-  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}), ...by } });
+  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}), ...by, ...(move ? { move: move.kind } : {}) } });
   releaseLane(c, lane, at);
   return parked;
 }
@@ -138,6 +139,8 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'parked') throw new EngineError('conflict', `job ${id} is ${job.status}: only a parked job can be re-queued`);
+  // Picked up: a move it was parked for ends here (issue #1892), whoever picked it up.
+  if (job.parked?.move) { const { move: _ended, ...parked } = job.parked; store.jobs.update(id, { parked }); }
   // Picked up past its token budget (issue #2302): it goes on, its budget counted again from what it had spent.
   if (job.budgetPaused) store.jobs.update(id, { budgetPaused: undefined, budgetFrom: jobSpend(store, id) });
   if (elsewhere) return recordElsewhere(c, store.jobs.get(id)!, by);

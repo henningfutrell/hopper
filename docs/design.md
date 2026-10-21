@@ -22347,6 +22347,43 @@ and not put back), `test/sources/github-label-sent-elsewhere.test.ts` (a correct
 is not queued again; a drift in a later listing is), `test/store/job-item-lock.test.ts` (the item lock held until the
 transaction ends, another item free), `test/crash/label-two-hosts.test.ts`.
 
+### A moved job goes back to the queue (issue #1892 part 13, 2026-10-21)
+
+Milestone 3 asks: "Jobs moved off a signed-out or lost machine (`signed-out-move.ts`, the `job-move` saga) go back to the
+queue through the item saga." The hopper moves a job off a machine with no person in three ways: the signed-out move
+(issue #1211), the busy-machine move (issue #1977) and the lost-machine move (issue #1569). Each one parks the job and picks
+it up elsewhere. Before this part the ledger read the park as any park: the item went to needs you ("a person to pick up
+the parked job"), and the pick up then put it back in queued. The signed-out and busy-machine moves park in one
+transaction and pick up in a later one, after the job's pane ends and one more checkpoint is taken. A stop between the two
+left the job parked for a person and its item in Needs you, and nothing took it on.
+
+- **A park to move names its move** (`ParkedMove`, `src/domain/checkpoints.ts`; `recordPark`, `src/engine/park.ts`). The
+  job keeps `parked.move` until its pick up: the move (`signed_out`, `busy_machine`, `lost_machine`), how it goes on (from
+  its checkpoint, or as a new start), whether it had a live pane to end, and whether that end was confirmed (`ended`).
+  `job.parked` carries `move`. Any pick up, a person's too, ends the move and takes the mark off.
+- **The ledger keeps the item in the queue** (`work-items.ts`). A `job.parked` with `move` moves the item to queued, waiting
+  on "a move to another machine" (`MOVE_WAIT`), owned by the scheduler; the pick up keeps it queued. A park with no move
+  still waits on a person. `transitionOwner` reads the event's data: a park to move and a pick up no one asked for are the
+  scheduler's, a park or pick up a person asked for is the person's, one a job asked for through the park skill is the lane
+  worker's.
+- **A move a stop cut short is finished** (`finishMove`, `finishLeftMoves`, `src/engine/move-finish.ts`). Each pass of the
+  signed-out and busy-machine moves first finishes the jobs still parked for its move, on the host that holds the pass's
+  lease, so after a restart, or on the host that takes the lease. Each step is safe to do again: the pane is ended only when
+  its end was not confirmed (its id may name another job's pane after that), the checkpoint is taken again, and the pick up
+  happens only while the job is still parked for that move. A pick up the engine refuses ends the move and leaves the job
+  parked for a person, as before.
+- **The lost-machine move** parks and picks up in one transaction, inside the job-run saga's end step: it names its move so
+  the item does not pass through needs you. Its `job-move` saga ends the agent it left, as before.
+
+**Not in this part:** the other milestone 3 moves (the labelling of `follow.ts` behind the saga; a next check and a deadline
+set per transition, not per state) and milestone 4.
+
+**Verification:** `test/domain/work-items-move.test.ts` (a park to move keeps the item queued; a signed-out move takes it
+from needs you to queued; a park with no move waits on a person; the owners), `test/engine/move-finish.test.ts` (a
+busy-machine move stopped after its park, or before its pane ended, finished by the next hopper's pass, once; a signed-out
+move finished with no sign-out read; a new start; a job a person parked or picked up left as it is),
+`test/engine/busy-move.test.ts` (`move` on `job.parked`).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

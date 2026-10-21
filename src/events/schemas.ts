@@ -5,7 +5,7 @@
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
 import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, WORK_DISCARD_REASONS } from '../domain/types.ts';
-import { DISMISSED_BY } from '../domain/locked.ts'; import { PARK_VIAS } from '../domain/park-ask.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
+import { DISMISSED_BY } from '../domain/locked.ts'; import { PARK_VIAS } from '../domain/park-ask.ts'; import { JOB_MOVES } from '../domain/checkpoints.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { MACHINE_DRAIN_EVENT_SCHEMAS } from './machine-drain-schemas.ts'; import { SANDBOX_HOST_EVENT_SCHEMAS } from './sandbox-host-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts'; import { EVENT_LOOP_EVENT_SCHEMAS } from './event-loop-schemas.ts'; import { PREEMPTION_EVENT_SCHEMAS } from './preemption-schemas.ts'; import { SKILL_LIBRARY_EVENT_SCHEMAS } from './skill-library-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
@@ -137,7 +137,7 @@ export const EVENT_SCHEMAS = {
   'job.failed': strict({ error: z.string(), ...priority }),
   'job.cancelled': strict({ reason: z.string(), note: z.string().optional() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
-  'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional(), by: z.string().optional(), via: z.enum(PARK_VIAS).optional(), reason: z.string().optional() }),
+  'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional(), by: z.string().optional(), via: z.enum(PARK_VIAS).optional(), reason: z.string().optional(), move: z.enum(JOB_MOVES).optional() }),
   // `elsewhere` (issue #921, additive): picked up to resume on another machine from its checkpoint. `job.checkpointed`
   // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
   'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional(), by: z.string().optional(), via: z.enum(PARK_VIAS).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),

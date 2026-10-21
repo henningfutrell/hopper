@@ -46,7 +46,8 @@ const machineOf = (c: Pick<EngineContext, 'store'>, laneId: LaneId | undefined):
 export function recordLostMove(c: EngineContext, job: Job, laneId: LaneId | undefined, lost: Lost, why: string): boolean {
   const how = lostResume(c, job, lost, machineOf(c, laneId));
   if (typeof how !== 'string') return false;
-  recordPark(c, job, 'running', laneId, why);
+  // Named as a move (issue #1892): its item stays in the queue; its pick up below, in the same tx, ends the move.
+  recordPark(c, job, 'running', laneId, why, undefined, { kind: 'lost_machine', how: 'checkpoint', live: false });
   // Moved away: a new proxy token for its next run, so the agent left on the lost machine is refused from now on.
   c.store.jobs.update(job.id, { pendingAnswer: lostResumeText(why), ...(how === 'elsewhere' ? { movedAway: (job.movedAway ?? 0) + 1 } : {}) });
   const next = recordUnpark(c, job.id, false, how === 'elsewhere');

@@ -65,13 +65,21 @@ export function checkOf(state: WorkItemState, since: string, at: string = since)
   return { owner: p.owner, nextCheckAt: plus(at, p.checkMs), ...(p.deadlineMs !== undefined ? { deadline: plus(since, p.deadlineMs) } : {}) };
 }
 
-/** Who makes each kind of move of the ledger: the transition's owner. */
-export function transitionOwner(type: EventType): ItemOwner {
+/**
+ * Who makes each kind of move of the ledger: the transition's owner. `data`, the event's: a park to move the job off its
+ * machine and a pick up no one asked for are the scheduler's (issue #1892); a park or a pick up a job asked for is its own.
+ */
+export function transitionOwner(type: EventType, data: Readonly<Record<string, unknown>> = {}): ItemOwner {
+  if (type === 'job.parked' || type === 'job.unparked') {
+    if (data.via === 'job') return 'lane_worker';
+    if (typeof data.by === 'string') return 'person';
+    return typeof data.move === 'string' || type === 'job.unparked' ? 'scheduler' : 'lane_worker';
+  }
   if (type === 'work_item.reconciled' || type === 'work_item.person_asked') return 'reconciler';
   if (type === 'work_item.dropped' || type === 'work_item.label_edited') return 'person';
   if (type.startsWith('work_item.') || type.startsWith('job.pull_request_') || type.startsWith('landing_batch.')) return 'github_observer';
   if (type === 'source.request_opened' || type === 'source.request_withdrawn' || type === 'source.request_auto_approved' || type === 'job.queued' || type === 'job.requeued') return 'scheduler';
-  if (type.startsWith('source.request_') || type === 'job.dismissed' || type === 'handoff.closed' || type === 'job.unparked') return 'person';
+  if (type.startsWith('source.request_') || type === 'job.dismissed' || type === 'handoff.closed') return 'person';
   if (type === 'handoff.opened') return 'assessor';
   return 'lane_worker';
 }

@@ -9,7 +9,8 @@ import { gunzipSync } from 'node:zlib';
 import { signedInOf, signedOutMove, signedOutOf } from '../decider/signed-out.ts';
 import { NOT_SIGNED_IN, SIGNED_OUT_MOVE_BY, signedOutMoveAnswer, type Job, type JobCheckpoint, type Question } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
-import { parkRefusal, recordPark, recordUnpark } from './park.ts';
+import { finishLeftMoves, finishMove } from './move-finish.ts';
+import { parkRefusal, recordPark } from './park.ts';
 
 /** A job the move could not checkpoint is tried again after this long. */
 export const MOVE_RETRY_MS = 10 * 60_000;
@@ -51,6 +52,8 @@ export function createSignedOutMove(c: EngineContext): () => Promise<void> {
   const tried = new Map<string, number>();
   return async function move(): Promise<void> {
     const { store } = c;
+    // A move a stop cut short first (issue #1892), whatever the sign-ins read now.
+    if (await finishLeftMoves(c, 'signed_out')) c.trigger('signed_out.move');
     const states = c.usage().map((u) => ({ name: u.name, state: u.state?.() }));
     const out = signedOutOf(states);
     if (out.length === 0) return;
@@ -75,37 +78,14 @@ export function createSignedOutMove(c: EngineContext): () => Promise<void> {
         // Read again in the tx: a sign-in or a person may have answered it meanwhile.
         const job = store.jobs.get(waiting.id);
         if (job?.status !== 'waiting_answer' || job.questionId !== held.q.id || store.questions.get(held.q.id)?.status !== 'open') return undefined;
-        recordPark(c, job, 'waiting_answer');
+        recordPark(c, job, 'waiting_answer', undefined, undefined, undefined, { kind: 'signed_out', how, live: true });
         // A job on a question holds no lane: the machine it leaves is the question's, which its pick up names.
         const p = store.jobs.update(job.id, { resumeOn: held.from });
         // Parked, so the answer is kept for its pick up (`onAnswered`), not sent to the pane.
         c.questions.settleWith(held.q.id, answer, SIGNED_OUT_MOVE_BY, reason);
         return p;
       });
-      if (!parked) continue;
-      try {
-        await c.executors.get(parked.spec.executor)?.park?.(parked);
-      } catch (e) {
-        if (!c.stopping()) console.warn(`hopper: job ${parked.id} moves, but its machine could not be reached to end its agent: ${(e as Error).message}; the sweep stops it`);
-      }
-      // Once more with its agent ended, so its session is whole; the one before stands if this one fails.
-      if (how === 'checkpoint' && !c.stopping()) await c.checkpoints?.take(parked.id);
-      if (c.stopping()) return;
-      store.tx(() => {
-        const job = store.jobs.get(parked.id);
-        if (job?.status !== 'parked') return;
-        if (how === 'checkpoint') {
-          // A refusal writes nothing: the job stays parked, and a person picks it up.
-          try {
-            recordUnpark(c, job.id, false, true);
-          } catch (e) {
-            console.warn(`hopper: job ${job.id} was parked to move, and could not resume elsewhere: ${(e as Error).message}`);
-          }
-          return;
-        }
-        store.jobs.update(job.id, { status: 'queued', parked: undefined, resumeOn: undefined, pendingAnswer: undefined, holdReason: undefined, waitReason: undefined });
-        store.events.append({ type: 'job.unparked', jobId: job.id, data: { to: 'queued', elsewhere: true } });
-      });
+      if (!parked || !await finishMove(c, parked)) continue;
       c.trigger('signed_out.move');
     }
   };
