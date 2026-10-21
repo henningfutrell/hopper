@@ -84,10 +84,8 @@ async function boot(mode: 'graph' | 'list' = 'list') {
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
   await vi.waitFor(() => expect(document.querySelector('[data-slot="jobs-mode-list"]')).not.toBeNull());
-  if (mode === 'list') {
-    await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-list"]')!);
-    await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 30)));
-  }
+  if (mode === 'graph') await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-graph"]')!);
+  else await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 30)));
 }
 
 async function click(el: HTMLElement | SVGElement) {
@@ -180,7 +178,7 @@ describe('the Jobs view (issue #434)', () => {
     expect(cards()).toHaveLength(30);
   });
 
-  it('opens in the graph mode: a tree per root, its nodes, what blocks the root, and a node\'s details on select', async () => {
+  it('the graph mode: a tree per root, its nodes, what blocks the root, and a node\'s details on select', async () => {
     const pr = 'https://github.com/acme/site/pull/70';
     const part = { ...pointed(1, 'finished'), partlyDone: pr, sourceState: { source: { pullRequest: pr, follow: 'open' } } } as Job;
     const next = { ...pointed(1, 'running'), id: 'job-next', rerunOf: part.id, tasks: { done: 1, total: 3 }, createdAt: '2026-10-02T00:00:00Z' } as Job;

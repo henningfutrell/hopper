@@ -38,7 +38,7 @@ Select the badge to open the Jobs view with only the jobs in flight. **In flight
 
 ### The graph
 
-The graph is the default mode. It shows each group of connected work as one **job tree**, named by its root. The root is usually the first issue.
+Select **Graph** for the graph. It shows each group of connected work as one **job tree**, named by its root. The root is usually the first issue.
 
 - A node is a job, an issue, a pull request, an open question or an open hand-off. It shows its title first. Under the title, in small type, it shows its repository and number, and its kind. Under that, it shows where it stands in plain words. Its colour is its stage. A question or a hand-off is a pill shape: it waits on you. A job node shows its task count as `x/y` when the job keeps a task list.
 - A line between two nodes reads as a sentence, from the first node to the second. Hover a line to read it.
@@ -109,13 +109,17 @@ Each note shows who sent it, and its state: **queued**, **delivered**, or **carr
 
 ### The list
 
-Select **List** for a row per job, the latest stage change first. A row shows:
+The list is the default mode. It is a table with a row per job, the latest stage change first. A row shows:
 
-- The job's goal, which links to its job page, its task count, and its stage.
-- Its issue, its lane and machine, and how long it is in its stage.
+- Its stage, its issue, the job's goal, which links to its job page, and its task count.
+- Its lane and machine, and how long it is in its stage.
 - Its pull request, with its state and checks (for example `open · checks failing`).
 - For a partly done job: the pull request that blocks the rest, and what runs after it merges.
-- Its last event.
+- Its last event, on a wide screen only.
+
+Select a row to see its **run graph** under it: the job tree of the job, as the graph shows it. Select a node in it to read its details. Select the row again to close it.
+
+The view keeps your choice of **List** or **Graph** in this browser.
 
 ## How to use it
 

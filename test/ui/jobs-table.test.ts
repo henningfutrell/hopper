@@ -3,7 +3,7 @@
 // daemon, its job graph made by the real jobGraph.
 //
 // Feature: the Jobs table
-//   Scenario: a browser that kept nothing opens Jobs in List, a table with the stage, issue, title, lane, age and pull request
+//   Scenario: a browser that kept nothing opens Jobs in List, a table with the stage, issue, title, lane, time in stage and pull request
 //   Scenario: Graph or List is the same toggle as before, kept over a reload
 //   Scenario: a click on a row opens its run graph under it, and a second click folds it
 import { act, createElement } from 'react';
@@ -83,7 +83,7 @@ afterEach(() => {
 });
 
 describe('the Jobs table (issue #2372)', () => {
-  it('opens in List, a table with a row per job: stage, issue, title, lane, age and pull request', async () => {
+  it('opens in List, a table with a row per job: stage, issue, title, lane, time in stage and pull request', async () => {
     const pr = 'https://github.com/acme/site/pull/70';
     jobs = [{ ...pointed(1, 'finished'), sourceState: { source: { pullRequest: pr, follow: 'open', seen: { draft: false, conflicting: false, checks: 'passing' } } } } as Job, pointed(2, 'running')];
     await boot();
@@ -91,7 +91,7 @@ describe('the Jobs table (issue #2372)', () => {
     expect(pressed('graph')).toBe('false');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     const table = document.querySelector<HTMLTableElement>('[data-slot="jobs-list"] table')!;
-    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['', 'Stage', 'Issue', 'Title', 'Lane', 'Age', 'Pull request', 'Last event']);
+    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['', 'Stage', 'Issue', 'Title', 'Lane', 'In stage', 'Pull request', 'Last event']);
     expect(rows().every((r) => r.tagName === 'TR')).toBe(true);
     expect(document.querySelector('[data-slot="jobs-graph"]')).toBeNull();
     const cells = [...row('job-1').children].map((c) => (c as HTMLElement).dataset.slot);

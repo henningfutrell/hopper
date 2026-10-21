@@ -3,15 +3,16 @@
 // each event, so a stage change arrives with no reload. Above both modes: how many jobs are in each stage (a count is
 // also its stage's filter) and the filters by stage and by repository. In flight (issue #1113): only the jobs whose work
 // item is in flight, on at #jobs/in-flight — the header badge's link — and off at #jobs.
-// - Graph (the default): a section per job tree, named by its root, laid out from it; nodes are jobs, issues and pull
+// - List (the default, issue #2372): a table, one row per job (job-row.tsx); a click on a row opens its run graph — the
+//   job tree it is in, as Graph draws it — under the row, and a second click folds it.
+// - Graph: a section per job tree, named by its root, laid out from it; nodes are jobs, issues and pull
 //   requests, coloured by stage, a job with its task count; edges are typed. What blocks the root is ringed, and the
 //   edges to it are drawn bold. A settled tree starts folded. Select a node to read its details.
-// - List: one line per job (job-row.tsx).
 // A row and a node render again only when what they show changes, so the view stays quick with hundreds of jobs. On a
 // long page (issue #2353): the header, its filters and the stage counts stay in view; the list shows 30 rows to a page and
 // the graph 8 trees; the mode and each tree folded or open are kept per browser.
 import { Briefcase, ChevronDown, ChevronRight, CircleHelp, List, Network } from 'lucide-react';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSection } from '@/app/nav';
 import { GhLink } from '@/components/job';
 import { NodeTends } from '@/components/node-tends';
@@ -35,12 +36,12 @@ import { ROWS_PER_PAGE } from '@/model/page-prefs';
 import type { DomainEvent, JobGraph, JobGraphEdge, JobGraphNode, JobStage, JobTree } from '@/model/wire';
 import { useHopper } from '@/store';
 import { Filter, InFlightToggle, StageCounts } from './jobs-filters';
-import { issueOf, JobRow, PullRequest, StageBadge } from './job-row';
+import { issueOf, JOB_COLUMNS, JobRow, JobTableHead, PullRequest, StageBadge } from './job-row';
 
 const EMPTY: JobGraph = { nodes: [], edges: [], trees: [], stages: {} };
 const MODES = [
-  { mode: 'graph', label: 'Graph', icon: Network },
-  { mode: 'list', label: 'List', icon: List, title: 'One line per job' },
+  { mode: 'list', label: 'List', icon: List, title: 'A row per job' },
+  { mode: 'graph', label: 'Graph', icon: Network, title: 'A graph per job tree' },
 ] as const;
 type Mode = (typeof MODES)[number]['mode'];
 const MODE_NAMES: readonly Mode[] = MODES.map((m) => m.mode);
@@ -174,6 +175,21 @@ function TreeSection({ graph, tree, openFirst, selected, onSelect, children }: {
   );
 }
 
+/** A row's run graph (issue #2372): the job tree its job is in, under the row, and a node's details on select. */
+function RunGraph({ graph, node, laneOf, now }: { graph: JobGraph; node: JobGraphNode; laneOf: (laneId: string) => string; now: number }) {
+  const tree = graph.trees.find((t) => t.nodes.includes(node.id));
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <tr data-slot="job-row-graph" data-job-id={node.jobId} className="bg-muted/20">
+      <td colSpan={JOB_COLUMNS} className="space-y-2 px-4 py-2">
+        {tree ? <TreeGraph graph={graph} tree={tree} selected={selected} onSelect={(id) => setSelected((s) => (s === id ? null : id))} />
+          : <span className="text-xs text-muted-foreground">No run graph for this job.</span>}
+        {selected && <NodeDetails graph={graph} id={selected} laneOf={laneOf} now={now} onClose={() => setSelected(null)} />}
+      </td>
+    </tr>
+  );
+}
+
 function Legend() {
   return (
     <div data-slot="jobs-graph-legend" className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground">
@@ -194,8 +210,10 @@ export function Jobs() {
   const [picked, setFilter] = useState<JobsFilter>(NO_FILTER);
   const inFlight = useSection() === IN_FLIGHT_SECTION; // the hash's, so the header badge's link turns it on
   const filter = useMemo(() => ({ ...picked, inFlight }), [picked, inFlight]);
-  const [mode, setMode] = usePagePref<Mode>('jobs.mode', 'graph', MODE_NAMES);
+  const [mode, setMode] = usePagePref<Mode>('jobs.mode', 'list', MODE_NAMES);
   const [selected, setSelected] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const onToggle = useCallback((jobId: string) => setExpanded((e) => (e === jobId ? null : jobId)), []);
   const now = useNow();
   const minute = Math.floor(now / 60_000);
   // Each job's last event, read once; the stream's events since are newer where they are a job's.
@@ -235,9 +253,16 @@ export function Jobs() {
       bodyClassName="p-0">
       {mode === 'list' ? (
         <div data-slot="jobs-list">
-          {rows.length ? <ul className="divide-y">{rowPage.shown.map((n) => (
-            <JobRow key={n.id} node={n} lane={n.laneId ? laneOf(n.laneId) : 'no lane'} last={last.get(n.jobId!)} since={n.stageSince ? elapsed(n.stageSince, minute * 60_000) : undefined} />
-          ))}</ul> : <Empty>{empty}</Empty>}
+          {rows.length ? <table className="w-full table-fixed border-collapse">
+            <JobTableHead />
+            <tbody className="divide-y">{rowPage.shown.map((n) => (
+              <Fragment key={n.id}>
+                <JobRow node={n} lane={n.laneId ? laneOf(n.laneId) : 'no lane'} last={last.get(n.jobId!)} since={n.stageSince ? elapsed(n.stageSince, minute * 60_000) : undefined}
+                  expanded={expanded === n.jobId} onToggle={onToggle} />
+                {expanded === n.jobId && <RunGraph graph={g} node={n} laneOf={laneOf} now={now} />}
+              </Fragment>
+            ))}</tbody>
+          </table> : <Empty>{empty}</Empty>}
           <Pager p={rowPage} onPage={rowPage.setPage} className="border-t px-4 py-2" />
         </div>
       ) : (
