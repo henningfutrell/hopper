@@ -14,7 +14,7 @@ export const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string } = {}) {
+export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean } = {}) {
   const gh = o.gh ?? createFakeGitHub();
   let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -36,6 +36,7 @@ export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { 
       partOpen: (key) => o.parts?.includes(key) ?? false,
       failureReported: (key) => o.reported?.includes(key) ?? false,
       partsLeft: (key) => o.partsLeft?.includes(key) ?? false,
+      ...(o.held ? { mirrorHeld: o.held } : {}),
     },
   });
   const edits = () => recorded.filter((r) => r.type === 'work_item.label_edited').map((r) => r.data);
