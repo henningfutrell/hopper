@@ -22196,6 +22196,34 @@ end labels before it. Before this part, Intake took such an item's reason from t
 dropped another way is not judged), `test/domain/work-items-wont-do.test.ts` (both acts mark the drop; a cancel or a
 dismiss does not; a new job forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor` of a dropped item).
 
+### An item done by hand carries hopper:done (issue #1892 part 10, 2026-10-21)
+
+Milestone 2, part 10: the done state, for a done with no whole merge whose label is certain. A person resolves a hand-off in
+Needs a person with **Done** (`handoff.closed` with end `done_by_hand`, issue #551): they did the work. The resolution puts
+`hopper:done` on through the outbox, in place of `hopper:failed` and the claim, and its job ends finished ("done by hand").
+Before this part the ledger did not read the close: the job's finish made the item done, as any job's end, and the labels
+decided its Intake reason.
+
+- **The ledger marks the done.** The close moves a handed-off item to done and sets `doneByHand` on the work item; the
+  job's finish that follows keeps it. Any other move forgets it, also a new job of the item. The field is in the item's JSON
+  body: no migration. An item done by hand before this part has no mark until the ledger is rebuilt, so the labels decide
+  for it, as before.
+- **`labelsFor` judges an item done by hand.** It wants `hopper:done`, and no other end label. The mirror corrects a stale
+  end label (for example a `hopper:failed` left on).
+- **Intake reads the ledger for it.** `ledgerReason` gives it `DONE_OPEN`, whatever end labels its issue carries.
+- **`hopper:done` taken off by hand is a Run again**, as for a done item by a whole merge: one `work_item.label_edited`
+  with `from: done`.
+- **Not judged: any other done with no whole merge.** A direct job's end, operator-led work, an issue a job closed as
+  complete, or a read of GitHub that saw the issue closed: the report set the labels by what the issue said then.
+
+**Left to the labels:** a done item with no whole merge but done by hand, an item dropped any way but Won't do.
+
+**Verification:** `test/sources/github-label-done-by-hand.test.ts` (an item done by hand gets `DONE_OPEN` and `hopper:done`
+in place of a stale end label; the label taken off by hand is one Run again and is not put back; a done a job's end made
+is not judged), `test/domain/work-items-done-by-hand.test.ts` (the close marks the item, the finish keeps the mark, a new
+job forgets it; a job's own "done by hand" result does not mark it), `test/sources/github-item-labels.test.ts`
+(`labelsFor` of an item done by hand).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
