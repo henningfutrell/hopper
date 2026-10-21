@@ -39,4 +39,19 @@ describe('Won\'t do on a blocked item', () => {
     expect(applyEvent(queued, ev(...dropped), KEY)).toBeUndefined();
     expect(applyEvent(undefined, ev(...dropped), KEY)).toBeUndefined();
   });
+
+  it('marks the item dropped by Won\'t do (issue #1892), and a new job of it forgets that', () => {
+    const blocked = fold([['job.queued'], ['job.finished', {}], ['job.pull_request_closed', { pullRequest: PR, part: false }]])!;
+    const after = applyEvent(blocked, ev(...dropped), KEY)!;
+    expect(after.wontDo).toBe(true);
+    expect(applyEvent(after, ev('job.queued'), KEY, { ...j1, id: 'j2' })?.wontDo).toBeUndefined();
+  });
+
+  it('a hand-off resolved as Won\'t do is dropped by Won\'t do; a cancelled job or a dismissed failure is not (issue #1892)', () => {
+    const handoff = fold([['job.queued'], ['job.failed'], ['handoff.opened'], ['handoff.closed', { end: 'wont_do' }]]);
+    expect(handoff).toMatchObject({ state: 'dropped', wontDo: true });
+    expect(fold([['job.queued'], ['job.cancelled']])).toMatchObject({ state: 'dropped' });
+    expect(fold([['job.queued'], ['job.cancelled']])?.wontDo).toBeUndefined();
+    expect(fold([['job.queued'], ['job.failed'], ['job.dismissed']])?.wontDo).toBeUndefined();
+  });
 });
