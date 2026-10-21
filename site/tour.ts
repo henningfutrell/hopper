@@ -34,7 +34,7 @@ export const TOUR: Feature[] = [
   },
   {
     shot: 'sources', icon: GitPullRequest, title: 'You choose what becomes a job',
-    text: 'Sign in with GitHub, tick the repositories, and label an issue hopper. Nothing else can give the hopper work.',
+    text: 'Sign in with GitHub, tick the repositories, and label an issue hopper. An issue someone else wrote waits in Intake until you approve it.',
     alt: 'The Sources view: a connected GitHub account with four of its repositories chosen for jobs.',
   },
   {

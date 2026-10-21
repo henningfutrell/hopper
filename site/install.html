@@ -363,9 +363,12 @@ planned: Podman machine, Docker Desktop or Hyper-V virtual machines.</p>
 
 <h2 id="sign-in">Sign-in for a team</h2>
 <p>Alone on one machine, signing in with GitHub is enough. For a team, or a hopper reached over the internet, people
-sign in through your own sign-in service, set up from the hopper's environment: no clicks and no files. Put the
-variables in <code>.env</code> beside <code>compose.yaml</code> (with Podman) or in
-<code>~/.config/hopper/daemon.env</code> (on the machine itself), and restart the hopper.</p>
+sign in through your own sign-in service. As the admin, open <strong>Settings</strong> → <strong>Sign-in</strong>, add a
+realm and turn it on: a change works at once. Or set it up at launch, with the <code>HOPPER_SIGN_IN_*</code> variables:
+give them to compose at launch (with Podman), put them in <code>~/.config/hopper/daemon.env</code> (on the machine
+itself) or in the chart's values (on Kubernetes), and restart the hopper. For people with no sign-in service, add local
+accounts in <strong>Settings</strong> → <strong>Sign-in</strong> → <strong>Local accounts</strong>: an email and a
+password, or a passkey.</p>
 <div class="table-wrap"><table class="stack">
 <tr><th>You have</th><th>People sign in</th></tr>
 <tr><td>An auth gateway in front (Envoy Gateway with OIDC, oauth2-proxy)</td><td>through the gateway; the hopper only checks the token it forwards</td></tr>
