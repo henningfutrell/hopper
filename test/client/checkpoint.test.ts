@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkpointArgv, checkpointOf, readCheckpoint, restoreArgv, restoreCommand, restoreOutcome } from '../../src/client/checkpoint.ts';
+import { checkpointArgv, checkpointOf, readCheckpoint, RESTORE_NO_WAY, restoreArgv, restoreCommand, restoreOutcome } from '../../src/client/checkpoint.ts';
 
 const JOB = 'job-921-abcdef';
 const SESSION = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -213,6 +213,41 @@ describe('restoring a checkpoint on another machine', () => {
     expect(out.trim()).toBe('failed');
     expect(existsSync(join(there, 'a.txt'))).toBe(true);
   });
+
+  // Issue #2316: the restore names what of the job's way to the hopper is missing, and waits a moment for a token file.
+  const runBoth = (argv: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ out: string; err: string }> => new Promise((resolve, reject) => {
+    execFile(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, ...ENV, ...env }, encoding: 'utf8', timeout: 60000 }, (e, out, err) => (e ? reject(e) : resolve({ out, err })));
+  });
+
+  it('with no HOPPER_URL: fails at once, saying the job has no way to the hopper and what is missing', async () => {
+    const there = jobClone('two');
+    const { HOPPER_URL: _url, ...env } = process.env;
+    const { out, err } = await runBoth(restoreArgv({ base: 'a'.repeat(40), session: SESSION, hasSession: false }), there, { ...env, HOPPER_URL: '', HOPPER_TOKEN_FILE: '' });
+    expect(out.trim()).toBe('failed');
+    expect(err).toContain(RESTORE_NO_WAY);
+    expect(err).toContain('HOPPER_URL is not set');
+  });
+
+  it('with a token file not there: waits for it a moment, then fails, saying the job has no way to the hopper', async () => {
+    const there = jobClone('two');
+    const at = Date.now();
+    const { out, err } = await runBoth(restoreArgv({ base: 'a'.repeat(40), session: SESSION, hasSession: false }), there, { HOPPER_URL: 'http://127.0.0.1:9', HOPPER_TOKEN_FILE: join(root, 'no-token') });
+    expect(out.trim()).toBe('failed');
+    expect(err).toContain(RESTORE_NO_WAY);
+    expect(err).toContain('HOPPER_TOKEN_FILE is not readable');
+    expect(Date.now() - at).toBeGreaterThanOrEqual(4000);
+  }, 30000);
+
+  it('with a token file placed a moment late: goes on with it', async () => {
+    const there = jobClone('two');
+    const url = await serve({}, 'other');
+    const tokenFile = join(root, 'late-token');
+    setTimeout(() => writeFileSync(tokenFile, 'tok'), 1500);
+    const { out, err } = await runBoth(restoreArgv({ base: 'a'.repeat(40), session: SESSION, hasSession: false }), there, { HOPPER_URL: url, HOPPER_TOKEN_FILE: tokenFile });
+    expect(out.trim()).toBe('failed');
+    expect(err).not.toContain(RESTORE_NO_WAY);
+    expect(err).toContain('could not get the checkpoint\'s patch');
+  }, 30000);
 
   it('as typed into a pane: one line, its outcome said in two printf words', () => {
     const command = restoreCommand({ base: 'a'.repeat(40), branch: "it's", session: SESSION, hasSession: true });

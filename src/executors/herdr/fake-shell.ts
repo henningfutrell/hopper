@@ -5,6 +5,14 @@
 
 import { TERMINAL_LINE_MAX } from './client.ts';
 
+export type FakeRestore = 'restored' | 'kept' | 'failed' | 'no-way';
+
+/** What the next restore says: the first of a list, the last one kept. */
+function nextRestore(o: FakeShellOptions): string[] {
+  const r = Array.isArray(o.restore) ? (o.restore.length > 1 ? o.restore.shift()! : o.restore[0]) : o.restore;
+  return r === 'no-way' ? ['hopper: the job has no way to the hopper: HOPPER_URL is not set', 'hopper-restore-failed'] : [`hopper-restore-${r ?? 'restored'}`];
+}
+
 /** What the shell does with a typed command: the lines it prints, and whether it now runs in the job's scope. */
 export interface ShellSaid { lines: string[]; scoped?: true }
 
@@ -15,7 +23,8 @@ export interface FakeShellOptions {
   origins?: Record<string, string>;
   worktreeFails?: boolean;
   unusableDirs?: string[];
-  restore?: 'restored' | 'kept' | 'failed';
+  /** What a checkpoint restore says (issue #921); `no-way`: it fails with no way to the hopper (issue #2316). A list: one per restore, the last kept. */
+  restore?: FakeRestore | FakeRestore[];
   /** What the job's container runtime setup says (issue #1295); default none: the fake machine has no podman. */
   runtime?: 'own' | 'none' | 'failed' | 'silent';
   /** What the job's sandbox setup says (issue #1295); default none: the fake machine has no bubblewrap. */
@@ -44,7 +53,7 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.includes('exec systemd-run --user --scope')) return o.scopes ? { lines: [], scoped: true } : { lines: ['hopper-scope-none'] };
   if (command.startsWith('case "$(cat /proc/self/cgroup')) return { lines: [`hopper-scope-${scoped ? 'entered' : 'outside'}`] };
   // Restoring a checkpoint (issue #921, checkpoint.ts): its outcome, as two printf words.
-  if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: [`hopper-restore-${o.restore ?? 'restored'}`] };
+  if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: nextRestore(o) };
   // The job's sandbox (src/client/job-sandbox.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-sandbox ')) return { lines: [`hopper-sandbox-${o.sandbox ?? 'none'}`] };
   // The job's container runtime guards, its first step (issue #2234).
