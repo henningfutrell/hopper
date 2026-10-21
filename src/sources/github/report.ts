@@ -10,6 +10,10 @@
 // away for every user and every hopper on the repo); cancelled → the claim label goes — a tend job's cancelled by no person
 // and no source puts `hopper:pr-ready` back (issue #1010): its pull request waits, to be tended again. `hopper:rejected`
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
+// The labels follow the ledger (issue #1892 part 15): each end names the state it moves the item to (`reportLabels`,
+// item-labels.ts), `labelsFor` that state names the end label, and the change, with the claim's, is GitHub outbox rows (act
+// `report`), kept before they are sent and sent at once: a refusal for now no longer fails the report, and a claim not sent
+// yet cancels out against the end that takes it off.
 // Run again (`takeBack`, issues #313, #354) is one other issue write: an issue no longer assigned to the connected account
 // is assigned to it (issue #1010), a closed issue is reopened, the end labels go and the source label comes back, so the new job runs and finishes against it. A person's resolution
 // of a hand-off (`resolutionChanges`, issue #551; rows of the GitHub outbox, issue #1238) is the other, and the hopper's only comment: one short comment saying
@@ -22,7 +26,8 @@ import type { SourceReport } from '../../domain/ports.ts';
 import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job, type ResolutionWrite } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
-import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
+import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
+import { reportLabels, type LabelDrift, type ReportEnd } from './item-labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import { isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
@@ -38,6 +43,15 @@ export interface ReportContext {
   /** Tell the ledger the issue `key` was read closed (issue #1892), when it does not hold that yet; absent: it is not told. */
   issueClosed?(key: string, reason: string | undefined): void;
 }
+
+/**
+ * Keeps the label change `change` of item `key` of `repo` (issue #1892 parts 14 and 15), tagged `tag`, and sends it: the GitHub
+ * outbox's rows. A change with that tag on its way already is not kept twice. The rows tagged `replaces` not sent yet are dropped.
+ */
+export type LabelSink = (key: string, repo: string, change: LabelDrift, tag: string, replaces?: string) => Promise<void>;
+
+/** What a job's report needs beyond the context of a give-back: where its label changes go. */
+export interface JobReportContext extends ReportContext { labels: LabelSink }
 
 type State = Record<string, unknown>;
 
@@ -74,9 +88,16 @@ export async function relabel(ctx: ReportContext, repo: string, number: number,
   }
 }
 
-/** End of a job on its issue: drop `hopper:claimed`, its holder label and `also`, add the outcome label. */
-async function settle(ctx: ReportContext, repo: string, number: number, add: string[], also: string[] = [], carried?: readonly string[]): Promise<void> {
-  await relabel(ctx, repo, number, { add, remove: [...claimLabels(ctx.holder), ...also], ...(carried ? { carried } : {}) });
+/**
+ * End of job `job` on its issue, which carries `carried` when just read: `hopper:claimed` and its holder label come off with
+ * the end labels the end's state does not want, and its label goes on. Kept in the outbox, tagged with the job and the end.
+ */
+async function settle(ctx: JobReportContext, job: Job, repo: string, r: ReportEnd, carried?: readonly string[]): Promise<void> {
+  const ends = reportLabels(r, carried);
+  const claim = claimLabels(ctx.holder).filter((l) => !carried || carried.includes(l));
+  const change = { remove: [...claim, ...ends.remove], add: ends.add };
+  // Its claim not sent yet is dropped: it comes off all the same (a claim refused for now would else land after the end).
+  if (change.remove.length || change.add.length) await ctx.labels(job.source!.key, repo, change, `${job.id}:${r.end}`, `${job.id}:claimed`);
 }
 
 /**
@@ -88,16 +109,15 @@ async function settle(ctx: ReportContext, repo: string, number: number, add: str
  * A proposal's job whose follow-ons go on with its work (issue #859) leaves the issue as it is, claimed, and follows
  * nothing: its follow-ons report the issue's end, and only a pull request one of them opens can make it done.
  */
-async function finished(ctx: ReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
+async function finished(ctx: JobReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
   if (handedToFollowOns(job)) return state;
   const issue = await ctx.api.getIssue(repo, number);
-  const also = [LABEL_FAILED];
   if (job.partlyDone) {
-    await settle(ctx, repo, number, [LABEL_PARTLY_DONE], also, issue.labels);
+    await settle(ctx, job, repo, { end: 'pr_open', part: true }, issue.labels);
     return { ...state, pullRequest: job.partlyDone, follow: 'open', part: true };
   }
   if (issue.state === 'closed') {
-    await settle(ctx, repo, number, [LABEL_DONE], also, issue.labels);
+    await settle(ctx, job, repo, { end: 'closed' }, issue.labels);
     // The ledger reads the close too (issue #1892): its item is done, not blocked for want of a pull request.
     if (job.source?.key) ctx.issueClosed?.(job.source.key, issue.stateReason);
     return state;
@@ -105,7 +125,7 @@ async function finished(ctx: ReportContext, job: Job, repo: string, number: numb
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
   // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.
   const open = await pullRequestOf(ctx.api, repo, number);
-  await settle(ctx, repo, number, [open ? (open.part ? LABEL_PARTLY_DONE : LABEL_PR_READY) : LABEL_BLOCKED], also, issue.labels);
+  await settle(ctx, job, repo, open ? { end: 'pr_open', part: open.part } : { end: 'no_pr' }, issue.labels);
   return { ...state, ...(open ? { pullRequest: open.url } : {}), ...(open?.part ? { part: true } : {}), follow: 'open' };
 }
 
@@ -140,26 +160,26 @@ const tendTriedAgain = (job: Job): boolean => {
   return job.spec.tend === true && !(typeof reason === 'string' && DELIBERATE_CANCELS.includes(reason));
 };
 
-async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {
+async function apply(ctx: JobReportContext, r: SourceReport, state: State): Promise<State> {
   const { job } = r;
   const { repo, number } = issueOf(job);
   switch (r.kind) {
     case 'claimed':
-      await relabel(ctx, repo, number, { add: claimLabels(ctx.holder) });
+      await ctx.labels(job.source!.key, repo, { remove: [], add: claimLabels(ctx.holder) }, `${job.id}:claimed`);
       return state;
     case 'finished':
       return finished(ctx, job, repo, number, state);
     case 'failed':
       // The hopper fixes it itself (issue #1230): the issue stays as it is, claimed, never `hopper:failed` meanwhile.
       if (r.fixing) return state;
-      await settle(ctx, repo, number, [LABEL_FAILED]);
+      await settle(ctx, job, repo, { end: 'failed' });
       return state;
     case 'cancelled':
       // A tend job cancelled not on purpose (issue #1010): its pull request still waits, and the hopper tends it again.
-      await settle(ctx, repo, number, tendTriedAgain(job) ? [LABEL_PR_READY] : []);
+      await settle(ctx, job, repo, { end: 'cancelled', tendAgain: tendTriedAgain(job) });
       return state;
     case 'rejected':
-      await settle(ctx, repo, number, []);
+      await settle(ctx, job, repo, { end: 'rejected' });
       return state;
   }
 }
@@ -239,7 +259,7 @@ export function keepResolution(outbox: GitHubOutbox, job: Job, r: HandoffResolut
   }
 }
 
-export async function reportToGitHub(ctx: ReportContext, r: SourceReport): Promise<State> {
+export async function reportToGitHub(ctx: JobReportContext, r: SourceReport): Promise<State> {
   const state: State = { ...(r.job.sourceState?.source ?? {}) };
   try {
     return await apply(ctx, r, state);

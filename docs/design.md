@@ -22416,6 +22416,36 @@ Left: GitLab's follow (`src/gitlab/follow.ts`) still writes its labels with its 
 remove and one add with nothing left on the way; GitHub refuses it for now, the follow ends, the rows wait, and a follow
 again sends them once).
 
+### The report's labels come from the ledger, through the outbox (issue #1892 part 15, 2026-10-21)
+
+Milestone 3 too: the report of a job's claim and end (`src/sources/github/report.ts`) picked its labels by hand and wrote them
+with its own calls, the last direct end label writes of the GitHub source. A call GitHub refused failed the report, and the
+sync sent the whole report again.
+
+- **Each end names a state, and `labelsFor` names its label.** `reportLabels` (`src/sources/github/item-labels.ts`) maps a
+  report's end to the state it moves the item to: a pull request waits, PR open (`hopper:pr-ready`, or `hopper:partly-done`
+  for a part); none open, blocked `no_pr` (`hopper:blocked`); failed as reported (`hopper:failed`); a tend job cancelled by
+  no person, PR open again (`hopper:pr-ready`). The issue closed as complete is `hopper:done`: a done item is judged only by
+  a whole merge or a hand-off done by hand, so that label is named here, not by `labelsFor`. Cancelled or rejected at the
+  queue gate puts no end label on. Where the report read the issue (a finished job), every end label the state does not
+  want comes off, as at a follow's end; where it did not, only the claim comes off, as before.
+- **The claim and the end are GitHub outbox rows (act `report`), sent at once.** Each is tagged with its job and its end
+  (`<job id>:claimed`, `<job id>:failed`, ...) and sent in the report's own pass (`sendOf`). A refusal for now leaves the
+  rows to wait their backoff: the report still ends, and a later flush sends them. While they wait the item is held, so
+  the label mirror does not judge it. A report sent again after a stop keeps no second set.
+- **An end drops its claim's rows not sent yet** (`drop`, `src/sources/github/outbox.ts`). A claim refused for now waits a
+  backoff that the end's own send does not wait on, so it would land after the end and put `hopper:claimed` back. The end
+  takes the claim off all the same, in case it went through.
+- **A give-back drops them too.** Run again and Rework drop the `report` rows not sent yet with the mirror's and the
+  follow's (`dropLabelRows`): a failed job's `hopper:failed` not sent yet would else land on the issue its new job works.
+
+Left: GitLab's report and follow (`src/gitlab/`) still write their labels with their own calls: the GitLab source has no
+outbox.
+
+**Verification:** `test/sources/github-report-labels.test.ts` (each end's labels from `labelsFor`; a claim and an end each
+sent at once; GitHub refuses the end for now, the report ends, the rows wait, and the report again sends them once; a claim
+refused for now never lands after the end; a Run again drops the end not sent).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

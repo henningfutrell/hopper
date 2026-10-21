@@ -46,7 +46,7 @@ describe('the report\'s label change goes through the GitHub outbox', () => {
     const job = jobForIssue(1, { status: 'finished', result: 'x' });
     await source.report({ kind: 'claimed', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:claimed']);
-    gh.openPullRequest(REPO, 1);
+    gh.openPullRequest(REPO, 1, { createdAt: '2026-10-02T11:00:00.000Z' });
     gh.calls.length = 0;
     await source.report({ kind: 'finished', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
@@ -72,7 +72,7 @@ describe('the report\'s label change goes through the GitHub outbox', () => {
     expect(labelCalls(gh.calls)).toHaveLength(2);
   });
 
-  it('a claim refused for now and the job\'s end after it: sent together, the claim and its removal cancel out', async () => {
+  it('a claim refused for now and the job\'s end after it: the claim not sent is dropped, so it never lands after the end', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed' });
     gh.failNext('addLabels', new TypeError('fetch failed'));
@@ -81,8 +81,10 @@ describe('the report\'s label change goes through the GitHub outbox', () => {
     gh.calls.length = 0;
     await source.report({ kind: 'failed', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:failed']);
-    expect(gh.calls.filter((c) => c.method === 'removeLabels')).toEqual([]);
+    expect(gh.calls.filter((c) => c.method === 'addLabels').map((c) => c.args)).toEqual([[REPO, 1, ['hopper:failed']]]);
     expect(pending(source)).toBeUndefined();
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:failed']);
   });
 
   it('a Run again drops the end labels not sent yet: they were for the state the item left', async () => {

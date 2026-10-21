@@ -36,14 +36,15 @@ export type OutboxGiveBackMore = Pick<Extract<OutboxChange, { op: 'give_back' }>
  * The act that asked for a row: a person's intake action, `resolve`, a person's resolution of a hand-off told to its item,
  * a person's Merge now or Close PR (part 3), a person's act that gives an ended job's item back (parts 4 and 5), or
  * `mirror`, the label mirror's change of a blocked item's end labels to its state (issue #1891), or `follow`, the end labels
- * of the state a followed pull request's end moves its item to (issue #1892 part 14).
+ * of the state a followed pull request's end moves its item to (issue #1892 part 14), or `report`, a job's claim and the end
+ * labels of the state its end moves its item to (issue #1892 part 15).
  */
-export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow';
+export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' | 'report';
 
-const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend', 'mirror', 'follow'];
+const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend', 'mirror', 'follow', 'report'];
 
 /** An act whose rows are not an intake item's write: the item shows no marker for them. */
-export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' => NOT_INTAKE.includes(act);
+export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' | 'report' => NOT_INTAKE.includes(act);
 
 /**
  * The sync loop's part of a flush: it sends a Merge now or Close PR row (part 3) or a give-back row (parts 4 and 5), and
