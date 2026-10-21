@@ -6,7 +6,7 @@
 // (issue #1508, watched-items.ts). An infra plan's approval (issue #2205): the plan must be recorded where Infra and Needs you
 // read it; else, or once nobody can approve it, the wait ends at once and the job is told why (`planWaitEnd`). Pure.
 import type { EventType } from './event-types.ts';
-import { failedChecks, type InfraPlan, type PlanApproval } from './infra-plans.ts';
+import { failedChecks, rejectedWords, type InfraPlan, type PlanApproval, type PlanRejection } from './infra-plans.ts';
 import { namesOwnCommand } from './own-command.ts';
 import { nameWithoutEmail } from './users.ts';
 import type { Job } from './types.ts';
@@ -171,7 +171,7 @@ const QUESTION_ENDS: Record<string, string> = { 'question.answered': 'was answer
 /** Every event type `settledBy` reads (issue #1571: the hopper reads them again for a wake a stop lost). */
 export const SETTLING_EVENT_TYPES: readonly EventType[] = [
   'job.pull_request_merged', 'job.pull_request_closed', 'job.waited_pull_request_ended', 'work_item.issue_closed', 'job.waited_items_ended',
-  'vault.granted', 'vault.grant_denied', 'vault.action_granted', 'vault.action_declined', 'infra.plan_approved', 'job.finished', 'job.failed', 'job.cancelled',
+  'vault.granted', 'vault.grant_denied', 'vault.action_granted', 'vault.action_declined', 'infra.plan_approved', 'infra.plan_rejected', 'job.finished', 'job.failed', 'job.cancelled',
   'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
 ];
 
@@ -207,6 +207,11 @@ export function settledBy(e: { type: string; jobId?: string; data?: unknown }): 
     case 'infra.plan_approved': {
       const plan = str('plan');
       return plan ? { kind: 'plan', planId: plan, note: `infra plan ${plan} was approved by ${nameWithoutEmail(str('by') ?? 'a person')}` } : undefined;
+    }
+    // Issue #2368: a rejected plan is never approved, so its wait ends with who rejected it and why.
+    case 'infra.plan_rejected': {
+      const plan = str('plan');
+      return plan ? { kind: 'plan', planId: plan, note: `infra ${rejectedWords(plan, { by: nameWithoutEmail(str('by') ?? 'a person'), note: str('note') ?? 'no note' })}` } : undefined;
     }
     // Issue #2206: an action grant a job's need step asked for.
     case 'vault.action_granted': case 'vault.action_declined':
@@ -284,10 +289,11 @@ export function settledAlready(on: WaitOn, ownRepo: string | undefined, ledger: 
 
 /**
  * How a wait on an infra plan ends as it starts (issue #2205), or undefined while a person can approve it: approved already,
- * it is settled; not recorded, stale, or failed its checks, no person can see or approve it, so the job is told why
+ * it is settled; not recorded, rejected (issue #2368), stale, or failed its checks, no person can see or approve it, so the job is told why
  * (`told`) rather than wait on something nobody acts on. `plan`: the plan of that id, as the job's user's store keeps it.
  */
-export function planWaitEnd(planId: string, plan: Pick<InfraPlan, 'id' | 'expiresAt' | 'summary'> | undefined, approval: Pick<PlanApproval, 'by'> | undefined, now: Date): { settled: Settled } | { told: string } | undefined {
+export function planWaitEnd(planId: string, plan: Pick<InfraPlan, 'id' | 'expiresAt' | 'summary'> | undefined, approval: Pick<PlanApproval, 'by'> | undefined, now: Date, rejection?: Pick<PlanRejection, 'by' | 'note'>): { settled: Settled } | { told: string } | undefined {
+  if (plan && rejection) return { told: `infra ${rejectedWords(planId, { by: nameWithoutEmail(rejection.by), note: rejection.note })}` };
   if (!plan) return { told: `no infra plan ${planId} is recorded on this hopper, so no person can see or approve it. Record the plan with POST /job/infra-plans; its answer names the plan's id. Then wait with on: infra plan <that id>` };
   if (approval) return { settled: { kind: 'plan', planId, note: `infra plan ${planId} was approved by ${nameWithoutEmail(approval.by)}` } };
   const failed = failedChecks(plan);

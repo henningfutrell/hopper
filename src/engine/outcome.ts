@@ -84,7 +84,7 @@ function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId
 function endPlanWait(c: EngineContext, jobId: string, on: WaitOn): boolean {
   if (on.kind !== 'plan') return false;
   const plan = c.store.infraPlans.get(on.planId);
-  const end = planWaitEnd(on.planId, plan, plan ? c.store.infraPlans.approval(plan.id) : undefined, c.clock.now());
+  const end = planWaitEnd(on.planId, plan, plan ? c.store.infraPlans.approval(plan.id) : undefined, c.clock.now(), plan ? c.store.infraPlans.rejection(plan.id) : undefined);
   if (!end) return false;
   if ('settled' in end) return wakeOn(c, end.settled).length > 0;
   recordEndWait(c, jobId, end.told, 'hopper', () => `[hopper] The hopper ended your wait (${waitOnLabel(on)}): ${end.told}.`);

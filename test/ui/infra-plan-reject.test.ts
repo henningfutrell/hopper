@@ -27,8 +27,8 @@ describe('a rejected infra plan in the UI (issue #2368)', () => {
 
   it('a plan that waits is offered Reject to an operator or an admin, never to a viewer', () => {
     expect(planReject(plan, now, admin)).toBe(true);
-    expect(planReject(plan, now, { operate: true, admin: false })).toBe(true);
-    expect(planReject(plan, now, { operate: false, admin: false })).toBe(false);
+    expect(planReject(plan, now, { operate: true })).toBe(true);
+    expect(planReject(plan, now, { operate: false })).toBe(false);
     expect(planReject({ ...plan, approval: { plan: plan.id, by: 'Ada', at: '2026-10-12T10:05:00.000Z' } }, now, admin)).toBe(false);
   });
 });
