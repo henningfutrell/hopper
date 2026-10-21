@@ -18,6 +18,7 @@ import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { keepTokenUse } from './checkpoints.ts';
 import { agentSignIn, placeCredentials, Unreached } from './credentials.ts';
+import { noWayMove } from './no-way-move.ts';
 import { moveLost, type Lost } from './lost-move.ts';
 import { nudgeCheck } from './nudge-check.ts';
 import { runNotes } from './notes.ts';
@@ -211,7 +212,8 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
 /**
  * The job's way to the hopper placed on `on` (credentials.ts). A machine that cannot reach the hopper (issue #1920) is
  * held, so it takes no new job for a while, and a fresh start there is queued again to be placed elsewhere
- * (`e.unreached`), never failed for the machine it was placed on. A resuming job returns to the pane it holds there: it fails.
+ * (`e.unreached`), never failed for the machine it was placed on; so is a job that resumes elsewhere from its checkpoint
+ * (issue #2355). Any other resuming job returns to the pane it holds there: it fails.
  */
 async function place(
   c: EngineContext, e: RunEntry, j: Job, on: MachineSnapshot, shell: MachineShell | undefined, scratch: string, make: boolean, note: (line: string) => void,
@@ -219,9 +221,11 @@ async function place(
   try {
     return await placeCredentials(c, j, on, shell, scratch, make, note);
   } catch (err) {
-    if (err instanceof Unreached && c.reachHolds) {
-      c.reachHolds.hold(on.id, err.message);
-      if (j.pendingAnswer === undefined) e.unreached = `machine ${on.id}: ${err.message}`;
+    if (err instanceof Unreached) {
+      c.reachHolds?.hold(on.id, err.message);
+      // A job that resumes elsewhere goes back to the queue too (issue #2355, no-way-move.ts).
+      const moved = j.pendingAnswer === undefined ? (c.reachHolds ? `machine ${on.id}: ${err.message}` : undefined) : noWayMove(c, j, on.id, err.message);
+      if (moved !== undefined) e.unreached = moved;
     }
     throw err;
   }

@@ -75,10 +75,17 @@ export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low 
 export const workTreeHolds = (m: MachineSnapshot, job: Job): boolean => m.workTreeProblem !== undefined && job.pendingAnswer === undefined;
 
 /**
- * A machine whose jobs cannot reach the hopper takes no new job (issue #698): they would have no GitHub proxy and no
- * git. The job waits for a machine that reaches it, never fails there. A job resuming there returns to the pane it holds.
+ * Whether `job` opens a new pane on the machine it is placed on (issue #2355): a new job, or one that resumes elsewhere from
+ * its checkpoint (issue #921), which holds no pane there. Any other resuming job returns to the pane it holds.
  */
-export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && job.pendingAnswer === undefined;
+const opensPane = (job: Job): boolean => job.pendingAnswer === undefined || job.parked?.elsewhere !== undefined;
+
+/**
+ * A machine whose jobs cannot reach the hopper takes no new job (issue #698): they would have no GitHub proxy and no
+ * git. The job waits for a machine that reaches it, never fails there. A job resuming there returns to the pane it holds;
+ * one that resumes elsewhere needs the hopper for its checkpoint (issue #2355), so it is held too.
+ */
+export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && opensPane(job);
 
 /**
  * A machine whose herdr client its herdr server does not take takes no new job (issue #741): every job start there
@@ -116,9 +123,9 @@ export const leavingHolds = (m: MachineSnapshot, job: Job): boolean => m.leaving
 
 /**
  * A machine a person drained takes no new job (issue #1511): the jobs on it run to their end. A job resuming there
- * returns to the pane it holds.
+ * returns to the pane it holds; one that resumes elsewhere opens a new one, so it is held too (issue #2355).
  */
-export const drainedHolds = (m: MachineSnapshot, job: Job): boolean => m.drained !== undefined && job.pendingAnswer === undefined;
+export const drainedHolds = (m: MachineSnapshot, job: Job): boolean => m.drained !== undefined && opensPane(job);
 
 /** A job moved off a lost machine (issue #1569) does not go back to it while the agent it left there may run. */
 export const leftHolds = (m: MachineSnapshot, job: Job): boolean => job.parked?.elsewhere?.lost === true && job.parked.elsewhere.from === m.id;
