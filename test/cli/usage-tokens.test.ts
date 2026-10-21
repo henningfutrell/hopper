@@ -36,4 +36,12 @@ describe('hopper usage tokens (issue #2302)', () => {
     expect(() => usageCall(['budget', '--job-tokens', '5'])).toThrow(/usage: hopper usage/);
     expect(() => usageCall(['budget', 'set', '--by', 'day'])).toThrow(/usage: hopper usage/);
   });
+
+  it('sets the day caps, in all and per repository (part 5)', async () => {
+    const set = usageCall(['budget', 'set', '--day-tokens', '9000000', '--day-cost', '40', '--repo-day-tokens', '3000000', '--repo-day-cost', '15']);
+    expect(await set.body!(async () => undefined)).toEqual({ dayTokens: 9_000_000, dayCostUsd: 40, repoDayTokens: 3_000_000, repoDayCostUsd: 15 });
+    expect(await usageCall(['budget', 'set', '--repo-day-cost', '0']).body!(async () => undefined)).toEqual({ repoDayCostUsd: 0 });
+    expect(() => usageCall(['budget', 'set', '--day-tokens', 'lots'])).toThrow(/usage: hopper usage/);
+    expect(() => usageCall(['tokens', '--day-cost', '5'])).toThrow(/usage: hopper usage/);
+  });
 });
