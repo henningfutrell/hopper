@@ -189,11 +189,16 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
   }
 
   const self = {
-    /** True: this act, with this tag, has rows on their way, or went through since a discover last listed the item: nothing more to do. */
-    sent(act: OutboxAct, key: string, tag = ''): boolean {
+    /**
+     * True: this act, with this tag, has rows on their way, or went through since a discover last listed the item: nothing more
+     * to do. With `since` (when the listing was read), a row any hopper sent after it counts too (issue #1892): that listing
+     * may not show it.
+     */
+    sent(act: OutboxAct, key: string, tag = '', since?: string): boolean {
       if (openOf(key).some((r) => r.act === act && r.tag === tag && r.lastError === undefined)) return true;
       const r = recent.get(key);
-      return r?.act === act && r.tag === tag;
+      if (r?.act === act && r.tag === tag) return true;
+      return since !== undefined && rows.of(o.source, key).some((x) => x.act === act && x.tag === tag && x.state === 'sent' && x.sentAt !== undefined && x.sentAt >= since);
     },
     /**
      * Keeps `changes` for the item, with `local` — the action's own local change — in the same transaction. The same act's

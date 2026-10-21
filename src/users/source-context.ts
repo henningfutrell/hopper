@@ -5,6 +5,7 @@
 import { allowedDeletesOfJob, doneCriteriaOfJob } from '../skill-library/index.ts';
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
+import type { SweepLease } from '../domain/leases.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import { DEFAULT_YOLO_MODE, isRerunnable, mergeRuleFor, yoloModeFor, type Parts } from '../domain/types.ts';
 import { landingBranch } from '../domain/landing-batches.ts';
@@ -21,13 +22,16 @@ import { allPartsDone } from '../sources/github/parts.ts';
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
 export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: string[]) => Set<string>) | undefined, decideActor: DecideIntakeActor | undefined,
-  mirrors?: { dataDir: string; logger: { warn(line: string): void } }, graphRead?: (keys: string[]) => void, clock: () => Date = () => new Date()): Omit<JobSourceContext, 'connectedAccounts'> {
+  mirrors?: { dataDir: string; logger: { warn(line: string): void } }, graphRead?: (keys: string[]) => void, clock: () => Date = () => new Date(),
+  lease?: (name: string) => SweepLease): Omit<JobSourceContext, 'connectedAccounts'> {
   return {
     ...(mirrors ? { gitMirrors: createGitMirrors({ dir: join(mirrors.dataDir, 'git-mirrors'), log: (line) => mirrors.logger.warn(line) }) } : {}),
     knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
     rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
     rejections: (keys) => new Map(keys.flatMap((k) => { const r = rejectionOf(store.jobs.getBySourceKey(k)); return r ? [[k, r] as const] : []; })),
     intake: (name) => ({
+      // The label mirror on one hopper of those on one database (issue #1892): the holder of the user's sweep lease `label-mirror/<source>`.
+      ...(lease ? { mirrorHeld: ((l) => () => l.hold().held)(lease(`label-mirror/${name}`)) } : {}),
       holder: store.settings.claimHolder(),
       othersKnown: (keys) => otherUsersKnow?.(keys) ?? new Set(),
       migration: () => store.settings.getIntakeMigration(name),

@@ -128,7 +128,7 @@ export function mirrorRows(w: Pick<LabelWorld, 'userUrl'>, n: number): { state: 
   } finally { db.close(); }
 }
 
-const requests = (w: LabelWorld, method: string, path: string): number =>
+export const requests = (w: LabelWorld, method: string, path: string): number =>
   w.github.state.requests.filter((r) => r.method === method && decodeURIComponent(r.path) === path).length;
 /** The host's end at its kill point; a host not killed within `KILL_MS` fails the scenario with its output. */
 async function killed(h: CrashHost, point: string): Promise<void> {
@@ -142,7 +142,7 @@ async function killed(h: CrashHost, point: string): Promise<void> {
 }
 /** The most a first host takes to reach its kill point: a few discovers, and an outbox send. */
 const KILL_MS = 30_000;
-const events = async (h: CrashHost, type: string): Promise<DomainEvent[]> => (await h.get<{ events: DomainEvent[] }>(`/api/events?types=${type}&limit=1000`)).events;
+export const events = async (h: CrashHost, type: string): Promise<DomainEvent[]> => (await h.get<{ events: DomainEvent[] }>(`/api/events?types=${type}&limit=1000`)).events;
 
 /** A first hopper killed at `point` while the mirror corrects #7; a second sends what is left, each label change once. */
 export async function killedThenMirrored(w: LabelWorld, point: string): Promise<void> {
