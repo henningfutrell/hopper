@@ -198,6 +198,17 @@ To prove that, the check needs the workspace's **state backend**: the S3 bucket 
 - `hopper sandbox list` lists your latest box steps: the job, the template, the box, the machine, when each started and ended, and the outcome.
 - It builds an image with the template's tools once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`, on the runtime the box starts on: beside the hopper, or on the machine that holds the box. A runtime that builds nothing (Kubernetes) runs the tools image CI publishes.
 
+## Bastions
+
+A bastion is the one sandbox of a job that stays after a step. It holds a port-forward to each target the job named, for example a Grafana or a Prometheus service in a cluster. The job reaches each target through the hopper. The box keeps its own Kubernetes tokens, and the job never gets them.
+
+A bastion ends by itself after an hour with no use, when its job ends, or when the job stops it. To stop one now:
+
+1. Open **Access requests**, panel **Bastions**. Each card shows the template, the job, the targets and when the bastion ends.
+2. Select **Stop**. The bastion's tokens stop working, and its box goes. The job can ask for a new bastion.
+
+An operator can stop a bastion.
+
 ## Windows sandbox steps
 
 No hopper client, lane or agent runs on Windows. When a job needs Windows for one step (a .NET Framework build, a Windows app's tests), it asks the hopper to run that step on a **Windows host**:

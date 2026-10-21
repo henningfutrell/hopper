@@ -197,6 +197,8 @@ export interface VaultView {
    * sandbox run, or both —, approved or declined once. A template a job asked for waits on its run card, never on a card of its own.
    */
   runs?: RunCardView[];
+  /** The bastions of the user's jobs that start or run now (issue #2146): a person sees each, and stops one. Never a token. */
+  bastions?: import('./bastions.ts').BastionView[];
   /** A person's write, sync and apply approvals the hopper remembers now (issue #1001), each with its end. */
   rememberedWrites?: RememberedWriteView[];
   /** Asks of jobs at work for an AWS action no grant covers (issue #2206): a person grants or declines each. */
