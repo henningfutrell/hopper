@@ -10,7 +10,7 @@
 // The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. The Dashboard
 // (issue #951; it was the Overview, and #overview still opens it) and Needs you are pinned above them, never collapsed: the Dashboard
 // covers the whole system and is the landing page; Needs you's badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
-// its own (issue #897): it left Settings, which keeps configuration only. Direct jobs (issue #901) submits a job with no GitHub issue and reads it back; Direct queries (issue #2184) the questions callers asked the hopper straight. Resources (issue #947) shows what every
+// its own (issue #897): it left Settings, which keeps configuration only. Ask hopper (issue #2375; it was Direct jobs, issue #901, and Direct queries, issue #2184, and #direct-jobs and #direct-queries still open it) submits a job with no GitHub issue (Run a job) or asks a question (Ask a question), and reads them back. Resources (issue #947) shows what every
 // container of the stack and its Postgres use now. Search (issue #945) finds jobs by their words: the header's search box opens it too.
 // Accounts (issue #1128), not under Settings: who each machine's agent tool is signed in as, badged with the machines signed in
 // as nobody; in Sources & machines, beside the machines it is about. Skills (issue #1911): the skills jobs get, and the choice
@@ -18,7 +18,7 @@
 // graph and the globe of the services in the AWS accounts and clusters. No group holds one entry only (issue #1943). Pending
 // approvals (issue #2088) is its own entry in Waiting on you, badged with the GitHub deployment approvals that wait on the
 // person; the header's in-flight badge does not count them.
-import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, Network, MessageCircleQuestion, MessageSquareText, OctagonAlert, Rocket, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
+import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Rocket, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -37,7 +37,7 @@ import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'direct-queries', 'intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'topology', 'skills', 'usage', 'resources', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'ask', 'intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'topology', 'skills', 'usage', 'resources', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
@@ -46,7 +46,7 @@ export const NAV_PINNED = ['dashboard', 'needs-you'] as const satisfies readonly
 /** The nav groups, in nav order, each with its entries in order. A view of the navigation neither pinned nor in a group fails the typecheck. */
 export const NAV_GROUPS = [
   { id: 'waiting', label: 'Waiting on you', views: ['intake', 'tagged', 'access-requests', 'pending-approvals', ...SECTION_KINDS] },
-  { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'direct-jobs', 'direct-queries', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
+  { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'ask', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
   { id: 'infra', label: 'Infra', views: ['infra', 'topology'] },
   { id: 'sources-machines', label: 'Sources & machines', views: ['sources', 'machines', 'accounts', 'usage', 'resources'] },
   { id: 'settings', label: 'Set up', views: ['skills', 'settings'] },
@@ -59,8 +59,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   search: { label: 'Search', icon: Search },
   jobs: { label: 'Jobs', icon: LayoutGrid },
   queue: { label: 'Queue', icon: ListOrdered },
-  'direct-jobs': { label: 'Direct jobs', icon: Send },
-  'direct-queries': { label: 'Direct queries', icon: MessageSquareText },
+  ask: { label: 'Ask hopper', icon: Send },
   intake: { label: 'Intake', icon: CircleDashed },
   tagged: { label: 'Tagged', icon: AtSign },
   'access-requests': { label: 'Access requests', icon: ShieldQuestion },
@@ -89,12 +88,14 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
 };
 
 const subscribe = (fn: () => void) => { window.addEventListener('hashchange', fn); return () => window.removeEventListener('hashchange', fn); };
-/** Old view names and the view each became, so an old link still opens it. */
-const MOVED: Record<string, View> = { 'not-taken': 'intake', overview: 'dashboard' };
-const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return MOVED[h] ?? ((ROUTES as readonly string[]).includes(h) ? (h as View) : 'dashboard'); };
+/** Old view names and the view each became, with the section it opens when it is one, so an old link still opens it. */
+const MOVED: Record<string, { view: View; section?: string }> = {
+  'not-taken': { view: 'intake' }, overview: { view: 'dashboard' }, 'direct-jobs': { view: 'ask' }, 'direct-queries': { view: 'ask', section: 'question' },
+};
+const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return MOVED[h]?.view ?? ((ROUTES as readonly string[]).includes(h) ? (h as View) : 'dashboard'); };
 export const useView = (): View => useSyncExternalStore(subscribe, read);
-/** The section after the view in the hash (#settings/routing → routing), or ''. */
-const readSection = (): string => window.location.hash.slice(1).split('/')[1] ?? '';
+/** The section after the view in the hash (#settings/routing → routing), or ''; an old view name's own section when it moved into one. */
+const readSection = (): string => { const [h, section] = window.location.hash.slice(1).split('/'); return MOVED[h!]?.section ?? section ?? ''; };
 export const useSection = (): string => useSyncExternalStore(subscribe, readSection);
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
@@ -120,7 +121,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const signedOut = signedOutMachines(useToolAccounts()?.accounts ?? []);
   const approvals = pendingApprovalsBadge(usePendingApprovals());
   const badge: Partial<Record<View, NavBadge>> = {
-    queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
+    queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job' : 'jobs'} waiting to be ordered` },
     'needs-you': { n: total.n, high: total.high, cls: 'bg-warn text-background', title: `${total.n} ${total.n === 1 ? 'decision waits' : 'decisions wait'} on you` },
     intake: { n: requests + unassigned + trustHeld, cls: 'bg-warn text-background', title: [
       requests > 0 && `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval`,
@@ -191,7 +192,7 @@ function Count({ slot, b }: { slot: string; b: NavBadge }) {
 
 function Backburner({ slot, n, alone }: { slot: string; n: number; alone: boolean }) {
   return (
-    <span data-slot={slot} title={`${n} ${n === 1 ? 'issue' : 'issues'} on the backburner`}
+    <span data-slot={slot} title={`${n} ${n === 1 ? 'issue' : 'issues'} for later (on the backburner: the hopper:backburner label)`}
       className={cn('num flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border border-dashed px-1.5 text-[11px] font-semibold normal-case tracking-normal text-muted-foreground', alone && 'ml-auto')}>
       <Flame className="size-3" aria-hidden />{n}
     </span>

@@ -1,4 +1,4 @@
-// Direct queries (issue #2184, design.md "Direct queries"), a view of its own (#direct-queries): every question a caller —
+// Direct queries (issue #2184, design.md "Direct queries"), the Ask a question tab of Ask hopper (#ask/question, issue #2375; ask.tsx): every question a caller —
 // an agent with a box token, or a person here — asked the hopper straight, with no GitHub issue, answered by a job that
 // only looks. Each row reads the query back, newest first: where it stands, who asked it and the way, the webhook
 // subscription its callback goes to, its hints, its open questions (answered in Questions; they go to the callback too),
@@ -129,11 +129,11 @@ export function DirectQueries() {
   return (
     <div className="grid max-w-3xl gap-3">
       {canOperate && <AskForm onAsked={() => { load().catch(() => {}); }} />}
-      <Panel title="Direct queries" icon={MessageSquareText} count={list?.length}>
+      <Panel title="Questions asked" icon={MessageSquareText} count={list?.length}>
         {list === null
           ? <Empty>loading</Empty>
           : list.length === 0
-            ? <Empty>No direct queries yet. A caller asks one with POST /ui/api/direct-queries.</Empty>
+            ? <Empty>No questions yet. Ask one above, or a caller asks one with POST /ui/api/direct-queries.</Empty>
             : <ul>{list.map((q) => <Row key={q.id} q={q} canOperate={canOperate} />)}</ul>}
       </Panel>
     </div>

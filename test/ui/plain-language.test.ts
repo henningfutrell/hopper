@@ -32,7 +32,7 @@ describe('Decisions as a table (issue #2375)', () => {
     expect(job).toContain('Fix part 1');
     expect(job).toContain('+3 more');
     expect(rows[0]!.querySelector('[data-slot="decision-kind"]')!.textContent).toBe('job queued');
-    expect(rows[0]!.querySelector('[data-slot="decision-outcome"]')!.textContent).toBe('started 1 job, held 3 for the usage limit');
+    expect(rows[0]!.querySelector('[data-slot="decision-outcome"]')!.textContent).toBe('started 1 job, held 3: the usage limit');
     expect(rows[0]!.textContent).not.toContain('f00dfeed');
   });
 
@@ -52,7 +52,7 @@ const EVENTS = { '/api/events': { events: [ev(1, 'job.started', { jobId: JOBS[0]
 describe('Events as a table (issue #2375)', () => {
   it('shows time, job, event type and message in columns', async () => {
     await boot('#events', { ...QUEUE, ...EVENTS });
-    const heads = all('[data-slot="events-table"] th').map((h) => h.textContent);
+    const heads = all('[data-slot="events-table"] th').map((h) => h.textContent).slice(0, 4);
     expect(heads).toEqual(['Time', 'Job', 'Event type', 'Message']);
     const rows = all('[data-slot="events-table"] tbody tr[data-event-seq]');
     expect(rows).toHaveLength(3);

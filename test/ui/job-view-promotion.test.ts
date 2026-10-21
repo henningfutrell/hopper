@@ -88,7 +88,7 @@ describe('Promote to GitHub from the job view (issue #946)', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-slot="job-promotion"]')).not.toBeNull());
     const part = document.querySelector<HTMLElement>('[data-slot="job-promotion"]')!;
     expect(part.textContent).toContain('It made an artifact you may want to share');
-    expect(part.querySelector('a[href="#direct-jobs"]')).not.toBeNull();
+    expect(part.querySelector('a[href="#ask"]')).not.toBeNull();
     await act(async () => { button(/Promote to GitHub/)!.click(); });
     await act(async () => { button(/Preview/)!.click(); });
     await vi.waitFor(() => expect(document.querySelector('[data-slot="promote-preview"]')).not.toBeNull());
