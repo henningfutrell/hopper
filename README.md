@@ -241,6 +241,11 @@ order or reject it:
 
 <img src="docs/screenshots/queue-order.webp" width="720" alt="The Queue view: the queue gate set to review, three held jobs in the pre-sort with Accept and Reject, and the accepted jobs in the user's order.">
 
+**Needs you** lists every decision that waits on you, by kind: Intake, access requests, questions, proposals,
+research, logins, failures and more. Each row opens the page where you act on it:
+
+<img src="docs/screenshots/needs-you.webp" width="720" alt="The Needs you view: each kind of decision that waits on a person with its count, two questions, one of high priority, and two failures.">
+
 ## Add machines
 
 A **machine** runs jobs. Each has **lanes**: how many jobs it runs at once. A job goes to a machine
@@ -260,6 +265,13 @@ machine online or offline; the daemon's log says why one is offline
 (`journalctl --user -u hopper`).
 
 <img src="docs/screenshots/machines.webp" width="720" alt="The Machines view: four online machines, each with its lanes and live usage of the session and the week.">
+
+**Usage throttling.** The **Usage** view shows how much of each account's plan the machines used, and the soft and
+hard limits. Below the soft limit every lane is open; from it, each machine keeps fewer lanes; at the hard limit
+nothing new starts. The view names the window that throttles, for example `46% session`. Help: [Lanes and lane
+tuning](https://henningfutrell.github.io/hopper/help/lanes.html#usage-limits).
+
+<img src="docs/screenshots/usage.webp" width="720" alt="The Usage view: the usage limits panel at 46% session, every lane open, the last day's usage over the free, soft and hard bands, and each machine's lanes.">
 
 **Machine defaults.** A machine added in the Machines view starts with the machine defaults: its
 lanes and the executors it runs (one lane and `herdr-claude` until you change them). Change them
