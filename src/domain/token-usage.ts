@@ -168,8 +168,11 @@ export function tokenRollup(entries: readonly TokenLedgerEntry[], by: TokenGroup
     .sort((a, b) => b.costUsd - a.costUsd || a.key.localeCompare(b.key));
 }
 
-/** A job's token use, as its page and `GET /api/jobs/:id/tokens` show it: totals, per model, and where it was read. */
-export interface JobTokenView { jobId: string; total: TokenTotals; models: (TokenTotals & { model: string })[]; sessions: number; machines: string[]; accounts: string[]; first?: string; last?: string }
+/**
+ * A job's token use, as its page and `GET /api/jobs/:id/tokens` show it: totals, per model, and where it was read.
+ * `waste`: its waste signals (part 4, `src/domain/token-waste.ts`), which the route adds.
+ */
+export interface JobTokenView { jobId: string; total: TokenTotals; models: (TokenTotals & { model: string })[]; sessions: number; machines: string[]; accounts: string[]; first?: string; last?: string; waste?: import('./token-waste.ts').TokenWaste[] }
 
 /** One job's ledger rows as its view. */
 export function jobTokenView(jobId: string, entries: readonly TokenLedgerEntry[]): JobTokenView {
