@@ -132,7 +132,7 @@ export interface OutsideRepo {
  */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
   | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_decline_written' | 'source.request_withdrawn' | 'source.review_requested'
-  | 'source.issue_taken_in' | 'work_item.issue_closed' | 'work_item.dropped';
+  | 'source.issue_taken_in' | 'work_item.issue_closed' | 'work_item.dropped' | 'work_item.label_edited';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
 export interface IntakeContext {

@@ -1,6 +1,6 @@
 // The engine's side of review sections (issues #537, #543, design.md "Sections"). A job whose agent comes back with a
 // proposal or a research report waits on it (waiting_answer, no question), as on a question: it holds no lane, its
-// pane stays, it can be parked. Sent back, the job is re-queued with what to do next, and its next document is the
+// pane stays, it can be parked; at the human stage it parks by itself (issue #2335), and stays in its section. Sent back, the job is re-queued with what to do next, and its next document is the
 // next version. Accepted, a job that asks for a further section (research, then the proposal: REVIEW_KINDS) is
 // re-queued, told to write that next, in the same session. A job that was not asked for the item — its agent wrote it
 // because its own item asked for it within the work — is told it was accepted and, where the type goes on (research:
@@ -18,6 +18,7 @@ import { cleanupDue, type Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { createFollowOns } from './follow-ons.ts';
+import { recordUnpark } from './park.ts';
 import { afterSwitch, resolveFork } from './phase-shifts.ts';
 
 /** The job's review items, by kind, that it has. */
@@ -116,7 +117,8 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup, endJob:
     return undefined;
   };
   const requeue = (job: Job, brief: string, reason: string) => {
-    if (job.status === 'parked') { store.jobs.update(job.id, { pendingAnswer: brief }); return; }
+    // Parked by a person, it keeps the brief until it is picked up; by auto-park (issue #2335), the brief picks it up.
+    if (job.status === 'parked') { const kept = store.jobs.update(job.id, { pendingAnswer: brief }); if (kept.parked?.auto) recordUnpark(c, job.id); return; }
     store.jobs.update(job.id, { status: 'queued', pendingAnswer: brief, holdReason: undefined, waitReason: undefined });
     store.events.append({ type: 'job.requeued', jobId: job.id, data: { from: 'waiting_answer', reason } });
   };

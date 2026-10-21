@@ -2,7 +2,7 @@
 // show a job, and list the waiting jobs, each held one with why it is held (issue #874, cli-operator-queue.ts); accept, reject, cancel (issue #1460), run a job again or send its pull request back for rework (issue #724), dismiss failed jobs (issue #1123), order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts), and Tend again (issue #1010);
-// the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
+// the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject;
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
 // the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only; the infra plans (issue #2205, cli-operator-infra.ts);
@@ -27,7 +27,6 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
-import { autoParkCall } from './cli-operator-auto-park.ts';
 import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
 import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
@@ -43,7 +42,7 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra', 'intake', 'usage'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra', 'intake', 'usage'] as const;
 
 export const OPERATOR_USAGE = `  hopper job show <id>                               one job, by its id or short id: its state, and why it is held or waits (holdReason, waitReason),
                                                      or, on its own wait, what it waits on (waitsOn, waitsFor, wait)
@@ -85,9 +84,6 @@ ${REPO_USAGE}\n${USAGE_USAGE}
 ${INTAKE_USAGE}
   hopper yolo <owner/repo> on|off|default            yolo mode for one repository: the hopper merges its ready pull requests; default follows every repository's
   hopper backfill done-check                         judge again each done-check failure waiting on a person: done, PR waiting, or it stays
-  hopper auto-park                                   the auto-park timeouts: minutes a question waits on a person before its job parks by itself
-  hopper auto-park set [--minutes <n>] [--high-priority-minutes <n>]
-                                                     change them; 0 turns auto-park off, for jobs that are not high priority or for high-priority jobs
   hopper proposal list                               the open proposals, each with its paths in short
   hopper proposal paths <id>                         one proposal's newest version: its problem, its paths, the recommendation
   hopper proposal select <id> <path>... [--path-note <path>=<text>]... [--note <text>]
@@ -277,7 +273,6 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'search') return searchCall(args);
   if (command === 'windows-link') return windowsLinkCall(args);
   if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
-  if (command === 'auto-park') return autoParkCall(args);
   if (command === 'proposal') return proposalCall(args);
   if (command === 'prs') return prsCall(args);
   if (command === 'pr') return prCall(args);
@@ -319,7 +314,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|machine|vault|template|sandbox|report|search|windows-link …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|proposal|typesafe-key|artifact|master-key|lanes|machine|vault|template|sandbox|report|search|windows-link …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON; the exit code the call gives it.
  */
 export async function runOperatorAction(

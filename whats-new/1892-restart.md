@@ -1,0 +1,1 @@
+- When you take the hopper's label off an issue by hand while the hopper is stopped, the hopper now runs that issue again when it starts, and does not put the label back.

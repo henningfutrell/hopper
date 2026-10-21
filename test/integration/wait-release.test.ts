@@ -61,6 +61,8 @@ describe('a wait release (issues #2303, #2326)', () => {
     const released = await waitFor(async () => { const j = await a.job(waiter.id); return j.checkpoint?.session ? j : undefined; }, { what: 'its checkpoint' });
     expect(released.status).toBe('waiting_on');
     expect(released.waitReleased?.machineId).toBe('seat');
+    // Its pane closed, and its id may name another job's pane by now: its terminal is refused (issue #2335).
+    expect((await a.ui(`/ui/api/jobs/${waiter.id}/terminal/screen`, {}, { token: admin })).status).toBe(409);
 
     // seat takes no new job now, host does. Woken, it resumes its own session on host, from its checkpoint.
     await drain('host', false);

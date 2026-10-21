@@ -1057,7 +1057,7 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 
 ## `job.parked`
 
-Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
+Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650, #2335: `auto`, its question waited on a person a few seconds, or its proposal or research report reached the human stage; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
 
 | field | type | required |
 |---|---|---|
@@ -3552,7 +3552,7 @@ Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin change
 
 ## `auto_park.settings_changed`
 
-Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed the auto-park settings (issue #650): how many minutes a question waits on a person before its job parks by itself (`minutes`), and the same for a high-priority job (`highPriorityMinutes`); 0 turns it off. `from` and `to`.
+Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed the auto-park settings (issue #650): how many minutes a question waits on a person before its job parks by itself (`minutes`), and the same for a high-priority job (`highPriorityMinutes`); 0 turns it off. `from` and `to`. No longer written (issue #2335): a job that waits on a person parks with no setting.
 
 | field | type | required |
 |---|---|---|
@@ -5916,6 +5916,30 @@ Version 1 (`docs/schemas/work_item.person_asked.v1.json`). The one notice of a b
   "cause": "pr_closed",
   "jobId": "job-1",
   "pullRequest": "https://github.com/owner/repo/pull/14"
+}
+```
+
+## `work_item.label_edited`
+
+Version 1 (`docs/schemas/work_item.label_edited.v1.json`). A person took an end label off a work item's issue by hand on GitHub (issue #1892, design.md "The item lifecycle"): the end label its state wants (`hopper:blocked` or `hopper:pr-closed` of a blocked item, `hopper:pr-ready` or `hopper:partly-done` of an item in PR open) was on at the last discover of `source` and is gone now, with the item not moved since and no write of the hopper's own on its way. `key` is the item's source key, `jobId` its newest job, `from` the state it was in, `label` the label taken off, `means` what the edit asks for: `run_again`. The item's state stays, and it keeps the ask (`runAgainAsked`): Intake gives it no reason, so the discover runs it again; the label is not put back. The new job's `job.queued` moves it, and any move forgets the ask. A label that is not on the issue when it is first seen is never read as an edit.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `jobId` | string | no |
+| `from` | `waiting_for_approval` \| `queued` \| `working` \| `needs_you` \| `waiting_outside` \| `pr_open` \| `partly_done` \| `done` \| `failed` \| `blocked` \| `dropped` | yes |
+| `label` | string | yes |
+| `means` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/owner/repo/issues/9",
+  "jobId": "job-1",
+  "from": "blocked",
+  "label": "hopper:pr-closed",
+  "means": "run_again"
 }
 ```
 

@@ -5,7 +5,7 @@ import type { IntakeActorSettings } from '../domain/intake-origin.ts'; import ty
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { InfraPlanSettings } from '../domain/infra-plans.ts';
-import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountKey, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
+import type { AutoAnswerSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountKey, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
 import type { TokenBudgetSettings } from '../domain/token-budget.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
@@ -192,8 +192,6 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       // `holdHighPriority` (issue #679): absent in a record from before it, read as off; the build before ignores it.
       write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold, ...(settings.holdHighPriority === undefined ? {} : { holdHighPriority: settings.holdHighPriority }) }));
     },
-    getAutoPark: () => { const text = read('autoPark'); return text === undefined ? undefined : JSON.parse(text) as AutoParkSettings; },
-    setAutoPark: (settings) => write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes })),
     getTokenBudget: () => { const text = read('tokenBudget'); return text === undefined ? undefined : JSON.parse(text) as Partial<TokenBudgetSettings>; },
     setTokenBudget: (s) => write('tokenBudget', JSON.stringify({
       jobTokens: s.jobTokens, jobCostUsd: s.jobCostUsd, dayTokens: s.dayTokens, dayCostUsd: s.dayCostUsd, repoDayTokens: s.repoDayTokens, repoDayCostUsd: s.repoDayCostUsd })),

@@ -10,7 +10,7 @@ Install page, step by step: https://henningfutrell.github.io/hopper/install.html
 User guide, what it does with a job once it runs and what you can do: https://henningfutrell.github.io/hopper/guide.html (`site/guide.html`).
 
 - **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, assigned to you,
-  from a trusted origin; any other is a request you approve in Sources. No route creates a job.
+  from a trusted origin; any other is a request card you approve in Intake. No route creates a job.
 - **Everything it keeps is in its database.** Config is the plugins, rules and sign-in configs and
   the webhook subscriptions, all in that database and all edited in the UI; there is no config file.
   Secrets come from its environment.
@@ -93,7 +93,7 @@ containers, and goes away when that terminal or agent exits. Start, restart and 
 `podman compose up` by hand; it starts the stack at boot, and every minute checks the port from the host and restarts
 the stack when it does not answer. Docker needs no service: `docker compose up -d`.
 
-The container is not a machine: jobs run on attached machines ("Add machines"). No `.env`: the hopper keeps its
+The container is not a machine: jobs run on attached machines ("Add machines"). No settings file: the hopper keeps its
 settings and secrets itself, set in the UI; the master key and what compose needs are given at launch. Update: you do it, the hopper never updates a container (`docs/deploy.md` "Update": the channel is the image tag; every image carries its own `compose.yaml` and the update: one command, the update notice gives it: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:<channel>` — it asks for the master key unless it is given at launch and refuses without it, uses the compose tool that started the stack, backs up the database, puts in the image's `compose.yaml`, restarts the whole stack on the new image, never the hopper alone, and checks the image, the health and the master key; then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`). Never edit `compose.yaml`: give a setting it names at launch (`export HOPPER_BIND=0.0.0.0` for a LAN install), the rest in `compose.override.yaml`.
 Details: `docs/deploy.md` "In containers, with Podman".
 
@@ -241,6 +241,11 @@ order or reject it:
 
 <img src="docs/screenshots/queue-order.webp" width="720" alt="The Queue view: the queue gate set to review, three held jobs in the pre-sort with Accept and Reject, and the accepted jobs in the user's order.">
 
+**Needs you** lists every decision that waits on you, by kind: Intake, access requests, questions, proposals,
+research, logins, failures and more. Each row opens the page where you act on it:
+
+<img src="docs/screenshots/needs-you.webp" width="720" alt="The Needs you view: each kind of decision that waits on a person with its count, two questions, one of high priority, and two failures.">
+
 ## Add machines
 
 A **machine** runs jobs. Each has **lanes**: how many jobs it runs at once. A job goes to a machine
@@ -260,6 +265,13 @@ machine online or offline; the daemon's log says why one is offline
 (`journalctl --user -u hopper`).
 
 <img src="docs/screenshots/machines.webp" width="720" alt="The Machines view: four online machines, each with its lanes and live usage of the session and the week.">
+
+**Usage throttling.** The **Usage** view shows how much of each account's plan the machines used, and the soft and
+hard limits. Below the soft limit every lane is open; from it, each machine keeps fewer lanes; at the hard limit
+nothing new starts. The view names the window that throttles, for example `46% session`. Help: [Lanes and lane
+tuning](https://henningfutrell.github.io/hopper/help/lanes.html#usage-limits).
+
+<img src="docs/screenshots/usage.webp" width="720" alt="The Usage view: the usage limits panel at 46% session, every lane open, the last day's usage over the free, soft and hard bands, and each machine's lanes.">
 
 **Machine defaults.** A machine added in the Machines view starts with the machine defaults: its
 lanes and the executors it runs (one lane and `herdr-claude` until you change them). Change them
@@ -475,7 +487,7 @@ a real machine or a real agent. Re-run it when the UI changes:
 
 ```sh
 npm run build:ui
-npx playwright install chromium   # once
+npx playwright install chromium   # once; or SCREENSHOTS_CHROMIUM=/usr/bin/chromium for a Chromium of the system
 npm run screenshots               # about 3 minutes; SHOTS=queue,job for some
 ```
 

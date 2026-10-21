@@ -228,6 +228,13 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       return jobAct(key, repo, { op: 'give_back', act, jobId, ...(acting ? { acting } : {}), ...kept }, acting) as OutboxGiveBack;
     },
     /**
+     * A give-back moves the item (issue #1892): the label mirror's rows for `key` not sent yet were for the state it left,
+     * and sent after the give-back they would put back the label it took off. They are dropped; one being sent goes on.
+     */
+    dropMirror(key: string): void {
+      rows.update(openOf(key).filter((r) => r.act === 'mirror' && r.state === 'pending').map((r) => r.id), { state: 'sent', sentAt: now() });
+    },
+    /**
      * Sends the rows due, one batch, coalesced; answers how many were due and the repositories it wrote to. Each row
      * failed for good is told to `gaveUp`. A flush under way is joined, never doubled.
      */

@@ -69,7 +69,8 @@ describe('Won\'t do on a blocked item (issue #1891)', () => {
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:blocked'] });
     await source.discover();
     const r = await source.intakeAction!({ kind: 'wont_do', keys: [url(1)], acting: ACTING });
-    expect(r.failed[url(1)]).toMatch(/not blocked/);
+    // Intake reads the ledger (issue #1892): PR open, so Won't do is not offered, whatever the labels say.
+    expect(r.failed[url(1)]).toBe('not offered: done: its pull request waits for review');
     expect(events).toEqual([]);
     // Only the label mirror's correction of its PR open drift (issue #1933): Won't do wrote nothing.
     await source.flushOutbox!();

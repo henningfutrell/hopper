@@ -13,11 +13,18 @@ The menu puts the other pages in groups. Each group has a heading.
 
 | Group | Pages |
 |---|---|
-| Waiting on you | Intake, Access requests, Pending approvals, Questions, Proposals, Research, Logins, Failures, Parked |
-| Jobs | Jobs, Queue, Direct jobs, Pull requests, Artifacts, Decisions, Events, Your reports |
-| Infra | Infra |
-| Sources & machines | Sources, Machines, Usage, Resources |
-| Settings | Settings |
+| Waiting on you | Intake, Tagged, Access requests, Pending approvals, Questions, Proposals, Research, Logins, Failures, Parked |
+| Jobs | Search, Jobs, Queue, Direct jobs, Direct queries, Pull requests, Artifacts, Decisions, Events, Your reports |
+| Infra | Infra, Topology |
+| Sources & machines | Sources, Machines, Accounts, Usage, Resources |
+| Set up | Skills, Settings |
+
+- **Tagged** lists the open issues and pull requests that ask for your review, mention you or are assigned to you.
+- **Search** finds jobs by their words. The search box in the header opens it too.
+- **Direct queries** lists the questions that callers asked the hopper directly.
+- **Topology** shows the graph and the globe of the services in your AWS accounts and clusters.
+- **Accounts** shows who the agent tool of each machine is signed in as. Its badge counts the machines that are signed in as nobody.
+- **Skills** lists the skills that jobs get, and which skill each kind of work uses.
 
 ## Collapse a group
 
