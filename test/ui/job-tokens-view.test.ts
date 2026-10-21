@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // A job's token use on its job view (issue #2302), the panel rendered against a fake of GET /api/jobs/:id/tokens: its
-// totals and estimated cost, then one row per model. A job with no session read says so.
+// totals and estimated cost, then one row per model, then its waste signals (part 4). A job with no session read says so.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,7 @@ const VIEW: JobTokenView = {
   jobId: 'j1', total: totals, sessions: 1, machines: ['m1'], accounts: ['someone@example.com'], first: '2026-10-21T08:00:00.000Z', last: '2026-10-21T09:00:00.000Z',
   models: [{ model: 'claude-opus-5-5', ...totals, costUsd: 2.4 }, { model: 'claude-haiku-4-5', ...totals, turns: 2, costUsd: 0.1 }],
 };
+const WASTEFUL: JobTokenView = { ...VIEW, total: { ...totals, failedTests: 6 }, waste: [{ kind: 'failing_tests', why: '6 test runs failed.' }, { kind: 'resume_loop', why: 'Started 7 times: it resumed or started again many times.' }] };
 const NONE: JobTokenView = { jobId: 'j1', total: { turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0, costKnown: true }, sessions: 0, models: [], machines: [], accounts: [] };
 const job = { id: 'j1', status: 'finished' } as Job;
 
@@ -52,6 +53,18 @@ describe('a job\'s token use on its job view', () => {
     expect(models).toHaveLength(2);
     expect(models[0]).toContain('claude-opus-5-5');
     expect(models[0]).toContain('$2.40');
+  });
+
+  it('shows no waste signal for a job that has none', async () => {
+    await boot(VIEW);
+    expect(document.querySelectorAll('[data-slot="job-tokens-waste"]')).toHaveLength(0);
+  });
+
+  it('shows its failed test runs and each waste signal with why (part 4)', async () => {
+    await boot(WASTEFUL);
+    expect(text('job-tokens-total')).toContain('6 failed test runs');
+    const waste = [...document.querySelectorAll('[data-slot="job-tokens-waste"]')].map((r) => r.textContent ?? '');
+    expect(waste).toEqual(['Failing tests: 6 test runs failed.', 'Resume loop: Started 7 times: it resumed or started again many times.']);
   });
 
   it('says so when no agent session of it was read', async () => {

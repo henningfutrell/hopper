@@ -3574,6 +3574,30 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 }
 ```
 
+## `token_budget.settings_changed`
+
+Version 1 (`docs/schemas/token_budget.settings_changed.v1.json`). An admin changed the token budget (issue #2302): the most one job may spend before it is paused, in tokens (`jobTokens`: input, output, cache read and cache write) and in estimated cost (`jobCostUsd`, US dollars); 0 turns a cap off. `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "jobTokens": 0,
+    "jobCostUsd": 0
+  },
+  "to": {
+    "jobTokens": 5000000,
+    "jobCostUsd": 10
+  },
+  "by": "admin"
+}
+```
+
 ## `preemption.settings_changed`
 
 Version 1 (`docs/schemas/preemption.settings_changed.v1.json`). An admin changed the preemption settings (issue #1525): whether a job of higher priority takes the lane of a running job of lower priority (`enabled`), and how many minutes a job runs before it may be preempted (`minRunMinutes`). `from` and `to`.

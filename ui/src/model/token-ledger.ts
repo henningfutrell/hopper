@@ -1,6 +1,8 @@
 // The token ledger's words (issue #2302): token counts and an estimated cost as a person reads them, and the ledger by
-// day as the Dashboard's tokens over time stacks it (part 2). Pure.
-import type { TokenRollupRow, TokenTotals } from '@/model/wire';
+// day as the Dashboard's tokens over time stacks it (part 2); the token budget in Settings and Needs you (part 3); the waste
+// signals and tokens per merged pull request (part 4). Pure.
+import { goalOf } from './job.ts';
+import type { Job, PerMergedPullRequest, TokenBudgetSettings, TokenRollupRow, TokenTotals, TokenWasteKind } from './wire.ts';
 
 /** A token count in short: 950, 12.3k, 2.4M. */
 export function tokenCount(n: number): string {
@@ -12,9 +14,19 @@ export function tokenCount(n: number): string {
 /** An estimated cost in US dollars; `~` before it when a model in it has no known price. */
 export const usd = (t: Pick<TokenTotals, 'costUsd' | 'costKnown'>): string => `${t.costKnown ? '' : '~'}$${t.costUsd.toFixed(2)}`;
 
-/** Its counts in one line: turns, input, output, cache read and cache write. */
+/** Its counts in one line: turns, input, output, cache read and cache write; its failed test runs when it has some. */
 export const tokenLine = (t: TokenTotals): string =>
-  `${t.turns} turns · ${tokenCount(t.input)} in · ${tokenCount(t.output)} out · ${tokenCount(t.cacheRead)} cache read · ${tokenCount(t.cacheWrite)} cache write`;
+  `${t.turns} turns · ${tokenCount(t.input)} in · ${tokenCount(t.output)} out · ${tokenCount(t.cacheRead)} cache read · ${tokenCount(t.cacheWrite)} cache write`
+  + (t.failedTests ? ` · ${t.failedTests} failed test run${t.failedTests === 1 ? '' : 's'}` : '');
+
+/** Each waste signal's name. */
+export const WASTE_NAMES: Record<TokenWasteKind, string> = { no_progress: 'No progress', failing_tests: 'Failing tests', resume_loop: 'Resume loop', cache_churn: 'Cache churn' };
+
+/** Tokens per merged pull request in one line, or that none was merged. */
+export const perMergedLine = (p: PerMergedPullRequest): string =>
+  p.pullRequests > 0 && p.tokens !== undefined
+    ? `${tokenCount(Math.round(p.tokens))} tokens · $${(p.costUsd ?? 0).toFixed(2)} per merged pull request (${p.pullRequests} merged)`
+    : 'No pull request merged in this range.';
 
 /** Every token of a row: input, output, cache read and cache write. */
 export const tokensOf = (t: Pick<TokenTotals, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): number => t.input + t.output + t.cacheRead + t.cacheWrite;
@@ -58,4 +70,32 @@ export function tokenDays(groups: readonly TokenRollupRow[], days: number, today
       return { day, tokens: shown.reduce((n, p) => n + p.tokens, 0), costUsd: shown.reduce((n, p) => n + p.costUsd, 0), parts: shown };
     }),
   };
+}
+
+/** Needs you's Budgets row (issue #2302, part 3): each parked job its token budget paused, with why. */
+export const budgetPausedLines = (jobs: readonly Job[]): string[] =>
+  jobs.filter((j) => j.status === 'parked' && j.budgetPaused).map((j) => `${goalOf(j)}: ${j.budgetPaused!.why} Pick it up to let it go on.`);
+
+/** The token budget, what is on now, in one sentence. */
+export function tokenBudgetSummary(s: TokenBudgetSettings): string {
+  const tokens = s.jobTokens > 0 ? `${tokenCount(s.jobTokens)} tokens` : undefined;
+  const cost = s.jobCostUsd > 0 ? `an estimated $${s.jobCostUsd.toFixed(2)}` : undefined;
+  if (!tokens && !cost) return 'Off: no job is paused for what it spends.';
+  return tokens && cost ? `A job is paused when it used ${tokens} or ${cost}, whichever comes first.` : `A job is paused when it used ${tokens ?? cost}.`;
+}
+
+export interface TokenBudgetDraft { jobTokens: string; jobCostUsd: string }
+
+/** The change a save sends: only what differs (undefined: nothing to save), or why the draft is refused. An empty field is 0. */
+export function tokenBudgetPatch(s: TokenBudgetSettings, d: TokenBudgetDraft): { ok: true; patch: Partial<TokenBudgetSettings> | undefined } | { ok: false; error: string } {
+  const read = (raw: string, whole: boolean): number | undefined => {
+    const text = raw.trim() || '0';
+    const n = Number(text);
+    return Number.isFinite(n) && n >= 0 && (!whole || Number.isInteger(n)) ? n : undefined;
+  };
+  const jobTokens = read(d.jobTokens, true), jobCostUsd = read(d.jobCostUsd, false);
+  if (jobTokens === undefined) return { ok: false, error: 'Tokens: a whole number from 0' };
+  if (jobCostUsd === undefined) return { ok: false, error: 'Cost: a number of US dollars from 0' };
+  const patch = { ...(jobTokens === s.jobTokens ? {} : { jobTokens }), ...(jobCostUsd === s.jobCostUsd ? {} : { jobCostUsd }) };
+  return { ok: true, patch: Object.keys(patch).length > 0 ? patch : undefined };
 }

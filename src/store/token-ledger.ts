@@ -1,5 +1,5 @@
 // The token ledger (issue #2302, tenant migration 89): each model's token use in each agent session of each job, as last
-// read from the session's log. Counts and metadata only. A session read again replaces its rows.
+// read from the session's log, and its failed test runs (migration 90). Counts and metadata only. A session read again replaces its rows.
 import type { TokenLedgerEntry, TokenLedgerRepository } from '../domain/token-usage.ts';
 import type { StoreContext } from './context.ts';
 import type { Row } from './db.ts';
@@ -12,12 +12,15 @@ export const TOKEN_LEDGER_TABLE = `
     PRIMARY KEY (job_id, session, model)
   )`;
 
+/** Migration 90: each row's failed test runs (part 4). */
+export const TOKEN_LEDGER_FAILED_TESTS_COLUMN = 'ALTER TABLE job_token_use ADD COLUMN failed_tests BIGINT NOT NULL DEFAULT 0';
+
 const entry = (r: Row): TokenLedgerEntry => ({
   jobId: String(r.job_id), session: String(r.session), model: String(r.model), readAt: String(r.read_at),
   ...(r.machine_id !== null ? { machineId: String(r.machine_id) } : {}), ...(r.lane_id !== null ? { laneId: String(r.lane_id) } : {}), ...(r.account !== null ? { account: String(r.account) } : {}),
   ...(r.first_at !== null ? { first: String(r.first_at) } : {}), ...(r.last_at !== null ? { last: String(r.last_at) } : {}),
   turns: Number(r.turns), input: Number(r.input), output: Number(r.output), cacheRead: Number(r.cache_read), cacheWrite: Number(r.cache_write),
-  ...(Number(r.cache_write_1h) ? { cacheWrite1h: Number(r.cache_write_1h) } : {}),
+  ...(Number(r.cache_write_1h) ? { cacheWrite1h: Number(r.cache_write_1h) } : {}), ...(Number(r.failed_tests) ? { failedTests: Number(r.failed_tests) } : {}),
 });
 
 export function createTokenLedgerRepository(c: StoreContext): TokenLedgerRepository {
@@ -26,9 +29,9 @@ export function createTokenLedgerRepository(c: StoreContext): TokenLedgerReposit
       c.tx(() => {
         c.db.run('DELETE FROM job_token_use WHERE job_id = ? AND session = ?', jobId, session);
         for (const m of use.models) {
-          c.db.run(`INSERT INTO job_token_use (job_id, session, model, read_at, machine_id, lane_id, account, first_at, last_at, turns, input, output, cache_read, cache_write, cache_write_1h)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, jobId, session, m.model, at.readAt, at.machineId ?? null, at.laneId ?? null, at.account ?? null, use.first ?? null, use.last ?? null,
-          m.turns, m.input, m.output, m.cacheRead, m.cacheWrite, m.cacheWrite1h ?? 0);
+          c.db.run(`INSERT INTO job_token_use (job_id, session, model, read_at, machine_id, lane_id, account, first_at, last_at, turns, input, output, cache_read, cache_write, cache_write_1h, failed_tests)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, jobId, session, m.model, at.readAt, at.machineId ?? null, at.laneId ?? null, at.account ?? null, use.first ?? null, use.last ?? null,
+          m.turns, m.input, m.output, m.cacheRead, m.cacheWrite, m.cacheWrite1h ?? 0, m.failedTests ?? 0);
         }
       });
     },

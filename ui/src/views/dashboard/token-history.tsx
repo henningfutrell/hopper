@@ -1,6 +1,7 @@
 // The Dashboard's tokens over time (issue #2302, design.md "The token ledger"), beside the usage graph: the token ledger
 // by UTC day over the last 30 days, stacked by repository or account — GET /api/usage/tokens?by=day&split=…, read again
 // every five minutes. Its total is the ledger's for the same days, so the stacks reconcile with the job ledger. Counts only.
+// Under it, tokens per merged pull request over the same days and the costliest jobs flagged for waste (part 4).
 import { Coins } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { TokenDaysChart } from '@/charts/token-days';
@@ -9,14 +10,17 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePoll } from '@/hooks/use-poll';
 import { get } from '@/lib/api';
 import { TOKEN_SPLITS, type TokenSplit } from '@/model/dashboard-layout';
-import { tokenDays, tokenLine, tokensOf, usd, tokenCount } from '@/model/token-ledger';
-import type { TokenRollupRow, TokenTotals } from '@/model/wire';
+import { jobHref } from '@/model/job';
+import { perMergedLine, tokenDays, tokenLine, tokensOf, usd, tokenCount, WASTE_NAMES } from '@/model/token-ledger';
+import type { PerMergedPullRequest, TokenRollupRow, TokenTotals, TokenWasteLine } from '@/model/wire';
 
 const DAYS = 30;
 const DAY = 86_400_000;
 const SPLIT_NAMES: Record<TokenSplit, string> = { repo: 'Repository', account: 'Account' };
+/** How many jobs flagged for waste the panel lists. */
+const WASTE_SHOWN = 3;
 
-interface ByDay { total: TokenTotals; groups: TokenRollupRow[] }
+interface ByDay { total: TokenTotals; groups: TokenRollupRow[]; waste?: TokenWasteLine[]; perMerged?: PerMergedPullRequest }
 
 /** `split` is the dashboard layout's; choosing another on the panel sets it there. */
 export function TokenHistoryPanel({ split, onSplit }: { split: TokenSplit; onSplit: (s: TokenSplit) => void }) {
@@ -51,6 +55,12 @@ export function TokenHistoryPanel({ split, onSplit }: { split: TokenSplit; onSpl
               </span>
             ))}
           </div>
+          {data.perMerged && <div data-slot="token-history-per-merged" className="text-xs text-muted-foreground">{perMergedLine(data.perMerged)}</div>}
+          {(data.waste ?? []).slice(0, WASTE_SHOWN).map((w) => (
+            <div key={w.jobId} data-slot="token-history-waste" className="truncate text-xs text-warn">
+              <a href={jobHref(w.jobId)} className="hover:underline">{w.title ?? w.jobId.slice(0, 8)}</a>: {w.signals.map((s) => WASTE_NAMES[s.kind]).join(', ')}
+            </div>
+          ))}
         </div>
       )}
     </Panel>

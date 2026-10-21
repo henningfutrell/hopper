@@ -7,6 +7,7 @@ import { plansWaiting } from '../../ui/src/model/infra-plans.ts';
 import { checksProblemLines, conflictedPullRequests, gaveUpLines } from '../../ui/src/model/pull-requests.ts';
 import { accessRequestsHigh, accessRequestsWaiting, ownTemplatesWaiting, rereadsVault, runCardsOf, templateWaits } from '../../ui/src/model/vault.ts';
 import { stuckLandingLines } from '../../ui/src/model/landing-batches.ts';
+import { budgetPausedLines } from '../../ui/src/model/token-ledger.ts';
 import { yoloIndicator } from '../../ui/src/model/yolo-mode.ts';
 import type { Job, LandingBatchesView, PlanView, PullRequestCard, PullRequestsView, TemplateView, VaultView, YoloModeView } from '../../ui/src/model/wire.ts';
 
@@ -21,15 +22,15 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#failures', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#failures', '#parked', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
-    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], stuckLanding: ['o/c: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
+    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], stuckLanding: ['o/c: why'], budgetPaused: ['Shed: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
-    expect(n).toEqual({ intake: 2, access: 1, 'unknown-assets': 0, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, failures: 4, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, sorting: 3 });
-    expect(needsYouTotal(rows)).toEqual({ n: 20, high: 3 });
+    expect(n).toEqual({ intake: 2, access: 1, 'unknown-assets': 0, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, failures: 4, budgets: 1, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, sorting: 3 });
+    expect(needsYouTotal(rows)).toEqual({ n: 21, high: 3 });
   });
 
   it('a landing pass stuck on the same failure waits on a person (issue #1333): the Landing row names each repository with its error', () => {
@@ -49,6 +50,21 @@ describe('Needs you rows (issue #897)', () => {
     const row = needsYouRows(counts({ signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'] })).find((r) => r.kind === 'accounts')!;
     expect(row).toMatchObject({ n: 1, href: '#accounts', details: ['Claude on Server: signed in as nobody — sign it in from Accounts'] });
     expect(needsYouRows(counts()).find((r) => r.kind === 'accounts')!.details).toBeUndefined();
+  });
+
+  it('a job its token budget paused waits on a person (issue #2302): the Budgets row names each, with why', () => {
+    const job = (o: Partial<Job>): Job => ({ id: 'j', status: 'parked', spec: { executor: 'herdr-claude', goal: 'Paint the shed' }, ...o }) as unknown as Job;
+    const why = 'Paused: the job used 1,610 tokens, its token budget is 1,000 tokens.';
+    const lines = budgetPausedLines([
+      job({ id: 'a', budgetPaused: { at: '2026-10-21T08:00:00.000Z', tokens: 1610, costUsd: 0.1, why } }),
+      // Picked up already, or parked by a person: not the budget's.
+      job({ id: 'b', status: 'queued', budgetPaused: { at: '2026-10-21T08:00:00.000Z', tokens: 1610, costUsd: 0.1, why } }),
+      job({ id: 'c' }),
+    ]);
+    expect(lines).toEqual([`Paint the shed: ${why} Pick it up to let it go on.`]);
+    const row = needsYouRows(counts({ budgetPaused: lines })).find((r) => r.kind === 'budgets')!;
+    expect(row).toMatchObject({ n: 1, href: '#parked', details: lines });
+    expect(needsYouRows(counts()).find((r) => r.kind === 'budgets')).toMatchObject({ n: 0 });
   });
 
   it('a machine not ready waits on a person (issue #1248): the Machines row names each', () => {

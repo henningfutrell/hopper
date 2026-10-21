@@ -17,7 +17,7 @@
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'budgets', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -39,6 +39,8 @@ export interface NeedsYouCounts {
   signedOut: readonly string[];
   /** The online machines that are not ready (issue #1248), one line each, with why. */
   notReady: readonly string[];
+  /** The jobs their token budget paused (issue #2302), one line each, with why; absent: none. */
+  budgetPaused?: readonly string[];
   /** The open pull requests the hopper gave up on (issue #927), one line each, with why. */
   gaveUp: readonly string[];
   /** The checks read problems (issue #1244), one line per repository, with the fix. */
@@ -71,6 +73,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   accounts: { label: 'Accounts', href: '#accounts', what: 'machines whose agent tool is signed in as nobody: sign them in again' },
   machines: { label: 'Machines', href: '#machines', what: 'machines that are not ready and take no new job: give their jobs a dedicated user with no credentials, or a way to reach the hopper' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
+  budgets: { label: 'Budgets', href: '#parked', what: 'jobs paused because they reached their token budget: pick one up to let it go on, or cancel it' },
   'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
   checks: { label: 'Checks', href: '#pull-requests', what: 'repositories whose pull request checks the hopper may not read: give its connection the permissions' },
   landing: { label: 'Landing', href: '#settings/landing-batches', what: 'landing passes that failed the same way several times in a row: nothing moves to the tested branch until you restart the batch or fix the cause' },
@@ -87,6 +90,7 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
       return { n: unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };
     }
     if (k === 'plans') return { n: c.plans, high: c.plansHigh ?? 0, ...(c.planLines?.length ? { details: c.planLines } : {}) };
+    if (k === 'budgets') { const paused = c.budgetPaused ?? []; return { n: paused.length, high: 0, ...(paused.length ? { details: paused } : {}) }; }
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
     if (k === 'checks') return { n: c.checksUnread.length, high: 0, ...(c.checksUnread.length ? { details: c.checksUnread } : {}) };
     if (k === 'accounts') return { n: c.signedOut.length, high: 0, ...(c.signedOut.length ? { details: c.signedOut } : {}) };
