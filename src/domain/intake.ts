@@ -183,6 +183,11 @@ export interface IntakeContext {
    * not every declared part is done. It then carries no end label, and Intake takes it again for its next part.
    */
   partsLeft?(key: string): boolean;
+  /**
+   * Whether this hopper holds the label mirror's lease of the source (issue #1892): of the hoppers on one database, only
+   * its holder corrects labels and records a label edited by hand. Absent: it does (one hopper).
+   */
+  mirrorHeld?(): boolean;
 }
 
 /**

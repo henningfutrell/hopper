@@ -22302,6 +22302,37 @@ crash harness") covered the item reconciler's corrections; the mirror had no kil
 
 **Verification:** `test/crash/label-kill.test.ts`.
 
+### The label mirror on one hopper at a time (issue #1892 part 12, 2026-10-21)
+
+The issue's two-host test, for the label mirror: "Only the lease holder acts, and the other host takes over once the lease
+expires." Every hopper on one database syncs the user's sources, and each discover ran the mirror. Two hoppers could both
+see a drift before either kept its outbox rows (the check and the insert are two statements, and what the outbox sent last
+is in each process's memory), and both could record one label edit.
+
+- **The mirror lease** (`label-mirror/<source>`, a user's sweep lease, "Sweep leases: one host per sweep"). The source asks
+  it once per discover (`mirrorHeld`, `IntakeContext`; `src/users/source-context.ts`). Only its holder corrects labels and
+  records a label edit or a card's withdraw. Another hopper reads the same issues and judges Intake from the ledger, as
+  before; it writes nothing. With no lease (a hopper alone, or a test), the mirror judges.
+- **A host that does not hold it still watches** (`edits` with `judge` false, `src/sources/github/label-mirror.ts`). It
+  keeps what it saw of each issue current, so a label the holder put on or took off is no edit when it takes the lease.
+  The one exception is an issue a person edited: it keeps seeing it as before the edit. The holder records the edit and the
+  item moves, so the next discover drops it; a holder killed before it recorded the edit leaves it to this host, which
+  records it once it takes the lease, and does not put the label back.
+- **Two hosts in the crash harness** (`test/crash/label-two-hosts.test.ts`). Two hoppers sync one source at once: #7's
+  correction is queued and sent once, #9's label taken off by hand is one Run again and one new job, and only one hopper
+  logs a mirror line. The test kills that one and ends its leases: the other takes the lease, and a label then taken off
+  #7 by hand is its Run again, once.
+
+**Decisions.**
+- **A lease per source, not a database claim per row.** A unique claim on the outbox rows would stop a second correction,
+  not a second label edit, and each write of the mirror would need its own. The lease puts all of them on one host, as the
+  item reconciler's (`item-reconcile`) does.
+- **The listing stays on every host.** Intake reads it on each hopper; only the mirror's writes are leased.
+
+**Verification:** `test/sources/github-label-lease.test.ts` (a host without the lease corrects and records nothing; the
+holder's correction is no edit to the next holder; an edit made while the holder stopped recorded once by the next holder,
+and not put back), `test/crash/label-two-hosts.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

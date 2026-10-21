@@ -253,8 +253,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       // After a start, the mirror takes what the listing cache kept before this sync lists again (issue #1892).
       if (mirror && !mirrorStarted) { mirrorStarted = true; for (const r of repos) { const l = listings.listing(r); if (l) mirror.start(l.items.filter((i) => i.kind === 'issue' && i.labels.includes(config.label)), l.fetchedAt); } }
       const listed = await listing.issues(repos, config.label, d?.due === true);
+      // Of the hoppers on one database, only the holder of the mirror's lease judges (issue #1892): another writes nothing.
+      const judging = intake?.mirrorHeld?.() !== false;
       // An end label a person took off by hand is their Run again (issue #1892), found before Intake reads the ledger.
-      const edited = mirror?.edits(listed.issues);
+      const edited = mirror?.edits(listed.issues, judging);
       const found = await discoverIssues(api, config, {
         listed, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
         ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
@@ -300,7 +302,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       // An issue taken as a new job is not judged (issue #1954): its job moves the item; an end label put back keeps it out.
       const taking = new Set(items.map((i) => i.key).filter((k) => !known.has(k) || rerun.has(k)));
-      mirror?.check(found.seen.filter((i) => !taking.has(i.url)));
+      if (judging) mirror?.check(found.seen.filter((i) => !taking.has(i.url)));
       repoErrors = found.repoErrors;
       outcomes = next; approvals.listed(next);
       outbox.listed(round);
