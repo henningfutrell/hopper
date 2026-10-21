@@ -69,13 +69,13 @@ describe('where the vault mints a cluster from', () => {
 
 interface Fake { minter: CredentialMinter; assumed: string[]; described: string[] }
 
-/** A minter that assumes any role but `refuse`, and has the cluster `utility` in the accounts `has`. */
-function fakeMinter(has: string[], refuse: string[] = []): Fake {
+/** A minter that assumes any role but those of the accounts `refuse` and the roles `refuseRoles`, and has the cluster `utility` in the accounts `has`. */
+function fakeMinter(has: string[], refuse: string[] = [], refuseRoles: string[] = []): Fake {
   const fake: Fake = { assumed: [], described: [], minter: undefined as unknown as CredentialMinter };
   fake.minter = {
     async awsSession(_c, r) {
       fake.assumed.push(r.roleArn);
-      if (refuse.some((a) => r.roleArn.includes(`::${a}:`))) throw new Error(`STS refused AssumeRole on ${r.roleArn}: AccessDenied`);
+      if (refuse.some((a) => r.roleArn.includes(`::${a}:`)) || refuseRoles.some((n) => r.roleArn.endsWith(`:role/${n}`))) throw new Error(`STS refused AssumeRole on ${r.roleArn}: AccessDenied`);
       return { kind: 'aws', AccessKeyId: `ASIA-${r.roleArn}`, SecretAccessKey: 's', SessionToken: 't', Expiration: '2030-01-01T00:15:00Z' };
     },
     async awsRegions(_session, r) { return [r.region]; },
@@ -131,6 +131,17 @@ describe('a mint for a discovered cluster', () => {
   it('mints nothing when no account has the cluster, and says where it looked', async () => {
     const made = await fromHere(fakeMinter([], [PROD]))(discovery, clusterTarget('utility'), 'job-1');
     expect(made).toEqual({ refused: expect.stringMatching(/found it in none of the accounts it mints for \(111111111111 in eu-west-1: none; 222222222222 in us-east-2: STS refused AssumeRole/) });
+  });
+
+  it('says what to change when STS refuses the observe role of the account that has the cluster (issue #2340)', async () => {
+    const f = fakeMinter([PROD], [], ['hopper-observe']);
+    const observe = { ...discovery, role: 'hopper-observe' };
+    expect(await fromHere(f)(observe, clusterTarget('utility'), 'job-1')).toEqual({ refused: expect.stringMatching(new RegExp([
+      `STS refused AssumeRole on arn:aws:iam::${PROD}:role/hopper-observe: AccessDenied\\.`,
+      `The identity of the minting credential MINTER_PROD needs sts:AssumeRole on arn:aws:iam::${PROD}:role/hopper-observe in its own policy,`,
+      'and that role\'s trust policy must let it assume the role \\(docs/deploy\\.md "The observe role"\\)',
+    ].join(' '))) });
+    expect(f.assumed).toContain(`arn:aws:iam::${PROD}:role/hopper-observe`);
   });
 
   it('picks no account of several that have the cluster', async () => {
