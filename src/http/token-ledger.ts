@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { DomainEvent } from '../domain/types.ts';
 import { jobTokenView, sumTokenUse, TOKEN_GROUPS, tokenRollup, type JobTokenFacts, type JobTokenView, type TokenRollupRow, type TokenTotals } from '../domain/token-usage.ts';
-import { perMergedPullRequest, tokenWaste, type PerMergedPullRequest, type TokenWaste } from '../domain/token-waste.ts';
+import { perMergedPullRequest, tokenWaste, type PerMergedPullRequest, type TokenWaste, type TokenWasteLine } from '../domain/token-waste.ts';
 import type { UserStore } from '../domain/ports.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { Operation } from './openapi-operation.ts';
@@ -34,9 +34,6 @@ export const TOKEN_LEDGER_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/usage/tokens', tag: 'Machines and usage', summary: 'The token ledger: token use and cost by job, repository, machine, lane, account, model or day', description: 'The request\'s user\'s token ledger (issue #2302) summed per group, the costliest first. `by`: `job`, `issue` (`owner/name#N`), `repo`, `machine`, `lane`, `account` (who the machine\'s Claude was signed in as), `model` or `day` (the UTC day of a session\'s last counted message); default `repo`. A group the ledger cannot name is `(none)`. `split` (one of the same groups): each group also has `parts`, its rows summed per that second group, which sum to it — `by=day&split=repo` or `split=account` is the Dashboard\'s tokens over time, stacked. Filters: `job` (one job\'s id), `repo` (`owner/name`), `since` (a date or a time: sessions whose last counted message is at or after it). `total`: every row the filters keep; each group\'s `jobs`: how many jobs it holds. `top`: the jobs that cost most, at most ten, with their title and repository. `waste`: the jobs with a waste signal, the costliest first, at most twenty, each with its `signals` (as on `GET /api/jobs/:id/tokens`). `perMerged`: the efficiency number — `pullRequests` merged in the range (from `since`, else from the ledger\'s first message; of the `job` or `repo` filter), and every token and the estimated cost divided by them (`tokens`, `costUsd`; absent when none was merged). Counts only. 400: a bad query.', query: tokenLedgerQuery, returns: '`TokenLedgerRollup` `{ by, total, groups: TokenRollupRow[] (with `parts` when split), top: (TokenTotals & { jobId, title?, repo? })[], waste: TokenWasteLine[], perMerged: { pullRequests, tokens?, costUsd? } }`', errors: [400] },
   ...TOKEN_BUDGET_OPERATIONS,
 ];
-
-/** A job the rollup flags (part 4): its waste signals, its totals, its title and repository. */
-export type TokenWasteLine = TokenTotals & { jobId: string; title?: string; repo?: string; signals: TokenWaste[] };
 
 export interface TokenLedgerRollup {
   by: string; total: TokenTotals; groups: TokenRollupRow[]; top: (TokenTotals & { jobId: string; title?: string; repo?: string })[];

@@ -26,6 +26,9 @@ export interface TokenWaste { kind: TokenWasteKind; why: string }
 /** What a job did besides spend: its pushes through the hopper, the commits of its last checkpoint, its claims. */
 export interface JobProgressFacts { pushes: number; commits: number; attempts: number }
 
+/** A job the rollup flags (`GET /api/usage/tokens` `waste`): its waste signals, its totals, its title and repository. */
+export type TokenWasteLine = TokenTotals & { jobId: string; title?: string; repo?: string; signals: TokenWaste[] };
+
 const count = (n: number): string => Math.round(n).toLocaleString('en-US');
 
 /** The waste signals of a job's token use, in the order of `WASTE_KINDS`; none for a job that makes progress. */
