@@ -2,7 +2,7 @@
 // state, and a drift is what a discover saw against them.
 import { describe, expect, it } from 'vitest';
 import { HANDOFF_WAIT } from '../../src/domain/work-items.ts';
-import { blockLabels, labelDrift, labelsFor, labelTakenOff } from '../../src/sources/github/item-labels.ts';
+import { blockLabels, labelDrift, labelPutOn, labelsFor, labelTakenOff } from '../../src/sources/github/item-labels.ts';
 
 describe('labelsFor: the end labels a state wants (issue #1891)', () => {
   it('a job at work: no end label', () => {
@@ -50,8 +50,14 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff({ state: 'needs_you', waitingOn: 'a question' }, ['hopper', 'hopper:pr-ready'], ['hopper'])).toBeUndefined();
   });
 
+  it('a request card (issue #1892): no end label, and none to take off', () => {
+    expect(labelsFor({ state: 'waiting_for_approval' })).toEqual({ allowed: [] });
+    expect(labelDrift({ state: 'waiting_for_approval' }, ['hopper', 'hopper:done'])).toEqual({ remove: ['hopper:done'], add: [] });
+    expect(labelTakenOff({ state: 'waiting_for_approval' }, ['hopper', 'hopper:done'], ['hopper'])).toBeUndefined();
+  });
+
   it('the other states are not judged', () => {
-    for (const state of ['waiting_for_approval', 'needs_you', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(labelsFor({ state })).toBeUndefined();
+    for (const state of ['needs_you', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(labelsFor({ state })).toBeUndefined();
   });
 });
 
@@ -109,5 +115,17 @@ describe('labelTakenOff: an end label a person took off by hand (issue #1892)', 
     expect(labelTakenOff({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:blocked'], ['hopper', 'hopper:blocked'])).toBeUndefined();
     expect(labelTakenOff({ state: 'working' }, ['hopper', 'hopper:done'], ['hopper'])).toBeUndefined();
     expect(labelTakenOff({ state: 'failed' }, ['hopper', 'hopper:failed'], ['hopper'])).toBeUndefined();
+  });
+});
+
+describe('labelPutOn: an end label a person put on a request card by hand (issue #1892)', () => {
+  it('a card: the end label not seen before and on now', () => {
+    expect(labelPutOn({ state: 'waiting_for_approval' }, ['hopper'], ['hopper', 'hopper:rejected'])).toBe('hopper:rejected');
+  });
+
+  it('a label seen before, a label that is no end label, or any other state: no edit', () => {
+    expect(labelPutOn({ state: 'waiting_for_approval' }, ['hopper', 'hopper:done'], ['hopper', 'hopper:done'])).toBeUndefined();
+    expect(labelPutOn({ state: 'waiting_for_approval' }, ['hopper'], ['hopper', 'hopper:high'])).toBeUndefined();
+    expect(labelPutOn({ state: 'queued' }, ['hopper'], ['hopper', 'hopper:done'])).toBeUndefined();
   });
 });
