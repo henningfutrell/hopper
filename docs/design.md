@@ -22078,11 +22078,17 @@ on a person in Failures (`waitingOn` is `HANDOFF_WAIT`). Its job failed, so its 
   `from: needs_you`. Intake takes the item again, as it did before when the labels decided; the event now records the
   person's act. The hopper's own label change at a resolution in Needs a person is no label edit: the resolution moves the
   item first, and its outbox row is held until it is sent.
+- **Not in its first moments.** A hand-off that moved within the reconciler's grace (`RECONCILE_GRACE_MS`) is not judged
+  by Intake yet (`handoffSettling`): the mirror and the label edit check skip it then, so a `hopper:failed` taken off in
+  that time would not be seen as a Run again, and the ledger would keep the item out. Its labels decide until the grace
+  ends, as before part 8.
 
 **Left to the labels:** a done item with no whole merge, dropped.
 
 **Verification:** `test/sources/github-label-needs-you.test.ts` (a hand-off whose failure was reported gets `hopper:failed`
-and the failed reason, and the label taken off by hand is one Run again; one not reported is not judged),
+and the failed reason, and the label taken off by hand is one Run again; one not reported, or reported moments ago, is not
+judged), `test/integration/github.test.ts` and `test/integration/item-snapshot.test.ts` (a failed issue's `hopper:failed`
+taken off at once runs it again),
 `test/sources/github-item-labels.test.ts` (`labelsFor` of a hand-off).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)

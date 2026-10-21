@@ -44,7 +44,7 @@ import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, u
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
-import { createLabelMirror } from './label-mirror.ts';
+import { createLabelMirror } from './label-mirror.ts'; import { handoffSettling } from './item-labels.ts';
 import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import { priorityOf, readProjects } from './priority.ts';
@@ -258,7 +258,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const found = await discoverIssues(api, config, {
         listed, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
         ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
-        ...(workItem ? { item: workItem, part: (key: string) => intake?.partOpen?.(key) ?? false, failureReported: (key: string) => intake?.failureReported?.(key) ?? false, partsLeft: (key: string) => intake?.partsLeft?.(key) ?? false, ...(edited ? { edited } : {}) } : {}),
+        ...(workItem ? { item: workItem, part: (key: string) => intake?.partOpen?.(key) ?? false, failureReported: (key: string) => (intake?.failureReported?.(key) ?? false) && !handoffSettling(workItem(key), o.clock.now().getTime()), partsLeft: (key: string) => intake?.partsLeft?.(key) ?? false, ...(edited ? { edited } : {}) } : {}),
       });
       // The new listing is built apart and kept at the end, in one step (issue #1019): until then the intake is the last
       // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list. A merge

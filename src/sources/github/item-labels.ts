@@ -16,7 +16,7 @@
 // approval) carries none: it has no job yet, and no report wrote one. An end label a person puts on a card by hand is their
 // withdraw of it (`labelPutOn`), never read back as state. Every other state is not judged.
 // Pure: no I/O, no clock.
-import type { BlockedCause } from '../../domain/item-lifecycle.ts';
+import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
 import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
 import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 
@@ -51,6 +51,14 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     default: return undefined;
   }
 }
+
+/**
+ * Whether `item` is a hand-off that moved within the reconciler's grace before `now` (issue #1892): the label mirror and
+ * the label edit check do not judge it yet, so Intake does not read the ledger for it either; its labels decide. A person
+ * who takes `hopper:failed` off it in that time gets a Run again, as before the hand-off was judged.
+ */
+export const handoffSettling = (item: Pick<WorkItem, 'state' | 'waitingOn' | 'eventAt'> | undefined, now: number): boolean =>
+  item?.state === 'needs_you' && item.waitingOn === HANDOFF_WAIT && Date.parse(item.eventAt) > now - RECONCILE_GRACE_MS;
 
 /**
  * The label change of a block the item reconciler makes (part 8): the end labels the state it leaves may have put on
