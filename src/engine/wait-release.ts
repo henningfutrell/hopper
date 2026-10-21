@@ -6,8 +6,8 @@
 // its wait check or a person still ends it. With that checkpoint kept (`waitReleased.checkpointAt`), its wake queues it to
 // resume on any machine with room (src/engine/wait.ts); else its claim resumes its agent session in a new pane on its own
 // machine. Every wait is released but one on its own command: a build or a test run of the job runs in its pane, and ending
-// the pane would end it. An outside event the hopper watches nothing of (once a background poll in the pane) has a recheck
-// (issue #2335): the hopper wakes the job at a time to look again.
+// the pane would end it. An outside event the hopper watches nothing of (once a background poll in the pane) is released too:
+// a person ends it, or the check-in the job named rechecks it (issues #2335, #2338).
 import type { Decision, Job, JobId, WaitReleasePlan, WaitSession } from '../domain/types.ts';
 import { conditionOf } from '../domain/wait-checks.ts';
 import type { EngineContext } from './context.ts';

@@ -3,8 +3,8 @@
 // the text names it with an owner too, issue #2066; `issue N` in its own repository, a link), a workflow run (`<repo> run N`,
 // `workflow run N`, a link). At each sync of the job's source each one is read (`JobSource.endedWatched`); once every one a
 // wait names ended — closed, merged, the run completed —, the job wakes (`job.waited_items_ended`), though it ended before
-// the watch began; but not an outside wait for one that ended before the wait began (`endedBeforeWait`, issue #2219). A wait the hopper watches no way, and only a background poll in its pane can end, is the pane's
-// (`paneCarriesWait`): it wakes when that pane is lost. Pure.
+// the watch began; but not an outside wait for one that ended before the wait began (`endedBeforeWait`, issue #2219). A wait on the job's own command is the pane's
+// (`paneCarriesWait`): it wakes when that pane is lost. An outside wait the hopper watches no way is not (issue #2338). Pure.
 import type { Job } from './types.ts';
 
 /** A thing a wait names that the hopper reads: an issue or a pull request (one GitHub number), or a workflow run. */
@@ -115,12 +115,10 @@ export const endedNote = (ended: Pick<WatchedEnd, 'url' | 'state'>[]): string =>
     : /\/actions\/runs\//.test(e.url) ? `${e.url} completed (${e.state})` : `${e.url} was ${e.state}`)).join('; ');
 
 /**
- * A wait only its pane can end (issue #1508): on its own command, or on an outside event the hopper watches nothing of — a
- * background poll the job started in its pane —, or a wait from before issue #1245. Lost with its pane, it never ends.
+ * A wait only its pane can end (issue #1508): on its own command. Lost with its pane, it never ends. An outside event the
+ * hopper watches nothing of is no longer the pane's (issue #2338): a person ends it, or the check-in or time the job named.
  */
 export function paneCarriesWait(job: WaitingJob): boolean {
   if (job.status !== 'waiting_on' || !job.wait) return false;
-  const kind = job.wait.on?.kind;
-  if (job.wait.ownCommand || kind === 'own_command') return true;
-  return (kind === undefined || kind === 'outside') && watchedOf(job).length === 0;
+  return Boolean(job.wait.ownCommand) || job.wait.on?.kind === 'own_command';
 }

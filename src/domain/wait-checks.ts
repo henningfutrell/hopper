@@ -6,8 +6,9 @@
 // the job names its next check-in, or a time to wake it at, on a `check:` line after HOPPER_WAITING (`checkAskOf`), and a
 // wait on a pull request's checks is tested on its checks (`checksOutcome`). Part 3: a wait on a pull request's review is
 // tested on its reviews (`reviewOutcome`). Issue #2335: a wait on an outside event the hopper watches nothing of — once a
-// background poll in the job's pane — gets a recheck: at a time, the hopper wakes the job to look again (`recheckOutcome`),
-// so its agent can end while it waits. Pure.
+// background poll in the job's pane — gets a recheck when the job named a check-in: at it, the hopper wakes the job to look
+// again (`recheckOutcome`), so its agent can end while it waits. Issue #2338: with no check-in, nothing wakes it but a
+// person (end-wait) or a time it named. Pure.
 import type { ChecksState } from './pull-requests.ts';
 import type { Job, JobWait } from './types.ts';
 import { waitOnLabel } from './wait-on.ts';
@@ -60,9 +61,6 @@ export const DEADLINE_MS = 24 * 3600_000;
 export const COMMAND_DEADLINE_MS = 4 * 3600_000;
 export const OVERDUE_EVERY_MS = 3600_000;
 
-/** When the hopper wakes a job to look again at an outside event it watches nothing of, after its wait began (issue #2335). */
-export const RECHECK_MS = MAX_EVERY_MS;
-
 /** The latest time a job may name to be woken at, after its wait began. */
 export const MAX_WAKE_MS = 7 * 24 * 3600_000;
 
@@ -97,8 +95,9 @@ const askOf = (w: Pick<JobWait, 'checkLine' | 'since'> | undefined): CheckAsk | 
 
 /**
  * What the hopper can test of `job`'s wait. A wait it cannot test, with a time the job named: that time. An outside event it
- * watches nothing of (or a wait with nothing recorded), with no time: a recheck at the check-in the job named, else at
- * `RECHECK_MS` (issue #2335). An approval, a grant or a plan stays `none`: the event that settles it wakes the job.
+ * watches nothing of (or a wait with nothing recorded), with a check-in the job named: a recheck at it (issue #2335). Else
+ * `none`: an approval, a grant or a plan is woken by the event that settles it, and an outside event by a person who ends
+ * the wait (issue #2338), so the job holds no agent and is not woken to look again and again.
  */
 export function conditionOf(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>): WaitCondition {
   const c = baseCondition(job);
@@ -106,8 +105,8 @@ export function conditionOf(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>)
   const ask = askOf(job.wait);
   if (ask && 'at' in ask) return { kind: 'time_passed', at: ask.at };
   const on = job.wait?.on;
-  if (on && on.kind !== 'outside') return c;
-  return { kind: 'recheck', at: iso(Date.parse(job.wait!.since) + (ask?.inMs ?? RECHECK_MS)) };
+  if ((on && on.kind !== 'outside') || !ask) return c;
+  return { kind: 'recheck', at: iso(Date.parse(job.wait!.since) + ask.inMs) };
 }
 
 function baseCondition(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>): WaitCondition {

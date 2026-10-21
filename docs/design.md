@@ -13166,6 +13166,44 @@ ends it at its time and the job is told to look again), `test/ui/board.test.ts`,
 its recheck it resumes on the other machine with the same session, told to look again), `test/integration/auto-park.test.ts`
 (a fork's parent parks at the fork and its pane closes), `test/integration/phase-shifts.test.ts`, `test/ui/phase-shifts.test.ts`.
 
+### An outside wait with no check stays parked until a person ends it (issue #2338, 2026-10-21)
+
+Follow-up to issue #2326 and part 2 of issue #2335. Waits on an outside event the hopper watches nothing of —
+`outside: gated: <what>`, `outside: not managed: <what>`, `outside: <what>` (reason not given), or a wait with nothing
+recorded — still kept a live agent: `paneCarriesWait` was true for them, so the pane was their only watch, and a lost pane
+woke them. An agent ended by hand resumed a minute later in a new, larger agent that waited again, which burned tokens.
+Part 2 of issue #2335 released them, but its 30-minute recheck woke the agent again and again for an event only a person
+settles. The owner's scope: such a job ends with no agent, no pane and no lane; it stays parked until End the wait (or an
+item or a time it named); a lost pane does not wake it; after End the wait it resumes its own session on any eligible
+machine.
+
+- **No recheck unless the job asks.** `conditionOf` (`src/domain/wait-checks.ts`) gives such a wait `recheck { at }` only
+  when the job named a check-in (`check: in <time>`); a time it named (`check: after|at`) stays `time_passed`, and items it
+  names stay `items_ended`. Else its condition is `none`: the wait check wakes nothing, and past its deadline it is overdue
+  once, so a person is told. `RECHECK_MS` is gone.
+- **The pane carries only its own command.** `paneCarriesWait` (`src/domain/watched-items.ts`) is true only for a wait on
+  the job's own command. A lost pane of an outside wait in the seconds before its release is marked stranded (issue #1779),
+  never ended: a person or what it names wakes it.
+- **Released as every other wait.** Its condition is not `command_exited`, so `waitSessionsOf` releases it 5 seconds after it
+  began (issue #2326): its pane and agent end, it holds no lane, its checkpoint is marked, and its wake resumes it on any
+  machine.
+- **The wait rule** (`WAIT_LINE`) says that for an outside event the hopper cannot see, only a person who ends the wait, or
+  the time its `check:` line names, wakes the job, so a job that waits on an event that ends by itself names a `check:` line.
+- **Persisted state.** No schema change. A wait stored with a `recheck` condition keeps it until its check ends it.
+
+**Decisions:**
+- **Every outside wait that names nothing, not only gated ones.** The issue names `outside (gated)` and `outside (reason not
+  given)`; the owner's scope says every outside wait with no check. `not managed` is a person's act too.
+- **A check-in the job named keeps the recheck.** The issue asks to encourage jobs to name an item or a time so a check can
+  watch them; the wait rule says so, and a job that names `check: in <time>` is woken to look again.
+
+Verification: `test/domain/wait-checks.test.ts` (condition `none` for gated, not managed, reason not given and nothing
+recorded; a recheck only at a check-in), `test/domain/watched-items.test.ts` (`paneCarriesWait` only for its own command),
+`test/engine/wait-sessions.test.ts` (gated and not managed waits released), `test/engine/wait-checks.test.ts`,
+`test/integration/job-wait.test.ts` (an outside wait's lost pane does not wake it; End the wait does),
+`test/integration/wait-release.test.ts` (two machines over the fake herdr: a gated wait has its pane closed, no lane, its
+checkpoint marked and condition `none`; after End the wait it resumes on the other machine with the same session).
+
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
 **Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
