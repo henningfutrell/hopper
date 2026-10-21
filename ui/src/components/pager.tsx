@@ -1,5 +1,5 @@
 // Paging and modes for a long page (issue #2353): a list past one page shows a page of it, with Back and More and where
-// it is ("1–40 of 250"); a page that shows cards also has a one-line mode. Which page is shown is not kept: a reload
+// it is ("1–30 of 250"); a page that shows cards also has a one-line mode. Which page is shown is not kept: a reload
 // starts at the first. The mode is a page choice (hooks/use-page-pref.ts), kept per browser.
 import { ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';

@@ -127,7 +127,7 @@ function Row({ c }: { c: PullRequestCard }) {
   const now = useNow();
   const age = c.openedAt ?? c.since;
   return (
-    <li data-pull-request={c.jobId} data-slot="pr-row" className="flex h-9 min-w-0 items-center gap-3 px-4 text-xs text-muted-foreground">
+    <li data-pull-request={c.jobId} data-slot="pr-row" className="flex h-8 min-w-0 items-center gap-3 px-4 text-xs text-muted-foreground">
       {c.pullRequest
         ? <GhLink url={c.pullRequest.url} className="shrink-0 text-sm font-medium text-foreground">#{c.pullRequest.number}</GhLink>
         : <span className="shrink-0">not found yet</span>}
@@ -258,7 +258,9 @@ export function PullRequests() {
   if (!view) return <Panel title="Pull requests" icon={GitPullRequest}><Empty>loading</Empty></Panel>;
   return (
     <div className="space-y-3">
-      <Panel title="Pull requests" icon={GitPullRequest} sticky action={<ModeToggle slot="pr-mode" value={mode} choices={MODES} onPick={setMode} />}>
+      {/* Sticky as a whole: a header sticks only inside its own card, and this card is short. */}
+      <div data-slot="pr-summary" className="sticky top-14 z-20">
+      <Panel title="Pull requests" icon={GitPullRequest} action={<ModeToggle slot="pr-mode" value={mode} choices={MODES} onPick={setMode} />}>
         <div className="space-y-1 text-sm">
           <p data-slot="pr-yolo-line">{yoloLine(view)}</p>
           <p data-slot="pr-waiting-line" className="text-muted-foreground">{waitingLine(view)}</p>
@@ -267,6 +269,7 @@ export function PullRequests() {
           {!hasCards(view) && <p data-slot="pr-empty" className="text-muted-foreground">No pull request waits.</p>}
         </div>
       </Panel>
+      </div>
       {view.landing && view.landing.length > 0 && <Landing cards={view.landing} />}
       {view.untracked && view.untracked.length > 0 && <Untracked prs={view.untracked} reload={reload} />}
       {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())}

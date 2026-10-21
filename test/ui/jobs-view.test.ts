@@ -4,7 +4,7 @@
 // blocks the root marked, a node's details on select. The list mode: a row per job with its stage, issue
 // (owner/repo#number), lane, task count, pull request and last event; a partly done job names the pull request it waits
 // on. Counts per stage; filters by stage and by repository; a stage change arrives live, with no reload; 200 jobs render.
-// Issue #2353 (jobs-long-page.test.ts): a row is one line, 40 to a page.
+// Issue #2353 (jobs-long-page.test.ts): a row is one line, 30 to a page.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -86,7 +86,7 @@ async function boot(mode: 'graph' | 'list' = 'list') {
   await vi.waitFor(() => expect(document.querySelector('[data-slot="jobs-mode-list"]')).not.toBeNull());
   if (mode === 'list') {
     await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-list"]')!);
-    await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 40)));
+    await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 30)));
   }
 }
 
@@ -166,8 +166,8 @@ describe('the Jobs view (issue #434)', () => {
   });
 
   it('a stage change reaches its row live, with no reload', async () => {
-    // One page of jobs (40 to a page): the row stays in view whatever its new place.
-    jobs = Array.from({ length: 40 }, (_, n) => pointed(n, STATUSES[n % STATUSES.length]!));
+    // One page of jobs (30 to a page): the row stays in view whatever its new place.
+    jobs = Array.from({ length: 30 }, (_, n) => pointed(n, STATUSES[n % STATUSES.length]!));
     await boot();
     const id = 'job-0';
     const n = 0;
@@ -177,7 +177,7 @@ describe('the Jobs view (issue #434)', () => {
     await vi.waitFor(() => expect(card(id).dataset.stage).toBe('running'));
     expect(slot(card(id), 'row-last-event')).toContain('job.started');
     expect(slot(card(id), 'row-lane')).toBe(`box (m1) · lane-${n}`);
-    expect(cards()).toHaveLength(40);
+    expect(cards()).toHaveLength(30);
   });
 
   it('opens in the graph mode: a tree per root, its nodes, what blocks the root, and a node\'s details on select', async () => {

@@ -43,7 +43,7 @@ export const JobRow = memo(function JobRow({ node, lane, last, since }: RowProps
   const partly = node.partlyDone;
   return (
     <li data-slot="job-row" data-job-id={node.jobId} data-stage={node.stage} data-status={node.status}
-      className="flex h-9 min-w-0 items-center gap-3 px-4 text-xs text-muted-foreground hover:bg-muted/30">
+      className="flex h-8 min-w-0 items-center gap-3 px-4 text-xs text-muted-foreground hover:bg-muted/30">
       <a href={jobHref(node.jobId!)} className="min-w-0 flex-1 truncate text-sm font-medium text-foreground underline-offset-4 hover:underline" title={`${node.label}\njob ${node.jobId}`}>{node.label}</a>
       {node.tasks && <span data-slot="row-tasks" className="num shrink-0 font-mono" title="tasks done of its task list">{tasksText(node)}</span>}
       <span data-slot="row-stage" className="shrink-0"><StageBadge stage={node.stage} text={node.stageText} /></span>

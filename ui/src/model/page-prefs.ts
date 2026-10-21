@@ -32,8 +32,8 @@ export const prefOf = <T extends string>(prefs: PagePrefs, key: string, fallback
 };
 
 /** How many items a page shows: one-line rows, and cards. */
-export const ROWS_PER_PAGE = 40;
-export const CARDS_PER_PAGE = 10;
+export const ROWS_PER_PAGE = 30;
+export const CARDS_PER_PAGE = 6;
 
 export interface Page<T> { shown: T[]; page: number; pages: number; from: number; to: number; total: number }
 

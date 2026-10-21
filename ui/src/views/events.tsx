@@ -1,5 +1,5 @@
 // The event stream, live, filterable by type or subject, as a log in a code block (issue #1169): one line per event, its
-// seq, time, type and subject; an event about a job links to its job view. A long page (issue #2353): 40 lines to a page,
+// seq, time, type and subject; an event about a job links to its job view. A long page (issue #2353): 30 lines to a page,
 // newest first, and the header with the filter stays in view; Copy takes every event the filter shows.
 import { ListTree } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';

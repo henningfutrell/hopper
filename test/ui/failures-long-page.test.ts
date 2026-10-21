@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The Failures view as a long page (issue #2353): the counts and Cards or Rows stay in view; in Rows a failure is one
-// line, its summary out; Needs a person, Recent failures and Ended page 10 cards (40 in Rows) to a page with no
+// line, its summary out; Needs a person, Recent failures and Ended page 6 cards (30 in Rows) to a page with no
 // scroll box of their own, and fold; the mode and the folds are kept over a reload.
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,24 +30,24 @@ describe('the Failures view as a long page (issue #2353)', () => {
     expect(bar.querySelector('[data-slot="failures-mode-rows"]')).not.toBeNull();
   });
 
-  it('pages 100 recent failures: 10 cards, or 40 one-line rows in Rows; no scroll box of its own', async () => {
+  it('pages 100 recent failures: 6 cards, or 30 one-line rows in Rows; no scroll box of its own', async () => {
     await boot('#failures', { failures: view({ recent }) });
-    expect(inSection('open-failures', '[data-failure]')).toHaveLength(10);
+    expect(inSection('open-failures', '[data-failure]')).toHaveLength(6);
     expect(document.querySelector('[data-section="open-failures"] [data-list-box]')).toBeNull();
-    expect(inSection('open-failures', '[data-slot="pager-range"]')[0]?.textContent).toBe('1–10 of 100');
+    expect(inSection('open-failures', '[data-slot="pager-range"]')[0]?.textContent).toBe('1–6 of 100');
     await click(document.querySelector('[data-slot="failures-mode-rows"]')!);
     const rows = inSection('open-failures', '[data-failure]');
-    expect(rows).toHaveLength(40);
+    expect(rows).toHaveLength(30);
     expect(rows[0]!.hasAttribute('data-row')).toBe(true);
     expect(rows[0]!.textContent).not.toContain('Held: Disk full on desk');
   });
 
-  it('pages the open hand-offs 10 to a page', async () => {
+  it('pages the open hand-offs 6 to a page', async () => {
     const handoffs = Array.from({ length: 12 }, (_, i) => handoff({ id: `h${i}`, jobId: `k${i}` }));
     await boot('#failures', { failures: view({ handoffs }) });
-    expect(inSection('needs-a-person', '[data-handoff]')).toHaveLength(10);
+    expect(inSection('needs-a-person', '[data-handoff]')).toHaveLength(6);
     await click(document.querySelector('[data-section="needs-a-person"] [data-slot="pager-more"]')!);
-    expect(inSection('needs-a-person', '[data-handoff]')).toHaveLength(2);
+    expect(inSection('needs-a-person', '[data-handoff]')).toHaveLength(6);
   });
 
   it('keeps the mode and a folded section over a reload', async () => {

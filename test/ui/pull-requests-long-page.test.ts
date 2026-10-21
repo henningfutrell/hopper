@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The Pull requests view as a long page (issue #2353): Cards or Rows, a row one line; a repository group folds; a group
-// past one page pages (10 cards or 40 rows to a page); the header with the mode stays in view; the mode and a fold are kept
+// past one page pages (6 cards or 30 rows to a page); the header with the mode stays in view; the mode and a fold are kept
 // over a reload.
 import { act } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -17,15 +17,15 @@ const shown = () => document.querySelectorAll('[data-repo="owner/a"] [data-pull-
 const range = () => text('[data-repo="owner/a"] [data-slot="pager-range"]');
 
 describe('Pull requests view: a long page (issue #2353)', () => {
-  it('pages 100 cards 10 to a page, and 40 rows to a page in Rows', async () => {
+  it('pages 100 cards 6 to a page, and 30 rows to a page in Rows', async () => {
     await boot(many(100));
-    expect(shown()).toBe(10);
-    expect(range()).toBe('1–10 of 100');
+    expect(shown()).toBe(6);
+    expect(range()).toBe('1–6 of 100');
     await click(document.querySelector('[data-repo="owner/a"] [data-slot="pager-more"]')!);
-    expect(range()).toBe('11–20 of 100');
+    expect(range()).toBe('7–12 of 100');
     await click(document.querySelector('[data-slot="pr-mode-rows"]')!);
-    expect(document.querySelectorAll('[data-slot="pr-row"]')).toHaveLength(40);
-    expect(range()).toBe('1–40 of 100');
+    expect(document.querySelectorAll('[data-slot="pr-row"]')).toHaveLength(30);
+    expect(range()).toBe('1–30 of 100');
   });
 
   it('a row is one line: number, what it closes, state, checks, conflicts, what it waits on; no acts or diff', async () => {
@@ -41,7 +41,7 @@ describe('Pull requests view: a long page (issue #2353)', () => {
 
   it('keeps the header with the mode in view', async () => {
     await boot(fixture);
-    const header = document.querySelector('[data-slot="panel-header"][data-sticky]')!;
+    const header = document.querySelector('[data-slot="pr-summary"]')!;
     expect(header.className).toContain('sticky');
     expect(header.querySelector('[data-slot="pr-mode-cards"]')).not.toBeNull();
   });

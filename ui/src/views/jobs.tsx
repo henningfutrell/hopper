@@ -8,8 +8,8 @@
 //   edges to it are drawn bold. A settled tree starts folded. Select a node to read its details.
 // - List: one line per job (job-row.tsx).
 // A row and a node render again only when what they show changes, so the view stays quick with hundreds of jobs. On a
-// long page (issue #2353): the header, its filters and the stage counts stay in view; the list shows 40 rows to a page and
-// the graph 20 trees; the mode and each tree folded or open are kept per browser.
+// long page (issue #2353): the header, its filters and the stage counts stay in view; the list shows 30 rows to a page and
+// the graph 8 trees; the mode and each tree folded or open are kept per browser.
 import { Briefcase, ChevronDown, ChevronRight, CircleHelp, List, Network } from 'lucide-react';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useSection } from '@/app/nav';
@@ -43,7 +43,7 @@ const MODES = [
 ] as const;
 type Mode = (typeof MODES)[number]['mode'];
 const MODE_NAMES: readonly Mode[] = MODES.map((m) => m.mode);
-const TREES_PER_PAGE = 20;
+const TREES_PER_PAGE = 8;
 
 const EDGE_STYLE: Record<JobGraphEdge['kind'], { dash?: string; tone: Tone }> = {
   parent: { tone: 'muted' }, follow_up: { dash: '2 3', tone: 'muted' }, works: { tone: 'muted' },

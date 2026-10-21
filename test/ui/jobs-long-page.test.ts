@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Jobs view as a long page (issue #2353): a job row is one line, the list shows 40 to a page with Back and More, a
+// The Jobs view as a long page (issue #2353): a job row is one line, the list shows 30 to a page with Back and More, a
 // filter starts again at the first page; the header, its filters and the stage counts stay in view; the mode and a tree
 // folded are kept over a reload. The whole app over a fake daemon, its job graph made by the real jobGraph.
 import { act, createElement } from 'react';
@@ -68,7 +68,7 @@ async function boot(mode: 'list' | 'kept' = 'list') {
   await vi.waitFor(() => expect(document.querySelector('[data-slot="jobs-mode-list"]')).not.toBeNull());
   if (mode === 'list') {
     await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-list"]')!);
-    await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 40)));
+    await vi.waitFor(() => expect(cards().length).toBe(Math.min(jobs.length, 30)));
   }
 }
 
@@ -93,27 +93,27 @@ afterEach(() => {
 });
 
 describe('the Jobs view as a long page (issue #2353)', () => {
-  it('shows one line per job, 40 to a page, with Back and More', async () => {
+  it('shows one line per job, 30 to a page, with Back and More', async () => {
     jobs = Array.from({ length: 200 }, (_, n) => pointed(n, STATUSES[n % STATUSES.length]!));
     await boot();
     expect(document.querySelector('[data-slot="jobs-list"] [data-slot="job-card"]')).toBeNull();
     expect(cards().every((r) => r.tagName === 'LI' && r.querySelectorAll('div').length === 0)).toBe(true);
     const range = () => document.querySelector('[data-slot="pager-range"]')?.textContent;
-    expect(range()).toBe('1–40 of 200');
+    expect(range()).toBe('1–30 of 200');
     const first = cards().map((r) => r.dataset.jobId);
     await click(document.querySelector<HTMLElement>('[data-slot="pager-more"]')!);
-    expect(range()).toBe('41–80 of 200');
-    expect(cards()).toHaveLength(40);
+    expect(range()).toBe('31–60 of 200');
+    expect(cards()).toHaveLength(30);
     expect(cards().some((r) => first.includes(r.dataset.jobId))).toBe(false);
     // A filter starts again at its first page.
     await choose('jobs-filter-repo', 'acme/widgets');
-    expect(range()).toBe('1–40 of 67');
+    expect(range()).toBe('1–30 of 67');
     await click(document.querySelector<HTMLElement>('[data-slot="pager-back"]')!);
-    expect(range()).toBe('1–40 of 67');
+    expect(range()).toBe('1–30 of 67');
   });
 
   it('no pager when every job fits one page', async () => {
-    jobs = Array.from({ length: 40 }, (_, n) => pointed(n, 'queued'));
+    jobs = Array.from({ length: 30 }, (_, n) => pointed(n, 'queued'));
     await boot();
     expect(document.querySelector('[data-slot="pager"]')).toBeNull();
   });

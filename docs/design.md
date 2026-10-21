@@ -19067,7 +19067,7 @@ a clock, not a ticking age, so no card renders each second.
 Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one event per job, the newest; none with no
 job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
 over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs; since issue #2353 a row
-per job, 40 to a page).
+per job, 30 to a page).
 
 ### Long pages (issue #2353, 2026-10-21)
 
@@ -19078,10 +19078,11 @@ One pattern for each page, in `ui/src/components/pager.tsx` and `panel.tsx`:
   view's List is rows only: a **job row** per job (`ui/src/views/job-row.tsx`), no card grid.
 - **Groups fold.** A Panel with `onToggle` folds by its title (Pull requests' repository groups, Landing, Not tracked;
   Failures' sections; the Jobs view's trees).
-- **Pages.** A list past one page shows a page of it with the **pager**: 40 rows or 10 cards, 20 trees in the graph.
+- **Pages.** A list past one page shows a page of it with the **pager**: 30 rows or 6 cards, 8 trees in the graph.
   A filter starts again at the first page. Paging is in the page, not on the wire: every list here is already read whole.
 - **The header stays.** A sticky Panel (`sticky`) keeps its header and its `toolbar` (the filters) under the app's header
-  while its body scrolls with the page. Its card clips with `overflow: clip`, not `hidden`: a hidden overflow makes the
+  while its body scrolls with the page. A header sticks only inside its own card: a page whose header is a short card
+  of its own (Pull requests' summary, Failures' counts) makes that whole card sticky. Its card clips with `overflow: clip`, not `hidden`: a hidden overflow makes the
   card its own scroll box, and the header would stick inside it.
 - **One scroll box.** No list box (`list`) inside a page that scrolls: Failures' sections page in place of it. A log or a
   code view keeps its own.

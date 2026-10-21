@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Events view as a long page (issue #2353): with 500 events, 40 lines to a page with Back and More; a filter starts
+// The Events view as a long page (issue #2353): with 500 events, 30 lines to a page with Back and More; a filter starts
 // again at its first page; the header with the filter stays in view.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -63,14 +63,14 @@ afterEach(() => {
 });
 
 describe('the Events view as a long page (issue #2353)', () => {
-  it('shows 500 events 40 lines to a page, newest first', async () => {
+  it('shows 500 events 30 lines to a page, newest first', async () => {
     await boot();
-    expect(lines()).toHaveLength(40);
+    expect(lines()).toHaveLength(30);
     expect(lines()[0]!.dataset.eventSeq).toBe('500');
-    expect(range()).toBe('1–40 of 500');
+    expect(range()).toBe('1–30 of 500');
     await click(document.querySelector('[data-slot="pager-more"]')!);
-    expect(range()).toBe('41–80 of 500');
-    expect(lines()[0]!.dataset.eventSeq).toBe('460');
+    expect(range()).toBe('31–60 of 500');
+    expect(lines()[0]!.dataset.eventSeq).toBe('470');
   });
 
   it('a filter starts again at its first page', async () => {
@@ -81,7 +81,7 @@ describe('the Events view as a long page (issue #2353)', () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'lane.opened');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    await vi.waitFor(() => expect(range()).toBe('1–40 of 250'));
+    await vi.waitFor(() => expect(range()).toBe('1–30 of 250'));
     expect(lines().every((l) => l.textContent?.includes('lane.opened'))).toBe(true);
   });
 
