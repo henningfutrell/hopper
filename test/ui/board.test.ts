@@ -276,4 +276,8 @@ describe('a wait check, in words (issue #1694)', () => {
     expect(waitCheckText(check({ condition: { kind: 'time_passed', at: '2026-10-17T12:00:00.000Z' } }), T).what).toBe('the hopper wakes it at 2026-10-17 12:00 UTC');
     expect(waitCheckText(check({ condition: { kind: 'job_ended', jobId: 'j9' }, wakeAt: '2026-10-17T12:00:00.000Z' }), T).what).toBe('the hopper checks whether job j9 ended, and wakes it at 2026-10-17 12:00 UTC');
   });
+
+  it('a recheck of an outside event the hopper cannot see (issue #2335)', () => {
+    expect(waitCheckText(check({ condition: { kind: 'recheck', at: '2026-10-17T12:00:00.000Z' } }), T).what).toBe('the hopper cannot see it: it wakes the job at 2026-10-17 12:00 UTC to look again');
+  });
 });

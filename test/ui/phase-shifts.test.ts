@@ -30,7 +30,7 @@ const RESEARCH_TYPE = {
     { id: 'dig_deeper', route: 'dig-deeper', label: 'Dig deeper', effect: 'send_back', notes: 'optional' },
   ],
 };
-const PHASE_SETTINGS = { defaultMode: 'fork', forkParent: 'wait', levels: [], choices: { levels: ['opus', 'fable'] } };
+const PHASE_SETTINGS = { defaultMode: 'fork', levels: [], choices: { levels: ['opus', 'fable'] } };
 
 interface Daemon { jobs?: Job[]; questions?: unknown[]; reports?: unknown[]; role?: 'operator' | 'admin' }
 
@@ -222,14 +222,13 @@ describe('a fork\'s item whose question was answered meanwhile (issue #570)', ()
 });
 
 describe('the phase-shift settings', () => {
-  it('an admin sets the default mode, what a parent does while its fork runs, and the levels that may shift', async () => {
+  it('an admin sets the default mode and the levels that may shift', async () => {
     const daemon = await boot('#questions', { role: 'admin' });
     const panel = await vi.waitFor(() => { const x = document.querySelector<HTMLElement>('[data-slot="phase-shift-settings"]'); expect(x).toBeTruthy(); return x!; });
     await click(panel.querySelector<HTMLInputElement>('input[name="defaultMode"][value="switch"]'));
-    await click(panel.querySelector<HTMLInputElement>('input[name="forkParent"][value="park"]'));
     await click(panel.querySelector<HTMLInputElement>('input[name="level"][value="opus"]'));
     await click(button('Save', panel));
-    await vi.waitFor(() => expect(daemon.posts.find((p) => p.path === '/ui/api/phase-shifts')?.body).toEqual({ defaultMode: 'switch', forkParent: 'park', levels: ['opus'] }));
+    await vi.waitFor(() => expect(daemon.posts.find((p) => p.path === '/ui/api/phase-shifts')?.body).toEqual({ defaultMode: 'switch', levels: ['opus'] }));
   });
 
   it('an operator does not see them', async () => {

@@ -81,6 +81,48 @@ describe('a wait release (issues #2303, #2326)', () => {
     expect(told).toContain('A person ended your wait');
   });
 
+  it('a wait on an outside event the hopper watches nothing of is released too; its recheck wakes it on another machine to look again (issue #2335)', async () => {
+    const POLL = { output: ['● The deploy runs.', '  HOPPER_WAITING', '  for: the deploy to finish', '  on: outside: the deploy to finish', '  until: a background poll of the deploy ends'] };
+    const checkpoint: CheckpointCapture = {
+      taken: { branch: 'hopper/deploy', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: [], patch: gzipSync('diff'), session: gzipSync('{"session":true}') },
+    };
+    const repositories = [`${homedir()}/deploy`];
+    const seat = createFakeHerdrClient({ session: 'seat-s', turns: [POLL], repositories, checkpoint });
+    const host = createFakeHerdrClient({ session: 'host-s', turns: [done('The deploy finished.')], repositories, checkpoint });
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const machines = (['seat', 'host'] as const).map((name) => ({ name, plugin: 'local', options: { lanes: 1, workTree: '~/deploy', session: `${name}-s` } }));
+    const a = t = await startTestApp({
+      dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines },
+      seams: { herdr: seat, herdrSessions: { 'seat-s': seat, 'host-s': host }, herdrSession: async () => {}, levels: [] },
+    });
+    const admin = await a.login();
+    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained }, { token: admin })).status).toBe(200);
+    await drain('host', true);
+    const waiter = await a.pull({}, { executor: 'herdr-claude', prompt: 'Deploy it', env: {} });
+    const waiting = await a.waitForStatus(waiter.id, 'waiting_on', 8000);
+    expect(waiting.wait?.on).toEqual({ kind: 'outside', what: 'the deploy to finish' });
+
+    // Its agent ends: no pane, no lane, its checkpoint marked.
+    const paneId = (waiting.executorState as { paneId: string }).paneId;
+    await waitFor(() => seat.closed.includes(paneId), { what: 'the waiting job\'s pane closed', timeoutMs: 20000 });
+    const released = await waitFor(async () => { const j = await a.job(waiter.id); return j.waitReleased?.checkpointAt && j.wait?.check ? j : undefined; }, { what: 'its checkpoint marked' });
+    expect(released.status).toBe('waiting_on');
+    expect(released.laneId).toBeUndefined();
+    expect(released.wait!.check!.condition.kind).toBe('recheck');
+
+    // Its recheck is due (the time moved on): the hopper wakes it, on host, its own session, told to look again.
+    await drain('host', false);
+    await drain('seat', true);
+    const { store } = a.user();
+    const now = new Date().toISOString();
+    store.tx(() => { const j = store.jobs.get(waiter.id)!; store.jobs.update(waiter.id, { wait: { ...j.wait!, check: { ...j.wait!.check!, condition: { kind: 'recheck', at: now }, nextCheckAt: now } } }); });
+    const back = await a.waitForStatus(waiter.id, 'finished', 15000);
+    expect(back.agentSession).toBe(waiting.agentSession);
+    expect((await a.events('types=job.started')).filter((e) => e.jobId === waiter.id).at(-1)!.laneId).toContain('host');
+    expect(host.prompts.at(-1)!.text).toContain('cannot see what you wait on (the deploy to finish)');
+  });
+
   it('a job that waits for memory, with nothing running, finds the agent of a job on its own wait ended; that job resumes its session when its wait ends', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WAIT, done('Built it.'), done('Deployed.')] });
     const memory = { availableGiB: 9 };
