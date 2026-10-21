@@ -5,14 +5,17 @@
 /** Token counts. `cacheWrite1h`: the part of `cacheWrite` written to the one-hour cache, which costs more. */
 export interface TokenCounts { input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h?: number }
 
-/** One model's token use: its counts and the assistant messages that spent them (`turns`). */
-export interface ModelTokenUse extends TokenCounts { model: string; turns: number }
+/**
+ * One model's token use: its counts and the assistant messages that spent them (`turns`). `failedTests`: the local test
+ * runs its messages started that failed (part 4, a waste signal); absent when none.
+ */
+export interface ModelTokenUse extends TokenCounts { model: string; turns: number; failedTests?: number }
 
 /** An agent session's token use: per model, by model name, and the times of its first and last counted message. */
 export interface SessionTokenUse { models: ModelTokenUse[]; first?: string; last?: string }
 
 /** Token use summed, with its estimated cost; `costKnown` false when a model in it has no known price. */
-export interface TokenTotals extends TokenCounts { turns: number; costUsd: number; costKnown: boolean }
+export interface TokenTotals extends TokenCounts { turns: number; costUsd: number; costKnown: boolean; failedTests?: number }
 
 /** List prices in US dollars per million tokens: input, output, cache read. A cache write is 1.25 × input (5 minutes), 2 × (an hour). */
 const PRICES: Record<string, readonly [number, number, number]> = {
@@ -35,21 +38,41 @@ export function estimatedCostUsd(model: string, t: TokenCounts): number | undefi
   return (t.input * input + t.output * output + t.cacheRead * read + (t.cacheWrite - hour) * input * 1.25 + hour * input * 2) / 1_000_000;
 }
 
+/** A shell command that runs a test suite: its failure is a failed test run. Only the count is kept, never the command. */
+const TEST_RUN = /(^|[\s;&|(])(npx |pnpm |yarn |bunx? )?(vitest|jest|mocha|pytest|playwright test|rspec|go test|cargo test|dotnet test|mvn( -\S+)* test|gradle test|(npm|pnpm|yarn|bun) (run )?test)\b/;
+
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
 
 /**
  * The token use in an agent session's log (JSON lines). Each assistant message counts once — a message is written again as
  * it streams, so the last line of each message id and request id wins —, a synthetic one (`<synthetic>`, the agent's own)
- * not at all. Lines that are not JSON are passed over.
+ * not at all. Lines that are not JSON are passed over. A shell command that runs tests and whose tool result is an error is a
+ * failed test run, counted on the model that ran it.
  */
 export function sessionTokenUse(log: string): SessionTokenUse {
   const byMessage = new Map<string, { model: string; at?: string; counts: TokenCounts }>();
+  /** Each test run started, by its tool use id: the model that ran it. */
+  const testRuns = new Map<string, string>();
+  const failed = new Set<string>();
   for (const text of log.split('\n')) {
+    if (text.includes('"tool_result"') && text.includes('"is_error":true')) {
+      try {
+        const content = (JSON.parse(text) as { message?: { content?: unknown } }).message?.content;
+        if (Array.isArray(content)) for (const b of content as { type?: unknown; tool_use_id?: unknown; is_error?: unknown }[]) if (b.type === 'tool_result' && b.is_error === true && typeof b.tool_use_id === 'string') failed.add(b.tool_use_id);
+      } catch { /* not JSON */ }
+      continue;
+    }
     if (!text.includes('"usage"')) continue;
     let o: { type?: unknown; timestamp?: unknown; requestId?: unknown; message?: { id?: unknown; model?: unknown; usage?: Record<string, unknown> } };
     try { o = JSON.parse(text) as typeof o; } catch { continue; }
     const m = o.message, u = m?.usage;
     if (o.type !== 'assistant' || !u || typeof m.model !== 'string' || m.model === '<synthetic>') continue;
+    const content = (m as { content?: unknown }).content;
+    if (Array.isArray(content)) {
+      for (const b of content as { type?: unknown; id?: unknown; name?: unknown; input?: { command?: unknown } }[]) {
+        if (b.type === 'tool_use' && b.name === 'Bash' && typeof b.id === 'string' && typeof b.input?.command === 'string' && TEST_RUN.test(b.input.command)) testRuns.set(b.id, m.model);
+      }
+    }
     const hour = (u.cache_creation as Record<string, unknown> | undefined)?.ephemeral_1h_input_tokens;
     const counts: TokenCounts = { input: num(u.input_tokens), output: num(u.output_tokens), cacheRead: num(u.cache_read_input_tokens), cacheWrite: num(u.cache_creation_input_tokens), ...(num(hour) ? { cacheWrite1h: num(hour) } : {}) };
     const key = `${typeof m.id === 'string' ? m.id : byMessage.size}:${typeof o.requestId === 'string' ? o.requestId : ''}`;
@@ -65,6 +88,10 @@ export function sessionTokenUse(log: string): SessionTokenUse {
     if (at && (!first || at < first)) first = at;
     if (at && (!last || at > last)) last = at;
   }
+  for (const [id, model] of testRuns) {
+    const was = models.get(model);
+    if (was && failed.has(id)) was.failedTests = (was.failedTests ?? 0) + 1;
+  }
   return { models: [...models.values()].sort((a, b) => a.model.localeCompare(b.model)), ...(first ? { first } : {}), ...(last ? { last } : {}) };
 }
 
@@ -78,7 +105,8 @@ export function sumTokenUse(uses: readonly ModelTokenUse[]): TokenTotals {
   let total: TokenTotals = { turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0, costKnown: true };
   for (const u of uses) {
     const cost = estimatedCostUsd(u.model, u);
-    total = { ...addCounts(total, u), turns: total.turns + u.turns, costUsd: total.costUsd + (cost ?? 0), costKnown: total.costKnown && cost !== undefined };
+    const failedTests = (total.failedTests ?? 0) + (u.failedTests ?? 0);
+    total = { ...addCounts(total, u), turns: total.turns + u.turns, costUsd: total.costUsd + (cost ?? 0), costKnown: total.costKnown && cost !== undefined, ...(failedTests ? { failedTests } : {}) };
   }
   return total;
 }
