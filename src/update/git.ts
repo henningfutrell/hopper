@@ -24,6 +24,8 @@ export interface GitMirror {
   count(from: string, to: string): Promise<number>;
   /** The text of `path` at `commit`, or undefined when it has no such file. */
   read(commit: string, path: string): Promise<string | undefined>;
+  /** The text of each of `paths` at `commit`, as `read`, from one git process (issue #2367). */
+  readAll(commit: string, paths: string[]): Promise<(string | undefined)[]>;
   /** The names of the files in folder `dir` at `commit`; none when it has no such folder. */
   list(commit: string, dir: string): Promise<string[]>;
   /**
@@ -44,10 +46,35 @@ export function sshCommand(env: Record<string, string | undefined>, home: string
   return `ssh -o BatchMode=yes -F ${exists(config) ? shellQuote(config) : '/dev/null'}`;
 }
 
-export function createGitMirror(dir: string): GitMirror {
+/** The objects `git cat-file --batch` printed, in the order asked; undefined for one it says is missing. */
+export function batchObjects(out: Buffer): (string | undefined)[] {
+  const objects: (string | undefined)[] = [];
+  for (let at = 0; at < out.length;) {
+    const end = out.indexOf(10, at);
+    const header = out.toString('utf8', at, end < 0 ? out.length : end).split(' ');
+    const size = header.length === 3 ? Number(header[2]) : NaN;
+    if (end < 0 || Number.isNaN(size)) { objects.push(undefined); at = end < 0 ? out.length : end + 1; continue; }
+    objects.push(header[1] === 'blob' ? out.toString('utf8', end + 1, end + 1 + size) : undefined);
+    at = end + 1 + size + 1;
+  }
+  return objects;
+}
+
+/** `onGit`: told the arguments of each git process the mirror starts (tests count them). */
+export function createGitMirror(dir: string, o: { onGit?: (args: string[]) => void } = {}): GitMirror {
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: sshCommand(process.env, homedir(), existsSync) };
-  const git = async (...args: string[]): Promise<string> =>
-    (await exec('git', ['--git-dir', dir, ...args], { env, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 })).stdout.trim();
+  const options = { env, timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 };
+  const git = async (...args: string[]): Promise<string> => {
+    o.onGit?.(args);
+    return (await exec('git', ['--git-dir', dir, ...args], options)).stdout.trim();
+  };
+  // Each spawn holds the event loop while it forks, the longer the larger the daemon (issue #2367): many reads go in one.
+  const batch = (specs: string[]): Promise<Buffer> => new Promise((resolve, reject) => {
+    o.onGit?.(['cat-file', '--batch']);
+    const child = execFile('git', ['--git-dir', dir, 'cat-file', '--batch'], { ...options, encoding: 'buffer' }, (e, out) => (e ? reject(e) : resolve(out)));
+    child.stdin?.on('error', () => undefined); // git ended early: its error comes through the callback
+    child.stdin?.end(specs.map((s) => `${s}\n`).join(''));
+  });
   const ok = (p: Promise<unknown>): Promise<boolean> => p.then(() => true, () => false);
 
   return {
@@ -73,6 +100,11 @@ export function createGitMirror(dir: string): GitMirror {
     },
     async read(commit, path) {
       return (await this.has(commit)) ? git('show', `${commit}:${path}`).catch(() => undefined) : undefined;
+    },
+    async readAll(commit, paths) {
+      if (!paths.length) return [];
+      const objects = batchObjects(await batch(paths.map((p) => `${commit}:${p}`)));
+      return paths.map((_, i) => objects[i]);
     },
     async list(commit, dir) {
       if (!(await this.has(commit))) return [];
@@ -109,6 +141,6 @@ export function createGitMirror(dir: string): GitMirror {
 /** What's new at `commit` of the mirror: WHATS-NEW.md and the fragments of `whats-new/` (issue #824). */
 export async function notesAt(mirror: GitMirror, commit: string): Promise<Notes> {
   const names = (await mirror.list(commit, WHATS_NEW_DIR)).filter((n) => n.endsWith('.md'));
-  const fragments = await Promise.all(names.map(async (name) => ({ name, text: (await mirror.read(commit, `${WHATS_NEW_DIR}/${name}`)) ?? '' })));
-  return { file: (await mirror.read(commit, WHATS_NEW_FILE)) ?? '', fragments };
+  const [file, ...texts] = await mirror.readAll(commit, [WHATS_NEW_FILE, ...names.map((name) => `${WHATS_NEW_DIR}/${name}`)]);
+  return { file: file ?? '', fragments: names.map((name, i) => ({ name, text: texts[i] ?? '' })) };
 }
