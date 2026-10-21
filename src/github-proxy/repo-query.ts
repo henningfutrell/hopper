@@ -1,5 +1,5 @@
 // The repo-query cache (issue #1074, design.md "Repo queries"): a job's reads of GitHub through the hopper — an issue, its
-// comments, a pull request, its diff, its commits, its checks, a repository, a check's log — answered from what the hopper
+// comments, a pull request, its diff, its commits, its checks, a repository, a check's log, a repository's workflow runs and a run's jobs (issue #2318) — answered from what the hopper
 // read last, so jobs that ask the same thing again, or ask what another job asked, spend no GitHub call. An answer is
 // kept `REPO_QUERY_FRESH_MS`; a pull request the work-item ledger, or its own read, says is merged never changes, so its
 // reads made after the merge are kept until they are pushed out. A job's own write drops what it changed. Past that, the read goes to GitHub,
@@ -31,9 +31,10 @@ export interface RepoQueryCache {
   forget(repo: string, number: number): void;
 }
 
-/** One query's key: its operation, its repository (GitHub ignores case there) and its number. */
-export function queryKey(r: { op: ProxyOp; repo: string; number?: number }): string {
-  return `${r.op} ${r.repo.toLowerCase()}${r.number !== undefined ? `#${r.number}` : ''}`;
+/** One query's key: its operation, its repository (GitHub ignores case there), its number, and a run list's branch and event (issue #2318). */
+export function queryKey(r: { op: ProxyOp; repo: string; number?: number; branch?: string; event?: string }): string {
+  const filter = `${r.branch !== undefined ? ` branch=${r.branch}` : ''}${r.event !== undefined ? ` event=${r.event}` : ''}`;
+  return `${r.op} ${r.repo.toLowerCase()}${r.number !== undefined ? `#${r.number}` : ''}${filter}`;
 }
 
 /**

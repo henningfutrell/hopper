@@ -157,3 +157,11 @@ describe('the repo queries need the hopper\'s GitHub as before', () => {
     expect(await proxy.handle(`Bearer ${proxyToken(key, 'u1', 'job-1')}`, { op: 'pr.view', repo: 'octo/tools', number: 8 })).toMatchObject({ status: 503 });
   });
 });
+
+describe('the repo-query cache key of a run list (issue #2318)', () => {
+  it('names its branch and its event, so two lists of one repository are two answers', () => {
+    expect(queryKey({ op: 'run.list', repo: 'Octo/Tools', branch: 'dev', event: 'push' })).toBe('run.list octo/tools branch=dev event=push');
+    expect(queryKey({ op: 'run.list', repo: 'octo/tools' })).toBe('run.list octo/tools');
+    expect(queryKey({ op: 'run.view', repo: 'octo/tools', number: 5 })).toBe('run.view octo/tools#5');
+  });
+});

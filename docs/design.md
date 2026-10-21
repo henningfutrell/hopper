@@ -21764,6 +21764,13 @@ the hopper's own job only, rate-limited as `pr.view` (120 an hour per job, 600 p
 | `pr checks N` | `pr.checks` | the pull request, `GET …/commits/<head>/check-runs` (every page) and `…/status` | `state`, `merged`, `head`, `headSha`, `checks` (id — the `check log` job —, name, status, conclusion, url), `statuses` |
 | `issue comments N` | `issue.comments` | `GET …/issues/N/comments`, every page | `comments` (id, author, createdAt, body, url): an issue's, or a pull request's conversation |
 | `pr reviews N` | `pr.reviews` | `GET …/pulls/N/reviews`, every page (issue #1072 part 3) | `reviews` (id, author, state, body, submittedAt, url), `decision` (`approved`, `changes_requested`, `none`) |
+| `run list [--branch B] [--event E]` | `run.list` | `GET …/actions/runs?branch=B&event=E`, one page of `RUN_LIST_MAX` (50), the newest (issue #2318) | no `number`; `url` (the repository's Actions page), `total` (how many runs match), `runs` (id, name, event, branch, headSha, status, conclusion, runNumber, runAttempt, createdAt, url) |
+| `run view RUN` | `run.view` | `GET …/actions/runs/RUN` and `…/actions/runs/RUN/jobs`, every page (issue #2318) | the run's fields as in `run list`; `jobs` (id — the `check log` job —, name, status, conclusion, startedAt, completedAt, url), the latest attempt's |
+
+`run list` and `run view` (issue #2318, `src/github-proxy/runs.ts`) read a run that no pull request names: a branch's
+push runs, a release job's result. `pr checks` reads only a pull request's head commit. The cache key of `run list` also
+names its branch and its event, so two lists of one repository are two answers. A run is never final: it is read again
+once its answer is 30 s old.
 
 The diff is built from the files' patches, not asked as `application/vnd.github.diff`: one JSON route, the file list
 with it, and the same cap GitHub puts on patches (a file with none says so).
