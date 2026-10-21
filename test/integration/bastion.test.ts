@@ -11,6 +11,7 @@
 //   Scenario (part 5): the template waits for its read-only check, which runs with the observe minted for it and passes
 //   Scenario (part 2): the job's `hopper-relay` holds a local port joined to a target of its bastion through the hopper's
 //     relay, a command in the box that reaches the forward; a target the bastion does not forward to is refused
+//   Scenario: a person sees the job's bastion in the vault's view, never its token, and stops it there
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type AddressInfo, type Server } from 'node:net';
@@ -129,6 +130,33 @@ describe('bastions (issue #2146)', () => {
     expect(events.find((e) => e.type === 'bastion.ended')?.data).toMatchObject({ box: box.spec.name, reason: 'stopped', by: 'job' });
     await waitFor(async () => (await b.a.events()).some((e) => e.type === 'vault.unbound' && (e.data as { box?: string }).box === box.spec.name), { timeoutMs: 10_000 });
     expect(JSON.stringify(await b.a.events())).not.toContain(MINTED_KUBE_TOKEN);
+  });
+
+  it('a person sees the job\'s bastion in the vault\'s view and stops it there', async () => {
+    const b = await boot([]);
+    bastionBoxes(b);
+    expect((await b.a.ui('/ui/api/sandbox-approvals', { yolo: true }, { token: b.token })).status).toBe(200);
+    const creds = await runningJob(b.a);
+    const jobId = b.a.user().store.jobs.list({ status: ['running'] }).at(-1)!.id;
+    const t = await observeTemplate(b, creds);
+    const asked = await skill(b.a, creds, ['bastion', '--template', t.name, '--targets', 'lab/monitoring/svc/grafana:3000', '--why', 'Read the lab dashboards']);
+    expect(asked.code, asked.stdout + asked.stderr).toBe(0);
+    const box = [...b.runtime.boxes.values()].find((c) => c.spec.name.startsWith(`hopper-bastion-${t.name}-`))!;
+
+    const view = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body;
+    expect(view.bastions).toMatchObject([{ jobId, template: t.name, box: box.spec.name, targets: [{ target: 'lab/monitoring/svc/grafana:3000', local: 20000 }] }]);
+    expect(JSON.stringify(view.bastions)).not.toContain(MINTED_KUBE_TOKEN);
+
+    const stopped = await b.a.ui('/ui/api/bastions/stop', { job: jobId }, { token: b.token });
+    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+    await waitFor(() => !b.runtime.boxes.has(box.spec.name), { timeoutMs: 10_000 });
+    await waitFor(async () => ((await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.bastions ?? []).length === 0, { timeoutMs: 10_000 });
+    const ended = (await b.a.events()).find((e) => e.type === 'bastion.ended' && e.jobId === jobId);
+    expect(ended?.data).toMatchObject({ box: box.spec.name, reason: 'stopped', by: expect.stringMatching(/^(?!job$).+/) });
+    expect((await skill(b.a, creds, ['bastion'])).stdout).toContain('ended');
+
+    const again = await b.a.ui('/ui/api/bastions/stop', { job: jobId }, { token: b.token });
+    expect(again.status).toBe(404);
   });
 
   it('the job\'s hopper-relay joins a local port to a target of its bastion; another target is refused', async () => {

@@ -164,6 +164,21 @@ describe('a bastion (issue #2146)', () => {
     expect(b.stop('job-2', 'job')).toBeUndefined();
   });
 
+  it('lists each bastion that runs, for a person; one that ended leaves the list (a person\'s stop)', async () => {
+    const { b, events } = bastions();
+    expect(b.list()).toEqual([]);
+    const first = await b.start(JOB, TEMPLATE, TARGETS) as { id: string };
+    const other = await b.start({ ...JOB, id: 'job-2' } as Job, TEMPLATE, TARGETS.slice(0, 1)) as { id: string };
+    await until(() => b.list().every((v) => v.state === 'running'));
+    expect(b.list().map((v) => [v.jobId, v.id])).toEqual([['job-1', first.id], ['job-2', other.id]]);
+    b.list()[0]!.targets[0]!.local = 1;
+    expect(b.of('job-1')?.targets[0]?.local).toBe(20000);
+    expect(b.stop('job-1', 'a person')?.id).toBe(first.id);
+    await until(() => b.list().length === 1);
+    expect(b.list()[0]?.jobId).toBe('job-2');
+    expect(events.find((e) => e.type === 'bastion.ended')?.data).toMatchObject({ bastion: first.id, reason: 'stopped', by: 'a person' });
+  });
+
   it('a hopper that runs no sandbox starts none', async () => {
     const { b } = bastions({ run: undefined });
     expect(await b.start(JOB, TEMPLATE, TARGETS)).toMatchObject({ status: 503 });
