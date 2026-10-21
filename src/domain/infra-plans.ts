@@ -6,7 +6,7 @@
 import { changesAsset, profileProblem, type Asset, type OperationProfile } from './access.ts';
 import type { PlanRisk, PlanSummary } from './infra-plan-summary.ts';
 import { roleAllows, type UiRole } from './sign-in.ts';
-import { profileInWords } from './minting.ts';
+import { ACTION_ROLE, profileInWords } from './minting.ts';
 
 /** What made the plan: `terraform plan -out`, `helm diff`, or a GitOps (Argo CD) diff. */
 export const PLAN_TOOLS = ['terraform', 'helm', 'gitops'] as const;
@@ -142,7 +142,7 @@ const sameAsset = (a: Asset, b: Asset): boolean => a.kind === b.kind && a.name =
  */
 export function applyRefusal(profile: OperationProfile, planId: string | undefined, plan: InfraPlan | undefined, approval: PlanApproval | undefined, now: Date): string | undefined {
   if (!changesAsset(profile)) return undefined;
-  const plan_again = 'Record a plan (POST /job/infra-plans), have a person approve it, then ask with --plan <id>';
+  const plan_again = `Record a plan (POST /job/infra-plans), have a person approve it, then ask with --plan <id>${profile.asset.kind === 'aws-role' ? `. For AWS actions with no terraform, helm or gitops plan, ask for apply/aws-role/<account>/${ACTION_ROLE} with --action <service:Action>=<resource ARN> and no plan: a person's grant of each action approves the change` : ''}`;
   if (planId === undefined) return `no apply without a plan: ${profileInWords(profile)} changes infrastructure, and the ask names no plan. ${plan_again}`;
   if (!plan) return `no plan ${planId}: ${plan_again}`;
   if (!sameAsset(plan.asset, profile.asset)) return `plan ${plan.id} is a plan for ${plan.asset.kind} ${plan.asset.name}, not ${profile.asset.kind} ${profile.asset.name}`;

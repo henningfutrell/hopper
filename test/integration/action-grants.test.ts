@@ -329,7 +329,8 @@ describe('action grants (issue #2206)', () => {
     const b = await boot({ template: false, iamAllows: ['eks:UpdateNodegroupConfig'] });
     const call = `aws eks update-nodegroup-config --cluster-name identity-eks --nodegroup-name identity-eks-nodes --scaling-config desiredSize=6`;
     const plan = `${call}; undone by the same call with desiredSize=3`;
-    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', plan, '--command', call, '--wait', '60']);
+    // The fake aws CLI answers who the session is: the session it runs under is what the test checks.
+    const run = step(b, ['need', NEED, '--action', SCALE, ...WHY, '--plan', plan, '--command', 'aws sts get-caller-identity', '--wait', '60']);
     await run.waiting;
     const card = (await vaultOf(b)).runs![0]!;
     expect(card).toMatchObject({ jobId: b.job, plan, actions: [expect.objectContaining({ job: b.job, ...SCOPE })] });
