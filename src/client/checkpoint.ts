@@ -114,7 +114,7 @@ export function readCheckpoint(stdout: string): ReadCheckpoint | undefined {
 export const RESTORE_MARK = 'hopper-restore-';
 export type RestoreOutcome = 'restored' | 'kept' | 'failed';
 
-/** The line the restore prints when the pane has no way to the hopper (issue #2316): that pane cannot go on, a new one may. Never in the script's text, which the pane's screen echoes. */
+/** The line the restore prints when the pane has no way to the hopper (issue #2316): the job cannot go on on that machine, another may (issue #2355). Never in the script's text, which the pane's screen echoes. */
 export const RESTORE_NO_WAY = 'hopper: the job has no way to the hopper';
 
 // Run by `sh` in the job's worktree, with the job's variables (HOPPER_URL, HOPPER_TOKEN_FILE; git reaches GitHub through

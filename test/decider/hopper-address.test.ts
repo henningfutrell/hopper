@@ -34,4 +34,12 @@ describe('machines whose jobs cannot reach the hopper', () => {
     const any = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED, addressFix: fix })], waiting: [job('a')] }), 'd1');
     expect(any.hold).toEqual([{ jobId: 'a', reason: `no machine running executor test reaches the hopper: box is off-network: ${UNREACHED}. Fix: ${fix}` }]);
   });
+  // Issue #2355: a job that resumes elsewhere from its checkpoint holds no pane there, and needs the hopper to restore it.
+  it('a job that resumes elsewhere goes to a machine that reaches the hopper', () => {
+    const machines = [machine({ id: 'box', maxLanes: 4, addressProblem: UNREACHED }), machine({ id: 'host', maxLanes: 1 })];
+    const elsewhere = job('a', { pendingAnswer: 'go on', parked: { at: '2026-10-21T00:00:00.000Z', from: 'running', elsewhere: { at: '2026-10-21T00:00:00.000Z', checkpointAt: '2026-10-21T00:00:00.000Z', from: 'seat' } } });
+    expect(decide(inputs({ machines, waiting: [elsewhere] }), 'd1').start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'host' })]);
+    const only = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED })], waiting: [elsewhere] }), 'd1');
+    expect(only.start).toEqual([]);
+  });
 });

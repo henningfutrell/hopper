@@ -8,6 +8,8 @@
 // its start gave it when its files cannot be placed again (issue #2040): a turn never takes its way to the hopper away. A
 // placement that fails is tried once more first, and a job that reopens after the end of its run reaped its credentials dir
 // (a continued or a parked job, issue #2233) has no files left to keep: it fails, never resumed with no way to the hopper.
+// A job that resumes elsewhere gets its checkpoint from the hopper (issue #2355): on a machine that gives it no way to the
+// hopper (no URL its jobs reach the hopper at there, or no shell), it cannot go on there, and says why.
 import type { JobProxyCredentials, MachineShell } from '../domain/ports.ts';
 import type { Job, MachineSnapshot } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
@@ -28,15 +30,19 @@ const pathsUnder = (dir: string, paths: Record<string, string>): Record<string, 
  * The variables a job runs with: its proxy files kept under `scratch` on its machine first. `note` says why a job runs
  * without the GitHub proxy: its machine reaches no hopper URL, or its connection keeps no files — or, for a job that ran
  * there before, that it keeps the files its start placed (issue #2040). Throws when the machine
- * cannot reach the hopper at the URL the job would be given (issue #695): `Unreached`, with the reason (job-run.ts `place`);
- * and when a job that reopens after its credentials dir was reaped cannot have its files placed again (issue #2233).
+ * cannot reach the hopper at the URL the job would be given (issue #695), or gives a job that resumes elsewhere no way to
+ * the hopper (issue #2355): `Unreached`, with the reason (job-run.ts `place`); and when a job that reopens after its
+ * credentials dir was reaped cannot have its files placed again (issue #2233).
  */
 export async function placeCredentials(
   c: Pick<EngineContext, 'jobProxy'>, job: Job, machine: MachineSnapshot, shell: MachineShell | undefined, scratch: string, make: boolean,
   note: (line: string) => void,
 ): Promise<Record<string, string>> {
   const proxy: JobProxyCredentials | undefined = shell ? c.jobProxy(job, machine) : undefined;
-  if (!proxy || !shell) return {};
+  if (!proxy || !shell) {
+    if (!job.parked?.elsewhere) return {};
+    throw new Unreached(`this machine cannot reach the hopper: ${shell ? 'the hopper has no URL its jobs reach it at' : 'the hopper has no shell'} on ${machine.id}, and the job needs it to restore its checkpoint. ${REACH_ACTION}`);
+  }
   const dir = credentialsDirOf(scratch);
   const env = { ...pathsUnder(dir, proxy.paths), ...proxy.vars };
   const placed = async (): Promise<string | undefined> => {

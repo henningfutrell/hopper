@@ -11,6 +11,7 @@ import { cancelOf, contextOf, guarded, left, machineOf, progressOf, runJob, type
 import type { Lost } from './lost-move.ts';
 import { elsewhereBrief, freshStartBrief, startsFresh } from './park.ts';
 import { forkResume } from './phase-shifts.ts';
+import { NO_WAY_PANE, noWayMove } from './no-way-move.ts';
 
 /** How often a job waiting for its machine (after a restart, or a lost link) asks again whether its work is alive. */
 const REACHABLE_EVERY_MS = 1000;
@@ -184,7 +185,11 @@ export async function runStep(c: EngineContext, e: RunEntry, d: JobRunData, take
   }
   // Shutdown, or another hopper took it (issue #1662): the job stays running in the store; the step is done again.
   if (left(c, e)) throw new Error('the run is left here: this hopper stops, or another one holds the job');
-  // Its machine out of reach of the hopper at its start (issue #1920): queued again by the end step.
+  // Its machine out of reach of the hopper at its start (issue #1920): queued again by the end step. So is a job that
+  // resumes elsewhere whose pane there had no way to the hopper (issue #2355), its machine held.
+  const noWay = outcome.kind === 'failed' && outcome.noWayToHopper && machine && e.unreached === undefined ? noWayMove(c, store.jobs.get(started.id) ?? started, machine.id, NO_WAY_PANE) : undefined;
+  // What its pane showed stays on its timeline: the evidence of why that machine gave it no way to the hopper.
+  if (noWay !== undefined && machine) { c.reachHolds?.hold(machine.id, NO_WAY_PANE); e.unreached = noWay; progressOf(c, e, d).report(outcome.kind === 'failed' ? outcome.error : noWay); progressOf(c, e, d).flush(); }
   if (e.unreached !== undefined && e.cancelReason === undefined) return { unreached: e.unreached };
   // Its pane gone when its run was taken up (issue #1569): the move says why, as a restart's recovery does.
   const lostWhy = takenUp && lost === 'gone' ? { lostWhy: `its pane was gone after ${takenUp === 'daemon restart' ? 'a daemon restart' : 'its hopper stopped'}` } : {};
