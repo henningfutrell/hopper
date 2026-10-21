@@ -67,6 +67,61 @@ describe('herdr-claude executor: a pane herdr restored (issue #1465)', () => {
     expect(herdr.prompts.at(-1)!.text).toBe(`${RESTORED_NOTE}\n\nBlue.`);
   });
 
+  // Issue #2320: herdr resumed Claude by itself in a pane the hopper did not open, a shell with none of the job's variables.
+  const resumedElsewhere = async (herdr: ReturnType<typeof setup>['herdr'], state: PaneState, session: string): Promise<string> => {
+    herdr.killAgent(state.agentName);
+    const other = herdr.openPane({ title: '', lines: ['$ '] });
+    await herdr.startAgent({ name: state.agentName, paneId: other, args: ['--resume', session], timeoutMs: 1000 });
+    return other;
+  };
+
+  it('an answer to a job whose Claude herdr resumed in another pane goes to Claude resumed in a new pane with the job\'s variables; the other pane is closed (issue #2320)', async () => {
+    const { herdr, executor } = setup({ turns: [ASK, DONE] });
+    const first = contextFor(jobWith({ prompt: 'go' }));
+    expect(await executor.run(first.ctx)).toMatchObject({ kind: 'question' });
+    const state = first.saved.at(-1) as unknown as PaneState;
+    const session = first.sessions[0]!;
+    const other = await resumedElsewhere(herdr, state, session);
+
+    const again = withCredentials(contextFor(jobWith({ prompt: 'go' }, { executorState: { ...state }, agentSession: session })));
+    expect(await executor.resume!(again.ctx, 'Blue.')).toMatchObject({ kind: 'finished' });
+    expect(herdr.closed).toEqual(expect.arrayContaining([state.paneId, other]));
+    expect([state.paneId, other]).not.toContain(herdr.agentStarts.at(-1)!.paneId);
+    expect(herdr.agentStarts.at(-1)!.args).toEqual(expect.arrayContaining(['--resume', session]));
+    const tabs = herdr.calls.filter((call) => call.method === 'createTab').map((call) => call.args[0] as { env: Record<string, string> });
+    expect(tabs.at(-1)!.env).toMatchObject(VARS);
+    expect(herdr.prompts.at(-1)!.text).toBe(`${RESTORED_NOTE}\n\nBlue.`);
+  });
+
+  it('a pane saved with no terminal: Claude in another pane is not the job\'s pane either (issue #2320)', async () => {
+    const { herdr, executor } = setup({ turns: [ASK, DONE] });
+    const first = contextFor(jobWith({ prompt: 'go' }));
+    await executor.run(first.ctx);
+    const { terminal: _unused, ...state } = first.saved.at(-1) as unknown as PaneState;
+    const other = await resumedElsewhere(herdr, state, first.sessions[0]!);
+
+    const again = withCredentials(contextFor(jobWith({ prompt: 'go' }, { executorState: { ...state }, agentSession: first.sessions[0]! })));
+    expect(await executor.resume!(again.ctx, 'Blue.')).toMatchObject({ kind: 'finished' });
+    expect(herdr.closed).toContain(other);
+    expect(herdr.prompts.at(-1)!.text).toBe(`${RESTORED_NOTE}\n\nBlue.`);
+  });
+
+  it('while it watches: Claude that herdr resumed in another pane is stopped there, and resumes in a new pane with the job\'s variables (issue #2320)', async () => {
+    const { herdr, executor } = setup({ turns: [WORKING, DONE] });
+    const c = withCredentials(contextFor(jobWith({ prompt: 'go' })));
+    const running = executor.run(c.ctx);
+    await until(() => herdr.prompts.length === 1 && herdr.screen((c.saved.at(-1) as unknown as PaneState).paneId).includes('Reading the code'));
+    const first = c.saved.at(-1) as unknown as PaneState;
+    const other = await resumedElsewhere(herdr, first, c.sessions[0]!);
+
+    expect(await running).toMatchObject({ kind: 'finished' });
+    expect(herdr.closed).toEqual(expect.arrayContaining([first.paneId, other]));
+    expect([first.paneId, other]).not.toContain(herdr.agentStarts.at(-1)!.paneId);
+    const tabs = herdr.calls.filter((call) => call.method === 'createTab').map((call) => call.args[0] as { env: Record<string, string> });
+    expect(tabs.at(-1)!.env).toMatchObject(VARS);
+    expect(herdr.prompts.at(-1)!.text).toBe(RESTORED_NOTE);
+  });
+
   it('a pane saved with no terminal (started before the check) is watched as before', async () => {
     const { herdr, executor } = setup({ turns: [ASK, DONE] });
     const first = contextFor(jobWith({ prompt: 'go' }));
