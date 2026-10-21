@@ -9,7 +9,7 @@ import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/i
 import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
 import { BLOCKED, BLOCKED_STALE, FAILED, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
-import { REPO, githubConfig, testTrust } from './fixtures/github-support.ts';
+import { REPO, githubConfig, jobForIssue, testTrust } from './fixtures/github-support.ts';
 
 const LONG_AGO = '2026-10-18T10:00:00.000Z';
 const url = (n: number) => `https://github.com/${REPO}/issues/${n}`;
@@ -42,7 +42,7 @@ function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; 
   const edits = () => recorded.filter((r) => r.type === 'work_item.label_edited').map((r) => r.data);
   const reason = (n: number) => source.intake!().find((x) => x.key === url(n));
   const later = (ms: number) => { now += ms; };
-  return { gh, source, edits, reason, later };
+  return { gh, source, edits, reason, later, recorded };
 }
 
 describe('Intake reads the ledger (issue #1892)', () => {
@@ -88,7 +88,7 @@ describe('a label edited by hand on GitHub is a person\'s event (issue #1892)', 
     const { gh, source, edits, later } = setup({ [url(1)]: { blockedCause: 'pr_closed', closedWithoutMerge: 2, jobId: 'job-1' } }, { rerunnable: [url(1)] });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-closed'] });
     expect(await source.discover()).toEqual([]);
-    gh.issue(REPO, 1).labels = ['hopper'];
+    gh.removeLabel(REPO, 1, 'hopper:pr-closed');
     later(60_000);
     expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
     expect(edits()).toEqual([{ source: 'github', key: url(1), jobId: 'job-1', from: 'blocked', label: 'hopper:pr-closed', means: 'run_again' }]);
@@ -103,8 +103,9 @@ describe('a label edited by hand on GitHub is a person\'s event (issue #1892)', 
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
     await source.discover();
-    gh.issue(REPO, 1).labels = ['hopper'];
-    gh.issue(REPO, 2).labels = ['hopper', 'hopper:partly-done'];
+    gh.removeLabel(REPO, 1, 'hopper:pr-ready');
+    gh.removeLabel(REPO, 2, 'hopper:pr-ready');
+    gh.addLabel(REPO, 2, 'hopper:partly-done');
     later(60_000);
     expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
     expect(edits().map((e) => [e.key, e.label])).toEqual([[url(1), 'hopper:pr-ready']]);
@@ -126,12 +127,31 @@ describe('a label edited by hand on GitHub is a person\'s event (issue #1892)', 
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:blocked'] });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:blocked'] });
     await source.discover();
-    gh.issue(REPO, 1).labels = ['hopper'];
-    gh.issue(REPO, 2).labels = ['hopper'];
+    gh.removeLabel(REPO, 1, 'hopper:blocked');
+    gh.removeLabel(REPO, 2, 'hopper:blocked');
     later(10 * 60_000);
     items[url(1)] = { ...items[url(1)], eventAt: '2026-10-18T12:05:00.000Z', stateSince: '2026-10-18T12:05:00.000Z' };
     outbox.add([{ source: 'github', act: 'wont_do', key: url(2), repo: REPO, tag: '', change: { op: 'remove_labels', labels: ['hopper:blocked'] } }], LONG_AGO);
     await source.discover();
     expect(edits()).toEqual([]);
+  });
+});
+
+describe('the report tells the ledger of a close it found (issue #1892)', () => {
+  it('a job ends on an issue closed as completed already: hopper:done goes on, and the ledger reads the close', async () => {
+    const { gh, source, recorded } = setup({ [url(1)]: { state: 'working', jobId: 'job-1' } });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-18T11:00:00.000Z', mergedAt: '2026-10-18T11:30:00.000Z' });
+    await source.report({ kind: 'finished', job: jobForIssue(1, { id: 'job-1', status: 'finished', result: 'ok' }) });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(recorded).toEqual([{ type: 'work_item.issue_closed', data: { key: url(1), reason: 'completed', via: 'read' } }]);
+  });
+
+  it('a close the ledger holds already is not recorded again', async () => {
+    const { gh, source, recorded } = setup({ [url(1)]: { state: 'working', jobId: 'job-1', issueState: 'closed', issueReason: 'completed' } });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-18T11:00:00.000Z', mergedAt: '2026-10-18T11:30:00.000Z' });
+    await source.report({ kind: 'finished', job: jobForIssue(1, { id: 'job-1', status: 'finished', result: 'ok' }) });
+    expect(recorded).toEqual([]);
   });
 });

@@ -330,7 +330,7 @@ describe('a state that needs a pull request (issue #1891)', () => {
     expect(closed?.state).toBe('done');
   });
 
-  it('a block its issue\'s close as completed ended does not come back when the issue is reopened (issue #1892): it stays done', () => {
+  it('a block that its issue\'s close as completed hid does not come back when the issue is reopened (issue #1892): it is done', () => {
     const closed = applyRead(fold([['job.queued'], ['job.finished', {}]])!, { kind: 'issue', at: '2026-10-14T00:00:00.000Z', state: 'closed', reason: 'completed' })!;
     const reopened = applyRead(closed, { kind: 'issue', at: '2026-10-14T01:00:00.000Z', state: 'open' })!;
     expect(reopened).toMatchObject({ state: 'done', issueState: 'open' });

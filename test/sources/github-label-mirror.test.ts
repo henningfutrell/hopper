@@ -103,7 +103,7 @@ describe('labels mirror the database (issue #1891)', () => {
     const { gh, source, drifts } = setup({ [url(1)]: { blockedCause: 'pr_closed', closedWithoutMerge: 1, jobId: 'job-1' } }, { rerunnable: [url(1)] });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-closed'] });
     expect(await source.discover()).toEqual([]);
-    gh.issue(REPO, 1).labels = ['hopper'];
+    gh.removeLabel(REPO, 1, 'hopper:pr-closed');
     expect((await source.discover()).map((i) => i.key)).toEqual([url(1)]);
     expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
