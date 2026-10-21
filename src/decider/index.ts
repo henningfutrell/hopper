@@ -134,8 +134,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
   const ordered = order(candidates, inputs.queueOrder?.jobIds);
   const assigned = assign(ordered, states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks, inputs.credentialHeld, inputs.avoidLanes);
-  const { memoryShort, ...rest } = assigned;
-  const placed = { ...rest, start: numberNewLanes(assigned.start, machines, lanes, inputs.at, inputs.avoidLanes) };
+  const placed = { ...assigned, start: numberNewLanes(assigned.start, machines, lanes, inputs.at, inputs.avoidLanes) };
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
   const elbowing = new Set(inputs.running.filter((j) => elbowsInAs(j) !== undefined).map((j) => j.id));
 
@@ -153,7 +152,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const drained = new Set(plans.flatMap((p) => p.drain));
   const preempts = preempt(ordered, placed.wait, inputs.running, lanes, states, drained, inputs.preemption, inputs.at, inputs.priorityLanes);
   const pauses = memoryPauses(machines, lanes, inputs.running, inputs.waiting, inputs.parkingExecutors, inputs.at, new Set(preempts.map((p) => p.jobId)), inputs.memoryPausedAt);
-  const releases = waitReleases(inputs.waitSessions, memoryShort, inputs.at);
+  const releases = waitReleases(inputs.waitSessions, inputs.at);
 
   reasons.push(
     `${waiting.length} waiting, ${placed.start.length} start, ${hold.length} held, ${placed.wait.length} waiting for a lane`,
