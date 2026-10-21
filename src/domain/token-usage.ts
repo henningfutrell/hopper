@@ -103,16 +103,19 @@ export interface TokenLedgerRepository {
 export const TOKEN_GROUPS = ['job', 'issue', 'repo', 'machine', 'lane', 'account', 'model', 'day'] as const;
 export type TokenGroup = (typeof TOKEN_GROUPS)[number];
 
-/** One group of a rollup: its key (`(none)` when the ledger does not say), its totals and how many jobs it holds. */
-export interface TokenRollupRow extends TokenTotals { key: string; jobs: number }
+/**
+ * One group of a rollup: its key (`(none)` when the ledger does not say), its totals and how many jobs it holds. `parts`:
+ * when the rollup is split by a second group, the group's rows summed per that group, the costliest first; they sum to it.
+ */
+export interface TokenRollupRow extends TokenTotals { key: string; jobs: number; parts?: TokenRollupRow[] }
 
 /** What a rollup needs to know of a job: its repository and its issue (`owner/name#N`). */
 export interface JobTokenFacts { repo?: string | undefined; issue?: string | undefined }
 
 const NONE = '(none)';
 
-/** The ledger's rows summed per group, the costliest first, then by key. */
-export function tokenRollup(entries: readonly TokenLedgerEntry[], by: TokenGroup, facts: (jobId: string) => JobTokenFacts | undefined): TokenRollupRow[] {
+/** The ledger's rows summed per group, the costliest first, then by key; with `split`, each group split by that one too. */
+export function tokenRollup(entries: readonly TokenLedgerEntry[], by: TokenGroup, facts: (jobId: string) => JobTokenFacts | undefined, split?: TokenGroup): TokenRollupRow[] {
   const keyOf = (e: TokenLedgerEntry): string | undefined => {
     switch (by) {
       case 'job': return e.jobId;
@@ -125,15 +128,15 @@ export function tokenRollup(entries: readonly TokenLedgerEntry[], by: TokenGroup
       case 'day': return (e.last ?? e.readAt).slice(0, 10);
     }
   };
-  const groups = new Map<string, { uses: ModelTokenUse[]; jobs: Set<string> }>();
+  const groups = new Map<string, { rows: TokenLedgerEntry[]; jobs: Set<string> }>();
   for (const e of entries) {
     const key = keyOf(e) ?? NONE;
-    const g = groups.get(key) ?? { uses: [], jobs: new Set<string>() };
-    g.uses.push(e);
+    const g = groups.get(key) ?? { rows: [], jobs: new Set<string>() };
+    g.rows.push(e);
     g.jobs.add(e.jobId);
     groups.set(key, g);
   }
-  return [...groups].map(([key, g]) => ({ key, ...sumTokenUse(g.uses), jobs: g.jobs.size }))
+  return [...groups].map(([key, g]) => ({ key, ...sumTokenUse(g.rows), jobs: g.jobs.size, ...(split ? { parts: tokenRollup(g.rows, split, facts) } : {}) }))
     .sort((a, b) => b.costUsd - a.costUsd || a.key.localeCompare(b.key));
 }
 

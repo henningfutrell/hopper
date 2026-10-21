@@ -4,12 +4,12 @@
 // Pure: reading a stored layout never throws and never loses a panel — a field it cannot use takes
 // its default, a panel it does not know goes, a panel the stored layout lacks comes back at the end.
 
-export const PANEL_IDS = ['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usage', 'usageHistory', 'live'] as const;
+export const PANEL_IDS = ['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usage', 'usageHistory', 'tokenHistory', 'live'] as const;
 export type PanelId = typeof PANEL_IDS[number];
 
 export const PANEL_TITLES: Record<PanelId, string> = {
   kpis: 'Numbers', timeline: 'Lane timeline', attention: 'Attention', lanes: 'Lanes', waiting: 'Waiting',
-  ended: 'Ended', throughput: 'Ended per hour', usage: 'Usage', usageHistory: 'Usage over time', live: 'Live activity',
+  ended: 'Ended', throughput: 'Ended per hour', usage: 'Usage', usageHistory: 'Usage over time', tokenHistory: 'Tokens over time', live: 'Live activity',
 };
 
 /** Thirds of the dashboard's row; on a narrow screen every panel takes the whole row. */
@@ -24,22 +24,26 @@ export type TimelineWindow = typeof TIMELINE_WINDOWS[number];
 /** The job store holds the last 24 h of ended jobs: no longer chart is possible. */
 export const THROUGHPUT_HOURS = [6, 12, 24] as const;
 export const LIVE_EVENTS = [5, 10, 14, 25, 50] as const;
+/** What the tokens over time stack by (issue #2302): repository or account. */
+export const TOKEN_SPLITS = ['repo', 'account'] as const;
+export type TokenSplit = typeof TOKEN_SPLITS[number];
 
 export interface DashboardSettings {
   timelineWindow: TimelineWindow;
   throughputHours: typeof THROUGHPUT_HOURS[number];
   liveEvents: typeof LIVE_EVENTS[number];
+  tokenSplit: TokenSplit;
   /** The usage source the Usage panel shows when there are several (issue #85); absent = the first. */
   usageSource?: string;
 }
 
 export interface DashboardLayout { panels: PanelPlacement[]; settings: DashboardSettings }
 
-const WIDTH: Record<PanelId, PanelWidth> = { kpis: 3, timeline: 2, attention: 1, lanes: 1, waiting: 1, ended: 1, throughput: 2, usage: 1, usageHistory: 3, live: 3 };
+const WIDTH: Record<PanelId, PanelWidth> = { kpis: 3, timeline: 2, attention: 1, lanes: 1, waiting: 1, ended: 1, throughput: 2, usage: 1, usageHistory: 3, tokenHistory: 3, live: 3 };
 
 export const DEFAULT_LAYOUT: DashboardLayout = {
   panels: PANEL_IDS.map((id) => ({ id, shown: true, width: WIDTH[id] })),
-  settings: { timelineWindow: '1h', throughputHours: 24, liveEvents: 14 },
+  settings: { timelineWindow: '1h', throughputHours: 24, liveEvents: 14, tokenSplit: 'repo' },
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -71,6 +75,7 @@ export function parseLayout(text: string | null): DashboardLayout {
       timelineWindow: oneOf(TIMELINE_WINDOWS, s.timelineWindow, d.timelineWindow),
       throughputHours: oneOf(THROUGHPUT_HOURS, s.throughputHours, d.throughputHours),
       liveEvents: oneOf(LIVE_EVENTS, s.liveEvents, d.liveEvents),
+      tokenSplit: oneOf(TOKEN_SPLITS, s.tokenSplit, d.tokenSplit),
       ...(typeof s.usageSource === 'string' && s.usageSource ? { usageSource: s.usageSource } : {}),
     },
   };
