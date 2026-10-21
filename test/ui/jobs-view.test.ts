@@ -4,8 +4,7 @@
 // blocks the root marked, a node's details on select. The list mode: a row per job with its stage, issue
 // (owner/repo#number), lane, task count, pull request and last event; a partly done job names the pull request it waits
 // on. Counts per stage; filters by stage and by repository; a stage change arrives live, with no reload; 200 jobs render.
-// Issue #2353: a row is one line, the list shows 40 to a page, the header and its filters are sticky, and the mode and a
-// tree folded are kept over a reload.
+// Issue #2353 (jobs-long-page.test.ts): a row is one line, 40 to a page.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -72,12 +71,11 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(mode: 'graph' | 'list' | 'kept' = 'list') {
+async function boot(mode: 'graph' | 'list' = 'list') {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  act(() => root?.unmount());
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#jobs';
-  if (mode !== 'kept') localStorage.clear(); // kept: a reload, with what the browser kept
+  localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.stubGlobal('fetch', fakeDaemon());
   vi.stubGlobal('EventSource', FakeEventSource);
@@ -310,60 +308,5 @@ describe('the in-flight badge (issue #1113)', () => {
     inFlight = 0;
     await boot();
     await vi.waitFor(() => expect(document.querySelector('header [data-slot="in-flight"]')?.textContent).toContain('0'));
-  });
-
-  describe('a long page (issue #2353)', () => {
-    it('shows one line per job, 40 to a page, with Back and More', async () => {
-      jobs = Array.from({ length: 200 }, (_, n) => pointed(n, STATUSES[n % STATUSES.length]!));
-      await boot();
-      expect(document.querySelector('[data-slot="jobs-list"] [data-slot="job-card"]')).toBeNull();
-      expect(cards().every((r) => r.tagName === 'LI' && r.querySelectorAll('div').length === 0)).toBe(true);
-      const range = () => document.querySelector('[data-slot="pager-range"]')?.textContent;
-      expect(range()).toBe('1–40 of 200');
-      const first = cards().map((r) => r.dataset.jobId);
-      await click(document.querySelector<HTMLElement>('[data-slot="pager-more"]')!);
-      expect(range()).toBe('41–80 of 200');
-      expect(cards()).toHaveLength(40);
-      expect(cards().some((r) => first.includes(r.dataset.jobId))).toBe(false);
-      // A filter starts again at its first page.
-      await choose('jobs-filter-repo', 'acme/widgets');
-      expect(range()).toBe('1–40 of 67');
-      await click(document.querySelector<HTMLElement>('[data-slot="pager-back"]')!);
-      expect(range()).toBe('1–40 of 67');
-    });
-
-    it('no pager when every job fits one page', async () => {
-      jobs = Array.from({ length: 40 }, (_, n) => pointed(n, 'queued'));
-      await boot();
-      expect(document.querySelector('[data-slot="pager"]')).toBeNull();
-    });
-
-    it('keeps the header, its filters and the stage counts in view', async () => {
-      jobs = [pointed(1, 'queued')];
-      await boot();
-      const header = document.querySelector<HTMLElement>('[data-slot="panel-header"][data-sticky]')!;
-      expect(header.className).toContain('sticky');
-      expect(header.querySelector('[data-slot="jobs-filter-stage"]')).not.toBeNull();
-      expect(header.querySelector('[data-slot="jobs-stage-counts"]')).not.toBeNull();
-    });
-
-    it('keeps the mode and a folded tree over a reload', async () => {
-      jobs = [pointed(1, 'queued'), pointed(2, 'finished')];
-      await boot();
-      expect(document.querySelector('[data-slot="jobs-mode-list"]')?.getAttribute('aria-pressed')).toBe('true');
-      await boot('kept');
-      await vi.waitFor(() => expect(cards()).toHaveLength(2));
-      expect(document.querySelector('[data-slot="jobs-mode-list"]')?.getAttribute('aria-pressed')).toBe('true');
-      await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-graph"]')!);
-      const tree = () => document.querySelector<HTMLElement>('[data-slot="job-tree"]')!;
-      await vi.waitFor(() => expect(tree()).not.toBeNull());
-      const root = tree().dataset.root!;
-      const wasOpen = tree().dataset.open !== undefined;
-      await click(tree().querySelector('button')!);
-      expect(tree().dataset.open !== undefined).toBe(!wasOpen);
-      await boot('kept');
-      await vi.waitFor(() => expect(document.querySelector(`[data-slot="job-tree"][data-root="${root}"]`)).not.toBeNull());
-      expect(document.querySelector<HTMLElement>(`[data-slot="job-tree"][data-root="${root}"]`)!.dataset.open !== undefined).toBe(!wasOpen);
-    });
   });
 });
