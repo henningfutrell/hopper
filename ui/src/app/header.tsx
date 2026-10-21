@@ -90,7 +90,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           )}
           <HeaderBadges />
           {logins.n > 0 && (
-            <a data-logins-pending href="#logins" title={logins.warn ? 'A login expires soon' : 'Logins wait on you'}
+            <a data-logins-pending href="#machines/logins" title={logins.warn ? 'A login expires soon' : 'Logins wait on you'}
               className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium',
                 logins.warn ? 'border-warn/40 bg-warn/10 text-warn hover:bg-warn/15' : 'border-border text-foreground hover:bg-muted/60')}>
               <KeyRound className="size-3.5" /><span className="num">{logins.n}</span> <span className="max-sm:sr-only">{logins.n === 1 ? 'login' : 'logins'} pending</span>

@@ -138,7 +138,7 @@ export function ParkedRows({ heading = true }: { heading?: boolean }) {
           <StatusBadge status="parked" title="Out of its lane, its pane and agent ended: its work tree, branch and agent session are kept on its machine until it is picked up." />
           {job.resumeOn && <span>on {machineName(job.resumeOn, machines)}</span>}
           {job.pendingAnswer !== undefined && job.parked?.from === 'waiting_answer' && <span>answered, resumes with it</span>}
-          {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#parked" className="text-question hover:underline">question open →</a>}
+          {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#failures/parked" className="text-question hover:underline">question open →</a>}
           <span className="ml-auto">for <Since iso={job.parked?.at ?? job.updatedAt} /></span>
         </div>
         {job.parked?.why && <div data-slot="parked-why" className="text-xs text-muted-foreground">{job.parked.why}</div>}
@@ -266,7 +266,7 @@ export function WaitingPanel() {
           {job.status === 'queued' && job.waitReason && <div className="pl-7 text-xs text-muted-foreground [overflow-wrap:anywhere]">{job.waitReason.replace(/^waiting for a lane: /, '')}</div>}
           <PreemptedLine job={job} className="pl-7" />
           <div data-slot="waiting-actions" className="flex flex-wrap items-center gap-1.5 pl-7 empty:hidden">
-            {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
+            {job.accepted === false && <a href="#jobs/queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
             {job.originPending && <a href="#intake" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Intake">approve in Intake →</a>}
             <GatePassButton job={job} />
             {approve && <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>}

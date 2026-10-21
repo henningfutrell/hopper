@@ -129,10 +129,10 @@ describe('the Pending approvals page', () => {
   });
 });
 
-describe('the Pending approvals nav entry', () => {
+describe('the Approvals nav entry (issue #2374: it holds Pending approvals)', () => {
   it('is in Waiting on you, with the count of pending approvals', async () => {
     await bootApp(VIEW);
-    const link = await vi.waitFor(() => { const a = document.querySelector('aside a[href="#pending-approvals"]'); expect(a).not.toBeNull(); return a!; });
+    const link = await vi.waitFor(() => { const a = document.querySelector('aside a[href="#approvals"]'); expect(a).not.toBeNull(); return a!; });
     expect(link.closest('[data-nav-group]')?.getAttribute('data-nav-group')).toBe('waiting');
     await vi.waitFor(() => expect(link.querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
     expect(link.querySelector('[data-slot="nav-badge"]')?.getAttribute('title')).toBe('2 deployment approvals wait on you (1 stale)');
@@ -140,7 +140,7 @@ describe('the Pending approvals nav entry', () => {
 
   it('shows no count when nothing waits', async () => {
     await bootApp(EMPTY);
-    const link = await vi.waitFor(() => { const a = document.querySelector('aside a[href="#pending-approvals"]'); expect(a).not.toBeNull(); return a!; });
+    const link = await vi.waitFor(() => { const a = document.querySelector('aside a[href="#approvals"]'); expect(a).not.toBeNull(); return a!; });
     await settle();
     expect(link.querySelector('[data-slot="nav-badge"]')).toBeNull();
   });

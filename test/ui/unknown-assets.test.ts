@@ -33,7 +33,7 @@ describe('an unknown asset (issue #2067)', () => {
     expect(access.n).toBe(1);
     expect(access.details).toBeUndefined();
     const unknown = rows.find((r) => r.kind === 'unknown-assets')!;
-    expect(unknown).toMatchObject({ n: 1, details: lines, href: '#access-requests' });
+    expect(unknown).toMatchObject({ n: 1, details: lines, href: '#approvals/access-requests' });
     expect(unknownAssetLines(null)).toEqual([]);
   });
 

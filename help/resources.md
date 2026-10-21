@@ -1,6 +1,6 @@
 # Resources
 
-**Resources** is a page in the main menu, in the group Sources & machines. It shows what each part of the hopper's own stack uses now, and how its database, OpenFGA and Solr do. Only the hopper's admin can read it.
+**Resources** is a tab of the Usage page, in the group Fleet of the main menu. It shows what each part of the hopper's own stack uses now, and how its database, OpenFGA and Solr do. Only the hopper's admin can read it.
 
 The page reads again every 10 seconds while it is open.
 

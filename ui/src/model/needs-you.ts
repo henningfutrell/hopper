@@ -63,22 +63,22 @@ export interface NeedsYouRow {
 /** Each row's page and words: what it counts, said also when nothing waits, so a person knows the kind is there. */
 const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> = {
   intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval, labelled issues not assigned to you: no job starts until you assign them, and jobs held by their trust stamp' },
-  access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants, box templates and sandbox runs that jobs on boxes wait for you to approve' },
-  'unknown-assets': { label: 'Unknown clusters', href: '#access-requests', what: 'templates that name a cluster the vault cannot find, or a short name of several clusters: point each at a cluster, add a cluster override, or remove it' },
+  access: { label: 'Access requests', href: '#approvals/access-requests', what: 'credentials, vault grants, box templates and sandbox runs that jobs on boxes wait for you to approve' },
+  'unknown-assets': { label: 'Unknown clusters', href: '#approvals/access-requests', what: 'templates that name a cluster the vault cannot find, or a short name of several clusters: point each at a cluster, add a cluster override, or remove it' },
   plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for a person to approve them' },
   questions: { label: 'Questions', href: '#questions', what: 'questions jobs asked you' },
   proposals: { label: 'Proposals', href: '#proposals', what: 'proposals that wait for you to pick a path' },
   research: { label: 'Research', href: '#research', what: 'research reports that wait for you to accept or steer them' },
-  logins: { label: 'Logins', href: '#logins', what: 'logins a job waits on, and connections that ended' },
-  accounts: { label: 'Accounts', href: '#accounts', what: 'machines whose agent tool is signed in as nobody: sign them in again' },
+  logins: { label: 'Logins', href: '#machines/logins', what: 'logins a job waits on, and connections that ended' },
+  accounts: { label: 'Accounts', href: '#machines/accounts', what: 'machines whose agent tool is signed in as nobody: sign them in again' },
   machines: { label: 'Machines', href: '#machines', what: 'machines that are not ready and take no new job: give their jobs a dedicated user with no credentials, or a way to reach the hopper' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
-  budgets: { label: 'Budgets', href: '#parked', what: 'jobs paused because they reached their token budget: pick one up to let it go on, or cancel it' },
+  budgets: { label: 'Budgets', href: '#failures/parked', what: 'jobs paused because they reached their token budget: pick one up to let it go on, or cancel it' },
   'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
   checks: { label: 'Checks', href: '#pull-requests', what: 'repositories whose pull request checks the hopper may not read: give its connection the permissions' },
   landing: { label: 'Landing', href: '#settings/landing-batches', what: 'landing passes that failed the same way several times in a row: nothing moves to the tested branch until you restart the batch or fix the cause' },
   tagged: { label: 'Tagged', href: '#tagged', what: 'issues and pull requests that ask for your review, mention you, or are assigned to you' },
-  sorting: { label: 'Waiting to be ordered', href: '#queue', what: 'jobs waiting to be ordered before a lane takes them' },
+  sorting: { label: 'Waiting to be ordered', href: '#jobs/queue', what: 'jobs waiting to be ordered before a lane takes them' },
 };
 
 export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {

@@ -1451,7 +1451,7 @@ Questions view changes nothing in the count. Any other badge for something pendi
 issue #477) follows the same rule: it counts what is pending and clears only when none is.
 
 **Nav groups never hide a badge** (issue #906). The nav entries are in nav groups (`NAV_GROUPS`,
-`ui/src/app/nav.tsx`); a person collapses a group by its heading, and the sidebar and the mobile drawer
+`ui/src/app/routes.ts`; Waiting on you, Work, Fleet, Infra, Admin since issue #2374); a person collapses a group by its heading, and the sidebar and the mobile drawer
 share which are collapsed, kept per browser (`jh_nav_collapsed`). A collapsed group's heading shows its
 entries' badges as one (`groupBadges`, `ui/src/model/nav-groups.ts`): the counts and the high-priority
 counts summed, the most urgent colour (bad, warn, question, plain, quiet), each entry and its count in the
@@ -1459,6 +1459,35 @@ title, and the backburner count summed on its own. Open, each entry shows its ow
 Needs you, in that order, are pinned above the groups (`NAV_PINNED`), never collapsed. The Dashboard (issue #951)
 covers the whole system, not only jobs, and the UI opens on it; it was the Overview, and `#overview` still opens it
 (`MOVED`). Needs you's badge already sums other entries', and a group that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
+
+**One canonical home per workflow** (issue #2374). Views that showed the same data are one nav entry, a **merged
+page** (`PAGE_TABS`, `ui/src/app/routes.ts`; `ui/src/app/page-tabs.tsx`), whose tabs filter that one workflow:
+
+| Entry | Tabs (the first by default) |
+|---|---|
+| Approvals | Access requests, Pending approvals |
+| Failures | Failures (Stuck work first in it), Parked |
+| Jobs | Jobs, Queue order |
+| Ask hopper | Run a job (direct jobs), Ask a question (direct queries) |
+| Activity | Events, Decisions |
+| Machines | Machines, Accounts, Logins |
+| Usage | Usage, Resources |
+
+- **The hash names the tab**: `#<entry>/<tab>`, and with none the first tab, which then reads the rest of the hash as
+  its own section (`#jobs/in-flight`). A tab is a view that was its own entry before; it is never a second home.
+- **Every old hash opens the new home** (`canonicalHash`): `#access-requests`, `#pending-approvals`, `#parked`,
+  `#events`, `#decisions`, `#accounts`, `#logins`, `#direct-jobs`, `#direct-queries`, `#resources`, `#queue` open their
+  tab, `#stuck` opens Failures, what follows the old view kept (`#direct-queries/<id>` → `#ask/direct-queries/<id>`). The
+  page replaces the hash with the canonical one, so a copied link names the new home. Links the hopper sent out earlier
+  (a notifier's `#logins`, a promotion's `#direct-jobs/<id>`) keep working by this rule.
+- **Badges**: each tab shows its own badge; the entry's badge is their sum (`mergedBadge`, the same sum as a collapsed
+  group's, each tab's title as it is). A collapsed group sums the entries' badges as before, so no count is lost or
+  counted twice.
+- **No entry**: Search, which the header's search box opens (on a phone, which has no search box, the navigation
+  drawer lists it after Needs you); Your reports and Version history, in the user menu. Their routes stay (`#search`,
+  `#reports`, `#settings/version-history`).
+- **Fits**: with every group open the sidebar holds 21 entries and needs no scroll at 1440×900; its rows are tighter
+  than the drawer's, whose rows stay a touch target's height.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
@@ -19132,9 +19161,9 @@ plain words. The terms stay in the glossary and the code; only the UI words chan
   filter. A row opens its detail: the ids and the data, in monospace. Copy takes every event the filters show.
 - **Questions**: a card's escalation trail is folded behind "N model answers"; the reason banner, the question and the
   answer box stay in view.
-- **Ask hopper** (`#ask`, `ui/src/views/ask.tsx`) is one nav entry in place of Direct jobs and Direct queries, with two
-  tabs: Run a job (`#ask`) and Ask a question (`#ask/question`). `#direct-jobs` and `#direct-queries`, with or without an
-  id after them, still open the matching tab (`MOVED` in `ui/src/app/nav.tsx`), so links already sent keep working.
+- **Ask hopper** (`#ask`) is one nav entry in place of Direct jobs and Direct queries, a merged page (issue #2374) with two
+  tabs: Run a job (`#ask/direct-jobs`) and Ask a question (`#ask/direct-queries`; `#ask/question` still opens it). `#direct-jobs` and `#direct-queries`, with or without an
+  id after them, still open the matching tab (`MOVED` in `ui/src/app/routes.ts`), so links already sent keep working.
 - **Waiting to be ordered** in place of the pre-sort: the Queue badge, the Queue column and its button (Accept this
   order), the Needs you row.
 - **Later** in place of the backburner: the Intake group, its tooltip names the `hopper:backburner` label; the action
@@ -20108,7 +20137,7 @@ rendered nothing when empty, so a person could not tell the feature was there.
   request declined there is no row either: one line counts them. Sources keeps each source's sync, the intake
   migration and the repos outside the job repositories, and links to Intake with its counts; it lists no issue and offers
   no Approve.
-- **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
+- **Access requests.** `#access-requests` (since issue #2374 the tab `#approvals/access-requests` of Approvals; `ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
   grants, and Template approvals (`template-approvals.tsx`: Approve, and Approve `<profile>` for a high-radius profile),
   plus a pointer to Users & access → API tokens for box tokens, and Bastions (issue #2146, "Bastions": each bastion of a job
   that runs now, with Stop). A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
@@ -20161,7 +20190,7 @@ reports and Question history, if they stay actionable.
   points, the TypeSafe API key, and a link to Decisions. Both read `GET /api/minor-decisions`; no route changed.
 - **Question history on Questions.** It holds Correct, so it left Settings for a section of Questions:
   `#questions/history`, a tab beside the open questions. `#questions` alone still holds only the open questions (#151).
-- **Your reports is its own view** (`#reports`, nav group Jobs). It holds no decision, but it is no configuration either.
+- **Your reports is its own view** (`#reports`; since issue #2374 the user menu links to it, with no nav entry). It holds no decision, but it is no configuration either.
 - **Old links.** `#settings/history` and `#settings/reports` are replaced by their new hashes (`LEFT`,
   `ui/src/views/settings.tsx`).
 - **No duplicates found for auto-park or the issue thread.** Auto-park and the issue thread are configuration, set only in
@@ -20212,7 +20241,7 @@ end as of any job's. The operator CLI: `hopper job submit --title … (--brief �
 webhook subscription to `job.queued` delivers it to the subscriber. The authorizations are told to the job and recorded;
 the one that makes a vault grant is part 3, below.
 
-**In the UI (part 2).** The view Direct jobs (`#direct-jobs`, in the Jobs nav group; since issue #2375 the Run a job tab of Ask hopper, `#ask`; `ui/src/views/direct-jobs.tsx`,
+**In the UI (part 2).** The view Direct jobs (`#direct-jobs`; since issues #2375 and #2374 the Run a job tab of Ask hopper, `#ask/direct-jobs`, in the Work nav group; `ui/src/views/direct-jobs.tsx`,
 `ui/src/model/direct-jobs.ts`) has the submit form, for an operator or admin only: title, brief, labels (split at commas),
 authorizations (one per line), repository and priority. It sends `POST /ui/api/direct-jobs` through the UI session, so the
 record says `via: ui`. Below it, every direct job from `GET /api/direct-jobs`, read when shown and every 15 s: its state
@@ -20284,8 +20313,8 @@ jobs"). What a query adds:
 - **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
   artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
   direct job ("Promote to GitHub").
-- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, since issue #2375 the Ask a question tab of Ask hopper, `#ask/question`; `ui/src/views/direct-queries.tsx`), in the Jobs
-  group beside Direct jobs, not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
+- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, `ui/src/views/direct-queries.tsx`; since issues #2375 and #2374 the Ask
+  a question tab of Ask hopper, `#ask/direct-queries`, beside Run a job), not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
   its callback, its hints, its open questions (a link to Questions), its answer, its error and its evidence (the job's
   artifacts). An operator asks a question there (a request id the page makes, `ui-<32 hex>`, from
   `crypto.getRandomValues`: a LAN page over plain HTTP has no `randomUUID`), and cancels a query whose job is not at an
@@ -20622,7 +20651,7 @@ has had no release since 2019. It waits 2 seconds; no OpenFGA, an error status o
 (`assertInstanceRead`): the hopper's admin, or loopback without a session. A part that fails says why and the rest is
 read.
 
-**UI.** Resources (`#resources`, in Sources & machines, `ui/src/views/resources.tsx`): a row per container of the stack
+**UI.** Resources (`#resources`; since issue #2374 the tab `#usage/resources` of Usage, in Fleet; `ui/src/views/resources.tsx`): a row per container of the stack
 and, apart, per sandbox box — service, state and health, uptime, restarts, image; CPU (against its quota), memory against
 its limit with a bar, network, disk read and written and its layer, volumes with their size —, Postgres's readings, and
 OpenFGA's: the mean check time and the share of checks that failed. It
@@ -20840,7 +20869,7 @@ updates wait in `search_pending` until Solr takes them.
 **In the UI and the operator CLI** (part 2). The **search box** in the header (`ui/src/app/search-box.tsx`, tablet width and
 up) asks `GET /api/search/suggest` 150 ms after a person stops typing (two characters at least) and lists the titles, each a
 link to its job; Enter opens the **Search view** on the words. The Search view (`#search/<search>`, `ui/src/views/search.tsx`;
-the Search entry in the Jobs nav group opens it on a phone) keeps the whole search in the hash — `q`, each `type`,
+the Search entry of the navigation drawer opens it on a phone, issue #2374) keeps the whole search in the hash — `q`, each `type`,
 `status`, `label` and `repo` picked, `offset` — URL-encoded as one part (`ui/src/model/search.ts`), so a link and the back
 button work. It reads `GET /api/search` (20 a page): the total, each hit with a link to its job view (`#job/<id>`, not the
 answer's `url`, which may name the public URL), its title and at most two snippets (asked, result, question, failure,
@@ -23350,7 +23379,7 @@ and the API for those are follow-ups.
   token with its scope in State and usage, the API door). No token or id: the accounts carry what `parseAuthStatus`
   keeps (email, plan, organization, sign-in method).
 - **CLI.** `hopper accounts` prints that answer (viewer).
-- **UI.** Accounts is a view of its own (not under Settings), in the nav group Sources & machines since issue #1943: `ui/src/views/accounts.tsx`, model
+- **UI.** Accounts is a view of its own (not under Settings), in the nav group Sources & machines since issue #1943, and since issue #2374 the tab `#machines/accounts` of Machines in Fleet: `ui/src/views/accounts.tsx`, model
   `ui/src/model/tool-accounts.ts`, read through the shared polled reads (`useToolAccounts`, every 30 s; a usage source
   emits no event). A card per account: its plan and organization, each machine with its sign-in, read and last-used
   times and why, and its week gauges. The nav badge counts the machines signed out.
@@ -29303,7 +29332,7 @@ set a credential. A primary view had no top-level home (issue #896), and the sid
 - **A failed read shows its error** (`ReadErrors`): each source whose last read failed, its name, when, and the error, in
   a box of its own above the graph. A graph with sources but no node says no source was read without an error.
 - **Nav groups.** Infra (Infra, Topology); Sources & machines takes Accounts; Set up holds Skills and Settings. No group
-  holds one entry only. Group ids stay (`infra`, `sources-machines`, `settings`), so a collapsed group stays collapsed.
+  holds one entry only. Issue #2374 renamed them (Work, Fleet, Admin) and merged entries: "One canonical home per workflow". Group ids stay (`infra`, `sources-machines`, `settings`), so a collapsed group stays collapsed.
 
 **Decisions:**
 - **Topology in the Infra group**, not a group of its own: the two pages are about the same accounts and clusters, and a

@@ -71,7 +71,7 @@ function HomeCard({ job, w }: { job: Job; w: TrackerWait }) {
       return type ? <ItemCard kind={w.review} p={w.item} type={type} /> : <a href={`#${w.review === 'proposal' ? 'proposals' : 'research'}`} className="text-xs underline">Open it in its section</a>;
     }
     case 'handoff': return <HandoffRow h={w.handoff} />;
-    case 'login': return loginSettings ? <LoginCard l={w.login} now={now} settings={loginSettings} /> : <a href="#logins" className="text-xs underline">Open it in Logins</a>;
+    case 'login': return loginSettings ? <LoginCard l={w.login} now={now} settings={loginSettings} /> : <a href="#machines/logins" className="text-xs underline">Open it in Logins</a>;
     case 'text-change': return <TextChangeCard job={job} />;
     default: return null;
   }
@@ -86,7 +86,7 @@ function QuickAction({ job, w }: { job: Job; w: TrackerWait }) {
     case 'gate': return <GatePassButton job={job} />;
     case 'hold': return operate && <Button size="xs" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><ShieldCheck />Approve</Button>;
     case 'wait': return operate && <Button size="xs" title="What it waits for has happened: it goes on in its pane, told so." onClick={() => act(`/ui/api/jobs/${job.id}/end-wait`, {}, 'Wait ended')}><Play />Continue</Button>;
-    case 'accept': return <a href="#queue" className="text-xs text-warn hover:underline">{text.act} →</a>;
+    case 'accept': return <a href="#jobs/queue" className="text-xs text-warn hover:underline">{text.act} →</a>;
     case 'origin': return <a href="#intake" className="text-xs text-warn hover:underline">{text.act} →</a>;
     default: return null;
   }

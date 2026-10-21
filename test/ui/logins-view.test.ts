@@ -105,7 +105,7 @@ async function pass(seconds: number) {
 }
 
 const card = () => document.querySelector('[data-login="l1"]');
-const navBadge = () => document.querySelector('a[href="#logins"] [data-slot="nav-badge"]');
+const navBadge = () => document.querySelector('[data-slot="page-tabs"] a[href="#machines/logins"] [data-slot="tab-badge"]');
 const header = () => document.querySelector('[data-logins-pending]');
 
 beforeEach(() => {

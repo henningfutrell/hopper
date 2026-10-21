@@ -98,14 +98,14 @@ describe('Ask hopper (issue #2375)', () => {
     expect(labels).toContain('Ask hopper');
     expect(labels).not.toContain('Direct jobs');
     expect(labels).not.toContain('Direct queries');
-    const tabs = all('[data-slot="ask-nav"] a').map((a) => a.textContent);
+    const tabs = all('[data-slot="page-tabs"] a').map((a) => a.textContent);
     expect(tabs).toEqual(['Run a job', 'Ask a question']);
   });
 
   it.each([['#direct-jobs', 'Run a job'], ['#direct-queries', 'Ask a question'], ['#ask/question', 'Ask a question']])('%s opens Ask hopper on %s', async (hash, tab) => {
     await boot(hash, DIRECT);
     expect(document.querySelector('nav a[aria-current="page"]')?.textContent).toBe('Ask hopper');
-    expect(document.querySelector('[data-slot="ask-nav"] a[aria-current="page"]')?.textContent).toBe(tab);
+    expect(document.querySelector('[data-slot="page-tabs"] a[aria-current="page"]')?.textContent).toBe(tab);
   });
 });
 

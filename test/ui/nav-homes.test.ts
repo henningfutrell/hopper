@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #2374: one canonical home per workflow. Views that showed the same data merged into one nav entry with tabs, each
 // tab a filter of that one workflow: Approvals (Access requests, Pending approvals), Failures (Failures with Stuck, Parked),
-// Jobs (Jobs, Queue order), Ask hopper (Direct jobs, Direct queries), Activity (Events, Decisions), Machines (Machines,
+// Jobs (Jobs, Queue order), Ask hopper (Run a job, Ask a question), Activity (Events, Decisions), Machines (Machines,
 // Accounts, Logins), Usage (Usage, Resources). Every old hash opens its new home; an entry's badge sums its tabs'. Search
 // keeps its route, which the header's search box opens; Your reports and Version history are in the user menu.
 import { createElement } from 'react';
@@ -78,10 +78,10 @@ describe('the nav groups after the merge', () => {
     expect(NAV_PINNED).toEqual(['dashboard', 'needs-you']);
     expect(NAV_GROUPS.map((g) => [g.id, g.label, g.views])).toEqual([
       ['waiting', 'Waiting on you', ['intake', 'questions', 'proposals', 'approvals', 'failures', 'tagged']],
-      ['work', 'Work', ['jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity']],
-      ['fleet', 'Fleet', ['machines', 'usage', 'sources']],
+      ['jobs', 'Work', ['jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity']],
+      ['sources-machines', 'Fleet', ['machines', 'usage', 'sources']],
       ['infra', 'Infra', ['infra', 'topology']],
-      ['admin', 'Admin', ['skills', 'settings']],
+      ['settings', 'Admin', ['skills', 'settings']],
     ]);
     for (const g of NAV_GROUPS) expect(g.views.length).toBeGreaterThan(1);
     expect(NAV_PINNED.length + NAV_GROUPS.reduce((t, g) => t + g.views.length, 0)).toBeLessThanOrEqual(21);
@@ -166,8 +166,8 @@ describe('the badges of a merged page', () => {
   });
 
   it('a collapsed group sums its entries\' badges, the merged ones too', async () => {
-    await boot('#dashboard', '["work"]');
-    const badge = await vi.waitFor(() => { const b = document.querySelector('aside [data-nav-group="work"] [data-slot="nav-group-badge"]'); expect(b?.textContent).toBe('2'); return b!; });
+    await boot('#dashboard', '["jobs"]');
+    const badge = await vi.waitFor(() => { const b = document.querySelector('aside [data-nav-group="jobs"] [data-slot="nav-group-badge"]'); expect(b?.textContent).toBe('2'); return b!; });
     expect(badge.getAttribute('title')).toBe('Jobs: 2 jobs wait on the pre-sort');
   });
 

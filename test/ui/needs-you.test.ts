@@ -22,7 +22,7 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#machines', '#failures', '#parked', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#approvals/access-requests', '#approvals/access-requests', '#infra', '#questions', '#proposals', '#research', '#machines/logins', '#machines/accounts', '#machines', '#failures', '#failures/parked', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#jobs/queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
@@ -48,7 +48,7 @@ describe('Needs you rows (issue #897)', () => {
 
   it('a machine whose tool is signed in as nobody waits on a sign-in (issue #1128): the Accounts row names each', () => {
     const row = needsYouRows(counts({ signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'] })).find((r) => r.kind === 'accounts')!;
-    expect(row).toMatchObject({ n: 1, href: '#accounts', details: ['Claude on Server: signed in as nobody — sign it in from Accounts'] });
+    expect(row).toMatchObject({ n: 1, href: '#machines/accounts', details: ['Claude on Server: signed in as nobody — sign it in from Accounts'] });
     expect(needsYouRows(counts()).find((r) => r.kind === 'accounts')!.details).toBeUndefined();
   });
 
@@ -63,7 +63,7 @@ describe('Needs you rows (issue #897)', () => {
     ]);
     expect(lines).toEqual([`Paint the shed: ${why} Pick it up to let it go on.`]);
     const row = needsYouRows(counts({ budgetPaused: lines })).find((r) => r.kind === 'budgets')!;
-    expect(row).toMatchObject({ n: 1, href: '#parked', details: lines });
+    expect(row).toMatchObject({ n: 1, href: '#failures/parked', details: lines });
     expect(needsYouRows(counts()).find((r) => r.kind === 'budgets')).toMatchObject({ n: 0 });
   });
 

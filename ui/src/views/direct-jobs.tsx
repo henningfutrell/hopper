@@ -1,4 +1,4 @@
-// Direct jobs (issue #901, design.md "Direct jobs"), the Run a job tab of Ask hopper (#ask, issue #2375; ask.tsx): a person submits a job straight to
+// Direct jobs (issue #901, design.md "Direct jobs"), the Run a job tab of Ask hopper (#ask/direct-jobs, issues #2375, #2374): a person submits a job straight to
 // the hopper — a title, a brief, routing labels, what they authorize, and the one repository its work may open a pull
 // request on —, with no GitHub issue behind it. The list reads each direct job back, newest first, with its job's state,
 // its open questions (answered in Questions), its result, its error and its artifacts. The brief and the results stay in

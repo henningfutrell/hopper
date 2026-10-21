@@ -1,7 +1,7 @@
 // The page: nothing until the session is read, then the landing page logged out (issue #213), or the
 // shell — header, navigation, the current view — signed in. Loads once, then lives on SSE. Another hopper at this
 // address (issue #1295): its notice alone, in place of all of it. The critical job tracker (issue #2203) sits over every
-// view, so it stays through navigation.
+// view, so it stays through navigation. A merged page (issue #2374) shows its tabs over the tab's view.
 import { AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +15,8 @@ import { Tagged } from '@/views/tagged';
 import { Artifacts } from '@/views/artifacts';
 import { BugReports } from '@/views/bug-reports';
 import { Decisions } from '@/views/decisions';
-import { AskHopper } from '@/views/ask';
+import { DirectJobs } from '@/views/direct-jobs';
+import { DirectQueries } from '@/views/direct-queries';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
 import { Infra } from '@/views/infra';
@@ -51,9 +52,19 @@ import { HopperGate } from './other-hopper';
 import { WindowsLinkNotice } from '@/components/windows-link';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
+import { PageTabs } from './page-tabs';
+import { useCanonicalHash, type MergedPage, type Tab } from './routes';
 
+const tabs = (page: MergedPage, views: Partial<Record<Tab, () => React.ReactNode>>) => () => <PageTabs page={page} views={views} />;
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, ask: AskHopper, intake: Intake, tagged: Tagged, 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, accounts: Accounts, sources: Sources, machines: Machines, infra: Infra, topology: Topology, skills: Skills, plugins: Plugins, vault: Vault, 'users-access': UsersAccess, usage: Usage, resources: Resources, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, intake: Intake, tagged: Tagged, questions: Questions, proposals: Proposals, research: Research, 'pull-requests': PullRequests, artifacts: Artifacts, reports: BugReports, sources: Sources, infra: Infra, topology: Topology, skills: Skills, plugins: Plugins, vault: Vault, 'users-access': UsersAccess, settings: Settings, job: JobView,
+  approvals: tabs('approvals', { 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals }),
+  failures: tabs('failures', { failures: Failures, parked: Parked }),
+  jobs: tabs('jobs', { jobs: Jobs, queue: Queue }),
+  ask: tabs('ask', { 'direct-jobs': DirectJobs, 'direct-queries': DirectQueries }),
+  activity: tabs('activity', { events: Events, decisions: Decisions }),
+  machines: tabs('machines', { machines: Machines, accounts: Accounts, logins: Logins }),
+  usage: tabs('usage', { usage: Usage, resources: Resources }),
 };
 
 function Loading() {
@@ -67,6 +78,7 @@ function Loading() {
 
 function Shell() {
   const view = useView();
+  useCanonicalHash();
   const loaded = useHopper((s) => s.loaded);
   const loadError = useHopper((s) => s.loadError);
   useForgetCleared();

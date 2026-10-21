@@ -120,7 +120,7 @@ function FollowedBy({ h }: { h: HandoffView }) {
     <div data-slot="next-job" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span>{h.nextJobId === h.jobId ? 'Goes on as' : 'Followed by'}</span>
       <JobLine id={h.nextJobId} />
-      <a href="#queue" className="underline-offset-4 hover:underline">in Queue →</a>
+      <a href="#jobs/queue" className="underline-offset-4 hover:underline">in Queue →</a>
     </div>
   );
 }
