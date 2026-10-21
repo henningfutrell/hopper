@@ -51,6 +51,11 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
   sh "$HOPPER_GH" check log JOB  --repo OWNER/NAME      (a failed check's full log; JOB: the last number of the check's link)
+  sh "$HOPPER_GH" run list       --repo OWNER/NAME [--branch BRANCH] [--event EVENT]
+                                                         (its newest workflow runs, at most 50: id, name, event, branch,
+                                                         status, conclusion; EVENT: push, pull_request, ...)
+  sh "$HOPPER_GH" run view RUN   --repo OWNER/NAME      (a workflow run and its jobs: id, name, status, conclusion;
+                                                         a job's id is its check log JOB)
   sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force]
                                                          (report a bug in the hopper itself)
 
@@ -117,7 +122,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr reviews'|'pr status'|'pr wait'|'pr ready'|'pr edit'|'pr close'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr reviews'|'pr status'|'pr wait'|'pr ready'|'pr edit'|'pr close'|'repo view'|'repo fork'|'check log'|'run list'|'run view'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac
@@ -129,7 +134,7 @@ while [ "$i" -lt "$n" ]; do
   case "$a" in
     --force) set -- "$@" --data-urlencode "force=true" ;;
     --required) set -- "$@" --data-urlencode "required=true" ;;
-    --repo|--title|--body|--head|--base|--body-file|--comment-on|--timeout|--for|--key)
+    --repo|--title|--body|--head|--base|--body-file|--comment-on|--timeout|--for|--key|--branch|--event)
       [ "$i" -lt "$n" ] || { echo "hopper-gh: $a needs a value" >&2; exit 2; }
       v=$1; shift; i=$((i + 1))
       [ "$a" = --key ] && ownkey=1

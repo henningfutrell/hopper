@@ -42,7 +42,9 @@
             "pr.close",
             "repo.view",
             "repo.fork",
-            "check.log"
+            "check.log",
+            "run.list",
+            "run.view"
           ]
         },
         "repo": {
@@ -173,7 +175,8 @@
           "type": "string",
           "enum": [
             "repo.view",
-            "repo.fork"
+            "repo.fork",
+            "run.list"
           ]
         },
         "repo": {

@@ -5,17 +5,17 @@
 // issues, and what it is a fork of. A fork made for a repository that takes no issues gets its own issues turned on.
 // The repo queries (issue #1074): a pull request's diff (from its files' patches), its commits and the check runs and
 // statuses of its head commit, and an issue's comments — every page, each answer with the item's own URL.
-import { MAX_JOB_LOG_CHARS, whyNoLog } from '../domain/check-logs.ts';
+import { whyNoLog } from '../domain/check-logs.ts';
 import type { GitHubCallKind } from '../domain/github-rate-limit.ts';
 import { webOriginOf } from '../sources/github/api.ts';
 import { ACCOUNT_CONNECTION, checksLack } from '../sources/github/checks-fallback.ts';
 import { explained, notAccessible, permissionsOfError } from '../sources/github/http/refusal.ts';
 import { fileAssignedIssue } from '../sources/github/http/file-issue.ts';
-import { jobLog } from '../sources/github/http/rest.ts';
 import { newestRuns } from '../sources/github/newest-runs.ts';
 import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/http/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
 import { findFiled, passProxyKillPoint } from './resend.ts';
+import { checkLog, listRuns, viewRun } from './runs.ts';
 import type { PullRequestStatus } from './pr-status.ts';
 
 /** What a done request answers the job: always where it is on GitHub; its number when it is an issue or pull request. */
@@ -130,16 +130,6 @@ async function fork(req: Request, headers: Record<string, string>, repo: string)
     url: d.html_url, fork: d.full_name, defaultBranch: d.default_branch, ...(issues ? { issues } : {}), ...(issuesError ? { issuesError } : {}),
     next: contributionSteps(repo, d.full_name, d.html_url, login, issues),
   };
-}
-
-/**
- * A failed check's full log (issue #993): its end when it is longer than `MAX_JOB_LOG_CHARS`, where the failure is. Read
- * through the shared rate limiter as every call; its link is the check run's page, which GitHub names by the job's id.
- */
-async function checkLog(req: Request, token: string, webOrigin: string, repo: string, job: number): Promise<ProxyResult> {
-  const log = await jobLog(req, token, repo, job);
-  const truncated = log.length > MAX_JOB_LOG_CHARS;
-  return { number: job, url: `${webOrigin}/${repo}/runs/${job}`, log: truncated ? log.slice(-MAX_JOB_LOG_CHARS) : log, ...(truncated ? { truncated: true } : {}) };
 }
 
 /** A pull request's diff (issue #1074): each file's patch as `git diff` writes it; a binary or too large file has none. */
@@ -272,6 +262,8 @@ async function call(req: Request, token: string, r: ProxyRequest, webOrigin: str
     case 'repo.view': return { ...(await readRepo(req, headers, r.repo)) };
     case 'repo.fork': return fork(req, headers, r.repo);
     case 'check.log': return checkLog(req, token, webOrigin, r.repo, r.number);
+    case 'run.list': return listRuns(req, token, webOrigin, r);
+    case 'run.view': return viewRun(req, token, webOrigin, r);
     case 'issue.create': {
       const routed = { ...(filed.labels ? { labels: filed.labels } : {}), ...(filed.assignees ? { assignees: filed.assignees } : {}) };
       const d = await fileAssignedIssue(req, headers, r.repo, { title: r.title, body: r.body, ...routed });
