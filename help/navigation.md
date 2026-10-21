@@ -13,18 +13,33 @@ The menu puts the other pages in groups. Each group has a heading.
 
 | Group | Pages |
 |---|---|
-| Waiting on you | Intake, Tagged, Access requests, Pending approvals, Questions, Proposals, Research, Logins, Failures, Parked |
-| Jobs | Search, Jobs, Queue, Direct jobs, Direct queries, Pull requests, Artifacts, Decisions, Events, Your reports |
-| Infra | Infra, Topology |
-| Sources & machines | Sources, Machines, Accounts, Usage, Resources |
-| Set up | Skills, Settings |
+| Waiting on you | Intake, Questions, Proposals, Approvals, Failures, Tagged |
+| Work | Jobs, Pull requests, Research, Ask hopper, Artifacts, Activity |
+| Fleet | Machines, Usage, Sources |
+| Infra | Infra, Topology, Vault |
+| Admin | Users & access, Skills, Plugins, Settings |
 
+Some pages have tabs. Each tab shows one part of the same work:
+
+| Page | Tabs |
+|---|---|
+| Approvals | Access requests, Pending approvals |
+| Failures | Failures (stuck work is first), Parked |
+| Jobs | Jobs, Queue order |
+| Ask hopper | Run a job, Ask a question |
+| Activity | Events, Decisions |
+| Machines | Machines, Accounts, Logins |
+| Usage | Usage, Resources |
+
+- The badge of a page with tabs is the sum of the badges of its tabs. Each tab shows its own badge.
+- An old link to a page that is now a tab, for example a link to Logins, opens that tab.
 - **Tagged** lists the open issues and pull requests that ask for your review, mention you or are assigned to you.
-- **Search** finds jobs by their words. The search box in the header opens it too.
-- **Direct queries** lists the questions that callers asked the hopper directly.
+- **Search** finds jobs by their words. Use the search box in the header. On a phone, select **Search** in the menu.
+- **Ask a question** in Ask hopper lists the questions that callers asked the hopper directly.
 - **Topology** shows the graph and the globe of the services in your AWS accounts and clusters.
 - **Accounts** shows who the agent tool of each machine is signed in as. Its badge counts the machines that are signed in as nobody.
 - **Skills** lists the skills that jobs get, and which skill each kind of work uses.
+- **Your reports** and **Version history** are in your user menu: select your initials at the top right.
 
 ## Collapse a group
 
@@ -49,7 +64,7 @@ Open the group to see the badge of each page.
 
 ## Pending approvals
 
-**Pending approvals** lists each GitHub Actions run that waits for a deployment approval you can give, for example a terraform apply or a production promote. It looks in the repositories of the organizations your job repositories are in. Its badge counts them.
+**Pending approvals**, a tab of Approvals, lists each GitHub Actions run that waits for a deployment approval you can give, for example a terraform apply or a production promote. It looks in the repositories of the organizations your job repositories are in. Its badge counts them.
 
 - Each row shows the repository, the workflow, the run, the environment and how long it waited. Select **Open run** to approve or reject it on GitHub. The hopper never approves or rejects a deployment.
 - A run marked **stale** has a newer run of the same repository that waits on the same environment.

@@ -115,7 +115,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         </div>
       )}
       {m.template?.waiting && (
-        <p role="alert" className="text-sm text-warn">Takes no job: {m.template.waiting}. Its jobs wait for another machine until a person approves the template on <a href="#access-requests" className="underline">Access requests</a>.</p>
+        <p role="alert" className="text-sm text-warn">Takes no job: {m.template.waiting}. Its jobs wait for another machine until a person approves the template on <a href="#approvals/access-requests" className="underline">Access requests</a>.</p>
       )}
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>

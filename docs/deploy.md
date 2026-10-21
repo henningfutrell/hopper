@@ -1223,6 +1223,9 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   job names (the **action check**). It asks with a read session of the account's read role `hopper-read`, so that role
   needs `iam:SimulatePrincipalPolicy` (`ReadOnlyAccess` holds it as `iam:Simulate*`). Without it, the check says "not
   checked" and refuses nothing.
+  It reads the role first (`iam:GetRole`, which `ReadOnlyAccess` holds): when the account has no role of that name, the
+  check refuses the template request at once and names the role, so make `hopper-action` in each account a job may
+  change before a job asks for it.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
@@ -1690,6 +1693,37 @@ joins as a machine (issue #1349). A box with tools on a machine runs a tools ima
 runtime, through its client, once per base image and set of tools; the client builds only a tools image, from the
 hopper's one Containerfile. A client of an older release refuses the build: the hopper loads its own release there
 once no job runs on it.
+
+### Sandboxes on a Podman host
+
+A Podman host is a computer that runs only sandboxes (issue #2272): a VM with rootless Podman and no hopper client. The
+hopper reaches it over ssh with its own key, and runs each call through `podman system dial-stdio`. Once the sandbox host
+names it, every sandbox starts there and nowhere else. A box step with vault secrets runs there too: the secrets are copied
+into the box, never put in its environment.
+
+On the host, once, as the account the sandboxes run as:
+
+1. Install Podman 4 or later. Check that it is rootless: `podman info --format '{{.Host.Security.Rootless}}'` prints `true`.
+2. Keep the account's services running after you sign out: `loginctl enable-linger "$USER"`.
+3. Add one line to `~/.ssh/authorized_keys`: the forced command, then the hopper's public key. Settings → Podman hosts
+   shows the whole line:
+
+   ```
+   command="podman system dial-stdio",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA… hopper
+   ```
+
+   The key can then run dial-stdio only: no shell, no forwarding.
+
+Then add the host and use it:
+
+1. Settings → Podman hosts → Add a Podman host: a name, `user@host`, and optionally the most CPUs and memory a box gets.
+   Read its host key, compare the fingerprint with the host's own (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the
+   host), then Pin this key and save. From the CLI: `hopper machine podman-host add <name> <user@host>` prints the key and its
+   fingerprint; run it again with `--host-key '<key>'` (and `--cpus N`, `--memory-mb N`) to add it.
+2. Use as sandbox host on its row, or `hopper machine sandbox-host <name>` (a list sets the order).
+
+While the host does not answer (ssh fails, or Podman does not), steps wait and say `sandbox host <name> is offline`; they never
+start on another machine.
 
 ### Sandbox boxes on Kubernetes
 

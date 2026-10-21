@@ -76,7 +76,7 @@ function Row({ x, source, canOperate, now }: { x: TaggedItem; source: string; ca
         {x.why.map((w) => <span key={w} data-tagged-why={w} className="rounded-full bg-muted px-2 py-0.5">{TAGGED_WHY_LABEL[w]}</span>)}
       </span>
       {x.started && (
-        <a data-tagged-started={x.started.directJob} className="underline" href={x.started.jobId ? `#job/${x.started.jobId}` : '#ask'} title={x.started.at}>
+        <a data-tagged-started={x.started.directJob} className="underline" href={x.started.jobId ? `#job/${x.started.jobId}` : '#ask/direct-jobs'} title={x.started.at}>
           {taggedStartedText(x.started)}
         </a>
       )}

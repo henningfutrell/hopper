@@ -1,8 +1,9 @@
 // The sandbox host (issue #2272, design.md "The sandbox host"): an admin names the machines the user's sandboxes start
 // on, in priority order, or clears it. Kept in the user's settings (`sandboxHost`), so a restart keeps it, and read by the
 // sandbox module at each sandbox it starts: a change needs no restart, and a sandbox that runs already ends where it
-// started. Each machine the engine lists carries its place in it (`sandboxHost`).
+// started. Each machine the engine lists carries its place in it (`sandboxHost`). It may name a Podman host too.
 import { sandboxHostProblem, withSandboxHost, type SandboxHost } from '../domain/sandbox-host.ts';
+import { PODMAN_HOSTS, podmanHostsOf } from '../domain/podman-hosts.ts';
 import type { MachineSource } from '../domain/ports.ts';
 import type { ActingPerson } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
@@ -28,7 +29,8 @@ export function createSandboxHostSetting(c: EngineContext): SandboxHostSetting {
   return {
     hosts,
     async set(next, by) {
-      const problem = sandboxHostProblem(next, await c.machines.list(), (id) => c.configuredMachines()?.includes(id) ?? false);
+      const podman = podmanHostsOf(c.store.config.read(PODMAN_HOSTS)).map((h) => h.name);
+      const problem = sandboxHostProblem(next, await c.machines.list(), (id) => c.configuredMachines()?.includes(id) ?? false, podman);
       if (problem) throw new EngineError(/not found/.test(problem) ? 'not_found' : 'invalid', problem);
       const was = hosts();
       if (was.join('\0') !== next.join('\0')) {

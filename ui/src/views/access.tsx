@@ -72,7 +72,7 @@ function Approvals({ view, onChanged }: { view: AccessView; onChanged: (v: Acces
               </div>
               <TemplateRadiusReasons radius={t.radius} />
               {t.radius.profiles.some((p) => !p.approved) && (
-                <p className="text-xs text-warn">Waits for approval on <a href="#access-requests" className="underline">Access requests</a>: {t.radius.profiles.filter((p) => !p.approved).map((p) => `${p.profile.operation} on ${p.profile.asset.kind} ${p.profile.asset.name}`).join(', ')}</p>
+                <p className="text-xs text-warn">Waits for approval on <a href="#approvals/access-requests" className="underline">Access requests</a>: {t.radius.profiles.filter((p) => !p.approved).map((p) => `${p.profile.operation} on ${p.profile.asset.kind} ${p.profile.asset.name}`).join(', ')}</p>
               )}
               {t.approvals.length > 0 && <ul className="divide-y rounded-lg border">
                 {t.approvals.map((a) => (

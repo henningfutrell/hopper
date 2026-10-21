@@ -88,7 +88,7 @@ function Why({ picked, view, onClose, onChanged }: { picked: Picked | undefined;
             ))}
             {cell.pending.map((p) => (
               <li key={p.operation} data-pending={p.operation} className="rounded-lg border border-dashed p-2 text-xs text-warn">
-                {p.operation}: waits for approval on <a href="#access-requests" className="underline">Access requests</a>
+                {p.operation}: waits for approval on <a href="#approvals/access-requests" className="underline">Access requests</a>
               </li>
             ))}
           </ul>

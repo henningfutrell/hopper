@@ -350,9 +350,9 @@ export interface SandboxRepository {
 
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
- * `plugins`, `rules`, `job-rules`, `repo-job-rules` (issue #1472), `windows-hosts` (issue #731) and `clusters` (issue #1766), and the instance's `sign-in`. No config lives in a file.
+ * `plugins`, `rules`, `job-rules`, `repo-job-rules` (issue #1472), `windows-hosts` (issue #731), `clusters` (issue #1766) and `podman-hosts` (issue #2272), and the instance's `sign-in`. No config lives in a file.
  */
-export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'repo-job-rules', 'windows-hosts', 'clusters'] as const;
+export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'repo-job-rules', 'windows-hosts', 'clusters', 'podman-hosts'] as const;
 export const INSTANCE_CONFIG = ['sign-in'] as const;
 export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
 export type UserConfigName = (typeof USER_CONFIG)[number];

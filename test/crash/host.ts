@@ -67,6 +67,9 @@ const app = await startTestApp({
 });
 if (connect) connectGitHub(app, connect.split(','), { token: process.env.CRASH_GITHUB_TOKEN ?? TEST_ACCOUNT_TOKEN, key: need('CRASH_MASTER_KEY') });
 if (github) await app.sync();
+// A sync loop of its own (the label mirror's scenarios, issue #1892): the source's own poll is an hour in tests.
+const syncMs = Number(process.env.CRASH_SYNC_MS ?? 0);
+if (github && syncMs) setInterval(() => { void app.sync().catch(() => undefined); }, syncMs).unref();
 let job: { job: string; proxyToken: string } | undefined;
 if (issue) {
   const [repo, number] = issue.split('#') as [string, string];

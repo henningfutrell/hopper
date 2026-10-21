@@ -19,7 +19,7 @@ import type { Egress } from './egress.ts';
 import { removeLeftoverBuilds, LEFTOVER_PASS_MS } from './leftover-builds.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { burnLaunched, type Problems } from './burn-launched.ts';
-import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets } from './runtime.ts';
+import { createPlacements, LOCAL, NO_RUNTIME, NO_RUNTIME_IN_CLUSTER, type ClientTargets, type PodmanHosts } from './runtime.ts';
 import { NO_SECRET_COPY, phaseTimes, runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxIo, type NeedBoxResult } from './need-box.ts';
 import { BOX_LABEL, sweepHomes, USER_LABEL } from './owned.ts';
 import { trace } from '@opentelemetry/api';
@@ -82,6 +82,8 @@ export interface SandboxesOptions {
   clients?: ClientTargets;
   /** The user's sandbox host, first first (issue #2272), read at each sandbox; empty or absent: none set. */
   sandboxHost?: (userId: string) => readonly string[];
+  /** A user's Podman host by name (issue #2272), read at each look; absent: none. */
+  podmanHosts?: PodmanHosts;
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
   /** The templates the read-only check reads, and where it keeps a check (issue #716). Absent: no check runs. */
@@ -137,7 +139,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   let buildsAt = -Infinity;
   const noRuntime = o.cluster ? NO_RUNTIME_IN_CLUSTER : NO_RUNTIME;
   const noPlace = (): string => `${noRuntime}; and no machine of the user's with a container runtime is dialled in`;
-  const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}), ...(o.egress ? { egress: o.egress } : {}), ...(o.sandboxHost ? { hosts: o.sandboxHost } : {}) });
+  const places = createPlacements({ local: o.runtime, network: o.network, ...(o.clients ? { clients: o.clients } : {}), ...(o.egress ? { egress: o.egress } : {}), ...(o.sandboxHost ? { hosts: o.sandboxHost } : {}), ...(o.podmanHosts ? { podmanHosts: o.podmanHosts } : {}) });
 
   /**
    * Each client target to look on (issue #1349): every one dialled in now, and each one `also` names. One that cannot
@@ -257,11 +259,10 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
    * went. A step that never ended ends as `swept`. A target that is only away keeps its runs open.
    */
   const closeRemoved = (): void => {
-    const clients = o.clients;
-    if (!clients) return;
+    if (!o.clients && !o.podmanHosts) return;
     const now = o.clock.now().toISOString();
     for (const r of o.runs.open()) {
-      if (r.machine === LOCAL || stepping.has(r.box) || clients.known(r.userId, r.machine)) continue;
+      if (r.machine === LOCAL || stepping.has(r.box) || o.clients?.known(r.userId, r.machine) || o.podmanHosts?.(r.userId, r.machine)) continue;
       if (r.endedAt === undefined) o.runs.end(r.id, { at: now, outcome: 'swept', problem: 'the step did not end: its machine was removed' });
       o.runs.destroyed(r.id, now, { machineRemoved: true });
       o.logger.info(`hopper: sandbox ${r.box} closed in the ledger: its machine ${r.machine} was removed`);
@@ -323,8 +324,9 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     if (!at) return { exit: 125, problem: noPlace() };
     if ('problem' in at) return { exit: 125, problem: at.problem };
     if (offline && at.runtime.kind === 'kubernetes') return { exit: 125, problem: NO_OFFLINE_POD };
-    // A box step's vault secrets (issue #1875) never go to a machine of the user's: it may be the job's own.
-    if (box.files?.secrets && Object.keys(box.files.secrets).length > 0 && at.machine !== LOCAL) return { exit: 125, problem: NO_SECRET_COPY };
+    // A box step's vault secrets (issue #1875) never go to a machine of the user's: it may be the job's own. Beside the
+    // hopper and on a Podman host (issue #2272) they go in by a copy.
+    if (box.files?.secrets && Object.keys(box.files.secrets).length > 0 && !at.secrets) return { exit: 125, problem: NO_SECRET_COPY };
     const ledger: SandboxRun = { id: run.step, userId, jobId: run.jobId, template: run.template, box: box.name, machine: at.machine, startedAt: o.clock.now().toISOString() };
     o.runs.start(ledger);
     stepping.add(box.name); steppingAt.set(box.name, at.machine === LOCAL ? 'local' : 'machine');

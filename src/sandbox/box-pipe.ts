@@ -10,7 +10,7 @@ import type { Socket } from 'node:net';
 import { Duplex } from 'node:stream';
 import type { BoxPipe, ContainerRuntime } from '../domain/sandboxes.ts';
 import { NEED_LABEL } from './owned.ts';
-import { ok, refusal, socketCall } from './socket-http.ts';
+import { dialOf, ok, refusal, socketCall, type RuntimeSocket } from './socket-http.ts';
 
 /** The most of a command's stderr a pipe keeps: its tail. */
 const STDERR_TAIL = 2048;
@@ -58,7 +58,7 @@ class FramedPipe extends Duplex implements BoxPipe {
   override _destroy(e: Error | null, done: (e?: Error | null) => void): void { this.sock.destroy(); done(e); }
 }
 
-export function pipeCall(socket: string, api: string, runtime: 'podman' | 'docker'): Required<Pick<ContainerRuntime, 'pipe'>> {
+export function pipeCall(socket: RuntimeSocket, api: string, runtime: 'podman' | 'docker'): Required<Pick<ContainerRuntime, 'pipe'>> {
   return {
     async pipe(id, cmd) {
       const what = `start a command in the box ${id}`;
@@ -74,7 +74,7 @@ export function pipeCall(socket: string, api: string, runtime: 'podman' | 'docke
       const body = JSON.stringify({ Detach: false, Tty: false });
       return new Promise<BoxPipe>((resolve, reject) => {
         const req = request({
-          socketPath: socket, method: 'POST', path: `${api}/exec/${enc(exec)}/start`, timeout: START_MS,
+          ...dialOf(socket), method: 'POST', path: `${api}/exec/${enc(exec)}/start`, timeout: START_MS,
           headers: { host: 'localhost', connection: 'Upgrade', upgrade: 'tcp', 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
         });
         req.on('upgrade', (_res, sock: Socket, head: Buffer) => { sock.setTimeout(0); resolve(new FramedPipe(sock, head)); });

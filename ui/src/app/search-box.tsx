@@ -1,7 +1,7 @@
 // The search box in the header (issue #945, design.md "Search"), on every screen from tablet width: as a person types,
 // job titles whose words start with what they typed (GET /api/search/suggest, after a short pause) open below it, each a
 // link to its job; Enter opens the Search view on the words. Search degraded or not set up: no suggestions, and Enter
-// still opens the view, which says why. On a phone the Search entry in the navigation opens the view.
+// still opens the view, which says why. On a phone the Search entry in the navigation drawer opens the view.
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { get } from '@/lib/api';

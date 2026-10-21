@@ -1,0 +1,1 @@
+- You can now run sandboxes on a computer with Podman that you set up for them, with no hopper client on it. Add it in Settings under Podman hosts, then use it as the sandbox host.

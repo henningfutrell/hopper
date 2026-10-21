@@ -66,7 +66,7 @@ async function boot(waiting: ReturnType<typeof job>[], hash = '#queue', fake: Fa
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
 }
 
-const queueLink = () => document.querySelector('aside nav a[href="#queue"]')!;
+const queueLink = () => document.querySelector('[data-slot="page-tabs"] a[href="#jobs/queue"]')!;
 
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -75,16 +75,16 @@ afterEach(async () => {
 });
 
 describe('Queue badge', () => {
-  it('the Queue nav entry counts the jobs waiting to be ordered', async () => {
+  it('the Queue order tab of Jobs counts the jobs waiting to be ordered (issue #2374)', async () => {
     await boot([job('a1', true), job('n1', false), job('n2', false)]);
-    await vi.waitFor(() => expect(queueLink().querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
-    expect(queueLink().querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('2 jobs waiting to be ordered');
+    await vi.waitFor(() => expect(queueLink().querySelector('[data-slot="tab-badge"]')?.textContent).toBe('2'));
+    expect(queueLink().querySelector('[data-slot="tab-badge"]')!.getAttribute('title')).toBe('2 jobs waiting to be ordered');
   });
 
   it('no badge when every waiting job is accepted', async () => {
     await boot([job('a1', true)]);
     await vi.waitFor(() => expect(document.body.textContent).toContain('goal a1'));
-    expect(queueLink().querySelector('[data-slot="nav-badge"]')).toBeNull();
+    expect(queueLink().querySelector('[data-slot="tab-badge"]')).toBeNull();
   });
 });
 

@@ -126,7 +126,7 @@ describe('a not-signed-in question links to Accounts (issue #1128)', () => {
     await boot('#questions');
     const card = await vi.waitFor(() => { const c = cardOf('Press Esc to go on.'); expect(c).not.toBeNull(); return c!; });
     const link = card.querySelector<HTMLAnchorElement>('[data-slot="sign-in-link"] a')!;
-    expect(link.getAttribute('href')).toBe('#accounts');
+    expect(link.getAttribute('href')).toBe('#machines/accounts');
     expect(card.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('Desk tower');
     expect(card.querySelector('[data-slot="sign-in-link"]')!.textContent).toContain('answers this question');
     const screen = cardOf(LOGIN_SCREEN_MARK)!;

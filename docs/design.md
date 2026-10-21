@@ -86,7 +86,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); the values of the secrets it delivered to a job, a checkpoint scrubbed of them (`delivered.ts`, issue #1957); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`), the action grants and the asks of jobs for an AWS action (`action-grants.ts`, issue #2206, pure in `src/domain/action-grants.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), a job's bastion, the one need box that outlives a step, and the relay's pipe into it and `hopper-relay` (`bastion.ts`, `bastions.ts`, `box-pipe.ts`, `relay-script.ts`, issue #2146), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, #1349, "Sandboxes are burned after each step"): the one owner of the life of the sandboxes the hopper starts — the sandbox requests jobs make (`requests.ts`, issue #991), the need steps and box steps, each in a need box of its own (`need-steps.ts`, `need-box.ts`, issues #1007, #1349), a job's bastion, the one need box that outlives a step, and the relay's pipe into it and `hopper-relay` (`bastion.ts`, `bastions.ts`, `box-pipe.ts`, `relay-script.ts`, issue #2146), each kept in the database and run by its `need-step` saga (`need-step-saga.ts`, issue #1568), the sweep that burns a need box that outlives its step and the sandbox runs ledger it writes (`service.ts`, issue #1349), the burn pass that burns each box an older build launched, with its sandbox record (`burn-launched.ts`, issue #1349), the read-only check (`check.ts`), the image a box runs (`box-image.ts`), the default limits (`params.ts`); the removal of the leftover box builds beside the hopper (`leftover-builds.ts`, issue #1120); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), with the archive call both share (`copy-in.ts`, issue #1004) and the image calls (`images.ts`, issue #1120), and a client target's own runtime through its client (`remote.ts`), and a Podman host's over ssh `podman system dial-stdio` (`podman-host.ts`, its record `podman-hosts.ts`, issue #2272) — and the one place a box is placed and its runtime selected (`runtime.ts`), with the settings that select it (`settings.ts`, part of the daemon's settings in `src/config.ts`). The records through the `SandboxRepository` port, the sandbox runs through `SandboxRunRepository` (`src/domain/sandbox-runs.ts`), the sandbox steps through `NeedStepRepository` (`src/domain/need-steps.ts`); the machines and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/sagas/` | sagas (issue #1524, "Sagas: work that survives a stop"): the coordinator (`coordinator.ts`) that drives each saga a step at a time under its lease, records each step before the next, takes the sagas due at start and every 5 s, and compensates on an abort or a step past its tries; the **kill points** a test of the crash harness ends the process at, off in a deploy (`kill-points.ts`, issue #1954, "The crash harness"); the kinds this build drives and the lease owner of this process (`index.ts`); the **sweep leases** of this process, renewed every 10 s with its host lease and released at its stop (`leases.ts`, issue #1627, "Sweep leases: one host per sweep"). The saga, its states and its pure transitions are `src/domain/sagas.ts`; its rows through `SagaRepository` (`src/store/sagas.ts`) | engine, http, store, plugins, decider, executors, sandbox, sources |
 | `src/kubernetes/` | job pods (issue #1283, "Job pods on Kubernetes"): the Kubernetes API as job pods use it — pods in one namespace, the service account's token and CA (`api.ts`) —, a job pod's manifest (`pod-spec.ts`, pure), and a job pod's life: started with a one-time join line, waited on until it joined, deleted with its machine (`job-pods.ts`) | engine, store, plugins, executors, http, decider |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
@@ -1451,7 +1451,7 @@ Questions view changes nothing in the count. Any other badge for something pendi
 issue #477) follows the same rule: it counts what is pending and clears only when none is.
 
 **Nav groups never hide a badge** (issue #906). The nav entries are in nav groups (`NAV_GROUPS`,
-`ui/src/app/nav.tsx`); a person collapses a group by its heading, and the sidebar and the mobile drawer
+`ui/src/app/routes.ts`; Waiting on you, Work, Fleet, Infra, Admin since issue #2374); a person collapses a group by its heading, and the sidebar and the mobile drawer
 share which are collapsed, kept per browser (`jh_nav_collapsed`). A collapsed group's heading shows its
 entries' badges as one (`groupBadges`, `ui/src/model/nav-groups.ts`): the counts and the high-priority
 counts summed, the most urgent colour (bad, warn, question, plain, quiet), each entry and its count in the
@@ -1459,6 +1459,35 @@ title, and the backburner count summed on its own. Open, each entry shows its ow
 Needs you, in that order, are pinned above the groups (`NAV_PINNED`), never collapsed. The Dashboard (issue #951)
 covers the whole system, not only jobs, and the UI opens on it; it was the Overview, and `#overview` still opens it
 (`MOVED`). Needs you's badge already sums other entries', and a group that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
+
+**One canonical home per workflow** (issue #2374). Views that showed the same data are one nav entry, a **merged
+page** (`PAGE_TABS`, `ui/src/app/routes.ts`; `ui/src/app/page-tabs.tsx`), whose tabs filter that one workflow:
+
+| Entry | Tabs (the first by default) |
+|---|---|
+| Approvals | Access requests, Pending approvals |
+| Failures | Failures (Stuck work first in it), Parked |
+| Jobs | Jobs, Queue order |
+| Ask hopper | Run a job (direct jobs), Ask a question (direct queries) |
+| Activity | Events, Decisions |
+| Machines | Machines, Accounts, Logins |
+| Usage | Usage, Resources |
+
+- **The hash names the tab**: `#<entry>/<tab>`, and with none the first tab, which then reads the rest of the hash as
+  its own section (`#jobs/in-flight`). A tab is a view that was its own entry before; it is never a second home.
+- **Every old hash opens the new home** (`canonicalHash`): `#access-requests`, `#pending-approvals`, `#parked`,
+  `#events`, `#decisions`, `#accounts`, `#logins`, `#direct-jobs`, `#direct-queries`, `#resources`, `#queue` open their
+  tab, `#stuck` opens Failures, what follows the old view kept (`#direct-queries/<id>` → `#ask/direct-queries/<id>`). The
+  page replaces the hash with the canonical one, so a copied link names the new home. Links the hopper sent out earlier
+  (a notifier's `#logins`, a promotion's `#direct-jobs/<id>`) keep working by this rule.
+- **Badges**: each tab shows its own badge; the entry's badge is their sum (`mergedBadge`, the same sum as a collapsed
+  group's, each tab's title as it is). A collapsed group sums the entries' badges as before, so no count is lost or
+  counted twice.
+- **No entry**: Search, which the header's search box opens (on a phone, which has no search box, the navigation
+  drawer lists it after Needs you); Your reports and Version history, in the user menu. Their routes stay (`#search`,
+  `#reports`, `#settings/version-history`).
+- **Fits**: with every group open the sidebar holds 24 entries (with Plugins, Vault and Users & access, issue #2373) and needs no scroll at 1440×900; its rows are tighter
+  than the drawer's, whose rows stay a touch target's height.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
@@ -19132,9 +19161,9 @@ plain words. The terms stay in the glossary and the code; only the UI words chan
   filter. A row opens its detail: the ids and the data, in monospace. Copy takes every event the filters show.
 - **Questions**: a card's escalation trail is folded behind "N model answers"; the reason banner, the question and the
   answer box stay in view.
-- **Ask hopper** (`#ask`, `ui/src/views/ask.tsx`) is one nav entry in place of Direct jobs and Direct queries, with two
-  tabs: Run a job (`#ask`) and Ask a question (`#ask/question`). `#direct-jobs` and `#direct-queries`, with or without an
-  id after them, still open the matching tab (`MOVED` in `ui/src/app/nav.tsx`), so links already sent keep working.
+- **Ask hopper** (`#ask`, `ui/src/views/ask.tsx`) is one nav entry in place of Direct jobs and Direct queries, a merged page (issue #2374) with two
+  tabs: Run a job (`#ask/direct-jobs`) and Ask a question (`#ask/direct-queries`; `#ask/question` still opens it). `#direct-jobs` and `#direct-queries`, with or without an
+  id after them, still open the matching tab (`MOVED` in `ui/src/app/routes.ts`), so links already sent keep working.
 - **Waiting to be ordered** in place of the pre-sort: the Queue badge, the Queue column and its button (Accept this
   order), the Needs you row.
 - **Later** in place of the backburner: the Intake group, its tooltip names the `hopper:backburner` label; the action
@@ -19169,7 +19198,7 @@ Requirement: no horizontal strip of Settings links; every section in view at 144
   typecheck, as a nav group of one entry does (`NAV_GROUPS`, `ui/src/app/nav.tsx`).
 - **Views of their own.** Plugins (`#plugins`), Vault (`#vault`) and **Users & access** (`#users-access`, sections
   `users`, `access`, `permissions`, `api-tokens`; `ui/src/views/users-access.tsx`) are workflows a person acts in, not
-  configuration. Each is an entry in Set up, its one home. Webhooks and Sign-in stay in Settings.
+  configuration. Each is an entry of its own, its one home: Vault in Infra, Plugins and Users & access in Admin (issue #2374). Webhooks and Sign-in stay in Settings.
 - **Old hashes.** `#settings/plugins`, `#settings/vault`, `#settings/users`, `#settings/access`, `#settings/permissions`
   and `#settings/api-tokens` are replaced by their new hash; what follows the section (a device grant's user code)
   follows the new one. A device grant's `verificationPath` is `/#users-access/api-tokens`.
@@ -20108,7 +20137,7 @@ rendered nothing when empty, so a person could not tell the feature was there.
   request declined there is no row either: one line counts them. Sources keeps each source's sync, the intake
   migration and the repos outside the job repositories, and links to Intake with its counts; it lists no issue and offers
   no Approve.
-- **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
+- **Access requests.** `#access-requests` (since issue #2374 the tab `#approvals/access-requests` of Approvals; `ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
   grants, and Template approvals (`template-approvals.tsx`: Approve, and Approve `<profile>` for a high-radius profile),
   plus a pointer to Users & access → API tokens for box tokens, and Bastions (issue #2146, "Bastions": each bastion of a job
   that runs now, with Stop). A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
@@ -20161,7 +20190,7 @@ reports and Question history, if they stay actionable.
   points, the TypeSafe API key, and a link to Decisions. Both read `GET /api/minor-decisions`; no route changed.
 - **Question history on Questions.** It holds Correct, so it left Settings for a section of Questions:
   `#questions/history`, a tab beside the open questions. `#questions` alone still holds only the open questions (#151).
-- **Your reports is its own view** (`#reports`, nav group Jobs). It holds no decision, but it is no configuration either.
+- **Your reports is its own view** (`#reports`; since issue #2374 the user menu links to it, with no nav entry). It holds no decision, but it is no configuration either.
 - **Old links.** `#settings/history` and `#settings/reports` are replaced by their new hashes (`LEFT`,
   `ui/src/views/settings.tsx`).
 - **No duplicates found for auto-park or the issue thread.** Auto-park and the issue thread are configuration, set only in
@@ -20212,7 +20241,7 @@ end as of any job's. The operator CLI: `hopper job submit --title … (--brief �
 webhook subscription to `job.queued` delivers it to the subscriber. The authorizations are told to the job and recorded;
 the one that makes a vault grant is part 3, below.
 
-**In the UI (part 2).** The view Direct jobs (`#direct-jobs`, in the Jobs nav group; since issue #2375 the Run a job tab of Ask hopper, `#ask`; `ui/src/views/direct-jobs.tsx`,
+**In the UI (part 2).** The view Direct jobs (`#direct-jobs`; since issues #2375 and #2374 the Run a job tab of Ask hopper, `#ask/direct-jobs`, in the Work nav group; `ui/src/views/direct-jobs.tsx`,
 `ui/src/model/direct-jobs.ts`) has the submit form, for an operator or admin only: title, brief, labels (split at commas),
 authorizations (one per line), repository and priority. It sends `POST /ui/api/direct-jobs` through the UI session, so the
 record says `via: ui`. Below it, every direct job from `GET /api/direct-jobs`, read when shown and every 15 s: its state
@@ -20284,8 +20313,8 @@ jobs"). What a query adds:
 - **Where the answer and evidence are kept.** In the hopper only: the record (`direct_jobs`), the job, its timeline and its
   artifacts (`OUTPUTS_LINE` asks for them). Nothing goes to GitHub. A person can promote a finished query to GitHub as any
   direct job ("Promote to GitHub").
-- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, since issue #2375 the Ask a question tab of Ask hopper, `#ask/question`; `ui/src/views/direct-queries.tsx`), in the Jobs
-  group beside Direct jobs, not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
+- **Its UI home** (part 2): the Direct queries view (`#direct-queries`, `ui/src/views/direct-queries.tsx`; since issues #2375 and #2374 the Ask
+  a question tab of Ask hopper, `#ask/direct-queries`, beside Run a job), not in Settings. It lists each query, newest first: where it stands, who asked it and the way,
   its callback, its hints, its open questions (a link to Questions), its answer, its error and its evidence (the job's
   artifacts). An operator asks a question there (a request id the page makes, `ui-<32 hex>`, from
   `crypto.getRandomValues`: a LAN page over plain HTTP has no `randomUUID`), and cancels a query whose job is not at an
@@ -20622,7 +20651,7 @@ has had no release since 2019. It waits 2 seconds; no OpenFGA, an error status o
 (`assertInstanceRead`): the hopper's admin, or loopback without a session. A part that fails says why and the rest is
 read.
 
-**UI.** Resources (`#resources`, in Sources & machines, `ui/src/views/resources.tsx`): a row per container of the stack
+**UI.** Resources (`#resources`; since issue #2374 the tab `#usage/resources` of Usage, in Fleet; `ui/src/views/resources.tsx`): a row per container of the stack
 and, apart, per sandbox box — service, state and health, uptime, restarts, image; CPU (against its quota), memory against
 its limit with a bar, network, disk read and written and its layer, volumes with their size —, Postgres's readings, and
 OpenFGA's: the mean check time and the share of checks that failed. It
@@ -20840,7 +20869,7 @@ updates wait in `search_pending` until Solr takes them.
 **In the UI and the operator CLI** (part 2). The **search box** in the header (`ui/src/app/search-box.tsx`, tablet width and
 up) asks `GET /api/search/suggest` 150 ms after a person stops typing (two characters at least) and lists the titles, each a
 link to its job; Enter opens the **Search view** on the words. The Search view (`#search/<search>`, `ui/src/views/search.tsx`;
-the Search entry in the Jobs nav group opens it on a phone) keeps the whole search in the hash — `q`, each `type`,
+the Search entry of the navigation drawer opens it on a phone, issue #2374) keeps the whole search in the hash — `q`, each `type`,
 `status`, `label` and `repo` picked, `offset` — URL-encoded as one part (`ui/src/model/search.ts`), so a link and the back
 button work. It reads `GET /api/search` (20 a page): the total, each hit with a link to its job view (`#job/<id>`, not the
 answer's `url`, which may name the public URL), its title and at most two snippets (asked, result, question, failure,
@@ -22246,6 +22275,33 @@ is not judged), `test/domain/work-items-done-by-hand.test.ts` (the close marks t
 job forgets it; a job's own "done by hand" result does not mark it), `test/sources/github-item-labels.test.ts`
 (`labelsFor` of an item done by hand).
 
+### The label mirror under the crash harness (issue #1892 part 11, 2026-10-21)
+
+The issue's restart test, for the label mirror: a hopper killed while its mirror corrects an item's labels, or once it
+recorded a label a person took off by hand, leaves the item to the next hopper with each effect once. Part 9 of #1954 ("The
+crash harness") covered the item reconciler's corrections; the mirror had no kill point.
+
+- **Two kill points** (`mirrorKillPoint`, `src/sources/github/label-mirror.ts`): `mirror:correct:after-queue`, once a
+  correction's outbox rows are kept and before its outbox sends them; `mirror:edit:after-record`, once a label edit's
+  `work_item.label_edited` is kept and before the discover judges Intake. Off in every deploy, as every kill point.
+- **The scenarios** (`test/crash/label-kill.test.ts`, `test/crash/label-world.ts`). Two items in PR open on the node:http
+  fake GitHub. #7 carries a stale `hopper:failed` and no `hopper:pr-ready`: the first hopper is killed after the mirror
+  queued its correction, or before its outbox sends the remove or the add (`outbox:remove_labels:before-send`,
+  `outbox:add_labels:before-send`). A second hopper sends what is left: `hopper:failed` off and `hopper:pr-ready` on, each
+  by one call, and the correction queued once. #9 carries `hopper:pr-ready`, which the test takes off by hand after the
+  first hopper saw it: that hopper is killed once it recorded the edit. A second hopper finds the Run again asked
+  (`runAgainAsked`), records no second edit, makes one new job of the item, and queues no mirror row for it: the label is
+  not put back.
+- **A crash host syncs on its own** (`CRASH_SYNC_MS`, `syncMs` of `startHost`): a source's poll is an hour in tests, and the
+  mirror judges only at a discover.
+
+**Decisions.**
+- **PR open, not failed.** A seeded failed item is handed off by the failure assessor at once, and a hand-off in its first
+  moments is not judged (part 8). PR open has the same correction path and no owner that moves it in a scenario.
+- **No mirror family in the randomised run.** A new family would change what each seed already picks.
+
+**Verification:** `test/crash/label-kill.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
@@ -23350,7 +23406,7 @@ and the API for those are follow-ups.
   token with its scope in State and usage, the API door). No token or id: the accounts carry what `parseAuthStatus`
   keeps (email, plan, organization, sign-in method).
 - **CLI.** `hopper accounts` prints that answer (viewer).
-- **UI.** Accounts is a view of its own (not under Settings), in the nav group Sources & machines since issue #1943: `ui/src/views/accounts.tsx`, model
+- **UI.** Accounts is a view of its own (not under Settings), in the nav group Sources & machines since issue #1943, and since issue #2374 the tab `#machines/accounts` of Machines in Fleet: `ui/src/views/accounts.tsx`, model
   `ui/src/model/tool-accounts.ts`, read through the shared polled reads (`useToolAccounts`, every 30 s; a usage source
   emits no event). A card per account: its plan and organization, each machine with its sign-in, read and last-used
   times and why, and its week gauges. The nav badge counts the machines signed out.
@@ -25068,7 +25124,15 @@ said what did not hold the loop, never what did.
   stderr, so the log says the loop is held while it is: `hopper: the event loop is held for 2.0 s now; it runs list
   (src/store/jobs.ts:88) ← …`. The watchdog names the reads with the stall when the loop is free (`held`: `afterMs`,
   `frames`), in its log line, in `/api/health`'s `eventLoopStall`, in `hopper.event_loop_stalled` (additive, still v1)
-  and in the **stalled** badge's title. A frame names its function and its file in the hopper's tree (`src/…`,
+  and in the **stalled** badge's title.
+- **A stall names the processes started in it** (issue #2367, `src/http/event-loop-processes.ts`). Each process the
+  hopper starts holds the loop while it forks, longer the larger the hopper is (about 2 ms at 800 MiB resident here,
+  more on WSL): the update check's thousands of git processes a minute were stalls of 2–4 s with almost no store time.
+  Node names each child process it makes on the `child_process` diagnostics channel, so every caller is counted. The
+  watchdog reads the totals at each tick, as it reads the store's; a stall's line adds `…; processes started in it: 41
+  (git ×38, herdr ×3)` when any started, and `processes` (`count`, `programs`) is in `eventLoopStall` and
+  `hopper.event_loop_stalled` (additive). A program is named by its file name only, never its path or its arguments.
+  `spawnSync` makes no child process object and is not counted. A frame names its function and its file in the hopper's tree (`src/…`,
   `node_modules/…`, `node:…`), else the file name alone: never an absolute path. The debugger is on only for the read.
   No inspector port is opened: the session is in-process. A Node with no inspector starts with none, and says so.
 - **A stall says the process's memory** (`memory`: `rssMb`, `heapMb`), and the watchdog logs each time the resident size
@@ -29303,7 +29367,7 @@ set a credential. A primary view had no top-level home (issue #896), and the sid
 - **A failed read shows its error** (`ReadErrors`): each source whose last read failed, its name, when, and the error, in
   a box of its own above the graph. A graph with sources but no node says no source was read without an error.
 - **Nav groups.** Infra (Infra, Topology); Sources & machines takes Accounts; Set up holds Skills and Settings. No group
-  holds one entry only. Group ids stay (`infra`, `sources-machines`, `settings`), so a collapsed group stays collapsed.
+  holds one entry only. Issue #2374 renamed them (Work, Fleet, Admin) and merged entries: "One canonical home per workflow". Group ids stay (`infra`, `sources-machines`, `settings`), so a collapsed group stays collapsed.
 
 **Decisions:**
 - **Topology in the Infra group**, not a group of its own: the two pages are about the same accounts and clusters, and a
@@ -30283,7 +30347,8 @@ GitHub, each by one call; #5 asked about once; #3 one new job of its item and `h
 transaction of more than one statement (`test/crash/item-drop.test.ts`): the proxy ends the connection at the block's first
 outbox row, before Postgres reads it or once it ran with the transaction open. Postgres rolls the transaction back: no
 event, no move, no row; a second host blocks the item once. The randomised run on GitHub's writes picks the item reconciler
-as a sixth family.
+as a sixth family. The label mirror's own kill points are issue #1892 part 11 ("The label mirror under the crash
+harness").
 **What it found.**
 - **A block wrote no label rows for a real job.** The reconciler kept a block's label rows only for a job of source kind
   `github`; a connected account's job is of kind `github-account`. So its issue kept `hopper:pr-ready` until the label
@@ -31696,10 +31761,15 @@ them). Before the template is made, `checkTemplateActions` (`src/vault/template-
 - **cannot** (`role-denies`) — the role does not allow it. No grant helps, as a session policy only narrows. The request
   is refused (409) before a template is made, with the need to ask for in its place (the action role, `--action`), or,
   on the action role itself, the operator's change to make;
+- **cannot** (`no-role`, issue #2387) — the role does not exist in its account (IAM `GetRole` answers `NoSuchEntity`).
+  No session of it can be minted, so the request is refused (409) the same way, before a template is made and before a
+  grant is asked; the line names the role's ARN and, for the action role, that an operator makes it;
 - **not checked** (`unchecked`) — IAM could not simulate it; the line says why, and nothing is refused for it.
 
 The simulation is the port `ActionSimulator`: `iam:SimulatePrincipalPolicy` (`src/vault/action-simulation.ts`,
-@aws-sdk/client-iam) of the role's ARN, one call per action on its resource, with a read session of the account's read
+@aws-sdk/client-iam) of the role's ARN, one call per action on its resource, after one `iam:GetRole` of the role (issue
+#2387: a role the account does not have is `no-role`, and a `GetRole` IAM refuses for another reason goes on to the
+simulation, as `ReadOnlyAccess` holds `iam:GetRole` but a narrower read role may not), with a read session of the account's read
 role `hopper-read`, minted as topology discovery mints one (`mintForDiscovery`: no job or template takes part, so Access
 is not asked, and `vault.discovery_minted` records it). It reads the role's own policies: a service control policy or a
 resource policy can still refuse the call when it runs. A need step with `--action` and no template yet passes its actions
@@ -31849,11 +31919,64 @@ dedicated machine for sandboxes was not possible to point at.
 **Not changed.** Sandbox network rules: no API-server proxy, no port-forward RBAC, no new port or tunnel. A box step's vault
 secrets still go only into a need box beside the hopper (`NO_SECRET_COPY`).
 
-**Left for the next parts** (path 2 of the proposal): a **remote Podman host** record (`sandbox-hosts`, shaped as
-`windows-hosts`) reached over the hopper's own ssh key and pinned host key by `ssh -T <host> podman system dial-stdio`, a
-`SocketCall` over it under the unchanged Podman adapter, secrets copied into such a host's box (lifting `NO_SECRET_COPY` there);
-the host's CPU and memory and its totals on Machines; and on Kubernetes `local:<node>`, a box pod pinned by `nodeSelector`.
+**Left for the next parts** (path 2 of the proposal): a **Podman host** record reached over the hopper's own ssh key and
+pinned host key by `podman system dial-stdio` — part 2, "Podman hosts" below —; the host's CPU and memory and its totals on
+Machines; and on Kubernetes `local:<node>`, a box pod pinned by `nodeSelector`.
 
 Tests: `test/domain/sandbox-host.test.ts` (which machines can be the host), `test/sandbox/sandbox-host.test.ts` (placement, no
 fallback, offline, a change mid-run), `test/sandbox/need-step-host-wait.test.ts` (the wait), `test/integration/sandbox-host.test.ts`
 (the route, the event, a restart, the CLI), `test/ui/machine-sandbox-host.test.ts` (the card).
+
+### Podman hosts (issue #2272 part 2, 2026-10-21)
+
+**The gap.** The sandbox host could name only `local` or a machine of the user's with no lanes, and a machine needs the
+hopper client. A dedicated VM for sandboxes needed a hopper client on it, and a box step with vault secrets still ran only
+beside the hopper (`NO_SECRET_COPY`).
+
+**The change** (`src/domain/podman-hosts.ts`; `src/sandbox/podman-hosts.ts`; `src/sandbox/podman-host.ts`;
+`src/sandbox/socket-http.ts` `RuntimeSocket`; `src/sandbox/runtime.ts` `PodmanHosts`; `src/http/ui/podman-hosts.ts`;
+`src/cli-operator-podman-host.ts`; Settings → Podman hosts, `ui/src/views/podman-hosts.tsx`):
+- **A Podman host** (glossary) is a Linux computer with rootless Podman (4 or later) that a person set up for sandboxes. It is
+  kept in the user's config record `podman-hosts`: a name (never `local`), an ssh destination (`[user@]host`), its pinned host
+  key, and the most CPUs and memory (MiB) a box gets there. Not a machine: no hopper client, lane or job runs there. The record
+  is read at each sandbox, so an edit needs no restart.
+- **Added** with its host key confirmed, as a Windows host is: Settings → Podman hosts reads the key the host presents
+  (`POST /ui/api/machines/host-key`), shows its fingerprint, and pins it on Pin this key and save; `hopper machine podman-host
+  add <name> <user@host>` prints the key and its fingerprint and adds nothing, and the same command with `--host-key '<key>'`
+  pins it. `POST /ui/api/podman-hosts` takes the whole list against the version read (admin, a box action: it says where
+  work runs). `GET /api/podman-hosts` reads it; `hopper machine podman-host list|remove` too.
+- **Used** once the sandbox host names it (`hopper machine sandbox-host <name>`, or Use as sandbox host on its row). A name
+  that is both a machine and a Podman host is refused. Placement is part 1's: the first host of the list whose runtime
+  answers, never another, none online `sandbox host <name> is offline`.
+- **The transport.** Each call of the Podman adapter (`podman.ts`, unchanged in its calls) goes over a stream that `ssh` opens
+  in place of the socket: `ssh … -- <host> podman system dial-stdio`, its stdin and stdout the host's Podman API. The ssh
+  connection is the one every ssh target gets ("Target authentication"): the hopper's own key, public-key authentication
+  only, the hardened options, nothing forwarded, and the pinned key only, written to `<workdir>/<user>/ssh/podman/<name>.known_hosts`.
+  One connection is shared per host (ControlMaster, 60 s). node:http drives the stream as it drives a unix socket, so the
+  copy into a box (`copy-in.ts`) and a command in a box (`box-pipe.ts`) go over it too.
+- **The host's key line.** The account's `~/.ssh/authorized_keys` gives the hopper's key one forced command:
+  `command="podman system dial-stdio",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding <public key>`
+  (`AUTHORIZED_KEYS_OPTIONS`; the section shows the line whole). The key then runs no shell and forwards nothing.
+- **Health** is ssh plus libpod `/info`: the adapter's own `problem()` — ssh that fails says why (`ssh to <name> failed
+  (exit 255): …`), and a rootful Podman is refused as it is beside the hopper.
+- **Vault secrets.** A place now says whether it takes a step's vault secrets (`Placed.secrets`): beside the hopper and on a
+  Podman host, by a copy into the box's file system over the same stream — never in its environment, never to a process of
+  the hopper's on the host —; on a machine of the user's, still refused (`NO_SECRET_COPY`).
+- **A dropped wait.** A step's wait can last its whole time limit over one ssh stream. When the stream drops (not a refusal of
+  Podman's), the runtime looks the box up again by its id after 5 s and waits again, until the time limit; a box that is gone
+  ends the step with why. The box is made once, by its name, so nothing runs twice. A hopper that stops mid-step leaves the
+  step to its saga as before: the run ends `interrupted`, the sweep burns the box on the host by its labels.
+- **The most a box gets** there is the host's `cpus` and `memoryMb`, as a Kubernetes box gets the chart's.
+- **The sweep** looks on a Podman host that an open sandbox run names, as on a client target, and burns a need box a step
+  left there; a run on a Podman host the user removed is closed in the ledger, as on a removed machine.
+
+**Not changed.** Sandbox network rules. A box there joins the host's network (`host`), as on a client target; the egress proxy
+of a read-only box is only beside the hopper. The leftover box builds on a Podman host are not removed yet.
+
+**Security.** One new exposure: the hopper's ssh key can drive the host's rootless Podman — the same trust a Windows host
+gets. The forced command limits the key to dial-stdio. Only key authentication to a pinned host key is used.
+
+Tests: `test/domain/podman-hosts.test.ts` (the record), `test/domain/sandbox-host.test.ts` (the sandbox host names one),
+`test/sandbox/podman-host.test.ts` (ssh dial-stdio against a libpod double: health, ssh failing, a box with secrets, the
+limits, a dropped wait), `test/sandbox/sandbox-host-podman.test.ts` (placement, secrets, offline, the sweep),
+`test/integration/podman-hosts.test.ts` (route, sandbox host, CLI), `test/cli/podman-host.test.ts`, `test/ui/podman-hosts.test.ts`.

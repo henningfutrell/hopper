@@ -98,7 +98,7 @@ describe('the user menu (issue #666)', () => {
     expect(text).toContain('admin');
     const labels = items().map((i) => i.textContent?.trim());
     expect(labels[0]).toMatch(/^(Light|Dark) theme$/);
-    expect(labels.slice(1)).toEqual(['Help', 'Log in another device', 'File an issue', 'Report a bug', 'Sign out']);
+    expect(labels.slice(1)).toEqual(['Help', 'Your reports', 'Version history', 'Log in another device', 'File an issue', 'Report a bug', 'Sign out']);
     const separators = [...menu()!.querySelectorAll('[role="separator"]')];
     expect(separators.at(-1)?.nextElementSibling).toBe(item(/Sign out/));
     for (const i of items()) expect(i.className).toMatch(/(^|\s)min-h-11(\s|$)/);
@@ -107,14 +107,14 @@ describe('the user menu (issue #666)', () => {
   it('has no device link for a user who is not admin', async () => {
     await render({ ...ADMIN, role: 'operator' });
     await openMenu();
-    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'File an issue', 'Report a bug', 'Sign out']);
-    expect(items()).toHaveLength(5);
+    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'Your reports', 'Version history', 'File an issue', 'Report a bug', 'Sign out']);
+    expect(items()).toHaveLength(7);
   });
 
   it('has no Report a bug and no File an issue for a viewer, who may send neither', async () => {
     await render({ ...ADMIN, role: 'viewer' });
     await openMenu();
-    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'Sign out']);
+    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'Your reports', 'Version history', 'Sign out']);
   });
 
   it('Help opens the help pages of this version, for every role (issue #782)', async () => {

@@ -183,7 +183,7 @@ export function MinorDecisions() {
         <p data-jev={view.jev.available ? 'on' : 'off'} className="text-sm">
           {view.jev.available ? 'Jev is on.' : `${view.jev.why ?? 'Jev is off'}. Each decision is made as before.`}
         </p>
-        <p className="text-sm">Each pick, with Override, is on <a className="underline" href="#decisions">Decisions</a>.</p>
+        <p className="text-sm">Each pick, with Override, is on <a className="underline" href="#activity/decisions">Decisions</a>.</p>
         <TypesafeKeyField k={view.typesafeKey} onSaved={reload} {...(access !== undefined ? { accessDown: access } : {})} />
         {view.points.map((p) => <Point key={`${p.point}:${p.mode}:${p.threshold}`} p={p} onSaved={reload} />)}
       </div>
