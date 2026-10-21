@@ -17,12 +17,19 @@
 // counts too. An end label a person put on a request card by hand (`labelPutOn`), not seen then and on now, is their withdraw of
 // the card: `source.request_withdrawn` with the label, once. Its item is dropped, so the labels decide Intake's reason, and the
 // label stays.
+//
+// Kill points (issue #1892, the crash harness): once a correction's rows are queued, and once a label edit is recorded. A
+// hopper killed there leaves the rows or the event to the next hopper, which does not queue or record them again.
 import { RECONCILE_GRACE_MS } from '../../domain/item-lifecycle.ts';
 import type { WorkItem } from '../../domain/work-items.ts';
+import { killPoint } from '../../sagas/kill-points.ts';
 import { labelCorrected, labelDriftSeen } from '../../telemetry/sources.ts';
 import type { GitHubIssue } from './api.ts';
 import { driftWords, labelDrift, labelPutOn, labelTakenOff, type LabelFacts } from './item-labels.ts';
 import type { GitHubOutbox } from './outbox.ts';
+
+/** A kill point of the mirror: after a correction's rows are queued, or after a label edit is recorded. */
+export const mirrorKillPoint = (kind: 'correct' | 'edit', at: 'after-queue' | 'after-record'): string => `mirror:${kind}:${at}`;
 
 export interface LabelMirror {
   /** Compare the issues a discover listed with their work items; answers how many items got outbox rows. */
@@ -86,6 +93,7 @@ export function createLabelMirror(o: {
         const label = labelTakenOff(item, was.labels, issue.labels, facts(issue.url, item));
         if (label === undefined) continue;
         o.record('work_item.label_edited', { source: o.source, key: issue.url, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), from: item.state, label, means: 'run_again' });
+        killPoint(mirrorKillPoint('edit', 'after-record'));
         o.log(`hopper: ${o.source}: ${label} was taken off ${issue.url} by hand: a Run again of its work item (${item.state})`);
         edited.add(issue.url);
       }
@@ -114,6 +122,7 @@ export function createLabelMirror(o: {
           ...(d.remove.length ? [{ change: { op: 'remove_labels' as const, labels: d.remove } }] : []),
           ...(d.add.length ? [{ change: { op: 'add_labels' as const, labels: d.add } }] : []),
         ], { tag });
+        killPoint(mirrorKillPoint('correct', 'after-queue'));
         labelCorrected(o.source, item.state);
         corrected += 1;
       }

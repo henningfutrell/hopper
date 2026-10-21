@@ -22246,6 +22246,33 @@ is not judged), `test/domain/work-items-done-by-hand.test.ts` (the close marks t
 job forgets it; a job's own "done by hand" result does not mark it), `test/sources/github-item-labels.test.ts`
 (`labelsFor` of an item done by hand).
 
+### The label mirror under the crash harness (issue #1892 part 11, 2026-10-21)
+
+The issue's restart test, for the label mirror: a hopper killed while its mirror corrects an item's labels, or once it
+recorded a label a person took off by hand, leaves the item to the next hopper with each effect once. Part 9 of #1954 ("The
+crash harness") covered the item reconciler's corrections; the mirror had no kill point.
+
+- **Two kill points** (`mirrorKillPoint`, `src/sources/github/label-mirror.ts`): `mirror:correct:after-queue`, once a
+  correction's outbox rows are kept and before its outbox sends them; `mirror:edit:after-record`, once a label edit's
+  `work_item.label_edited` is kept and before the discover judges Intake. Off in every deploy, as every kill point.
+- **The scenarios** (`test/crash/label-kill.test.ts`, `test/crash/label-world.ts`). Two items in PR open on the node:http
+  fake GitHub. #7 carries a stale `hopper:failed` and no `hopper:pr-ready`: the first hopper is killed after the mirror
+  queued its correction, or before its outbox sends the remove or the add (`outbox:remove_labels:before-send`,
+  `outbox:add_labels:before-send`). A second hopper sends what is left: `hopper:failed` off and `hopper:pr-ready` on, each
+  by one call, and the correction queued once. #9 carries `hopper:pr-ready`, which the test takes off by hand after the
+  first hopper saw it: that hopper is killed once it recorded the edit. A second hopper finds the Run again asked
+  (`runAgainAsked`), records no second edit, makes one new job of the item, and queues no mirror row for it: the label is
+  not put back.
+- **A crash host syncs on its own** (`CRASH_SYNC_MS`, `syncMs` of `startHost`): a source's poll is an hour in tests, and the
+  mirror judges only at a discover.
+
+**Decisions.**
+- **PR open, not failed.** A seeded failed item is handed off by the failure assessor at once, and a hand-off in its first
+  moments is not judged (part 8). PR open has the same correction path and no owner that moves it in a scenario.
+- **No mirror family in the randomised run.** A new family would change what each seed already picks.
+
+**Verification:** `test/crash/label-kill.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
@@ -30283,7 +30310,8 @@ GitHub, each by one call; #5 asked about once; #3 one new job of its item and `h
 transaction of more than one statement (`test/crash/item-drop.test.ts`): the proxy ends the connection at the block's first
 outbox row, before Postgres reads it or once it ran with the transaction open. Postgres rolls the transaction back: no
 event, no move, no row; a second host blocks the item once. The randomised run on GitHub's writes picks the item reconciler
-as a sixth family.
+as a sixth family. The label mirror's own kill points are issue #1892 part 11 ("The label mirror under the crash
+harness").
 **What it found.**
 - **A block wrote no label rows for a real job.** The reconciler kept a block's label rows only for a job of source kind
   `github`; a connected account's job is of kind `github-account`. So its issue kept `hopper:pr-ready` until the label
