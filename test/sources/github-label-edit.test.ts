@@ -4,49 +4,15 @@
 // (`work_item.label_edited`): the end label its state wants, seen on the issue at the last discover and gone now, with the
 // item not moved since and no write of the hopper's own on its way, is a Run again. It is never read back as state: a label
 // that is not on the issue at its first sight is put back, and the item stays where the ledger has it.
-import { describe, expect, it, vi } from 'vitest';
-import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
+import { describe, expect, it } from 'vitest';
+import { createFakeGitHub } from '../../src/sources/github/index.ts';
 import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
 import { memoryListings } from '../../src/sources/github/listing.ts';
 import { BLOCKED, BLOCKED_STALE, DONE_OPEN, FAILED, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 import { RECONCILE_GRACE_MS } from '../../src/domain/item-lifecycle.ts';
-import { REPO, githubConfig, jobForIssue, testTrust } from './fixtures/github-support.ts';
-
-const LONG_AGO = '2026-10-18T10:00:00.000Z';
-const url = (n: number) => `https://github.com/${REPO}/issues/${n}`;
-
-const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
-  key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
-});
-
-function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string } = {}) {
-  const gh = o.gh ?? createFakeGitHub();
-  let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
-  vi.spyOn(console, 'warn').mockImplementation(() => {});
-  const recorded: { type: string; data: Record<string, unknown> }[] = [];
-  const source = createGitHubSource({
-    name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig({}), api: gh,
-    trust: testTrust(), ...(o.outbox ? { outbox: o.outbox } : {}), ...(o.listings ? { listings: o.listings } : {}), clock: { now: () => new Date(now) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k])),
-    rerunnable: (keys: string[]) => new Set(keys.filter((k) => o.rerunnable?.includes(k))),
-    intake: {
-      holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: LONG_AGO, changes: [] }), migrated: () => {},
-      // The ledger folds the person's event into the item: its Run again is asked, its state stays.
-      record: (type, data) => {
-        recorded.push({ type, data });
-        if (type === 'work_item.label_edited') items[String(data.key)] = { ...items[String(data.key)], runAgainAsked: String(data.label) };
-      },
-      requestOpened: () => false, requestsWaiting: () => [],
-      workItem: (key) => (items[key] ? itemOf(key, items[key]) : undefined),
-      partOpen: (key) => o.parts?.includes(key) ?? false,
-      failureReported: (key) => o.reported?.includes(key) ?? false,
-    },
-  });
-  const edits = () => recorded.filter((r) => r.type === 'work_item.label_edited').map((r) => r.data);
-  const reason = (n: number) => source.intake!().find((x) => x.key === url(n));
-  const later = (ms: number) => { now += ms; };
-  return { gh, source, edits, reason, later, recorded };
-}
+import { REPO, jobForIssue } from './fixtures/github-support.ts';
+import { LONG_AGO, labelMirrorSetup as setup, url } from './fixtures/label-mirror-support.ts';
 
 describe('Intake reads the ledger (issue #1892)', () => {
   it('a job at work with a stale end label on its issue: no reason from the label', async () => {
