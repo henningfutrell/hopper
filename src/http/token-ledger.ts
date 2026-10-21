@@ -76,13 +76,14 @@ export function tokenLedgerRoutes(app: FastifyInstance, o: { tenant: (req: Fasti
       return { jobId: key, ...(f?.title ? { title: f.title } : {}), ...(f?.repo ? { repo: f.repo } : {}), ...t };
     });
     const total = sumTokenUse(entries);
-    // The range the waste signals and the merges are read over: the filter's, else the ledger's own, from its first message.
-    const from = since ?? entries.reduce<string | undefined>((m, e) => { const at = e.first ?? e.readAt; return !m || at < m ? at : m; }, undefined);
+    // The pushes are read from the first message of the range's jobs, so a push before `since` still counts as progress;
+    // the merges over the range: the filter's, else the ledger's own, from its first message.
+    const first = entries.reduce<string | undefined>((m, e) => { const at = e.first ?? e.readAt; return !m || at < m ? at : m; }, undefined);
     const pushes = new Map<string, number>();
     const merged = new Set<string>();
-    if (from !== undefined) {
-      for (const e of store.events.between([...PROXY_DONE], from)) if (e.jobId && isPush(e)) pushes.set(e.jobId, (pushes.get(e.jobId) ?? 0) + 1);
-      for (const e of store.events.between(['job.pull_request_merged'], from)) {
+    if (first !== undefined) {
+      for (const e of store.events.between([...PROXY_DONE], first)) if (e.jobId && isPush(e)) pushes.set(e.jobId, (pushes.get(e.jobId) ?? 0) + 1);
+      for (const e of store.events.between(['job.pull_request_merged'], since ?? first)) {
         if (!e.jobId || (q.job && e.jobId !== q.job) || (q.repo && factsOf(e.jobId)?.repo !== q.repo)) continue;
         merged.add((e.data as { pullRequest: string }).pullRequest);
       }
