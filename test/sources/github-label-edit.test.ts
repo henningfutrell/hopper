@@ -120,6 +120,19 @@ describe('a label edited by hand on GitHub is a person\'s event (issue #1892)', 
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-closed']);
   });
 
+  it('a Run again drops the mirror\'s label change not sent yet: the label the give-back took off stays off', async () => {
+    const outbox = memoryGitHubOutbox();
+    const { gh, source } = setup({ [url(1)]: { blockedCause: 'pr_closed', closedWithoutMerge: 2, jobId: 'job-1' } }, { outbox });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    await source.discover();
+    const unsent = () => outbox.of('github', url(1)).filter((r) => r.state !== 'sent').map((r) => r.act);
+    expect(unsent()).toEqual(['mirror']);
+    await source.rerun!(jobForIssue(1, { id: 'job-1', status: 'finished', result: 'ok' }));
+    expect(unsent()).toEqual([]);
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).not.toContain('hopper:pr-closed');
+  });
+
   it('an item that moved since the label was seen, or with the hopper\'s own writes on their way: no edit', async () => {
     const outbox = memoryGitHubOutbox();
     const items: Record<string, Partial<WorkItem>> = { [url(1)]: { blockedCause: 'no_pr', jobId: 'job-1' }, [url(2)]: { blockedCause: 'no_pr', jobId: 'job-2' } };
