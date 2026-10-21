@@ -21104,7 +21104,15 @@ above holds the Windows half; this section the Linux half.
   and the kubeconfig (a context per cluster or namespace, the first current) under the box's home with umask 077, takes
   them out of the environment, and runs the command in `$HOME/work` with `sh -c`. One AWS role
   is also the AWS CLI's own variables. After the command it prints the outputs as a tar in base64 between two marks,
-  which the job's log never shows (`shownSoFar`, `splitOutput`). The box's output is read every second and streamed with
+  which the job's log never shows (`shownSoFar`, `splitOutput`), with the tar's **outputs sha256** as the box made it
+  (issue #2288). A runtime's log once lost one line of the base64: 57 bytes gone mid-file, the tar's NUL padding at the
+  end of the file, the same length. So the hopper computes the sha256 of the tar it decoded and compares the two: on a
+  difference it reads the box's log once more (the box is still there, and a read changes nothing), and when they still
+  differ, or the box gave none (its image has no `sha256sum`), the step ends with a problem and no outputs. The digest is
+  kept with the step's result (`outputsSha256`, in `step.finished`), sent in `x-hopper-step-outputs-sha256`, and
+  `hopper-step` checks it again on the job's machine before it unpacks the tar. The digest is of the tar, not of each
+  file: the tar holds every output file whole, so one digest covers each byte of each file, and the hopper needs no tar
+  parser. The box's output is read every second and streamed with
   each credential's value masked (`maskSecrets`); the exit code is the command's; a timeout or the job's request gone
   stops the box. The box and its home volume are removed after it, whatever came before.
 - **`terraform apply` in a need box.** A step with `--plan-id` gets, after its write credential is minted through the apply

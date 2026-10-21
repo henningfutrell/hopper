@@ -13,11 +13,14 @@
 // machine of the user's) takes them in the environment instead, as a small tar in base64: at most 64 KiB. A need box
 // holds no proxy token, so the apply wrapper in it reads the plan file there (HOPPER_PLAN_FILE) and fetches nothing.
 // The outputs (paths relative to the step's work directory) come back as a tar in base64 after a mark at the end of the
-// box's output, which the job's log never shows. The box ends with the command's exit code; the box and its home volume
+// box's output, which the job's log never shows, with the tar's sha256 as the box made it (issue #2288): a runtime's log
+// once lost one line of the base64, so the outputs are checked on arrival, read once more when they differ, and never
+// given damaged. The box ends with the command's exit code; the box and its home volume
 // are removed after it. It starts only on a home volume it made itself (issue #1371): never one of an earlier box.
 // A box step's vault secrets (issue #1875) are copied in with the files, each one a file under `$HOME/.hopper-need/secrets`
 // (mode 600), never in the box's environment, and read as in a box: `"$HOPPER_SECRET" get NAME`. A runtime with no copy
 // takes no secret: the step does not run.
+import { createHash } from 'node:crypto';
 import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
@@ -45,6 +48,7 @@ const FILES_DIR = '.hopper-need';
 const FILES_WAIT_S = 600;
 const OUTPUTS_MARK = 'HOPPER-STEP-OUTPUTS';
 const END_MARK = 'HOPPER-STEP-END';
+const SHA256_MARK = 'HOPPER-STEP-SHA256';
 
 /** One need's minted credential, as the need box takes it. */
 export interface NeedCredential { profile: OperationProfile; minted: Minted; reach: MintReach }
@@ -146,9 +150,11 @@ if [ -n "$outputs" ]; then
   while IFS= read -r o; do [ -n "$o" ] && set -- "$@" "$o"; done <<HOPPER_OUTPUTS
 $outputs
 HOPPER_OUTPUTS
+  tar -cf "$HOME/.hopper-outputs.tar" -- "$@" 2>"$HOME/.tar-errors"
   printf '\\n${OUTPUTS_MARK}\\n'
-  tar -cf - -- "$@" 2>"$HOME/.tar-errors" | base64
-  printf '${END_MARK}\\n'
+  base64 < "$HOME/.hopper-outputs.tar"
+  sha=$(sha256sum < "$HOME/.hopper-outputs.tar" 2>/dev/null) || sha=
+  printf '${SHA256_MARK} %s\\n${END_MARK}\\n' "\${sha%% *}"
   cat "$HOME/.tar-errors" 2>/dev/null
 fi
 exit "$code"`;
@@ -156,17 +162,30 @@ exit "$code"`;
 /** Where the outputs' mark begins, with the line end before it (`\r\n` on the box's terminal); -1: not there. */
 const markAt = (text: string): number => /\r?\nHOPPER-STEP-OUTPUTS/.exec(text)?.index ?? -1;
 
-/** The box's output split: what the job reads, and the outputs tar when there was one. */
-export function splitOutput(text: string): { log: string; outputs?: Buffer; problem?: string } {
+/** The problem of outputs whose sha256 here is not the one the box made (issue #2288). */
+export const damagedOutputs = (box: string, here: string): string => `the outputs came back damaged: their sha256 in the box is ${box}, here ${here}`;
+
+/**
+ * The box's output split: what the job reads, and the outputs tar when there was one, with its sha256. Outputs whose
+ * sha256 is not the box's, or that come with none, are a problem and not given (issue #2288).
+ */
+export function splitOutput(text: string): { log: string; outputs?: Buffer; outputsSha256?: string; problem?: string } {
   const at = markAt(text);
   if (at === -1) return { log: text };
   const rest = text.slice(text.indexOf(OUTPUTS_MARK, at) + OUTPUTS_MARK.length);
   const end = rest.indexOf(END_MARK);
   if (end === -1) return { log: text.slice(0, at), problem: 'the outputs did not all come back' };
-  const outputs = Buffer.from(rest.slice(0, end).replace(/\s+/g, ''), 'base64');
   const after = rest.slice(end + END_MARK.length).replace(/^\r?\n/, '');
-  if (outputs.length > NEED_BOX_OUTPUTS_MAX_BYTES) return { log: text.slice(0, at) + after, problem: `the outputs hold more than ${NEED_BOX_OUTPUTS_MAX_BYTES / (1024 * 1024)} MiB` };
-  return { log: text.slice(0, at) + after, outputs };
+  const log = text.slice(0, at) + after;
+  const body = rest.slice(0, end);
+  const shaAt = body.indexOf(SHA256_MARK);
+  const outputs = Buffer.from((shaAt === -1 ? body : body.slice(0, shaAt)).replace(/\s+/g, ''), 'base64');
+  if (outputs.length > NEED_BOX_OUTPUTS_MAX_BYTES) return { log, problem: `the outputs hold more than ${NEED_BOX_OUTPUTS_MAX_BYTES / (1024 * 1024)} MiB` };
+  const boxSha = shaAt === -1 ? '' : body.slice(shaAt + SHA256_MARK.length).trim();
+  if (!/^[0-9a-f]{64}$/.test(boxSha)) return { log, problem: 'the box gave no sha256 of the outputs (its image has no sha256sum): they could not be checked' };
+  const here = createHash('sha256').update(outputs).digest('hex');
+  if (here !== boxSha) return { log, problem: damagedOutputs(boxSha, here) };
+  return { log, outputs, outputsSha256: here };
 }
 
 /** The part of the box's output so far that the job may read now: never the outputs, and never a tail that may begin the mark. */
@@ -212,10 +231,10 @@ const homeTar = (o: { plan?: Buffer; inputs?: Buffer; secrets?: Record<string, s
 ]);
 
 /**
- * What a need box came to: the command's exit code, its outputs tar, and the hopper's problem, if any; `stopped`, the
- * hopper stopped it: it ran past its time limit, or the job stopped waiting for it (issue #1371).
+ * What a need box came to: the command's exit code, its outputs tar and its sha256 (issue #2288), and the hopper's
+ * problem, if any; `stopped`, the hopper stopped it: it ran past its time limit, or the job stopped waiting for it (issue #1371).
  */
-export interface NeedBoxResult { exit: number; outputs?: Buffer; problem?: string; stopped?: 'timed-out' | 'cancelled' }
+export interface NeedBoxResult { exit: number; outputs?: Buffer; outputsSha256?: string; problem?: string; stopped?: 'timed-out' | 'cancelled' }
 
 /** How long each part of a need step took, in ms (issue #1737): its image, the box's start, its run. A part not reached is absent. */
 export interface NeedBoxPhases { image?: number; start?: number; run?: number }
@@ -345,11 +364,19 @@ export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: Ne
     }
     output = await runtime.logs(id).catch(() => output);
     show(output);
-    const split = splitOutput(output);
+    let split = splitOutput(output);
+    // Damaged on the way (issue #2288): the box is still there, so its log is read once more; a read changes nothing.
+    if (split.problem?.startsWith('the outputs came back damaged')) {
+      const again = splitOutput(await runtime.logs(id).catch(() => output));
+      if (again.outputs) split = again;
+    }
     // What the box wrote after the outputs (a missing output's tar error) goes to the job too.
     const tail = split.log.slice(shownSoFar(output).length);
     if (tail) io.log(tail);
-    return { exit: first.exit, ...(split.outputs ? { outputs: split.outputs } : {}), ...(split.problem ? { problem: split.problem } : {}) };
+    return {
+      exit: first.exit, ...(split.outputs ? { outputs: split.outputs } : {}), ...(split.outputsSha256 ? { outputsSha256: split.outputsSha256 } : {}),
+      ...(split.problem ? { problem: split.problem } : {}),
+    };
   } catch (e) {
     return { exit: 125, problem: `the need box did not run: ${e instanceof Error ? e.message : String(e)}` };
   } finally {

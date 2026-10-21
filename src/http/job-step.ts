@@ -30,8 +30,8 @@
 //                                      is whole)
 //   DELETE /job/step/:id               the job stops its step: its saga is aborted
 //   GET  /job/step/:id                 the step's outputs (a tar; empty: none), its exit code in `x-hopper-step-exit`,
-//                                      and the hopper's problem, if any, in `x-hopper-step-problem`; 202 while the step
-//                                      runs
+//                                      the hopper's problem, if any, in `x-hopper-step-problem`, and a need step's
+//                                      outputs' sha256 in `x-hopper-step-outputs-sha256` (issue #2288); 202 while it runs
 //
 // It changes no job, question, webhook or setting: a step runs on a Windows host the user set up, or in a one-shot need
 // box, burned after the step, and is recorded on the job's timeline (`step.started`, `step.finished`, `step.refused`). A
@@ -265,6 +265,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
       if ('running' in step) return reply.code(202).type('text/plain; charset=utf-8').send(`running: step ${id}\n`);
       reply.header(STEP_HEADER.exit, String(step.result.exit)).type('application/x-tar');
       if (step.result.problem) reply.header(STEP_HEADER.problem, headerSafe(step.result.problem));
+      if (step.result.outputsSha256) reply.header(STEP_HEADER.sha256, step.result.outputsSha256);
       const outputs = step.outputs ?? Buffer.alloc(0);
       // Its length said (issue #1255): a job whose copy ends short knows it, instead of unpacking part of it.
       return reply.header('content-length', String(outputs.length)).send(outputs);

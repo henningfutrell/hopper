@@ -17,7 +17,7 @@ export const STEP_PATH = '/job/step';
 export const STEP_SCRIPT_FILE = 'hopper/step';
 
 /** The response headers: the step's id on the ask, its exit code and the hopper's problem on the result; a log read's next start and state (issues #1568, #1611). */
-export const STEP_HEADER = { id: 'x-hopper-step', exit: 'x-hopper-step-exit', problem: 'x-hopper-step-problem', logNext: 'x-hopper-step-log-next', state: 'x-hopper-step-state' } as const;
+export const STEP_HEADER = { id: 'x-hopper-step', exit: 'x-hopper-step-exit', problem: 'x-hopper-step-problem', logNext: 'x-hopper-step-log-next', state: 'x-hopper-step-state', sha256: 'x-hopper-step-outputs-sha256' } as const;
 
 /** The exit code the script ends with when the hopper did not run the step, or could not bring it all back. */
 export const STEP_NOT_RUN = 125;
@@ -306,6 +306,17 @@ code=$(token | curl -sS -H @- -D "$tmp/head2" -o "$tmp/out.tar" -w '%{http_code}
 [ "$code" = 200 ] || { cat "$tmp/out.tar" >&2; exit ${STEP_NOT_RUN}; }
 exit_code=$(header ${STEP_HEADER.exit} "$tmp/head2")
 problem=$(header ${STEP_HEADER.problem} "$tmp/head2")
+sha=$(header ${STEP_HEADER.sha256} "$tmp/head2")
+if [ -s "$tmp/out.tar" ] && [ -n "$sha" ]; then
+  # The outputs' sha256 as the box made it (issue #2288): checked here too, so a copy damaged on the way is never unpacked.
+  echo "hopper-step: outputs sha256 $sha" >&2
+  got=$(sha256sum < "$tmp/out.tar" 2>/dev/null) || got=
+  got=\${got%% *}
+  if [ -n "$got" ] && [ "$got" != "$sha" ]; then
+    echo "hopper-step: the outputs came back damaged: their sha256 is $sha, here $got" >&2
+    exit ${STEP_NOT_RUN}
+  fi
+fi
 if [ -s "$tmp/out.tar" ]; then
   mkdir -p "$into" && tar -xf "$tmp/out.tar" -C "$into" && echo "hopper-step: outputs in $into" >&2 || problem=\${problem:-the outputs could not be unpacked into $into}
 fi

@@ -169,7 +169,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     if (!o.steps.end(s.id, result, now().toISOString(), outputs)) return;
     o.record({ type: 'step.finished', jobId: s.jobId, data: {
       step: s.id, box: s.box, exit: result.exit, seconds,
-      ...(result.outputsBytes !== undefined ? { outputsBytes: result.outputsBytes } : {}), ...(result.problem ? { problem: result.problem } : {}),
+      ...(result.outputsBytes !== undefined ? { outputsBytes: result.outputsBytes } : {}),
+      ...(result.outputsSha256 ? { outputsSha256: result.outputsSha256 } : {}), ...(result.problem ? { problem: result.problem } : {}),
     } });
   };
   const ofJob = (job: Job, id: string): NeedStep | undefined => {
@@ -280,7 +281,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       const leaks = r.outputs !== undefined && Object.values(secrets).some((v) => v.length > 0 && r.outputs!.includes(v));
       outputs = leaks ? undefined : r.outputs;
       const problem = leaks ? `${r.problem ? `${r.problem}; ` : ''}${OUTPUTS_HOLD_SECRET}` : r.problem;
-      result = { exit: r.exit, ...(outputs ? { outputsBytes: outputs.length } : {}), ...(problem ? { problem } : {}) };
+      result = { exit: r.exit, ...(outputs ? { outputsBytes: outputs.length, ...(r.outputsSha256 ? { outputsSha256: r.outputsSha256 } : {}) } : {}), ...(problem ? { problem } : {}) };
     } catch (e) {
       o.log(`hopper: sandbox step ${s.id} in ${s.box}: ${(e as Error).message}`);
       result = { exit: 125, problem: (e as Error).message };

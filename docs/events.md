@@ -7523,7 +7523,7 @@ Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step st
 
 ## `step.finished`
 
-Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004; a need box, issue #1007): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back, or its outputs held a vault secret's value and were not given (a box step, issue #1875).
+Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004; a need box, issue #1007): its `exit` code and how long it ran; `outputsBytes` when its outputs came back, and `outputsSha256`, their sha256 as a need box made it and the hopper checked it on arrival (issue #2288); `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back, or its outputs held a vault secret's value and were not given (a box step, issue #1875).
 
 | field | type | required |
 |---|---|---|
@@ -7533,6 +7533,7 @@ Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its W
 | `exit` | integer | yes |
 | `seconds` | integer | yes |
 | `outputsBytes` | integer | no |
+| `outputsSha256` | string | no |
 | `problem` | string | no |
 
 ```json

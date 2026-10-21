@@ -157,6 +157,8 @@ export interface StepResult {
   exit: number;
   /** The outputs tar's size, when the step asked for outputs and they came back. */
   outputsBytes?: number;
+  /** The outputs tar's sha256 as the need box made it, checked on arrival (issue #2288). */
+  outputsSha256?: string;
   problem?: string;
 }
 
