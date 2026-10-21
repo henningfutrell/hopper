@@ -13014,8 +13014,7 @@ the queue moved only when waits ended by chance.
   lane, so a waiting agent that started after the baseline counts as the running job's: with 50 agents resident, the expected
   peaks grew with them. With waits released while a job waits for memory, that share falls away. The floor of 1.4 GiB is 10%
   of the 14 GiB VM, as set. Not changed here: the expected peak still counts when it is more than the job's memory.
-- **Not built.** Releasing a wait before a job waits for memory (a wait keeps its agent while memory holds every job); a count
-  of each agent's memory.
+- **Not built.** A count of each agent's memory. (Releasing a wait before a job waits for memory: issue #2326, below.)
 - **Persisted state.** No schema change: `waitReleased` is in the job's JSON, `waitSessions` and `waitRelease` in the
   Decision's. A build before this ignores them: a released job's wait ends as a lost pane's does (issue #1508), or it is
   marked stranded, and its resume opens a new pane (`resumeLostPane`).
@@ -13025,6 +13024,42 @@ every job fits), `test/domain/stuck.test.ts` (`memory_starved` only while nothin
 `test/integration/wait-release.test.ts` (the real daemon over the fake herdr: a job on a vault-grant wait, the memory short,
 a new job queued; the wait is released and its pane closed, not stranded, Failures shows `memory_starved`; the memory back,
 the new job finishes; End the wait resumes the first job's own session in a new pane with `RELEASED_NOTE`, and it finishes).
+
+### Every wait released, and its wake on any machine (issue #2326, 2026-10-21)
+
+Reported from a real run of the release above: 45 jobs on their own wait still held 34 resident Claude processes with
+nothing queued, as the release ran only while a job waited for memory. The owner's direction: a waiting job is parked at
+once, the wait check wakes it, and it does not need to start again on the machine it came from.
+
+- **Every wait, at once.** `waitReleases` (`src/decider/memory-floor.ts`) names every job of `waitSessions`, on every
+  machine, the oldest wait first, once its wait is 5 seconds old (`WAIT_RELEASE_AFTER_MS`), whether or not a job waits for
+  memory. Step 7 no longer gives `memoryShort`. The 5 seconds spare a park and a restore to a wait the hopper answers at
+  once (a request of the job, issue #998), and let a wait whose agent ended at once be seen as stranded (issue #1779) first. Which waits stay is as before: one only its pane carries (its own command, a background
+  poll) keeps its agent. With nothing queued, the steady state is no agent for any wait the hopper ends by itself. A stranded
+  wait is not released: its agent ended already.
+- **Its checkpoint, marked.** After the commit, `releaseWait` (`src/engine/wait-release.ts`) ends the pane and agent
+  (`Executor.park`), then takes its checkpoint and waits for it. A checkpoint that holds the agent session is marked on the
+  job: `waitReleased.checkpointAt`. A checkpoint the same as the last one (issue #1975) is the last one, and is marked so.
+- **Its wake, on any machine.** `recordEndWait` (`src/engine/wait.ts`), the one path every wake takes (the event that
+  settles what it waits on, its wait check, a comment, the hopper's answer, a person's End the wait), queues a released job
+  whose marked checkpoint is still its checkpoint, with its agent session and no machine pin of its spec, as picked up to
+  resume elsewhere (issue #921): `parked: { from: 'waiting_answer', auto, why, elsewhere: { checkpointAt, from } }`,
+  `resumeOn` and `waitReleased` cleared. Admission control places it on any machine with room; herdr-claude restores the
+  checkpoint in a new job worktree there (`relocate`, with the #2316 restore that needs the job's way to the hopper first)
+  and resumes the same session, told `WAIT_RELEASED_NOTE`, then that it moved (`elsewhereBrief`), then the wake's note. A
+  released job woken before its checkpoint was marked resumes on its own machine as before (`RELEASED_NOTE`); the
+  busy-machine move may still take it elsewhere.
+- **UI.** The Dashboard's wait row says `parked (waiting on <what it waits on>)`, with End the wait.
+- **Not built.** A job parked on a question (the Park button, auto-park) keeps its pin to its machine; the busy-machine move
+  and a person's pick up elsewhere still move it. A wait that ends a few seconds after it began is released all the same.
+- **Persisted state.** No schema change: `waitReleased.checkpointAt` is in the job's JSON. A build before this reads a woken
+  job as one picked up to resume elsewhere, as after a busy-machine move.
+
+Verification: `test/decider/memory-floor.test.ts` (every wait released, on every machine, with nothing queued, none less than
+5 seconds old),
+`test/ui/job-wait-view.test.ts`, and `test/integration/wait-release.test.ts` (two machines over the fake herdr: a job on a
+vault-grant wait with nothing queued has its pane closed and its checkpoint marked; its machine drained, End the wait
+resumes it on the other machine from its checkpoint, with the same session and `WAIT_RELEASED_NOTE`).
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 

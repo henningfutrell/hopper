@@ -3833,7 +3833,7 @@ Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this run
 
 ## `job.wait_released`
 
-Version 1 (`docs/schemas/job.wait_released.v1.json`). A Decision ended the agent of this job on its own wait (issue #2303): a job waits for memory on its machine (`machineId`), and the hopper ends this wait by itself, with no pane. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session in a new pane. `reason`: the Decision's.
+Version 1 (`docs/schemas/job.wait_released.v1.json`). A Decision ended the agent of this job on its own wait (issues #2303, #2326), on its machine (`machineId`): the hopper ends this wait by itself, with no pane, and a waiting job holds no agent. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session from that checkpoint on any machine with room, else in a new pane on its machine. `reason`: the Decision's.
 
 | field | type | required |
 |---|---|---|
@@ -3841,7 +3841,7 @@ Version 1 (`docs/schemas/job.wait_released.v1.json`). A Decision ended the agent
 
 ```json
 {
-  "reason": "releases the agent of j-wait on laptop: a job waits for memory there, and j-wait waits on its own since 42 min ago; it resumes its session when its wait ends"
+  "reason": "releases the agent of j-wait on laptop: it waits on its own since 42 min ago, and a waiting job holds no agent; it resumes its session when its wait ends, on any machine with room"
 }
 ```
 
