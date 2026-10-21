@@ -3,10 +3,11 @@
 // once on a sync a person asked for; a read that fails keeps the last list and says why. An item with the source's label is
 // intake's, and a pull request the user wrote is the user's own work (Pull requests): neither is tagged. Each pull request
 // that newly asks for the user's review records `source.review_requested`, once while it asks. What is kept between reads —
-// those requests and a person's dismissals — is in the user's settings, so a restart records nothing again.
+// those requests, a person's dismissals and the jobs a person started on an item (issue #2342) — is in the user's
+// settings, so a restart records nothing again.
 import type { IntakeActionResult, IntakeContext } from '../../domain/intake.ts';
 import type { Clock } from '../../domain/ports.ts';
-import { NO_TAGGED_RECORD, dismissTagged, mergeTagged, shownTagged, taggedRead, type TaggedItem, type TaggedRecord } from '../../domain/tagged.ts';
+import { NO_TAGGED_RECORD, dismissTagged, mergeTagged, shownTagged, startTagged, taggedRead, type TaggedItem, type TaggedRecord, type TaggedStarted } from '../../domain/tagged.ts';
 import type { GitHubApi } from './api.ts';
 
 export function taggedReader(o: { source: string; api: Pick<GitHubApi, 'taggedItems'>; label: string; clock: Clock; everyMs: () => number; intake?: IntakeContext }) {
@@ -42,6 +43,12 @@ export function taggedReader(o: { source: string; api: Pick<GitHubApi, 'taggedIt
     dismiss(keys: string[]): IntakeActionResult {
       const r = dismissTagged(kept(), items, keys);
       keep(r.record);
+      return { done: r.done, failed: r.failed };
+    },
+    /** Keep the job a person started on an item the last read listed (issue #2342, the intake action `tagged_start`). */
+    start(started: TaggedStarted): IntakeActionResult {
+      const r = startTagged(kept(), items, started);
+      if (r.done.length) keep(r.record);
       return { done: r.done, failed: r.failed };
     },
     /** What `describe` shows: the items not dismissed, how many are, when they were read, and why the last read failed. */
