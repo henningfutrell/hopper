@@ -30,7 +30,7 @@
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable, type ActingPerson, type DomainEvent, type JevFirst, type Job, type SourceCallLog, type SourceStatus } from '../domain/types.ts'; import type { GiveBackCheck, GiveBackChecked } from '../domain/give-back.ts';
-import { offer } from './item-text.ts';
+import { offer } from './item-text.ts'; import { yieldToLoop } from '../domain/yield-loop.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, detailOf, dropRetries, followSources, joined, keepArrivals, keepNotRerun, newSlot, notAssignedTold, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake, withTakenStatus } from './intake-live.ts';
@@ -228,11 +228,13 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   async function pull(slot: Slot, asked: boolean): Promise<{ seen: number; created: number }> {
     const discovered = await slot.source.discover(asked ? undefined : { due: true }); slot.answer = answerPrint(discovered);
-    const items = await intakeOrder(o.jevFirst, slot.source.name, discovered, (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
+    // The items free to run at the listing: a job whose end is reported after it is not run again on it, as the listing is older than its end (issue #2392).
+    const listedFree = new Set(discovered.filter((i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); }).map((i) => i.key)), items = await intakeOrder(o.jevFirst, slot.source.name, discovered, (i) => listedFree.has(i.key));
     let created = 0;
     const notRerun: NotRerun[] = [];
     for (const item of items) {
-      const existing = store.jobs.getBySourceKey(item.key);
+      // Each item its own step: a request waits for one item, not the pass (issue #2392). Its job is read after the yield.
+      await yieldToLoop(); const existing = store.jobs.getBySourceKey(item.key); if (existing && isRerunnable(existing) && !listedFree.has(item.key)) continue;
       if (existing && isTerminal(existing) && !isRerunnable(existing)) notRerun.push({ key: item.key, job: existing.id, status: existing.status, reason: NOT_REPORTED });
       if (await offer(host, slot.source, item, existing)) created++;
     }
