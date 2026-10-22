@@ -8,6 +8,8 @@
 //   Scenario: only the machines that hold a box of a sandbox record are read, each once
 //   Scenario: a machine that is no client target now, or has no runtime, says why; the other machines are still read
 //   Scenario: a client that refuses the stats (a release before this one) still gives the boxes' state
+//   Scenario: each Podman host given is read over its own stream, labelled by its name (issue #2272)
+import { connect } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runtimeRelay } from '../../src/executors/client.ts';
 import { createRemoteBoxMeter } from '../../src/stack-resources/remote.ts';
@@ -103,5 +105,26 @@ describe('the sandbox boxes on a client target', () => {
     const before = { which: m.relay.which, call: async (c: Parameters<typeof m.relay.call>[0]) => (c.path.includes('/stats') ? { status: 403, text: JSON.stringify({ message: 'the hopper client refuses' }) } : m.relay.call(c)) };
     const read = await createRemoteBoxMeter({ instanceId: 'i-1', records: () => [{ userId: 'u1', machine: 'laptop' }], clients: () => ({ relay: before }) }).read();
     expect(read).toEqual([{ machine: 'laptop', containers: [{ service: 'laptop/hopper-sandbox-kube', group: 'sandbox', machine: 'laptop', name: 'hopper-sandbox-kube', image: 'box:1', state: 'running' }] }]);
+  });
+
+  it('reads each Podman host given over its own stream, labelled by its name (issue #2272)', async () => {
+    const libpod = createFakeLibpod();
+    libpod.put({ name: 'hopper-need-box-1', image: 'box:1', labels: { 'io.hopper.box': 'i-1' } });
+    libpod.put({ name: 'their-own', image: 'pg:17', labels: {} });
+    const api = await startFakeRuntimeApi([STATS, ...libpod.handlers]);
+    apis.push(api);
+    let streams = 0;
+    const socket = { name: 'box-vm', connect: () => { streams++; return connect(api.socket); } };
+    const meter = createRemoteBoxMeter({
+      instanceId: 'i-1', records: () => [], clients: () => undefined,
+      podmanHosts: () => [{ userId: 'u1', name: 'box-vm', socket }, { userId: 'u1', name: 'down-vm', socket: { name: 'down-vm', connect: () => connect('/nonexistent/podman.sock') } }],
+    });
+    const read = await meter.read();
+    expect(read.map((r) => r.machine)).toEqual(['box-vm', 'down-vm']);
+    expect(read[0]).toMatchObject({ machine: 'box-vm', containers: [expect.objectContaining({ service: 'box-vm/hopper-need-box-1', machine: 'box-vm', memUsedBytes: 200 * 1024 ** 2 })] });
+    expect((read[0] as { containers: unknown[] }).containers).toHaveLength(1);
+    expect(read[1]).toEqual({ machine: 'down-vm', problem: expect.stringContaining('cannot reach the container runtime on down-vm') });
+    expect(streams).toBeGreaterThan(0);
+    expect(api.seen.every((x) => x.path.startsWith(API))).toBe(true);
   });
 });
