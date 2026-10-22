@@ -32107,6 +32107,13 @@ credential.
   `said`; absent while it said nothing yet). `bastion` shows each forward's state and, while it runs, the tail of its
   output. A relay or a read to a forward that does not listen is a 503 with kubectl's words, and starts no command in the
   box. A box step of an observe template still holds no kube credential: its port-forward is a bastion's (`OBSERVE_NO_STEP`).
+- **A connection waits for its forward to listen** (issue #2484). A job's `bastion --wait` answered a running bastion,
+  and its first read right after got only curl's "Failed to connect": kubectl had said nothing of the forward yet, and
+  the hopper started the read's command all the same. A relay connection, and so a bastion read, to a forward that has
+  said nothing yet now waits up to 10 s for the bastion to run and the forward to say whether it listens; still
+  nothing is a 503 `does not listen in the box yet`, as `bastion` says ("not listening yet"), and starts no command.
+  The need box holds back the last new line of its output (it may start the outputs' mark), and "Forwarding from" is
+  often kubectl's last line for a long time: `forwardWatch` counts it before its new line comes.
 - **The tokens stay in the box** (`bastionKubeconfig`, `bastionTokens`). Each token is a vault secret file of the box
   (`$HOME/.hopper-need/secrets/kube-<context>`, copied in, mode 600, never in its environment); the kubeconfig names it as
   its user's `tokenFile`, which kubectl reads again within a minute. Every 5 minutes the hopper mints each observe again
