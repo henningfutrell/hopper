@@ -2,7 +2,7 @@
 // state, and a drift is what a discover saw against them.
 import { describe, expect, it } from 'vitest';
 import { HANDOFF_WAIT } from '../../src/domain/work-items.ts';
-import { blockLabels, labelDrift, labelPutOn, labelsFor, labelTakenOff } from '../../src/sources/github/item-labels.ts';
+import { blockLabels, dropReported, labelDrift, labelPutOn, labelsFor, labelTakenOff } from '../../src/sources/github/item-labels.ts';
 
 describe('labelsFor: the end labels a state wants (issue #1891)', () => {
   it('a job at work: no end label', () => {
@@ -81,6 +81,16 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff(wontDo, ['hopper', 'hopper:rejected'], ['hopper'])).toBe('hopper:rejected');
   });
 
+  it('dropped by a cancelled or rejected job, its report out (issue #1892 part 19): no end label; one a person put on: that one', () => {
+    const cancelled = { state: 'dropped', eventState: 'dropped' } as const;
+    expect(labelsFor(cancelled, { dropReported: true })).toEqual({ allowed: [] });
+    expect(labelDrift(cancelled, ['hopper', 'hopper:done'], { dropReported: true })).toEqual({ remove: ['hopper:done'], add: [] });
+    const kept = { ...cancelled, keptOut: 'hopper:done' };
+    expect(labelsFor(kept, { dropReported: true })).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
+    expect(labelDrift(kept, ['hopper', 'hopper:done', 'hopper:failed'], { dropReported: true })).toEqual({ remove: ['hopper:failed'], add: [] });
+    expect(labelTakenOff(kept, ['hopper', 'hopper:done'], ['hopper'], { dropReported: true })).toBe('hopper:done');
+  });
+
   it('the other states are not judged', () => {
     for (const state of ['needs_you', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(labelsFor({ state })).toBeUndefined();
   });
@@ -152,5 +162,27 @@ describe('labelPutOn: an end label a person put on a request card by hand (issue
     expect(labelPutOn({ state: 'waiting_for_approval' }, ['hopper', 'hopper:done'], ['hopper', 'hopper:done'])).toBeUndefined();
     expect(labelPutOn({ state: 'waiting_for_approval' }, ['hopper'], ['hopper', 'hopper:high'])).toBeUndefined();
     expect(labelPutOn({ state: 'queued' }, ['hopper'], ['hopper', 'hopper:done'])).toBeUndefined();
+  });
+
+  it('an item a cancelled or rejected job dropped, its report out (issue #1892 part 19): the end label put on', () => {
+    const cancelled = { state: 'dropped', eventState: 'dropped' } as const;
+    expect(labelPutOn(cancelled, ['hopper'], ['hopper', 'hopper:rejected'], { dropReported: true })).toBe('hopper:rejected');
+    expect(labelPutOn(cancelled, ['hopper'], ['hopper', 'hopper:rejected'])).toBeUndefined();
+    expect(labelPutOn({ ...cancelled, keptOut: 'hopper:rejected' }, ['hopper', 'hopper:rejected'], ['hopper', 'hopper:rejected', 'hopper:done'], { dropReported: true })).toBeUndefined();
+    expect(labelPutOn({ ...cancelled, wontDo: true }, ['hopper'], ['hopper', 'hopper:done'], { dropReported: true })).toBeUndefined();
+  });
+});
+
+describe('dropReported: a cancelled or rejected job whose report went out (issue #1892 part 19)', () => {
+  const sync = (finalReported: boolean) => ({ sync: { finalReported } });
+  it('cancelled or rejected, reported: yes', () => {
+    expect(dropReported({ status: 'cancelled', spec: { executor: 'x', payload: {} }, sourceState: sync(true) })).toBe(true);
+    expect(dropReported({ status: 'rejected', spec: { executor: 'x', payload: {} }, sourceState: sync(true) })).toBe(true);
+  });
+  it('not reported yet, a tend job, or another end: no', () => {
+    expect(dropReported({ status: 'cancelled', spec: { executor: 'x', payload: {} }, sourceState: sync(false) })).toBe(false);
+    expect(dropReported({ status: 'cancelled', spec: { executor: 'x', payload: {}, tend: true }, sourceState: sync(true) })).toBe(false);
+    expect(dropReported({ status: 'failed', spec: { executor: 'x', payload: {} }, sourceState: sync(true) })).toBe(false);
+    expect(dropReported(undefined)).toBe(false);
   });
 });

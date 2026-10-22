@@ -5944,7 +5944,7 @@ Version 1 (`docs/schemas/work_item.person_asked.v1.json`). The one notice of a b
 
 ## `work_item.label_edited`
 
-Version 1 (`docs/schemas/work_item.label_edited.v1.json`). A person took an end label off a work item's issue by hand on GitHub (issue #1892, design.md "The item lifecycle"): the end label its state wants (`hopper:blocked` or `hopper:pr-closed` of a blocked item, `hopper:pr-ready` or `hopper:partly-done` of an item in PR open) was on at the last discover of `source` and is gone now, with the item not moved since and no write of the hopper's own on its way. `key` is the item's source key, `jobId` its newest job, `from` the state it was in, `label` the label taken off, `means` what the edit asks for: `run_again`. The item's state stays, and it keeps the ask (`runAgainAsked`): Intake gives it no reason, so the discover runs it again; the label is not put back. The new job's `job.queued` moves it, and any move forgets the ask. A label that is not on the issue when it is first seen is never read as an edit.
+Version 1 (`docs/schemas/work_item.label_edited.v1.json`). A person took an end label off a work item's issue by hand on GitHub (issue #1892, design.md "The item lifecycle"): the end label its state wants (`hopper:blocked` or `hopper:pr-closed` of a blocked item, `hopper:pr-ready` or `hopper:partly-done` of an item in PR open) was on at the last discover of `source` and is gone now, with the item not moved since and no write of the hopper's own on its way. `key` is the item's source key, `jobId` its newest job, `from` the state it was in, `label` the label taken off, `means` what the edit asks for: `run_again`. The item's state stays, and it keeps the ask (`runAgainAsked`): Intake gives it no reason, so the discover runs it again; the label is not put back. The new job's `job.queued` moves it, and any move forgets the ask. A label that is not on the issue when it is first seen is never read as an edit. Since part 19, `means: keep_out` is an end label a person put on by hand on an item a cancelled or rejected job dropped, after its report (`label` the label put on, `from` `dropped`): the item keeps it (`keptOut`) and carries it from then, so it decides Intake's reason and the mirror does not take it off; taken off again, it is a `run_again`. Any move forgets it.
 
 | field | type | required |
 |---|---|---|
@@ -5953,7 +5953,7 @@ Version 1 (`docs/schemas/work_item.label_edited.v1.json`). A person took an end 
 | `jobId` | string | no |
 | `from` | `waiting_for_approval` \| `queued` \| `working` \| `needs_you` \| `waiting_outside` \| `pr_open` \| `partly_done` \| `done` \| `failed` \| `blocked` \| `dropped` | yes |
 | `label` | string | yes |
-| `means` | string | yes |
+| `means` | `run_again` \| `keep_out` | yes |
 
 ```json
 {

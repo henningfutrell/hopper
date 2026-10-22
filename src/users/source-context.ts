@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { createGitMirrors } from '../git-mirror/mirrors.ts';
 import { graphKeys } from '../search/index.ts';
 import { allPartsDone } from '../sources/github/parts.ts';
+import { dropReported } from '../sources/github/item-labels.ts';
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
@@ -67,6 +68,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
         const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
         return s?.follow === 'merged' && s.part === true && !allPartsDone(s.parts);
       },
+      // Its cancelled or rejected job reported (issue #1892 part 19): no end label, unless a person put one on to keep it out.
+      dropReported: (key) => { const id = store.workItems.get(key)?.jobId; return dropReported(id === undefined ? undefined : store.jobs.get(id)); },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
