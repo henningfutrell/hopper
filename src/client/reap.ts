@@ -58,12 +58,7 @@ export const UNPUSHED_SH: readonly string[] = [
   // its own HEAD; a clone for HEAD and every branch it has. A node_modules link to the shared dependencies (issue #410) is no
   // work of the job's.
   'held() { hd=$1; hr="HEAD --branches"; [ -f "$hd/.git" ] && hr=HEAD;',
-  '  ! hs=$(git -C "$hd" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$hs" | grep -vx "?? node_modules")" ] || ! hu=$(git -C "$hd" log --oneline -1 $hr --not --remotes 2>/dev/null) || { [ -n "$hu" ] && unpushed "$hd" "$hr"; } || stashed "$hd"; };',
-  // Whether the checkout $1 holds a stash (issue #2494): a clone any entry of its own, a worktree (.git a file, the stash
-  // its repository's) one made on its own HEAD. Another worktree at the same commit keeps it too: never one too few.
-  'stashed() { [ -f "$1/.git" ] || { [ -n "$(git -C "$1" stash list 2>/dev/null)" ]; return; };',
-  '  sb=$(git -C "$1" rev-parse -q --verify HEAD 2>/dev/null) || return 1;',
-  '  git -C "$1" log -g --format=%P refs/stash 2>/dev/null | cut -d " " -f 1 | grep -qx "$sb"; };',
+  '  ! hs=$(git -C "$hd" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$hs" | grep -vx "?? node_modules")" ] || ! hu=$(git -C "$hd" log --oneline -1 $hr --not --remotes 2>/dev/null) || { [ -n "$hu" ] && unpushed "$hd" "$hr"; }; };',
 ];
 
 // $1 the job id, $2 its scratch dir or empty, $3 `keep` to keep the scratch dir whatever it holds (a timed-out
@@ -125,9 +120,9 @@ const REAP_SCRIPT = [
   ...UNPUSHED_SH,
   // The commits of a clean checkout $1 that hold work no remote has (issue #2087): a worktree's HEAD, a clone's HEAD and
   // branches. The hopper reads a checkout whose every such commit it pushed for the job as pushed: the push says so, though
-  // the checkout's remote branches may not. A checkout with a change or a stash (issue #2494) names none.
+  // the checkout's remote branches may not. A checkout with a change names none.
   'tips() { td=$1; tr="HEAD --branches"; [ -f "$td/.git" ] && tr=HEAD; ts=$(git -C "$td" status --porcelain 2>/dev/null) || return 0;',
-  '  [ -z "$(printf "%s\\n" "$ts" | grep -vx "?? node_modules")" ] || return 0; ! stashed "$td" || return 0;',
+  '  [ -z "$(printf "%s\\n" "$ts" | grep -vx "?? node_modules")" ] || return 0;',
   '  for tu in $(git -C "$td" rev-parse $tr 2>/dev/null); do unpushed "$td" "$tu" && printf "hopper-kept-tip %s %s\\n" "$tu" "$td"; done; };',
   'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
   '  d=${g%/.git}; held "$d" && { printf "hopper-kept %s\\n" "$d"; tips "$d"; };',
@@ -177,9 +172,11 @@ const SURVEY_SCRIPT = [
   '  systemctl --user list-units --type=scope --plain --no-legend "hopper-job-*" 2>/dev/null | sed -n "s/^hopper-job-\\([^ ]*\\)\\.scope .*/hopper-scope \\1/p";',
   'fi;',
   'if [ -r /proc/self/environ ]; then',
-  '  for f in /proc/[0-9]*/environ; do tr "\\0" "\\n" 2>/dev/null < "$f" | sed -n "s/^HOPPER_JOB_ID=//p"; done | sort -u | sed "s/^/hopper-proc /";',
+  '  cat /proc/[0-9]*/environ 2>/dev/null | tr "\\0" "\\n" | sed -n "s/^HOPPER_JOB_ID=//p" | sort -u | sed "s/^/hopper-proc /";',
   'fi;',
   'now=$(date +%s); to=; command -v timeout >/dev/null 2>&1 && to="timeout 20";',
+  // GNU stat (Linux, MSYS) or BSD stat (macOS): `<mtime> <path>` for each path.
+  'if stat -c %Y / >/dev/null 2>&1; then mtimes() { stat -c "%Y %n" "$@"; }; else mtimes() { stat -f "%m %N" "$@"; }; fi;',
   'for rt in docker podman; do command -v "$rt" >/dev/null 2>&1 || continue;',
   `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
   `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
@@ -191,17 +188,15 @@ const SURVEY_SCRIPT = [
   '    set -- "$@" "$p";',
   '  done; [ $# -gt 0 ] || return 0;',
   `  $to du -skx "$@" 2>/dev/null | awk -F '\t' '$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-du " k " " $0 }'; };`,
+  // `ages <dir|tree> <paths>`: the dirs of the paths, with their ages, by one `stat` (issue #2490: a start per dir was too
+  // slow under MSYS). `for` takes its list once, so each pass shifts its path off and puts a dir back at the end.
+  'ages() { k=$1; shift; for d do shift; [ -d "$d" ] && [ ! -L "$d" ] || continue;',
+  `  [ "$k" = tree ] && case $d in "$r"/${LAYOUT.worktrees}/@*) continue;; esac; set -- "$@" "$d"; done; [ $# -gt 0 ] || return 0;`,
+  `  mtimes "$@" 2>/dev/null | awk -v now="$now" -v k="$k" '$1 ~ /^[0-9]+$/ { m = $1; sub(/^[^ ]* /, ""); print "hopper-" k " " (now - m) " " $0 }'; };`,
   `for r in "$@"; do if [ -d "$r/${LAYOUT.worktrees}" ] || [ -d "$r/${LAYOUT.oldScratch}" ]; then printf "hopper-root %s\\n" "$r";`,
   '  [ -n "$to" ] && measure;',
-  `fi; for d in "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; do`,
-  '  [ -d "$d" ] && [ ! -L "$d" ] || continue;',
-  '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
-  '  printf "hopper-dir %s %s\\n" "$((now - m))" "$d";',
-  `done; for d in "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*; do`,
-  `  case $d in "$r"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$d" ] && [ ! -L "$d" ] || continue;`,
-  '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
-  '  printf "hopper-tree %s %s\\n" "$((now - m))" "$d";',
-  'done; done;',
+  `fi; ages dir "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; ages tree "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*;`,
+  'done;',
   'printf "%s\\n" hopper-surveyed',
 ].map((l) => l.trim()).join(' ');
 

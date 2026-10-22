@@ -1,0 +1,1 @@
+- The hopper now also cleans up what ended jobs left on a Windows computer that runs its client, where this check took too long before and was cut off.
