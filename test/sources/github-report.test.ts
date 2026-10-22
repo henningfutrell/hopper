@@ -74,6 +74,14 @@ describe('GitHub source report', () => {
     expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:done'] });
   });
 
+  it('finished on an issue closed as complete: the state records that the report put hopper:done on (issue #1892 part 24)', async () => {
+    const { gh, source } = withIssue();
+    gh.closeIssue(REPO, 1);
+    const state = await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'ok', sourceState: { source: { claimCommentId: 5 } } }) });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(state).toEqual({ claimCommentId: 5, doneReported: true });
+  });
+
   it('failed: label only, claimed → failed, no comment', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, { status: 'failed', error: 'empty issue body' });

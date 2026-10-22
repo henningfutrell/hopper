@@ -190,6 +190,11 @@ export interface IntakeContext {
    */
   dropReported?(key: string): 'none' | 'pr_ready' | undefined;
   /**
+   * Whether a done item's job finished and its final report found the issue closed as complete (issue #1892 part 24): the
+   * report put `hopper:done` on, and it is then the item's label.
+   */
+  doneReported?(key: string): boolean;
+  /**
    * Whether this hopper holds the label mirror's lease of the source (issue #1892): of the hoppers on one database, only
    * its holder corrects labels and records a label edited by hand. Absent: it does (one hopper).
    */

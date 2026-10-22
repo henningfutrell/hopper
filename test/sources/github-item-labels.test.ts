@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { HANDOFF_WAIT } from '../../src/domain/work-items.ts';
 import { DELIBERATE_CANCELS } from '../../src/domain/types.ts';
-import { blockLabels, dropReported, labelDrift, labelPutOn, labelsFor, labelTakenOff } from '../../src/sources/github/item-labels.ts';
+import { blockLabels, doneReported, dropReported, labelDrift, labelPutOn, labelsFor, labelTakenOff } from '../../src/sources/github/item-labels.ts';
 
 describe('labelsFor: the end labels a state wants (issue #1891)', () => {
   it('a job at work: no end label', () => {
@@ -42,6 +42,25 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'done', eventState: 'failed', doneByHand: true })).toBeUndefined();
     expect(labelDrift(byHand, ['hopper', 'hopper:failed'])).toEqual({ remove: ['hopper:failed'], add: ['hopper:done'] });
     expect(labelTakenOff(byHand, ['hopper', 'hopper:done'], ['hopper'])).toBe('hopper:done');
+  });
+
+  it('done by a job\'s end whose report put hopper:done on (issue #1892 part 24): hopper:done; not judged before', () => {
+    const ended = { state: 'done', eventState: 'done' } as const;
+    expect(labelsFor(ended, { doneReported: true })).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
+    expect(labelsFor(ended, { doneReported: false })).toBeUndefined();
+    expect(labelsFor({ state: 'done', eventState: 'pr_open' }, { doneReported: true })).toBeUndefined();
+    expect(labelDrift(ended, ['hopper', 'hopper:blocked'], { doneReported: true })).toEqual({ remove: ['hopper:blocked'], add: ['hopper:done'] });
+    expect(labelTakenOff(ended, ['hopper', 'hopper:done'], ['hopper'], { doneReported: true })).toBe('hopper:done');
+  });
+
+  it('doneReported: a finished job whose final report found its issue closed as complete', () => {
+    const job = (status: string, sync: Record<string, unknown>, source?: Record<string, unknown>) =>
+      ({ status, spec: {}, sourceState: { sync, ...(source ? { source } : {}) } }) as unknown as Parameters<typeof doneReported>[0];
+    expect(doneReported(job('finished', { finalReported: true }, { doneReported: true }))).toBe(true);
+    expect(doneReported(job('finished', { finalReported: false }, { doneReported: true }))).toBe(false);
+    expect(doneReported(job('finished', { finalReported: true }, { follow: 'open' }))).toBe(false);
+    expect(doneReported(job('failed', { finalReported: true }, { doneReported: true }))).toBe(false);
+    expect(doneReported(undefined)).toBe(false);
   });
 
   it('partly done (issue #1892): no end label once its merged part leaves parts to run; not judged else', () => {

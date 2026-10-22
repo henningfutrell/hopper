@@ -106,6 +106,8 @@ export interface DiscoverScope {
   partsLeft?: (key: string) => boolean;
   /** What a dropped item's cancelled or rejected job's report left (`DropReport`); undefined: not reported. */
   dropReported?: (key: string) => DropReport | undefined;
+  /** Whether a done item's job's final report put `hopper:done` on. */
+  doneReported?: (key: string) => boolean;
   /** The issues whose end label a person took off by hand, found in this pass (`work_item.label_edited`): no reason from the ledger. */
   edited?: ReadonlySet<string>;
 }
@@ -225,7 +227,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
   const reasons = new Map<string, { reason: string; action?: IntakeOutcome['action'] }>();
   const candidates: GitHubIssue[] = [];
   for (const i of issues) {
-    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false, partsLeft: scope.partsLeft?.(i.url) ?? false, dropReported: scope.dropReported?.(i.url) });
+    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false, partsLeft: scope.partsLeft?.(i.url) ?? false, dropReported: scope.dropReported?.(i.url), doneReported: scope.doneReported?.(i.url) ?? false });
     const byLabel = labelReason(i, config.hopperName, ledger);
     if (byLabel) reasons.set(i.url, { reason: byLabel, ...(LABEL_ACTION[byLabel] ? { action: LABEL_ACTION[byLabel] } : {}) });
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });
