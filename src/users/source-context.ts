@@ -77,14 +77,12 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       },
       // Its part merged with parts left (issue #1892): no end label, Intake takes it again; not a last part that made all done.
       partsLeft: (key) => {
-        const id = store.workItems.get(key)?.jobId;
-        const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
+        const s = mergedFollowOf(store, key);
         return s?.follow === 'merged' && s.part === true && !allPartsDone(s.parts);
       },
       // Its part merged and made every declared part done (issue #1892 part 35): the follow put hopper:done on.
       lastPartMerged: (key) => {
-        const id = store.workItems.get(key)?.jobId;
-        const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
+        const s = mergedFollowOf(store, key);
         return s?.follow === 'merged' && s.part === true && allPartsDone(s.parts);
       },
       // Its cancelled or rejected job reported (issue #1892 parts 19, 23): no end label, unless a person put one on to keep it
@@ -107,6 +105,26 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     jobDoneCriteria: (jobId) => doneCriteriaOfJob(store, jobId),
     jobAllowedDeletes: (jobId) => allowedDeletesOfJob(store, jobId),
   };
+}
+
+type FollowState = { follow?: string; pullRequest?: string; part?: boolean; parts?: Parts };
+
+/**
+ * The follow of item `key`'s merge (issue #1892 part 37): its newest job's; else, once its pull request merged, the follow of
+ * the older job that recorded that merge. Any job's merge moves the item (a tend or a new job can end before an older job's
+ * pull request merges), and the follow of that job wrote the issue's labels.
+ */
+function mergedFollowOf(store: UserStore, key: string): FollowState | undefined {
+  const item = store.workItems.get(key);
+  const sourceOf = (id: string | undefined) => (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as FollowState | undefined;
+  const own = sourceOf(item?.jobId);
+  if (own?.follow === 'merged' || item?.pullRequestState !== 'merged' || item.pullRequest === undefined) return own;
+  const url = item.pullRequest.toLowerCase();
+  for (const job of store.jobs.getMany(store.jobs.idsOfItem(key)).values()) {
+    const s = job.sourceState?.source as FollowState | undefined;
+    if (s?.follow === 'merged' && s.pullRequest?.toLowerCase() === url) return s;
+  }
+  return own;
 }
 
 /**

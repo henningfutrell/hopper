@@ -23108,6 +23108,32 @@ points apply (`test/crash/label-states-world.ts`).
 
 **Verification:** `test/crash/label-states-kill.test.ts`.
 
+### A part an older job merged, judged by the ledger (issue #1892 part 37, 2026-10-22)
+
+Parts 5, 34 and 35 read the facts `partsLeft` and `lastPartMerged` from the follow of the item's newest job (`jobId`). But
+any job's merge moves the item (`job.pull_request_merged` is not only the current job's): a newer job of the item (a new job,
+or a tend whose pull request is another one) can end before the older job's pull request merges. The older job's follow
+recorded the merge and wrote the issue's labels (`followLabels`), but the newest job has no merge of its own, so both facts
+were false and the item stayed to the labels. This was the case "a merge the follow did not record".
+
+**As built** (`src/users/source-context.ts` `mergedFollowOf`):
+- The facts read the newest job's follow. When it recorded no merge, and the item's pull request is merged, they read the
+  follow of the job of the item (`jobs.idsOfItem`, one `getMany`) that recorded the merge of that pull request (`follow:
+  merged`, the same URL, case ignored).
+- The facts mean what they meant: the follow that wrote the labels recorded the merge of a part, with parts left or not.
+  `labelsFor`, the mirror and Intake do not change.
+
+**Decision.** **The facts read the follow, not the newest job.** The follow writes the labels at the merge, so its record is
+what the labels are. A follow records its end (`keepFollowed`) before it appends the merge event, so a merge in the ledger
+always has its follow's record; only a stray's merge has none, and a stray's merge moves no item.
+
+**Still left to the labels:** a done item that a read of GitHub made done (a merged pull request read with no follow: the issue
+carries what was on it before, which no record says); an item dropped by a card withdrawn by its source or by an issue closed as
+not planned (not listed, so neither Intake nor the mirror reads it).
+
+**Verification:** `test/users/source-context-parts-left.test.ts` (a part an older job's follow merged: parts left, and the
+last part; not a merge of another pull request, nor an item whose pull request is not merged).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

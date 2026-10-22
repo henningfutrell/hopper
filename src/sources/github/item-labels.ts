@@ -22,7 +22,7 @@
 // made done. A partly done item carries none once its merged
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. A partly done item whose merged part made every declared part done (`lastPartMerged`, part 35) carries `hopper:done`:
-// the follow put it on with that merge. Not a merge the follow did not record. An item that needs a person carries
+// the follow put it on with that merge. The follow is that of the job that recorded the merge, also an older job's (part 37). An item that needs a person carries
 // none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
 // A hand-off (`HANDOFF_WAIT`) carries `hopper:failed` once its job's failure was reported as failed (`failureReported`), as a
 // failed item does: its job failed, and the hand-off waits on a person; before, the labels decide. A request card (waiting for
@@ -51,7 +51,7 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
 /**
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
  * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
- * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done), and so of
+ * follow (of the job that recorded the merge, part 37) recorded its part's merge and parts are left to run (no end label; not when every declared part is done), and so of
  * a reverted culprit of a part; or whether that merge made every declared part done (`lastPartMerged`, `hopper:done`). Of a done
  * item: what its job's final report put on (`doneReported`). Of a failed item: whether its job's failure was reported as one
  * the hopper fixes itself (`fixingReported`, no end label), or its report is not out yet (`failureReportWaits`).
