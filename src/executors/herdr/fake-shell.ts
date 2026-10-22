@@ -4,6 +4,7 @@
 // runs in the job's scope decide it.
 
 import { TERMINAL_LINE_MAX } from './client.ts';
+import { EXIT_CODE_COMMAND, EXIT_CODE_MARK } from './exited.ts';
 
 export type FakeRestore = 'restored' | 'partly' | 'kept' | 'failed' | 'no-way';
 
@@ -30,6 +31,8 @@ export interface FakeShellOptions {
   runtime?: 'own' | 'none' | 'failed' | 'silent';
   /** What the job's sandbox setup says (issue #1295); default none: the fake machine has no bubblewrap. */
   sandbox?: 'on' | 'none' | 'failed';
+  /** The status Claude exited with, as the shell says it after Claude (issue #2432); default 0. */
+  claudeExitCode?: number;
 }
 
 /** A typed command longer than ECHO_MAX echoes only its first ECHO_SHOWN characters, as a terminal's screen scrolls the rest off. */
@@ -55,6 +58,8 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.startsWith('case "$(cat /proc/self/cgroup')) return { lines: [`hopper-scope-${scoped ? 'entered' : 'outside'}`] };
   // Restoring a checkpoint (issue #921, checkpoint.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: nextRestore(o) };
+  // The shell's status of Claude, once Claude exited (issue #2432).
+  if (command === EXIT_CODE_COMMAND) return { lines: [`${EXIT_CODE_MARK}${o.claudeExitCode ?? 0}`] };
   // The job's sandbox (src/client/job-sandbox.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-sandbox ')) return { lines: [`hopper-sandbox-${o.sandbox ?? 'none'}`] };
   // The job's container runtime guards, its first step (issue #2234).

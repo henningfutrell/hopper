@@ -3,6 +3,7 @@
 // A screen the hopper may not answer leaves Claude up at it: the send asks it of a person (issue #534, before-send.ts).
 import type { ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { CLAUDE_CONFIG_MARK, claudeConfigOutcome, seedClaudeConfigCommand } from './claude-config.ts';
+import { exitedError } from './exited.ts';
 import { tail } from './monitor.ts';
 import { awaitOnScreen } from './pane-wait.ts';
 import type { PaneState, StartDeps, StartTimedOut } from './start.ts';
@@ -49,7 +50,7 @@ export async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: Pane
   while (d.clock.now().getTime() < until) {
     if (ctx.signal.aborted) return null;
     const agent = await d.herdr.getAgent(s.agentName);
-    if (!agent) return { kind: 'failed', error: 'claude exited at startup' };
+    if (!agent) return { kind: 'failed', error: await exitedError(d, ctx, s.paneId, 'startup') };
     const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
     if (promptShown(screen)) {
       if (notSignedIn(screen) || ++promptPolls > polls(d.promptSteadyMs ?? PROMPT_STEADY_MS)) return null;
