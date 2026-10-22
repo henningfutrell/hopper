@@ -9,6 +9,8 @@
 // provider mirror is there too: TF_CLI_CONFIG_FILE names it, and init finds only the providers it holds (`MIRRORED_PROVIDERS`), as the real terraform does.
 // After an init with -backend-config (an S3 backend), a state push writes to the bucket: refused under a read-only credential.
 // Issue #2146, part 5: kubectl refuses a Secret read and an exec under a read-only credential.
+// Issue #2477: a fake curl answers a WebSocket upgrade of a pod's exec as the API server does, and kubectl's config view
+// gives the kubeconfig's server and token.
 // Issue #849: aws and kubectl sent to a host off the allowlist (the egress probes) answer as the real tools do. `limited`
 // (the default): it cannot be reached, past the proxy or through it; `open`: it is reached either way; `proxy-open`: the
 // proxy lets it through, but the box has no route of its own.
@@ -24,7 +26,11 @@ import { MIRRORED_PROVIDERS } from '../../src/sandbox/tools.ts';
  * `unauthorized` (issue #2396): kubectl's every request is refused as the API server refuses a token it does not take, as
  * before an EKS access entry holds it; `get-unauthorized`: only its gets are, its other requests answer as `read-only`.
  */
-export type CloudMode = 'read-only' | 'writable' | 'unauthorized' | 'get-unauthorized';
+/**
+ * `view-exec` (issue #2477): a view role that may get `pods/exec` but not create it, as EKS's AmazonEKSViewPolicy gives: a
+ * plain GET of exec answers NotFound, and a WebSocket upgrade, for which the API server asks create too, is Forbidden.
+ */
+export type CloudMode = 'read-only' | 'writable' | 'unauthorized' | 'get-unauthorized' | 'view-exec';
 /** What a box's egress lets out (issue #849). */
 export type EgressMode = 'limited' | 'open' | 'proxy-open';
 
@@ -60,7 +66,14 @@ const TOOLS: Record<string, string> = {
   *delete-*) exit 0 ;;
   *) if [ "$MODE" = read-only ]; then echo "An error occurred (AccessDenied) when calling the operation: User is not authorized to perform: $2:$3" >&2; exit 254; fi ;;
 esac`,
-  kubectl: `case "$MODE:$1" in unauthorized:*|get-unauthorized:get) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;; get-unauthorized:*) MODE=read-only ;; esac
+  kubectl: `case "$1" in config) case "$*" in
+    *server*) sed -n 's/.*"server":"\\([^"]*\\)".*/\\1/p' "$KUBECONFIG" ;;
+    *token*) sed -n 's/.*"token":"\\([^"]*\\)".*/\\1/p' "$KUBECONFIG" ;;
+  esac; exit 0 ;; esac
+case "$MODE:$1" in unauthorized:*|get-unauthorized:get) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;; get-unauthorized:*) MODE=read-only ;;
+  view-exec:get) case " $* " in *"/exec"*) echo 'Error from server (NotFound): pods "hopper-read-only-check" not found' >&2; exit 1 ;; esac; MODE=read-only ;;
+  view-exec:*) MODE=read-only ;;
+esac
 case "$1" in
   # A view role reads no Secret and runs nothing in a pod (issue #2146, part 5). Allowed, the exec answers NotFound.
   get) case " $* " in *" secret"*|*"/exec"*)
@@ -72,6 +85,15 @@ case "$1" in
      [ "$1" = delete ] && { echo 'Error from server (NotFound): pods "hopper-read-only-check" not found' >&2; exit 1; }
      [ "$1" = create ] && case " $* " in *" --dry-run=server "*) echo 'deployment.apps/hopper-read-only-check-chart created (server dry run)' ;; esac ;;
 esac`,
+  // Only a WebSocket upgrade of a pod's exec, with a bearer token from its header file (issue #2477).
+  curl: `auth=; for a in "$@"; do case "$a" in @*) auth=$(cat "\${a#@}") ;; esac; done
+case "$*" in *"Upgrade: websocket"*"/exec?"*) ;; *) echo 'curl: (6) Could not resolve host' >&2; exit 6 ;; esac
+case "$MODE:$auth" in
+  unauthorized:*|get-unauthorized:*|*:) echo '{"kind":"Status","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}'; echo 'curl: (22) The requested URL returned error: 401' >&2; exit 22 ;;
+  writable:*) echo '{"kind":"Status","status":"Failure","message":"pods \\"hopper-read-only-check\\" not found","reason":"NotFound","code":404}'; echo 'curl: (22) The requested URL returned error: 404' >&2; exit 22 ;;
+esac
+echo '{"kind":"Status","status":"Failure","message":"pods \\"hopper-read-only-check\\" is forbidden: User \\"system:serviceaccount:hopper:hopper\\" cannot create resource \\"pods/exec\\" in API group \\"\\" in the namespace","reason":"Forbidden","code":403}'
+echo 'curl: (22) The requested URL returned error: 403' >&2; exit 22`,
   // helm's `--dry-run=server` renders the chart and creates nothing: it never asks the API's authorization for the
   // writes, so it ends 0 under a read-only credential too (issue #869). `template` renders the chart.
   helm: `case "$1" in
