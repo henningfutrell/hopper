@@ -120,7 +120,8 @@ async function finished(ctx: JobReportContext, job: Job, repo: string, number: n
     await settle(ctx, job, repo, { end: 'closed' }, issue.labels);
     // The ledger reads the close too (issue #1892): its item is done, not blocked for want of a pull request.
     if (job.source?.key) ctx.issueClosed?.(job.source.key, issue.stateReason);
-    return state;
+    // The ledger judges its done item by it (issue #1892 part 24): this report put `hopper:done` on.
+    return { ...state, doneReported: true };
   }
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
   // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.

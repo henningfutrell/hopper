@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { createGitMirrors } from '../git-mirror/mirrors.ts';
 import { graphKeys } from '../search/index.ts';
 import { allPartsDone } from '../sources/github/parts.ts';
-import { dropReported } from '../sources/github/item-labels.ts';
+import { doneReported, dropReported } from '../sources/github/item-labels.ts';
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
@@ -70,6 +70,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       },
       // Its cancelled or rejected job reported (issue #1892 parts 19, 23): no end label, unless a person put one on to keep it
       // out; a tend job cancelled not on purpose, hopper:pr-ready.
+      // Its job's final report found the issue closed as complete (issue #1892 part 24): hopper:done is its label.
+      doneReported: (key) => { const id = store.workItems.get(key)?.jobId; return doneReported(id === undefined ? undefined : store.jobs.get(id)); },
       dropReported: (key) => { const id = store.workItems.get(key)?.jobId; return dropReported(id === undefined ? undefined : store.jobs.get(id)); },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),

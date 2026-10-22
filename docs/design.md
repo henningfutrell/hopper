@@ -22744,6 +22744,32 @@ Milestone 4.
 (`dropReported` of a tend job cancelled on purpose, not on purpose, rejected and not reported; `labelsFor`, `labelDrift`,
 `labelTakenOff`, `labelPutOn` of such an item).
 
+### A done item whose report closed it carries `hopper:done` (issue #1892 part 24, 2026-10-22)
+
+Milestone 2, part 24: the done item parts 4 and 10 left to the labels. A job's end makes its item done (`job.finished` with a
+result in `DONE_RESULTS`: operator-led work complete, the issue closed as complete), with no whole merge and no Done by hand.
+Its report reads the issue: closed as complete, it puts `hopper:done` on; open, it sets PR open's or blocked's label by
+what it finds. Only the first is certain, so only it is judged. Such an item is listed again when its issue is reopened.
+
+- **The report records the close** (`src/sources/github/report.ts`): a finished job's report that finds the issue closed
+  keeps `doneReported: true` in the job's source state.
+- **`doneReported`** (`src/sources/github/item-labels.ts`, fact of `LabelFacts`): the item's job finished, its final report
+  went out, and that report kept `doneReported`. The store answers it (`src/users/source-context.ts`), the label mirror asks
+  it for a done item, and Intake passes it to `ledgerReason`.
+- **`labelsFor` wants `hopper:done`** of a done item whose events made it done (`eventState: done`) with `doneReported`. The
+  mirror swaps a stale end label for it, Intake says done (`DONE_OPEN`), and `hopper:done` taken off by hand is a Run again.
+- **A job reported before this part** has no `doneReported`: its item stays to the labels. No migration: the field is new,
+  and the labels decide as before.
+
+**Left to the labels:** a done item a job's end made while its issue was open (its report set PR open's or blocked's label);
+an item dropped by a card withdrawn by its source or by an issue closed as not planned (not listed open with the source
+label). Milestone 4.
+
+**Verification:** `test/sources/github-label-done-reported.test.ts` (Intake says done, `hopper:done` in place of a stale end
+label, taken off by hand a Run again, not judged without the fact), `test/sources/github-item-labels.test.ts` (`labelsFor`,
+`labelDrift`, `labelTakenOff` with `doneReported`; `doneReported` of a job), `test/sources/github-report.test.ts` (the report
+of a closed issue keeps `doneReported`), `test/users/source-context-done-reported.test.ts` (the store's fact).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

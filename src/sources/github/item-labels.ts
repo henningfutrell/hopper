@@ -7,8 +7,9 @@
 // as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits, and not a
 // culprit whose merge was reverted (failed by its landing, not by its job); a done item carries `hopper:done` once its pull
 // request merged as the whole item (`wholeMerged`): the follow put it on with the merge; or once a person resolved its hand-off as
-// Done by hand (`doneByHand`): the resolution put it on. Not a done item a job's end or a read of GitHub made done: its report
-// set the labels by what the issue said then. A partly done item carries none once its merged
+// Done by hand (`doneByHand`): the resolution put it on; or once a job's end made it done and its job's final report found
+// the issue closed as complete (`doneReported`, part 24): the report put it on. Not a done item a job's end made while its
+// issue was open, or a read of GitHub made done: its report set the labels by what the issue said then. A partly done item carries none once its merged
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. Not a last part that made every declared part done: the follow put `hopper:done` on. An item that needs a person carries
 // none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
@@ -39,9 +40,10 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
 /**
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
  * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
- * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done).
+ * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done). Of a done
+ * item: whether its job's final report found the issue closed as complete and put `hopper:done` on (`doneReported`).
  */
-export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: DropReport }
+export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: boolean }
 
 /**
  * What the final report of a dropped item's cancelled or rejected job left on its issue: `none`, only the claim came off
@@ -64,6 +66,13 @@ export const dropReported = (job: Pick<Job, 'status' | 'spec' | 'sourceState'> |
   return job.status === 'cancelled' && tendTriedAgain(job) ? 'pr_ready' : 'none';
 };
 
+/**
+ * Of a done item's job: whether it finished and its final report found the issue closed as complete, so put `hopper:done`
+ * on (issue #1892 part 24; the report's source state keeps `doneReported`).
+ */
+export const doneReported = (job: Pick<Job, 'status' | 'sourceState'> | undefined): boolean =>
+  job?.status === 'finished' && job.sourceState?.sync?.finalReported === true && job.sourceState?.source?.doneReported === true;
+
 /** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, its merge, and what it waits on. */
 export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'dismissed' | 'closedByPerson' | 'closedByHopper' | 'doneByHand'>>;
 
@@ -77,7 +86,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       return { allowed: [label], add: label };
     }
     case 'failed': return item.eventState === 'failed' && facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
-    case 'done': return (item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && item.doneByHand === true) ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
+    case 'done': return (item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && (item.doneByHand === true || facts.doneReported === true)) ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     case 'partly_done': return item.eventState === 'partly_done' && facts.partsLeft ? { allowed: [] } : undefined;
     case 'needs_you':
       if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;

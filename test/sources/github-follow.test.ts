@@ -74,12 +74,12 @@ describe('the end of a done job on its issue', () => {
     expect(state).toEqual({ pullRequest: pr.url, follow: 'open', part: true });
   });
 
-  it('the issue closed as complete already (merged in yolo mode): hopper:done, nothing to follow', async () => {
+  it('the issue closed as complete already (merged in yolo mode): hopper:done, nothing to follow, the report keeps that it put hopper:done on (issue #1892 part 24)', async () => {
     const { gh, source } = withIssue();
     gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: AFTER });
     const state = await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished' }) });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
-    expect(state).toEqual({});
+    expect(state).toEqual({ doneReported: true });
   });
 
   it('an issue labelled hopper:pr-ready, hopper:partly-done or hopper:pr-closed is not taken again', async () => {
