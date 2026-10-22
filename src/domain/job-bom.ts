@@ -22,6 +22,7 @@ import { phaseOf } from './phase.ts';
 import type { Question } from './questions.ts';
 import { testDatabases } from './test-databases.ts';
 import { resourcesUsed } from './job-resources.ts';
+import { ledgerParts, type LedgerEntry } from './resource-ledger.ts';
 import type { DomainEvent, Job } from './types.ts';
 
 /** The groups of a parts list, in the order it shows them. */
@@ -68,6 +69,8 @@ export interface JobBomInput {
   runs?: readonly JobRun[];
   /** The job that took its lane, when it was preempted (issue #1525). */
   preempter?: Job;
+  /** Its resource ledger (issue #2504): its cleanup status and each entry; absent or empty: none. */
+  ledger?: readonly LedgerEntry[];
   now: string;
 }
 
@@ -335,7 +338,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const own = events.filter((e) => e.jobId === job.id);
   const parts = [
     ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...resourcesUsed(own), ...code(job, own), ...outputs(job, own, input.artifacts),
-    ...infra(own), ...decisions(input.questions, own, input.handoff),
+    ...infra(own), ...decisions(input.questions, own, input.handoff), ...ledgerParts(job, input.ledger ?? []),
   ];
   const ordered = parts.map((p, i) => ({ p, i }))
     .sort((a, b) => Number(b.p.status === 'waiting_on_you') - Number(a.p.status === 'waiting_on_you') || RANK.get(a.p.group)! - RANK.get(b.p.group)! || a.i - b.i)

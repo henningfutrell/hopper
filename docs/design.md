@@ -19599,7 +19599,7 @@ job's own graph with each part as a node, a timeline newest first, and the parts
 stay live, and what waits on the person is pinned at the top.
 
 **The model** (`jobBom`, `src/domain/job-bom.ts`, pure; its types go out through `job-graph.ts`, as `types.ts` is at its
-line limit). Nothing new is recorded: the parts are read from what the job's record, its events and its rows already say.
+line limit). Nothing new is recorded for it: the parts are read from what the job's record, its events and its rows already say (since issue #2504 also its resource ledger's rows).
 
 | Group | Parts, and where each comes from |
 |---|---|
@@ -19609,7 +19609,7 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 | Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`); the help pages and What's new lines among the files its pull request changes (part 2) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
 | Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
-| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); its latest checkpoint only, one part however many were taken (`job.checkpoint`, with how many `job.checkpointed` say were taken, issue #1975), with its commits and whether it holds the session; each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below) |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); its latest checkpoint only, one part however many were taken (`job.checkpoint`, with how many `job.checkpointed` say were taken, issue #1975), with its commits and whether it holds the session; each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below); its cleanup status and each entry of its **resource ledger** (issue #2504, "The resource ledger") |
 
 Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
 piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
@@ -33079,3 +33079,49 @@ stopped.
 **Verification.** `test/herdr/exit-at-start.test.ts`: the exit code read and its command's echo not taken as one; the text
 after the command line; an exit in the task's turn with nothing shown is an exit at start, with its code and signal, and
 one after output is not; the cause, the lane fault, the assessor's retry, and the rerun's avoided lane.
+
+## The resource ledger (issue #2504, part 1, 2026-10-22)
+
+Requirement (issue #2504): a job that ends leaves nothing behind. Each thing the hopper makes for a job is recorded when it
+is made, a durable cleanup reaps each one on its own machine, work not pushed is kept and flagged, a reconciler reaps what
+no live job holds, and each job shows its cleanup status. The cleanup itself exists already: the **reap** at the job's end,
+its **cleanup record** (issue #1570) and **deferred cleanup** (issue #371), and the **sweep** (issue #410). What was
+missing is the record of what each job has: the reap and the sweep find a job's things by path and job id only, and no
+one can ask "what does this job still hold, and why".
+
+**Part 1: the ledger.** The `job_resource_ledger` table (tenant migration 92, `src/store/resource-ledger.ts`, pure rules in
+`src/domain/resource-ledger.ts`), one **ledger entry** per job, kind and locator:
+
+| Kind | Locator | Recorded from |
+|---|---|---|
+| `scratch_dir` | `<work tree>/.worktrees/@scratch/<job id>` | the executor's saved state, its `cwd` |
+| `job_worktree` | its path | the saved state's `jobWorktree` |
+| `job_scope` | `hopper-job-<job id>.scope` | the saved state's `scope` |
+
+- **When it is recorded.** Each `saveState` of a job's executor writes the job's state and its ledger entries in one
+  transaction (`recordLedger`, `src/engine/resource-ledger.ts`), on the machine the job runs on. An entry already there is
+  left as it is, so a later save changes nothing. An executor that saves none of these fields records nothing.
+- **How it is closed.** Each reap that ends — the cleanup at the job's end (`src/engine/cleanup.ts`), the sweep's reaps and
+  a discard (`src/engine/sweep.ts`) — closes the job's entries as it says (`reapClosures`): a dir it names as still there is
+  `failed`, with that path as the reason; with work kept, the scratch dir and the job worktree are `kept` together, as the
+  reap keeps them; else each is `reaped`. A scope is always `reaped`. A reap that did not look at the scratch dir (the
+  sweep stops only a scope or processes) closes only the scope. A `kept` entry a later reap removes becomes `reaped`; a
+  `reaped` or `failed` entry is not judged again. A reap that could not reach the machine closes nothing: the entries
+  stay `live` until a reap goes through.
+- **Cleanup status** (`cleanupStatusOf`). `none` with no entry; `in_use` while the job has not ended; `pending` while its
+  cleanup is deferred or an entry is still `live`; `in_progress` while its cleanup record is owed; then `failed` if an
+  entry failed, `kept_work` if one is kept, else `done`.
+- **Shown.** The job's parts list (`GET /api/jobs/:id/bom`, the job page) has, in the machines group, a part `cleanup` with
+  the cleanup status and how many entries are closed, and one part per entry with its locator and state. An entry is a
+  record, but one whose removal failed counts as `failed`.
+
+**Left for later parts** of issue #2504: containers, volumes, processes, agent sessions, herdr panes and build daemons as
+entries; the cleanup as a persisted work item per entry with backoff, on each machine's own transport, and container storage
+that only a `podman unshare` removes; the reconciler that compares each machine with the live jobs, also for a job outside
+the job-list window and what was left before the ledger; `job.cleanup_leftover` after a grace period; leftover counts and
+bytes on Machines; a cleanup failure on Failures.
+
+**Verification.** `test/domain/resource-ledger.test.ts` (the entries from a state, the closures, the status);
+`test/engine/sweep-ledger.test.ts` (the sweep closes entries: kept work later removed, a dir left, a scope-only reap);
+`test/integration/resource-ledger.test.ts` (a job that ends cancelled, finished or failed has every entry reaped; work kept;
+a removal that failed; the parts list).
