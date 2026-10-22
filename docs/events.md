@@ -1055,6 +1055,24 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 }
 ```
 
+## `job.resources_used`
+
+Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used on its machine (`machineId`), read by the job's reap at its end from the scope's cgroup before it stopped the scope (issue #2498): `memoryPeakBytes`, the most memory the scope held at once (cgroup `memory.peak`); `cpuSeconds`, the CPU time of every process in it (`cpu.stat` `usage_usec`); `oomKills`, the processes in it the kernel killed for want of memory (`memory.events` `oom_kill`). Each is absent where the cgroup has none (`memory.peak` needs Linux 5.19). None where the job has no scope there: no systemd user manager, or its scope ended before the reap (a parked job's, a print-mode agent's after its turn), or a client older than this. The job's parts list shows it.
+
+| field | type | required |
+|---|---|---|
+| `memoryPeakBytes` | number | no |
+| `cpuSeconds` | number | no |
+| `oomKills` | number | no |
+
+```json
+{
+  "memoryPeakBytes": 3221225472,
+  "cpuSeconds": 754.5,
+  "oomKills": 1
+}
+```
+
 ## `job.parked`
 
 Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650, #2335: `auto`, its question waited on a person a few seconds, or its proposal or research report reached the human stage; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. `move` (issue #1892): the hopper parked it to move it off its machine with no person — `signed_out` (issue #1211), `busy_machine` (issue #1977) or `lost_machine` (issue #1569; also a run whose session had no way to the hopper, issue #2427, its `why` says so) — and picks it up elsewhere (`job.unparked`); its work item goes back to queued, not to needs you, and a stop before the pick up leaves the move to its next pass. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.

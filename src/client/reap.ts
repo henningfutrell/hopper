@@ -69,6 +69,11 @@ export const UNPUSHED_SH: readonly string[] = [
 // with HOPPER_JOB_ID unset, so neither it nor what it starts matches the processes it stops.
 const REAP_SCRIPT = [
   'id=$1; s=$2; k=$3;',
+  // What the job's scope used (issue #2498), read from its cgroup before it is stopped: its peak memory, its CPU time and the
+  // OOM kills in it, each `-` where the cgroup has none. HOPPER_CGROUP_ROOT stands in for the cgroup root in tests.
+  'cr=${HOPPER_CGROUP_ROOT:-/sys/fs/cgroup}; cg=; command -v systemctl >/dev/null 2>&1 && cg=$(systemctl --user show -p ControlGroup --value "hopper-job-$id.scope" 2>/dev/null);',
+  'case $cg in *..*) ;; /?*) [ -d "$cr$cg" ] && { mp=$(head -n 1 "$cr$cg/memory.peak" 2>/dev/null); cu=$(sed -n "s/^usage_usec //p" "$cr$cg/cpu.stat" 2>/dev/null);',
+  '  ok=$(sed -n "s/^oom_kill //p" "$cr$cg/memory.events" 2>/dev/null); printf "hopper-used %s %s %s\\n" "${mp:--}" "${cu:--}" "${ok:--}"; };; esac;',
   // The job's scope: every process in it, whatever it did to its environment or session.
   'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1; fi;',
   // Where there is no systemd, or for what left the scope: the processes carrying the job's id, and those run from its
@@ -234,7 +239,7 @@ function detailsOf(line: string): ContainerDetails | undefined {
  * could not remove (issue #1452), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] } } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
@@ -252,7 +257,20 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
   return {
     kept, ...(Object.keys(tips).length ? { tips } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
+    ...usedOf(lines),
   };
+}
+
+/** What a job's scope used (issue #2498), as `job.resources_used` records it: each field absent where its cgroup had none. */
+export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number }
+
+/** The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread; nothing when no field was read. */
+function usedOf(lines: readonly string[]): { used?: ResourceUse } {
+  const m = lines.map((l) => /^hopper-used (\S+) (\S+) (\S+)$/.exec(l)).find((x) => x !== null);
+  const n = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined);
+  const peak = n(m?.[1]), usec = n(m?.[2]), oom = n(m?.[3]);
+  const used: ResourceUse = { ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}) };
+  return Object.keys(used).length ? { used } : {};
 }
 
 /** One scratch dir the survey found: its job, path and age. */
