@@ -62,6 +62,13 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
         const sync = (job?.sourceState?.sync ?? {}) as { finalReported?: boolean; fixingReported?: boolean };
         return job?.status === 'failed' && sync.finalReported === true && sync.fixingReported !== true;
       },
+      // Its job's failure reported as one the hopper fixes itself (issue #1892 part 31): no end label.
+      fixingReported: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const job = id === undefined ? undefined : store.jobs.get(id);
+        const sync = (job?.sourceState?.sync ?? {}) as { finalReported?: boolean; fixingReported?: boolean };
+        return job?.status === 'failed' && sync.finalReported === true && sync.fixingReported === true;
+      },
       // Its part merged with parts left (issue #1892): no end label, Intake takes it again; not a last part that made all done.
       partsLeft: (key) => {
         const id = store.workItems.get(key)?.jobId;
