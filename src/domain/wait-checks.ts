@@ -8,7 +8,7 @@
 // tested on its reviews (`reviewOutcome`). Issue #2335: a wait on an outside event the hopper watches nothing of — once a
 // background poll in the job's pane — gets a recheck when the job named a check-in: at it, the hopper wakes the job to look
 // again (`recheckOutcome`), so its agent can end while it waits. Issue #2338: with no check-in, nothing wakes it but a
-// person (end-wait) or a time it named. Pure.
+// person (end-wait) or a time it named. Issue #2459: the recheck is at the check-in however long it is, not at 30 minutes. Pure.
 import type { ChecksState } from './pull-requests.ts';
 import type { Job, JobWait } from './types.ts';
 import { waitOnLabel } from './wait-on.ts';
@@ -75,7 +75,11 @@ function durationMs(text: string): number | undefined {
   return ms > 0 ? ms : undefined;
 }
 
-/** A `check:` line, for a wait that began at `sinceMs`; undefined when it reads as none. A check-in is kept to a minute..30 minutes, a time to wake at to the wait..a week after. */
+/**
+ * A `check:` line, for a wait that began at `sinceMs`; undefined when it reads as none. A check-in is kept to a minute..a
+ * week (a wait the hopper can test is checked at most MAX_EVERY_MS apart all the same, `newCheck`), a time to wake at to
+ * the wait..a week after.
+ */
 export function checkAskOf(line: string, sinceMs: number): CheckAsk | undefined {
   const m = /^(in|every|after|at)\s+(.+)$/i.exec(line.trim());
   if (!m) return undefined;
@@ -87,7 +91,7 @@ export function checkAskOf(line: string, sinceMs: number): CheckAsk | undefined 
   }
   const ms = durationMs(rest);
   if (ms === undefined) return undefined;
-  return word === 'after' ? clampAt(sinceMs + ms) : { inMs: Math.min(Math.max(ms, FIRST_CHECK_MS), MAX_EVERY_MS) };
+  return word === 'after' ? clampAt(sinceMs + ms) : { inMs: Math.min(Math.max(ms, FIRST_CHECK_MS), MAX_WAKE_MS) };
 }
 
 /** What the job named on its wait's `check:` line, if anything. */
@@ -152,11 +156,13 @@ export function newCheck(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, no
   const condition = conditionOf(job);
   const ask = askOf(w);
   const since = Date.parse(w.since);
-  const everyMs = ask && 'inMs' in ask ? ask.inMs : FIRST_CHECK_MS;
+  const everyMs = ask && 'inMs' in ask ? Math.min(ask.inMs, MAX_EVERY_MS) : FIRST_CHECK_MS;
   const wake = ask && 'at' in ask ? Date.parse(ask.at) : undefined;
+  // Issue #2459: a recheck is at the check-in the job named, however long; its deadline comes after it.
+  const due = condition.kind === 'recheck' ? Date.parse(condition.at) : wake;
   // A time the hopper only waits for is checked at that time, not before.
   const next = w.stuckAt ? nowMs : condition.kind === 'time_passed' ? wake! : condition.kind === 'recheck' ? Date.parse(condition.at) : Math.min(since + everyMs, wake ?? Infinity);
-  const deadline = Math.max(since + (condition.kind === 'command_exited' ? COMMAND_DEADLINE_MS : DEADLINE_MS), (wake ?? 0) + OVERDUE_EVERY_MS);
+  const deadline = Math.max(since + (condition.kind === 'command_exited' ? COMMAND_DEADLINE_MS : DEADLINE_MS), (due ?? 0) + OVERDUE_EVERY_MS);
   const repeat = condition.kind === 'items_ended' && wokenFor === conditionKey(condition);
   return {
     condition, nextCheckAt: iso(next), everyMs, attempts: 0, deadline: iso(deadline), ...(repeat ? { repeat: true as const } : {}),
