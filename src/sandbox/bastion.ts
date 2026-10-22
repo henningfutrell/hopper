@@ -171,6 +171,40 @@ export function bastionCommand(placed: readonly PlacedTarget[]): string {
   ].join('\n');
 }
 
+/** What the bastion's output says of one forward (issue #2413): it listens, or not, with the last thing kubectl said. */
+export interface ForwardState { listening: boolean; said?: string }
+
+const FORWARD_LINE = /^\[([^\]]+)\] (.*)$/;
+const ENDED = 'the forward ended:';
+
+/**
+ * Reads the bastion's output as it comes (bastionCommand marks each forward's lines with its target): a forward listens
+ * once kubectl says "Forwarding from", and stops when its loop says it ended, which keeps the last thing kubectl said.
+ * A connection it handles, or an error of one connection, does not end it. A line cut over two chunks is read whole.
+ */
+export function forwardWatch(): { add(chunk: string): void; of(target: string): ForwardState | undefined } {
+  const states = new Map<string, ForwardState>();
+  const said = new Map<string, string>();
+  let rest = '';
+  const line = (text: string): void => {
+    const m = FORWARD_LINE.exec(text.replace(/\r$/, ''));
+    if (!m) return;
+    const [, target, words] = m as unknown as [string, string, string];
+    if (words.startsWith('Forwarding from ')) { states.set(target, { listening: true }); said.delete(target); return; }
+    if (words.startsWith('Handling connection for ')) return;
+    if (words.startsWith(ENDED)) { states.set(target, { listening: false, said: said.get(target) ?? words }); said.delete(target); return; }
+    said.set(target, words);
+  };
+  return {
+    add(chunk) {
+      const lines = (rest + chunk).split('\n');
+      rest = lines.pop()!;
+      for (const l of lines) line(l);
+    },
+    of: (target) => states.get(target),
+  };
+}
+
 /**
  * The command the relay starts in the box for one connection (part 2): its stdin to 127.0.0.1:`local`, what comes back to
  * its stdout. It takes the first the box's image has of socat, bash (its /dev/tcp) and nc. It ends when the target ends
