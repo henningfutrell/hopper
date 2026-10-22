@@ -52,6 +52,12 @@ describe('a blocked item\'s pull request found open: the ledger decides its labe
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:blocked']);
   });
 
+  it('done by this job\'s end, its report found no pull request (part 28), its label not on: PR open\'s label goes on', async () => {
+    const { gh, source, job } = blockedWith(['hopper'], (id) => ({ state: 'done', eventState: 'done', jobId: id, issueState: 'open' }));
+    await source.follow!(job);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
+  });
+
   it('an item the ledger does not know: its hopper:blocked decides, as before', async () => {
     const { gh, source, job } = blockedWith(['hopper', 'hopper:blocked']);
     await source.follow!(job);

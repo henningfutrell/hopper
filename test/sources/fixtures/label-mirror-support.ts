@@ -5,6 +5,7 @@ import { createFakeGitHub, createGitHubSource } from '../../../src/sources/githu
 import type { memoryGitHubOutbox } from '../../../src/sources/github/outbox.ts';
 import type { memoryListings } from '../../../src/sources/github/listing.ts';
 import type { WorkItem } from '../../../src/domain/work-items.ts';
+import type { DoneReport } from '../../../src/sources/github/item-labels.ts';
 import { REPO, githubConfig, testTrust } from './github-support.ts';
 
 export const LONG_AGO = '2026-10-18T10:00:00.000Z';
@@ -14,7 +15,7 @@ export const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; dropped?: string[]; tendAgain?: string[]; doneReported?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean } = {}) {
+export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; dropped?: string[]; tendAgain?: string[]; doneReported?: string[]; doneOpen?: Record<string, DoneReport>; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean } = {}) {
   const gh = o.gh ?? createFakeGitHub();
   let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -36,7 +37,7 @@ export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { 
       partOpen: (key) => o.parts?.includes(key) ?? false,
       failureReported: (key) => o.reported?.includes(key) ?? false,
       partsLeft: (key) => o.partsLeft?.includes(key) ?? false,
-      doneReported: (key) => o.doneReported?.includes(key) ?? false,
+      doneReported: (key) => o.doneOpen?.[key] ?? (o.doneReported?.includes(key) ? 'closed' : undefined),
       dropReported: (key) => (o.tendAgain?.includes(key) ? 'pr_ready' : o.dropped?.includes(key) ? 'none' : undefined),
       ...(o.held ? { mirrorHeld: o.held } : {}),
     },
