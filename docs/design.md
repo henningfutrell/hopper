@@ -987,7 +987,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
   A dir the reap could not remove (issue #1452) is never said removed. The reap makes a read-only dir in it (a Go
-  module cache) writable and removes it again, and resets the job's container storage in it through the job's runtime
+  module cache), and a dir its owner cannot read (a container's overlay `work/work`, mode 200, issue #2490), readable,
+  writable and searchable (`chmod -R u+rwX`) and removes it again, and resets the job's container storage in it through the job's runtime
   dir, which it makes again when a reboot removed it. What is still there it names (`hopper-left <path>`): the sweep
   logs that once while it stays, records no `job.work_removed`, and a discard of it fails with the path. The sweep
   reaps that job again only once `STUCK_RETRY_MS` (6 hours) passed (issue #1613): each pass would only fail the same way,
