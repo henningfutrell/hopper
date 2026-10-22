@@ -22,6 +22,26 @@ export interface PodmanHost {
 }
 
 export interface PodmanHostsConfig { hosts: PodmanHost[] }
+
+/**
+ * A Podman host now (issue #2272), read from libpod /info over its ssh stream: why boxes cannot start there, or its CPU
+ * and memory. A value Podman did not give is absent.
+ */
+export interface PodmanHostStatus {
+  name: string;
+  /** When it was read (ISO). */
+  at: string;
+  /** Why boxes cannot start there now (ssh failed, Podman not reached, rootful); absent: online. */
+  problem?: string;
+  cpus?: number;
+  /** The share of its CPU time busy (0–1), as Podman last sampled it. */
+  cpuBusyFrac?: number;
+  memTotalBytes?: number;
+  /** Memory in use: all of it less what is free. */
+  memUsedBytes?: number;
+}
+/** `GET /api/podman-hosts/status`: each Podman host, in the record's order. */
+export interface PodmanHostsStatusView { hosts: PodmanHostStatus[] }
 /** `GET /api/podman-hosts`: the hosts, and the record's version to edit against. */
 export interface PodmanHostsView { hosts: PodmanHost[]; version: string }
 
