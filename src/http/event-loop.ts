@@ -18,6 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import type { HeldSample, HeldWatch } from './event-loop-held.ts';
 import type { StoreTotal } from '../store/slow-calls.ts';
 import { processesBetween, type StallProcesses } from './event-loop-processes.ts';
+import { giveLoopHeld } from '../domain/loop-held.ts';
 
 /** A timer this late is a stall. */
 export const STALL_MS = 2000;
@@ -209,8 +210,16 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
     try { o.raise(told); } catch (e) { o.warn(`hopper: the event loop stall could not be raised: ${(e as Error).message}`); }
   };
   timer.unref();
+  const heldSince = (from: number): number => {
+    // The stall going on now, not yet seen by the timer: this read runs as the loop is freed.
+    const going = performance.now() - at - tickMs, wall = Date.now();
+    const spans = going >= stallMs ? [...stalls, { from: wall - going, to: wall }] : stalls;
+    return Math.round(spans.reduce((n, s) => n + Math.max(0, s.to - Math.max(s.from, from)), 0));
+  };
+  // A machine's check that the hopper answers reads it (issue #2427): one that failed in a stall is checked again.
+  const stopGiving = giveLoopHeld(heldSince);
   // The held thread ends on its own time: a close never waits on it.
-  app.addHook('onClose', async () => { clearInterval(timer); delay.disable(); void o.held?.end().catch(() => undefined); });
+  app.addHook('onClose', async () => { clearInterval(timer); delay.disable(); stopGiving(); void o.held?.end().catch(() => undefined); });
 
   return {
     reading: () => {
@@ -224,11 +233,6 @@ export function watchEventLoop(app: FastifyInstance, o: WatchOptions): EventLoop
       };
     },
     last: () => (last && performance.now() - last.seen < STALL_SHOWN_MS ? last.stall : undefined),
-    heldSince: (from) => {
-      // The stall going on now, not yet seen by the timer: this read runs as the loop is freed.
-      const going = performance.now() - at - tickMs, wall = Date.now();
-      const spans = going >= stallMs ? [...stalls, { from: wall - going, to: wall }] : stalls;
-      return Math.round(spans.reduce((n, s) => n + Math.max(0, s.to - Math.max(s.from, from)), 0));
-    },
+    heldSince,
   };
 }
