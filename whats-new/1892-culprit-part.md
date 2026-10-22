@@ -1,0 +1,1 @@
+- When a batch test run takes back one merged part of a larger issue, its issue no longer keeps a stale label, and the next part runs.

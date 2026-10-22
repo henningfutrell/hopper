@@ -16,7 +16,7 @@
 // command written since takes it again.
 //
 // Intake reads the ledger (issue #1892): for an issue whose work item is in a state the label mirror judges (a job at work,
-// PR open, blocked, failed as reported, as one the hopper fixes itself or with its report not out yet, a reverted culprit of a whole merge, done by a whole merge or by hand, partly done with parts left, needs you, a hand-off as reported, a request card, dropped by Won't do, dropped by a cancelled or rejected job as reported, with the label a person put on to keep it out, dropped by a tend job cancelled not on purpose as reported, dropped by a dismissed failure as reported, dropped by a person's Close PR or the hopper's own close; `labelsFor`), its end-label reason is the ledger's (`ledgerReason`), whatever end labels the issue
+// PR open, blocked, failed as reported, as one the hopper fixes itself or with its report not out yet, a reverted culprit of a whole merge or of a part with parts left, done by a whole merge or by hand, partly done with parts left, needs you, a hand-off as reported, a request card, dropped by Won't do, dropped by a cancelled or rejected job as reported, with the label a person put on to keep it out, dropped by a tend job cancelled not on purpose as reported, dropped by a dismissed failure as reported, dropped by a person's Close PR or the hopper's own close; `labelsFor`), its end-label reason is the ledger's (`ledgerReason`), whatever end labels the issue
 // carries — the mirror corrects them. The labels decide only for an issue the hopper does not know, or a state the mirror
 // does not judge yet. An item a person asked to run again by taking its end label off (`runAgainAsked`, or `edited` in this
 // pass) has no such reason, so it is taken again.
