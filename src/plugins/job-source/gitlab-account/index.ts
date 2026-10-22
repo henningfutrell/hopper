@@ -34,7 +34,7 @@ export function gitlabAccountPlugin(): PluginDefinition<'job-source', GitLabAcco
       const source = createGitLabSource({
         name: ctx.instanceName, account: ctx.gitlabAccount, label: o.label, priorityLabels: o.priorityLabels, defaultPriority: o.defaultPriority,
         executor: o.executor, ...(o.model ? { model: o.model } : {}), yoloMode: (project) => ctx.yoloMode(project),
-        trust: ctx.intakeTrust, ...(intake ? { intake } : {}),
+        trust: ctx.intakeTrust, ...(intake ? { intake } : {}), knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable,
         ...(ctx.jobDoneCriteria ? { doneCriteria: (jobId: string) => ctx.jobDoneCriteria!(jobId) } : {}),
         ...(ctx.jobAllowedDeletes ? { allowedDeletes: (jobId: string) => ctx.jobAllowedDeletes!(jobId) } : {}),
         ...(ctx.githubOutbox ? { outbox: ctx.githubOutbox } : {}),

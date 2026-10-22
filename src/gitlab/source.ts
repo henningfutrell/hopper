@@ -9,7 +9,7 @@
 // follow.ts). An issue of another origin is a request card a person approves (intake.ts), as on GitHub; the job runs the text
 // approved. Its label changes are rows of the user's outbox under its own name (issue #1892 part 17, outbox.ts): sent in
 // the follow's or the report's pass, and by the sync loop's flush when GitLab refused them for now. An issue whose rows are
-// not sent is not taken.
+// not sent is not taken. Intake reads the ledger, and the label mirror corrects the end labels (issue #1892 part 29, ledger.ts).
 import type { JobSource, SourceSignal } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -33,9 +33,14 @@ import type { GitHubOutboxRepository } from '../domain/github-outbox.ts';
 import type { LabelSink } from '../sources/github/report.ts';
 import { reportLabels } from '../sources/github/item-labels.ts';
 import { mergeRequestHold } from './done-criteria.ts';
+import { gitlabLedger } from './ledger.ts';
+import { groupOf } from '../sources/github/discover.ts';
 import type { JobAllowedDeletes, JobDoneCriteria } from '../sources/github/done-criteria.ts';
 
-/** The labels a job's end leaves on a GitLab issue: any of them keeps the issue out until a person removes it. */
+/**
+ * The labels a job's end leaves on a GitLab issue: any of them keeps an issue out until a person removes it, when the ledger
+ * does not decide (issue #1892 part 29, ledger.ts): an issue the hopper does not know, or a state the mirror does not judge.
+ */
 const END_LABELS = [LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, LABEL_PR_READY, LABEL_PR_CLOSED] as const;
 
 export interface GitLabSourceOptions {
@@ -65,6 +70,8 @@ export interface GitLabSourceOptions {
   doneCriteria?: JobDoneCriteria; allowedDeletes?: JobAllowedDeletes;
   /** The user's outbox (issue #1892 part 17): its label changes' rows, under the source's name. Absent: kept in memory. */
   outbox?: GitHubOutboxRepository;
+  /** Of these keys, those with a job here, and those of them that may run again: an issue taken as a new job is not judged by the label mirror. */
+  knownKeys?(keys: string[]): Set<string>; rerunnable?(keys: string[]): Set<string>;
 }
 
 const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
@@ -132,6 +139,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock, connected: () => o.account.status().state === 'connected' });
   const send = gitlabOutboxSend(o.account);
   const labelRows = gitlabLabelRows(outbox, send);
+  const ledger = gitlabLedger({ source: o.name, ...(o.intake ? { intake: o.intake } : {}), outbox, now: () => clock.now() });
   /** Yolo mode for a project, by its URL at the account's GitLab; no account connected: off. */
   const yolo = (project: string): boolean => {
     const s = o.account.status();
@@ -165,9 +173,13 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
     };
   };
 
-  /** Why an issue is not taken before its origin is read; undefined: it may be. */
-  const notTaken = (i: GitLabIssue, account: string): Pick<IntakeOutcome, 'reason' | 'group'> | undefined => {
-    const ended = END_LABELS.find((l) => i.labels.includes(l));
+  /**
+   * Why an issue is not taken before its origin is read; undefined: it may be. Its end labels count only when the ledger does
+   * not decide (`ledger` undefined, issue #1892 part 29); the backburner always counts.
+   */
+  const notTaken = (i: GitLabIssue, account: string, ledger: { reason?: string } | undefined): Pick<IntakeOutcome, 'reason' | 'group'> | undefined => {
+    if (ledger?.reason !== undefined) return { reason: ledger.reason, group: groupOf(ledger.reason) };
+    const ended = ledger ? undefined : END_LABELS.find((l) => i.labels.includes(l));
     if (ended) return { reason: `labelled ${ended}: remove the label at GitLab to offer it again`, group: 'other' };
     if (i.labels.includes(LABEL_BACKBURNER)) return { reason: `on the backburner (${LABEL_BACKBURNER})`, group: 'backburner' };
     if (!i.assignees.some((a) => same(a, account))) return { reason: `not assigned to your GitLab account ${account}: assign it at GitLab`, group: 'not-assigned' };
@@ -210,14 +222,22 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       const requests = new Map<string, IntakeRequest>();
       const errors: Record<string, string> = {};
       const round = outbox.begin();
+      const lists: [string, GitLabIssue[]][] = [];
       for (const project of s.projects) {
+        try { lists.push([project, await o.account.issues(project, label)]); } catch (err) {
+          errors[project] = (err as Error).message;
+          if (o.account.status().state !== 'connected') break; // its token ended: the rest would be refused too
+        }
+      }
+      // An end label a person took off by hand is their Run again (issue #1892 part 29), found before Intake reads the ledger.
+      const edited = ledger?.edits(lists.flatMap(([, issues]) => issues)) ?? new Set<string>();
+      for (const [project, issues] of lists) {
         try {
-          const issues = await o.account.issues(project, label);
           let branch: { name: string | undefined } | undefined;
           for (const i of issues) {
             const base = { key: i.url, title: i.title, repo: i.project };
             if (outbox.held(i.url)) { listed.push({ ...base, reason: 'its label change is on its way to GitLab', group: 'other' }); continue; }
-            const out = notTaken(i, s.account);
+            const out = notTaken(i, s.account, ledger?.reason(i, edited));
             if (out) { listed.push({ ...base, ...out }); continue; }
             let v: GitLabVerdict;
             try { v = await originOf(i, s.account); } catch (err) {
@@ -240,6 +260,10 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
         }
       }
       if (o.account.status().state !== 'connected') return clear(); // ended now: paused from the next sync
+      // An issue taken as a new job is not judged (issue #1954): its job moves the item.
+      const known = o.knownKeys?.(items.map((i) => i.key)) ?? new Set<string>(), rerun = o.rerunnable?.(items.map((i) => i.key)) ?? new Set<string>();
+      const taking = new Set(items.map((i) => i.key).filter((k) => !known.has(k) || rerun.has(k)));
+      ledger?.check(lists.flatMap(([, issues]) => issues).filter((i) => !taking.has(i.url) && !errors[i.project]));
       outcomes = listed; repoErrors = errors; outbox.listed(round);
       for (const [key, hash] of [...fresh]) if (requests.get(key)?.hash !== hash) fresh.delete(key);
       if (o.intake) {
