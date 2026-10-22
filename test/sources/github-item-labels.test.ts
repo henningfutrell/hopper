@@ -28,6 +28,15 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff({ state: 'failed', eventState: 'failed' }, ['hopper', 'hopper:failed'], ['hopper'], { failureReported: true })).toBe('hopper:failed');
   });
 
+  it('failed, told as one the hopper fixes itself (issue #1892 part 31): no end label; not a reverted culprit', () => {
+    const fixing = { state: 'failed', eventState: 'failed' } as const;
+    expect(labelsFor(fixing, { fixingReported: true })).toEqual({ allowed: [] });
+    expect(labelDrift(fixing, ['hopper', 'hopper:claimed', 'hopper:failed'], { fixingReported: true })).toEqual({ remove: ['hopper:failed'], add: [] });
+    expect(labelTakenOff(fixing, ['hopper', 'hopper:failed'], ['hopper'], { fixingReported: true })).toBeUndefined();
+    expect(labelPutOn(fixing, ['hopper'], ['hopper', 'hopper:failed'], { fixingReported: true })).toBeUndefined();
+    expect(labelsFor({ state: 'failed', eventState: 'done' }, { fixingReported: true })).toBeUndefined();
+  });
+
   it('done (issue #1892): hopper:done once its pull request merged as the whole item; not judged else', () => {
     expect(labelsFor({ state: 'done', pullRequestState: 'merged', wholeMerged: true })).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
     expect(labelsFor({ state: 'done', pullRequestState: 'merged' })).toBeUndefined();
