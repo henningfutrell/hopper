@@ -23134,6 +23134,31 @@ not planned (not listed, so neither Intake nor the mirror reads it).
 **Verification:** `test/users/source-context-parts-left.test.ts` (a part an older job's follow merged: parts left, and the
 last part; not a merge of another pull request, nor an item whose pull request is not merged).
 
+### What stays to the labels, by decision (issue #1892 part 38, 2026-10-22)
+
+Milestone 4 ends here. Parts 1 to 37 moved every state whose end labels a record of the hopper's says to the ledger. Three
+cases stay to the labels. This part records that as a decision, not as work left, and pins it with a test.
+
+- **A done item that a read of GitHub made done.** The issue graph read its pull request as merged (`applyRead`), and no
+  follow recorded the merge (no `wholeMerged`). A follow records its end before it appends the merge event (part 37), so a
+  read that comes first is judged as soon as the follow's merge event comes. What stays is a merge that no follow records.
+  Then no report and no follow wrote the issue's labels after the merge, and no record says if the merge was the whole item
+  or a part. `hopper:done` would keep the issue out while parts may be left; no label would take it into Intake again while
+  it may be done. Neither is certain, so the labels decide.
+- **An item dropped by its issue closed as not planned.** A closed issue is not listed, so neither Intake nor the mirror
+  reads it. Its labels change nothing that the hopper does.
+- **An item dropped by a request card that its source withdrew.** The source withdraws a card when it no longer offers the
+  issue (`withdrawRequests`, "The work-item ledger"): its issue closed, or its label or assignee gone, so neither Intake nor
+  the mirror reads it. A card a person withdrew by an end label they put on (part 7) is listed, and that label is theirs: the
+  labels decide Intake's reason, as part 7 says.
+
+**Decision.** **Not judged, and not built.** A rule for these cases would guess what the issue carries, and a wrong guess
+writes a label that a person did not ask for. The labels of an item the hopper does not judge count only as the labels of an
+item it does not know (`labelReason`), as milestone 2 asked.
+
+**Verification:** `test/sources/github-label-not-judged.test.ts` (each case: `labelsFor` and `ledgerReason` give no answer,
+whatever the facts).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
