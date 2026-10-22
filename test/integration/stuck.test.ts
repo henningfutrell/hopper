@@ -58,7 +58,7 @@ describe('Stuck work (issue #1010)', () => {
   it('a cause with no bulk action, or none at all, is refused', async () => {
     const a = await boot();
     const token = await a.login();
-    expect((await a.ui(`/ui/api/failures/stuck/parked`, {}, { token })).status).toBe(400);
+    expect((await a.ui(`/ui/api/failures/stuck/own_wait`, {}, { token })).status).toBe(400);
     expect((await a.ui(`/ui/api/failures/stuck/nonsense`, {}, { token })).status).toBe(400);
     // Nothing stuck: nothing done, nothing refused.
     const r = await a.ui<StuckActResult>(`/ui/api/failures/stuck/retry`, {}, { token });
