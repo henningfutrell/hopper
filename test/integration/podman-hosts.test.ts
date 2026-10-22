@@ -2,10 +2,10 @@
 // host key they confirmed (POST /ui/api/podman-hosts, the whole list against the version read), GET /api/podman-hosts
 // shows it, and the sandbox host may then name it. A record that is not one, and an edit against an old version, are
 // refused. `hopper machine podman-host` lists, adds and removes them through the same routes; without --host-key, add
-// only reads the host's key for the person to compare, and adds nothing. GET /api/podman-hosts/status reads each host now.
+// only reads the host's key for the person to compare, and adds nothing.
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
-import type { PodmanHostsStatusView, PodmanHostsView } from '../../src/domain/podman-hosts.ts';
+import type { PodmanHostsView } from '../../src/domain/podman-hosts.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
@@ -65,12 +65,5 @@ describe('the Podman hosts (issue #2272)', () => {
     expect(JSON.parse((await hopper(a, ['machine', 'podman-host', 'remove', 'box-vm'])).out)).toEqual([]);
     expect((await hopper(a, ['machine', 'podman-host', 'remove', 'box-vm'])).code).toBe(2);
     expect((await hopper(a, ['machine', 'podman-host', 'add', 'box-vm'])).code).toBe(2);
-  });
-
-  it('the status of no Podman host is an empty list', async () => {
-    const a = await boot();
-    const r = await a.api('GET', '/api/podman-hosts/status');
-    expect(r.status).toBe(200);
-    expect(r.body as PodmanHostsStatusView).toEqual({ hosts: [] });
   });
 });

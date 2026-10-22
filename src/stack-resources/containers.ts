@@ -6,7 +6,7 @@
 // (`machine`), the same reader reads the hopper's boxes there through its remote runtime (remote.ts): libpod's list,
 // inspect and per-container stats answer in these shapes too.
 import type { ContainerGroup, ContainerMeter, ContainerReading } from '../domain/stack-resources.ts';
-import { ok, refusal, socketCall, socketName, type Answer, type RuntimeSocket, type SocketCall } from '../sandbox/socket-http.ts';
+import { ok, refusal, socketCall, type Answer, type SocketCall } from '../sandbox/socket-http.ts';
 
 /** The labels compose (docker compose and podman-compose alike) puts on each container it starts. */
 const PROJECT_LABEL = 'com.docker.compose.project';
@@ -80,8 +80,7 @@ function runtimeCpu(s: Stats): number | undefined {
 }
 
 export function createContainerMeter(o: {
-  /** The runtime's socket, or a Podman host's stream (issue #2272). */
-  socket: RuntimeSocket;
+  socket: string;
   /** This process's host name: in a container, its id's start, which finds the hopper's own container and project. */
   self: string;
   /** This hopper's instance id: the boxes it started carry it. */
@@ -197,7 +196,7 @@ export function createContainerMeter(o: {
       try {
         listed = await call('/containers/json?all=true');
       } catch (e) {
-        return { problem: `cannot reach the container runtime ${o.machine !== undefined ? `on ${o.machine}` : `at ${socketName(o.socket)}`}: ${e instanceof Error ? e.message : String(e)}` };
+        return { problem: `cannot reach the container runtime ${o.machine !== undefined ? `on ${o.machine}` : `at ${o.socket}`}: ${e instanceof Error ? e.message : String(e)}` };
       }
       if (!ok(listed)) return { problem: refusal('the container runtime', 'list containers', listed).message };
       const all = JSON.parse(listed.text) as Listed[];
