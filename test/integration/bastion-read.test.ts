@@ -43,21 +43,31 @@ async function grafana(): Promise<{ port: number; seen: { method?: string; url?:
   return { port: (s.address() as AddressInfo).port, seen };
 }
 
-/** The bastion's box runs its script under `sh` with a kubectl that only waits; its pipe runs a command here, in the box's home. */
+/** The bastion's box runs its script under `sh` with a kubectl that says it listens, then waits; its pipe runs a command here, in the box's home. */
 function boxes(b: Booted, port: number): void {
   const homeOf = (name: string): string => { const h = join(b.cloud.dir, `home-${name}`); mkdirSync(h, { recursive: true }); return h; };
   const bin = join(b.cloud.dir, 'bastion-bin');
   mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, 'kubectl'), '#!/bin/sh\nexec sleep 600\n');
+  writeFileSync(join(bin, 'kubectl'), '#!/bin/sh\necho "Forwarding from 127.0.0.1:20000 -> 3000"\nexec sleep 600\n');
   chmodSync(join(bin, 'kubectl'), 0o755);
   const check = b.runtime.runScript;
   const running = new Map<string, ChildProcess>();
+  const outputs = new Map<string, string>();
   b.runtime.runScript = (spec) => (spec.name.startsWith('hopper-check-') && check ? check(spec) : new Promise((resolve) => {
     const child = spawn('sh', ['-c', spec.script ?? ''], { env: { ...spec.env, HOME: homeOf(spec.name), PATH: `${bin}:${process.env.PATH}` }, detached: true });
     running.set(spec.name, child);
     children.push(child);
-    child.on('exit', (code) => resolve({ exit: code ?? 143, output: '' }));
+    const add = (d: Buffer): void => { outputs.set(spec.name, (outputs.get(spec.name) ?? '') + d.toString()); };
+    child.stdout.on('data', add);
+    child.stderr.on('data', add);
+    child.on('exit', (code) => resolve({ exit: code ?? 143, output: outputs.get(spec.name) ?? '' }));
   }));
+  // The box's output while it runs, as a runtime's log gives it: the bastion reads each forward's state there (issue #2484).
+  const logs = b.runtime.logs.bind(b.runtime);
+  b.runtime.logs = async (id) => {
+    const c = [...b.runtime.boxes.values()].find((x) => x.id === id);
+    return c && running.has(c.spec.name) ? outputs.get(c.spec.name) ?? '' : logs(id);
+  };
   b.runtime.copyIn = async (id, dir, tar) => {
     const c = [...b.runtime.boxes.values()].find((x) => x.id === id)!;
     const to = dir.replace(HOME, homeOf(c.spec.name));

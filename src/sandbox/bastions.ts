@@ -34,6 +34,8 @@ const CHECK_MS = 5_000;
 const LOG_TAIL = 4096;
 /** How long a relay connection that got no answer waits for kubectl to say why. */
 const SAID_MS = 1_000;
+/** How long a relay connection waits for a forward that has said nothing yet to listen (issue #2484). */
+const LISTEN_MS = 10_000;
 
 export interface BastionsOptions {
   userId: string;
@@ -63,6 +65,8 @@ export interface BastionsOptions {
   checkMs?: number;
   /** How long a relay connection that got no answer waits for kubectl's line on it (issue #2474). */
   saidMs?: number;
+  /** How long a relay connection waits for a starting bastion, or a forward that has said nothing yet (issue #2484). */
+  listenMs?: number;
 }
 
 export interface Bastions {
@@ -310,6 +314,12 @@ export function createBastions(o: BastionsOptions): Bastions {
     if (!l || l.why) return { status: 404, no: 'this job has no bastion that runs: ask for one with sh "$HOPPER_SKILL" bastion --template NAME --targets "..." --why "..."' };
     const t = l.placed.find((x) => targetText(x) === target);
     if (!t) return { status: 404, no: `the job's bastion forwards to ${l.view.targets.map((x) => x.target).join(', ')}; not to ${target}` };
+    // Issue #2484: a read right after the start found no forward that listened, and curl said only "Failed to connect".
+    // A connection waits a short time for the bastion to run and its forward to say whether it listens.
+    const listenMs = o.listenMs ?? LISTEN_MS;
+    const said = (): boolean => l.view.state === 'running' && l.view.targets.find((x) => x.target === target)?.listening !== undefined;
+    for (let waited = 0; !said() && !l.why && waited < listenMs; waited += 50) await new Promise((r) => setTimeout(r, 50));
+    if (l.why) return { status: 404, no: `the job's bastion ${l.view.id} ended` };
     if (l.view.state !== 'running') return { status: 409, no: `the job's bastion ${l.view.id} is ${l.view.state}: ask again in a few seconds` };
     if (!l.pipe) return { status: 503, no: 'the container runtime of the bastion\'s box starts no command in it: no relay reaches it' };
     // Issue #2413: a forward that ended does not listen; kubectl's own words say why, not the connect command's refusal.
@@ -317,10 +327,13 @@ export function createBastions(o: BastionsOptions): Bastions {
     if (forward?.listening === false) {
       return { status: 503, no: `the bastion's forward to ${target} does not listen in the box: ${forward.said}. Its loop starts it again every 2 s; see where it stands with sh "$HOPPER_SKILL" bastion` };
     }
-    const said = await o.mayRelay({ jobId, template: l.view.template, target }).catch((e: unknown) => ({ allowed: false, reason: `Access could not be asked: ${e instanceof Error ? e.message : String(e)}` }));
-    if (!said.allowed) {
-      o.record({ type: 'bastion.relay_refused', jobId, data: { bastion: l.view.id, target, reason: said.reason } });
-      return { status: 403, no: `Access denies the relay to ${target}: ${said.reason}` };
+    if (forward?.listening === undefined) {
+      return { status: 503, no: `the bastion's forward to ${target} does not listen in the box yet: kubectl said nothing of it in ${listenMs / 1000} s. See where it stands with sh "$HOPPER_SKILL" bastion` };
+    }
+    const access = await o.mayRelay({ jobId, template: l.view.template, target }).catch((e: unknown) => ({ allowed: false, reason: `Access could not be asked: ${e instanceof Error ? e.message : String(e)}` }));
+    if (!access.allowed) {
+      o.record({ type: 'bastion.relay_refused', jobId, data: { bastion: l.view.id, target, reason: access.reason } });
+      return { status: 403, no: `Access denies the relay to ${target}: ${access.reason}` };
     }
     let pipe: BoxPipe;
     try {

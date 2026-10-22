@@ -57,6 +57,8 @@ function bastions() {
     userId: 'u1', dir, record: (e) => { events.push(e); }, log: () => {}, atWork: () => true, saidMs: 0,
     run: (box, io) => new Promise<NeedBoxResult>((resolve) => {
       boxes.push({ name: box.name, io, gone: () => resolve({ exit: 125, stopped: 'cancelled' }) });
+      // Each forward listens, as kubectl says in the box (issue #2484: a relay waits for that).
+      io.log([...(box.env.HOPPER_STEP_COMMAND ?? '').matchAll(/ '([^']+)' &$/gm)].map((m) => `[${m[1]}] Forwarding from 127.0.0.1 -> remote\n`).join(''));
       io.running?.({ renew: async () => {}, pipe });
     }),
     mint: async () => ({ minted: { kind: 'kube', token: 'token-1', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://uat.example:6443' } }),
