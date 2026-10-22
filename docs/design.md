@@ -925,7 +925,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      when it makes no change from the default branch (`origin/HEAD`), or when the default branch or one of
      the 30 newest remote branches has each of its patches (`git cherry`; not when it holds a merge of its
      own the remote does not have) or has every file it changed from the default branch with the same
-     content. Then nothing is removed and each such repository is printed; a pushed git worktree
+     content. A stash is work too (issue #2494): a clone keeps for any entry of its stash; a worktree, whose
+     stash is its repository's, keeps for an entry made on its own `HEAD` (the stash commit's first parent),
+     so another worktree at the same commit keeps too, never one too few. Then nothing is removed and each such repository is printed; a pushed git worktree
      of a repository outside is removed through `git worktree remove`, never with `--force` (its
      `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees,
      `<work tree>/.worktrees/<name>/<job id>` (issue #1188), are read and removed with the scratch dir by the same
@@ -937,7 +939,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      `github_proxy.done` and `gitlab_proxy.done`). A kept repository whose every tip the hopper pushed for the job
      (`keptPushedOf`, `src/domain/kept-work.ts`) is no work not pushed: the cleanup at the job's end records no
      `job.work_kept` for it, and the sweep removes it as a discard does (`job.work_removed` with `reason` `pushed` when
-     it was kept before). A repository with a change names no tip and stays kept; so does every repository a client
+     it was kept before). A repository with a change or a stash names no tip and stays kept; so does every repository a client
      older than this keeps.
   4. removes what the layout before issue #1188 left ("Job worktrees in `.worktrees`" below): the job's scratch dir and
      worktrees there by the same rule, and, once that layout holds no job's, the rest of it. Then `git worktree
@@ -25119,7 +25121,7 @@ Nobody saw them, and nothing removed them.
   none does, the next reap in that work tree removes the rest of it, mirrors too, as before (issue #1188).
 - **The listing.** After its reaps, each pass asks the machine (`MachineShell.leftovers`; a client target's `POST /leftovers
   {roots}`) about the work trees the survey found. The script only reads: each leftover with its age, whether it holds work
-  not pushed (by the reap's own rule, `UNPUSHED_SH` in `src/client/reap.ts`: a change, or a commit no remote has; for a
+  not pushed (by the reap's own rule, `UNPUSHED_SH` in `src/client/reap.ts`: a change, a commit no remote has, or a stash; for a
   mirror, a branch of its own no remote has), the worktrees that still use a mirror, and its size (one `du -skx` per work
   tree, cut off at 20 s; none where `timeout` is missing). The sweep keeps the leftovers it does not judge per machine, in
   memory (`Sweep.leftovers`), as it keeps the disk measure. A listing that fails keeps the last one and is logged once; a
