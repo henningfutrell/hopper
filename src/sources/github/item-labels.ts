@@ -19,9 +19,11 @@
 // Intake, or a hand-off) carries `hopper:rejected`: the act put it on. An item a cancelled or rejected job dropped carries none
 // once its report went out (`dropReported`, part 19): the report took only the claim off, and while its job worked the mirror
 // kept every end label off. Not a tend job's cancel (its pull request may wait again). An end label a person puts on such an
-// item by hand (`labelPutOn`) keeps the issue out (`keptOut`): the item then carries that label. Not an item dropped any other
-// way (declined, dismissed, Close PR, closed as not planned): what its issue carries then is not certain. Every other state is
-// not judged. Pure: no I/O, no clock.
+// item by hand (`labelPutOn`) keeps the issue out (`keptOut`): the item then carries that label. An item dropped by the dismiss
+// of its failed job's locked entry (`dismissed`, part 20) carries `hopper:failed` once its job's failure was reported as failed
+// (`failureReported`): the dismiss writes no label, so the issue keeps the report's. Not an item dropped any other way
+// (declined, Close PR, closed as not planned): what its issue carries then is not certain. Every other state is not judged.
+// Pure: no I/O, no clock.
 import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
 import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
 import type { Job } from '../../domain/types.ts';
@@ -32,7 +34,7 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
 
 /**
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
- * item or a hand-off: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
+ * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
  * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done).
  */
 export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: boolean }
@@ -45,7 +47,7 @@ export const dropReported = (job: Pick<Job, 'status' | 'spec' | 'sourceState'> |
   (job?.status === 'cancelled' || job?.status === 'rejected') && job.spec.tend !== true && job.sourceState?.sync?.finalReported === true;
 
 /** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, its merge, and what it waits on. */
-export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'doneByHand'>>;
+export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'dismissed' | 'doneByHand'>>;
 
 /** The end labels `item`'s state wants on its issue; undefined: the state is not judged. */
 export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLabels | undefined {
@@ -66,6 +68,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       if (item.eventState !== 'dropped') return undefined;
       const label = item.wontDo === true ? LABEL_REJECTED : item.keptOut;
       if (label !== undefined) return { allowed: [label], add: label };
+      if (item.dismissed === true) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
       return facts.dropReported ? { allowed: [] } : undefined;
     }
     default: return undefined;

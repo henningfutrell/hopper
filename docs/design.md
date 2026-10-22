@@ -22518,7 +22518,7 @@ ended) was past its deadline, and its row was due for a check at once.
   A read of GitHub is no move: it does not set them again.
 - **The row's `owner` is still the state's owner**: who moves the item out of its state next. `movedBy` is who moved it in.
 
-**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's), and milestone 4.
+**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's, part 20 a dismissed failure's), and milestone 4.
 
 **Verification:** `test/domain/work-items-transition.test.ts` (the owner of each move kept, a mark keeps it, the reconciler's
 replay is its own; a move within working starts its deadline again; a mark does not), `test/store/work-items.test.ts` (the
@@ -22555,6 +22555,34 @@ closed as not planned; a done item with no whole merge that was not done by hand
 comes off; an end label put on by hand keeps the issue out once and stays; taken off again, a Run again; not reported: the
 labels decide), `test/domain/work-items-kept-out.test.ts` (the fold of `keep_out`: a dropped item only, once, a move
 forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelPutOn` and `dropReported`).
+
+### A dismissed failure's item carries `hopper:failed` (issue #1892 part 20, 2026-10-22)
+
+Milestone 2, part 20: one more of the drops part 9 left to the labels. When a person dismisses a failed job's locked entry
+(`job.dismissed`), its item moves from failed (or a hand-off) to dropped. The dismiss writes no label: the issue keeps the
+`hopper:failed` its job's report put on (`docs/events.md`, `job.dismissed`).
+
+- **The ledger keeps that the dismiss dropped the item** (`dismissed`, in the item's JSON body: no migration;
+  `src/domain/work-items.ts`). It is kept while the item stays dropped. Any move forgets it: the hand-off a person's
+  dismiss opens moves the item to needs you, and a new job moves it to queued.
+- **`labelsFor` judges such an item once its job's failure was reported as failed** (`failureReported`, as for a failed
+  item). It wants `hopper:failed`. The mirror puts it back when it is gone and takes another end label off, and Intake gives
+  the item the failed reason (`ledgerReason`). The mirror asks the fact `failureReported` for such a dropped item, and
+  `dropReported` for any other.
+- **`hopper:failed` taken off by hand is a Run again**, as for a failed item: `work_item.label_edited` with
+  `means: run_again`. An end label put on such an item is no edit: the item wants a label, so `labelPutOn` does not apply.
+- **Before the report.** A failure not reported as failed (its report waits, or the hopper fixes it itself) is not judged:
+  its labels decide.
+- **A declined request card needs no judgment.** A decline takes the source's label off the issue (issue #1710), so no
+  listing has the issue until a person puts the label on again; then it is a request card again, which part 7 judges.
+
+**Left to the labels:** an item dropped by a card withdrawn by its source, a person's Close PR or an issue closed as not
+planned; a done item with no whole merge that was not done by hand; a tend job's cancel. Milestone 4.
+
+**Verification:** `test/sources/github-label-dismissed.test.ts` (reported: the failed reason, `hopper:failed` back in place
+of a stale end label; taken off by hand, a Run again; not reported: the labels decide), `test/domain/work-items-dismissed.test.ts`
+(the fold: a dismiss marks the drop, a cancel does not, a hand-off or a new job forgets it),
+`test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`, `labelPutOn` of such an item).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

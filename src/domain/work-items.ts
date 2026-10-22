@@ -106,8 +106,9 @@ export interface WorkItem {
    * A person's Won't do dropped it (issue #1892): a blocked item's in Intake, or a hand-off's; kept while it stays dropped.
    * `keptOut`: the end label a person put on by hand on an item a cancelled or rejected job dropped (part 19,
    * `work_item.label_edited` with `means: keep_out`): it keeps the issue out; kept while the item does not move.
+   * `dismissed`: its failed job's locked entry was dismissed (part 20, `job.dismissed`); kept while it stays dropped.
    */
-  wontDo?: true; keptOut?: string;
+  wontDo?: true; keptOut?: string; dismissed?: true;
   /** A person resolved its hand-off as Done by hand (issue #1892): its job's work is done, by them; kept while it stays done. */
   doneByHand?: true;
   /** How many of its pull requests in a row were closed without a merge on GitHub (issue #1891); a merge ends the row. */
@@ -193,7 +194,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const next: Base = { ...base, ...change, eventState, eventAt: event.at, movedBy: by ?? transitionOwner(event.type, d) };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
     if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
-    delete next.runAgainAsked; delete next.keptOut; if (change.wontDo !== true || next.eventState !== 'dropped') delete next.wontDo; if (change.doneByHand !== true || next.eventState !== 'done') delete next.doneByHand; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
+    delete next.runAgainAsked; delete next.keptOut; if (change.wontDo !== true || next.eventState !== 'dropped') delete next.wontDo; if (change.dismissed !== true || next.eventState !== 'dropped') delete next.dismissed; if (change.doneByHand !== true || next.eventState !== 'done') delete next.doneByHand; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
     return settled(item, next, event.at);
   };
   const mark = (change: Partial<Base>): WorkItem => {
@@ -324,7 +325,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     case 'job.cancelled': case 'job.rejected':
       return move('dropped', { waitingOn: undefined, failedJobId: undefined });
     case 'job.dismissed':
-      return base.eventState === 'failed' || base.eventState === 'needs_you' ? move('dropped', { waitingOn: undefined, failedJobId: undefined }) : undefined;
+      return base.eventState === 'failed' || base.eventState === 'needs_you' ? move('dropped', { waitingOn: undefined, failedJobId: undefined, dismissed: true }) : undefined;
     default:
       return undefined;
   }

@@ -91,6 +91,16 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff(kept, ['hopper', 'hopper:done'], ['hopper'], { dropReported: true })).toBe('hopper:done');
   });
 
+  it('dropped by a dismissed failure (issue #1892 part 20): hopper:failed once the failure was reported as failed', () => {
+    const dismissed = { state: 'dropped', eventState: 'dropped', dismissed: true } as const;
+    expect(labelsFor(dismissed, { failureReported: true })).toEqual({ allowed: ['hopper:failed'], add: 'hopper:failed' });
+    expect(labelsFor(dismissed)).toBeUndefined();
+    expect(labelsFor(dismissed, { dropReported: true })).toBeUndefined();
+    expect(labelDrift(dismissed, ['hopper', 'hopper:pr-ready'], { failureReported: true })).toEqual({ remove: ['hopper:pr-ready'], add: ['hopper:failed'] });
+    expect(labelTakenOff(dismissed, ['hopper', 'hopper:failed'], ['hopper'], { failureReported: true })).toBe('hopper:failed');
+    expect(labelPutOn(dismissed, ['hopper'], ['hopper', 'hopper:done'], { failureReported: true })).toBeUndefined();
+  });
+
   it('the other states are not judged', () => {
     for (const state of ['needs_you', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(labelsFor({ state })).toBeUndefined();
   });
