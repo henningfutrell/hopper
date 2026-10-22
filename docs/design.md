@@ -22797,6 +22797,25 @@ label, taken off by hand a Run again, not judged without the fact), `test/source
 `labelDrift`, `labelTakenOff` with `doneReported`; `doneReported` of a job), `test/sources/github-report.test.ts` (the report
 of a closed issue keeps `doneReported`), `test/users/source-context-done-reported.test.ts` (the store's fact).
 
+### The label mirror's restart test in two dropped states (issue #1892 part 25, 2026-10-22)
+
+The issue's restart test, for more states than part 11's PR open. A hopper killed while its mirror corrects the labels of a
+dropped item leaves it to the next hopper with each label change once (`test/crash/label-states-kill.test.ts`,
+`test/crash/label-states-world.ts`). Each run kills the first hopper at one of part 11's three kill points.
+
+- **#12, dropped by a person's Close PR** (`closedByPerson`, part 21). Its issue carries a stale `hopper:pr-ready`. The next
+  hopper takes it off and puts `hopper:pr-closed` on, each by one call.
+- **#13, dropped by a person's Won't do on its block** (`wontDo`, part 9). Its issue carries a stale `hopper:pr-closed`. The
+  next hopper takes it off and puts `hopper:rejected` on, each by one call.
+- Each correction is queued once, as one remove and one add, and each item stays in its state.
+
+**Decisions.**
+- **No done item.** A done item whose issue is listed open is a reopened card (issue #1126, `reopenedRequests`): the sync asks
+  for approval again, and that is not a label drift.
+- **No code change.** The two states had the correction path of every judged state. The test found no defect.
+
+**Verification:** `test/crash/label-states-kill.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
