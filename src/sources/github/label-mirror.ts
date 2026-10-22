@@ -16,7 +16,8 @@
 // labels (`start`), kept in the database, as seen when that listing was read, so an edit made while the hopper was stopped
 // counts too. An end label a person put on a request card by hand (`labelPutOn`), not seen then and on now, is their withdraw of
 // the card: `source.request_withdrawn` with the label, once. Its item is dropped, so the labels decide Intake's reason, and the
-// label stays.
+// label stays. One put on an item a cancelled or rejected job dropped (part 19) keeps the issue out: `work_item.label_edited`
+// with `means: keep_out`, once. The item carries that label from then, which decides Intake's reason; taken off, it is a Run again.
 //
 // On several hoppers on one database (issue #1892), only the holder of the source's mirror lease judges: it corrects and
 // records. Another (`edits` with `judge` false) records nothing and corrects nothing, and keeps seeing an issue a person
@@ -39,7 +40,8 @@ export interface LabelMirror {
   /** Compare the issues a discover listed with their work items; answers how many items got outbox rows. */
   check(listed: readonly Pick<GitHubIssue, 'url' | 'repo' | 'labels'>[]): number;
   /**
-   * Find the end labels a person took off by hand since the last discover, and record each (issue #1892): their issues' URLs.
+   * Find the end labels a person took off or put on by hand since the last discover, and record each (issue #1892): the URLs
+   * of the issues whose label taken off is a Run again.
    * With `judge` false (another hopper holds the mirror's lease), nothing is recorded, and an issue edited is still seen as before.
    */
   edits(listed: readonly Pick<GitHubIssue, 'url' | 'labels'>[], judge?: boolean): Set<string>;
@@ -58,6 +60,8 @@ export function createLabelMirror(o: {
   failureReported?(key: string): boolean;
   /** Whether a partly done item's merged part leaves parts to run (issue #1892): only then is no end label its labels. */
   partsLeft?(key: string): boolean;
+  /** Whether a dropped item's cancelled or rejected job was reported (issue #1892 part 19): only then is no end label its labels. */
+  dropReported?(key: string): boolean;
   /**
    * When the listing of a repository was read (issue #1892): a correction any hopper sent after it is not queued again, as
    * that listing may not show it. Absent: only this hopper's own sends count.
@@ -67,25 +71,25 @@ export function createLabelMirror(o: {
   busy?(key: string): boolean;
   now(): string;
   log(line: string): void;
-  /** Record a person's label edit (`work_item.label_edited`), or a card's withdraw by a label put on (`source.request_withdrawn`); absent: none is recorded. */
+  /** Record a person's label edit (`work_item.label_edited`: a Run again, or a label put on that keeps a dropped item out), or a card's withdraw by a label put on (`source.request_withdrawn`); absent: none is recorded. */
   record?(type: 'work_item.label_edited' | 'source.request_withdrawn', data: Record<string, unknown>): void;
 }): LabelMirror {
   /** The drift each item was last logged with: a drift is logged and counted once, until it changes or ends. */
   const logged = new Map<string, string>();
   /** The labels each listed issue had at the last discover, and when it was. */
   const seen = new Map<string, { labels: string[]; at: string }>();
-  /** The issues whose label edit the last `edits` found: not judged in the same discover. */
-  let edited = new Set<string>();
+  /** The issues whose label edit the last `edits` found: not judged in the same discover. Of them, the Run agains (`edits` answers those). */
+  let edited = new Set<string>(); let runAgain = new Set<string>();
   /** What the item's labels are judged by besides its state: asked only for the state that needs it. */
   const facts = (key: string, item: WorkItem): LabelFacts =>
     item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' || item.state === 'needs_you' ? { failureReported: o.failureReported?.(key) ?? false }
-      : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : {};
+      : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : item.state === 'dropped' ? { dropReported: o.dropReported?.(key) ?? false } : {};
   /** A person's label edit on the issue since `was`: an end label put on a request card, or the one its state wants taken off. */
   const editOf = (issue: Pick<GitHubIssue, 'url' | 'labels'>, was: { labels: string[]; at: string }, settledBefore: number): { item: WorkItem; put?: string; label?: string } | undefined => {
     const item = o.item(issue.url);
     if (!o.record || !item || item.runAgainAsked !== undefined || o.outbox.held(issue.url) || o.busy?.(issue.url)) return undefined;
     if (Date.parse(item.eventAt) > Math.min(Date.parse(was.at), settledBefore)) return undefined;
-    const put = labelPutOn(item, was.labels, issue.labels);
+    const put = labelPutOn(item, was.labels, issue.labels, facts(issue.url, item));
     if (put !== undefined) return { item, put };
     const label = labelTakenOff(item, was.labels, issue.labels, facts(issue.url, item));
     return label === undefined ? undefined : { item, label };
@@ -99,7 +103,7 @@ export function createLabelMirror(o: {
       const settledBefore = Date.parse(at) - RECONCILE_GRACE_MS;
       const keys = new Set(listed.map((i) => i.url));
       for (const key of [...seen.keys()]) if (!keys.has(key)) seen.delete(key);
-      edited = new Set();
+      edited = new Set(); runAgain = new Set();
       for (const issue of listed) {
         const was = seen.get(issue.url);
         const edit = was && editOf(issue, was, settledBefore);
@@ -107,6 +111,13 @@ export function createLabelMirror(o: {
         if (edit && !judge) continue;
         seen.set(issue.url, { labels: [...issue.labels], at });
         if (!edit) continue;
+        if (edit.put !== undefined && edit.item.state === 'dropped') {
+          o.record!('work_item.label_edited', { source: o.source, key: issue.url, ...(edit.item.jobId !== undefined ? { jobId: edit.item.jobId } : {}), from: 'dropped', label: edit.put, means: 'keep_out' });
+          killPoint(mirrorKillPoint('edit', 'after-record'));
+          o.log(`hopper: ${o.source}: ${edit.put} was put on ${issue.url} by hand: it keeps its dropped work item out`);
+          edited.add(issue.url);
+          continue;
+        }
         if (edit.put !== undefined) {
           o.record!('source.request_withdrawn', { source: o.source, key: issue.url, label: edit.put });
           o.log(`hopper: ${o.source}: ${edit.put} was put on ${issue.url} by hand: its request card is withdrawn`);
@@ -116,9 +127,9 @@ export function createLabelMirror(o: {
         o.record!('work_item.label_edited', { source: o.source, key: issue.url, ...(item.jobId !== undefined ? { jobId: item.jobId } : {}), from: item.state, label, means: 'run_again' });
         killPoint(mirrorKillPoint('edit', 'after-record'));
         o.log(`hopper: ${o.source}: ${label} was taken off ${issue.url} by hand: a Run again of its work item (${item.state})`);
-        edited.add(issue.url);
+        edited.add(issue.url); runAgain.add(issue.url);
       }
-      return new Set(edited);
+      return new Set(runAgain);
     },
     check(listed) {
       let corrected = 0;

@@ -184,6 +184,11 @@ export interface IntakeContext {
    */
   partsLeft?(key: string): boolean;
   /**
+   * Whether a dropped item's job was cancelled or rejected and its final report went out (issue #1892 part 19): it then
+   * carries no end label, unless a person put one on by hand to keep it out. Not a tend job.
+   */
+  dropReported?(key: string): boolean;
+  /**
    * Whether this hopper holds the label mirror's lease of the source (issue #1892): of the hoppers on one database, only
    * its holder corrects labels and records a label edited by hand. Absent: it does (one hopper).
    */

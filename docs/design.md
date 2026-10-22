@@ -22518,11 +22518,43 @@ ended) was past its deadline, and its row was due for a check at once.
   A read of GitHub is no move: it does not set them again.
 - **The row's `owner` is still the state's owner**: who moves the item out of its state next. `movedBy` is who moved it in.
 
-**Not in this part:** milestone 2's other drops, and milestone 4.
+**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's), and milestone 4.
 
 **Verification:** `test/domain/work-items-transition.test.ts` (the owner of each move kept, a mark keeps it, the reconciler's
 replay is its own; a move within working starts its deadline again; a mark does not), `test/store/work-items.test.ts` (the
 row's next check from a move within working).
+
+### A cancelled or rejected job's item carries no end label (issue #1892 part 19, 2026-10-22)
+
+Milestone 2, part 19: two of the drops part 9 left to the labels. A job that is cancelled (by a person, its source or the
+sweep) or rejected at the queue gate drops its item. Its report takes only the claim off. While the job worked, the mirror
+kept every end label off (a job at work wants none). So once the report went out, the issue carries no end label.
+
+- **`labelsFor` judges such an item once its report went out** (`dropReported`, `src/sources/github/item-labels.ts`: the
+  item's job is cancelled or rejected, its final report went out, and it is no tend job). It wants no end label. The mirror
+  takes a stale end label off, and Intake gives the item no end-label reason (`ledgerReason`). So Intake takes it again when
+  its labels and assignment let it, as it did before when no end label was on. A job rejected at the queue gate still keeps
+  its item out by its rejection (`REJECTED_BY_YOU`), until the issue is assigned again.
+- **Not a tend job's cancel.** A tend job cancelled by no person puts `hopper:pr-ready` back, and its pull request may be
+  tended again: its labels decide.
+- **An end label a person puts on such an item by hand keeps the issue out** (`labelPutOn`). Before the discover judges
+  Intake, the mirror finds an end label that was not on the issue at the last discover and is on now, with the item not
+  moved since. It records `work_item.label_edited` with `means: keep_out` and the label, once. The ledger keeps the label on
+  the item (`keptOut`, in its JSON body: no migration), and the item wants that label from then. So it decides Intake's
+  reason (for example `hopper:rejected` gives the rejected reason), and the mirror does not take it off. This is the
+  person's explicit event: the label is never read back as state.
+- **That label taken off again is a Run again**, as for any end label the state wants: `work_item.label_edited` with
+  `means: run_again`. Any move of the item (a new job) forgets both marks.
+- **Before its report.** A cancelled or rejected job whose report did not go out yet is not judged: its labels decide, and
+  no label put on is an edit.
+
+**Left to the labels:** an item dropped by a declined or withdrawn card, a dismissed failure, a person's Close PR or an issue
+closed as not planned; a done item with no whole merge that was not done by hand; a tend job's cancel. Milestone 4.
+
+**Verification:** `test/sources/github-label-cancelled.test.ts` (a reported cancel: no end-label reason, a stale end label
+comes off; an end label put on by hand keeps the issue out once and stays; taken off again, a Run again; not reported: the
+labels decide), `test/domain/work-items-kept-out.test.ts` (the fold of `keep_out`: a dropped item only, once, a move
+forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelPutOn` and `dropReported`).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

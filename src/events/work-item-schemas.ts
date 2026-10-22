@@ -28,8 +28,8 @@ export const WORK_ITEM_EVENT_SCHEMAS = {
   }),
   // The one notice of a blocked item (issue #1891): a person is asked.
   'work_item.person_asked': strict({ key: z.string(), cause: z.enum(BLOCKED_CAUSES), jobId: z.string().optional(), pullRequest: z.string().optional() }),
-  // An end label a person took off by hand on GitHub (issue #1892): a person's Run again.
+  // An end label a person took off by hand on GitHub (issue #1892): a person's Run again; or put on a dropped item (part 19): it keeps it out.
   'work_item.label_edited': strict({
-    source: z.string(), key: z.string(), jobId: z.string().optional(), from: z.enum(WORK_ITEM_STATES), label: z.string(), means: z.literal('run_again'),
+    source: z.string(), key: z.string(), jobId: z.string().optional(), from: z.enum(WORK_ITEM_STATES), label: z.string(), means: z.enum(['run_again', 'keep_out']),
   }),
 };
