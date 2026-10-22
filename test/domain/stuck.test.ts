@@ -123,7 +123,7 @@ describe('stuck work by cause (issue #1010)', () => {
   });
 
   it('jobs that wait for memory while no job runs (issue #2303): counted, with what a person does; not while a job runs', () => {
-    const starved = job('q1', { status: 'queued', waitReason: 'waiting for memory: local has 2 GiB available; a new job needs 2 GiB over its floor of 1.4 GiB' });
+    const starved = job('q1', { status: 'queued', waitReason: 'waiting for memory: local has 2 GiB available, and a new job needs 2 GiB over its floor of 1.4 GiB' });
     const lane = job('q2', { status: 'queued', waitReason: 'waiting for a lane' });
     const causes = stuckOf({ ...empty, jobs: [starved, lane] });
     expect(causes.map((c) => [c.cause, c.ids])).toEqual([['memory_starved', ['q1']]]);

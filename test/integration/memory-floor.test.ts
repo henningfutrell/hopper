@@ -48,7 +48,7 @@ describe('the memory floor (issue #2291)', () => {
     expect(now.filter((s) => s === 'claimed' || s === 'running')).toHaveLength(2);
     expect(now.filter((s) => s === 'queued')).toHaveLength(5);
     const waiting = await a.job(jobs[6]!.id);
-    expect(waiting.waitReason).toMatch(/^waiting for memory: local has 7 GiB available, 4 GiB of it kept for 2 jobs started lately; a new job needs 2 GiB over its floor of 1\.4 GiB$/);
+    expect(waiting.waitReason).toMatch(/^waiting for memory: local has 7 GiB available, 4 GiB of it kept for 2 jobs started lately, and a new job needs 2 GiB over its floor of 1\.4 GiB$/);
     const health = await a.api<{ ok: boolean }>('GET', '/api/health');
     expect(health.status).toBe(200);
     expect(health.body.ok).toBe(true);
