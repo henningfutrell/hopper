@@ -2,7 +2,7 @@
 // read from the work trail. Pure.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
-import { discardReasonOf, keptAgainOf, keptPushedOf, keptWorkOf, proxyPushedOf, pushedBranchOf, scratchOf } from '../../src/domain/kept-work.ts';
+import { discardReasonOf, keptAgainOf, keptData, keptPushedOf, keptWorkOf, proxyPushedOf, pushedBranchOf, scratchOf } from '../../src/domain/kept-work.ts';
 
 let seq = 0;
 const ev = (type: 'job.work_kept' | 'job.work_removed' | 'job.continued', jobId: string, paths: string[], at = '2026-10-13T00:00:00.000Z'): DomainEvent =>
@@ -59,6 +59,21 @@ describe('why nobody waits on kept work (issue #1187)', () => {
     expect(discardReasonOf(job('r', 'finished', {}, { research: true }), false, undefined, none)).toBe('research');
     expect(discardReasonOf(job('p', 'failed', {}, { proposal: true }), false, undefined, none)).toBeUndefined();
     expect(discardReasonOf(job('w', 'finished'), false, undefined, none)).toBeUndefined();
+  });
+});
+
+describe('why the work was kept (issue #2494)', () => {
+  it('kept work carries why the reap kept each repository; one recorded before names none', () => {
+    const repo = '/w/.worktrees/@scratch/a/repo';
+    const said = { ...ev('job.work_kept', 'a', [repo]), data: { paths: [repo], reasons: { [repo]: ['stash'] } } } as DomainEvent;
+    expect(keptWorkOf([said])).toEqual([{ jobId: 'a', paths: [repo], reasons: { [repo]: ['stash'] }, at: said.at }]);
+    expect(keptWorkOf([ev('job.work_kept', 'b', [repo])])[0]).not.toHaveProperty('reasons');
+  });
+
+  it('keptData records the reasons of the repositories kept only', () => {
+    const repo = '/w/.worktrees/@scratch/a/repo';
+    expect(keptData({ reasons: { [repo]: ['dirty'], '/w/other': ['unpushed'] } }, [repo])).toEqual({ paths: [repo], reasons: { [repo]: ['dirty'] } });
+    expect(keptData({}, [repo])).toEqual({ paths: [repo] });
   });
 });
 
