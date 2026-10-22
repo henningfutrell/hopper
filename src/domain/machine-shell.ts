@@ -9,9 +9,16 @@ import type { Leftover } from './leftovers.ts';
  * (issue #630): those whose HEAD holds a remote branch the default branch does not; absent, none. `removed` (issue #1120):
  * the containers and volumes labelled with the job's id that it removed; absent, none. `left` (issue #1452): the job's dirs
  * it set out to remove and could not; absent, none (or a client older than this). `tips` (issue #2087): for each kept
- * repository with no change, the commits that hold work no remote has; absent, none (or a client older than this).
+ * repository with no change, the commits that hold work no remote has; absent, none (or a client older than this). `used`
+ * (issue #2498): what the job's scope used, read before the reap stopped it; absent, no scope there (or a client older than this).
  */
-export interface Reaped { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: ContainersRemoved }
+export interface Reaped { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: ContainersRemoved; used?: ResourceUse }
+
+/**
+ * What a job's scope used (issue #2498), as `job.resources_used` records it: its peak memory (cgroup `memory.peak`), its CPU
+ * time (`cpu.stat` `usage_usec`) and the OOM kills in it (`memory.events` `oom_kill`), each absent where the cgroup had none.
+ */
+export type ResourceUse = { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number };
 
 /**
  * The containers and volumes a reap removed (issue #1120), as `job.containers_removed` records them; `details` (issue #975):

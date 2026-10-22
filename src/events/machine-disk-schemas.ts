@@ -1,7 +1,7 @@
 // The hopper's own disk use's events (issue #1120, design.md "Hopper's own disk use"): the hopper's own disk use on a
 // machine is still over the disk budget after the sweep reaped what it could, or is back within it (part 2); a job's reap
 // removed the containers and volumes labelled with its id (part 3); the sweep removed an ended job's pod (issue #1570); a
-// person kept or removed a leftover (issue #1116). Part of EVENT_SCHEMAS (schemas.ts), with their docs
+// person kept or removed a leftover (issue #1116); what a job's scope used, read by its reap (issue #2498). Part of EVENT_SCHEMAS (schemas.ts), with their docs
 // (docs.ts) and examples (examples.ts).
 import { z } from 'zod';
 import { ACTION_VIAS } from '../domain/types.ts';
@@ -18,6 +18,7 @@ export const MACHINE_DISK_EVENT_SCHEMAS = {
     details: z.array(z.strictObject({ id: z.string(), name: z.string(), image: z.string(), startedAt: z.string().optional(), stoppedAt: z.string().optional() })).optional(),
   }),
   'job.pod_removed': z.strictObject({ executor: z.string() }),
+  'job.resources_used': z.strictObject({ memoryPeakBytes: z.number().optional(), cpuSeconds: z.number().optional(), oomKills: z.number().optional() }),
   'machine.leftover_kept': z.strictObject(leftover),
   'machine.leftover_removed': z.strictObject({ ...leftover, unpushed: z.boolean(), bytes: z.number().optional(), gone: z.literal(true).optional() }),
 } as const;
@@ -28,6 +29,7 @@ export const MACHINE_DISK_EVENT_DOCS = {
   'machine.disk_within_budget': 'A machine told over by `machine.disk_over_budget` has the hopper\'s own disk use back within the disk budget (issue #1120): `usedBytes` of `budgetBytes` now.',
   'job.containers_removed': 'The job\'s reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job\'s reap removes none: it may go on there. `details` (issue #975): what the reap said of each container before it removed it — its `name`, `image`, and when it started (`startedAt`) and stopped (`stoppedAt`), each absent when it never did —, which the job\'s parts list shows; absent from a client older than this.',
   'job.pod_removed': 'The sweep (issue #1570), at startup and then every 10 minutes, deleted the job\'s pod and removed its machine: the job ended, no cleanup was still owed, and its pod was still there with this hopper\'s instance label (a delete that failed, or a hopper older than the cleanup record). `executor` is the executor that started it.',
+  'job.resources_used': 'What the job\'s scope used on its machine (`machineId`), read by the job\'s reap at its end from the scope\'s cgroup before it stopped the scope (issue #2498): `memoryPeakBytes`, the most memory the scope held at once (cgroup `memory.peak`); `cpuSeconds`, the CPU time of every process in it (`cpu.stat` `usage_usec`); `oomKills`, the processes in it the kernel killed for want of memory (`memory.events` `oom_kill`). Each is absent where the cgroup has none (`memory.peak` needs Linux 5.19). None where the job has no scope there: no systemd user manager, or its scope ended before the reap (a parked job\'s, a print-mode agent\'s after its turn), or a client older than this. The job\'s parts list shows it.',
   'machine.leftover_kept': 'A person keeps a leftover on Machines (issue #1116): a dir in a work tree\'s `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.',
   'machine.leftover_removed': 'A person removes a leftover on Machines (issue #1116): the dir at `path` on `machineId` is removed whatever it holds. `unpushed`: it held work not pushed, which is lost; `bytes`: its size when listed. `gone`: it was no longer there. `person` and `via` say who and the way.',
 } as const;
@@ -38,6 +40,7 @@ export const MACHINE_DISK_EVENT_EXAMPLES = {
   'machine.disk_within_budget': { machineId: 'desk', usedBytes: 41_000_000_000, budgetBytes: 50_000_000_000 },
   'job.containers_removed': { containers: ['3f2a9c1b7d4e'], volumes: ['hopper-test-db'], details: [{ id: '3f2a9c1b7d4e', name: 'hopper-test-db', image: 'docker.io/library/postgres:16', startedAt: '2026-10-08T00:02:00.000Z', stoppedAt: '2026-10-08T00:09:00.000Z' }] },
   'job.pod_removed': { executor: 'kubernetes' },
+  'job.resources_used': { memoryPeakBytes: 3_221_225_472, cpuSeconds: 754.5, oomKills: 1 },
   'machine.leftover_kept': { machineId: 'desk', path: '/home/me/work/.hopper-scratch/test-job', person: 'Pat', via: 'ui' },
   'machine.leftover_removed': { machineId: 'desk', path: '/home/me/work/.hopper-scratch/repos/acme/app.git', unpushed: false, bytes: 1_200_000_000, person: 'Pat', via: 'ui' },
 } as const;

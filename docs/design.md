@@ -906,8 +906,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   client target in its client (`POST /reap {jobId, scratch}`, "Client targets"). So a job is reaped
   though Claude is still in front of its pane, and though the pane is gone (a crashed hopper, a lost
   pane). The script, on whichever machine the job ran:
-  1. stops the job's scope, `systemctl --user stop hopper-job-<job id>.scope`, which kills every process
-     in it and waits up to 10 s (`TimeoutStopSec`);
+  1. reads what the job's scope used from its cgroup — its peak memory, CPU time and OOM kills (issue #2498, "A job's
+     parts list" → "Resources used") —, then stops the scope, `systemctl --user stop hopper-job-<job id>.scope`, which
+     kills every process in it and waits up to 10 s (`TimeoutStopSec`);
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
      unset, so it never matches itself. Linux only (`/proc`); elsewhere this step is skipped.
@@ -19618,6 +19619,23 @@ of them. Three decisions:
    and that its reap removed it. A recorded container is therefore never still there. A job whose reap has not run yet
    (it runs, or its cleanup is deferred, or it timed out and may go on) shows none: the hopper learns of its containers
    only at the reap.
+
+**Resources used** (issue #2498). Lane machines ran out of memory, and nothing said which job held it. A job's processes
+are already in its scope (`hopper-job-<job id>.scope`, "The job's scope"), so its cgroup counts them, whatever they did to
+their environment. Three decisions:
+
+1. *When it is read.* By the reap, before it stops the scope: once the scope stops, systemd removes its cgroup and the
+   counts with it. The reap asks `systemctl --user show -p ControlGroup` for the scope's cgroup and reads three files
+   there: `memory.peak` (Linux 5.19 and later), `cpu.stat` `usage_usec` and `memory.events` `oom_kill`. One line
+   `hopper-used <bytes> <µs> <kills>`, `-` for a file it could not read; `readReap` reads it as `used`, and the cleanup
+   records `job.resources_used` with the job's machine. A cgroup path with `..` is never read.
+2. *What it misses.* A job with no scope there (no systemd user manager), a scope that ended before the reap (a parked
+   job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job,
+   the current use of a running job, and memory or CPU limits on the scope are not read or set here: later parts of
+   issue #2498.
+3. *What the part shows.* One part, `resources` in the machines group: "Peak memory <n>, CPU <time>", the OOM kills when
+   there were any, and the machines. A job reaped on more than one machine (moved, resumed elsewhere) shows the highest
+   peak, and the CPU time and OOM kills of all of them (`src/domain/job-resources.ts`).
 
 **The route.** `GET /api/jobs/:id/bom` (`src/http/jobs.ts`), the user's own; 404 for a job it does not know. It reads the
 job's newest 2000 events (`EventLog.recent` takes a job now, over the `events_job` index of tenant migration 45), its

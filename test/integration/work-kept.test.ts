@@ -1,5 +1,6 @@
 // The reap at a job's end (issue #401): what it kept for uncommitted or unpushed work is flagged on the
-// job's trail as job.work_kept, never removed silently; a reap that kept nothing records nothing.
+// job's trail as job.work_kept, never removed silently; a reap that kept nothing records nothing. What the job's scope
+// used (issue #2498) is recorded as job.resources_used.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Reaped } from '../../src/domain/ports.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -16,10 +17,10 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function cancelled(kept?: string[], removed?: Reaped['removed'], tips?: Reaped['tips'], heads?: string[]) {
+async function cancelled(kept?: string[], removed?: Reaped['removed'], tips?: Reaped['tips'], heads?: string[], used?: Reaped['used']) {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(tips ? { tips } : {}), ...(removed ? { removed } : {}) });
+  const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(tips ? { tips } : {}), ...(removed ? { removed } : {}), ...(used ? { used } : {}) });
   app = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [sticky] } });
   const job = await app.pull({}, { executor: 'sticky' });
   await app.waitForStatus(job.id, 'running');
@@ -72,5 +73,21 @@ describe('the containers and volumes the reap removed (issue #1120)', () => {
     const { a } = await cancelled(undefined, { containers: [], volumes: [] });
     await new Promise((r) => setTimeout(r, 100));
     expect(await a.events('types=job.containers_removed')).toEqual([]);
+  });
+});
+
+describe('what the job\'s scope used (issue #2498)', () => {
+  it('is recorded on the job: job.resources_used with its machine', async () => {
+    const used = { memoryPeakBytes: 3221225472, cpuSeconds: 754.5, oomKills: 1 };
+    const { a, job } = await cancelled(undefined, undefined, undefined, undefined, used);
+    await waitFor(async () => (await a.events('types=job.resources_used')).length === 1);
+    const [e] = await a.events('types=job.resources_used');
+    expect(e).toMatchObject({ jobId: job.id, data: used });
+  });
+
+  it('records nothing when the reap read none', async () => {
+    const { a } = await cancelled([]);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await a.events('types=job.resources_used')).toEqual([]);
   });
 });
