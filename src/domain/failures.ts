@@ -426,7 +426,7 @@ export interface FailuresView {
   /** Work not pushed (issue #1010): every ended job whose reap kept work, newest first, with Push it and Discard. */
   keptWork: KeptWorkView[];
   /**
-   * Stuck work (issue #1010): every item that waits on a person — here, in Parked, or on the Pull requests page — by its
+   * Stuck work (issue #1010): every item that waits on a person — here, or on the Pull requests page; not a parked job (issue #2414) — by its
    * stuck cause, each with one bulk action or what a person does.
    */
   stuck: StuckCause[];

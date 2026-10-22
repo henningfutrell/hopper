@@ -12737,7 +12737,7 @@ one press per cause where the hopper can move each item.
   failure that Run again takes and no open hand-off counts (`retry`); work not pushed, `push` when Push it is taken (its
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
-  tend its source refused (`tend_refused`); a parked job (`parked`); a job on a wait that names nothing it waits on (`wait_unnamed`,
+  tend its source refused (`tend_refused`); a job on a wait that names nothing it waits on (`wait_unnamed`,
   "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
   item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
@@ -12751,15 +12751,19 @@ one press per cause where the hopper can move each item.
   why (`refused`); the others go on. The answer: `{ cause, done, refused }`.
 - **The view** (`ui/src/views/stuck.tsx`). First in Failures, only when some work is stuck: the total, then each cause's
   count and what it is, its bulk action — asked first, with the count — or what a person does. A viewer sees no button.
-- Why no bulk Done, and none for parked jobs: Done needs a person to look at each pull request or the work; a parked
-  job needs its own answer. Those causes say so.
+- Why no bulk Done: Done needs a person to look at each pull request or the work. The cause says so.
+- **No parked job** (issue #2414). A parked job waits by design, not as a failure: it is in Parked only, never in Stuck,
+  and it counts toward neither Failures' list nor its badge (`viewOf` reads no parked job for `stuckOf`; the Failures
+  section counts open problems, open hand-offs and work not pushed). The `parked` cause had no bulk action, so nothing
+  moved to Parked. Each workflow keeps one home (issue #896).
 - **Direct jobs** (issue #901). A direct job has no issue, so nothing is assigned: the `direct` source gives its
   submission back (`JobSource.rerun`), and a failed direct job is in Stuck as any failure, by its hand-off or as `retry`,
   and its bulk action runs it again. Since issue #1068 the `direct` source follows a direct job's pull request
   ("Direct jobs", "Its pull request"): one the hopper gave up tending is an open pull request card like any other
   (`tend`, `checks`).
 
-**Verification:** `test/domain/stuck.test.ts` (each cause, an item counted once, the order),
+**Verification:** `test/domain/stuck.test.ts` (each cause, an item counted once, the order, no parked job),
+`test/integration/park.test.ts` (a parked job in neither Failures' stuck work nor its section count),
 `test/integration/stuck.test.ts` (two hand-offs resolved by one press; a cause with no bulk action refused),
 `test/integration/direct-jobs.test.ts` (a failed direct job in Stuck with a bulk action, and one press runs it again),
 `test/ui/stuck-view.test.ts` (the counts, the todo, the bulk action asked first, a viewer).
