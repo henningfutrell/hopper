@@ -30,7 +30,7 @@ import type { WorkItem } from '../../domain/work-items.ts';
 import { killPoint } from '../../sagas/kill-points.ts';
 import { labelCorrected, labelDriftSeen } from '../../telemetry/sources.ts';
 import type { GitHubIssue } from './api.ts';
-import { driftWords, labelDrift, labelPutOn, labelTakenOff, type LabelFacts } from './item-labels.ts';
+import { driftWords, labelDrift, labelPutOn, labelTakenOff, type DropReport, type LabelFacts } from './item-labels.ts';
 import type { GitHubOutbox } from './outbox.ts';
 
 /** A kill point of the mirror: after a correction's rows are queued, or after a label edit is recorded. */
@@ -60,8 +60,8 @@ export function createLabelMirror(o: {
   failureReported?(key: string): boolean;
   /** Whether a partly done item's merged part leaves parts to run (issue #1892): only then is no end label its labels. */
   partsLeft?(key: string): boolean;
-  /** Whether a dropped item's cancelled or rejected job was reported (issue #1892 part 19): only then is no end label its labels. */
-  dropReported?(key: string): boolean;
+  /** What a dropped item's cancelled or rejected job's report left (issue #1892 parts 19, 23): only once reported is it judged. */
+  dropReported?(key: string): DropReport | undefined;
   /**
    * When the listing of a repository was read (issue #1892): a correction any hopper sent after it is not queued again, as
    * that listing may not show it. Absent: only this hopper's own sends count.
@@ -84,7 +84,7 @@ export function createLabelMirror(o: {
   const facts = (key: string, item: WorkItem): LabelFacts =>
     item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' || item.state === 'needs_you' ? { failureReported: o.failureReported?.(key) ?? false }
       : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : item.state === 'dropped'
-        ? (item.dismissed === true ? { failureReported: o.failureReported?.(key) ?? false } : { dropReported: o.dropReported?.(key) ?? false }) : {};
+        ? (item.dismissed === true ? { failureReported: o.failureReported?.(key) ?? false } : { dropReported: o.dropReported?.(key) }) : {};
   /** A person's label edit on the issue since `was`: an end label put on a request card, or the one its state wants taken off. */
   const editOf = (issue: Pick<GitHubIssue, 'url' | 'labels'>, was: { labels: string[]; at: string }, settledBefore: number): { item: WorkItem; put?: string; label?: string } | undefined => {
     const item = o.item(issue.url);

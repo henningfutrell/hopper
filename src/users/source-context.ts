@@ -68,7 +68,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
         const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
         return s?.follow === 'merged' && s.part === true && !allPartsDone(s.parts);
       },
-      // Its cancelled or rejected job reported (issue #1892 part 19): no end label, unless a person put one on to keep it out.
+      // Its cancelled or rejected job reported (issue #1892 parts 19, 23): no end label, unless a person put one on to keep it
+      // out; a tend job cancelled not on purpose, hopper:pr-ready.
       dropReported: (key) => { const id = store.workItems.get(key)?.jobId; return dropReported(id === undefined ? undefined : store.jobs.get(id)); },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),
     }),
