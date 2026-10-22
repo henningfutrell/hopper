@@ -9,7 +9,8 @@
 # The line runs it locked down: every capability dropped, no new privileges, a read-only root, /tmp a
 # tmpfs, its home the volume hopper-sandbox-<agent>-home — where its link key, the agent's sign-in and the
 # jobs' work trees live, so a rebuilt or recreated box is the same machine.
-FROM node:24-bookworm-slim
+# Node pinned to a patched version (issue #2479: 24.22.1 or later on line 24); Dependabot bumps it in its line.
+FROM node:24.22.1-bookworm-slim
 
 ARG AGENT=claude
 
@@ -35,6 +36,8 @@ RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin s
 
 # The hopper client: its release as this commit has it. The hopper loads its own onto the box when they differ.
 COPY src/client/ /usr/local/lib/hopper-client/
+# No box on unpatched Node (issue #2479): fails the build below the floor.
+RUN node /usr/local/lib/hopper-client/node-floor.ts
 COPY scripts/box/entrypoint.sh /usr/local/bin/hopper-box
 
 # A job's Claude Code starts without its first-run screens: onboarding, and the prompt that confirms

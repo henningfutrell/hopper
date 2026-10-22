@@ -25,6 +25,7 @@ import { hasLink, joinHopper, linkKeyFile, readLink } from './join.ts';
 import { drain, leaveHopper, type LeaveAnswer } from './leave.ts';
 import { ISOLATION_FILE, maxIsolationOf } from './isolation.ts';
 import { linkToken } from './link.ts';
+import { nodeWarning } from './node-floor.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
 import { askHopper, HELPER_FILE, startVault } from './vault.ts';
 import { createWindowsLinkCheck } from './windows-link.ts';
@@ -93,6 +94,8 @@ async function run(argv: string[]): Promise<void> {
     return;
   }
   if (argv.length) throw new Error(`unknown command ${argv[0]}: main.ts join <hopper URL>#<join code> [name], or no command to serve`);
+  const node = nodeWarning(); // below the patched Node floor (issue #2479): said here and on the Machines page
+  if (node) say(`hopper-client: ${node}`);
   const line = takeJoinLine();
   if (!hasLink(dir) && line) {
     const link = await joinHopper({ line, name, dir });

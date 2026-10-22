@@ -1,4 +1,5 @@
 // The daemon's startup lines: where it listens, what runs each part, how people sign in.
+import { nodeWarning } from './client/node-floor.ts';
 import type { PluginsView } from './domain/ports.ts';
 import type { App } from './main.ts';
 
@@ -25,5 +26,7 @@ export function logStartup(app: App): void {
   if (auth.realms.length) console.log(`hopper: realms, in order: ${auth.realms.map((r) => `${r.name} (${r.type}${r.enabled ? '' : ', off'})`).join(', ')}`);
   if (auth.local.enabled) console.log('hopper: local sign-in on: device links and new users\' login links sign in');
   else console.log('hopper: local sign-in is off (the sign-in config)');
+  const node = nodeWarning(); // below the patched Node floor (issue #2479)
+  if (node) console.warn(`hopper: ${node}`);
   if (auth.none) console.warn(`hopper: NO SIGN-IN is on (the sign-in config none): anyone who reaches the UI acts as ${auth.none.role}`);
 }

@@ -3,6 +3,7 @@
 // says that has none. The view mode is kept per browser (hooks/use-machines-layout.ts); what is read back is checked.
 import { unhealthyLaneLines } from './lane-health.ts';
 import { credentialCard, offNetwork } from './machines.ts';
+import type { ResourceReading } from '../../../src/domain/types.ts';
 import type { MachineView } from './wire.ts';
 
 export type MachinesMode = 'cards' | 'list';
@@ -29,9 +30,14 @@ export function machineBadges(m: MachineView, now: number): MachineBadge[] {
     ...(credential ? [{ status: credential.badge, tone: credential.state === 'acknowledged' ? 'muted' as const : 'warn' as const }] : []),
     ...warn(m.hopperDisk?.over, 'over disk budget'),
     ...warn(m.resources?.windowsLink?.ok === false, 'Windows link broken'),
+    ...warn(m.resources?.nodeFloor, 'Node unpatched'),
     { status: m.online ? 'online' : 'offline' },
   ];
 }
+
+/** What a machine card says of its Node version (issue #2479): below the patched floor, what to update it to. */
+export const nodeText = (r: Pick<ResourceReading, 'node' | 'nodeFloor'>): string =>
+  (r.nodeFloor ? `${r.node}: it lacks the October 21, 2026 security release. Update Node there to ${r.nodeFloor} or later` : `${r.node ?? ''}`);
 
 /** Whether a machine has an alert: a warning badge, a work tree problem, or a client that cannot be updated from here. */
 export const machineHasAlert = (m: MachineView, now: number): boolean =>

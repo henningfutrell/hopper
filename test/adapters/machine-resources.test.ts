@@ -62,6 +62,15 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, cpuBusyFrac: 2, load: ['a'] })).toEqual({ cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB });
   });
 
+  it('a client\'s Node version (issue #2479): kept when it reads as one, its floor judged here, not taken from the client', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, node: 'v26.12.1', nodeFloor: '99.0.0' })).toEqual({ ...r, node: 'v26.12.1' });
+    expect(resourcesOf({ ...r, node: 'v26.8.2' })).toEqual({ ...r, node: 'v26.8.2', nodeFloor: '26.12.1' });
+    expect(resourcesOf({ ...r, node: 'v24.22.0' })).toEqual({ ...r, node: 'v24.22.0', nodeFloor: '24.22.1' });
+    expect(resourcesOf({ ...r, node: 'v26.8.2\nx' })).toEqual(r);
+    expect(resourcesOf({ ...r, node: 26 })).toEqual(r);
+  });
+
   it('a WSL client\'s VM figure and Windows\' memory (issue #868), each dropped when not sane', () => {
     const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
     const wsl = { ...r, wsl: true, vmHeldBytes: 7 * GIB, hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB };
