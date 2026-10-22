@@ -36,10 +36,12 @@ const failuresOf = async (a: TestApp): Promise<FailuresView> => (await a.api<Fai
 const chain = async (a: TestApp, key: string): Promise<Job[]> =>
   (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === key).reverse();
 
-/** A job that reports a hopper bug about itself (issue #1147 as `number`) while it runs, then fails as `message`. */
+/**
+ * A job that reports a hopper bug about itself (issue #1147 as `number`) before it fails as `message`. The report is
+ * added once the job is pulled, not once it is seen running: under load a poll can miss its 1500 ms run.
+ */
 async function reportsThenFails(a: TestApp, message: string, number = 1147) {
   const job = await a.pull({ op: 'fail', message, ms: 1500 });
-  await a.waitForStatus(job.id, 'running');
   const report = a.user().store.bugReports.add({
     createdAt: new Date().toISOString(), by: `job ${job.id}`, jobId: job.id, fromJob: true, title: 'The shrink guard compares a push with the default branch',
     state: 'open', kind: 'issue', number, url: `https://github.com/henningfutrell/hopper/issues/${number}`, tries: 1,

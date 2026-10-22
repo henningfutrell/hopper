@@ -1,6 +1,7 @@
 // Whether a machine holds a job off (src/decider/assign.ts step 5): the holds a machine's own problems make, and their
 // reasons. Pure.
 import type { Job, MachineSnapshot } from '../domain/types.ts';
+import { reopensPane } from '../domain/checkpoints.ts';
 
 /**
  * A machine whose work tree cannot be made usable takes no new job (issue #361): the job waits for one
@@ -17,9 +18,10 @@ export const opensPane = (job: Job): boolean => job.pendingAnswer === undefined 
 /**
  * A machine whose jobs cannot reach the hopper takes no new job (issue #698): they would have no GitHub proxy and no
  * git. The job waits for a machine that reaches it, never fails there. A job resuming there returns to the pane it holds;
- * one that resumes elsewhere needs the hopper for its checkpoint (issue #2355), so it is held too.
+ * one that resumes elsewhere needs the hopper for its checkpoint (issue #2355), so it is held too; so is one that reopens
+ * its session in a new pane (issue #2427), which would have no way to the hopper to push its commits.
  */
-export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && opensPane(job);
+export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && (opensPane(job) || reopensPane(job));
 
 /**
  * A machine whose herdr client its herdr server does not take takes no new job (issue #741): every job start there
