@@ -115,7 +115,7 @@ export function createPodmanRuntime(socket: RuntimeSocket, via: SocketCall = soc
     },
 
     async create(spec) {
-      const a = await call('POST', '/containers/create', libpodCreateBody(spec));
+      const a = await call('POST', '/containers/create', libpodCreateBody(spec, { fileLog: guarded }));
       if (!ok(a)) throw refusal(`create the box ${spec.name}`, a);
       return String((JSON.parse(a.text) as { Id: string }).Id);
     },

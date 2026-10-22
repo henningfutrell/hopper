@@ -111,7 +111,7 @@ export function createItemReconciler(o: {
     const correction = correctionOf(item, job && {
       id: job.id, status: job.status, ended: TERMINAL_STATUSES.includes(job.status), updatedAt: job.updatedAt, ...(typeof pullRequest === 'string' ? { pullRequest } : {}),
     }, job !== undefined && following(job), now);
-    const next = checkOf(item.state, item.stateSince, now);
+    const next = checkOf(item.state, item.eventAt, now);
     if (correction?.kind === 'run_again') {
       if (next) o.ledger.checked(item.key, item.version, next.nextCheckAt);
       return runAgain(correction);

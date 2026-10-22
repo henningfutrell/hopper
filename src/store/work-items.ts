@@ -64,7 +64,7 @@ function readsOf(node: GraphNode, readAt: string): { key: string; read: Paramete
 }
 
 const put = (db: Db, i: WorkItem): void => {
-  const check = checkOf(i.state, i.stateSince);
+  const check = checkOf(i.state, i.eventAt);
   db.run(`INSERT INTO work_items (key, state, state_since, job_id, pull_request, version, body, owner, next_check_at, deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state, state_since = EXCLUDED.state_since, job_id = EXCLUDED.job_id,
       pull_request = EXCLUDED.pull_request, version = EXCLUDED.version, body = EXCLUDED.body, owner = EXCLUDED.owner,

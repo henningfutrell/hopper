@@ -240,7 +240,8 @@ describe('a need step\'s box (issue #1007)', () => {
     const tar = Buffer.from('a tar').toString('base64');
     const sha = sha256(Buffer.from('a tar'));
     expect(splitOutput(`done\r\n\r\nHOPPER-STEP-OUTPUTS\r\n${tar}\r\nHOPPER-STEP-SHA256 ${sha}\r\nHOPPER-STEP-END\r\ntar: missing: No such file\r\n`)).toEqual({ log: 'done\r\ntar: missing: No such file\r\n', outputs: Buffer.from('a tar'), outputsSha256: sha });
-    expect(splitOutput('done\nHOPPER-STEP-OUTPUTS\nAAA').problem).toBe('the outputs did not all come back');
+    // A log cut short (issue #2406: journald drops a large output) says how much came, and the limit.
+    expect(splitOutput('done\nHOPPER-STEP-OUTPUTS\nAAAA\nAAAA').problem).toBe('the outputs did not all come back: the box\'s log ends after 6 bytes of them (the limit is 16 MiB); its container runtime did not keep all of its log');
   });
 
   it('outputs that differ from their sha256 in the box are a problem, never given; so are outputs with no sha256 (issue #2288)', () => {
@@ -270,6 +271,18 @@ describe('a need step\'s box (issue #1007)', () => {
     writeFileSync(join(out, 'o.tar'), result.outputs!);
     execFileSync('tar', ['-xf', join(out, 'o.tar'), '-C', out]);
     expect(sha256(readFileSync(join(out, 'rendered.yaml')))).toBe(sha256(data));
+  });
+
+  it('outputs over the limit are not sent: the step says their size and the limit (issue #2406)', async () => {
+    const r = runtime();
+    const command = 'head -c 9437184 /dev/zero > a.bin && head -c 8388608 /dev/zero > b.bin && echo small > c.txt';
+    const log: string[] = [];
+    const result = await runNeedBox(r, box(needEnv({ command, outputs: ['a.bin', 'b.bin', 'c.txt'], credentials: [] })), { log: (c) => log.push(c), signal: new AbortController().signal, pollMs: 10 });
+    expect(result.exit).toBe(0);
+    expect(result.outputs).toBeUndefined();
+    expect(result.problem).toMatch(/^the outputs total \d+ bytes, over the limit of 16 MiB \(16777216 bytes\): none were sent back; bring back less, or split it over more steps$/);
+    expect(Number(/total (\d+)/.exec(result.problem!)![1])).toBeGreaterThan(9437184 + 8388608);
+    expect(log.join('')).not.toContain('HOPPER-STEP');
   });
 
   it('a log that lost a line of the outputs is read again; lost again, the step fails with no outputs (issue #2288)', async () => {

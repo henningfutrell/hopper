@@ -1,7 +1,7 @@
 // A dropped item's label mirrors the ledger (issue #1892, milestone 2). An item a person dropped by Won't do (a blocked
 // item in Intake, or a hand-off in Needs a person) carries `hopper:rejected`: the act put it on through the outbox. The
 // ledger says so, not the labels: the mirror corrects a stale end label, Intake says rejected, and `hopper:rejected` taken
-// off by hand is a Run again. An item dropped any other way (cancelled, declined, dismissed) is not judged: the labels decide.
+// off by hand is a Run again. An item dropped any other way (declined, dismissed; a cancel before its report, part 19) is not judged: the labels decide.
 import { describe, expect, it } from 'vitest';
 import { FAILED, REJECTED_LABEL } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';

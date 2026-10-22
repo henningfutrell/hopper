@@ -21623,7 +21623,13 @@ above holds the Windows half; this section the Linux half.
   kept with the step's result (`outputsSha256`, in `step.finished`), sent in `x-hopper-step-outputs-sha256`, and
   `hopper-step` checks it again on the job's machine before it unpacks the tar. The digest is of the tar, not of each
   file: the tar holds every output file whole, so one digest covers each byte of each file, and the hopper needs no tar
-  parser. The box's output is read every second and streamed with
+  parser. **The outputs' limit** (issue #2406): their tar holds at most 16 MiB (`NEED_BOX_OUTPUTS_MAX_BYTES`). Over it,
+  the box sends none of it, only its size (`HOPPER-STEP-TOO-BIG`), and the step's problem names the size and the limit:
+  all or none, as a part of the outputs is not what the job asked for. A one-shot box beside the hopper or on a Podman
+  host keeps its log in a file (`k8s-file` on Podman, `json-file` on Docker; `libpodCreateBody`, `dockerCreateBody`):
+  journald, Podman's default on a systemd host, kept less than 1 MB of a 2 MB output, so outputs over about 1 MB never
+  came back. A box on a machine of the user's keeps its runtime's log setting (its client takes none); a log cut short
+  there names how much of the outputs came. The box's output is read every second and streamed with
   each credential's value masked (`maskSecrets`); the exit code is the command's; a timeout or the job's request gone
   stops the box. The box and its home volume are removed after it, whatever came before.
 - **`terraform apply` in a need box.** A step with `--plan-id` gets, after its write credential is minted through the apply
@@ -21836,7 +21842,7 @@ and the writes held while a sign-in has ended are the next parts.
 
 - **Each state's promise** (`src/domain/item-lifecycle.ts`, pure). Every **work item state** not ended has an **owner**
   — `scheduler`, `lane_worker`, `github_observer`, `assessor`, `reconciler` or `person` —, how often it is checked, and
-  for PR open a **deadline**, an hour from `state_since` (issue #1231's rule; part 7 gives the other states no person holds
+  for PR open a **deadline**, an hour from `state_since` (from the item's last move since issue #1892 part 18; issue #1231's rule; part 7 gives the other states no person holds
   one). `done` and `dropped` have none. Each kind
   of move names its owner too (`transitionOwner`). The ledger keeps the owner, the next check and the deadline of each
   row as columns (`owner`, `next_check_at`, `deadline`; tenant migration 82, which also rebuilds the ledger; a rebuild
@@ -22492,6 +22498,63 @@ write its label.
 `hopper:done` on; a failed job's end kept before a restart is sent by the source after it; an issue with rows not sent is
 not taken; an expired token holds the rows with no attempt counted), and `test/integration/gitlab-source.test.ts` through
 the daemon and the user's store.
+
+### Each transition names its owner and sets the next check (issue #1892 part 18, 2026-10-22)
+
+Milestone 3 asks: "Each transition names its owner (scheduler, lane worker, GitHub observer, assessor, reconciler, person)
+and sets a next check and a deadline." Before this part, `transitionOwner` named the owner of each kind of move, but the
+ledger did not keep it. The next check and the deadline ran from the item's first entry to its state (`stateSince`), so a
+move within a state did not count: an item working for an hour whose job moved a minute ago (a wait on its own command
+ended) was past its deadline, and its row was due for a check at once.
+
+- **The item keeps who made its last move** (`movedBy`, `src/domain/work-items.ts`). Each move of the reducer sets it from
+  `transitionOwner(type, data)`. A mark that moves nothing (a pull request's change kind, its wait as the follow saw it)
+  keeps it. A replay of a job's end by the item reconciler is the reconciler's move. The field is in the item's JSON body:
+  no migration. An item last moved before this part has none until it moves again or the ledger is rebuilt.
+  `GET /api/work-items` answers it.
+- **The next check and the deadline run from the last move** (`checkOf(state, movedAt)`, `src/domain/item-lifecycle.ts`;
+  `eventAt`). The ledger row's `next_check_at` and `deadline`, the item reconciler's next check and its deadline check
+  (`correctionOf`) all use it. So "past its deadline with no move" counts from the last move, as `BLOCKED_WORDS.stale` says.
+  A read of GitHub is no move: it does not set them again.
+- **The row's `owner` is still the state's owner**: who moves the item out of its state next. `movedBy` is who moved it in.
+
+**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's), and milestone 4.
+
+**Verification:** `test/domain/work-items-transition.test.ts` (the owner of each move kept, a mark keeps it, the reconciler's
+replay is its own; a move within working starts its deadline again; a mark does not), `test/store/work-items.test.ts` (the
+row's next check from a move within working).
+
+### A cancelled or rejected job's item carries no end label (issue #1892 part 19, 2026-10-22)
+
+Milestone 2, part 19: two of the drops part 9 left to the labels. A job that is cancelled (by a person, its source or the
+sweep) or rejected at the queue gate drops its item. Its report takes only the claim off. While the job worked, the mirror
+kept every end label off (a job at work wants none). So once the report went out, the issue carries no end label.
+
+- **`labelsFor` judges such an item once its report went out** (`dropReported`, `src/sources/github/item-labels.ts`: the
+  item's job is cancelled or rejected, its final report went out, and it is no tend job). It wants no end label. The mirror
+  takes a stale end label off, and Intake gives the item no end-label reason (`ledgerReason`). So Intake takes it again when
+  its labels and assignment let it, as it did before when no end label was on. A job rejected at the queue gate still keeps
+  its item out by its rejection (`REJECTED_BY_YOU`), until the issue is assigned again.
+- **Not a tend job's cancel.** A tend job cancelled by no person puts `hopper:pr-ready` back, and its pull request may be
+  tended again: its labels decide.
+- **An end label a person puts on such an item by hand keeps the issue out** (`labelPutOn`). Before the discover judges
+  Intake, the mirror finds an end label that was not on the issue at the last discover and is on now, with the item not
+  moved since. It records `work_item.label_edited` with `means: keep_out` and the label, once. The ledger keeps the label on
+  the item (`keptOut`, in its JSON body: no migration), and the item wants that label from then. So it decides Intake's
+  reason (for example `hopper:rejected` gives the rejected reason), and the mirror does not take it off. This is the
+  person's explicit event: the label is never read back as state.
+- **That label taken off again is a Run again**, as for any end label the state wants: `work_item.label_edited` with
+  `means: run_again`. Any move of the item (a new job) forgets both marks.
+- **Before its report.** A cancelled or rejected job whose report did not go out yet is not judged: its labels decide, and
+  no label put on is an edit.
+
+**Left to the labels:** an item dropped by a declined or withdrawn card, a dismissed failure, a person's Close PR or an issue
+closed as not planned; a done item with no whole merge that was not done by hand; a tend job's cancel. Milestone 4.
+
+**Verification:** `test/sources/github-label-cancelled.test.ts` (a reported cancel: no end-label reason, a stale end label
+comes off; an end label put on by hand keeps the issue out once and stays; taken off again, a Run again; not reported: the
+labels decide), `test/domain/work-items-kept-out.test.ts` (the fold of `keep_out`: a dropped item only, once, a move
+forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelPutOn` and `dropReported`).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

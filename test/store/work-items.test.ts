@@ -133,4 +133,18 @@ describe('the work-item ledger in the database', () => {
     expect(db.all('SELECT key, state FROM work_items')).toEqual([{ key: KEY, state: 'dropped' }]);
     db.close();
   });
+
+  it('an item\'s next check runs from its last move, a move within its state too (issue #1892)', () => {
+    const store = t.open(t.url());
+    const a = store.jobs.create(spec, 50, ref(KEY, 1));
+    const at = (m: number) => new Date(Date.parse('2026-10-21T10:00:00.000Z') + m * 60_000).toISOString();
+    store.events.append({ type: 'job.queued', jobId: a.id, data: { spec, priority: 50 }, at: at(0) });
+    store.events.append({ type: 'job.started', jobId: a.id, data: {}, at: at(1) });
+    store.events.append({ type: 'job.waiting', jobId: a.id, data: { for: 'a build', ownCommand: true }, at: at(30) });
+    store.events.append({ type: 'job.wait_ended', jobId: a.id, data: {}, at: at(40) });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'working', stateSince: at(1), movedBy: 'lane_worker' });
+    expect(store.workItems.due(at(44), 10)).toEqual([]);
+    expect(store.workItems.due(at(45), 10).map((i) => i.key)).toEqual([KEY]);
+    store.close();
+  });
 });

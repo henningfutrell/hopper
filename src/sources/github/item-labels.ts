@@ -16,11 +16,15 @@
 // failed item does: its job failed, and the hand-off waits on a person; before, the labels decide. A request card (waiting for
 // approval) carries none: it has no job yet, and no report wrote one. An end label a person puts on a card by hand is their
 // withdraw of it (`labelPutOn`), never read back as state. An item a person dropped by Won't do (`wontDo`: a blocked item in
-// Intake, or a hand-off) carries `hopper:rejected`: the act put it on. Not an item dropped any other way (cancelled, declined,
-// dismissed, Close PR, closed as not planned): what its issue carries then is not certain. Every other state is not judged.
-// Pure: no I/O, no clock.
+// Intake, or a hand-off) carries `hopper:rejected`: the act put it on. An item a cancelled or rejected job dropped carries none
+// once its report went out (`dropReported`, part 19): the report took only the claim off, and while its job worked the mirror
+// kept every end label off. Not a tend job's cancel (its pull request may wait again). An end label a person puts on such an
+// item by hand (`labelPutOn`) keeps the issue out (`keptOut`): the item then carries that label. Not an item dropped any other
+// way (declined, dismissed, Close PR, closed as not planned): what its issue carries then is not certain. Every other state is
+// not judged. Pure: no I/O, no clock.
 import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
 import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
+import type { Job } from '../../domain/types.ts';
 import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED } from './labels.ts';
 
 /** The end labels an item's state allows, and the one to add when none of them is on (absent: none is needed). */
@@ -31,10 +35,17 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
  * item or a hand-off: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
  * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done).
  */
-export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean }
+export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: boolean }
+
+/**
+ * Of a dropped item's job (issue #1892 part 19): whether it was cancelled or rejected and its final report went out. The
+ * report then took only the claim off. Not a tend job: one cancelled by no person puts `hopper:pr-ready` back.
+ */
+export const dropReported = (job: Pick<Job, 'status' | 'spec' | 'sourceState'> | undefined): boolean =>
+  (job?.status === 'cancelled' || job?.status === 'rejected') && job.spec.tend !== true && job.sourceState?.sync?.finalReported === true;
 
 /** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, its merge, and what it waits on. */
-export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'doneByHand'>>;
+export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'doneByHand'>>;
 
 /** The end labels `item`'s state wants on its issue; undefined: the state is not judged. */
 export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLabels | undefined {
@@ -51,7 +62,12 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     case 'needs_you':
       if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
       return item.waitingOn !== undefined ? { allowed: [] } : undefined;
-    case 'dropped': return item.eventState === 'dropped' && item.wontDo === true ? { allowed: [LABEL_REJECTED], add: LABEL_REJECTED } : undefined;
+    case 'dropped': {
+      if (item.eventState !== 'dropped') return undefined;
+      const label = item.wontDo === true ? LABEL_REJECTED : item.keptOut;
+      if (label !== undefined) return { allowed: [label], add: label };
+      return facts.dropReported ? { allowed: [] } : undefined;
+    }
     default: return undefined;
   }
 }
@@ -156,7 +172,7 @@ export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
 
 /**
  * The end label a person took off the issue by hand (issue #1892): `item`'s state wants one of its labels on (PR open,
- * blocked, failed or handed off as reported, dropped by Won't do), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
+ * blocked, failed or handed off as reported, dropped by Won't do or kept out by a label a person put on), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
  * seen before (never read back as state), one is still on (a swap of PR open's waiting labels is none), or the state wants
  * no label. Whether the item moved since, or the hopper's own write took it off, the caller judges.
  */
@@ -167,11 +183,13 @@ export function labelTakenOff(item: LabelledItem, before: readonly string[], now
 }
 
 /**
- * The end label a person put on a request card by hand (issue #1892): `item` waits for approval, and an end label not on the
- * issue at the last discover (`before`) is on now. It withdraws the card; the label stays. Undefined: no such edit. Whether
- * the item moved since, the caller judges.
+ * The end label a person put on by hand (issue #1892): `item` waits for approval, or a cancelled or rejected job dropped it
+ * and it wants no end label (part 19), and an end label not on the issue at the last discover (`before`) is on now. On a card
+ * it withdraws the card; on a dropped item it keeps the issue out. The label stays. Undefined: no such edit. Whether the item
+ * moved since, the caller judges.
  */
-export function labelPutOn(item: LabelledItem, before: readonly string[], now: readonly string[]): string | undefined {
-  if (item.state !== 'waiting_for_approval') return undefined;
+export function labelPutOn(item: LabelledItem, before: readonly string[], now: readonly string[], facts: LabelFacts = {}): string | undefined {
+  const keepsOut = item.state === 'dropped' && labelsFor(item, facts)?.allowed.length === 0;
+  if (item.state !== 'waiting_for_approval' && !keepsOut) return undefined;
   return now.find((l) => END_LABELS.includes(l) && !before.includes(l));
 }

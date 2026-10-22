@@ -16,8 +16,15 @@ export function isRootUser(user: string): boolean {
   const name = user.split(':')[0]!.trim();
   return name === '' || name === 'root' || name === '0';
 }
+/**
+ * `fileLog`: a one-shot container keeps its log in a file (issue #2406), as the runtime's own: journald, Podman's default on
+ * a systemd host, drops most of an output over about 1 MB, and a need step's outputs come back in its log. Only over the
+ * runtime's socket: a machine's client (src/client/runtime.ts) takes no log setting.
+ */
+export interface CreateOptions { fileLog?: boolean }
+
 /** The libpod create body (Podman's own API, `/libpod/containers/create`). */
-export function libpodCreateBody(spec: ContainerSpec): Record<string, unknown> {
+export function libpodCreateBody(spec: ContainerSpec, o: CreateOptions = {}): Record<string, unknown> {
   return {
     name: spec.name, image: spec.image, labels: spec.labels, env: spec.env, user: spec.user,
     cap_drop: ['ALL'], no_new_privileges: true, read_only_filesystem: true, read_only_tmpfs: false,
@@ -29,12 +36,13 @@ export function libpodCreateBody(spec: ContainerSpec): Record<string, unknown> {
     },
     // A one-shot container (issue #716): its script on a terminal, in place of the entrypoint, never restarted.
     ...(spec.script !== undefined ? { entrypoint: ['/bin/sh'], command: ['-c', spec.script], terminal: true, restart_policy: 'no' } : { restart_policy: 'unless-stopped' }),
+    ...(spec.script !== undefined && o.fileLog ? { log_configuration: { driver: 'k8s-file' } } : {}),
     ...(spec.network === 'host' || spec.network === NO_NETWORK ? { netns: { nsmode: spec.network } } : { netns: { nsmode: 'bridge' }, networks: { [spec.network]: {} } }),
   };
 }
 
 /** The Docker Engine create body (`/containers/create?name=`). */
-export function dockerCreateBody(spec: ContainerSpec): Record<string, unknown> {
+export function dockerCreateBody(spec: ContainerSpec, o: CreateOptions = {}): Record<string, unknown> {
   return {
     Image: spec.image, Labels: spec.labels, User: spec.user, Env: Object.entries(spec.env).map(([k, v]) => `${k}=${v}`),
     ...(spec.script !== undefined ? { Entrypoint: ['/bin/sh'], Cmd: ['-c', spec.script], Tty: true } : {}),
@@ -45,6 +53,7 @@ export function dockerCreateBody(spec: ContainerSpec): Record<string, unknown> {
       NanoCpus: Math.round(spec.limits.cpus * 1e9), Memory: spec.limits.memoryMb * MIB,
       RestartPolicy: { Name: spec.script !== undefined ? 'no' : 'unless-stopped' },
       NetworkMode: spec.network,
+      ...(spec.script !== undefined && o.fileLog ? { LogConfig: { Type: 'json-file' } } : {}),
     },
   };
 }
