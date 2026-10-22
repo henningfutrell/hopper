@@ -9,16 +9,25 @@
 // placement that fails is tried once more first, and a job that reopens after the end of its run reaped its credentials dir
 // (a continued or a parked job, issue #2233) has no files left to keep: it fails, never resumed with no way to the hopper.
 // A job that resumes elsewhere gets its checkpoint from the hopper (issue #2355): on a machine that gives it no way to the
-// hopper (no URL its jobs reach the hopper at there, or no shell), it cannot go on there, and says why.
+// hopper (no URL its jobs reach the hopper at there, or no shell), it cannot go on there, and says why. A reach check that
+// fails while the hopper's own event loop is held (issue #2427) is checked again once the loop is free; one that fails in a
+// hold again says so (`Unreached.loopHeld`), so its machine is not held for it.
 import type { JobProxyCredentials, MachineShell } from '../domain/ports.ts';
 import type { Job, MachineSnapshot } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
+import { loopHeldDoubts } from '../domain/loop-held.ts';
 
 /** What to do when a machine cannot reach the hopper (issue #695). */
 export const REACH_ACTION = 'Set an address this machine reaches as the link base (Settings → Artifacts), or join the machine with Add machine: a client target\'s jobs reach the hopper through its client';
 
-/** The machine cannot reach the hopper at the URL the job would be given (issue #695): why, and what to do. */
-export class Unreached extends Error {}
+/**
+ * The machine cannot reach the hopper at the URL the job would be given (issue #695): why, and what to do. `loopHeld`: the
+ * check failed while the hopper's own event loop was held, checked again too (issue #2427), so it is no proof of the machine.
+ */
+export class Unreached extends Error {
+  readonly loopHeld: boolean;
+  constructor(message: string, loopHeld = false) { super(message); this.loopHeld = loopHeld; }
+}
 
 /** The job's credentials dir under its scratch dir. */
 export const credentialsDirOf = (scratch: string): string => `${scratch}/credentials`;
@@ -50,10 +59,17 @@ export async function placeCredentials(
     if (!unreached) for (const [file, content] of Object.entries(proxy.files)) await shell.keepCredential(job.id, dir, file, content, make);
     return unreached;
   };
-  let unreached: string | undefined;
+  let unreached: string | undefined, loopHeld = false;
   try {
     // A connection that dropped for a moment (issue #2233): tried once more.
+    const from = Date.now();
     unreached = await placed().catch(placed);
+    // The hopper's own loop held while the machine asked it (issue #2427): its answer may have come too late. Checked again.
+    if (unreached && loopHeldDoubts(from)) {
+      const again = Date.now();
+      unreached = await placed();
+      loopHeld = unreached !== undefined && loopHeldDoubts(again);
+    }
   } catch (e) {
     const why = (e as Error).message;
     if (job.agentSession === undefined) {
@@ -64,7 +80,7 @@ export async function placeCredentials(
     note(`its files were not placed again (${why}): it keeps the hopper's GitHub proxy its start placed`);
     return env;
   }
-  if (unreached) throw new Unreached(`${unreached}. ${REACH_ACTION}`);
+  if (unreached) throw new Unreached(loopHeld ? `${unreached}, while the hopper's own event loop was held: it is checked again at its next start` : `${unreached}. ${REACH_ACTION}`, loopHeld);
   return env;
 }
 

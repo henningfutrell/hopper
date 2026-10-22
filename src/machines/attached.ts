@@ -3,7 +3,8 @@
 // #58, #865, "Container targets"). Online while that session answers, or while a box can start for it. The probe runs in the
 // background, at most once per `probeEveryMs`; list() never waits for it, so a machine that is off
 // or asleep never stalls a Decision. Offline until the first probe says otherwise. Each is a
-// machine-source instance (issue #74), reached through createTargetPool.
+// machine-source instance (issue #74), reached through createTargetPool. An address problem a probe found while the
+// hopper's own event loop was held (issue #2427) is not taken: the machine keeps what it had, and is probed again.
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,6 +24,7 @@ import { herdrMismatch, readHerdrStatus } from './herdr-version.ts';
 import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
 import { isAddressLine, addressCommand, networkFix, readAddress, type WslAddress } from './hopper-address.ts';
+import { loopHeldDoubts } from '../domain/loop-held.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -116,10 +118,14 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     if (inFlight || (now() - lastProbe < every && !((o.reachedAt?.() ?? 0) > lastProbe))) return;
     inFlight = true;
     lastProbe = now();
+    const from = Date.now();
     o.probe().then(
       (p) => {
         online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; resources = p.online ? p.resources : undefined; infraCredentials = p.online ? p.infraCredentials : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
-        hopperUrl = p.online ? p.hopperUrl : undefined; addressProblem = p.online ? p.addressProblem : undefined;
+        // Its address check waited on the hopper's own held loop (issue #2427): no proof. Kept as it was; probed again.
+        const doubted = p.online && p.addressProblem !== undefined && loopHeldDoubts(from);
+        if (doubted) lastProbe = -Infinity;
+        else { hopperUrl = p.online ? p.hopperUrl : undefined; addressProblem = p.online ? p.addressProblem : undefined; }
         herdr = p.online ? p.herdr : undefined; herdrProblem = p.online ? p.herdrProblem : undefined;
         const noJob = [workTreeProblem, addressProblem, herdrProblem].filter((x) => x !== undefined).join('; ');
         say(!p.online ? `hopper: attached machine ${name} offline: ${down()}`

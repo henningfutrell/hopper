@@ -9,6 +9,7 @@ import type { CapBand } from './usage.ts';
 import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryWait, type MemoryRoom } from './memory-floor.ts';
 import { jevPicked } from './lane-calls.ts';
 import { SIGN_IN, signedOutFor } from './signed-out.ts';
+import { addressHolds, credentialHolds, heldOff, herdrHolds, notReady, offNetwork, opensPane, workTreeHolds } from './machine-holds.ts';
 
 /** One executor's share of a machine: its own cap, and the lanes its jobs hold there. */
 export interface ExecutorState {
@@ -69,47 +70,6 @@ export function pinOf(job: Job): string | undefined {
 export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low === true && job.pendingAnswer === undefined;
 
 /**
- * A machine whose work tree cannot be made usable takes no new job (issue #361): the job waits for one
- * that can, never fails there. A job resuming there returns to the pane it holds.
- */
-export const workTreeHolds = (m: MachineSnapshot, job: Job): boolean => m.workTreeProblem !== undefined && job.pendingAnswer === undefined;
-
-/**
- * Whether `job` opens a new pane on the machine it is placed on (issue #2355): a new job, or one that resumes elsewhere from
- * its checkpoint (issue #921), which holds no pane there. Any other resuming job returns to the pane it holds.
- */
-const opensPane = (job: Job): boolean => job.pendingAnswer === undefined || job.parked?.elsewhere !== undefined;
-
-/**
- * A machine whose jobs cannot reach the hopper takes no new job (issue #698): they would have no GitHub proxy and no
- * git. The job waits for a machine that reaches it, never fails there. A job resuming there returns to the pane it holds;
- * one that resumes elsewhere needs the hopper for its checkpoint (issue #2355), so it is held too.
- */
-export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && opensPane(job);
-
-/**
- * A machine whose herdr client its herdr server does not take takes no new job (issue #741): every job start there
- * would fail. The job waits for a machine whose herdr works, never fails there. A job resuming there returns to the pane it holds.
- */
-export const herdrHolds = (m: MachineSnapshot, job: Job): boolean => m.herdrProblem !== undefined && job.pendingAnswer === undefined;
-
-/**
- * A machine whose job user holds credentials a job could use (issue #1248: a kube config, cloud CLI credentials, an ssh key,
- * a token variable) is not ready and takes no new job: a job holds no owner credentials (#652). The job waits for a ready
- * machine, never fails there; the machine takes jobs again once its probe finds none. A job resuming there returns to the pane it holds.
- * Only a machine the credential check holds (issue #1467, `credentialHeld` in src/domain/machine-credentials.ts): one an admin
- * stopped, or, with strict mode on, one no admin acknowledged. Else the credentials are a warning, and it takes jobs.
- */
-export const credentialHolds = (m: MachineSnapshot, job: Job, held: boolean): boolean => held && (m.infraCredentials?.length ?? 0) > 0 && job.pendingAnswer === undefined;
-
-/** Why such a machine holds a job (issue #1248): what its job user holds, and the fix. */
-const notReady = (m: MachineSnapshot): string =>
-  `is not ready: its job user holds credentials a job could use (${m.infraCredentials!.join(', ')}). Run its jobs as a dedicated user that holds none`;
-
-/** Why such a machine holds a job (issue #711): it is off-network, why, and the command that joins it when one fits. */
-const offNetwork = (m: MachineSnapshot): string => `is off-network: ${m.addressProblem}${m.addressFix ? `. Fix: ${m.addressFix}` : ''}`;
-
-/**
  * A sandbox box whose template is not approved takes no new job (issue #602): the job waits for a machine that can
  * take it, never fails there. A job resuming there returns to the pane it holds.
  */
@@ -164,23 +124,8 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
       return `no machine running executor ${executor} reaches the hopper: ${tree.map((m) => `${m.id} ${offNetwork(m)}`).join('; ')}`;
     }
     const reached = tree.filter((m) => !addressHolds(m, job));
-    if (reached.every((m) => credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false))) {
-      return `no machine running executor ${executor} is ready: ${reached.map((m) => `${m.id} ${notReady(m)}`).join('; ')}`;
-    }
-    const reaching = reached.filter((m) => !credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false));
-    if (reaching.every((m) => herdrHolds(m, job))) {
-      return `no machine running executor ${executor} has a working herdr: ${reaching.map((m) => `${m.id}: ${m.herdrProblem}`).join('; ')}`;
-    }
-    const working = reaching.filter((m) => !herdrHolds(m, job));
-    if (working.every((m) => templateHolds(m, job))) return `${working.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
-    const usable = working.filter((m) => !templateHolds(m, job));
-    if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
-    const roomy = usable.filter((m) => !diskHolds(m, job));
-    const out = roomy.map((m) => signedOutFor(m.id, job, signedOut));
-    if (out.every((t) => t !== undefined)) {
-      return `no machine running executor ${executor} is signed in: ${roomy.map((m, i) => `${m.id} (${out[i]!.service} signed out)`).join(', ')}: ${SIGN_IN}`;
-    }
-    return undefined;
+    const reason = reachedHold(job, reached, signedOut, credentialHeld);
+    return reason === undefined ? undefined : `${reason}${heldOff(tree, job)}`;
   }
   const pinned = machines.find((m) => m.id === pin);
   if (!pinned) return `pinned machine ${pin} unknown`;
@@ -197,6 +142,28 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   const out = signedOutFor(pin, job, signedOut);
   if (out) return `pinned machine ${pin}: ${out.service} signed out (usage source ${out.source}): ${SIGN_IN}`;
+  return undefined;
+}
+
+/** Why a job no machine that reaches the hopper takes is held (step 5 after the reach step), or undefined. */
+function reachedHold(job: Job, reached: MachineSnapshot[], signedOut?: readonly SignedOutTool[], credentialHeld?: readonly string[]): string | undefined {
+  const executor = job.spec.executor;
+  if (reached.every((m) => credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false))) {
+    return `no machine running executor ${executor} is ready: ${reached.map((m) => `${m.id} ${notReady(m)}`).join('; ')}`;
+  }
+  const reaching = reached.filter((m) => !credentialHolds(m, job, credentialHeld?.includes(m.id) ?? false));
+  if (reaching.every((m) => herdrHolds(m, job))) {
+    return `no machine running executor ${executor} has a working herdr: ${reaching.map((m) => `${m.id}: ${m.herdrProblem}`).join('; ')}`;
+  }
+  const working = reaching.filter((m) => !herdrHolds(m, job));
+  if (working.every((m) => templateHolds(m, job))) return `${working.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
+  const usable = working.filter((m) => !templateHolds(m, job));
+  if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
+  const roomy = usable.filter((m) => !diskHolds(m, job));
+  const out = roomy.map((m) => signedOutFor(m.id, job, signedOut));
+  if (out.every((t) => t !== undefined)) {
+    return `no machine running executor ${executor} is signed in: ${roomy.map((m, i) => `${m.id} (${out[i]!.service} signed out)`).join(', ')}: ${SIGN_IN}`;
+  }
   return undefined;
 }
 
@@ -435,7 +402,9 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it.
     const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]));
     if (able.length === 0) {
-      wait.push({ jobId: job.id, reason: laned.length ? memoryWait(laned, costs?.[job.id]) : waitReason(job, checked, pl) });
+      // The machines held off for reach are named too (issue #2427): the lane wait names only the one with the most lanes.
+      const off = pinOf(job) === undefined ? heldOff(checked.map((s) => s.machine), job) : '';
+      wait.push({ jobId: job.id, reason: laned.length ? memoryWait(laned, costs?.[job.id]) : `${waitReason(job, checked, pl)}${off}` });
       continue;
     }
     const { options: fit, note: costed } = fitting(awayFrom(able, avoid[job.id]), costs?.[job.id]);
