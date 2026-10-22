@@ -87,7 +87,7 @@ describe('the bastion ask (issue #2146)', () => {
 
   it('says where the job\'s bastion stands, and stops it', async () => {
     expect(await ask({}).answer).toMatchObject({ status: 200, text: expect.stringContaining('bastion b-1 of template observe-uat is running') });
-    expect(await ask({ asset: 'stop' }).answer).toMatchObject({ status: 200, text: expect.stringMatching(/^stopping: bastion b-1/) });
+    expect(await ask({ asset: 'stop' }).answer).toMatchObject({ status: 200, text: expect.stringMatching(/^stopped: bastion b-1/) });
     const none = { start: async () => VIEW, of: () => undefined, stop: () => undefined, read: async () => ({ status: 404, no: 'this job has no bastion that runs' }) };
     expect(await ask({}, { bastions: none }).answer).toMatchObject({ status: 404, text: expect.stringContaining('this job has no bastion') });
     expect(await ask({ asset: 'stop' }, { bastions: none }).answer).toMatchObject({ status: 404 });

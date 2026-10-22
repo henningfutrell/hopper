@@ -61,7 +61,7 @@ export async function bastionAsk<A>(u: BastionUser, job: Job, f: BastionFields, 
   if (!b) return say.no(503, 'this hopper starts no bastion');
   if (f.asset === 'stop') {
     const v = b.stop(job.id, 'job');
-    return v ? say.loaded(`stopping: ${bastionText(v)}`) : say.no(404, 'this job has no bastion that runs');
+    return v ? say.loaded(`stopped: ${bastionText(v)}`) : say.no(404, 'this job has no bastion that runs');
   }
   if (f.asset === 'read') {
     const r = parseRead({ target: f.targets?.trim(), path: f.path, secret: f.secrets?.trim() || undefined, data: f.data });

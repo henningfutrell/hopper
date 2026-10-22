@@ -32,6 +32,8 @@ export type { BastionEnd, BastionView } from '../domain/bastions.ts';
 const CHECK_MS = 5_000;
 /** The most of a bastion's output the hopper keeps: its tail. */
 const LOG_TAIL = 4096;
+/** How long a relay connection that got no answer waits for kubectl to say why. */
+const SAID_MS = 1_000;
 
 export interface BastionsOptions {
   userId: string;
@@ -59,6 +61,8 @@ export interface BastionsOptions {
   ttlMs?: number;
   renewMs?: number;
   checkMs?: number;
+  /** How long a relay connection that got no answer waits for kubectl's line on it (issue #2474). */
+  saidMs?: number;
 }
 
 export interface Bastions {
@@ -82,6 +86,11 @@ export interface Bastions {
    * `command`: the command started for it, from the target's port (a bastion read's); else the connect command.
    */
   relay(jobId: string, target: string, command?: (local: number) => string[]): Promise<BoxPipe | { status: number; no: string }>;
+  /**
+   * Why a relay connection got no byte back (issue #2474): its target's name, and what kubectl said of that
+   * forward after the connection opened, else the connect command's stderr. It waits a short time for kubectl's line.
+   */
+  noAnswer(target: string, pipe: BoxPipe): Promise<string>;
   /** One HTTP read of a target of the job's bastion that runs, in its box (part 6): the status and body, or a no. */
   read(jobId: string, r: BastionRead): Promise<{ status: number; body: Buffer } | { status: number; no: string }>;
   /** Stops every bastion and waits for their boxes to go: the hopper stops. */
@@ -100,6 +109,7 @@ interface Live {
   why?: { end: BastionEnd; by?: string; problem?: string };
   timers: ReturnType<typeof setInterval>[];
   done: Promise<void>;
+  watch: ReturnType<typeof forwardWatch>;
 }
 
 const sameTargets = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && [...a].sort().join(' ') === [...b].sort().join(' ');
@@ -111,6 +121,10 @@ export function createBastions(o: BastionsOptions): Bastions {
   const ttlMs = o.ttlMs ?? BASTION_TTL_MS;
   const live = new Map<string, Live>();
   const last = new Map<string, BastionView>();
+  /** Bastions that ended whose box still goes: the hopper's stop waits for them. */
+  const going = new Set<Live>();
+  /** Each relay connection's count of kubectl's lines on its forward when it opened (issue #2474). */
+  const saidAt = new WeakMap<BoxPipe, { live: Live; n: number }>();
 
   /** Each observe minted for the box, or why one was not. */
   const mintAll = async (b: { template: string; box: string; jobId: string }, observes: readonly OperationProfile[]): Promise<BastionCredential[] | string> => {
@@ -124,25 +138,33 @@ export function createBastions(o: BastionsOptions): Bastions {
     return out;
   };
 
-  /** Asks the bastion to end, once: the first reason is the one kept. */
+  /**
+   * Ends the bastion, once: the first reason is the one kept. Issue #2474: it is ended for the job at once — it leaves
+   * the job's running bastion, its timers stop and its relay connections close —, so the job may start a new one while
+   * its box still goes. Its tokens are released, and its end recorded, once its box is gone (ended).
+   */
   const end = (l: Live, why: NonNullable<Live['why']>): void => {
     if (l.why) return;
     l.why = why;
+    for (const t of l.timers) clearInterval(t);
+    for (const p of l.open) p.destroy();
+    if (live.get(l.view.jobId) === l) live.delete(l.view.jobId);
+    going.add(l);
+    last.set(l.view.jobId, {
+      ...l.view, targets: l.view.targets.map((t) => ({ ...t })), state: 'ended', endedAt: now().toISOString(), ended: why.end,
+      ...(why.by ? { endedBy: why.by } : {}), ...(why.problem ? { problem: why.problem } : {}),
+    });
     l.stop.abort();
   };
 
-  /** Keeps its end: its tokens released, its timers stopped, the end an event on the job's timeline. */
+  /** Keeps its end once its box is gone: its tokens released, the end an event on the job's timeline. */
   const ended = async (l: Live, r: NeedBoxResult): Promise<void> => {
-    for (const t of l.timers) clearInterval(t);
-    for (const p of l.open) p.destroy();
+    end(l, { end: 'failed', problem: r.problem ?? `its box ended with ${r.exit}` });
+    const why = l.why!;
     rmSync(join(o.dir, l.view.id), { recursive: true, force: true });
     await o.release(l.view.box).catch(() => undefined);
-    const why = l.why ?? { end: 'failed' as const, problem: r.problem ?? `its box ended with ${r.exit}` };
-    const view: BastionView = {
-      ...l.view, state: 'ended', endedAt: now().toISOString(), ended: why.end, ...(why.by ? { endedBy: why.by } : {}), ...(why.problem ? { problem: why.problem } : {}),
-    };
-    live.delete(l.view.jobId);
-    last.set(l.view.jobId, view);
+    going.delete(l);
+    const view = { ...l.view, ...(why.problem ? { problem: why.problem } : {}) };
     o.record({
       type: 'bastion.ended', jobId: view.jobId,
       data: { bastion: view.id, template: view.template, box: view.box, reason: why.end, ...(why.by ? { by: why.by } : {}), ...(why.problem ? { problem: why.problem } : {}) },
@@ -195,6 +217,8 @@ export function createBastions(o: BastionsOptions): Bastions {
           startedAt: at.toISOString(), expiresAt: new Date(at.getTime() + ttlMs).toISOString(), log: '',
         },
         placed: placing.placed, observes: placing.observes, stop: new AbortController(), open: new Set(), timers: [], done: Promise.resolve(),
+        // Issue #2413: whether each forward listens, from its lines in the box's output, so a job sees a forward that fails.
+        watch: forwardWatch(),
       };
       live.set(job.id, l);
       o.record({ type: 'bastion.started', jobId: job.id, data: { bastion: id, template: template.name, box, targets: asked, ...(names.length ? { secrets: names } : {}), expiresAt: l.view.expiresAt } });
@@ -214,8 +238,7 @@ export function createBastions(o: BastionsOptions): Bastions {
         else if (l.open.size === 0 && now().getTime() >= Date.parse(l.view.expiresAt)) end(l, { end: 'expired' });
       }, o.checkMs ?? CHECK_MS));
       const t = template;
-      // Issue #2413: whether each forward listens, from its lines in the box's output, so a job sees a forward that fails.
-      const watch = forwardWatch();
+      const watch = l.watch;
       mkdirSync(join(o.dir, id), { recursive: true, mode: 0o700 });
       l.done = run({
         name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.egress?.length ? { egress: t.egress } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
@@ -248,10 +271,26 @@ export function createBastions(o: BastionsOptions): Bastions {
     relay,
     read,
 
+    async noAnswer(target, pipe) {
+      const at = saidAt.get(pipe);
+      const said = (): string | undefined => {
+        const p = at?.live.watch.problem(target);
+        return p && p.n > at!.n ? p.said : undefined;
+      };
+      const saidMs = o.saidMs ?? SAID_MS;
+      for (let waited = 0; !said() && at && !at.live.why && waited < saidMs; waited += 50) await new Promise((r) => setTimeout(r, 50));
+      const words = said();
+      const stderr = pipe.stderr().trim();
+      const head = `the bastion's forward to ${target} closed the connection with no answer`;
+      if (words) return `${head}: kubectl said: ${words}`;
+      if (stderr) return `${head}: ${stderr}`;
+      return `${head}${at?.live.why ? `: the bastion ${at.live.view.id} ended` : ''}. See its output with sh "$HOPPER_SKILL" bastion`;
+    },
+
     async stopAll() {
       const all = [...live.values()];
       for (const l of all) end(l, { end: 'stopped', by: 'the hopper' });
-      await Promise.allSettled(all.map((l) => l.done));
+      await Promise.allSettled([...going].map((l) => l.done));
     },
   };
 
@@ -291,6 +330,7 @@ export function createBastions(o: BastionsOptions): Bastions {
     }
     if (l.why) { pipe.destroy(); return { status: 404, no: `the job's bastion ${l.view.id} ended` }; }
     l.open.add(pipe);
+    saidAt.set(pipe, { live: l, n: l.watch.problem(target)?.n ?? 0 });
     used(l);
     const opened = now();
     pipe.once('close', () => {

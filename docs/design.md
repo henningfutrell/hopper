@@ -32096,7 +32096,11 @@ credential.
   does not expire while one is open), when
   its job is no longer at work, when the job stops it, when a renewal is refused, when its box ends by itself, or at 12
   hours whatever its use. Its tokens are released (`releaseMints`: their Secrets deleted), and its box burned.
-  `bastion.started` and `bastion.ended` (its reason, who stopped it, its problem) are on the job's timeline.
+  `bastion.started` and `bastion.ended` (its reason, who stopped it, its problem) are on the job's timeline. Issue #2474:
+  a bastion ends for its job at once — it leaves the job's running bastion and the vault's list, its timers stop and
+  its relay connections close —, while its box still goes. So `bastion`, the relay and the next ask all read the same
+  state: once a job stopped its bastion, the next ask starts a new one, and `bastion` names the new one. Its tokens are
+  released, and `bastion.ended` recorded, once its old box is gone; the hopper's stop waits for those boxes too.
 
 **The relay (part 2).** Only the box reaches its forwards; the relay joins a job's connection to one, protocol-agnostic,
 with no new opening in the cluster: the forward is the bastion's own.
@@ -32113,6 +32117,13 @@ with no new opening in the cluster: the forward is the bastion's own.
   with the first of socat, bash (`/dev/tcp`) and nc the image has (exit 127 and its reason when none), ends when the
   target ends the connection, and when the job's side ends first waits at most 5 s for the rest of the answer. Each
   connection starts the TTL again, and an open one keeps the bastion; the bastion's end closes each one.
+- **No empty reply** (issue #2474, `Bastions.noAnswer`). A forward can listen and still fail each connection: kubectl
+  takes it, its stream to the pod fails, and it closes the connection with no byte back, so curl said only "Empty reply
+  from server". When the target's side ends with no byte back to a connection the job wrote to, the hopper finds why:
+  what kubectl said of that forward after the connection opened (it waits up to 1 s for that line), else the connect
+  command's stderr, else where to look. When the job's first bytes are an HTTP/1.x request, the route answers
+  `502` with `no: the bastion's forward to <target> closed the connection with no answer: kubectl said: …`; any other
+  protocol gets the end of the connection, as before.
 - **The client** (`hopper-relay`, `src/sandbox/relay-script.ts`). `sh "$HOPPER_RELAY" TARGET [LOCAL] [-- COMMAND]`, in
   every job's credentials dir: a POSIX sh line that runs a Node module of no dependency beside it (curl holds no two-way
   byte stream). It holds a port on 127.0.0.1 where the job runs (LOCAL, else one the system picks) and joins each

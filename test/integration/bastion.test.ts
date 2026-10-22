@@ -219,6 +219,27 @@ describe('bastions (issue #2146)', () => {
     expect(stranger).toMatchObject({ code: 1, stderr: 'hopper-relay: the token is not a job\'s of this hopper. A job connects with its own HOPPER_TOKEN_FILE.\n' });
     expect(started).toHaveLength(2);
   });
+
+  it('answers an HTTP request whose forward closes with no answer 502, naming the target, never an empty reply (issue #2474)', async () => {
+    const b = await boot([]);
+    bastionBoxes(b);
+    // The box's connect command: it reads the request, then ends with no byte back, as kubectl does when its stream fails.
+    b.runtime.pipe = async () => {
+      const d = new Duplex({ read() {}, write(_c, _e, done) { done(); setImmediate(() => d.push(null)); } });
+      return Object.assign(d, { stderr: () => '' });
+    };
+    expect((await b.a.ui('/ui/api/sandbox-approvals', { yolo: true }, { token: b.token })).status).toBe(200);
+    const creds = await runningJob(b.a);
+    writeFileSync(join(creds, 'relay'), RELAY_SCRIPT, { mode: 0o700 });
+    writeFileSync(join(creds, 'relay.mjs'), RELAY_CLIENT, { mode: 0o600 });
+    const t = await observeTemplate(b, creds);
+    expect((await skill(b.a, creds, ['bastion', '--template', t.name, '--targets', 'lab/monitoring/svc/grafana:3000', '--why', 'Read the lab dashboards'])).code).toBe(0);
+    await waitFor(async () => (await skill(b.a, creds, ['bastion'])).stdout.includes('is running'), { timeoutMs: 10_000 });
+    const client = 'require("node:http").get(`http://127.0.0.1:${process.env.HOPPER_RELAY_PORT}/-/ready`, (r) => { let o = ""; r.on("data", (d) => { o += d; }); r.on("end", () => process.stdout.write(`${r.statusCode} ${o}`)); }).on("error", (e) => { process.stdout.write(e.message); });';
+    const used = await relay(b, creds, ['lab/monitoring/svc/grafana:3000', '--', process.execPath, '-e', client]);
+    expect(used.code, used.stderr).toBe(0);
+    expect(used.stdout).toBe('502 no: the bastion\'s forward to lab/monitoring/svc/grafana:3000 closed the connection with no answer. See its output with sh "$HOPPER_SKILL" bastion\n');
+  });
 });
 
 function relay(b: Booted, creds: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
