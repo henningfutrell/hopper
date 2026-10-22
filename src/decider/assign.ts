@@ -175,7 +175,8 @@ export const homeless = (m: MachineSnapshot): boolean => (m.ssh !== undefined ||
 
 /**
  * Issue #371: an ended job of the same item whose cleanup has not gone through may still run in its pane;
- * starting this one beside it runs the item twice. Held until that cleanup goes through.
+ * starting this one beside it runs the item twice. Held until that cleanup goes through, or a person marks it done
+ * (issue #2427: the reason says how, for a machine that is gone for good).
  */
 export function cleanupHold(job: Job, due: readonly CleanupDue[]): string | undefined {
   const key = job.source?.key;
@@ -183,7 +184,8 @@ export function cleanupHold(job: Job, due: readonly CleanupDue[]): string | unde
   if (!earlier) return undefined;
   return earlier.error === undefined
     ? `job ${earlier.jobId} of this item is being cleaned up`
-    : `job ${earlier.jobId} of this item may still run: its cleanup waits for its machine (${earlier.error})`;
+    : `job ${earlier.jobId} of this item may still run: its cleanup waits for its machine (${earlier.error}). `
+      + `Its pane closed, or its machine gone for good: Mark closed on job ${earlier.jobId}, or hopper job cleaned-up ${earlier.jobId}`;
 }
 
 /**

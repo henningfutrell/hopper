@@ -52,6 +52,7 @@ export const OPERATOR_USAGE = `  hopper job show <id>                           
   hopper job park <id> [--reason <text>]             park a running job, or one on a question, a proposal or a research report: it leaves its lane, and keeps its work
   hopper job pick-up <id>                            pick a parked job up: it waits again where it was parked, or resumes its session
   hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
+  hopper job cleaned-up <id>                         an ended job whose cleanup cannot reach its machine: its pane is closed, or its machine is gone for good; its item's jobs may run
   hopper job end-wait <id> [--note <text>]           end a job's own wait: it goes on, told the note; a stranded one resumes its session
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
@@ -132,7 +133,7 @@ function jobCall(args: string[]): Call {
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' }, note: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job show|stamp|accept|reject|cancel|park|pick-up|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
+  if (!id || extra.length > 0) throw usage('job show|stamp|accept|reject|cancel|park|pick-up|rerun|cleaned-up|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes, note = values.note;
   // End a job's own wait (issue #1779: a stranded one too), as the job's End wait button.
   if (verb === 'end-wait' && notes === undefined && values.reason === undefined) return { role: 'operator', path: `${at}/end-wait`, body: async () => (note === undefined ? {} : { note }) };
@@ -149,6 +150,8 @@ function jobCall(args: string[]): Call {
   if (verb === 'pick-up') return { role: 'operator', path: `${at}/requeue`, body: async () => ({}) };
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
   // Quarantine and its lift (issue #655) too.
+  // Mark closed (issue #2427): an ended job's deferred cleanup is done, its pane closed or its machine gone for good.
+  if (verb === 'cleaned-up') return { role: 'operator', path: `${at}/cleaned-up`, body: async () => ({}) };
   if (['rerun', 'keep-original', 'accept-new-text', 'quarantine', 'unquarantine', 'approve-trust'].includes(verb ?? '')) return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
   if (verb === 'accept') {
     // As the Queue view's Accept: the accepted waiting jobs in queue order, then this one.
@@ -157,7 +160,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job show|stamp|accept|reject|cancel|park|pick-up|rerun|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
+  throw usage('job show|stamp|accept|reject|cancel|park|pick-up|rerun|cleaned-up|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */

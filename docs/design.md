@@ -1668,7 +1668,9 @@ then `Revised after: <answer>`.
   The UI flags such a job (Ended, the locked entries, Attention). **Mark closed**
   (`POST /ui/api/jobs/:id/cleaned-up`, operator) ends a deferral by hand — the pane closed by hand, or
   its machine gone for good — with `job.cleaned_up { by: "user" }`; without it a machine that never
-  comes back would hold its items for good.
+  comes back would hold its items for good. The button is only on the jobs that ended in the last day, so the held job's
+  reason names the earlier job and both ways (issue #2427): Mark closed, or the operator CLI's
+  `hopper job cleaned-up <id>`, which makes the same call.
 - **herdr unit:** a second `herdr --session X server` exits 1, so
   `hopper-herdr.service` has an `ExecCondition` that skips the start when that
   session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers
@@ -17476,6 +17478,13 @@ state it had, and is probed again at the next read of the machines. A hold's rea
 job placed there checks again. A job's hold or lane wait that names other machines also names the machines held off as not
 reaching the hopper (`heldOff`, src/decider/machine-holds.ts), so a hold of every seat does not read as a placement that
 targets only the machine left.
+
+**The reap on a native Windows client** (issue #2427). Node gives a Windows program its argv as one command line, and
+writes a `\"` of an argument as `\\\"` there. The sh of Git for Windows (MSYS) reads a backslash as an escape only before a
+quote, so it read `\\"` back, and the reap script closed a quote early: `sh: -c: line 1: unexpected EOF while looking for
+matching '"'`, and every job there failed after it ran. Only the reap held a `\"`: the runtime config it writes again
+before a reset (`CONF_SH`, `src/client/job-runtime.ts`). Its printf formats are now in single quotes. Every fixed script
+a client runs is held to the round trip (`test/client/windows-command-line.test.ts`).
 
 **Never a GitHub sign-in.** The protocol line on GitHub (`GITHUB_PROXY_LINE`) says: when the hopper cannot be reached,
 never start or ask for a GitHub sign-in to get around it; end failed with the reason. A herdr-claude job that reports a

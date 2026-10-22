@@ -33,7 +33,7 @@ describe('hopper job cleaned-up (issue #2427)', () => {
 
     expect(await hopper(a, ['job', 'cleaned-up', job.id])).toMatchObject({ code: 0 });
     expect((await a.job(job.id)).cleanupDeferred).toBeUndefined();
-    const marked = (await a.events(`type=job.cleaned_up&jobId=${job.id}`)).filter((e) => e.jobId === job.id);
+    const marked = (await a.events()).filter((e) => e.type === 'job.cleaned_up' && e.jobId === job.id);
     expect(marked.map((e) => (e.data as { by?: string }).by)).toEqual(['user']);
 
     const again = await hopper(a, ['job', 'cleaned-up', job.id]);
