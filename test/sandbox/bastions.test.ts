@@ -38,6 +38,10 @@ const until = async (what: () => boolean): Promise<void> => {
   expect(what()).toBe(true);
 };
 
+/** What kubectl says in the box once each forward of its command listens. */
+const listening = (box: { env: Record<string, string> }): string =>
+  [...(box.env.HOPPER_STEP_COMMAND ?? '').matchAll(/ '([^']+)' &$/gm)].map((m) => `[${m[1]}] Forwarding from 127.0.0.1 -> remote\n`).join('');
+
 /** Bastions with the box a double that runs until it is stopped, and a mint that counts. */
 function bastions(o: Partial<BastionsOptions> & { pipe?: RunningNeedBox['pipe'] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bastions-'));
@@ -50,7 +54,7 @@ function bastions(o: Partial<BastionsOptions> & { pipe?: RunningNeedBox['pipe'] 
   const run = async (box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: Omit<NeedBoxIo, 'phases'>): Promise<NeedBoxResult> => {
     const b = { box, renewed: [] as Record<string, string>[] };
     boxes.push(b);
-    io.log('hopper-bastion: forwarding 2 targets\n');
+    io.log(`hopper-bastion: forwarding 2 targets\n${listening(box)}`);
     io.running?.({ renew: async (secrets) => { b.renewed.push(secrets); }, ...(o.pipe ? { pipe: o.pipe } : {}) });
     await new Promise((r) => { io.signal.addEventListener('abort', r, { once: true }); });
     return { exit: 125, problem: 'the job stopped waiting for it', stopped: 'cancelled' };
