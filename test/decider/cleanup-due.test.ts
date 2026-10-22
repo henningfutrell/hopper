@@ -11,7 +11,7 @@ describe('a waiting job whose item has a cleanup due', () => {
   it('is held while that cleanup is deferred, with the job and the error', () => {
     const d = decide(inputs({ waiting: [of('new', 'k1')], cleanupDue: [{ jobId: 'old', sourceKey: 'k1', error: 'herdr: not dialled in' }] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold).toEqual([{ jobId: 'new', reason: 'job old of this item may still run: its cleanup waits for its machine (herdr: not dialled in)' }]);
+    expect(d.hold).toEqual([{ jobId: 'new', reason: 'job old of this item may still run: its cleanup waits for its machine (herdr: not dialled in). Its pane closed, or its machine gone for good: Mark closed on job old, or hopper job cleaned-up old' }]);
   });
 
   it('is held while that cleanup still runs', () => {

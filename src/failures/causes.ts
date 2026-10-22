@@ -13,6 +13,8 @@ export const OWN_PR_CHECKS_RED = 'own-pr-checks-red';
 export const OWN_PR_UNFINISHED = 'own-pr-unfinished';
 /** The cause of a job whose session has no way to the hopper (issue #2233): it runs again as a new job, never in that session. */
 export const NO_WAY_TO_HOPPER = 'no-way-to-hopper';
+/** The cause of a job whose agent CLI exited as it started (issue #2432): the seat's fault, so it runs again on another lane. */
+export const EXITED_AT_START = 'exited-at-start';
 /** The cause of a job whose conditional skills' done criteria are not met (issue #1924): the hopper sends it back to rework. */
 export const DONE_CRITERIA_UNMET = 'done-criteria-unmet';
 
@@ -54,6 +56,12 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
     id: 'herdr-outdated', name: 'Herdr outdated', cls: 'shared', decision: 'redirect', scope: 'machine', check: 'herdr',
     description: 'The herdr client the hopper calls on the machine is older than the herdr server of its session: every job start there fails until the server\'s herdr is installed where the hopper calls it (issue #741).',
     pattern: /client protocol \d+ is older than server protocol \d+/i,
+  }),
+  // After Login expired: what Claude printed as it exited may say it is signed out, which holds the executor (issue #2432).
+  cause({
+    id: EXITED_AT_START, name: 'Exited at start', cls: 'transient', decision: 'retry', scope: 'machine',
+    description: 'The agent CLI exited as it started, or in its first turn of a new session before it showed anything, with no cause its output names: the seat it ran on, not the job (issue #2432). The failure says its exit code and what it printed. It runs again with backoff, on another lane, of another machine when one may take it; a lane where it happens 3 times in a row takes no new job for a while.',
+    pattern: /claude exited at (startup|the start of a new session)/i,
   }),
   cause({
     id: 'daemon-restart', name: 'Daemon restart', cls: 'transient', decision: 'retry', scope: 'machine',

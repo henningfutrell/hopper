@@ -8,7 +8,8 @@ import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
 import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '../../domain/task-count.ts';
 import type { HerdrClient } from './client.ts';
 import { outsideItsPane, type PaneRestored } from './restored.ts';
-import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
+import { exitedError } from './exited.ts';
+import { CTRL_END, FOOTER_ANCHOR, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -119,15 +120,6 @@ export function abortReason(signal: AbortSignal): 'cancel' | 'park' | 'shutdown'
 
 export const tail = (text: string, lines: number): string => text.split('\n').slice(-lines).join('\n').trim();
 
-async function exitedError(w: TurnWatch): Promise<string> {
-  try {
-    const last = await w.herdr.read(w.paneId, { source: 'recent-unwrapped', lines: 40 });
-    return `claude exited: ${tail(last, 20)}`;
-  } catch {
-    return 'claude exited';
-  }
-}
-
 /** The dialog Claude waits at, as the job's question; `recent` is what led up to it. */
 export async function blockedQuestion(w: Pick<TurnWatch, 'herdr' | 'paneId' | 'clock'>, recent: string): Promise<ExecutionOutcome & { kind: 'question' }> {
   const visible = await w.herdr.read(w.paneId, { source: 'visible', lines: 60 });
@@ -171,6 +163,8 @@ async function watch(w: TurnWatch): Promise<Watched> {
   /** The background work last reported as waited on, so it is reported once. */
   let waitedOn: string | undefined;
   let errors = 0;
+  /** Whether Claude showed anything in this turn: the task's turn of a new session (FOOTER_ANCHOR) with nothing is an exit at start (issue #2432). */
+  let shown = false;
   /** The login this watch waits on, until a signal ends it; the last signal it was given. */
   let login = w.login;
   let signalled: LoginSignal | undefined;
@@ -181,7 +175,7 @@ async function watch(w: TurnWatch): Promise<Watched> {
     try {
       const agent = await herdr.getAgent(w.agentName);
       if (ctx.signal.aborted) continue;
-      if (!agent) return { kind: 'failed', error: await exitedError(w) };
+      if (!agent) return { kind: 'failed', error: await exitedError(w, ctx, w.paneId, !shown && w.anchor === FOOTER_ANCHOR ? 'new-session' : undefined) };
       if (outsideItsPane(agent, w)) return { paneRestored: true, agentPane: agent.paneId };
       let recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
       if (isScrolledUp(recent)) {
@@ -192,6 +186,7 @@ async function watch(w: TurnWatch): Promise<Watched> {
       const turn = readTurn(recent, w.anchor, w.markersAfter);
       const output = `${turn.outputLines}\n${turn.lastLine}`;
       if (turn.lastLine && output !== lastOutput) { lastOutput = output; w.onOutput?.(now); }
+      if (turn.lastLine) shown = true;
       // Progress is the job's task count (issue #794), as it writes it: never a clock. Its count line is no message.
       const counted = lastTaskCount(turn.assistantText);
       const newCount = counted && !sameTaskCount(counted, tasks) ? counted : undefined;

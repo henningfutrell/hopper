@@ -122,7 +122,7 @@ ${next}`);
         if (!file) return no(req, reply, 404, `plan ${plan.id} has no saved plan file`);
         return reply.code(200).type('application/octet-stream').header('cache-control', 'no-store').send(file);
       }
-      const { text: _text, ...view } = plans.view(plan.id)!;
+      const { text: _text, ...view } = (await plans.view(plan.id))!;
       return answer(req, reply, 200, { plan: view },
         `plan ${plan.id}  ${plan.tool}  ${plan.asset.kind}/${plan.asset.name}  ${plan.target}  ${view.approval ? `approved by ${nameWithoutEmail(view.approval.by)}` : `not approved: ${view.approver.who === 'nobody' ? 'nobody approves it' : `${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it`} (${view.approver.why})`}  stale at ${plan.expiresAt}`);
     });

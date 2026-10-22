@@ -109,8 +109,10 @@ export interface WorkItem {
    * `dismissed`: its failed job's locked entry was dismissed (part 20, `job.dismissed`); kept while it stays dropped.
    * `closedByPerson`: a person's Close PR closed its pull request without a merge (part 21, `job.pull_request_closed` with
    * `person`, not superseded); kept while it stays dropped.
+   * `closedByHopper`: the hopper's own close (part 22, `job.pull_request_closed` with `superseded`, no person), its issue
+   * open: housekeeping closed its pull request with nothing left to land; kept while it stays dropped and its issue open.
    */
-  wontDo?: true; keptOut?: string; dismissed?: true; closedByPerson?: true;
+  wontDo?: true; keptOut?: string; dismissed?: true; closedByPerson?: true; closedByHopper?: true;
   /** A person resolved its hand-off as Done by hand (issue #1892): its job's work is done, by them; kept while it stays done. */
   doneByHand?: true;
   /** How many of its pull requests in a row were closed without a merge on GitHub (issue #1891); a merge ends the row. */
@@ -196,7 +198,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const next: Base = { ...base, ...change, eventState, eventAt: event.at, movedBy: by ?? transitionOwner(event.type, d) };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
     if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
-    delete next.runAgainAsked; delete next.keptOut; if (change.wontDo !== true || next.eventState !== 'dropped') delete next.wontDo; if (change.dismissed !== true || next.eventState !== 'dropped') delete next.dismissed; if (change.closedByPerson !== true || next.eventState !== 'dropped') delete next.closedByPerson; if (change.doneByHand !== true || next.eventState !== 'done') delete next.doneByHand; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
+    delete next.runAgainAsked; delete next.keptOut; if (change.wontDo !== true || next.eventState !== 'dropped') delete next.wontDo; if (change.dismissed !== true || next.eventState !== 'dropped') delete next.dismissed; if (change.closedByPerson !== true || next.eventState !== 'dropped') delete next.closedByPerson; if (change.closedByHopper !== true || next.eventState !== 'dropped') delete next.closedByHopper; if (change.doneByHand !== true || next.eventState !== 'done') delete next.doneByHand; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
     return settled(item, next, event.at);
   };
   const mark = (change: Partial<Base>): WorkItem => {
@@ -277,8 +279,9 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     const change = { pullRequest: pr, pullRequestState: event.type === 'job.pull_request_closed' ? 'closed' as const : 'abandoned' as const, pullRequestWait: undefined, waitingOn: undefined };
     if (isActive(base.eventState) || base.eventState === 'done') return mark(change);
     // Closed without a merge on GitHub (issue #1891): the item waits on a run again, the item reconciler's the first time in a row.
-    // A person's Close PR (issue #1892 part 21) drops it, and the drop is marked: its follow put `hopper:pr-closed` on.
-    return closedOnGitHub(event) ? move('blocked', { ...change, blockedCause: 'pr_closed', waitingOn: BLOCKED_WORDS.pr_closed, closedWithoutMerge: (base.closedWithoutMerge ?? 0) + 1 }) : move('dropped', { ...change, ...(event.type === 'job.pull_request_closed' && d.person !== undefined && d.superseded === undefined ? { closedByPerson: true as const } : {}) });
+    // A person's Close PR (issue #1892 part 21) drops it, and the drop is marked: its follow put `hopper:pr-closed` on. So did
+    // the hopper's own close (part 22) while its issue is open; a close because another pull request closed it put `hopper:done` on.
+    const closedBy = event.type !== 'job.pull_request_closed' ? {} : d.person !== undefined ? (d.superseded === undefined ? { closedByPerson: true as const } : {}) : d.superseded !== undefined && base.issueState !== 'closed' ? { closedByHopper: true as const } : {}; return closedOnGitHub(event) ? move('blocked', { ...change, blockedCause: 'pr_closed', waitingOn: BLOCKED_WORDS.pr_closed, closedWithoutMerge: (base.closedWithoutMerge ?? 0) + 1 }) : move('dropped', { ...change, ...closedBy });
   }
   // Everything else is the current job's: an older job's end moves nothing.
   if (!current) return undefined;
@@ -358,7 +361,7 @@ export function applyRead(item: WorkItem, read: LedgerRead): WorkItem | undefine
   const issueState = read.state.toLowerCase();
   const issueReason = read.reason?.toLowerCase();
   if (item.issueState === issueState && item.issueReason === issueReason) return undefined;
-  const next: Base = { ...base, issueState }; if (issueReason) next.issueReason = issueReason; else delete next.issueReason;
+  const next: Base = { ...base, issueState }; if (issueReason) next.issueReason = issueReason; else delete next.issueReason; if (issueState === 'closed') delete next.closedByHopper;
   if (issueState === 'open' && item.issueState === 'closed' && base.eventState === 'blocked' && !NOT_COMPLETED.includes(item.issueReason ?? '')) {
     Object.assign(next, { eventState: 'done' }); for (const k of ['blockedCause', 'waitingOn', 'personAsked', 'runAgainAsked'] as const) delete next[k];
   }

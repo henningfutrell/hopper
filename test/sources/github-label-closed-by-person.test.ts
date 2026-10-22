@@ -32,7 +32,7 @@ describe('an item a person\'s Close PR dropped: hopper:pr-closed (issue #1892 pa
     expect(reason(1)?.reason).not.toBe(PR_CLOSED);
   });
 
-  it('an item the hopper\'s own close dropped is not judged: the labels decide', async () => {
+  it('an item dropped with no such mark is not judged: the labels decide', async () => {
     const { gh, source, reason } = setup({ [url(1)]: { ...closed, closedByPerson: undefined } });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:done'] });
     await source.discover();

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkpointArgv, checkpointOf, readCheckpoint, RESTORE_NO_WAY, restoreArgv, restoreCommand, restoreOutcome } from '../../src/client/checkpoint.ts';
+import { checkpointArgv, checkpointOf, readCheckpoint, RESTORE_NO_WAY, restoreArgv, restoreCommand, restoredInPart, restoreOutcome } from '../../src/client/checkpoint.ts';
 
 const JOB = 'job-921-abcdef';
 const SESSION = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -154,6 +154,10 @@ describe('taking a checkpoint', () => {
 });
 
 describe('restoring a checkpoint on another machine', () => {
+  const runBoth = (argv: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ out: string; err: string }> => new Promise((resolve, reject) => {
+    execFile(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, ...ENV, ...env }, encoding: 'utf8', timeout: 60000 }, (e, out, err) => (e ? reject(e) : resolve({ out, err })));
+  });
+
   async function serve(parts: Record<string, Buffer>, token: string): Promise<string> {
     server = createServer((req, res) => {
       const part = /^\/job\/checkpoint\/(patch|session)$/.exec(req.url ?? '')?.[1];
@@ -204,6 +208,42 @@ describe('restoring a checkpoint on another machine', () => {
     expect(readFileSync(join(wt, 'new.txt'), 'utf8')).toBe('untracked\n');
   });
 
+  // Issue #2428: a patch that conflicts with the restored tree is applied file by file, and the job goes on.
+  it('applies a patch that does not apply whole file by file: says each file left out, and keeps the whole patch', async () => {
+    const { wt, home } = await workOnFirstMachine();
+    const read = readCheckpoint(await run(checkpointArgv(JOB, wt, SESSION), wt, { HOME: home }));
+    if (!read || !('taken' in read)) throw new Error('no checkpoint');
+    const k = read.taken;
+    const patch = gunzipSync(k.patch);
+    const url = await serve({ patch, session: gunzipSync(k.session!) }, 'tok');
+    const tokenFile = join(root, 'token');
+    writeFileSync(tokenFile, 'tok');
+    // The base as the other machine has it: a.txt differs there, and new.txt is there already, so the patch conflicts.
+    const there = jobClone('two');
+    git(there, 'fetch', '-q', 'origin', 'hopper/921');
+    git(there, 'checkout', '-q', '--detach', k.base);
+    writeFileSync(join(there, 'a.txt'), 'other\n');
+    writeFileSync(join(there, 'new.txt'), 'other\n');
+    git(there, 'add', '.');
+    git(there, 'commit', '-q', '-m', 'drift');
+    const drifted = git(there, 'rev-parse', 'HEAD');
+    git(there, 'checkout', '-q', '--detach', 'origin/main');
+    const { out, err } = await runBoth(restoreArgv({ base: drifted, branch: k.branch, session: SESSION, hasSession: true }), there,
+      { HOME: join(root, 'two-home'), CLAUDE_CONFIG_DIR: '', HOPPER_URL: url, HOPPER_TOKEN_FILE: tokenFile });
+    expect(out.trim().split('\n').at(-1)).toBe('partly');
+    expect(readFileSync(join(there, 'a.txt'), 'utf8')).toBe('other\n');
+    expect(readFileSync(join(there, 'new.txt'), 'utf8')).toBe('other\n');
+    expect(readFileSync(join(there, 'c.txt'), 'utf8')).toBe('committed, not pushed\n');
+    const said = restoredInPart(err);
+    expect(said.leftOut.sort()).toEqual(['a.txt', 'new.txt']);
+    expect(said.patch).toBe(git(there, 'rev-parse', '--path-format=absolute', '--git-path', 'hopper-checkpoint.patch'));
+    expect(readFileSync(said.patch!)).toEqual(patch);
+    expect(readFileSync(`${said.patch}.left-out`, 'utf8').split('\n').filter(Boolean).sort()).toEqual(['a.txt', 'new.txt']);
+    expect(git(there, 'status', '--porcelain')).not.toContain('hopper-checkpoint');
+    const dir = realpathSync(there).replace(/[^A-Za-z0-9]/g, '-');
+    expect(readFileSync(join(root, 'two-home', '.claude', 'projects', dir, `${SESSION}.jsonl`), 'utf8')).toContain('"hello"');
+  });
+
   it('fails, saying why, when the hopper refuses the parts', async () => {
     const there = jobClone('two');
     const url = await serve({}, 'other');
@@ -215,9 +255,6 @@ describe('restoring a checkpoint on another machine', () => {
   });
 
   // Issue #2316: the restore names what of the job's way to the hopper is missing, and waits a moment for a token file.
-  const runBoth = (argv: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ out: string; err: string }> => new Promise((resolve, reject) => {
-    execFile(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, ...ENV, ...env }, encoding: 'utf8', timeout: 60000 }, (e, out, err) => (e ? reject(e) : resolve({ out, err })));
-  });
 
   it('with no HOPPER_URL: fails at once, saying the job has no way to the hopper and what is missing', async () => {
     const there = jobClone('two');
@@ -255,6 +292,7 @@ describe('restoring a checkpoint on another machine', () => {
     expect(command).toMatch(/printf 'hopper-restore-%s\\n' "\$\{o:-failed\}"$/);
     expect(restoreOutcome('$ o=$(sh -c …)\nhopper-restore-restored\n$ ')).toBe('restored');
     expect(restoreOutcome('hopper-restore-kept')).toBe('kept');
+    expect(restoreOutcome('hopper-restore-partly')).toBe('partly');
     expect(restoreOutcome('nothing yet')).toBeUndefined();
   });
 });

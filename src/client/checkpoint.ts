@@ -112,7 +112,7 @@ export function readCheckpoint(stdout: string): ReadCheckpoint | undefined {
 
 /** What the restore command prints, followed by its outcome. */
 export const RESTORE_MARK = 'hopper-restore-';
-export type RestoreOutcome = 'restored' | 'kept' | 'failed';
+export type RestoreOutcome = 'restored' | 'partly' | 'kept' | 'failed';
 
 /** The line the restore prints when the pane has no way to the hopper (issue #2316): the job cannot go on on that machine, another may (issue #2355). Never in the script's text, which the pane's screen echoes. */
 export const RESTORE_NO_WAY = 'hopper: the job has no way to the hopper';
@@ -121,7 +121,9 @@ export const RESTORE_NO_WAY = 'hopper: the job has no way to the hopper';
 // the hopper; a token file not readable yet is waited for a few seconds, issue #2316): $1 the base, $2 the branch (empty: none), $3 the session id, $4 1 when the checkpoint holds the session.
 // It gets the checkpoint's parts from the hopper first, then checks out the base (fetched when it is not here), applies
 // the patch as uncommitted changes, and puts the session where the agent finds it for this directory. A worktree that
-// holds changes already is the job's own work, never overwritten: `kept` (only a missing session file is put).
+// holds changes already is the job's own work, never overwritten: `kept` (only a missing session file is put). A patch
+// that does not apply whole (issue #2428) is applied file by file: `partly`, each file left out keeps the base's content
+// and is said on a line of its own, the whole patch and the list kept in the worktree's git dir, said last.
 // Prints its outcome last.
 const RESTORE_SCRIPT = [
   'base=$1 b=$2 s=$3 hs=$4;',
@@ -140,9 +142,14 @@ const RESTORE_SCRIPT = [
   'git cat-file -e "$base^{commit}" 2>/dev/null || git fetch --quiet origin "$base" 2>/dev/null || { [ -n "$b" ] && git fetch --quiet origin "$b"; };',
   'git cat-file -e "$base^{commit}" 2>/dev/null || no "the checkpoint\'s base $base is not on the remote";',
   'if [ -n "$b" ]; then git checkout --quiet -B "$b" "$base" 2>/dev/null || git checkout --quiet --detach "$base"; else git checkout --quiet --detach "$base"; fi || no "could not check out $base";',
-  '[ ! -s "$t/p" ] || git apply --binary --whitespace=nowarn "$t/p" || no "the patch did not apply";',
+  'o=restored; a() { git apply --binary --whitespace=nowarn "$@" "$t/p" 2>/dev/null; };',
+  'if [ -s "$t/p" ] && ! a; then o=partly;',
+  'k=$(git rev-parse --path-format=absolute --git-path hopper-checkpoint.patch) && cp "$t/p" "$k" && : > "$k.left-out" || no "could not keep the patch";',
+  'git apply --numstat "$t/p" | cut -f3- > "$t/f";',
+  'while IFS= read -r f; do a --include="$f" || { echo "$f" >> "$k.left-out"; printf "hopper: %s %s\\n" "left out" "$f" >&2; }; done < "$t/f";',
+  'printf "hopper: %s %s\\n" "kept the whole patch in" "$k" >&2; fi;',
   'place || no "could not put the session";',
-  'rm -rf "$t"; echo restored',
+  'rm -rf "$t"; echo $o',
 ].join(' ');
 
 const shq = (s: string): string => `'${s.replaceAll("'", "'\\''")}'`;
@@ -153,7 +160,7 @@ export function restoreCommand(o: { base: string; branch?: string; session: stri
   return `o=$(sh -c ${shq(RESTORE_SCRIPT)} hopper-restore ${args} | tail -n 1); printf 'hopper-restore-%s\\n' "\${o:-failed}"`;
 }
 
-const OUTCOME = /hopper-restore-(restored|kept|failed)\b/g;
+const OUTCOME = /hopper-restore-(restored|partly|kept|failed)\b/g;
 
 /** The outcome the restore command printed on the screen, if it has. */
 export function restoreOutcome(screen: string): RestoreOutcome | undefined {
@@ -163,3 +170,27 @@ export function restoreOutcome(screen: string): RestoreOutcome | undefined {
 /** The argv that runs the restore script outside a pane, for a test: as the pane's shell runs it. */
 export const restoreArgv = (o: { base: string; branch?: string; session: string; hasSession: boolean }): string[] =>
   ['sh', '-c', RESTORE_SCRIPT, 'hopper-restore', o.base, o.branch ?? '', o.session, o.hasSession ? '1' : '0'];
+
+/** What a restore that applied its patch only in part said (issue #2428): the files it left out, where it kept the whole patch. */
+export interface RestoredInPart { leftOut: string[]; patch?: string }
+
+const LEFT_OUT = 'hopper: left out ';
+const PATCH_KEPT = 'hopper: kept the whole patch in ';
+
+/** What the restore said on the screen of what it left out; the screen holds the last lines only, the list file all of them. */
+export function restoredInPart(screen: string): RestoredInPart {
+  const lines = screen.split('\n').map((l) => l.trimEnd());
+  const patch = lines.findLast((l) => l.startsWith(PATCH_KEPT))?.slice(PATCH_KEPT.length);
+  return { leftOut: lines.filter((l) => l.startsWith(LEFT_OUT)).map((l) => l.slice(LEFT_OUT.length)), ...(patch ? { patch } : {}) };
+}
+
+/** What the resumed agent is told first when its checkpoint's patch applied only in part (issue #2428). */
+export function restoredInPartNote(r: RestoredInPart): string {
+  const where = r.patch ? `\`${r.patch}\`, and the list of the files left out in \`${r.patch}.left-out\`` : 'the git dir of this worktree, as `hopper-checkpoint.patch`';
+  return [
+    'The hopper moved this job to another machine. Your work that was not pushed came back as a patch on your pushed branch,',
+    'and the patch did not apply whole there. The changes to the other files are in place.',
+    `These files keep the content of the base, so your changes to them are not in the work tree: ${r.leftOut.length > 0 ? r.leftOut.map((f) => `\`${f}\``).join(', ') : 'see the list file'}.`,
+    `The whole patch is in ${where}. Read it, and make again the changes you need (for example: git apply --3way --include=<file> <patch>).`,
+  ].join('\n');
+}

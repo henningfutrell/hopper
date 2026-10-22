@@ -25,12 +25,14 @@ export const HOST_RUNTIME_SH = `h=\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; case 
  * under the runtime dir. Read over the user's own (CONTAINERS_CONF_OVERRIDE is read last), and the storage config in
  * place of theirs (CONTAINERS_STORAGE_CONF), its storage named twice: rootless Podman 4 reads no graphroot from a config
  * that is not the user's own, only rootless_storage_path, and so kept a job's images in the user's storage. The reap
- * writes it again before it resets, so a job that changed it cannot point the reset elsewhere.
+ * writes it again before it resets, so a job that changed it cannot point the reset elsewhere. Its formats are in single
+ * quotes, with no `\"`: a native Windows client gets the reap as one command line, where Git for Windows' sh reads a `\"`
+ * back as `\\"` (issue #2427).
  */
 export const CONF_SH = [
   'conf() {',
-  '  printf "[engine]\\ntmp_dir = \\"%s/libpod/tmp\\"\\nvolume_path = \\"%s/storage/volumes\\"\\n[network]\\nnetwork_config_dir = \\"%s/networks\\"\\n" "$1" "$2" "$2" > "$2/containers.conf" &&',
-  '  printf "[storage]\\ngraphroot = \\"%s/storage\\"\\nrunroot = \\"%s/storage\\"\\nrootless_storage_path = \\"%s/storage\\"\\n" "$2" "$1" "$2" > "$2/storage.conf";',
+  `  printf '[engine]\\ntmp_dir = "%s/libpod/tmp"\\nvolume_path = "%s/storage/volumes"\\n[network]\\nnetwork_config_dir = "%s/networks"\\n' "$1" "$2" "$2" > "$2/containers.conf" &&`,
+  `  printf '[storage]\\ngraphroot = "%s/storage"\\nrunroot = "%s/storage"\\nrootless_storage_path = "%s/storage"\\n' "$2" "$1" "$2" > "$2/storage.conf";`,
   '};',
 ].join(' ');
 

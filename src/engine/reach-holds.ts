@@ -3,7 +3,8 @@
 // (a client target, a box) is offered jobs that would all fail there. Once a start finds it so, the machine carries that
 // problem (`addressProblem`) for a while, and the decider holds a new job there (src/decider/assign.ts `addressHolds`);
 // the job that found it is queued again, to be placed elsewhere. The hold ends by itself: the next job placed there
-// checks again. Kept in memory: a restart forgets it, and the next start there finds it again.
+// checks again. Kept in memory: a restart forgets it, and the next start there finds it again. Its problem says when the
+// hold began and when it ends (issue #2427), so a wait that names the machine says that the hold ends by itself.
 import type { Clock, MachineSource } from '../domain/ports.ts';
 
 /** How long a machine a job's start found out of reach takes no new job, before a job is placed there to check again. */
@@ -24,7 +25,10 @@ export function createReachHolds(clock: Clock, holdMs = REACH_HOLD_MS): ReachHol
     return held.get(machineId)?.problem;
   };
   return {
-    hold(machineId, problem) { held.set(machineId, { problem, until: clock.now().getTime() + holdMs }); },
+    hold(machineId, problem) {
+      const at = clock.now().getTime(), until = at + holdMs;
+      held.set(machineId, { problem: `${problem} (held since ${new Date(at).toISOString()}; a job placed there after ${new Date(until).toISOString()} checks again)`, until });
+    },
     source: (machines) => ({
       list: async () => (await machines.list()).map((m) => {
         const addressProblem = m.addressProblem === undefined ? problemOf(m.id) : undefined;

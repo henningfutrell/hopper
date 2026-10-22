@@ -299,7 +299,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     const unsent = saved?.turn?.unsent ? saved.turn.text : undefined;
     const text = withNotes(ctx, unsent ? `${answer}\n\n${unsent}` : answer);
     // Back on a machine it left (issue #1569): what of it still runs there stops first.
-    return startAndSend(ctx, r.p, { first: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), resume: r.session, restore: r.restore, said: r.said }, () => [text, lastLineOf(text)]);
+    // A patch that applied only in part (issue #2428): the agent is told first what of its work is not in the work tree.
+    return startAndSend(ctx, r.p, { first: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), resume: r.session, restore: r.restore, said: r.said }, (s) => [s.restoreNote ? `${s.restoreNote}\n\n${text}` : text, lastLineOf(text)]);
   }
 
   return {

@@ -7,8 +7,9 @@
 // as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits, and not a
 // culprit whose merge was reverted (failed by its landing, not by its job); a done item carries `hopper:done` once its pull
 // request merged as the whole item (`wholeMerged`): the follow put it on with the merge; or once a person resolved its hand-off as
-// Done by hand (`doneByHand`): the resolution put it on. Not a done item a job's end or a read of GitHub made done: its report
-// set the labels by what the issue said then. A partly done item carries none once its merged
+// Done by hand (`doneByHand`): the resolution put it on; or once a job's end made it done and its job's final report found
+// the issue closed as complete (`doneReported`, part 24): the report put it on. Not a done item a job's end made while its
+// issue was open, or a read of GitHub made done: its report set the labels by what the issue said then. A partly done item carries none once its merged
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. Not a last part that made every declared part done: the follow put `hopper:done` on. An item that needs a person carries
 // none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
@@ -18,17 +19,19 @@
 // withdraw of it (`labelPutOn`), never read back as state. An item a person dropped by Won't do (`wontDo`: a blocked item in
 // Intake, or a hand-off) carries `hopper:rejected`: the act put it on. An item a cancelled or rejected job dropped carries none
 // once its report went out (`dropReported`, part 19): the report took only the claim off, and while its job worked the mirror
-// kept every end label off. Not a tend job's cancel (its pull request may wait again). An end label a person puts on such an
+// kept every end label off. A tend job cancelled by no person and no source carries `hopper:pr-ready` once reported (part 23):
+// its report put it back, as its pull request waits to be tended again. An end label a person puts on such an
 // item by hand (`labelPutOn`) keeps the issue out (`keptOut`): the item then carries that label. An item dropped by the dismiss
 // of its failed job's locked entry (`dismissed`, part 20) carries `hopper:failed` once its job's failure was reported as failed
 // (`failureReported`): the dismiss writes no label, so the issue keeps the report's. An item dropped by a person's Close PR
-// (`closedByPerson`, part 21) carries `hopper:pr-closed`: the follow of the close put it on, as for a close on GitHub. Not an
-// item dropped any other way (declined, the hopper's own close, closed as not planned): what its issue carries then is not
-// certain. Every other state is not judged.
+// (`closedByPerson`, part 21) carries `hopper:pr-closed`: the follow of the close put it on, as for a close on GitHub. So does
+// an item the hopper's own close dropped while its issue is open (`closedByHopper`, part 22: housekeeping closed its pull
+// request with nothing left to land). Not an item dropped any other way (declined, closed as not planned): what its issue
+// carries then is not certain. Every other state is not judged.
 // Pure: no I/O, no clock.
 import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
 import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
-import type { Job } from '../../domain/types.ts';
+import { DELIBERATE_CANCELS, type Job } from '../../domain/types.ts';
 import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED } from './labels.ts';
 
 /** The end labels an item's state allows, and the one to add when none of them is on (absent: none is needed). */
@@ -37,19 +40,41 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
 /**
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
  * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
- * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done).
+ * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done). Of a done
+ * item: whether its job's final report found the issue closed as complete and put `hopper:done` on (`doneReported`).
  */
-export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: boolean }
+export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: boolean }
 
 /**
- * Of a dropped item's job (issue #1892 part 19): whether it was cancelled or rejected and its final report went out. The
- * report then took only the claim off. Not a tend job: one cancelled by no person puts `hopper:pr-ready` back.
+ * What the final report of a dropped item's cancelled or rejected job left on its issue: `none`, only the claim came off
+ * (issue #1892 part 19); `pr_ready`, a tend job cancelled not on purpose put `hopper:pr-ready` back (part 23).
  */
-export const dropReported = (job: Pick<Job, 'status' | 'spec' | 'sourceState'> | undefined): boolean =>
-  (job?.status === 'cancelled' || job?.status === 'rejected') && job.spec.tend !== true && job.sourceState?.sync?.finalReported === true;
+export type DropReport = 'none' | 'pr_ready';
+
+/** A tend job (issue #967) cancelled by no person and no source (issue #1010): `tendRetryAt` tends its pull request again. */
+export const tendTriedAgain = (job: Pick<Job, 'spec' | 'sourceState'>): boolean => {
+  const reason = job.sourceState?.sync?.cancelReason;
+  return job.spec.tend === true && !(typeof reason === 'string' && DELIBERATE_CANCELS.includes(reason));
+};
+
+/**
+ * Of a dropped item's job: what its final report left (`DropReport`), once the job was cancelled or rejected and the
+ * report went out. Undefined: not such a job, or its report not out yet.
+ */
+export const dropReported = (job: Pick<Job, 'status' | 'spec' | 'sourceState'> | undefined): DropReport | undefined => {
+  if ((job?.status !== 'cancelled' && job?.status !== 'rejected') || job.sourceState?.sync?.finalReported !== true) return undefined;
+  return job.status === 'cancelled' && tendTriedAgain(job) ? 'pr_ready' : 'none';
+};
+
+/**
+ * Of a done item's job: whether it finished and its final report found the issue closed as complete, so put `hopper:done`
+ * on (issue #1892 part 24; the report's source state keeps `doneReported`).
+ */
+export const doneReported = (job: Pick<Job, 'status' | 'sourceState'> | undefined): boolean =>
+  job?.status === 'finished' && job.sourceState?.sync?.finalReported === true && job.sourceState?.source?.doneReported === true;
 
 /** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, its merge, and what it waits on. */
-export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'dismissed' | 'closedByPerson' | 'doneByHand'>>;
+export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'dismissed' | 'closedByPerson' | 'closedByHopper' | 'doneByHand'>>;
 
 /** The end labels `item`'s state wants on its issue; undefined: the state is not judged. */
 export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLabels | undefined {
@@ -61,17 +86,18 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       return { allowed: [label], add: label };
     }
     case 'failed': return item.eventState === 'failed' && facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
-    case 'done': return (item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && item.doneByHand === true) ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
+    case 'done': return (item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && (item.doneByHand === true || facts.doneReported === true)) ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     case 'partly_done': return item.eventState === 'partly_done' && facts.partsLeft ? { allowed: [] } : undefined;
     case 'needs_you':
       if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
       return item.waitingOn !== undefined ? { allowed: [] } : undefined;
     case 'dropped': {
       if (item.eventState !== 'dropped') return undefined;
-      const label = item.wontDo === true ? LABEL_REJECTED : item.closedByPerson === true ? LABEL_PR_CLOSED : item.keptOut;
+      const label = item.wontDo === true ? LABEL_REJECTED : item.closedByPerson === true || item.closedByHopper === true ? LABEL_PR_CLOSED : item.keptOut;
       if (label !== undefined) return { allowed: [label], add: label };
       if (item.dismissed === true) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
-      return facts.dropReported ? { allowed: [] } : undefined;
+      if (facts.dropReported === 'pr_ready') return { allowed: [LABEL_PR_READY], add: LABEL_PR_READY };
+      return facts.dropReported === 'none' ? { allowed: [] } : undefined;
     }
     default: return undefined;
   }
@@ -177,7 +203,7 @@ export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
 
 /**
  * The end label a person took off the issue by hand (issue #1892): `item`'s state wants one of its labels on (PR open,
- * blocked, failed or handed off as reported, dropped by Won't do or a person's Close PR or kept out by a label a person put on), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
+ * blocked, failed or handed off as reported, dropped by Won't do, a person's Close PR or the hopper's own close, or kept out by a label a person put on), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
  * seen before (never read back as state), one is still on (a swap of PR open's waiting labels is none), or the state wants
  * no label. Whether the item moved since, or the hopper's own write took it off, the caller judges.
  */

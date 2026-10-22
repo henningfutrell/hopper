@@ -1,7 +1,8 @@
 // A done item's label mirrors the ledger when a person did it by hand (issue #1892, milestone 2). A hand-off resolved as
 // Done by hand carries `hopper:done`: the resolution put it on through the outbox. The ledger says so, not the labels: the
 // mirror corrects a stale end label, Intake says done, and `hopper:done` taken off by hand is a Run again. A done item a
-// job's end made, with no whole merge, is not judged: the labels decide.
+// job's end made, with no whole merge, is not judged unless its report put `hopper:done` on (part 24,
+// github-label-done-reported.test.ts): the labels decide.
 import { describe, expect, it } from 'vitest';
 import { DONE_OPEN, FAILED } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';

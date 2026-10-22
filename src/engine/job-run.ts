@@ -222,7 +222,8 @@ async function place(
     return await placeCredentials(c, j, on, shell, scratch, make, note);
   } catch (err) {
     if (err instanceof Unreached) {
-      c.reachHolds?.hold(on.id, err.message);
+      // A check that failed while the hopper's own loop was held holds no machine (issue #2427): the job goes elsewhere.
+      if (!err.loopHeld) c.reachHolds?.hold(on.id, err.message);
       // A job that resumes elsewhere goes back to the queue too (issue #2355, no-way-move.ts).
       const moved = j.pendingAnswer === undefined ? (c.reachHolds ? `machine ${on.id}: ${err.message}` : undefined) : noWayMove(c, j, on.id, err.message);
       if (moved !== undefined) e.unreached = moved;
