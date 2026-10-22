@@ -22839,6 +22839,28 @@ apply (`test/crash/label-states-world.ts`).
 
 **Verification:** `test/crash/label-states-kill.test.ts`.
 
+### A blocked item's pull request found open, judged by the ledger (issue #1892 part 27, 2026-10-22)
+
+Milestone 4 starts: a path that read an item's state from its labels reads the ledger. A done job whose report found no
+pull request follows the issue (`follow: open`, no pull request named). When its follow finds one open, the issue gets PR
+open's labels (issue #1891). Before, the follow did so only when the issue carried `hopper:blocked`.
+
+**As built** (`blockedForPullRequest`, `src/sources/github/item-labels.ts`; the follow context's `item`):
+- The ledger decides: the item is blocked with cause `no_pr`, its job is the job that follows, and no Run again is asked.
+  Then `hopper:blocked` comes off and `hopper:pr-ready` (or `hopper:partly-done` for a part) goes on, also when the issue does
+  not carry `hopper:blocked` (a label not sent yet, or lost).
+- Any other state writes no label: a newer job works on the item (an old job still follows its issue), a person asked to run
+  it again, or the item is blocked for another cause. A stale `hopper:blocked` no longer makes the old job's follow write.
+- The labels decide only for an item the ledger does not know, or a state the mirror does not judge (`labelsFor` undefined).
+
+**Decisions.**
+- **A state the mirror does not judge falls back to the label**, as Intake's `ledgerReason` does. A done item a job's end made
+  while its issue was open is such a state: its report put `hopper:blocked` on, and a pull request found later still gets
+  PR open's labels.
+- **GitLab is not changed.** Its follow has no such label read.
+
+**Verification:** `test/sources/github-follow-found-open.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

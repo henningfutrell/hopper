@@ -139,6 +139,16 @@ export function labelDrift(item: LabelledItem, seen: readonly string[], facts: L
 }
 
 /**
+ * Whether the pull request found open for job `jobId` ends its item's block for want of one (issue #1891), so its issue
+ * gets PR open's labels: the ledger says so (issue #1892 part 27) — blocked with no pull request, by this job, no Run again
+ * asked —; the issue's `hopper:blocked` only for an item the ledger does not know or a state the mirror does not judge.
+ */
+export function blockedForPullRequest(item: (LabelledItem & Pick<WorkItem, 'jobId' | 'runAgainAsked'>) | undefined, jobId: string, carried: readonly string[]): boolean {
+  if (item === undefined || labelsFor(item) === undefined) return carried.includes(LABEL_BLOCKED);
+  return item.state === 'blocked' && item.blockedCause === 'no_pr' && item.jobId === jobId && item.runAgainAsked === undefined;
+}
+
+/**
  * How a follow of a job's pull request ends for its item (issue #1892 part 14): merged as the whole item (or its last part),
  * a part merged with parts left, closed without a merge, a blocked item's pull request found open, or abandoned (the issue
  * closed as not planned).
