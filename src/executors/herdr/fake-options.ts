@@ -103,6 +103,8 @@ export interface FakeHerdrOptions {
   runtime?: 'own' | 'none' | 'failed' | 'silent';
   /** What setting up the job's sandbox says (issue #1295). Default `none`: no bubblewrap. */
   sandbox?: 'on' | 'none' | 'failed';
+  /** The status Claude exits with, as the pane's shell says it after Claude (issue #2432). Default 0. */
+  claudeExitCode?: number;
   /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
   scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */

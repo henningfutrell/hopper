@@ -13450,7 +13450,8 @@ waiting one), with `job.reprioritized`, so a label change moves it everywhere at
 **Lane reliability** (`src/reliability/`, pure). Runs are read from the event log over the window (`EventLog.between`:
 `job.claimed`, `job.started`, and the end on that lane — `job.finished`, `job.failed`, `question.asked`;
 `job.cancelled` does not count). Per lane: runs, finished, failed, **lane faults** (`isLaneFault`: the failure
-assessor's known causes `machine-offline`, `link-closed`, `start-race`, `socket-path-too-long`, `disk-full`, and the
+assessor's known causes `machine-offline`, `link-closed`, `start-race`, `socket-path-too-long`, `disk-full`,
+`exited-at-start` (issue #2432), and the
 executors' start failures — `claude exited at startup`, `blocked at startup`, `never reached claude`, a work tree not
 usable, `herdr:` errors), lane faults in the last day, success rate, median claim-to-start time. The **score** is the
 share of runs without a lane fault, each run weighing half as much per quarter of the window it is old.
@@ -32520,3 +32521,40 @@ Tests: `test/domain/podman-hosts.test.ts` (the record), `test/domain/sandbox-hos
 `test/sandbox/podman-host.test.ts` (ssh dial-stdio against a libpod double: health, ssh failing, a box with secrets, the
 limits, a dropped wait), `test/sandbox/sandbox-host-podman.test.ts` (placement, secrets, offline, the sweep),
 `test/integration/podman-hosts.test.ts` (route, sandbox host, CLI), `test/cli/podman-host.test.ts`, `test/ui/podman-hosts.test.ts`.
+
+## Exit at start (issue #2432, 2026-10-22)
+
+**What happened.** On one seat, new jobs failed about a minute after their start with `claude exited:` and the last lines
+of the pane: the setup commands (the job worktree, shared dependencies, Claude's config kept), the `claude … --session-id`
+line, then only Claude's resume hint. Jobs on the same seat that ran in a session already open went on and finished. The
+failure assessor matched no known cause, so each failed job went to a person.
+
+**What the hopper could not see.** The failure text was the pane's last 20 lines. Claude Code draws its screen and takes
+it away when it exits, so what was left was mostly the setup, and Claude's exit code was never read. The cause on the
+seat is not found from these records: the change below makes the next such failure say what Claude said and how it
+stopped.
+
+**The change** (`src/executors/herdr/exited.ts`; `monitor.ts`, `startup.ts`; `src/failures/causes.ts`;
+`src/reliability/fault.ts`):
+- **The exit code.** When Claude's agent is gone from its pane, the hopper reads the screen, then types
+  `printf 'hopper-claude-exit-%s\n' "$?"` at the shell prompt Claude left, and reads the code back (5 s at most). Every
+  pane is a POSIX shell (issue #367), so `$?` is Claude's status: in the job's sandbox too, as bubblewrap exits with its
+  command's status. A code above 128 also names the signal. A pane that is gone or does not answer gives
+  `exit code unknown`.
+- **What Claude printed.** The text is the lines after Claude's own command line (the one with `--session-id`), its
+  shell prompt after them left out; the pane is Claude's terminal, so its stderr is there too. With no such line on
+  screen, the last 20 lines, as before.
+- **Exit at start** (glossary). Claude gone during startup is `claude exited at startup (…)`. Claude gone in the task's
+  turn (its anchor is the protocol footer, which only a new session is sent) before the watch saw any line of output is
+  `claude exited at the start of a new session, before any output (…)`. Any other exit is `claude exited (…)`.
+- **The known cause Exited at start** (`exited-at-start`): transient, retry, after Login expired, Disk full, Machine
+  offline and Herdr outdated, so a text Claude printed that names one of those keeps that cause. It is a **lane fault**:
+  the rerun avoids the lane — another machine when one may take it, else another lane ("Unhealthy lanes", issue #2234) —
+  and 3 such starts in a row on one lane put it out for 30 minutes. No second hold mechanism: the seat's health is the
+  lane health that issue #2234 made, which the stall work of issue #2427 also leaves as it is. The same failure on the
+  item's run before still stops it for a person (issue #1461): a rerun on another seat that exits the same way is not a
+  seat's fault.
+
+**Verification.** `test/herdr/exit-at-start.test.ts`: the exit code read and its command's echo not taken as one; the text
+after the command line; an exit in the task's turn with nothing shown is an exit at start, with its code and signal, and
+one after output is not; the cause, the lane fault, the assessor's retry, and the rerun's avoided lane.
