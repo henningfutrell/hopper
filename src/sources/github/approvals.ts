@@ -12,11 +12,15 @@
 // before the approval, and lists the card again, does not bring it back; a sync that lists the item otherwise ends that
 // (`listed`). Approve on an item the last sync does not list with that text — no sync since a restart, or a read older
 // than the page — is resolved again (`resolve`): the issue is read now, and approved while it is a request card of that text.
+// For an item the ledger holds (issue #1892), its state says whether it is a card, not the end labels on its issue: a card
+// with `hopper:done` left on (the label mirror takes it off) is approved, an item in another state is not shown. The end
+// labels decide only for an item the hopper does not know.
 import type { IntakeAction, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { AutoApproval } from '../../domain/intake-auto-approve.ts';
 import { autoApprovals, cardsOf } from './auto-approve.ts';
 import type { OutboxChange } from '../../domain/github-outbox.ts';
+import type { WorkItem } from '../../domain/work-items.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import { contextComments } from './context.ts';
 import type { GitHubOutbox } from './outbox.ts';
@@ -38,6 +42,8 @@ export interface ApprovalsContext {
   scope(): readonly string[];
   /** Whether the item has a job here: it is never resolved again, so its snapshot stays its job's. */
   known(key: string): boolean;
+  /** The item's work item in the ledger, when it holds one: its state, not the end labels, says whether it is a card. */
+  item?(key: string): WorkItem | undefined;
 }
 
 /** What Approve resolved again (`resolve`) did: `approved`, `done` (its text was approved before), or why not. */
@@ -83,7 +89,8 @@ export function createApprovals(c: ApprovalsContext) {
     /**
      * Approve resolved again: the issue `key` read now, and approved when it is still a request card of this source with
      * the text `a.hash` names — open, labelled, assigned to the user, not claimed, not reopened (its card needs the sync's
-     * history), no job here, not declined, its origin not trusted.
+     * history), no job here, not declined, its origin not trusted. For an item the ledger holds, its state decides in place of
+     * `hopper:done`: a request card is one, any other state is not.
      */
     async resolve(key: string, a: IntakeAction): Promise<Resolved> {
       const at = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(key);
@@ -93,9 +100,12 @@ export function createApprovals(c: ApprovalsContext) {
       if (c.known(key)) return HAS_JOB;
       const issue = await c.api.getIssue(repo, Number(at[2]));
       const assigned = issue.assignees.some((x) => x.toLowerCase() === assignee.toLowerCase());
-      if (issue.state !== 'open' || !issue.labels.includes(c.label) || !assigned || issue.labels.includes(LABEL_CLAIMED) || issue.labels.includes(LABEL_DONE)) return NOT_SHOWN;
+      const item = c.item?.(key);
+      const ended = item === undefined && issue.labels.includes(LABEL_DONE);
+      if (issue.state !== 'open' || !issue.labels.includes(c.label) || !assigned || issue.labels.includes(LABEL_CLAIMED) || ended) return NOT_SHOWN;
       if (requestHash(issue) !== a.hash) return TEXT_CHANGED_SINCE_SHOWN;
       if (c.trust.declined(key, a.hash)) return DECLINED;
+      if (item !== undefined && item.state !== 'waiting_for_approval') return NOT_SHOWN;
       const v = (await originsOf(c.api, c.trust, [issue], c.label, assignee)).get(key);
       if (!v || !('request' in v)) return v?.origin === 'approved' ? 'done' : ALREADY_TAKEN;
       return approve(repo, key, v.request, a) ? 'approved' : TEXT_CHANGED_SINCE_SHOWN;

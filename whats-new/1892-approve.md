@@ -1,0 +1,1 @@
+- Approve on a request card now works right after the hopper restarts, also when an old done label is still on the issue.

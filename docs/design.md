@@ -17656,7 +17656,10 @@ or a card of new text — ends that (`listed`). So an approved item comes back t
 (issue #1126). When the last sync does not list the item as a card of `hash` — no sync since a restart, or its read was
 older than the page — Approve is **resolved again** (`resolve`): the issue is read now, and approved only while it is
 open, labelled, assigned to the user, not claimed, not `hopper:done`, has no job here, is not declined, is not of a trusted
-origin, and its title and body hash as `hash`. Else `failed` says why, and the card keeps the refusal on the page, also
+origin, and its title and body hash as `hash`. For an item the ledger holds (issue #1892), its work item's state says
+whether it is a card, in place of `hopper:done`: an item waiting for approval is one, also with `hopper:done` left on (the
+label mirror takes that off); an item in any other state is not, whatever its labels. `hopper:done` decides only for an
+item the hopper does not know. Else `failed` says why, and the card keeps the refusal on the page, also
 when the next list shows the new text.
 
 **Approved.** At a later sync, an issue not of a trusted origin whose title and body hash as the text a person approved
