@@ -4,7 +4,7 @@
 // in a new pane (`claude --resume <session>`), never a fresh one. Real daemon over the fake herdr, as
 // herdr-pane-answer.test.ts.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DomainEvent, Job } from '../../src/domain/types.ts';
+import type { DomainEvent, FailuresView, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -209,6 +209,9 @@ describe('the Parked section (issue #565)', () => {
     expect(parked.map((s) => s.kind)).toEqual(['questions', 'proposals', 'research', 'logins', 'failures', 'parked']);
     expect(one(parked, 'questions')).toMatchObject({ open: 0, waiting: 0, high: 0 });
     expect(one(parked, 'parked')).toMatchObject({ open: 1, waiting: 1, high: 1, events: ['job.parked', 'job.unparked'] });
+    // Parked only (issue #2414): a parked job waits by design, so Failures neither lists nor counts it.
+    expect(one(parked, 'failures')).toMatchObject({ open: 0, waiting: 0, high: 0 });
+    expect((await a.api<FailuresView>('GET', '/api/failures')).body.stuck.flatMap((c) => c.ids)).not.toContain(job.id);
 
     expect((await requeue(a, token, job.id)).body.status).toBe('waiting_answer');
     expect(one(await sectionsOf(a), 'questions')).toMatchObject({ open: 1, waiting: 1, high: 1 });

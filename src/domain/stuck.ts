@@ -1,7 +1,7 @@
 // Stuck work (issue #1010, design.md "Stuck work"): every item that waits on a person — an open hand-off, a failure, work
-// not pushed, a pull request the hopper gave up on, a parked job, a job stuck on its own wait, an item left in PR open
+// not pushed, a pull request the hopper gave up on, a job stuck on its own wait, an item left in PR open
 // with no pull request to wait on (issue #1231), a job on a wait that names nothing it waits on (issue #1245), a job on a wait whose agent session ended (issue #1779), a job that waits for memory while no job runs (issue #2303) — in exactly one stuck cause, with its count, and one bulk action when the hopper takes it now for each item of the cause, else what a person
-// does. The Failures view shows them first; `POST /ui/api/failures/stuck/:cause` runs a cause's bulk action. Pure.
+// does. A parked job is no stuck work (issue #2414): it waits by design, in Parked only. The Failures view shows them first; `POST /ui/api/failures/stuck/:cause` runs a cause's bulk action. Pure.
 // Re-exported from types.ts.
 import type { Allowed, FailureRecordView, HandoffResolutionAction, HandoffView } from './failures.ts';
 import type { KeptWorkView } from './kept-work.ts';
@@ -13,7 +13,7 @@ import { waitsOnNothing } from './wait-on.ts';
 /** The causes, bulk ones first, in the order the view shows them. */
 export const STUCK_CAUSES = [
   'continue', 'run_again', 'wont_do', 'retry', 'push', 'tend', 'wait_unnamed', 'stranded',
-  'memory_starved', 'done_by_hand', 'taken_soon', 'kept_work', 'checks', 'tend_refused', 'parked', 'own_wait', 'pr_open_stale',
+  'memory_starved', 'done_by_hand', 'taken_soon', 'kept_work', 'checks', 'tend_refused', 'own_wait', 'pr_open_stale',
 ] as const;
 export type StuckCauseId = typeof STUCK_CAUSES[number];
 
@@ -35,7 +35,7 @@ export interface StuckInputs {
   recent: FailureRecordView[];
   keptWork: KeptWorkView[];
   pullRequests: PullRequestCard[];
-  /** Parked jobs, jobs on their own wait, and the waiting and running jobs (issue #2303: a job that waits for memory while none runs). */
+  /** Jobs on their own wait, and the waiting and running jobs (issue #2303: a job that waits for memory while none runs). */
   jobs: Job[];
   /** The jobs of the items blocked with no pull request to wait on, or with it closed without a merge (issues #1231, #1891, `blockedStuck`). */
   prOpen: string[];
@@ -56,7 +56,6 @@ const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> 
   kept_work: { what: 'Jobs with work not pushed that cannot go on', todo: 'Press Discard in Work not pushed, or run its item again. Do not push on its machine: it holds no GitHub credentials.' },
   checks: { what: 'Pull requests whose checks still fail', todo: 'Look at the failing checks on GitHub. Fix them, or close the PR.' },
   tend_refused: { what: 'Pull requests the hopper cannot tend', todo: 'Read why on its card in Pull requests, and remove the block.' },
-  parked: { what: 'Parked jobs', todo: 'Answer its question in Parked, then pick it up.' },
   own_wait: { what: 'Jobs stuck on their own wait, past its deadline', todo: 'End its wait or cancel it, on the job.' },
   pr_open_stale: { what: 'Items blocked with no pull request to wait on, with their pull request closed without a merge, or past their deadline with no move', todo: 'Look at its issue and its pull request on GitHub. Then, on its row in Intake, press Run again when work is left, else press Won\'t do.' },
 };
@@ -97,7 +96,6 @@ export function stuckOf(i: StuckInputs): StuckCause[] {
   const running = i.jobs.some((j) => j.status === 'claimed' || j.status === 'running');
   for (const j of i.jobs) {
     if (j.status === 'queued' && !running && j.waitReason?.startsWith(MEMORY_WAIT)) add('memory_starved', j.id);
-    else if (j.status === 'parked') add('parked', j.id);
     else if (waitsOnNothing(j)) add('wait_unnamed', j.id);
     else if (j.status === 'waiting_on' && j.wait?.strandedAt) add('stranded', j.id);
     else if (j.status === 'waiting_on' && (j.wait?.stuckAt || j.wait?.check?.overdueAt)) add('own_wait', j.id);

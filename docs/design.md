@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `token-usage.ts` the token ledger — a session's token use, its estimated cost, the rollups (pure, issue #2302); `token-waste.ts` its waste signals and tokens per merged pull request (pure, issue #2302 part 4); `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
+| `src/domain/` | the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); the event loop given back between a long timer loop's items (`yield-loop.ts`, issue #2392); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `token-usage.ts` the token ledger — a session's token use, its estimated cost, the rollups (pure, issue #2302); `token-waste.ts` its waste signals and tokens per merged pull request (pure, issue #2302 part 4); `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211); the memory floor and the memory pause (`memory-floor.ts`, issue #2291) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `token-ledger.ts` (tenant 89) the token ledger (issue #2302; tenant 90 its failed test runs); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), what a quarantine takes back — the job's steps and its item's vault grant (`quarantine.ts`, issue #655 part 6), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
@@ -8105,6 +8105,24 @@ sub-millisecond to a database on the same host or LAN, but put Postgres near the
 link × ~50 queries a tick is a second of stall). An async Store was rejected: ~230 call sites, and a
 new class of interleaving bug between the tick and the UI's mutations.
 
+**A timer's long loop yields between its items** (issue #2392, `src/domain/yield-loop.ts`). An `await` of a promise that
+is already settled lets no request in, so a timer's pass over many items with no real wait between them held every
+request, the UI and the machines' links until it ended: a sync of a source with 300 items held the loop for about 5 s
+(one offer an item, each tens of store calls). Such a loop awaits a `loopYield()` at the top of each item: once the loop
+held the event loop `LOOP_BUDGET_MS` (50 ms) since its start or its last yield, it gives it back (one `setImmediate`), so a
+request waits for about one budget, not for the pass. A short pass runs as one step, as before: a yield at every item let
+event handlers (a job's report, a tend, a follow) run between the items of a pass of three, and changed what the pass
+did after them. Two rules keep it safe. Each item's read-modify-write stays in
+one synchronous step, as the engine's Decision does. And the loop keeps no state across items that another step can change
+meanwhile: it reads what an item needs after its yield (the sync's intake reads the item's job then, not before the loop).
+What it read before the loop is older than what another step did meanwhile: the sync's intake takes no new job for an item
+whose job's end was reported after the listing (the listing does not know that end yet; the next sync lists it again).
+A loop whose items each wait on real I/O already (a shell, git, a GitHub call: the sweep, the tends, the failure sweep's
+runs) needs no yield. The engine's Decision is one step and never yields. The rule needs no second connection pool; an
+asynchronous pool for the HTTP reads is a separate path of the same issue. It is checked in review: a new loop over a list
+of items that makes store calls with no real I/O between them yields. Tested by `test/integration/timer-loop-yields.test.ts`: `/api/health` and a plan read answer while a
+sync of 300 items still runs.
+
 **Reads off the loop** (issue #2392). Every write, and every read of the engine and the timers, stays on the
 synchronous Store port. The HTTP read routes that read many rows read through the **read pool**
 (`src/store/read-pool.ts`) instead: an async `pg.Pool` on the main thread, so a read that waits on the database holds
@@ -12763,7 +12781,7 @@ one press per cause where the hopper can move each item.
   failure that Run again takes and no open hand-off counts (`retry`); work not pushed, `push` when Push it is taken (its
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
-  tend its source refused (`tend_refused`); a parked job (`parked`); a job on a wait that names nothing it waits on (`wait_unnamed`,
+  tend its source refused (`tend_refused`); a job on a wait that names nothing it waits on (`wait_unnamed`,
   "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
   item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
@@ -12777,15 +12795,19 @@ one press per cause where the hopper can move each item.
   why (`refused`); the others go on. The answer: `{ cause, done, refused }`.
 - **The view** (`ui/src/views/stuck.tsx`). First in Failures, only when some work is stuck: the total, then each cause's
   count and what it is, its bulk action — asked first, with the count — or what a person does. A viewer sees no button.
-- Why no bulk Done, and none for parked jobs: Done needs a person to look at each pull request or the work; a parked
-  job needs its own answer. Those causes say so.
+- Why no bulk Done: Done needs a person to look at each pull request or the work. The cause says so.
+- **No parked job** (issue #2414). A parked job waits by design, not as a failure: it is in Parked only, never in Stuck,
+  and it counts toward neither Failures' list nor its badge (`viewOf` reads no parked job for `stuckOf`; the Failures
+  section counts open problems, open hand-offs and work not pushed). The `parked` cause had no bulk action, so nothing
+  moved to Parked. Each workflow keeps one home (issue #896).
 - **Direct jobs** (issue #901). A direct job has no issue, so nothing is assigned: the `direct` source gives its
   submission back (`JobSource.rerun`), and a failed direct job is in Stuck as any failure, by its hand-off or as `retry`,
   and its bulk action runs it again. Since issue #1068 the `direct` source follows a direct job's pull request
   ("Direct jobs", "Its pull request"): one the hopper gave up tending is an open pull request card like any other
   (`tend`, `checks`).
 
-**Verification:** `test/domain/stuck.test.ts` (each cause, an item counted once, the order),
+**Verification:** `test/domain/stuck.test.ts` (each cause, an item counted once, the order, no parked job),
+`test/integration/park.test.ts` (a parked job in neither Failures' stuck work nor its section count),
 `test/integration/stuck.test.ts` (two hand-offs resolved by one press; a cause with no bulk action refused),
 `test/integration/direct-jobs.test.ts` (a failed direct job in Stuck with a bulk action, and one press runs it again),
 `test/ui/stuck-view.test.ts` (the counts, the todo, the bulk action asked first, a viewer).
@@ -13183,7 +13205,8 @@ Verification: `test/integration/auto-park.test.ts` (a question parks its job 5 s
 question too; a job on its proposal parks 5 s after it reached the human stage, stays in Proposals and its send back resumes its session; on two
 machines over the fake herdr, the answer resumes a parked job on the other machine from the checkpoint marked on its park,
 with the same session, and its terminal is refused while it is parked), `test/integration/wait-release.test.ts` (a released
-wait's terminal is refused), `test/integration/thread-ask.test.ts` (picked up with its question open, it parks again 5 s later).
+wait's terminal is refused), `test/integration/thread-ask.test.ts` (parked for its thread question, its pick up is refused:
+issue #2415 below).
 
 ### Part 2: a wait the pane carried, rechecked by the hopper; a fork's parent parked (issue #2335, 2026-10-21)
 
@@ -13272,6 +13295,32 @@ recorded; a recheck only at a check-in), `test/domain/watched-items.test.ts` (`p
 `test/integration/job-wait.test.ts` (an outside wait's lost pane does not wake it; End the wait does),
 `test/integration/wait-release.test.ts` (two machines over the fake herdr: a gated wait has its pane closed, no lane, its
 checkpoint marked and condition `none`; after End the wait it resumes on the other machine with the same session).
+
+### No pick up of a job auto-parked on a person (issue #2415, 2026-10-21)
+
+Pick up on a job auto-park parked on a person had no lasting effect: the job went back to `waiting_answer` on the same
+open question, proposal or research report, and auto-park parked it again within seconds. The person saw a button that
+did nothing, and could press it again and again.
+
+- **What waits on a person** (`personWaitOf`, `src/engine/park.ts`): the job's open question at the human stage, else its
+  open proposal or research report at the human stage. A question or an item still with a reviewer level is not: picked
+  up, its level goes on.
+- **Refused.** `recordUnpark` refuses (409) a job whose park is auto-park's (`parked.auto`), that waits on a person and has
+  no answer kept: picked up, it would only park again. The answer to its question, or the decision on its item, picks it
+  up, as before. A question on the issue thread (issue #435) is the same: a reply there picks it up.
+- **A person's park still picks up.** A job a person parked on a person goes back to its question or item, as before, and
+  auto-park parks it again a few seconds later; then its pick up is refused. For an item this puts it back in its section
+  to be decided (issue #2167); for a question, the answer picks it up after that. An answer kept while it was parked
+  (`pendingAnswer`) picks it up as always.
+- **The UI.** The same rule, pure (`ui/src/model/auto-park.ts`: `personWait`, `pickUpRefused`). Pick up is not shown for
+  such a job, wherever parked jobs are listed. Its Parked row says what it waits on and what picks it up: Answer opens the
+  answer form; for a proposal or a research report, Decide opens its card inline, and a link opens its section. A job a
+  person parked on a person keeps Pick up, and the button and the row say that it parks again until the answer comes.
+- **Persisted state.** No change.
+
+Verification: `test/integration/auto-park.test.ts` (parked by a person, picked up, it parks again by itself; then its pick
+up is 409, it stays parked with one `job.unparked`, and the answer resumes it; a job auto-parked on its proposal: 409),
+`test/integration/thread-ask.test.ts`, `test/ui/auto-park.test.ts`, `test/ui/parked-view.test.ts`.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
@@ -22544,7 +22593,7 @@ ended) was past its deadline, and its row was due for a check at once.
   A read of GitHub is no move: it does not set them again.
 - **The row's `owner` is still the state's owner**: who moves the item out of its state next. `movedBy` is who moved it in.
 
-**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's), and milestone 4.
+**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's, part 20 a dismissed failure's, part 21 a person's Close PR's), and milestone 4.
 
 **Verification:** `test/domain/work-items-transition.test.ts` (the owner of each move kept, a mark keeps it, the reconciler's
 replay is its own; a move within working starts its deadline again; a mark does not), `test/store/work-items.test.ts` (the
@@ -22581,6 +22630,62 @@ closed as not planned; a done item with no whole merge that was not done by hand
 comes off; an end label put on by hand keeps the issue out once and stays; taken off again, a Run again; not reported: the
 labels decide), `test/domain/work-items-kept-out.test.ts` (the fold of `keep_out`: a dropped item only, once, a move
 forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelPutOn` and `dropReported`).
+
+### A dismissed failure's item carries `hopper:failed` (issue #1892 part 20, 2026-10-22)
+
+Milestone 2, part 20: one more of the drops part 9 left to the labels. When a person dismisses a failed job's locked entry
+(`job.dismissed`), its item moves from failed (or a hand-off) to dropped. The dismiss writes no label: the issue keeps the
+`hopper:failed` its job's report put on (`docs/events.md`, `job.dismissed`).
+
+- **The ledger keeps that the dismiss dropped the item** (`dismissed`, in the item's JSON body: no migration;
+  `src/domain/work-items.ts`). It is kept while the item stays dropped. Any move forgets it: the hand-off a person's
+  dismiss opens moves the item to needs you, and a new job moves it to queued.
+- **`labelsFor` judges such an item once its job's failure was reported as failed** (`failureReported`, as for a failed
+  item). It wants `hopper:failed`. The mirror puts it back when it is gone and takes another end label off, and Intake gives
+  the item the failed reason (`ledgerReason`). The mirror asks the fact `failureReported` for such a dropped item, and
+  `dropReported` for any other.
+- **`hopper:failed` taken off by hand is a Run again**, as for a failed item: `work_item.label_edited` with
+  `means: run_again`. An end label put on such an item is no edit: the item wants a label, so `labelPutOn` does not apply.
+- **Before the report.** A failure not reported as failed (its report waits, or the hopper fixes it itself) is not judged:
+  its labels decide.
+- **A declined request card needs no judgment.** A decline takes the source's label off the issue (issue #1710), so no
+  listing has the issue until a person puts the label on again; then it is a request card again, which part 7 judges.
+
+**Left to the labels:** an item dropped by a card withdrawn by its source, a person's Close PR or an issue closed as not
+planned; a done item with no whole merge that was not done by hand; a tend job's cancel. Milestone 4.
+
+**Verification:** `test/sources/github-label-dismissed.test.ts` (reported: the failed reason, `hopper:failed` back in place
+of a stale end label; taken off by hand, a Run again; not reported: the labels decide), `test/domain/work-items-dismissed.test.ts`
+(the fold: a dismiss marks the drop, a cancel does not, a hand-off or a new job forgets it),
+`test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`, `labelPutOn` of such an item).
+
+### An item a person's Close PR dropped carries `hopper:pr-closed` (issue #1892 part 21, 2026-10-22)
+
+Milestone 2, part 21: one more of the drops part 9 left to the labels. A person's Close PR (issue #677) closes a finished
+job's pull request without a merge. Its follow records `job.pull_request_closed` with `person`, so the item moves from PR open
+to dropped, not to blocked as for a close on GitHub. The follow's end is `closed` all the same: it puts `hopper:pr-closed`
+on the issue through the GitHub outbox (part 14).
+
+- **The ledger keeps that a person's close dropped the item** (`closedByPerson`, in the item's JSON body: no migration;
+  `src/domain/work-items.ts`). Only `job.pull_request_closed` with `person` and no `superseded` marks it: a close as
+  superseded by another pull request is done, and its follow puts `hopper:done` on. The mark is kept while the item stays
+  dropped; a new job forgets it.
+- **`labelsFor` judges such an item: it wants `hopper:pr-closed`.** No fact is needed: the mirror does not judge an item
+  with outbox rows not sent, so the follow's own change goes out first. The mirror puts the label back when it is gone and
+  takes another end label off, and Intake gives the item the pr-closed reason (`ledgerReason`, `PR_CLOSED`).
+- **`hopper:pr-closed` taken off by hand is a Run again** (`work_item.label_edited` with `means: run_again`), as the issue
+  asks. An end label put on such an item is no edit: the item wants a label, so `labelPutOn` does not apply.
+- **The hopper's own close is not judged.** A close by pull request housekeeping (`byHopper`) also drops the item, and its
+  follow puts `hopper:pr-closed` on too, but no person asked for it; it stays with the labels for now.
+
+**Left to the labels:** an item dropped by a card withdrawn by its source, the hopper's own close or an issue closed as not
+planned; a done item with no whole merge that was not done by hand; a tend job's cancel. Milestone 4.
+
+**Verification:** `test/sources/github-label-closed-by-person.test.ts` (the pr-closed reason, `hopper:pr-closed` back in place
+of a stale end label; taken off by hand, a Run again; the hopper's own close: the labels decide),
+`test/domain/work-items-closed-by-person.test.ts` (the fold: a person's close marks the drop; the hopper's own close, a close
+as superseded and a close on GitHub do not; a new job forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor`,
+`labelDrift`, `labelTakenOff`, `labelPutOn` of such an item).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -31467,6 +31572,13 @@ credential.
   the sandbox runs ledger, the sweep leaves it while it runs, and it is burned when it ends. Its command
   (`bastionCommand`) runs `kubectl port-forward --address 127.0.0.1` to each target in a loop that starts it again 2 s
   after it ends (a pod that restarted), each on a port of its own from 20000, its lines marked with its target.
+- **Whether each forward listens** (issue #2413, `forwardWatch`). A bastion once said "running" and listed its forwards
+  while each kubectl failed in the box (no RBAC, no kubectl), and every read answered only curl's "Failed to connect". The
+  hopper reads each forward's lines in the box's output as they come: a forward listens once kubectl says "Forwarding
+  from", and does not once its loop says it ended, with the last thing kubectl said (`BastionView.targets[].listening`,
+  `said`; absent while it said nothing yet). `bastion` shows each forward's state and, while it runs, the tail of its
+  output. A relay or a read to a forward that does not listen is a 503 with kubectl's words, and starts no command in the
+  box. A box step of an observe template still holds no kube credential: its port-forward is a bastion's (`OBSERVE_NO_STEP`).
 - **The tokens stay in the box** (`bastionKubeconfig`, `bastionTokens`). Each token is a vault secret file of the box
   (`$HOME/.hopper-need/secrets/kube-<context>`, copied in, mode 600, never in its environment); the kubeconfig names it as
   its user's `tokenFile`, which kubectl reads again within a minute. Every 5 minutes the hopper mints each observe again

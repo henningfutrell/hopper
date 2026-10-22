@@ -1,5 +1,5 @@
 // Stuck work (issue #1010, design.md "Stuck work"): first in Failures, every item that waits on a person — a hand-off, a
-// failure, work not pushed, a pull request the hopper gave up on, a parked job, a job stuck on its own wait — counted by
+// failure, work not pushed, a pull request the hopper gave up on, a job stuck on its own wait — counted by
 // its stuck cause. A cause the hopper acts on in bulk has one button, asked first; else it says what a person does.
 // Shown only when some work is stuck.
 import { CircleAlert } from 'lucide-react';

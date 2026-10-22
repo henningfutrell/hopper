@@ -84,23 +84,31 @@ describe('auto-park', () => {
     expect((await ofJob(a, job.id)).find((e) => e.type === 'job.unparked')!.data).toEqual({ to: 'queued' });
   });
 
-  it('re-queued with its question still open, it waits a few seconds again before it parks by itself (issue #692)', async () => {
+  it('picked up from a person\'s park, it parks again by itself; then Pick up is refused until the answer, which picks it up (issue #2415)', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
     const a = await boot(herdr);
     const token = await a.login();
     const job = await a.pull({}, item);
-    await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    expect((await a.ui(`/ui/api/jobs/${job.id}/park`, {}, { token })).status).toBe(200);
     await a.waitForStatus(job.id, 'parked', PARKS);
 
     const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
-    expect(r.status).toBe(200);
     expect(r.body.status).toBe('waiting_answer');
-    await waitFor(async () => (await ofJob(a, job.id)).filter((e) => e.type === 'job.parked').length === 2, { what: 'parked again', timeoutMs: PARKS });
-    const events = await ofJob(a, job.id);
-    const unparked = events.find((e) => e.type === 'job.unparked')!;
-    const again = events.filter((e) => e.type === 'job.parked')[1]!;
-    expect(new Date(again.at).getTime() - new Date(unparked.at).getTime()).toBeGreaterThanOrEqual(WAIT_RELEASE_AFTER_MS);
-  });
+    const again = await waitFor(async () => { const j = await a.job(job.id); return j.status === 'parked' && j.parked?.auto ? j : undefined; }, { what: 'parked again by itself', timeoutMs: PARKS });
+    expect(again.parked).toMatchObject({ auto: true, why: AUTO_PARK_WHY });
+
+    // No loop: picked up now, it would only park again.
+    const refused = await a.ui<{ error: string }>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain('waits on its question with a person');
+    await sleep(500);
+    expect((await a.job(job.id)).status).toBe('parked');
+    expect((await ofJob(a, job.id)).filter((e) => e.type === 'job.unparked')).toHaveLength(1);
+
+    expect((await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Blue.' }, { token })).status).toBe(200);
+    await a.waitForStatus(job.id, 'finished', 8000);
+  }, 30_000);
 
   it('picked up with a question 5 h old, it waits a few seconds again; the answer then resumes it (issue #1007)', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
@@ -176,6 +184,10 @@ describe('auto-park', () => {
     const open = (await a.api<{ items: ReviewItemView[] }>('GET', '/api/proposals?status=open')).body.items;
     expect(open.map((p) => p.jobId)).toEqual([job.id]);
     expect(open[0]!.parked).toBeUndefined();
+    // Picked up, it would only park again (issue #2415): the decision picks it up.
+    const refused = await a.ui<{ error: string }>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain('waits on its proposal with a person');
 
     expect((await a.ui(`/ui/api/proposals/${open[0]!.id}/steer`, { notes: 'Use oil paint.' }, { token })).status).toBe(200);
     await waitFor(() => herdr.prompts.length === 2, { what: 'its session resumed, told the notes', timeoutMs: 8000 });

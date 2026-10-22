@@ -41,7 +41,9 @@ const READ = 'sh "$HOPPER_SKILL" bastion read --targets TARGET --path "/api/..."
 
 /** Where a bastion stands, in words for the job. */
 export function bastionText(v: BastionView): string {
-  const forwards = v.targets.map((t) => `  ${t.target} on 127.0.0.1:${t.local} in the box`).join('\n');
+  // Issue #2413: each forward says whether it listens, and the running bastion its output too.
+  const state = (t: BastionView['targets'][number]): string => (t.listening ? 'listening' : t.listening === false ? `not listening: ${t.said}` : 'not listening yet');
+  const forwards = v.targets.map((t) => `  ${t.target} on 127.0.0.1:${t.local} in the box: ${state(t)}`).join('\n');
   if (v.state === 'ended') {
     return `bastion ${v.id} of template ${v.template} ended at ${v.endedAt}: ${v.ended}${v.endedBy ? ` by ${v.endedBy}` : ''}${v.problem ? `: ${v.problem}` : ''}. Ask again for a new one: ${START}\n${v.log ? `Its last output:\n${v.log}\n` : ''}`;
   }
@@ -50,7 +52,8 @@ export function bastionText(v: BastionView): string {
     + `Reach a target from here through the hopper's relay: a local port joined to it while a command runs, for example\n`
     + `  sh "$HOPPER_RELAY" ${v.targets[0]?.target ?? 'TARGET'} -- sh -c 'curl -s "http://127.0.0.1:$HOPPER_RELAY_PORT/"'\n`
     + 'Or hold a port of your choice until you stop it: sh "$HOPPER_RELAY" TARGET 19090 &\n'
-    + (v.secrets?.length ? `It holds the vault secrets ${v.secrets.join(', ')} for reads in the box (a Grafana token): ${READ}\n` : '');
+    + (v.secrets?.length ? `It holds the vault secrets ${v.secrets.join(', ')} for reads in the box (a Grafana token): ${READ}\n` : '')
+    + (v.log ? `Its last output:\n${v.log}\n` : '');
 }
 
 export async function bastionAsk<A>(u: BastionUser, job: Job, f: BastionFields, say: BastionSay<A>): Promise<A> {

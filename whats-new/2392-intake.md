@@ -1,0 +1,1 @@
+- The hopper now answers its pages while it takes in many new items at once, in place of a stop of several seconds.

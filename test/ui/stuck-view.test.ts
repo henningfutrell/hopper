@@ -7,7 +7,7 @@ import { T0, view, boot, settle, buttonsIn, daemon, unmount } from './failures-v
 
 const stuck = [
   { cause: 'continue', ids: ['h1', 'h2'], what: 'Failed jobs that can go on in their work', act: 'Continue all' },
-  { cause: 'parked', ids: ['j4'], what: 'Parked jobs', todo: 'Answer its question in Parked, then pick it up.' },
+  { cause: 'own_wait', ids: ['j4'], what: 'Jobs stuck on their own wait, past its deadline', todo: 'End its wait or cancel it, on the job.' },
 ];
 const panel = () => document.querySelector('[data-section="stuck"]');
 const cause = (c: string) => document.querySelector(`[data-stuck="${c}"]`);
@@ -35,8 +35,8 @@ describe('Stuck work (issue #1010)', () => {
     expect(cause('continue')?.textContent).toContain('2');
     expect(cause('continue')?.textContent).toContain('Failed jobs that can go on in their work');
     expect(buttonsIn(cause('continue'))).toEqual(['Continue all']);
-    expect(cause('parked')?.textContent).toContain('Answer its question in Parked, then pick it up.');
-    expect(buttonsIn(cause('parked'))).toEqual([]);
+    expect(cause('own_wait')?.textContent).toContain('End its wait or cancel it, on the job.');
+    expect(buttonsIn(cause('own_wait'))).toEqual([]);
   });
 
   it('the bulk action asks first, then goes to the daemon', async () => {

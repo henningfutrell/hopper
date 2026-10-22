@@ -10,8 +10,11 @@ export interface BastionView {
   jobId: string;
   template: string;
   box: string;
-  /** Each target, and its port on 127.0.0.1 in the box. */
-  targets: { target: string; local: number }[];
+  /**
+   * Each target, and its port on 127.0.0.1 in the box. `listening` (issue #2413): its forward listens, as its kubectl
+   * said; false with `said`, the last thing kubectl said, once its forward ended; absent while it said nothing yet.
+   */
+  targets: { target: string; local: number; listening?: boolean; said?: string }[];
   /** The vault secrets it holds for bastion reads (issue #2146 part 6), by name: each a header file in its box. Never a value. */
   secrets?: string[];
   state: 'starting' | 'running' | 'ended';
