@@ -174,6 +174,9 @@ export function bastionCommand(placed: readonly PlacedTarget[]): string {
 /** What the bastion's output says of one forward (issue #2413): it listens, or not, with the last thing kubectl said. */
 export interface ForwardState { listening: boolean; said?: string }
 
+/** The last thing kubectl said of a forward that was no state (issue #2474), and how many such lines it said. */
+export interface ForwardProblem { n: number; said: string }
+
 const FORWARD_LINE = /^\[([^\]]+)\] (.*)$/;
 const ENDED = 'the forward ended:';
 
@@ -182,9 +185,12 @@ const ENDED = 'the forward ended:';
  * once kubectl says "Forwarding from", and stops when its loop says it ended, which keeps the last thing kubectl said.
  * A connection it handles, or an error of one connection, does not end it. A line cut over two chunks is read whole.
  */
-export function forwardWatch(): { add(chunk: string): void; of(target: string): ForwardState | undefined } {
+export function forwardWatch(): { add(chunk: string): void; of(target: string): ForwardState | undefined; problem(target: string): ForwardProblem | undefined } {
   const states = new Map<string, ForwardState>();
   const said = new Map<string, string>();
+  // Issue #2474: the last thing kubectl said of a forward that was no state, counted, so a connection that got no answer
+  // finds what kubectl said after it opened (an error of that one connection, which leaves the forward listening).
+  const problems = new Map<string, ForwardProblem>();
   let rest = '';
   const line = (text: string): void => {
     const m = FORWARD_LINE.exec(text.replace(/\r$/, ''));
@@ -194,6 +200,7 @@ export function forwardWatch(): { add(chunk: string): void; of(target: string): 
     if (words.startsWith('Handling connection for ')) return;
     if (words.startsWith(ENDED)) { states.set(target, { listening: false, said: said.get(target) ?? words }); said.delete(target); return; }
     said.set(target, words);
+    problems.set(target, { n: (problems.get(target)?.n ?? 0) + 1, said: words });
   };
   return {
     add(chunk) {
@@ -202,6 +209,7 @@ export function forwardWatch(): { add(chunk: string): void; of(target: string): 
       for (const l of lines) line(l);
     },
     of: (target) => states.get(target),
+    problem: (target) => problems.get(target),
   };
 }
 
