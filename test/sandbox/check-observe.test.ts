@@ -11,6 +11,7 @@
 //   Scenario: an observe credential that may exec and read Secrets fails, and the failure says it is under observe
 //   Scenario: a credential the cluster does not take errs on exec and the Secret read, and is never reported allowed (issue #2396)
 //   Scenario: one request refused and the other erred is an error, not a refusal (issue #2396)
+//   Scenario: a view role that may get pods/exec but not create it is refused exec: the get is a WebSocket upgrade (issue #2477)
 //   Scenario: a read and an observe on one asset each get their own credential and their own probes
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OperationProfile } from '../../src/domain/access.ts';
@@ -116,6 +117,21 @@ describe('the read-only check under observe (issue #2146, part 5)', () => {
     // Its create is Forbidden, its get errs: the probe proves no refusal of both.
     expect(exec).toMatchObject({ outcome: 'error', passed: false });
     expect(exec!.output).toMatch(/Forbidden/);
+  });
+
+  it('a view role that may get pods/exec but not create it is refused exec: the get is a WebSocket upgrade (issue #2477)', async () => {
+    const s = setup([OBSERVE], 'view-exec');
+    await s.pass();
+    const check = s.check();
+    expect(check.state, JSON.stringify(check)).toBe('passed');
+    const exec = check.probes.find((p) => p.id === 'observe.exec');
+    expect(exec).toMatchObject({ outcome: 'denied', passed: true });
+    expect(exec!.output).toContain('cannot create resource \\"pods/exec\\"');
+    // The get goes as kubectl exec sends it: an upgrade to a WebSocket, with the kubeconfig's server and token.
+    const upgrade = s.cloud.calls().find((c) => c.startsWith('curl '));
+    expect(upgrade).toContain('Upgrade: websocket');
+    expect(upgrade).toContain('https://k/api/v1/namespaces/monitoring/pods/hopper-read-only-check/exec?');
+    expect(upgrade).not.toContain('observe-token');
   });
 
   it('a read and an observe on one asset each get their own credential and their own probes', async () => {
