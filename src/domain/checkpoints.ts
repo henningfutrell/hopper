@@ -1,7 +1,7 @@
 // Job checkpoints (issue #921, design.md "Checkpoints and resume elsewhere"): while a job runs, the hopper copies its
 // agent session and a patch of its work that is not pushed from its machine, so the job can resume on another machine
 // when its own is lost. Types only.
-import type { MachineId } from './types.ts';
+import type { Job, MachineId } from './types.ts';
 
 /**
  * What a job's latest checkpoint holds, kept on the job: where and when it was taken, the commit its patch applies to,
@@ -42,6 +42,12 @@ export type JobMove = (typeof JOB_MOVES)[number];
  * pick up leaves it: the move's next pass finishes it (`move-finish.ts`).
  */
 export interface ParkedMove { kind: JobMove; how: 'checkpoint' | 'fresh'; live: boolean; ended?: true }
+
+/**
+ * Whether the run of `job`, which resumes, reopens its agent session in a new pane (issues #501, #551, #2303): it was
+ * parked, continued from its hand-off, or its agent was ended on its own wait. That pane gets its way to the hopper afresh.
+ */
+export const reopensPane = (job: Job): boolean => job.parked !== undefined || job.continued !== undefined || job.waitReleased !== undefined;
 
 /** At most this many commits are named on a checkpoint. */
 export const CHECKPOINT_COMMITS = 50;

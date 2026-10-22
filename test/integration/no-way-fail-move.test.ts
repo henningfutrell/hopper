@@ -21,7 +21,7 @@ const DONE: FakeTurn = { output: ['● Pushed the sanded planks.', '  HOPPER_DON
 const item = { executor: 'herdr-claude', prompt: 'Sand the shed', env: {} };
 /** A checkpoint with commits not pushed and the agent session. */
 const CHECKPOINT: CheckpointCapture = {
-  taken: { branch: 'hopper/shed', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: ['ccccccc Sand the shed'], patch: gzipSync('diff'), session: gzipSync('{"session":true}') },
+  taken: { branch: 'hopper/shed', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: ['ccccccc Sand the first planks'], patch: gzipSync('diff'), session: gzipSync('{"session":true}') },
 };
 
 const apps: TestApp[] = [];
