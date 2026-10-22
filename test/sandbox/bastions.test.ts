@@ -161,6 +161,7 @@ describe('a bastion (issue #2146)', () => {
     expect(b.stop('job-1', 'job')?.id).toBe(first.id);
     await until(() => b.of('job-1')?.state === 'ended');
     expect(b.of('job-1')).toMatchObject({ ended: 'stopped', endedBy: 'job' });
+    await until(() => released.length === 1);
     expect(released).toEqual([first.box]);
     const second = await b.start(JOB, TEMPLATE, TARGETS) as { id: string };
     expect(second.id).not.toBe(first.id);
@@ -180,6 +181,7 @@ describe('a bastion (issue #2146)', () => {
     expect(b.stop('job-1', 'a person')?.id).toBe(first.id);
     await until(() => b.list().length === 1);
     expect(b.list()[0]?.jobId).toBe('job-2');
+    await until(() => events.some((e) => e.type === 'bastion.ended'));
     expect(events.find((e) => e.type === 'bastion.ended')?.data).toMatchObject({ bastion: first.id, reason: 'stopped', by: 'a person' });
   });
 

@@ -5,7 +5,10 @@
 //                    `Authorization: Bearer <the job's proxy token>`, only while the job is at work. Answered 101, the
 //                    connection is a byte pipe to that target's forward in the job's bastion (Bastions.relay): what
 //                    the job writes goes to the target, and what the target answers comes back. A no is plain text,
-//                    `no: <reason>`, with its status. It changes no job, question, webhook or setting.
+//                    `no: <reason>`, with its status. It changes no job, question, webhook or setting. A connection
+//                    the target closes with no byte back (issue #2474: kubectl took it, and its stream to the pod
+//                    failed) is no empty reply: when the job sent an HTTP request, it is answered 502 with
+//                    `no: <why>`, naming the target and what kubectl said (Bastions.noAnswer).
 //
 // The upgrade bypasses Fastify's hooks, so the Host guard's rule is applied here too (classifyRequest), as for a
 // machine's dial-in (client-link.ts). `hopper-relay` (src/sandbox/relay-script.ts) is what a job runs to use it.
@@ -20,12 +23,21 @@ import type { Tenants } from './tenants.ts';
 
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 const BEARER = /^Bearer\s+(\S+)$/i;
+/** The start of an HTTP/1.x request: what curl, promtool and logcli send. */
+const HTTP_REQUEST = /^[A-Z]+ \S+ HTTP\/1\.[01]\r?\n/;
+/** How much of what the job sends first is kept, to know an HTTP request. */
+const FIRST_BYTES = 2048;
 const STATUS: Record<number, string> = { 400: 'Bad Request', 401: 'Unauthorized', 404: 'Not Found', 409: 'Conflict', 421: 'Misdirected Request', 502: 'Bad Gateway', 503: 'Service Unavailable' };
+
+/** A no as an HTTP/1.1 answer. */
+const answer = (status: number, no: string): string => {
+  const body = `no: ${no}\n`;
+  return `HTTP/1.1 ${status} ${STATUS[status] ?? 'Refused'}\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`;
+};
 
 /** A no on a socket that will not be upgraded, then the socket closed. */
 function refuse(socket: Duplex, status: number, no: string): void {
-  const body = `no: ${no}\n`;
-  socket.end(`HTTP/1.1 ${status} ${STATUS[status] ?? 'Refused'}\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`);
+  socket.end(answer(status, no));
 }
 
 export function jobRelayRoutes(app: FastifyInstance, o: { tenants: Tenants; port: () => number; lan: Lan }): void {
@@ -50,13 +62,30 @@ export function jobRelayRoutes(app: FastifyInstance, o: { tenants: Tenants; port
       if (socket.destroyed) { pipe.destroy(); return; }
       socket.write(`HTTP/1.1 101 Switching Protocols\r\nupgrade: ${RELAY_PROTOCOL}\r\nconnection: Upgrade\r\n\r\n`);
       if ('setTimeout' in socket && typeof socket.setTimeout === 'function') socket.setTimeout(0);
+      let first = head.subarray(0, FIRST_BYTES);
+      let back = false;
+      socket.on('data', (d: Buffer) => { if (first.length < FIRST_BYTES) first = Buffer.concat([first, d]).subarray(0, FIRST_BYTES); });
+      pipe.on('data', () => { back = true; });
       if (head.length) pipe.write(head);
-      // A pipe that ends (its command ended, the bastion ended) ends the job's connection once its last bytes are sent.
-      pipe.on('error', () => socket.destroy()).on('close', () => { if (!socket.writableEnded) socket.end(); });
+      // A pipe that ends (its command ended, the bastion ended) ends the job's connection once its last bytes are sent;
+      // one that sent no byte back to an HTTP request answers why, not an empty reply (issue #2474).
+      let ended = false;
+      const done = (): void => {
+        if (ended) return;
+        ended = true;
+        if (socket.writableEnded || socket.destroyed) return;
+        if (back || first.length === 0) { socket.end(); return; }
+        void t.bastions.noAnswer(target, pipe).then((why) => {
+          if (socket.writableEnded || socket.destroyed) return;
+          if (HTTP_REQUEST.test(first.toString('latin1'))) socket.end(answer(502, why));
+          else socket.end();
+        });
+      };
+      pipe.on('error', () => socket.destroy()).on('end', done).on('close', done);
       socket.on('close', () => pipe.destroy());
       // An end of the job's writes ends the command's stdin; the rest of the target's answer still comes back.
       socket.pipe(pipe);
-      pipe.pipe(socket);
+      pipe.pipe(socket, { end: false });
       socket.resume();
     }, (e: unknown) => refuse(socket, 502, e instanceof Error ? e.message : String(e)));
   });
