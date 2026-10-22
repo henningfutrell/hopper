@@ -143,6 +143,25 @@ describe('resuming elsewhere', () => {
     expect((await a.events('types=job.unparked'))[0]!.data).toEqual({ to: 'queued', elsewhere: true, by: expect.any(String), via: 'ui' });
   });
 
+  it('a head the hopper pushed for the job (issue #2459): restored on its branch at it, and not told its commits were not pushed', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING, DONE], repositories: [tree()], checkpoint: CAPTURE });
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await runningJob(a, herdr);
+    a.user().store.events.append({ type: 'github_proxy.done', jobId: job.id, data: { requestId: 'r1', op: 'git.push', repo: 'octo/shed', refs: ['refs/heads/hopper/shed'], heads: ['c'.repeat(40)] } });
+    expect((await park(a, token, job.id)).status).toBe(200);
+    await a.waitForStatus(job.id, 'parked');
+    await waitFor(async () => (await a.job(job.id)).checkpoint !== undefined, { what: 'the checkpoint at the park' });
+    expect((await a.job(job.id)).checkpoint).toMatchObject({ base: BASE, head: 'c'.repeat(40), pushedTo: 'hopper/shed' });
+
+    expect((await requeue(a, token, job.id, { elsewhere: true })).status).toBe(200);
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(herdr.restores[0]).toContain(`'${BASE}' 'hopper/shed' '${job.agentSession}' '1' '${'c'.repeat(40)}'`);
+    const told = herdr.prompts[1]!.text;
+    expect(told).toContain(`commit ${'c'.repeat(12)} on branch hopper/shed, which the remote holds`);
+    expect(told).not.toContain('were not pushed');
+  });
+
   it('fails the job, saying why, when the checkpoint cannot be restored', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING, DONE], repositories: [tree()], checkpoint: CAPTURE, restore: 'failed' });
     const a = await boot(herdr);

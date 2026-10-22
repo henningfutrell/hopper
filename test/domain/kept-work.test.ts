@@ -2,7 +2,7 @@
 // read from the work trail. Pure.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
-import { discardReasonOf, keptAgainOf, keptPushedOf, keptWorkOf, proxyPushedOf, scratchOf } from '../../src/domain/kept-work.ts';
+import { discardReasonOf, keptAgainOf, keptPushedOf, keptWorkOf, proxyPushedOf, pushedBranchOf, scratchOf } from '../../src/domain/kept-work.ts';
 
 let seq = 0;
 const ev = (type: 'job.work_kept' | 'job.work_removed' | 'job.continued', jobId: string, paths: string[], at = '2026-10-13T00:00:00.000Z'): DomainEvent =>
@@ -96,6 +96,18 @@ describe('kept work the hopper pushed itself (issue #2087)', () => {
     const trail = [push('github_proxy.done', { repo: 'o/r', heads: ['c1', 'c2'] }), push('gitlab_proxy.done', { project: 'o/r', heads: ['c3'] }), push('github_proxy.done', { repo: 'o/r' })];
     expect([...proxyPushedOf(trail)].sort()).toEqual(['c1', 'c2', 'c3']);
     expect(proxyPushedOf([{ ...push('github_proxy.done', { repo: 'o/r' }), data: { op: 'pr.create', heads: ['c4'] } } as unknown as DomainEvent])).toEqual(new Set());
+  });
+
+  it('the branch a push moved to a commit (issue #2459): the job\'s own branch first, else the newest push', () => {
+    const trail = [
+      push('github_proxy.done', { repo: 'o/r', refs: ['refs/heads/b', 'refs/heads/x'], heads: ['c2', 'c1'] }),
+      push('github_proxy.done', { repo: 'o/r', refs: ['refs/heads/a'], heads: ['c1'] }),
+    ];
+    expect(pushedBranchOf(trail, 'c1')).toBe('x');
+    expect(pushedBranchOf(trail, 'c1', 'a')).toBe('a');
+    expect(pushedBranchOf(trail, 'c2', 'a')).toBe('b');
+    expect(pushedBranchOf(trail, 'c3')).toBeUndefined();
+    expect(pushedBranchOf([push('github_proxy.done', { repo: 'o/r' })], 'c1')).toBeUndefined();
   });
 
   it('a kept repository whose every tip the hopper pushed; one with a tip it did not, or with no tip (a change, an older client), is not', () => {

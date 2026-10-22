@@ -118,7 +118,9 @@ export type RestoreOutcome = 'restored' | 'partly' | 'kept' | 'failed';
 export const RESTORE_NO_WAY = 'hopper: the job has no way to the hopper';
 
 // Run by `sh` in the job's worktree, with the job's variables (HOPPER_URL, HOPPER_TOKEN_FILE; git reaches GitHub through
-// the hopper; a token file not readable yet is waited for a few seconds, issue #2316): $1 the base, $2 the branch (empty: none), $3 the session id, $4 1 when the checkpoint holds the session.
+// the hopper; a token file not readable yet is waited for a few seconds, issue #2316): $1 the base, $2 the branch (empty: none), $3 the session id, $4 1 when the checkpoint holds the session,
+// $5 the checkpoint's head when the remote holds it (issue #2459; empty: not pushed): after the patch, the branch moves to
+// it and the work tree stays, so only the work not committed is uncommitted; a file the patch left out takes its content.
 // It gets the checkpoint's parts from the hopper first, then checks out the base (fetched when it is not here), applies
 // the patch as uncommitted changes, and puts the session where the agent finds it for this directory. A worktree that
 // holds changes already is the job's own work, never overwritten: `kept` (only a missing session file is put). A patch
@@ -126,7 +128,7 @@ export const RESTORE_NO_WAY = 'hopper: the job has no way to the hopper';
 // and is said on a line of its own, the whole patch and the list kept in the worktree's git dir, said last.
 // Prints its outcome last.
 const RESTORE_SCRIPT = [
-  'base=$1 b=$2 s=$3 hs=$4;',
+  'base=$1 b=$2 s=$3 hs=$4 h=${5:-};',
   'export GIT_TERMINAL_PROMPT=0;',
   'no() { echo "hopper: $*" >&2; echo failed; exit 0; };',
   'k=0; while [ -n "$HOPPER_URL" ] && [ -n "$HOPPER_TOKEN_FILE" ] && [ ! -r "$HOPPER_TOKEN_FILE" ] && [ $k -lt 5 ]; do sleep 1; k=$((k+1)); done;',
@@ -148,15 +150,23 @@ const RESTORE_SCRIPT = [
   'git apply --numstat "$t/p" | cut -f3- > "$t/f";',
   'while IFS= read -r f; do a --include="$f" || { echo "$f" >> "$k.left-out"; printf "hopper: %s %s\\n" "left out" "$f" >&2; }; done < "$t/f";',
   'printf "hopper: %s %s\\n" "kept the whole patch in" "$k" >&2; fi;',
+  'if [ -n "$h" ]; then git cat-file -e "$h^{commit}" 2>/dev/null || git fetch --quiet origin "$h" 2>/dev/null || { [ -n "$b" ] && git fetch --quiet origin "$b"; };',
+  'if git cat-file -e "$h^{commit}" 2>/dev/null && git reset --quiet "$h"; then [ "$o" = partly ] && while IFS= read -r f; do git checkout --quiet "$h" -- "$f" 2>/dev/null; done < "$k.left-out";',
+  'else echo "hopper: the pushed commit $h is not here: the commits after the base are uncommitted changes" >&2; fi; fi;',
   'place || no "could not put the session";',
   'rm -rf "$t"; echo $o',
 ].join(' ');
 
 const shq = (s: string): string => `'${s.replaceAll("'", "'\\''")}'`;
 
+/** What a restore is given: `pushed`, the checkpoint's head when the remote holds it (issue #2459). */
+export interface RestoreArgs { base: string; branch?: string; session: string; hasSession: boolean; pushed?: string }
+
+const restoreArgs = (o: RestoreArgs): string[] => [o.base, o.branch ?? '', o.session, o.hasSession ? '1' : '0', ...(o.pushed ? [o.pushed] : [])];
+
 /** The one-line restore command for the pane's shell, in the job's worktree: it says its outcome as two printf words. */
-export function restoreCommand(o: { base: string; branch?: string; session: string; hasSession: boolean }): string {
-  const args = [o.base, o.branch ?? '', o.session, o.hasSession ? '1' : '0'].map(shq).join(' ');
+export function restoreCommand(o: RestoreArgs): string {
+  const args = restoreArgs(o).map(shq).join(' ');
   return `o=$(sh -c ${shq(RESTORE_SCRIPT)} hopper-restore ${args} | tail -n 1); printf 'hopper-restore-%s\\n' "\${o:-failed}"`;
 }
 
@@ -168,8 +178,7 @@ export function restoreOutcome(screen: string): RestoreOutcome | undefined {
 }
 
 /** The argv that runs the restore script outside a pane, for a test: as the pane's shell runs it. */
-export const restoreArgv = (o: { base: string; branch?: string; session: string; hasSession: boolean }): string[] =>
-  ['sh', '-c', RESTORE_SCRIPT, 'hopper-restore', o.base, o.branch ?? '', o.session, o.hasSession ? '1' : '0'];
+export const restoreArgv = (o: RestoreArgs): string[] => ['sh', '-c', RESTORE_SCRIPT, 'hopper-restore', ...restoreArgs(o)];
 
 /** What a restore that applied its patch only in part said (issue #2428): the files it left out, where it kept the whole patch. */
 export interface RestoredInPart { leftOut: string[]; patch?: string }

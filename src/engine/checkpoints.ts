@@ -11,6 +11,7 @@
 import type { JobCheckpoint } from '../domain/checkpoints.ts';
 import { withTurnUse, type SessionTokenUse } from '../domain/token-usage.ts';
 import { CHECKPOINT_COMMITS } from '../domain/checkpoints.ts';
+import { PROXY_PUSH_EVENTS, PUSHES_READ, pushedBranchOf } from '../domain/kept-work.ts';
 import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
 import { scrubCheckpoint } from './checkpoint-scrub.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -45,7 +46,7 @@ const machineOf = (c: Pick<EngineContext, 'store'>, job: Job): string =>
 
 /** The checkpoint taken is the one kept: the same commits, patch and agent session (both gzip, which is deterministic). */
 const unchanged = (k: JobCheckpoint, kept: { patch: Buffer; session?: Buffer }, taken: Omit<JobCheckpoint, 'at' | 'machineId' | 'bytes' | 'session'>, patch: Buffer, session: Buffer | undefined): boolean =>
-  k.branch === taken.branch && k.base === taken.base && k.head === taken.head && k.commits.join('\n') === taken.commits.slice(0, CHECKPOINT_COMMITS).join('\n')
+  k.branch === taken.branch && k.pushedTo === taken.pushedTo && k.base === taken.base && k.head === taken.head && k.commits.join('\n') === taken.commits.slice(0, CHECKPOINT_COMMITS).join('\n')
   && kept.patch.equals(patch) && (kept.session && session ? kept.session.equals(session) : kept.session === session);
 
 /**
@@ -94,11 +95,14 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
         // Ended meanwhile: nothing to resume.
         if (!now || TERMINAL_STATUSES.includes(now.status)) return `job ${jobId} ended meanwhile`;
         const last = store.checkpoints.get(jobId);
-        if (now.checkpoint && last && now.checkpoint.machineId === machineOf(c, now) && unchanged(now.checkpoint, last, got.taken, patch, session)) return now.checkpoint;
+        // Issue #2459: commits the hopper pushed for the job are pushed, whatever the worktree's remote branches say.
+        const pushedTo = got.taken.head !== got.taken.base ? pushedBranchOf(store.events.recent(PUSHES_READ, [...PROXY_PUSH_EVENTS], jobId), got.taken.head, got.taken.branch) : undefined;
+        const taken = { ...got.taken, ...(pushedTo ? { pushedTo } : {}) };
+        if (now.checkpoint && last && now.checkpoint.machineId === machineOf(c, now) && unchanged(now.checkpoint, last, taken, patch, session)) return now.checkpoint;
         const at = nowIso(c);
         const k: JobCheckpoint = {
           at, machineId: machineOf(c, now), ...(got.taken.branch ? { branch: got.taken.branch } : {}), base: got.taken.base, head: got.taken.head,
-          commits: got.taken.commits.slice(0, CHECKPOINT_COMMITS), bytes: patch.length + (session?.length ?? 0), session: session !== undefined,
+          ...(pushedTo ? { pushedTo } : {}), commits: got.taken.commits.slice(0, CHECKPOINT_COMMITS), bytes: patch.length + (session?.length ?? 0), session: session !== undefined,
         };
         store.checkpoints.put({ jobId, at, patch, ...(session ? { session } : {}) });
         store.jobs.update(jobId, { checkpoint: k });
