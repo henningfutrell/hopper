@@ -132,9 +132,11 @@ export function elsewhereBrief(job: Job, answer: string): string {
   if (!k) return answer;
   const lines = [
     `This job was parked on machine ${k.machineId} and resumes now on another machine, from its checkpoint of ${k.at}. Its agent session is this one.`,
-    `Its work tree is new: commit ${k.base.slice(0, 12)}${k.branch ? ` on branch ${k.branch}` : ''}, with the checkpoint's patch applied as uncommitted changes. Paths and files of the other machine are not here.`,
+    k.pushedTo
+      ? `Its work tree is new: commit ${k.head.slice(0, 12)} on branch ${k.pushedTo}, which the remote holds, with the work not committed then applied as uncommitted changes. Paths and files of the other machine are not here.`
+      : `Its work tree is new: commit ${k.base.slice(0, 12)}${k.branch ? ` on branch ${k.branch}` : ''}, with the checkpoint's patch applied as uncommitted changes. Paths and files of the other machine are not here.`,
   ];
-  if (k.commits.length) lines.push('', 'These commits were not pushed then. They are uncommitted changes now: commit them again before you push.', ...k.commits.map((s) => `- ${s}`));
+  if (k.commits.length && !k.pushedTo) lines.push('', 'These commits were not pushed then. They are uncommitted changes now: commit them again before you push.', ...k.commits.map((s) => `- ${s}`));
   lines.push('', 'Work done after the checkpoint is lost. Look at git status and git diff first, then go on where the checkpoint left off.');
   if (answer !== PARKED_RESUME) lines.push('', answer);
   return lines.join('\n');

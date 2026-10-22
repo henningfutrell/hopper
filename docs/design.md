@@ -13298,6 +13298,42 @@ recorded; a recheck only at a check-in), `test/domain/watched-items.test.ts` (`p
 `test/integration/wait-release.test.ts` (two machines over the fake herdr: a gated wait has its pane closed, no lane, its
 checkpoint marked and condition `none`; after End the wait it resumes on the other machine with the same session).
 
+### A long check-in, and a pushed head at resume (issue #2459, 2026-10-22)
+
+A job waited on `outside: gated: <what>` with `check: in 12h`, and the hopper woke it every 30 to 60 minutes, on a new
+machine each time. `checkAskOf` kept a check-in to 1..30 minutes (`MAX_EVERY_MS`), so the recheck of issue #2335 came 30
+minutes after the wait began. One resume also told the job that a pushed commit was not pushed, and put the tree at the
+default branch with that commit as uncommitted changes. The owner's scope: a recheck is not before the check-in's time
+unless a person ends the wait or its check fires; a resume of a head the remote holds stays on the job's branch.
+
+- **The check-in, kept to a week.** `checkAskOf` keeps `in <time>` and `every <time>` to a minute..a week
+  (`MAX_WAKE_MS`). A recheck (`conditionOf`) is at that time, and its deadline is an hour after it at least (`newCheck`). A
+  wait the hopper can test still starts its checks at most `MAX_EVERY_MS` apart: `newCheck` caps `everyMs` and the first
+  check, as before.
+- **The pushed head, from the push records.** The checkpoint script finds the pushed branch from the worktree's remote
+  branches; a push through the hopper need not move them. The hopper records each push's refs and heads (issue #2087), so
+  a checkpoint whose head is not its base reads the job's pushes (`pushedBranchOf`, `src/domain/kept-work.ts`) and keeps
+  `pushedTo`, the branch a push moved to its head (the job's own branch first, else the newest push's).
+- **The restore at the head.** With `pushedTo`, the restore (`src/client/checkpoint.ts`) gets that branch and the head
+  (`$5`). It checks out the base and applies the patch as before, then fetches the head if it is not here and moves the
+  branch to it with `git reset` (the work tree stays): only the work not committed then is uncommitted. A file the patch
+  left out (issue #2428) takes the head's content. A head it cannot get is said on stderr, and the work stays as before.
+- **What the job is told.** `elsewhereBrief` names the head on its branch, "which the remote holds", and lists no
+  commits as not pushed.
+- **Persisted state.** No schema change: `checkpoint.pushedTo` is an optional field in the job's JSON; a build before
+  ignores it and restores as before.
+
+**Decisions:**
+- **The push records, not a fetch in the checkpoint.** The checkpoint script never fetches (it runs often, on the job's
+  machine); the hopper already knows what it pushed.
+- **Only the head.** A checkpoint whose head the hopper did not push (commits after the last push) restores as before.
+
+Verification: `test/domain/wait-checks.test.ts` (a check-in of 12 hours and 3 days; a testable wait still checked at 30
+minutes), `test/engine/wait-recheck.test.ts` (two hoppers sweep a gated wait every 15 minutes for 12 hours: no wake-up,
+then one at its time), `test/domain/kept-work.test.ts` (`pushedBranchOf`), `test/client/checkpoint-pushed.test.ts` (real
+git: a pushed head with no remote branch restores on the branch at it, with only the work not committed uncommitted),
+`test/integration/checkpoint.test.ts` (a pushed head: `pushedTo`, the restore command, the job told the remote holds it).
+
 ### No pick up of a job auto-parked on a person (issue #2415, 2026-10-21)
 
 Pick up on a job auto-park parked on a person had no lasting effect: the job went back to `waiting_answer` on the same

@@ -44,7 +44,7 @@ export function relocation(ctx: ExecutionContext): Relocation | ExecutionOutcome
   const p = payloadOn(ctx);
   if ('kind' in p) return p;
   return {
-    p, session, restore: restoreCommand({ base: k.base, ...(k.branch ? { branch: k.branch } : {}), session, hasSession: true }),
+    p, session, restore: restoreCommand({ base: k.base, ...(k.pushedTo ? { branch: k.pushedTo, pushed: k.head } : k.branch ? { branch: k.branch } : {}), session, hasSession: true }),
     said: `resumed agent session ${session} on ${ctx.machine.id} from the checkpoint taken on ${k.machineId} at ${k.at}`,
   };
 }
