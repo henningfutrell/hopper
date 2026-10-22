@@ -71,8 +71,10 @@ const REAP_SCRIPT = [
   'id=$1; s=$2; k=$3;',
   // The job's scope: every process in it, whatever it did to its environment or session.
   'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1; fi;',
-  // Where there is no systemd, or for what left the scope: the processes carrying the job's id.
-  'pids() { grep -lzx "HOPPER_JOB_ID=$id" /proc/[0-9]*/environ 2>/dev/null | sed -n "s|^/proc/\\([0-9]*\\)/environ\\$|\\1|p" | grep -vx "$$"; };',
+  // Where there is no systemd, or for what left the scope: the processes carrying the job's id, and those run from its
+  // scratch dir (issue #2489: a Gradle daemon of a JDK the job put there, which left the job's scope or environment).
+  'pids() { { grep -lzx "HOPPER_JOB_ID=$id" /proc/[0-9]*/environ 2>/dev/null | sed -n "s|^/proc/\\([0-9]*\\)/environ\\$|\\1|p";',
+  '  [ -n "$s" ] && find /proc -mindepth 2 -maxdepth 2 -path "/proc/[0-9]*/exe" -lname "$s/*" 2>/dev/null | sed -n "s|^/proc/\\([0-9]*\\)/exe\\$|\\1|p"; } | sort -u | grep -vx "$$"; };',
   'if [ -r /proc/self/environ ]; then',
   '  l=$(pids);',
   '  if [ -n "$l" ]; then',
