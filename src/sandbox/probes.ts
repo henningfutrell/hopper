@@ -137,6 +137,23 @@ if forbidden "$a" && forbidden "$b"; then echo 'both refused: ${what} is forbidd
 echo '${what}: neither request was allowed, and not both were refused'; exit 2`;
 }
 
+/**
+ * A GET of a pod's exec as `kubectl exec` sends it (issue #2477): an upgrade to a WebSocket, by curl, with the kubeconfig's
+ * server, token and CA. For an upgrade the API server asks `create` on `pods/exec` too, so a view role that may only `get`
+ * it (EKS's AmazonEKSViewPolicy) is refused, as `kubectl exec` is; a server that does not ask it lets that role exec, and
+ * the upgrade answers NotFound. A plain GET asks `get` only: it answers NotFound for that role, which runs nothing.
+ */
+const UPGRADE = `upgrade() {
+  command -v curl >/dev/null 2>&1 || { echo "the box's image has no curl"; return 127; }
+  kc() { kubectl config view --minify --raw -o "jsonpath={$1}"; }
+  srv=$(kc .clusters[0].cluster.server) && tok=$(kc .users[0].user.token) && crt=$(kc '.clusters[0].cluster.certificate-authority-data') || return 1
+  (umask 077 && printf 'Authorization: Bearer %s\\n' "$tok" > "$HOME/exec-auth") || return 1
+  if [ -n "$crt" ]; then printf '%s' "$crt" | base64 -d > "$HOME/exec-ca" || return 1; fi
+  curl -sS --http1.1 --max-time 10 --fail-with-body \${crt:+--cacert "$HOME/exec-ca"} -H "@$HOME/exec-auth" -H 'Connection: Upgrade' -H 'Upgrade: websocket' \\
+    -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: aG9wcGVyLXJlYWQtb25seQ==' -H 'Sec-WebSocket-Protocol: v5.channel.k8s.io' "$srv$1"
+  c=$?; rm -f "$HOME/exec-auth"; return $c
+}`;
+
 export const PROBES: readonly Probe[] = [
   { id: 'aws.caller-identity', title: 'read who the session is', kinds: AWS, tool: 'aws', expect: 'allowed', script: 'aws sts get-caller-identity' },
   {
@@ -188,10 +205,10 @@ exit "$code"`,
   // Issue #2146, part 5: an observe credential may port-forward to the monitoring pods, and nothing more. It must not
   // run a command in a pod, nor read a Secret.
   {
-    id: 'observe.exec', title: 'run a command in a pod (pods/exec, by its create and its get)', kinds: KUBE, tool: 'kubectl', expect: 'denied', operations: ['observe'],
+    id: 'observe.exec', title: 'run a command in a pod (pods/exec, by its create and its get as a WebSocket upgrade)', kinds: KUBE, tool: 'kubectl', expect: 'denied', operations: ['observe'],
     // The API asks the authorization before it looks for the pod: allowed, each answers NotFound, which is no refusal.
-    script: bothRefused(`path="/api/v1/namespaces/$ns/pods/hopper-read-only-check/exec?command=true&stdout=true"`,
-      'kubectl create --raw "$path" -f /dev/null', 'kubectl get --raw "$path"', 'pods/exec'),
+    script: bothRefused(`path="/api/v1/namespaces/$ns/pods/hopper-read-only-check/exec?command=true&stdout=true"\n${UPGRADE}`,
+      'kubectl create --raw "$path" -f /dev/null', 'upgrade "$path"', 'pods/exec'),
     denial: BOTH_REFUSED,
   },
   {

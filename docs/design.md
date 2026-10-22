@@ -32246,7 +32246,7 @@ hopper proves it can do nothing more before a bastion of its template starts.
   with the credential of its own need (`CheckCredential.operation`, `ProbeRun.operation`).
 - **The probes under observe** (`Probe.operations`, `src/sandbox/probes.ts`). `kube.get` must work; `kube.create-namespace`,
   `kube.delete-pod` and `egress.kube` must be refused, as under a read; and two of observe's own must be refused:
-  `observe.exec` (`pods/exec`, by a POST and by a GET of the exec subresource of a pod that is not there: the API asks the
+  `observe.exec` (`pods/exec`, by a POST and by a GET — a WebSocket upgrade, issue #2477 — of the exec subresource of a pod that is not there: the API asks the
   authorization before it looks for the pod, so an allowed exec answers NotFound) and `observe.secret-read` (a list of the
   Secrets in the namespace, or in every namespace for a cluster, and a get of one). Each passes only when both of its
   requests are Forbidden. A result under observe says so (`ProbeResult.operation`: `<probe> on <asset> under observe`).
@@ -32283,6 +32283,21 @@ an allow.
   port or a tunnel, and the role has view only, that cluster has **no hopper metrics read**: the bastion's forward is
   refused, and the hopper has no other path, by design (the owner's ruling above). The observability skill says so, and
   a job that needs such a read waits with `on: outside: gated: pods/portforward for hopper-observe on <cluster>/<namespace>`.
+
+**The exec probe's get is a WebSocket upgrade (issue #2477).** EKS's AmazonEKSViewPolicy gives `get` on `pods/exec`, not
+`create`. A plain GET of the exec subresource asks `get` only, so the API allowed it and answered NotFound, and
+`observe.exec` read as allowed for an identity that cannot exec. `kubectl exec` sends its GET as a WebSocket upgrade, and
+for an upgrade the API server asks `create` on `pods/exec` too.
+- **The get as `kubectl exec` sends it** (`UPGRADE`, `src/sandbox/probes.ts`): curl, with the server, token and CA that
+  `kubectl config view` gives of the check's kubeconfig, the token from a header file (mode 600, removed after), never in
+  argv. A server that asks `create` for an upgrade refuses it with a Forbidden; a server that does not lets a `get` exec
+  over a WebSocket, so the upgrade answers NotFound and the probe is allowed, as it must be.
+- **A box with no curl errs.** The upgrade then ends 127 with no Forbidden: the probe's outcome is `error`, never a refusal.
+  The hopper's box images carry curl.
+
+Tests (issue #2477): `test/sandbox/check-observe.test.ts` (a view role that may get `pods/exec` but not create it passes;
+the get is an upgrade with the kubeconfig's server, the token not in argv), `test/support/fake-cloud-tools.ts` (`view-exec`,
+a fake curl).
   Opening it is the cluster's RBAC change, a person's, not the hopper's.
 
 Tests: `test/sandbox/check-observe.test.ts` (a credential the cluster does not take errs on both probes and the check
