@@ -109,6 +109,14 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelPutOn(closed, ['hopper'], ['hopper', 'hopper:done'])).toBeUndefined();
   });
 
+  it('dropped by the hopper\'s own close (issue #1892 part 22): hopper:pr-closed, as the follow put it on', () => {
+    const closed = { state: 'dropped', eventState: 'dropped', closedByHopper: true } as const;
+    expect(labelsFor(closed)).toEqual({ allowed: ['hopper:pr-closed'], add: 'hopper:pr-closed' });
+    expect(labelDrift(closed, ['hopper', 'hopper:done'])).toEqual({ remove: ['hopper:done'], add: ['hopper:pr-closed'] });
+    expect(labelTakenOff(closed, ['hopper', 'hopper:pr-closed'], ['hopper'])).toBe('hopper:pr-closed');
+    expect(labelPutOn(closed, ['hopper'], ['hopper', 'hopper:done'])).toBeUndefined();
+  });
+
   it('the other states are not judged', () => {
     for (const state of ['needs_you', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(labelsFor({ state })).toBeUndefined();
   });
