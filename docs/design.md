@@ -21836,7 +21836,7 @@ and the writes held while a sign-in has ended are the next parts.
 
 - **Each state's promise** (`src/domain/item-lifecycle.ts`, pure). Every **work item state** not ended has an **owner**
   — `scheduler`, `lane_worker`, `github_observer`, `assessor`, `reconciler` or `person` —, how often it is checked, and
-  for PR open a **deadline**, an hour from `state_since` (issue #1231's rule; part 7 gives the other states no person holds
+  for PR open a **deadline**, an hour from `state_since` (from the item's last move since issue #1892 part 18; issue #1231's rule; part 7 gives the other states no person holds
   one). `done` and `dropped` have none. Each kind
   of move names its owner too (`transitionOwner`). The ledger keeps the owner, the next check and the deadline of each
   row as columns (`owner`, `next_check_at`, `deadline`; tenant migration 82, which also rebuilds the ledger; a rebuild
@@ -22492,6 +22492,31 @@ write its label.
 `hopper:done` on; a failed job's end kept before a restart is sent by the source after it; an issue with rows not sent is
 not taken; an expired token holds the rows with no attempt counted), and `test/integration/gitlab-source.test.ts` through
 the daemon and the user's store.
+
+### Each transition names its owner and sets the next check (issue #1892 part 18, 2026-10-22)
+
+Milestone 3 asks: "Each transition names its owner (scheduler, lane worker, GitHub observer, assessor, reconciler, person)
+and sets a next check and a deadline." Before this part, `transitionOwner` named the owner of each kind of move, but the
+ledger did not keep it. The next check and the deadline ran from the item's first entry to its state (`stateSince`), so a
+move within a state did not count: an item working for an hour whose job moved a minute ago (a wait on its own command
+ended) was past its deadline, and its row was due for a check at once.
+
+- **The item keeps who made its last move** (`movedBy`, `src/domain/work-items.ts`). Each move of the reducer sets it from
+  `transitionOwner(type, data)`. A mark that moves nothing (a pull request's change kind, its wait as the follow saw it)
+  keeps it. A replay of a job's end by the item reconciler is the reconciler's move. The field is in the item's JSON body:
+  no migration. An item last moved before this part has none until it moves again or the ledger is rebuilt.
+  `GET /api/work-items` answers it.
+- **The next check and the deadline run from the last move** (`checkOf(state, movedAt)`, `src/domain/item-lifecycle.ts`;
+  `eventAt`). The ledger row's `next_check_at` and `deadline`, the item reconciler's next check and its deadline check
+  (`correctionOf`) all use it. So "past its deadline with no move" counts from the last move, as `BLOCKED_WORDS.stale` says.
+  A read of GitHub is no move: it does not set them again.
+- **The row's `owner` is still the state's owner**: who moves the item out of its state next. `movedBy` is who moved it in.
+
+**Not in this part:** milestone 2's other drops, and milestone 4.
+
+**Verification:** `test/domain/work-items-transition.test.ts` (the owner of each move kept, a mark keeps it, the reconciler's
+replay is its own; a move within working starts its deadline again; a mark does not), `test/store/work-items.test.ts` (the
+row's next check from a move within working).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

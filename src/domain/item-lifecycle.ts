@@ -27,7 +27,7 @@ export const BLOCKED_WORDS: Readonly<Record<BlockedCause, string>> = {
   pr_closed: 'a person: its pull request was closed without a merge',
 };
 
-/** What each state promises: its owner, how often it is checked, and its deadline from `stateSince` (absent: none). */
+/** What each state promises: its owner, how often it is checked, and its deadline from the item's last move (absent: none). */
 interface StatePromise { owner: ItemOwner; checkMs: number; deadlineMs?: number }
 
 const MINUTE = 60_000;
@@ -57,12 +57,15 @@ export const JOB_HELD: readonly WorkItemState[] = ['queued', 'working', 'waiting
 /** The states an item ends in: no owner, no check. */
 export const ENDED_STATES: readonly WorkItemState[] = ['done', 'dropped'];
 
-/** The owner, the next check and the deadline of an item in `state` since `since`; undefined for an ended state. */
-export function checkOf(state: WorkItemState, since: string, at: string = since): { owner: ItemOwner; nextCheckAt: string; deadline?: string } | undefined {
+/**
+ * The owner, the next check and the deadline of an item in `state` whose last move was at `movedAt` (its `eventAt`), checked
+ * at `at`; undefined for an ended state. Each transition sets them (issue #1892): a move within a state starts them again.
+ */
+export function checkOf(state: WorkItemState, movedAt: string, at: string = movedAt): { owner: ItemOwner; nextCheckAt: string; deadline?: string } | undefined {
   const p = PROMISES[state];
   if (!p) return undefined;
   const plus = (base: string, ms: number) => new Date(Date.parse(base) + ms).toISOString();
-  return { owner: p.owner, nextCheckAt: plus(at, p.checkMs), ...(p.deadlineMs !== undefined ? { deadline: plus(since, p.deadlineMs) } : {}) };
+  return { owner: p.owner, nextCheckAt: plus(at, p.checkMs), ...(p.deadlineMs !== undefined ? { deadline: plus(movedAt, p.deadlineMs) } : {}) };
 }
 
 /**
@@ -165,12 +168,12 @@ export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, foll
     return { kind: 'replay', key: item.key, jobId: job.id, from: item.state };
   }
   if (item.state === 'pr_open') {
-    const deadline = checkOf(item.state, item.stateSince)?.deadline;
+    const deadline = checkOf(item.state, item.eventAt)?.deadline;
     if (deadline === undefined || Date.parse(now) < Date.parse(deadline)) return undefined;
     if (item.pullRequest === undefined) return { kind: 'block', key: item.key, from: item.state, cause: 'no_pr' };
     if (item.pullRequestState !== 'open' || !follows) return { kind: 'block', key: item.key, from: item.state, cause: 'stale' };
   } else if (item.state !== 'blocked') {
-    const deadline = checkOf(item.state, item.stateSince)?.deadline;
+    const deadline = checkOf(item.state, item.eventAt)?.deadline;
     // Its job found: live, its own deadlines hold it; ended, it is folded again from its end, above or once that settles.
     const held = job !== undefined && job.id === item.jobId;
     if (deadline !== undefined && Date.parse(now) >= Date.parse(deadline) && !(JOB_HELD.includes(item.state) && held)) {
