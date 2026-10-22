@@ -13,11 +13,13 @@
 // the hopper's merge: one not met, or a `person-merges` one that applies, holds it as `mergeError`, asked again at the next follow.
 // The end labels come from the item's state (issue #1892 part 16), as on GitHub: an end names the state it moves the item to,
 // `followLabels` or `reportLabels` names that state's end labels from the issue's labels as just read, and every other end
-// label comes off, with the ended job's claim. A write that changes nothing is not sent.
+// label comes off, with the ended job's claim. A write that changes nothing is not sent. The change is outbox rows (issue #1892
+// part 17, `outbox.ts`), act `follow`, tagged with the job and its end: a write GitLab refuses for now fails no follow.
 import { SourceError } from '../domain/ports.ts';
 import { readyToMerge, type ChecksState, type FollowAt, type FollowUp, type Job, type MergeMarker, type PullRequestAct, type PullRequestSeen } from '../domain/types.ts';
 import { followLabels, type FollowEnd, type LabelDrift } from '../sources/github/item-labels.ts';
 import { LABEL_CLAIMED } from '../sources/github/labels.ts';
+import type { LabelSink } from '../sources/github/report.ts';
 import { GitLabTokenRefused, type GitLabApi, type GitLabMergeRequest } from './api.ts';
 
 interface Followed { pullRequest?: string; follow?: string; merging?: MergeMarker; seen?: PullRequestSeen; mergeChecked?: boolean }
@@ -30,6 +32,8 @@ export interface GitLabFollowContext {
   now: number;
   /** Why the hopper does not merge it itself by the job's done criteria (done-criteria.ts); absent, or undefined: no hold. */
   hold?: (m: GitLabMergeRequest) => Promise<string | undefined>;
+  /** Keeps a follow's label change on the issue and sends it: the outbox's rows (act `follow`). */
+  labels: LabelSink;
 }
 
 /** A head pipeline's status as checks: absent, none. */
@@ -54,15 +58,10 @@ export async function readyMergeRequest(api: GitLabApi, project: string, iid: nu
 export const endChange = (drift: LabelDrift | undefined, carried: readonly string[]): LabelDrift =>
   ({ add: drift?.add ?? [], remove: [...(drift?.remove ?? []), ...(carried.includes(LABEL_CLAIMED) ? [LABEL_CLAIMED] : [])] });
 
-/** Write `change` on the issue, when it changes something. */
-export async function relabel(api: GitLabApi, project: string, iid: number, change: LabelDrift): Promise<void> {
-  if (change.add.length || change.remove.length) await api.editLabels(project, iid, change);
-}
-
-/** A follow's end on the issue: its labels read, then the end labels of the state the end moves the item to. */
-async function followEnd(api: GitLabApi, project: string, iid: number, f: FollowEnd): Promise<void> {
-  const carried = (await api.issue(project, iid)).labels;
-  await relabel(api, project, iid, endChange(followLabels(f, carried), carried));
+/** A follow's end on job `job`'s issue: its labels read, then the end labels of the state the end moves the item to. */
+async function followEnd(c: GitLabFollowContext, job: Job, project: string, iid: number, f: FollowEnd): Promise<void> {
+  const carried = (await c.api.issue(project, iid)).labels;
+  await c.labels(job.source!.key, project, endChange(followLabels(f, carried), carried), `${job.id}:${f.end}`);
 }
 
 const seenOf = (m: GitLabMergeRequest): PullRequestSeen => ({
@@ -93,7 +92,7 @@ export async function followMergeRequest(c: GitLabFollowContext, job: Job, act?:
   if (!url) return undefined;
   const { merging, seen: _seen, ...rest } = s;
   const merged = async (marker: MergeMarker | undefined): Promise<FollowUp> => {
-    await followEnd(c.api, project, iid, { end: 'merged' });
+    await followEnd(c, job, project, iid, { end: 'merged' });
     return {
       outcome: 'merged', pullRequest: url, part: false, ...(marker?.byHopper ? { byHopper: true } : {}), ...(marker?.acting ? { acting: marker.acting } : {}),
       state: { ...rest, pullRequest: url, follow: 'merged', mergeChecked: true },
@@ -102,7 +101,7 @@ export async function followMergeRequest(c: GitLabFollowContext, job: Job, act?:
   const m = await c.api.mergeRequest(project, mergeRequestNumber(url));
   if (m.state === 'merged') return merged(merging?.pullRequest === url ? merging : undefined);
   if (m.state === 'closed') {
-    await followEnd(c.api, project, iid, { end: 'closed' });
+    await followEnd(c, job, project, iid, { end: 'closed' });
     return { outcome: 'closed', pullRequest: url, part: false, state: { ...rest, pullRequest: url, follow: 'closed' } };
   }
   let seen = seenOf(m);

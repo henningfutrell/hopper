@@ -44,7 +44,7 @@ async function setup(o: { labels: string[]; issue?: Partial<FakeGitLabIssue>; me
 
 const job = (source: Record<string, unknown> = {}): Job => ({
   id: 'j1', status: 'finished', createdAt: '2026-10-17T10:00:00Z',
-  source: { source: 'gitlab-account', kind: 'gitlab-account', key: 'k', url: 'u', title: 't', author: 'ada', assignee: 'ada', repo: 'ada/tools', number: 1, labels: [] },
+  source: { source: 'gitlab-account', kind: 'gitlab-account', key: 'https://gitlab.test/ada/tools/-/issues/1', url: 'u', title: 't', author: 'ada', assignee: 'ada', repo: 'ada/tools', number: 1, labels: [] },
   sourceState: { source },
 } as unknown as Job);
 
