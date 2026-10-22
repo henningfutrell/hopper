@@ -888,17 +888,24 @@ Version 1 (`docs/schemas/job.reassigned.v1.json`). A flagged job's issue is assi
 
 ## `job.work_kept`
 
-Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir and its job worktrees (issue #1188: in its work tree's `.worktrees`): each of `paths` is a repository there holding uncommitted or unpushed work. Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
+Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir and its job worktrees (issue #1188: in its work tree's `.worktrees`): each of `paths` is a repository there holding uncommitted or unpushed work. `reasons` (issue #2494; absent from a client older than that) says, for each path, why: `dirty` (a change not committed), `stash` (a stash), `unpushed` (commits no remote has). Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
+| `reasons` | object | no |
 
 ```json
 {
   "paths": [
     "/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f"
-  ]
+  ],
+  "reasons": {
+    "/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f": [
+      "dirty",
+      "unpushed"
+    ]
+  }
 }
 ```
 

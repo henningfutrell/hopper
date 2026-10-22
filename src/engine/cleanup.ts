@@ -7,7 +7,7 @@
 // route cannot do (issue #2490: its ssh name no longer resolves) reaps through the machine as it is reached now.
 import { jobScratchOf } from '../domain/job-layout.ts';
 import type { MachineShell, Reaped } from '../domain/ports.ts';
-import { keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
+import { keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
@@ -83,7 +83,7 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
       const was = c.store.jobs.get(jobId)?.cleanupDeferred;
       c.store.tx(() => {
         // Never removed silently (issue #401): what the reap kept is flagged on the job.
-        if (reaped && reaped.kept.length > 0) c.store.events.append({ type: 'job.work_kept', jobId, data: { paths: reaped.kept } });
+        if (reaped && reaped.kept.length > 0) c.store.events.append({ type: 'job.work_kept', jobId, data: keptData(reaped, reaped.kept) });
         // The job's containers and volumes it removed (issue #1120), with what it said of each container (issue #975).
         const removed = reaped?.removed;
         const machineId = machineRanOn(job);

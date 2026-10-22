@@ -76,8 +76,21 @@ export function keptPushedOf(reaped: Pick<Reaped, 'kept' | 'tips'>, pushed: Read
   });
 }
 
-/** One ended job's kept work: the repositories holding it, and when it was kept. */
-export interface KeptWork { jobId: string; paths: string[]; at: string }
+/**
+ * Why the reap kept a repository (issue #2494): a change not committed (`dirty`), a stash (`stash`), commits no remote has
+ * (`unpushed`). src/client/reap.ts names the same.
+ */
+export const KEPT_REASONS = ['dirty', 'stash', 'unpushed'] as const;
+export type KeptReason = typeof KEPT_REASONS[number];
+
+/** Pure: the `job.work_kept` data for the repositories `paths` a reap kept, with why it kept each, when it said (issue #2494). */
+export function keptData(reaped: Pick<Reaped, 'reasons'>, paths: string[]): { paths: string[]; reasons?: Record<string, KeptReason[]> } {
+  const reasons = Object.fromEntries(paths.flatMap((p) => (reaped.reasons?.[p]?.length ? [[p, [...reaped.reasons[p]]]] : [])));
+  return { paths, ...(Object.keys(reasons).length ? { reasons } : {}) };
+}
+
+/** One ended job's kept work: the repositories holding it, why each was kept (issue #2494; none recorded before), and when. */
+export interface KeptWork { jobId: string; paths: string[]; reasons?: Record<string, KeptReason[]>; at: string }
 
 /**
  * A discard a person asked for (issue #1194): answered at once, its removal on the machine after — under way, or failed
@@ -110,7 +123,9 @@ export function keptWorkOf(newestFirst: readonly DomainEvent[]): KeptWork[] {
   for (const e of newestFirst) {
     if (!e.jobId || seen.has(e.jobId) || !(WORK_EVENTS as readonly string[]).includes(e.type)) continue;
     seen.add(e.jobId);
-    if (e.type === 'job.work_kept') out.push({ jobId: e.jobId, paths: [...(e.data as { paths: string[] }).paths], at: e.at });
+    if (e.type !== 'job.work_kept') continue;
+    const d = e.data as { paths: string[]; reasons?: Record<string, KeptReason[]> };
+    out.push({ jobId: e.jobId, paths: [...d.paths], ...(d.reasons ? { reasons: d.reasons } : {}), at: e.at });
   }
   return out;
 }

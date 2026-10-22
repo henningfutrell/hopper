@@ -3,6 +3,7 @@
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { CheckpointCapture } from './checkpoints.ts';
 import type { Leftover } from './leftovers.ts';
+import type { KeptReason } from './kept-work.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
@@ -12,7 +13,12 @@ import type { Leftover } from './leftovers.ts';
  * repository with no change, the commits that hold work no remote has; absent, none (or a client older than this). `used`
  * (issue #2498): what the job's scope used, read before the reap stopped it; absent, no scope there (or a client older than this).
  */
-export interface Reaped { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: ContainersRemoved; used?: ResourceUse }
+export interface Reaped {
+  kept: string[]; tips?: Record<string, string[]>;
+  /** Why it kept each it kept (issue #2494); none from a client older than that. */
+  reasons?: Record<string, KeptReason[]>;
+  pushed?: string[]; left?: string[]; removed?: ContainersRemoved; used?: ResourceUse;
+}
 
 /**
  * What a job's scope used (issue #2498), as `job.resources_used` records it: its peak memory (cgroup `memory.peak`), its CPU

@@ -928,7 +928,10 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      own the remote does not have) or has every file it changed from the default branch with the same
      content. A stash is work too (issue #2494): a clone keeps for any entry of its stash; a worktree, whose
      stash is its repository's, keeps for an entry made on its own `HEAD` (the stash commit's first parent),
-     so another worktree at the same commit keeps too, never one too few. Then nothing is removed and each such repository is printed; a pushed git worktree
+     so another worktree at the same commit keeps too, never one too few. Then nothing is removed and each such repository is printed,
+     with why it keeps it, `hopper-kept-why <reason> <path>` once for each it holds (issue #2494): `dirty` (a change not
+     committed), `stash`, `unpushed` (commits no remote has). `job.work_kept` records them as `reasons`, and Work not
+     pushed in Failures shows them beside each repository; a client older than this says none; a pushed git worktree
      of a repository outside is removed through `git worktree remove`, never with `--force` (its
      `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees,
      `<work tree>/.worktrees/<name>/<job id>` (issue #1188), are read and removed with the scratch dir by the same
