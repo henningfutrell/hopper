@@ -23085,6 +23085,80 @@ withdrawn by its source or by an issue closed as not planned (not listed).
 `hopper:done` taken off by hand is a Run again, a merge not recorded not judged), `test/sources/github-label-culprit.test.ts`,
 `test/sources/github-item-labels.test.ts`, `test/users/source-context-parts-left.test.ts`.
 
+### The label mirror's restart test, held failure and partly done (issue #1892 part 36, 2026-10-22)
+
+The same restart test, for the two states part 26 left out. The world of part 25 seeds two more items, and the same three kill
+points apply (`test/crash/label-states-world.ts`).
+
+- **#16, failed and held on a problem.** Its job failed, its failure was reported as failed, and the seed holds its assessment
+  (`hold`), its failure record (`held`) and an open problem with no check, so the assessor does not assess it again and the item
+  stays failed. Its issue carries a stale `hopper:pr-ready`. The next hopper takes it off and puts `hopper:failed` on, each by
+  one call.
+- **#17, partly done with parts left.** Its part merged, the follow recorded it, and parts are left. Its issue carries a stale
+  `hopper:partly-done`. Intake takes the issue again, so the mirror does not judge it (it is given back), and the item gets one
+  new job for its next part, never two, whichever hopper's Intake made it. The labels are that new job's.
+
+**Decisions.**
+- **A held failure, not a hand-off.** A hand-off is part 26's #15. A failure held on a problem is the state where the item stays
+  failed with its failure reported. The problem has no check, so no check resolves it during the test.
+- **#17 checks the new job, not the label.** The mirror skips an item Intake gives back. The new job's report puts its own end
+  label on without a read of the issue (`reportLabels` with no carried labels), so a stale end label can stay beside it until
+  the reconciler's grace passes and the mirror corrects it.
+- **No code change.** The test found no defect.
+
+**Verification:** `test/crash/label-states-kill.test.ts`.
+
+### A part an older job merged, judged by the ledger (issue #1892 part 37, 2026-10-22)
+
+Parts 5, 34 and 35 read the facts `partsLeft` and `lastPartMerged` from the follow of the item's newest job (`jobId`). But
+any job's merge moves the item (`job.pull_request_merged` is not only the current job's): a newer job of the item (a new job,
+or a tend whose pull request is another one) can end before the older job's pull request merges. The older job's follow
+recorded the merge and wrote the issue's labels (`followLabels`), but the newest job has no merge of its own, so both facts
+were false and the item stayed to the labels. This was the case "a merge the follow did not record".
+
+**As built** (`src/users/source-context.ts` `mergedFollowOf`):
+- The facts read the newest job's follow. When it recorded no merge, and the item's pull request is merged, they read the
+  follow of the job of the item (`jobs.idsOfItem`, one `getMany`) that recorded the merge of that pull request (`follow:
+  merged`, the same URL, case ignored).
+- The facts mean what they meant: the follow that wrote the labels recorded the merge of a part, with parts left or not.
+  `labelsFor`, the mirror and Intake do not change.
+
+**Decision.** **The facts read the follow, not the newest job.** The follow writes the labels at the merge, so its record is
+what the labels are. A follow records its end (`keepFollowed`) before it appends the merge event, so a merge in the ledger
+always has its follow's record; only a stray's merge has none, and a stray's merge moves no item.
+
+**Still left to the labels:** a done item that a read of GitHub made done (a merged pull request read with no follow: the issue
+carries what was on it before, which no record says); an item dropped by a card withdrawn by its source or by an issue closed as
+not planned (not listed, so neither Intake nor the mirror reads it).
+
+**Verification:** `test/users/source-context-parts-left.test.ts` (a part an older job's follow merged: parts left, and the
+last part; not a merge of another pull request, nor an item whose pull request is not merged).
+
+### What stays to the labels, by decision (issue #1892 part 38, 2026-10-22)
+
+Milestone 4 ends here. Parts 1 to 37 moved every state whose end labels a record of the hopper's says to the ledger. Three
+cases stay to the labels. This part records that as a decision, not as work left, and pins it with a test.
+
+- **A done item that a read of GitHub made done.** The issue graph read its pull request as merged (`applyRead`), and no
+  follow recorded the merge (no `wholeMerged`). A follow records its end before it appends the merge event (part 37), so a
+  read that comes first is judged as soon as the follow's merge event comes. What stays is a merge that no follow records.
+  Then no report and no follow wrote the issue's labels after the merge, and no record says if the merge was the whole item
+  or a part. `hopper:done` would keep the issue out while parts may be left; no label would take it into Intake again while
+  it may be done. Neither is certain, so the labels decide.
+- **An item dropped by its issue closed as not planned.** A closed issue is not listed, so neither Intake nor the mirror
+  reads it. Its labels change nothing that the hopper does.
+- **An item dropped by a request card that its source withdrew.** The source withdraws a card when it no longer offers the
+  issue (`withdrawRequests`, "The work-item ledger"): its issue closed, or its label or assignee gone, so neither Intake nor
+  the mirror reads it. A card a person withdrew by an end label they put on (part 7) is listed, and that label is theirs: the
+  labels decide Intake's reason, as part 7 says.
+
+**Decision.** **Not judged, and not built.** A rule for these cases would guess what the issue carries, and a wrong guess
+writes a label that a person did not ask for. The labels of an item the hopper does not judge count only as the labels of an
+item it does not know (`labelReason`), as milestone 2 asked.
+
+**Verification:** `test/sources/github-label-not-judged.test.ts` (each case: `labelsFor` and `ledgerReason` give no answer,
+whatever the facts).
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

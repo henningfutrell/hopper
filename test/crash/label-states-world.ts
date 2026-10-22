@@ -1,12 +1,15 @@
-// The label mirror's correction in more states (issue #1892 parts 25, 26, design.md "The item lifecycle") under the crash
+// The label mirror's correction in more states (issue #1892 parts 25, 26, 36, design.md "The item lifecycle") under the crash
 // harness (issue #1954): a hopper killed with SIGKILL while its mirror corrects the labels of items in states that
 // label-world.ts does not seed. #12 was dropped by a person's Close PR, and its issue carries a stale `hopper:pr-ready`: it gets
 // `hopper:pr-closed`. #13 was dropped by a person's Won't do on its block, and its issue carries a stale `hopper:pr-closed`: it
 // gets `hopper:rejected`. #14 is blocked: its job ended done with no pull request, and its issue carries a stale
 // `hopper:pr-ready`: it gets `hopper:blocked`. #15 is a hand-off whose job's failure was reported as failed, and its issue
-// carries a stale `hopper:pr-ready`: it gets `hopper:failed`. A second hopper on the same database ends what is left: each label
-// change on GitHub once, and each item stays in its state. (Not a done item: one whose issue is listed open is a reopened card,
-// issue #1126, not a drift. Not a partly done item with parts left: Intake takes it again, and a new job runs its next part.)
+// carries a stale `hopper:pr-ready`: it gets `hopper:failed`. #16 failed, its failure reported and held on an open problem
+// (part 36), and its issue carries a stale `hopper:pr-ready`: it gets `hopper:failed`. #17 is partly done, one part merged and
+// parts left (part 36), and its issue carries a stale `hopper:partly-done`: Intake takes the issue again, so the mirror leaves it
+// be (it is given back) and one new job runs its next part, its labels that job's. A second hopper on the same database ends
+// what is left: each label change on GitHub once, each item stays in its state, and #17 gets one new job, never two. (Not a done
+// item: one whose issue is listed open is a reopened card, issue #1126, not a drift.)
 import { randomUUID } from 'node:crypto';
 import { expect } from 'vitest';
 import type { EventType } from '../../src/domain/event-types.ts';
@@ -23,14 +26,19 @@ import { endHeld, issueUrl, itemOf, killed, mirrorRows, REPO, requests, SYNC_MS,
 
 const pullUrl = (n: number): string => `https://github.com/${REPO}/pull/${n}`;
 
-/** One seeded item: its stale end label, the label its state wants, and the state and mark its events give it. */
-interface StateCase { n: number; stale: string; wanted: string; state: WorkItemState; mark: Record<string, unknown> }
+/**
+ * One seeded item: its stale end label, the label its state wants, and the state and mark its events give it. `next`: Intake
+ * takes the issue again, so the mirror does not judge it, a new job of the item runs, and the item leaves that state.
+ */
+interface StateCase { n: number; stale: string; wanted?: string; state: WorkItemState; mark: Record<string, unknown>; next?: true }
 
 export const STATE_CASES: readonly StateCase[] = [
   { n: 12, stale: 'hopper:pr-ready', wanted: 'hopper:pr-closed', state: 'dropped', mark: { closedByPerson: true } },
   { n: 13, stale: 'hopper:pr-closed', wanted: 'hopper:rejected', state: 'dropped', mark: { wontDo: true } },
   { n: 14, stale: 'hopper:pr-ready', wanted: 'hopper:blocked', state: 'blocked', mark: { blockedCause: 'no_pr' } },
   { n: 15, stale: 'hopper:pr-ready', wanted: 'hopper:failed', state: 'needs_you', mark: { waitingOn: HANDOFF_WAIT } },
+  { n: 16, stale: 'hopper:pr-ready', wanted: 'hopper:failed', state: 'failed', mark: {} },
+  { n: 17, stale: 'hopper:partly-done', state: 'partly_done', mark: { pullRequestState: 'merged' }, next: true },
 ];
 
 type Append = (type: EventType, data: Record<string, unknown>, jobId?: string) => void;
@@ -50,7 +58,24 @@ function seedHandoff(store: UserStore, jobId: string, at: string, append: Append
   append('handoff.opened', { handoffId: h.id, reason: 'person', summary: h.summary, notify: false, recordId: record.id, decision: 'person', class: 'job' });
 }
 
-export type StatesWorld = Pick<LabelWorld, 'url' | 'userUrl' | 'github' | 'jobs' | 'host' | 'seed' | 'labels' | 'close'>;
+/** #16's job failed, its failure reported, and assessed as held on an open problem with no check: it waits on the problem. */
+function seedHeld(store: UserStore, jobId: string, at: string, append: Append): void {
+  const error = 'tests failed';
+  store.jobs.update(jobId, { status: 'failed', approved: true, attempts: 1, finishedAt: at, error, sourceState: { sync: { claimReported: true, finalReported: true } } });
+  append('job.failed', { error });
+  const problem = store.problems.create({ signature: 'seeded', title: 'Seeded problem', decision: 'hold', scope: {}, status: 'open', openedAt: at, updatedAt: at, general: false, jobIds: [jobId] });
+  const record = store.failures.create({
+    jobId, at, signature: 'seeded', normalised: error, cls: 'shared', decision: 'hold', reasons: ['seeded'], summary: 'Held.', auto: true, problemId: problem.id,
+    evidence: { error, executor: 'scripted', attempt: 1, sameSignature: 1 }, outcome: 'held', outcomeAt: at,
+  });
+  store.jobs.update(jobId, { assessment: { recordId: record.id, at, class: 'shared', decision: 'hold', summary: record.summary, reasons: record.reasons, problemId: problem.id, problemTitle: problem.title } });
+  append('job.assessed', { recordId: record.id, signature: 'seeded', class: 'shared', decision: 'hold', reasons: record.reasons, summary: record.summary, attempt: 1, auto: true, problemId: problem.id });
+}
+
+export type StatesWorld = Pick<LabelWorld, 'url' | 'userUrl' | 'github' | 'jobs' | 'host' | 'seed' | 'labels' | 'close'> & {
+  /** How many jobs issue `n`'s item has. */
+  jobsOf: (n: number) => number;
+};
 
 export async function statesWorld(): Promise<StatesWorld> {
   const github = await createFakeGitHubServer({
@@ -83,6 +108,15 @@ export async function statesWorld(): Promise<StatesWorld> {
             const append: Append = (type, data, jobId = job.id) => { store.events.append({ type, ...(jobId ? { jobId } : {}), data, at }); };
             append('job.queued', { spec, priority: 50 });
             if (c.n === 15) { seedHandoff(store, job.id, at, append); return job.id; }
+            if (c.n === 16) { seedHeld(store, job.id, at, append); return job.id; }
+            if (c.n === 17) {
+              // Its job's part merged with parts left, and its report went out; the follow recorded the merge.
+              const parts = { done: 1, total: 3 };
+              store.jobs.update(job.id, { status: 'finished', approved: true, attempts: 1, finishedAt: at, sourceState: { sync: { claimReported: true, finalReported: true }, source: { pullRequest, follow: 'merged', part: true, parts } } });
+              append('job.finished', { result: 'pull request ready for review', partlyDone: pullRequest });
+              append('job.pull_request_merged', { pullRequest, part: true });
+              return job.id;
+            }
             if (c.n === 14) {
               // Its job ended done with no pull request, and its report went out: blocked, a person is asked.
               store.jobs.update(job.id, { status: 'finished', approved: true, attempts: 1, finishedAt: at, sourceState: { sync: { claimReported: true, finalReported: true } } });
@@ -105,6 +139,10 @@ export async function statesWorld(): Promise<StatesWorld> {
       } finally { store.close(); }
     },
     labels: (n) => [...github.state.repos.get(REPO)!.issues.get(n)!.labels],
+    jobsOf: (n) => {
+      const store = openUserStore({ url: w.userUrl, clock: { now: () => new Date() }, idGen: randomUUID });
+      try { return store.jobs.idsOfItem(issueUrl(n)).length; } finally { store.close(); }
+    },
     close: async () => { await github.close(); db.cleanup(); },
   };
   return w;
@@ -118,18 +156,24 @@ export async function statesKilledThenMirrored(w: StatesWorld, point: string): P
   await killed(a, point);
   endHeld(w);
   const b = await w.host();
-  const sent = () => STATE_CASES.every((c) => mirrorRows(w, c.n).length > 0 && mirrorRows(w, c.n).every((r) => r.state === 'sent'));
+  const sent = () => STATE_CASES.every((c) => (c.next ? w.jobsOf(c.n) > 1 : mirrorRows(w, c.n).length > 0 && mirrorRows(w, c.n).every((r) => r.state === 'sent')));
   await waitFor(() => (sent() ? true : undefined), { timeoutMs: 60_000, what: 'the corrections sent' })
     .catch((err: unknown) => { throw new Error(`${(err as Error).message}: ${JSON.stringify(STATE_CASES.map((c) => ({ n: c.n, rows: mirrorRows(w, c.n), labels: w.labels(c.n) })))}\n${b.output()}`); });
   // A second hopper's discovers go on meanwhile: a second correction would show in them.
   await new Promise((r) => setTimeout(r, 4 * SYNC_MS));
   for (const c of STATE_CASES) {
+    // Its next part: one new job, whichever hopper's Intake made it, and no mirror row.
+    if (c.next) {
+      expect(w.jobsOf(c.n), `#${c.n}`).toBe(2);
+      expect(mirrorRows(w, c.n), `#${c.n}`).toEqual([]);
+      continue;
+    }
     expect(w.labels(c.n), `#${c.n}`).toContain(c.wanted);
     expect(w.labels(c.n), `#${c.n}`).not.toContain(c.stale);
     expect(itemOf(w, c.n), `#${c.n}`).toMatchObject({ state: c.state, ...c.mark });
     // Queued once, as one remove and one add, and each sent once, whatever process sent it.
     expect(mirrorRows(w, c.n).map((r) => r.op), `#${c.n}`).toEqual(['remove_labels', 'add_labels']);
-    expect(requests(w as LabelWorld, 'DELETE', `/repos/${REPO}/issues/${c.n}/labels/${c.stale}`), `#${c.n}`).toBe(1);
-    expect(requests(w as LabelWorld, 'POST', `/repos/${REPO}/issues/${c.n}/labels`), `#${c.n}`).toBe(1);
+    expect(requests(w, 'DELETE', `/repos/${REPO}/issues/${c.n}/labels/${c.stale}`), `#${c.n}`).toBe(1);
+    expect(requests(w, 'POST', `/repos/${REPO}/issues/${c.n}/labels`), `#${c.n}`).toBe(1);
   }
 }
