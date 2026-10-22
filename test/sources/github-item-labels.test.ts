@@ -21,7 +21,7 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'blocked', blockedCause: 'pr_closed' })).toEqual({ allowed: ['hopper:pr-closed'], add: 'hopper:pr-closed' });
   });
 
-  it('failed (issue #1892): hopper:failed once its job\'s failure was reported as failed; not judged before, nor a reverted culprit', () => {
+  it('failed (issue #1892): hopper:failed once its job\'s failure was reported as failed; not judged before, nor a reverted culprit not of a whole merge', () => {
     expect(labelsFor({ state: 'failed', eventState: 'failed' }, { failureReported: true })).toEqual({ allowed: ['hopper:failed'], add: 'hopper:failed' });
     expect(labelsFor({ state: 'failed', eventState: 'failed' })).toBeUndefined();
     expect(labelsFor({ state: 'failed', eventState: 'done' }, { failureReported: true })).toBeUndefined();
