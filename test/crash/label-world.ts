@@ -28,7 +28,7 @@ const pullUrl = (n: number): string => `https://github.com/${REPO}/pull/${n}`;
 /** The most one scenario takes: two or three hoppers start, one is killed. */
 export const SCENARIO_MS = 120_000;
 /** How often a crash host syncs its source: each sync is a discover, and the mirror judges at each one. */
-const SYNC_MS = 500;
+export const SYNC_MS = 500;
 
 /** The kill points of the correction of #7: once the mirror queued it, and before its outbox sends each call of it. */
 export const CORRECTION_KILL_POINTS = [
@@ -131,7 +131,7 @@ export function mirrorRows(w: Pick<LabelWorld, 'userUrl'>, n: number): { state: 
 export const requests = (w: LabelWorld, method: string, path: string): number =>
   w.github.state.requests.filter((r) => r.method === method && decodeURIComponent(r.path) === path).length;
 /** The host's end at its kill point; a host not killed within `KILL_MS` fails the scenario with its output. */
-async function killed(h: CrashHost, point: string): Promise<void> {
+export async function killed(h: CrashHost, point: string): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`not killed at ${point} in ${KILL_MS} ms:\n${h.output()}`)), KILL_MS); });
   try {
