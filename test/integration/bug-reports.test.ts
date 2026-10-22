@@ -74,7 +74,7 @@ describe('Report a bug', () => {
     const r = await app.ui<{ kind: string }>('/ui/api/bug-reports', { ...REPORT, context, jobId: job.id, force: true }, { token });
     expect(r.body.kind).toBe('filed');
     const body = github.issues.find((i) => i.repo === REPO)!.body;
-    const section = body.split('### Context\n\n')[1]!.split('\n\n---\n')[0];
+    const section = body.split('### Context\n\n')[1]!.split('\n\n---\n')[0]!;
     expect(section).toBe(context);
     expect(section.split('\n')).toEqual([expect.stringMatching(/^- System: /)]);
     expect(body).not.toContain(job.id);

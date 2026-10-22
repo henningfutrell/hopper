@@ -31,12 +31,12 @@ describe('question card', () => {
     expect(notice()).toBeNull();
   });
 
-  it('Report a bug on the card opens the report form on the question\'s job (issue #694)', async () => {
+  it('Report a bug on the card opens the report form, its context asked with no job (issues #694, #2478)', async () => {
     const daemon = await boot({ authed: true });
     await vi.waitFor(() => expect(button('Report a bug')).toBeDefined());
     await click(button('Report a bug'));
     await vi.waitFor(() => expect(document.querySelector('[data-slot="bug-report"]')).not.toBeNull());
-    expect(daemon.calls).toContainEqual(expect.objectContaining({ path: '/ui/api/bug-reports/context', body: { jobId: question.jobId } }));
+    expect(daemon.calls).toContainEqual(expect.objectContaining({ path: '/ui/api/bug-reports/context', body: {} }));
   });
 
   it('Close asks first, then posts /ui/api/questions/:id/close with the session header and a JSON body', async () => {

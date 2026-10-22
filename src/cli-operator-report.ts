@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
-export const REPORT_USAGE = `  hopper report context [--job <id>]                 the context a report carries, masked: read it before you send
+export const REPORT_USAGE = `  hopper report context                              the context a report carries, masked: read it before you send
   hopper report bug --title <t> (--happened <text> | --happened-file <f>) [--expected <text>] [--job <id>]
                     [--context-file <f>] [--comment-on <n>] [--force]
                                                      file a bug report on the hopper's repository, as you, with the
@@ -17,7 +17,7 @@ export const REPORT_USAGE = `  hopper report context [--job <id>]               
   hopper report refresh                              send the kept reports now, and read the others' state on GitHub`;
 
 const REPORT_BUG = 'report bug --title <t> (--happened <text> | --happened-file <f>) [--expected <text>] [--job <id>] [--context-file <f>] [--comment-on <n>] [--force]';
-const REPORT_VERBS = 'report context [--job <id>] | bug … | list | refresh';
+const REPORT_VERBS = 'report context | bug … | list | refresh';
 
 const readText = (flag: string, file: string): string => {
   try { return readFileSync(file, 'utf8'); } catch (e) { throw new OperatorRefusal(`--${flag} ${file}: ${(e as Error).message}`); }
@@ -34,7 +34,7 @@ export function reportCall(args: string[]): Call {
   if (rest.length > 0) throw usage(verb === 'bug' ? REPORT_BUG : REPORT_VERBS);
   if (verb === 'list' && !bugFlags && values.job === undefined) return { role: 'viewer', path: '/api/bug-reports' };
   if (verb === 'refresh' && !bugFlags && values.job === undefined) return { role: 'operator', path: '/ui/api/bug-reports/refresh', body: async () => ({}) };
-  if (verb === 'context' && !bugFlags) return { role: 'operator', path: '/ui/api/bug-reports/context', body: async () => job };
+  if (verb === 'context' && !bugFlags && values.job === undefined) return { role: 'operator', path: '/ui/api/bug-reports/context', body: async () => ({}) };
   if (verb !== 'bug') throw usage(REPORT_VERBS);
   if (values.title === undefined || (values.happened === undefined) === (values['happened-file'] === undefined)) throw usage(REPORT_BUG);
   const commentOn = values['comment-on'] === undefined ? undefined : Number(values['comment-on']);
@@ -47,7 +47,7 @@ export function reportCall(args: string[]): Call {
     body: async (send) => ({
       title: values.title, happened, expected: values.expected ?? '', ...job,
       // The hopper's context, masked, unless the person gives their own (read with `report context`, then edited).
-      context: contextFile !== undefined ? readText('context-file', contextFile) : ((await send('/ui/api/bug-reports/context', job)) as { context: string }).context,
+      context: contextFile !== undefined ? readText('context-file', contextFile) : ((await send('/ui/api/bug-reports/context', {})) as { context: string }).context,
       ...(commentOn !== undefined ? { commentOn } : {}), ...(values.force ? { force: true } : {}),
     }),
   };
