@@ -128,7 +128,7 @@ export function mirrorRows(w: Pick<LabelWorld, 'userUrl'>, n: number): { state: 
   } finally { db.close(); }
 }
 
-export const requests = (w: LabelWorld, method: string, path: string): number =>
+export const requests = (w: Pick<LabelWorld, 'github'>, method: string, path: string): number =>
   w.github.state.requests.filter((r) => r.method === method && decodeURIComponent(r.path) === path).length;
 /** The host's end at its kill point; a host not killed within `KILL_MS` fails the scenario with its output. */
 export async function killed(h: CrashHost, point: string): Promise<void> {

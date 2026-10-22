@@ -23085,6 +23085,29 @@ withdrawn by its source or by an issue closed as not planned (not listed).
 `hopper:done` taken off by hand is a Run again, a merge not recorded not judged), `test/sources/github-label-culprit.test.ts`,
 `test/sources/github-item-labels.test.ts`, `test/users/source-context-parts-left.test.ts`.
 
+### The label mirror's restart test, held failure and partly done (issue #1892 part 36, 2026-10-22)
+
+The same restart test, for the two states part 26 left out. The world of part 25 seeds two more items, and the same three kill
+points apply (`test/crash/label-states-world.ts`).
+
+- **#16, failed and held on a problem.** Its job failed, its failure was reported as failed, and the seed holds its assessment
+  (`hold`), its failure record (`held`) and an open problem with no check, so the assessor does not assess it again and the item
+  stays failed. Its issue carries a stale `hopper:pr-ready`. The next hopper takes it off and puts `hopper:failed` on, each by
+  one call.
+- **#17, partly done with parts left.** Its part merged, the follow recorded it, and parts are left. Its issue carries a stale
+  `hopper:partly-done`. Intake takes the issue again, so the mirror does not judge it (it is given back), and the item gets one
+  new job for its next part, never two, whichever hopper's Intake made it. The labels are that new job's.
+
+**Decisions.**
+- **A held failure, not a hand-off.** A hand-off is part 26's #15. A failure held on a problem is the state where the item stays
+  failed with its failure reported. The problem has no check, so no check resolves it during the test.
+- **#17 checks the new job, not the label.** The mirror skips an item Intake gives back. The new job's report puts its own end
+  label on without a read of the issue (`reportLabels` with no carried labels), so a stale end label can stay beside it until
+  the reconciler's grace passes and the mirror corrects it.
+- **No code change.** The test found no defect.
+
+**Verification:** `test/crash/label-states-kill.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
