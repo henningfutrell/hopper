@@ -14,7 +14,7 @@ export const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean } = {}) {
+export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; dropped?: string[]; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean } = {}) {
   const gh = o.gh ?? createFakeGitHub();
   let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -25,10 +25,10 @@ export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { 
     rerunnable: (keys: string[]) => new Set(keys.filter((k) => o.rerunnable?.includes(k))),
     intake: {
       holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: LONG_AGO, changes: [] }), migrated: () => {},
-      // The ledger folds the person's event into the item: its Run again is asked, its state stays; a card withdrawn is dropped.
+      // The ledger folds the person's event into the item: its Run again is asked, or its label kept, its state stays; a card withdrawn is dropped.
       record: (type, data) => {
         recorded.push({ type, data });
-        if (type === 'work_item.label_edited') items[String(data.key)] = { ...items[String(data.key)], runAgainAsked: String(data.label) };
+        if (type === 'work_item.label_edited') items[String(data.key)] = { ...items[String(data.key)], ...(data.means === 'keep_out' ? { keptOut: String(data.label) } : { runAgainAsked: String(data.label) }) };
         if (type === 'source.request_withdrawn') items[String(data.key)] = { ...items[String(data.key)], state: 'dropped', eventState: 'dropped', waitingOn: undefined, requestSource: undefined };
       },
       requestOpened: () => false, requestsWaiting: () => [],
@@ -36,6 +36,7 @@ export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { 
       partOpen: (key) => o.parts?.includes(key) ?? false,
       failureReported: (key) => o.reported?.includes(key) ?? false,
       partsLeft: (key) => o.partsLeft?.includes(key) ?? false,
+      dropReported: (key) => o.dropped?.includes(key) ?? false,
       ...(o.held ? { mirrorHeld: o.held } : {}),
     },
   });
