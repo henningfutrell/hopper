@@ -22878,6 +22878,38 @@ open's labels (issue #1891). Before, the follow did so only when the issue carri
 
 **Verification:** `test/sources/github-follow-found-open.test.ts`.
 
+### A done item whose report found its issue open, judged by the ledger (issue #1892 part 28, 2026-10-22)
+
+Milestone 2: the done item part 24 left to the labels. A job's end makes its item done (`job.finished` with a result in
+`DONE_RESULTS`), and its report finds the issue open. The report then sets the labels by what it finds, and follows the
+issue (`follow: open`): its pull request waits (`hopper:pr-ready`, a part's `hopper:partly-done`), or none is open
+(`hopper:blocked`). The item stays done until the follow ends. What the report put on is certain, so it is judged now.
+
+**As built** (`src/sources/github/item-labels.ts`):
+- **`doneReported` names what the report put on** (`DoneReport`): `closed` (part 24's `hopper:done`), `pr_open`, `part` or
+  `no_pr`. The job finished and its final report went out. An open issue's case comes from the job's source state while
+  its follow is open: the pull request it follows, a part, or none. No new field is kept, so no migration. A follow that
+  found a pull request since names it there too, so the fact follows it.
+- **`labelsFor` of a done item with `eventState: done`** wants PR open's labels for `pr_open` and `part`, and blocked's for
+  `no_pr`. The mirror corrects a lost or wrong end label, Intake gives the same reason as that label (`ledgerReason`), and
+  the label taken off by hand is a Run again.
+- **The follow that finds a pull request open** (`blockedForPullRequest`, part 27) asks the ledger for such an item too: done
+  by this job's end, not by a whole merge and not by hand, no Run again asked. Its issue gets PR open's labels also when
+  `hopper:blocked` is not on it.
+- **A follow that ended** (merged, closed, abandoned) gives no fact: the follow's end moves the item, and that state is judged.
+
+**Decisions.**
+- **The label the report wrote, not `hopper:done`.** The ledger says done, but the issue is open and the report asked a
+  person to look at the pull request or the block. The mirror keeps that, as it does for every judged state.
+- **Derived, not recorded.** The report already keeps `follow`, `pullRequest` and `part`; a second field would say the same.
+
+**Left to the labels:** an item dropped by a card withdrawn by its source or by an issue closed as not planned (not listed
+open with the source label); a done item a read of GitHub made done.
+
+**Verification:** `test/sources/github-label-done-open.test.ts` (Intake reasons, the mirror's corrections, a Run again by
+hand), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`, `doneReported` of a job),
+`test/sources/github-follow-found-open.test.ts` (the follow of such an item), `test/users/source-context-done-reported.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

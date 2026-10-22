@@ -190,10 +190,11 @@ export interface IntakeContext {
    */
   dropReported?(key: string): 'none' | 'pr_ready' | undefined;
   /**
-   * Whether a done item's job finished and its final report found the issue closed as complete (issue #1892 part 24): the
-   * report put `hopper:done` on, and it is then the item's label.
+   * What a done item's job's final report put on, once it finished and the report went out (issue #1892 parts 24, 28):
+   * `closed`, the issue closed as complete, `hopper:done`; the issue open, `pr_open` (`hopper:pr-ready`), `part`
+   * (`hopper:partly-done`) or `no_pr` (`hopper:blocked`). It is then the item's label. Undefined: not judged.
    */
-  doneReported?(key: string): boolean;
+  doneReported?(key: string): 'closed' | 'pr_open' | 'part' | 'no_pr' | undefined;
   /**
    * Whether this hopper holds the label mirror's lease of the source (issue #1892): of the hoppers on one database, only
    * its holder corrects labels and records a label edited by hand. Absent: it does (one hopper).

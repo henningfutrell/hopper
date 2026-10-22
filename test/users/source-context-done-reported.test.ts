@@ -7,7 +7,7 @@ import { storeSourceContext } from '../../src/users/source-context.ts';
 
 const KEY = 'https://github.com/o/r/issues/7';
 
-const doneReportedOf = (source: Record<string, unknown> | undefined, jobId = 'j1', finalReported = true): boolean => {
+const doneReportedOf = (source: Record<string, unknown> | undefined, jobId = 'j1', finalReported = true): string | undefined => {
   const store = {
     settings: { claimHolder: () => 'a1b2c3d4e5f6' },
     workItems: { get: (key: string) => (key === KEY ? { key, jobId } : undefined) },
@@ -16,15 +16,20 @@ const doneReportedOf = (source: Record<string, unknown> | undefined, jobId = 'j1
   return storeSourceContext(store, undefined, undefined).intake('github')!.doneReported!(KEY);
 };
 
-describe('doneReported: the report put hopper:done on (issue #1892 part 24)', () => {
+describe('doneReported: what the report put on (issue #1892 parts 24, 28)', () => {
   it('its job\'s final report found the issue closed as complete', () => {
-    expect(doneReportedOf({ doneReported: true })).toBe(true);
+    expect(doneReportedOf({ doneReported: true })).toBe('closed');
+  });
+
+  it('its job\'s final report found the issue open (part 28): what it put on', () => {
+    expect(doneReportedOf({ follow: 'open' })).toBe('no_pr');
+    expect(doneReportedOf({ follow: 'open', pullRequest: 'https://github.com/o/r/pull/2' })).toBe('pr_open');
   });
 
   it('not reported yet, another end, or its job not in the store: none', () => {
-    expect(doneReportedOf({ doneReported: true }, 'j1', false)).toBe(false);
-    expect(doneReportedOf({ follow: 'open' })).toBe(false);
-    expect(doneReportedOf(undefined)).toBe(false);
-    expect(doneReportedOf({ doneReported: true }, 'gone')).toBe(false);
+    expect(doneReportedOf({ doneReported: true }, 'j1', false)).toBeUndefined();
+    expect(doneReportedOf({ follow: 'closed' })).toBeUndefined();
+    expect(doneReportedOf(undefined)).toBeUndefined();
+    expect(doneReportedOf({ doneReported: true }, 'gone')).toBeUndefined();
   });
 });
