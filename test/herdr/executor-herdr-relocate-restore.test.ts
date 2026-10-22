@@ -30,6 +30,21 @@ describe('herdr-claude executor: a checkpoint restore with no way to the hopper 
     expect(herdr.agentStarts).toHaveLength(0);
   });
 
+  // Issue #2428: a checkpoint whose patch does not apply whole no longer fails the job.
+  it('a patch that applied only in part: the job goes on, its progress names what was left out, and the agent is told first', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], restore: 'partly' }, { jobWorktrees: true });
+    const { ctx, progress } = contextFor(moved());
+    const out = await executor.resume!(ctx, 'The job moved.');
+    expect(out.kind).toBe('finished');
+    expect(herdr.agentStarts).toHaveLength(1);
+    expect(progress.map((p) => p.message).join('\n')).toContain('restored the checkpoint in part: its patch did not apply whole, so it left out src/a.ts');
+    const told = herdr.prompts.map((t) => t.text).join('\n');
+    expect(told).toContain('the patch did not apply whole there');
+    expect(told).toContain('`src/a.ts`');
+    expect(told).toContain('/w/.git/worktrees/j/hopper-checkpoint.patch');
+    expect(told).toContain('The job moved.');
+  });
+
   it('a restore that fails for another reason fails the job at once, as before, with no mark', async () => {
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], restore: 'failed' }, { jobWorktrees: true });
     const out = await executor.resume!(contextFor(moved()).ctx, 'The job moved.');
