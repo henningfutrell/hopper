@@ -31,7 +31,7 @@ import type { Rejection } from '../../domain/rejection.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { HANDOFF_WAIT, type WorkItem } from '../../domain/work-items.ts';
-import { labelsFor, type DropReport, type LabelFacts } from './item-labels.ts';
+import { labelsFor, type DoneReport, type DropReport, type LabelFacts } from './item-labels.ts';
 import {
   ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_BLOCKED, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED, holderLabel,
 } from './labels.ts';
@@ -107,7 +107,7 @@ export interface DiscoverScope {
   /** What a dropped item's cancelled or rejected job's report left (`DropReport`); undefined: not reported. */
   dropReported?: (key: string) => DropReport | undefined;
   /** Whether a done item's job's final report put `hopper:done` on. */
-  doneReported?: (key: string) => boolean;
+  doneReported?: (key: string) => DoneReport | undefined;
   /** The issues whose end label a person took off by hand, found in this pass (`work_item.label_edited`): no reason from the ledger. */
   edited?: ReadonlySet<string>;
 }
@@ -118,7 +118,7 @@ export const isAssignedTo = (i: Pick<GitHubIssue, 'assignees'>, login: string): 
 
 /**
  * Intake's end-label reason from the ledger (issue #1892), for an item in a state the label mirror judges: PR open, its pull
- * request (or its part) waits for review; blocked, why; failed or handed off, as its failure was reported; done, its issue still open; dropped by Won't do, rejected;
+ * request (or its part) waits for review; blocked, why; failed or handed off, as its failure was reported; done, its issue still open, or as its job's report found the issue open (part 28); dropped by Won't do, rejected;
  * dropped by a cancelled or rejected job, the reason of the label a person put on to keep it out; dropped by a tend job cancelled
  * not on purpose, its pull request waits for review; dropped by a dismissed failure, failed; dropped by a person's Close PR or the hopper's own close, pr-closed. `{}`: no such reason (a job at
  * work, a part merged with parts left, a cancelled or rejected job's item with no such label, or a person's Run again).
@@ -129,7 +129,7 @@ export function ledgerReason(item: WorkItem | undefined, facts: LabelFacts): { r
   if (item.runAgainAsked !== undefined) return {};
   if (item.state === 'pr_open') return { reason: facts.part ? PARTLY_DONE : PR_READY };
   if (item.state === 'failed' || (item.state === 'needs_you' && item.waitingOn === HANDOFF_WAIT)) return { reason: FAILED };
-  if (item.state === 'done') return { reason: DONE_OPEN };
+  if (item.state === 'done') return { reason: labelReason({ labels: [labelsFor(item, facts)!.add!] }, null) };
   if (item.state === 'dropped') return item.wontDo === true ? { reason: REJECTED_LABEL } : item.dismissed === true ? { reason: FAILED } : item.closedByPerson === true || item.closedByHopper === true ? { reason: PR_CLOSED } : item.keptOut !== undefined ? { reason: labelReason({ labels: [item.keptOut] }, null) } : facts.dropReported === 'pr_ready' ? { reason: PR_READY } : {};
   if (item.state === 'blocked') return { reason: item.blockedCause === 'pr_closed' ? PR_CLOSED : item.blockedCause === 'stale' ? BLOCKED_STALE : BLOCKED };
   return {};
@@ -227,7 +227,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
   const reasons = new Map<string, { reason: string; action?: IntakeOutcome['action'] }>();
   const candidates: GitHubIssue[] = [];
   for (const i of issues) {
-    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false, partsLeft: scope.partsLeft?.(i.url) ?? false, dropReported: scope.dropReported?.(i.url), doneReported: scope.doneReported?.(i.url) ?? false });
+    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false, partsLeft: scope.partsLeft?.(i.url) ?? false, dropReported: scope.dropReported?.(i.url), doneReported: scope.doneReported?.(i.url) });
     const byLabel = labelReason(i, config.hopperName, ledger);
     if (byLabel) reasons.set(i.url, { reason: byLabel, ...(LABEL_ACTION[byLabel] ? { action: LABEL_ACTION[byLabel] } : {}) });
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });

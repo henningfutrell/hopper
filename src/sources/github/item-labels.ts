@@ -8,8 +8,10 @@
 // culprit whose merge was reverted (failed by its landing, not by its job); a done item carries `hopper:done` once its pull
 // request merged as the whole item (`wholeMerged`): the follow put it on with the merge; or once a person resolved its hand-off as
 // Done by hand (`doneByHand`): the resolution put it on; or once a job's end made it done and its job's final report found
-// the issue closed as complete (`doneReported`, part 24): the report put it on. Not a done item a job's end made while its
-// issue was open, or a read of GitHub made done: its report set the labels by what the issue said then. A partly done item carries none once its merged
+// the issue closed as complete (`doneReported`, part 24): the report put it on. A done item a job's end made while its issue
+// was open carries what its job's final report put on (`doneReported`, part 28): `hopper:pr-ready`, or `hopper:partly-done`
+// for a part, while the pull request it follows waits; `hopper:blocked` while it found none. Not a done item a read of GitHub
+// made done. A partly done item carries none once its merged
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. Not a last part that made every declared part done: the follow put `hopper:done` on. An item that needs a person carries
 // none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
@@ -41,9 +43,16 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
  * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
  * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done). Of a done
- * item: whether its job's final report found the issue closed as complete and put `hopper:done` on (`doneReported`).
+ * item: what its job's final report put on (`doneReported`).
  */
-export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: boolean }
+export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: DoneReport }
+
+/**
+ * What the final report of a finished job put on its issue (issue #1892 parts 24, 28): `closed`, the issue was closed as
+ * complete, `hopper:done`; else the issue was open and the report follows it: `pr_open`, its pull request waits,
+ * `hopper:pr-ready`; `part`, a part's, `hopper:partly-done`; `no_pr`, none is open, `hopper:blocked`.
+ */
+export type DoneReport = 'closed' | 'pr_open' | 'part' | 'no_pr';
 
 /**
  * What the final report of a dropped item's cancelled or rejected job left on its issue: `none`, only the claim came off
@@ -67,11 +76,18 @@ export const dropReported = (job: Pick<Job, 'status' | 'spec' | 'sourceState'> |
 };
 
 /**
- * Of a done item's job: whether it finished and its final report found the issue closed as complete, so put `hopper:done`
- * on (issue #1892 part 24; the report's source state keeps `doneReported`).
+ * Of a done item's job: what its final report put on (`DoneReport`), once it finished and the report went out. The report's
+ * source state keeps `doneReported` for an issue closed as complete (part 24); for an open one, the pull request it follows
+ * (part 28): while the follow is open, the one it follows, or none yet. A follow found one since: its labels follow it too.
+ * Undefined: not such a job, its report not out yet, or its follow ended (the follow's end moves the item).
  */
-export const doneReported = (job: Pick<Job, 'status' | 'sourceState'> | undefined): boolean =>
-  job?.status === 'finished' && job.sourceState?.sync?.finalReported === true && job.sourceState?.source?.doneReported === true;
+export const doneReported = (job: Pick<Job, 'status' | 'sourceState'> | undefined): DoneReport | undefined => {
+  if (job?.status !== 'finished' || job.sourceState?.sync?.finalReported !== true) return undefined;
+  const s = job.sourceState?.source as { doneReported?: boolean; follow?: string; pullRequest?: string; part?: boolean } | undefined;
+  if (s?.doneReported === true) return 'closed';
+  if (s?.follow !== 'open') return undefined;
+  return s.pullRequest === undefined ? 'no_pr' : s.part === true ? 'part' : 'pr_open';
+};
 
 /** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, its merge, and what it waits on. */
 export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'dismissed' | 'closedByPerson' | 'closedByHopper' | 'doneByHand'>>;
@@ -86,7 +102,11 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       return { allowed: [label], add: label };
     }
     case 'failed': return item.eventState === 'failed' && facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
-    case 'done': return (item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && (item.doneByHand === true || facts.doneReported === true)) ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
+    case 'done': {
+      if ((item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && (item.doneByHand === true || facts.doneReported === 'closed'))) return { allowed: [LABEL_DONE], add: LABEL_DONE };
+      if (item.eventState !== 'done' || facts.doneReported === undefined) return undefined;
+      return facts.doneReported === 'no_pr' ? labelsFor({ state: 'blocked', blockedCause: 'no_pr' }) : labelsFor({ state: 'pr_open' }, { part: facts.doneReported === 'part' });
+    }
     case 'partly_done': return item.eventState === 'partly_done' && facts.partsLeft ? { allowed: [] } : undefined;
     case 'needs_you':
       if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
@@ -140,12 +160,14 @@ export function labelDrift(item: LabelledItem, seen: readonly string[], facts: L
 
 /**
  * Whether the pull request found open for job `jobId` ends its item's block for want of one (issue #1891), so its issue
- * gets PR open's labels: the ledger says so (issue #1892 part 27) — blocked with no pull request, by this job, no Run again
- * asked —; the issue's `hopper:blocked` only for an item the ledger does not know or a state the mirror does not judge.
+ * gets PR open's labels: the ledger says so (issue #1892 part 27) — blocked with no pull request, or done by its end with
+ * none found (part 28), by this job, no Run again asked —; the issue's `hopper:blocked` only for an item the ledger does not know or a state the mirror does not judge.
  */
 export function blockedForPullRequest(item: (LabelledItem & Pick<WorkItem, 'jobId' | 'runAgainAsked'>) | undefined, jobId: string, carried: readonly string[]): boolean {
-  if (item === undefined || labelsFor(item) === undefined) return carried.includes(LABEL_BLOCKED);
-  return item.state === 'blocked' && item.blockedCause === 'no_pr' && item.jobId === jobId && item.runAgainAsked === undefined;
+  // Done by this job's end, its report found none open (part 28): it put `hopper:blocked` on, and the follow looks again.
+  const reportedNone = item?.state === 'done' && item.eventState === 'done' && item.doneByHand !== true && item.wholeMerged !== true;
+  if (item === undefined || (labelsFor(item) === undefined && !reportedNone)) return carried.includes(LABEL_BLOCKED);
+  return (reportedNone || (item.state === 'blocked' && item.blockedCause === 'no_pr')) && item.jobId === jobId && item.runAgainAsked === undefined;
 }
 
 /**
