@@ -21,7 +21,7 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'blocked', blockedCause: 'pr_closed' })).toEqual({ allowed: ['hopper:pr-closed'], add: 'hopper:pr-closed' });
   });
 
-  it('failed (issue #1892): hopper:failed once its job\'s failure was reported as failed; not judged before, nor a reverted culprit', () => {
+  it('failed (issue #1892): hopper:failed once its job\'s failure was reported as failed; not judged before, nor a reverted culprit not of a whole merge', () => {
     expect(labelsFor({ state: 'failed', eventState: 'failed' }, { failureReported: true })).toEqual({ allowed: ['hopper:failed'], add: 'hopper:failed' });
     expect(labelsFor({ state: 'failed', eventState: 'failed' })).toBeUndefined();
     expect(labelsFor({ state: 'failed', eventState: 'done' }, { failureReported: true })).toBeUndefined();
@@ -46,6 +46,15 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelTakenOff(waits, ['hopper', 'hopper:failed'], ['hopper'], { failureReportWaits: true })).toBeUndefined();
     expect(labelPutOn(waits, ['hopper'], ['hopper', 'hopper:failed'], { failureReportWaits: true })).toBeUndefined();
     expect(labelsFor({ state: 'failed', eventState: 'done' }, { failureReportWaits: true })).toBeUndefined();
+  });
+
+  it('failed by its landing, a reverted culprit of a whole merge (issue #1892 part 33): hopper:done, as the follow put it on', () => {
+    const culprit = { state: 'failed', eventState: 'done', pullRequestState: 'merged', wholeMerged: true } as const;
+    expect(labelsFor(culprit)).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
+    expect(labelDrift(culprit, ['hopper', 'hopper:failed'])).toEqual({ remove: ['hopper:failed'], add: ['hopper:done'] });
+    expect(labelTakenOff(culprit, ['hopper', 'hopper:done'], ['hopper'])).toBe('hopper:done');
+    expect(labelsFor({ state: 'failed', eventState: 'partly_done', pullRequestState: 'merged' })).toBeUndefined();
+    expect(labelsFor({ state: 'failed', eventState: 'done', pullRequestState: 'merged' })).toBeUndefined();
   });
 
   it('done (issue #1892): hopper:done once its pull request merged as the whole item; not judged else', () => {

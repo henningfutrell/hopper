@@ -1,0 +1,1 @@
+- When a batch test run finds that a merged change broke the build and the hopper takes it back, Intake still offers its issue to run again, even when someone changed the issue's labels.

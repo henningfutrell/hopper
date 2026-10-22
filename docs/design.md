@@ -23004,6 +23004,38 @@ source or by an issue closed as not planned (not listed).
 `hopper:failed` kept and none put on, no person event), `test/sources/github-item-labels.test.ts`,
 `test/users/source-context-failure-report-waits.test.ts`, `test/gitlab/ledger-intake.test.ts`.
 
+### A reverted culprit, judged by the ledger (issue #1892 part 33, 2026-10-22)
+
+Milestone 4: the failed item parts 31 and 32 left to the labels. A job's pull request merged into the landing branch as the
+whole item. A red batch then found it the **culprit** and reverted it ("Landing batches", issue #1175). Its item is failed by
+its landing, not by its job: its events say done (`eventState: done`), and `stateOf` gives failed for the landing stage. The
+follow put `hopper:done` on at the merge. Nothing took it off: the red batch writes no label to the culprit's issue, and no
+batch run closed the issue. So `hopper:done` is the end label the issue carries, and the next sync offers the item as a
+reopened card ("Issues fixed on the landing branch").
+
+**As built** (`src/sources/github/item-labels.ts`):
+- **`labelsFor` of a failed item with `eventState: done`**, its pull request merged as the whole item (`pullRequestState:
+  merged`, `wholeMerged`), wants `hopper:done`. No new fact and no new field: a failed state with done events comes only
+  from the landing stage. The mirror puts a lost `hopper:done` back and takes any other end label off.
+- **Intake reads the ledger for it** (`ledgerReason`, `src/sources/github/discover.ts`): the done-but-open reason
+  (`DONE_OPEN`), whatever end labels the issue carries. So the reopened card comes as before (`reopenedRequests`), also when a
+  stale label was on the issue.
+- **`hopper:done` taken off by hand is a Run again** (`labelTakenOff`), as for a done item.
+- **GitLab** reads the same `ledgerReason`; it has no landing batches, so no item there is in this state.
+
+**Decisions.**
+- **`hopper:done`, not `hopper:failed`.** The labels mirror what the hopper wrote and what the ledger knows: the follow wrote
+  `hopper:done`, and the done-but-open reason is what opens the reopened card. A new label write at the revert would be a
+  change of the batch runner, which the issue does not ask for.
+- **A culprit that was a part stays to the labels.** Its events say partly done; what the follow left on it depends on the
+  parts left, and no fact says so yet.
+
+**Left to the labels:** a culprit that was a part, a done item a read of GitHub made done, an item dropped by a card withdrawn
+by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-culprit.test.ts` (Intake reason, a stale end label swapped, a lost `hopper:done`
+put back, Run again by hand, a part's culprit not judged), `test/sources/github-item-labels.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

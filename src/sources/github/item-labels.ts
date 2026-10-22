@@ -4,8 +4,10 @@
 // judged: an item a job works (queued, working, waiting outside) carries none; an item in PR open carries
 // `hopper:pr-ready`, or `hopper:partly-done` for a part (either is allowed; the one to add follows `part`, issue #1933); a blocked item carries `hopper:blocked`, or `hopper:pr-closed`
 // when its pull request was closed without a merge; a failed item carries `hopper:failed` once its job's failure was reported
-// as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits, and not a
-// culprit whose merge was reverted (failed by its landing, not by its job); a failed item whose failure was told as one the
+// as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits; a
+// culprit whose merge was reverted (failed by its landing, not by its job: its events say done, issue #1175) carries
+// `hopper:done` when it merged as the whole item (part 33): the follow put it on at the merge, the red batch writes no label to
+// its issue and no batch run closed it; not a culprit that was a part; a failed item whose failure was told as one the
 // hopper fixes itself (`fixingReported`, issue #1230, part 31) carries none: that report left the issue as it was, and while
 // its job worked the mirror kept every end label off; a failed item whose report waits (`failureReportWaits`, part 32) may
 // carry `hopper:failed` and no other end label: the report puts it on, or leaves the issue as it was, so none is put on before
@@ -107,6 +109,8 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       return { allowed: [label], add: label };
     }
     case 'failed':
+      // A reverted culprit of a whole merge (part 33): its events say done; the follow put `hopper:done` on at the merge.
+      if (item.eventState === 'done' && item.pullRequestState === 'merged' && item.wholeMerged === true) return { allowed: [LABEL_DONE], add: LABEL_DONE };
       if (item.eventState !== 'failed') return undefined;
       if (facts.failureReported) return { allowed: [LABEL_FAILED], add: LABEL_FAILED };
       return facts.fixingReported ? { allowed: [] } : facts.failureReportWaits ? { allowed: [LABEL_FAILED] } : undefined;
