@@ -211,12 +211,13 @@ function claimVerdict(i: GitHubIssue, scope: DiscoverScope, otherUser: boolean):
 
 /** The not-taken group of a reason (issue #798); a request card's is set where its origin is judged (source.ts). */
 const GROUP_OF: Record<string, NotTakenGroup> = { [NOT_ASSIGNED]: 'not-assigned', [BACKBURNER]: 'backburner', [PR_READY]: 'pr-waiting', [PARTLY_DONE]: 'partly-done' };
+export const groupOf = (reason: string): NotTakenGroup => GROUP_OF[reason] ?? 'other';
 
 /** What a person can do about an issue its labels keep out: take it off the backburner, or Won't do on a blocked one (issue #1891). */
 const LABEL_ACTION: Record<string, IntakeOutcome['action']> = { [BACKBURNER]: 'unbackburner', [BLOCKED]: 'wont_do', [BLOCKED_STALE]: 'wont_do', [PR_CLOSED]: 'wont_do' };
 
 const outcome = (i: GitHubIssue, reason?: string, action?: IntakeOutcome['action']): IntakeOutcome => ({
-  key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason, group: GROUP_OF[reason] ?? 'other' } : {}), ...(action ? { action } : {}),
+  key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason, group: groupOf(reason) } : {}), ...(action ? { action } : {}),
 });
 
 export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, scope: DiscoverScope): Promise<DiscoverResult> {

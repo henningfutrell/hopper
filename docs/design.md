@@ -17656,7 +17656,10 @@ or a card of new text — ends that (`listed`). So an approved item comes back t
 (issue #1126). When the last sync does not list the item as a card of `hash` — no sync since a restart, or its read was
 older than the page — Approve is **resolved again** (`resolve`): the issue is read now, and approved only while it is
 open, labelled, assigned to the user, not claimed, not `hopper:done`, has no job here, is not declined, is not of a trusted
-origin, and its title and body hash as `hash`. Else `failed` says why, and the card keeps the refusal on the page, also
+origin, and its title and body hash as `hash`. For an item the ledger holds (issue #1892), its work item's state says
+whether it is a card, in place of `hopper:done`: an item waiting for approval is one, also with `hopper:done` left on (the
+label mirror takes that off); an item in any other state is not, whatever its labels. `hopper:done` decides only for an
+item the hopper does not know. Else `failed` says why, and the card keeps the refusal on the page, also
 when the next list shows the new text.
 
 **Approved.** At a later sync, an issue not of a trusted origin whose title and body hash as the text a person approved
@@ -22909,6 +22912,33 @@ open with the source label); a done item a read of GitHub made done.
 **Verification:** `test/sources/github-label-done-open.test.ts` (Intake reasons, the mirror's corrections, a Run again by
 hand), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`, `doneReported` of a job),
 `test/sources/github-follow-found-open.test.ts` (the follow of such an item), `test/users/source-context-done-reported.test.ts`.
+
+### GitLab's Intake reads the ledger (issue #1892 part 29, 2026-10-22)
+
+Milestone 4: GitLab's Intake still worked out an item's state from its end labels alone (`END_LABELS` in
+`src/gitlab/source.ts`). It now reads the ledger as GitHub's does (part 1), and the label mirror (`label-mirror.ts`) runs on
+its issues too.
+
+**As built** (`src/gitlab/ledger.ts`):
+- **Intake reads the ledger.** An issue whose work item is in a state the mirror judges gets the ledger's reason
+  (`ledgerReason`, with its group, `groupOf`), whatever end labels it carries. The end labels decide only for an issue the
+  hopper does not know, or a state the mirror does not judge. The backburner always counts.
+- **The mirror corrects GitLab's labels** through the GitLab outbox (part 17), act `mirror`: the sync loop's flush sends
+  the rows. An issue taken as a new job is not judged (issue #1954); the source now gets `knownKeys` and `rerunnable` for that.
+- **An end label taken off by hand at GitLab is a Run again** (`work_item.label_edited`, found before Intake reads the
+  ledger), so the issue is taken again, as the old "remove the label at GitLab to offer it again" did.
+- **Only the holder of the mirror's lease** (`label-mirror/<source>`, part 12) corrects and records.
+
+**Decisions.**
+- **GitLab's own ends are told apart, so the mirror never fights them.** A GitLab job has no parts, and its finished report
+  puts `hopper:pr-ready` on whether or not it found a merge request yet: `doneReported` `no_pr` and `part` read as `pr_open`.
+  A rejected job's report puts `hopper:rejected` on, which `dropReported` cannot tell from a cancel: a drop by a job's end
+  is not judged on GitLab (no `dropReported`), so the labels decide it.
+- **No listing cache.** GitLab's listings are not kept in the database, so the mirror's view after a start is empty: an edit
+  made while the hopper was stopped is not seen. The next edit is.
+
+**Verification:** `test/gitlab/ledger-intake.test.ts` (a lost label put back, a Run again by hand, a done item with no merge
+request yet, a hopper without the lease, an unknown issue by its labels); `test/gitlab/` all pass.
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

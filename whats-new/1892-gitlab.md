@@ -1,0 +1,1 @@
+- On GitLab, Intake now shows where the hopper's own records say each issue stands, and the hopper puts back an end label it lost.
