@@ -4,7 +4,7 @@
 // session with it, on its own. The policy is a setting (GET /api/thread-ask, POST /ui/api/thread-ask) read at each sync.
 // Real daemon over the fake herdr and the in-memory fake GitHub.
 import { afterEach, describe, expect, it } from 'vitest';
-import { AUTO_PARK_WHY, WAIT_RELEASE_AFTER_MS, type DomainEvent, type Job, type Question, type ThreadAskSettings } from '../../src/domain/types.ts';
+import { THREAD_PARK_WHY, type DomainEvent, type Job, type Question, type ThreadAskSettings } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -123,7 +123,7 @@ describe('the hopper label means full automation', () => {
     expect((await questionOf(a, job.id)).answeredBy).toBe('thread:maintainer');
   });
 
-  it('picked up with its question still open, it waits a few seconds from the pick-up, not one tick (issues #1006, #2335)', async () => {
+  it('parked for its question on the thread, it is not picked up: it would park again at once (issues #1006, #2415)', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
     const gh = createFakeGitHub();
     const a = await boot(herdr, gh);
@@ -131,12 +131,10 @@ describe('the hopper label means full automation', () => {
     const { job } = await blocked(a, gh, OWN);
     await a.waitForStatus(job.id, 'parked', 5000);
 
-    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
-    expect(r.body.status).toBe('waiting_answer');
-    await new Promise((done) => setTimeout(done, 600));
-    expect((await a.job(job.id)).status).toBe('waiting_answer');
-    const again = await a.waitForStatus(job.id, 'parked', WAIT_RELEASE_AFTER_MS + 10_000);
-    expect(again.parked).toMatchObject({ auto: true, why: AUTO_PARK_WHY });
+    const r = await a.ui<{ error: string }>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toContain('waits on its question with a person');
+    expect((await a.job(job.id)).parked).toMatchObject({ auto: true, why: THREAD_PARK_WHY });
   });
 
   it('off: the question stays with the hopper, nothing is posted and the job does not park for it', async () => {

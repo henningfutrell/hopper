@@ -77,7 +77,7 @@ describe('a GitHub-signed-in user becomes a hopper user with GitHub as a source 
     const accounts = (await app.api<{ accounts: ConnectedAccountStatus[] }>('GET', '/api/connected-accounts', undefined, { 'x-hopper-session': local })).body.accounts;
     expect(accounts.find((a) => a.provider === 'github')).toMatchObject({ state: 'connected', account: 'octo-user' });
     expect(app.app.instance.users.list()).toHaveLength(before);
-  });
+  }, 60_000); // a daemon, a CLI and two sign-ins: 8 s on a loaded CI shard
 });
 
 describe('single sign-on keyed by email (issue #1380)', () => {
@@ -110,5 +110,5 @@ describe('single sign-on keyed by email (issue #1380)', () => {
     // The users list names each user's email, for the admin to see who is who.
     const users = (await app.api<{ users: { id: string; email?: string }[] }>('GET', '/api/users', undefined, { 'x-hopper-session': boss })).body.users;
     expect(users.find((u) => u.id === ada)).toMatchObject({ email: 'ada@example.com' });
-  });
+  }, 60_000); // three sign-ins, a CLI and a daemon: timed out at 15 s on a loaded CI shard
 });

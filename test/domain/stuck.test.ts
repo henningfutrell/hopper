@@ -85,13 +85,14 @@ describe('stuck work by cause (issue #1010)', () => {
     ]);
   });
 
-  it('parked jobs and jobs stuck on their own wait: counted, with what a person does', () => {
+  it('jobs stuck on their own wait: counted, with what a person does; a parked job is not stuck work (issue #2414)', () => {
     const causes = stuckOf({
       ...empty,
       jobs: [job('j1', {}), job('j2', { status: 'waiting_on', wait: { for: 'x', since: 's', ownCommand: true, stuckAt: 't' } }), job('j3', { status: 'waiting_on', wait: { for: 'x', since: 's', on: { kind: 'grant' } } })],
     });
-    expect(causes.map((c) => [c.cause, c.ids])).toEqual([['parked', ['j1']], ['own_wait', ['j2']]]);
+    expect(causes.map((c) => [c.cause, c.ids])).toEqual([['own_wait', ['j2']]]);
     expect(causes.every((c) => c.act === undefined && c.todo)).toBe(true);
+    expect(stuckOf({ ...empty, jobs: [job('j1', {})] })).toEqual([]);
   });
 
   it('a legacy job waiting on nothing recorded (issue #1245): stuck work with that reason, and Resume all', () => {
@@ -132,7 +133,7 @@ describe('stuck work by cause (issue #1010)', () => {
   });
 
   it('the bulk causes come first', () => {
-    const causes = stuckOf({ ...empty, jobs: [job('j1', {})], recent: [record('r1', OK)] });
-    expect(causes.map((c) => c.cause)).toEqual(['retry', 'parked']);
+    const causes = stuckOf({ ...empty, jobs: [job('j1', { status: 'waiting_on', wait: { for: 'x', since: 's', ownCommand: true, stuckAt: 't' } })], recent: [record('r1', OK)] });
+    expect(causes.map((c) => c.cause)).toEqual(['retry', 'own_wait']);
   });
 });

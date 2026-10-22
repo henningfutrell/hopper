@@ -197,7 +197,7 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 
     // Work not pushed (issue #1010): ended jobs whose reap kept work, each with Push it and Discard.
     keptWork,
     // Stuck work (issue #1010): each item that waits on a person, by its cause, with one bulk action or what to do.
-    stuck: stuckOf({ handoffs: shownHandoffs, recent, keptWork, pullRequests: pullRequestCards(store, now), jobs: store.jobs.list({ status: ['parked', 'waiting_on', 'queued', 'claimed', 'running'] }), prOpen: prOpenStale(store, now) }),
+    stuck: stuckOf({ handoffs: shownHandoffs, recent, keptWork, pullRequests: pullRequestCards(store, now), jobs: store.jobs.list({ status: ['waiting_on', 'queued', 'claimed', 'running'] }), prOpen: prOpenStale(store, now) }),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.
     recent,
