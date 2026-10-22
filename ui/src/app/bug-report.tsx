@@ -1,5 +1,5 @@
 // Report a bug (issue #694): a short form — a title, what happened, what you expected — and the context the hopper fills
-// in (its version, the install type, the system, and the job when the report is about one), masked, for the person to
+// in (the System line only, issue #2478), masked, for the person to
 // read and edit before sending. The daemon files it on the hopper's own repository as the person, through their own
 // GitHub connection. When open reports look similar it offers them first: add yours to one, or file a new one anyway.
 // After filing it shows the link. When GitHub cannot take it now, the hopper keeps it and sends it later: the form says
@@ -28,10 +28,10 @@ export function BugReportDialog({ jobId, onClose }: { jobId?: string; onClose: (
   const [error, setError] = useState<string>();
   useEffect(() => {
     let live = true;
-    post<{ context: string }>('/ui/api/bug-reports/context', jobId ? { jobId } : {})
+    post<{ context: string }>('/ui/api/bug-reports/context', {})
       .then((r) => { if (live) setDraft((d) => ({ ...d, context: r.context })); }, (e: unknown) => { if (live) setError((e as Error).message); });
     return () => { live = false; };
-  }, [jobId]);
+  }, []);
   const set = (k: keyof BugReportDraft) => (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [k]: e.target.value }));
   const send = async (o: { commentOn?: number; force?: boolean } = {}) => {
     setBusy(true);
@@ -134,7 +134,7 @@ export function ReportBugButton({ jobId }: { jobId: string }) {
   if (!canOperate) return null;
   return (
     <>
-      <Button type="button" size="xs" variant="ghost" title="Report a bug in the hopper, with this job's context" onClick={() => report.open(jobId)}><Bug />Report a bug</Button>
+      <Button type="button" size="xs" variant="ghost" title="Report a bug in the hopper about this job" onClick={() => report.open(jobId)}><Bug />Report a bug</Button>
       {report.dialog}
     </>
   );

@@ -17291,15 +17291,14 @@ person who may triage the repository: a report by anyone else arrives with no la
 Filing needs the hopper's app installed on the repository with issues write (the app reaches only the repositories it is
 installed on); without that, GitHub refuses it, and the person reads why.
 
-**The report context** (`reportContext`, `src/bug-reports/context.ts`, pure). What the form fills in: the version and
-revision from install.json (`Updater.status().installed`: the branch and the first 12 digits of the commit, else
-"version not known"), the install type (`image`: container, else host), the system (platform, release, architecture,
-Node), and for a report on a job: its id, its state in plain words, its failure record's id, the first line of its
-error, and the last 20 lines of its error tail. Never the job's item — its repository, title or text may be private, so
-only the person adds them. Masked before the person sees it (`maskReportText`): the host name by value, GitHub tokens,
-keys (as the log mask, issue #685), and `maskAddresses` (`src/secrets/mask.ts`): IPv4, IPv6 (full or with `::`, so a
-time is none), host names under a private suffix (`.local`, `.lan`, `.home`, `.internal`, `.corp`, `.ts.net`) and the
-user name in a home directory. The person reads and edits it; what they leave in is sent.
+**The report context** (`reportContext`, `src/bug-reports/context.ts`, pure). What the form fills in: the System line
+only (issue #2478) — the platform, its release, the architecture and the Node version. Never the hopper's version or
+revision, its install type, a job, its failure or its log: a report is a public issue, and none of them belongs there.
+The generator makes no other line, so nothing else can reach GitHub; the person adds what they want to say in their own
+sections. Masked before the person sees it (`maskReportText`): the host name by value, GitHub tokens, keys (as the log
+mask, issue #685), and `maskAddresses` (`src/secrets/mask.ts`): IPv4, IPv6 (full or with `::`, so a time is none), host
+names under a private suffix (`.local`, `.lan`, `.home`, `.internal`, `.corp`, `.ts.net`) and the user name in a home
+directory. The person reads and edits it; what they leave in is sent.
 
 **Filing** (`createBugReports`, `src/bug-reports/service.ts`). `POST /ui/api/bug-reports { title, happened, expected?,
 context?, jobId?, commentOn?, force? }`, operator. First the **duplicate search**: the title's words (three letters or
@@ -17311,21 +17310,17 @@ first. When there are some, nothing is filed and they are answered (`kind: simil
 What I expected, Context — and the note "Filed with Report a bug in a hopper."; GitHub tokens and keys are always
 masked in the title and body. Each outcome is one event on the person's log, never with the text:
 `bug_report.filed { repo, kind: issue | comment, number, url, jobId?, by }`, or `bug_report.failed { repo, error, jobId?,
-by }` — 503 with no GitHub connection, 502 when GitHub refuses. `POST /ui/api/bug-reports/context { jobId? }` answers
-`{ context, repo }` and changes nothing (404 for a job that is not the person's).
-
-**The duplicate search by signature.** A report on a job whose failure record has a **signature** (the failure
-assessor's, 12 hex digits) names it in the context (`- Signature: <hex>`). Before the title search, the open
-`user-report` issues whose body has that signature are searched (`in:body`); every one found is similar, first. Only
-while the context sent still names it: a signature the person removed is not searched for either.
+by }` — 503 with no GitHub connection, 502 when GitHub refuses. `POST /ui/api/bug-reports/context {}` answers
+`{ context, repo }` and changes nothing. A report's `jobId` stays on the hopper: its row and its events name the job
+(issue #1147 reads it), the text sent to GitHub does not.
 
 **Jobs report too** (`fileForJob`). A running job files a hopper bug with `sh "$HOPPER_GH" report bug --title T (--body
 TEXT | --body-file F) [--comment-on N] [--force]` — a subcommand of `hopper-gh` ("GitHub through the hopper"), not a
 second script: one script, one token, one place a job looks for anything GitHub. The proxy checks the job's token and
 the limits (3 per job, 10 per machine, in any day), then files it by the person's path, with the **job's own user's**
 connection, so the job never signs in to GitHub. No person reads a job's text before it is sent, so its title and body
-pass through the whole report mask (`maskReportText`), not only the token mask; its context is the hopper's, on the job
-itself; the body ends "Filed by a job (`<id>`) with Report a bug in a hopper."; `bug_report.filed` and `.failed` carry
+pass through the whole report mask (`maskReportText`), not only the token mask; its context is the hopper's System line;
+the body ends "Filed by a job with Report a bug in a hopper." (no job id, issue #2478); `bug_report.filed` and `.failed` carry
 `fromJob: true` and `by: job <id>`. Similar open reports are answered **409** with the list and what to do next
 (`--comment-on N`, or `--force`): nothing is filed until the job chooses. The label is still `user-report`, so a job's
 report never starts a job either.
@@ -17334,8 +17329,8 @@ report never starts a job either.
 with a title, what happened, what you expected, and the context, editable, under a line that says what was masked and
 to remove anything private. Send is off until there is a title and what happened. Similar open reports are listed with
 *Add to #N* each and *File a new report*; after filing, the line names the issue and links it. Every hand-off card,
-failure row and question card has *Report a bug* too (`ReportBugButton`), for an operator or admin: the same form, with
-that job's context. A problem card has none: it is many jobs, and each of its failures has its own row.
+failure row and question card has *Report a bug* too (`ReportBugButton`), for an operator or admin: the same form and
+context; the report's row names that job, the text does not. A problem card has none: it is many jobs, and each of its failures has its own row.
 
 **Kept and sent later.** With no GitHub connection, or when GitHub cannot take the report now — no answer, 401 (the
 connection refused or ended), 403 or 404 (no access to the repository: the app is not installed there), 429, or a 5xx
@@ -17358,16 +17353,16 @@ kept report, oldest first, with the person's own connection — `bug_report.file
 never sent twice. `GET /api/bug-reports` (never the text) and `POST /ui/api/bug-reports/refresh` (operator: one pass
 now) serve Settings → Your reports, which lists them newest first with a Refresh button.
 
-**From the CLI** (`src/cli-operator-report.ts`, issue #623): `hopper report context [--job <id>]` prints the context,
+**From the CLI** (`src/cli-operator-report.ts`, issue #623): `hopper report context` prints the context,
 masked, to read first; `hopper report bug --title <t> (--happened <text> | --happened-file <f>) [--expected <text>]
 [--job <id>] [--context-file <f>] [--comment-on <n>] [--force]` files it by the UI's path — the hopper's context unless
 `--context-file` gives the person's own —; `hopper report list` and `hopper report refresh` are Your reports. Each is
 the UI's own call under a session minted for it; the answer is JSON.
 
 Tests: `test/integration/bug-reports-jobs.test.ts` (a job's report through the real `hopper-gh`: filed with its user's
-connection, masked, marked; similar first, `--comment-on`, `--force`; the daily limit; the signature search),
+connection, masked, marked; similar first, `--comment-on`, `--force`; the daily limit),
 `test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
-`test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context redacted, filing as the person
+`test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context the System line only, also on a job's report, filing as the person
 with the label and no assignee, a similar report offered, a comment, filing anyway, kept with no connection, a refused
 draft), `test/integration/bug-reports-later.test.ts` (kept with no connection and sent once connected; kept while GitHub
 refuses access, a comment too; Your reports' states refreshed; a 422 not kept), `test/integration/bug-reports-cli.test.ts`

@@ -10,12 +10,15 @@ import {
   draftContext, filedBody, filingRefusal, type DraftAnswer, type FiledIssue, type IssueCheck, type IssueDraftRequest, type IssueDraftStatus,
 } from '../domain/issue-drafts.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
-import { maskReportText, TAIL_LINES } from '../bug-reports/context.ts';
+import { maskReportText } from '../bug-reports/context.ts';
 import { PromotionGitHubError, type PromotionGitHub } from '../promotions/github.ts';
 import { cleanText } from '../promotions/scan.ts';
 import { checkDraft, type DraftFinding, type DraftScope } from '../run-skills/constraints.ts';
 import { fileIssuePrompt, type FileIssueInput, type IssueDraft } from '../run-skills/file-issue.ts';
 import { checkRunSkill, loadRunSkill, type RunSkill } from '../run-skills/index.ts';
+
+/** The log lines of the job a draft's context carries, the last ones. */
+const TAIL_LINES = 20;
 
 /** Why a draft or a filing did not go on: `status` as the HTTP edge answers it. */
 export class IssueDraftRefused extends Error {

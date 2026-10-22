@@ -1,76 +1,34 @@
-// Report a bug (issue #694, design.md "Report a bug"), pure: the context a report carries — the hopper's version and
-// revision, the install type, the system, the related job, its failure and plain-language state, its last log lines —
-// masked before the person sees it; the report's body; and the terms of the duplicate search.
-import type { InstallInfo, Job, JobStatus } from '../domain/types.ts';
+// Report a bug (issue #694, design.md "Report a bug"), pure: the context a report carries — the System line only (issue
+// #2478) — masked before the person sees it; the report's body; and the terms of the duplicate search.
 import { maskAddresses, maskGitHubTokens, maskKeys, maskSecret } from '../secrets/mask.ts';
 
 /** Where every report goes: the hopper's own repository. */
 export const REPORT_REPO = 'henningfutrell/hopper';
 /** The one label a report gets: never `hopper`, so a report never starts a job (issue #655 is the gate for the rest). */
 export const REPORT_LABEL = 'user-report';
-/** How the context names a failure's signature, before its 12 hex digits. */
-export const SIGNATURE_LINE = 'Signature: ';
-/** The log lines of the job a report carries, the last ones. */
-export const TAIL_LINES = 20;
-
-/** A job's state, as a person reads it. */
-const STATE_WORDS: Record<JobStatus, string> = {
-  queued: 'queued: it waits for a lane', held: 'held: it waits for a person or a rule', claimed: 'starting',
-  running: 'running', waiting_answer: 'waiting for an answer to its question', operator_led: 'a person works on it',
-  parked: 'parked', waiting_on: 'waiting on something outside the hopper', finished: 'finished',
-  failed: 'failed: it stopped with an error', cancelled: 'cancelled', rejected: 'rejected',
-};
 
 /** The machine the hopper runs on, as the context names it. */
 export interface ReportSystem { platform: string; release: string; arch: string; node: string; hostname: string }
-
-export interface ReportContextInput {
-  /** What install.json says of the running build: whatever fields it has. */
-  install: Partial<InstallInfo>;
-  system: ReportSystem;
-  job?: Job;
-  /** The failure record of the job, if it has one. */
-  failureId?: string;
-  /** Its signature (the failure assessor's): the duplicate search looks for it in the open reports' text. */
-  signature?: string;
-}
 
 /** Text as a report may carry it: tokens, keys, the host name, IP addresses, private host names and home directories masked. */
 export function maskReportText(text: string, hostname?: string): string {
   return maskAddresses(maskKeys(maskGitHubTokens(maskSecret(text, hostname, 'host'))));
 }
 
-const versionOf = (i: Partial<InstallInfo>): string =>
-  (i.commit ? `${i.branch ?? 'unknown branch'} at ${i.commit.slice(0, 12)}` : 'version not known');
-
 /**
- * The context of a report, masked, as Markdown lines. Never the job's item: its repository, title and text may be
- * private, so only the person adds them.
+ * The context of a report, masked: the System line and nothing else (issue #2478). Never the hopper's version, its
+ * install type or a job: they do not belong in a public issue.
  */
-export function reportContext(i: ReportContextInput): string {
-  const lines = [
-    `- Hopper: ${versionOf(i.install)}`,
-    `- Install: ${i.install.kind === 'image' ? 'container' : 'host'}`,
-    `- System: ${i.system.platform} ${i.system.release} (${i.system.arch}), Node ${i.system.node}`,
-  ];
-  const job = i.job;
-  if (job) {
-    lines.push(`- Job: ${job.id} (${STATE_WORDS[job.status]})`);
-    if (i.failureId) lines.push(`- Failure: ${i.failureId}`);
-    if (i.signature) lines.push(`- ${SIGNATURE_LINE}${i.signature}`);
-    if (job.error) lines.push(`- Error: ${job.error.split('\n')[0]!.slice(0, 500)}`);
-    const tail = job.errorTail?.trimEnd().split('\n').slice(-TAIL_LINES).join('\n');
-    if (tail) lines.push('', `Last ${TAIL_LINES} log lines of the job:`, '', '```text', tail.replaceAll('```', "'''"), '```');
-  }
-  return maskReportText(lines.join('\n'), i.system.hostname);
+export function reportContext(system: ReportSystem): string {
+  return maskReportText(`- System: ${system.platform} ${system.release} (${system.arch}), Node ${system.node}`, system.hostname);
 }
 
 export interface ReportText {
   happened: string;
   expected: string;
   context: string;
-  /** The job that files it (`hopper-report`), marked as the job's. */
-  fromJob?: string;
+  /** A job files it (`hopper-gh report bug`): marked as a job's, with no job id. */
+  fromJob?: boolean;
 }
 
 /** A report's body: the person's sections, those with text, and the hopper's note; GitHub tokens and keys always masked. */
@@ -78,7 +36,7 @@ export function reportBody(r: ReportText): string {
   const sections = [['What happened', r.happened], ['What I expected', r.expected], ['Context', r.context]]
     .filter(([, text]) => text!.trim() !== '')
     .map(([heading, text]) => `### ${heading}\n\n${text!.trim()}`);
-  const note = r.fromJob ? `Filed by a job (${r.fromJob}) with Report a bug in a hopper.` : 'Filed with Report a bug in a hopper.';
+  const note = r.fromJob ? 'Filed by a job with Report a bug in a hopper.' : 'Filed with Report a bug in a hopper.';
   return maskKeys(maskGitHubTokens(`${sections.join('\n\n')}\n\n---\n${note}`));
 }
 
