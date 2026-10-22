@@ -1,13 +1,13 @@
 import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, LaneId, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, SignedOutTool, StartPlan, WaitPlan } from '../domain/types.ts';
-import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
+import { holdingBestFree, isHigh, keptFor, pickLane, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
-import { isWindowsJob, windowsFits } from '../domain/windows-jobs.ts';
+import { windowsFits } from '../domain/windows-jobs.ts';
 import { roomToElbowIn } from './elbow-in.ts'; import { awayFrom, takeIdle } from './lane-health.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryWait, type MemoryRoom } from './memory-floor.ts';
-import { jevPicked } from './lane-calls.ts';
+import { jevPicked } from './lane-calls.ts'; import { leftOut, waitReason } from './wait-reason.ts';
 import { SIGN_IN, signedOutFor } from './signed-out.ts';
 import { addressHolds, credentialHolds, heldOff, herdrHolds, notReady, offNetwork, opensPane, workTreeHolds } from './machine-holds.ts';
 
@@ -91,7 +91,7 @@ export const drainedHolds = (m: MachineSnapshot, job: Job): boolean => m.drained
 export const leftHolds = (m: MachineSnapshot, job: Job): boolean => job.parked?.elsewhere?.lost === true && job.parked.elsewhere.from === m.id;
 
 const GIB = 1024 ** 3;
-const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
+export const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
 export const NO_NEW_JOB = 'no new job is claimed there';
 
 /**
@@ -223,12 +223,12 @@ export function order(candidates: Candidate[], queueOrder?: readonly JobId[]): C
     || a.job.id.localeCompare(b.job.id));
 }
 
-function room(s: MachineState): number {
+export function room(s: MachineState): number {
   return s.cap - s.occupied - s.assigned;
 }
 
 /** Room for one more job of `executor`: the machine's lanes, and the executor's own cap. */
-function roomFor(s: MachineState, executor: string): number {
+export function roomFor(s: MachineState, executor: string): number {
   const e = s.executors.get(executor);
   return e ? Math.min(room(s), e.cap - e.occupied.length - e.assigned) : 0;
 }
@@ -246,7 +246,7 @@ function roomForJob(s: MachineState, job: Job, pl?: PriorityLanesInput): number 
 }
 
 /** Whether an open problem names this machine, or every machine, and the job's executor (or none). */
-const problemHits = (b: ProblemBlock, machineId: string, job: Job): boolean =>
+export const problemHits = (b: ProblemBlock, machineId: string, job: Job): boolean =>
   (b.machineId === undefined || b.machineId === machineId) && (b.executor === undefined || b.executor === job.spec.executor);
 
 /** A job resuming returns to the pane it holds: no problem keeps it from it. */
@@ -283,7 +283,7 @@ export interface MachineStateWithCredentialHold extends MachineState {
   credentialHeld: boolean;
 }
 
-function eligible(s: MachineStateWithCredentialHold, job: Job): boolean {
+export function eligible(s: MachineStateWithCredentialHold, job: Job): boolean {
   const pin = pinOf(job);
   return problemFree(s, job) && windowsFits(s.machine, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && !leavingHolds(s.machine, job) && !drainedHolds(s.machine, job) && !leftHolds(s.machine, job) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !credentialHolds(s.machine, job, s.credentialHeld) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
@@ -330,54 +330,6 @@ function better(a: MachineStateWithCredentialHold, b: MachineStateWithCredential
   return b.machine.id < a.machine.id ? b : a;
 }
 
-const percent = (frac: number): string => `${Math.round(frac * 100)}%`;
-const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' ? ` (usage soft limit, used ${percent(usedFrac)})` : '');
-
-/**
- * Why a job waits for a lane (issue #381): the lane cap that binds on the machine with the most of
- * them — its executor's when that leaves less room than the machine's, else the machine's — with its
- * real number and how many lanes it counts in use.
- */
-function waitReason(job: Job, states: MachineStateWithCredentialHold[], pl?: PriorityLanesInput): string {
-  const ex = job.spec.executor;
-  const able = states.filter((m) => eligible(m, job));
-  if (able.length === 0 && isWindowsJob(job)) return windowsWait(job, states);
-  const s = able.reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
-  const e = s.executors.get(ex)!;
-  const id = s.machine.id;
-  if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
-  const kept = keptFor(s.slots, job, pl) > 0 ? freePriority(s.slots) : [];
-  if (roomFor(s, ex) > 0 && kept.length > 0 && (pinOf(job) === id || s.unpinned < unpinnedCap(s))) {
-    // Only priority lanes held for high-priority jobs still to be placed are free (issues #535, #788).
-    return `waiting for a lane: machine ${id} holds ${priorityLaneNames(kept)} for high-priority jobs still to be placed, the other ${s.occupied + s.assigned} are in use`;
-  }
-  if (roomFor(s, ex) > 0) {
-    // Only its reserved lanes are free (issue #372).
-    return `waiting for a lane: machine ${id} keeps ${s.cap - unpinnedCap(s)} of its ${s.cap} lanes for jobs pinned to it, the other ${s.unpinned} are in use`;
-  }
-  const executorInUse = e.occupied.length + e.assigned;
-  const executorBinds = e.cap - executorInUse < room(s) || (e.cap - executorInUse === room(s) && e.cap < s.cap);
-  if (executorBinds) {
-    return `waiting for a lane: executor ${ex}'s lane cap on ${id} is ${e.cap}${usageNote(e.band, e.usedFrac)}, all ${executorInUse} in use`;
-  }
-  return `waiting for a lane: machine ${id}'s lane cap is ${s.cap}${usageNote(s.band, s.usedFrac)}, all ${s.occupied + s.assigned} in use`;
-}
-
-/**
- * Why a Windows job no Windows machine can take waits (issue #1350): none runs its executor, none of those is online, or
- * none of those takes it now (pinned elsewhere, or held there). It waits queued; it never goes to another machine.
- */
-function windowsWait(job: Job, states: MachineState[]): string {
-  const ex = job.spec.executor;
-  const runs = states.map((s) => s.machine).filter((m) => m.windows === true && m.executors.includes(ex));
-  if (runs.length === 0) return `waiting for a Windows lane: no Windows machine runs executor ${ex}`;
-  const online = runs.filter((m) => m.online);
-  if (online.length === 0) return `waiting for a Windows lane: no Windows machine that runs executor ${ex} is online (${runs.map((m) => `${m.id} offline`).join(', ')})`;
-  const pin = pinOf(job);
-  if (pin !== undefined && !online.some((m) => m.id === pin)) return `waiting for a Windows lane: it is pinned to ${pin}, which is not an online Windows machine`;
-  return `waiting for a Windows lane: no Windows machine that runs executor ${ex} takes a new job now (${online.map((m) => m.id).join(', ')})`;
-}
-
 /**
  * Step 7: give each ordered job a machine and an idle lane, or leave it waiting for one. A high-priority job goes
  * to the machine holding the best free priority lane first (issue #535). Of the machines it may go to, one where its expected
@@ -404,9 +356,8 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it.
     const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]));
     if (able.length === 0) {
-      // The machines held off for reach are named too (issue #2427): the lane wait names only the one with the most lanes.
-      const off = pinOf(job) === undefined ? heldOff(checked.map((s) => s.machine), job) : '';
-      wait.push({ jobId: job.id, reason: laned.length ? memoryWait(laned, costs?.[job.id]) : `${waitReason(job, checked, pl)}${off}` });
+      // Every other machine of its executor is named with why it was left out (issues #2427, #2499).
+      wait.push({ jobId: job.id, reason: laned.length ? `${memoryWait(laned, costs?.[job.id])}${leftOut(job, checked, laned.map((s) => s.machine.id), pl, costs?.[job.id])}` : waitReason(job, checked, pl, costs?.[job.id]) });
       continue;
     }
     const { options: fit, note: costed } = fitting(awayFrom(able, avoid[job.id]), costs?.[job.id]);
