@@ -140,6 +140,9 @@ describe('the Parked section', () => {
 
   it('Pick up re-queues the job, resuming its session', async () => {
     await boot('admin', '#parked');
+    // Parked by a person on its question (issue #2415): Pick up says the job parks again until the answer comes.
+    expect(buttonIn(row('later'), 'Pick up')!.title).toContain('parks again in a few seconds; the answer picks it up');
+    expect(row('later').querySelector('[data-slot="waits-on"]')!.textContent).toContain('picked up, it parks again until the answer comes');
     await act(async () => { buttonIn(row('later'), 'Pick up')!.click(); });
     await settle();
     expect(daemon.posts).toEqual([{ path: '/ui/api/jobs/later/requeue', body: {} }]);
@@ -166,7 +169,10 @@ describe('the Parked section', () => {
     });
     expect(row('night').querySelector('[data-slot="parked-why"]')!.textContent).toBe(why);
     expect(row('later').querySelector('[data-slot="parked-why"]')).toBeNull();
-    await act(async () => { (row('night').querySelector('[aria-label="Show the question"]') as HTMLButtonElement).click(); });
+    // Issue #2415: picked up, it would only park again, so it has no Pick up; it says what picks it up.
+    expect(buttonIn(row('night'), 'Pick up')).toBeUndefined();
+    expect(row('night').querySelector('[data-slot="waits-on"]')!.textContent).toContain('Waits on a person for its question: the answer picks it up. Pick up would only park it again.');
+    await act(async () => { buttonIn(row('night').querySelector('[data-slot="waits-on"]')!, 'Answer')!.click(); });
     await act(async () => { type(row('night').querySelector('textarea')!, 'Blue.'); });
     expect(buttonIn(row('night'), 'Answer and pick up')).toBeUndefined();
     await act(async () => { buttonIn(row('night'), 'Answer')!.click(); });

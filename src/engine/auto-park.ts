@@ -7,8 +7,8 @@
 // agent session to resume (its pick up needs a person's confirmation, issue #530). A job a fork of its question works for
 // parks too (issue #2335): the fork's result answers the question. The answer to its question, or the decision on its item, re-queues it (`src/engine/answers.ts`,
 // `src/engine/reviews.ts`). A question asked on its issue thread (issue #435: it has a `thread` record, posted or held for
-// review) parks its job at once, with its own `why`. A job picked up with its question or item still open has no pane: it
-// parks again with no executor call.
+// review) parks its job at once, with its own `why`. A job a person parked, picked up with its question or item still open, has
+// no pane: it parks again with no executor call; then its pick up is refused (issue #2415, `recordUnpark`).
 import { AUTO_PARK_WHY, THREAD_PARK_WHY, WAIT_RELEASE_AFTER_MS, type Job } from '../domain/types.ts';
 import { HUMAN } from '../questions/service.ts';
 import type { EngineContext } from './context.ts';

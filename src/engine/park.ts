@@ -8,7 +8,9 @@
 // that holds its agent session may instead be picked up to resume elsewhere (issue #921): not pinned to its machine,
 // its claim rebuilds its work tree from the checkpoint wherever it runs, and the agent is told so (`elsewhereBrief`). Issue
 // #2335: once the checkpoint taken after its park is marked, every re-queue of it does so, a person's or the hopper's.
-import type { Job, LaneId } from '../domain/types.ts';
+// Issue #2415: a job auto-park parked on a person is not re-queued: it would only park again; the answer picks it up.
+import { REVIEW_SECTIONS, type Job, type LaneId } from '../domain/types.ts';
+import { HUMAN } from '../questions/service.ts';
 import type { JobCheckpoint, ParkedMove } from '../domain/checkpoints.ts';
 import { parkAskOf, type ParkAsk } from '../domain/park-ask.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -21,6 +23,17 @@ import { jobSpend } from './token-budget.ts';
 export const PARKED_RESUME = 'This job was parked and is resumed now, in the same session and work tree. Go on with it where you left off.';
 
 const PARKABLE = new Set<Job['status']>(['running', 'waiting_answer']);
+
+/**
+ * What a parked job waits on a person for (issue #2415), or undefined: its open question with a person, or its proposal
+ * or research report at the human stage. Picked up, such a job waits on it again, and auto-park parks it again.
+ */
+export function personWaitOf(c: EngineContext, job: Job): string | undefined {
+  const q = job.questionId ? c.store.questions.get(job.questionId) : undefined;
+  if (q?.status === 'open') return q.tier === HUMAN ? 'question' : undefined;
+  const item = openItemOf(c, job);
+  return item?.stage === HUMAN ? REVIEW_SECTIONS[item.kind].noun : undefined;
+}
 
 /** Why the job cannot be parked, or undefined: running or on a question, its executor able to park. With or without an agent session (issue #530). */
 export function parkRefusal(c: Pick<EngineContext, 'executors'>, job: Job): string | undefined {
@@ -139,6 +152,9 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'parked') throw new EngineError('conflict', `job ${id} is ${job.status}: only a parked job can be re-queued`);
+  // Auto-parked on a person (issue #2415): picked up, it would park again at once. The answer, or the decision, picks it up.
+  const wait = job.parked?.auto && job.pendingAnswer === undefined ? personWaitOf(c, job) : undefined;
+  if (wait) throw new EngineError('conflict', `job ${id} waits on its ${wait} with a person: picked up, it would park again at once; ${wait === 'question' ? 'the answer' : 'a decision on it'} picks it up`);
   // Picked up: a move it was parked for ends here (issue #1892), whoever picked it up.
   if (job.parked?.move) { const { move: _ended, ...parked } = job.parked; store.jobs.update(id, { parked }); }
   // Picked up past its token budget (issue #2302): it goes on, its budget counted again from what it had spent.
