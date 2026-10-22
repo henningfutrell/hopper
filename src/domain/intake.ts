@@ -190,7 +190,7 @@ export interface IntakeContext {
   failureReportWaits?(key: string): boolean;
   /**
    * Whether a partly done item's merged part leaves parts to run (issue #1892): the follow recorded the merge of a part, and
-   * not every declared part is done. It then carries no end label, and Intake takes it again for its next part.
+   * not every declared part is done. The follow is its newest job's, else the older job's that recorded the merge (part 37). It then carries no end label, and Intake takes it again for its next part.
    */
   partsLeft?(key: string): boolean;
   /**
