@@ -53,6 +53,7 @@ describe('session lengths in Settings → Sign-in', () => {
 describe('renewal on activity', () => {
   // 1.8 s idle, 6 s at most: a session renews at most every tenth of its idle timeout.
   const short = { version: 1, sessions: { idleHours: 0.0005, maxHours: 6 / 3600 } };
+  // Each test sleeps 5 to 7 s on top of a daemon start: 30 s, as a loaded CI shard ran them in 10 to 12 s (issue #2465).
 
   it('a session in use outlives its idle timeout; left alone it ends, as an expired-idle event', async () => {
     const o = await startWithAuth(h, short);
@@ -65,7 +66,7 @@ describe('renewal on activity', () => {
     await sleep(2200);
     expect((await session(o.app, token)).authenticated).toBe(false);
     expect(await endedEvents(o.app)).toEqual([{ reason: 'expired-idle', realm: 'local' }]);
-  });
+  }, 30_000);
 
   it('in use, it still ends at the maximum', async () => {
     const o = await startWithAuth(h, short);
@@ -74,7 +75,7 @@ describe('renewal on activity', () => {
     while (Date.now() < until) { await read(o.app, token); await sleep(400); }
     expect((await session(o.app, token)).authenticated).toBe(false);
     expect(await endedEvents(o.app)).toEqual([{ reason: 'expired-absolute', realm: 'local' }]);
-  });
+  }, 30_000);
 
   it('a mutation refused for an ended session answers so, and logout is an event too', async () => {
     const o = await startWithAuth(h, { version: 1 });
@@ -86,6 +87,8 @@ describe('renewal on activity', () => {
 });
 
 describe('a gateway realm stays the authority', () => {
+  // The gateway sign-in makes a new user, and so a user store of its own: on a loaded CI shard that took ~6 s, after
+  // ~6 s to start the daemon, so 15 s was too short (issue #2465).
   it('a session from the gateway ends once the token it forwards is refused', async () => {
     const idp = await oidcIdp(h);
     const o = await startWithAuth(h, {
@@ -105,5 +108,5 @@ describe('a gateway realm stays the authority', () => {
     expect((await session(o.app, token)).authenticated).toBe(false);
     // The gateway's person signs in as a user of their own: the event is theirs.
     expect(o.app.user(user).store.events.recent(10, ['ui_session.ended']).map((e) => e.data)).toEqual([{ reason: 'refresh-refused', realm: 'edge' }]);
-  });
+  }, 60_000);
 });
