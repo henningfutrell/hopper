@@ -4,7 +4,7 @@
 // runs in the job's scope decide it.
 
 import { TERMINAL_LINE_MAX } from './client.ts';
-import { EXIT_CODE_COMMAND, EXIT_CODE_MARK } from './exited.ts';
+import { EXIT_CODE_COMMAND, EXIT_CODE_MARK, OOM_KILLS_MARK } from './exited.ts';
 
 export type FakeRestore = 'restored' | 'partly' | 'kept' | 'failed' | 'no-way';
 
@@ -33,6 +33,8 @@ export interface FakeShellOptions {
   sandbox?: 'on' | 'none' | 'failed';
   /** The status Claude exited with, as the shell says it after Claude (issue #2432); default 0. */
   claudeExitCode?: number;
+  /** The OOM kills in the job's scope, as the shell reads them after Claude (issue #2498); default 0. */
+  oomKills?: number;
 }
 
 /** A typed command longer than ECHO_MAX echoes only its first ECHO_SHOWN characters, as a terminal's screen scrolls the rest off. */
@@ -60,6 +62,8 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: nextRestore(o) };
   // The shell's status of Claude, once Claude exited (issue #2432).
   if (command === EXIT_CODE_COMMAND) return { lines: [`${EXIT_CODE_MARK}${o.claudeExitCode ?? 0}`] };
+  // The OOM kills in the job's scope (issue #2498): only a shell in the scope reads them.
+  if (command.startsWith("g=$(sed -n 's/^0:://p' /proc/self/cgroup")) return { lines: [`${OOM_KILLS_MARK}${scoped ? o.oomKills ?? 0 : 'none'}`] };
   // The job's sandbox (src/client/job-sandbox.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-sandbox ')) return { lines: [`hopper-sandbox-${o.sandbox ?? 'none'}`] };
   // The job's container runtime guards, its first step (issue #2234).

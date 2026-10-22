@@ -15,6 +15,8 @@ export const OWN_PR_UNFINISHED = 'own-pr-unfinished';
 export const NO_WAY_TO_HOPPER = 'no-way-to-hopper';
 /** The cause of a job whose agent CLI exited as it started (issue #2432): the seat's fault, so it runs again on another lane. */
 export const EXITED_AT_START = 'exited-at-start';
+/** The cause of a job whose agent CLI exited after the OOM killer stopped processes in its scope (issue #2498): resources, not its code. */
+export const RESOURCE_LIMIT = 'resource-limit';
 /** The cause of a job whose conditional skills' done criteria are not met (issue #1924): the hopper sends it back to rework. */
 export const DONE_CRITERIA_UNMET = 'done-criteria-unmet';
 
@@ -24,6 +26,12 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
     id: 'done-check-unread', name: 'Done check unread', cls: 'transient', decision: 'retry', scope: 'machine',
     description: 'The job said it was done, but the hopper could not read its source to check the work, also after it tried again with backoff (a connect timeout, a busy service, a rate limit). Nothing showed the work incomplete. Before it runs again, its source is asked whether the work is done there: then it ends finished.',
     pattern: /could not confirm the work is complete/i,
+  }),
+  // Before every cause what Claude printed may name (issue #2498): the hopper's own reading of the job's scope says it.
+  cause({
+    id: RESOURCE_LIMIT, name: 'Resource limit', cls: 'transient', decision: 'retry', scope: 'machine',
+    description: 'The agent CLI exited after the kernel\'s OOM killer stopped processes in the job\'s scope: the job ran out of memory, at its memory limit or the machine\'s, not into a fault of its code. The failure says how many processes it stopped. It runs again with backoff, and the memory floor decides where it starts. The job\'s parts list shows its peak memory and OOM kills.',
+    pattern: /at a resource limit: the kernel's OOM killer stopped \d+ process(es)? in the job's scope/,
   }),
   cause({
     id: 'socket-path-too-long', name: 'Socket path too long', cls: 'shared', decision: 'redirect', scope: 'machine',
