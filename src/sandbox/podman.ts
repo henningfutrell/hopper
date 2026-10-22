@@ -20,34 +20,8 @@ interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Recor
 
 const enc = encodeURIComponent;
 
-/** What the hopper reads of libpod /info: whether it is rootless, and the computer's CPUs and memory (issue #2272). */
-export interface PodmanInfo {
-  host?: {
-    security?: { rootless?: boolean };
-    cpus?: number;
-    memTotal?: number;
-    memFree?: number;
-    cpuUtilization?: { userPercent?: number; systemPercent?: number; idlePercent?: number };
-  };
-}
-
-/** libpod /info, or why boxes cannot be launched through this Podman: not reached, not its API, or rootful. */
-export async function podmanInfo(socket: RuntimeSocket, via: SocketCall = socketCall, timeoutMs?: number): Promise<{ info: PodmanInfo } | { problem: string }> {
-  const at = socketName(socket);
-  let a: Answer;
-  try {
-    a = await via(socket, 'GET', `${API}/info`, undefined, timeoutMs);
-  } catch (e) {
-    return { problem: `cannot reach podman ${typeof socket === 'string' ? 'at' : 'on'} ${at}: ${e instanceof Error ? e.message : String(e)}` };
-  }
-  if (!ok(a)) return { problem: `podman at ${at} answered ${a.status}: is it the Podman API socket?` };
-  const info = JSON.parse(a.text) as PodmanInfo;
-  // Rootful Podman is root on the computer: the hopper never launches through it.
-  if (info.host?.security?.rootless !== true) return { problem: `podman at ${at} is not rootless: the hopper launches sandbox boxes only through a rootless runtime` };
-  return { info };
-}
-
 export function createPodmanRuntime(socket: RuntimeSocket, via: SocketCall = socketCall): BuildingRuntime {
+  const at = socketName(socket);
   const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('podman', what, a);
   const read = async (id: string): Promise<Inspected | undefined> => {
@@ -85,8 +59,17 @@ export function createPodmanRuntime(socket: RuntimeSocket, via: SocketCall = soc
     ...imageCalls('podman', (method, path) => call(method, path)),
 
     async problem() {
-      const r = await podmanInfo(socket, via);
-      return 'problem' in r ? r.problem : undefined;
+      let a: Answer;
+      try {
+        a = await call('GET', '/info');
+      } catch (e) {
+        return `cannot reach podman ${typeof socket === 'string' ? 'at' : 'on'} ${at}: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      if (!ok(a)) return `podman at ${at} answered ${a.status}: is it the Podman API socket?`;
+      const info = JSON.parse(a.text) as { host?: { security?: { rootless?: boolean } } };
+      // Rootful Podman is root on the computer: the hopper never launches through it.
+      if (info.host?.security?.rootless !== true) return `podman at ${at} is not rootless: the hopper launches sandbox boxes only through a rootless runtime`;
+      return undefined;
     },
 
     async pull(image) {

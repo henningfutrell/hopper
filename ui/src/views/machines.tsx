@@ -17,7 +17,6 @@
 // leftovers there the sweep does not judge, each for a person to keep or remove (issue #1116, machine-leftovers.tsx).
 // A machine whose job user holds infra credentials is not ready: their names and the guided fix to a dedicated job user (issues #1128 part 7, #1248).
 // Cards or List, and sections a person collapses, each remembered per browser (issue #2352, machine-list.tsx; the card itself, machine-card.tsx).
-// Below the machines, each Podman host: its sandbox host place, live sandboxes, CPU and memory or why it is offline (issue #2272, machine-podman-hosts.tsx).
 import { Box, Plus, Server, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -41,7 +40,6 @@ import { DiskBudgetPanel } from './disk-budget';
 import { SandboxPlaygroundPanel } from './sandbox-playground';
 import { MachineCard, type Ctx } from './machine-card';
 import { MachineList, MachinesModeToggle, MachinesSection } from './machine-list';
-import { MachinePodmanHosts } from './machine-podman-hosts';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -147,7 +145,6 @@ export function Machines() {
             ? <MachineList machines={machines} ctx={ctx} />
             : <div data-slot="machine-cards" className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>}
       </MachinesSection>
-      <MachinePodmanHosts boxes={boxes} />
       {authed && <MachinesSection id="sandboxes" title="Sandbox playground"><SandboxPlaygroundPanel /></MachinesSection>}
       {machines.length > 0 && (
         <MachinesSection id="budgets" title="Budgets and lane tuning"><DiskBudgetPanel /><LaneTuningPanel /><JobCostsPanel /></MachinesSection>

@@ -1,1 +1,0 @@
-- Machines now shows each Podman host: whether it is the sandbox host, how many sandboxes run there, and how much CPU and memory it uses, or why it is offline. Old box builds on a Podman host are now removed, as on your other machines.
