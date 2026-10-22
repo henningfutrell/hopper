@@ -23,7 +23,7 @@ import type { StepSecretAsk } from '../vault/step-delivery.ts';
 import { readAnswer, readCommand, readHeader, readSecretName, READ_MAX_BYTES, type BastionRead } from './bastion-read.ts';
 import type { NeedBox, NeedBoxIo, NeedBoxResult, RunningNeedBox } from './need-box.ts';
 import {
-  bastionEnv, bastionTokens, placeTargets, relayCommand, targetsOutside, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
+  bastionEnv, bastionTokens, forwardWatch, placeTargets, relayCommand, targetsOutside, targetText, BASTION_MAX_MS, BASTION_RENEW_MS, BASTION_TTL_MS, type BastionCredential, type BastionTarget, type PlacedTarget,
 } from './bastion.ts';
 
 export type { BastionEnd, BastionView } from '../domain/bastions.ts';
@@ -214,13 +214,20 @@ export function createBastions(o: BastionsOptions): Bastions {
         else if (l.open.size === 0 && now().getTime() >= Date.parse(l.view.expiresAt)) end(l, { end: 'expired' });
       }, o.checkMs ?? CHECK_MS));
       const t = template;
+      // Issue #2413: whether each forward listens, from its lines in the box's output, so a job sees a forward that fails.
+      const watch = forwardWatch();
       mkdirSync(join(o.dir, id), { recursive: true, mode: 0o700 });
       l.done = run({
         name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.egress?.length ? { egress: t.egress } : {}), ...(t.readOnly ? { readOnly: true as const } : {}), ...(t.limits ? { limits: t.limits } : {}) },
         // Part 5: a read-only template's box runs behind the egress proxy, which lets its tokens' cluster through.
         env: bastionEnv(l.placed, credentials), reaches: credentials.map((c) => c.reach), timeoutMs: BASTION_MAX_MS, dir: join(o.dir, id), files: { secrets: { ...bastionTokens(credentials), ...held } },
       }, {
-        log: (chunk) => { l.view.log = (l.view.log + chunk).slice(-LOG_TAIL); }, signal: l.stop.signal, running: renewing,
+        log: (chunk) => {
+          l.view.log = (l.view.log + chunk).slice(-LOG_TAIL);
+          watch.add(chunk);
+          l.view.targets = l.view.targets.map((x) => ({ target: x.target, local: x.local, ...watch.of(x.target) }));
+        },
+        signal: l.stop.signal, running: renewing,
       }, { jobId: job.id, step: id, template: template.name }).then((r) => ended(l, r), (e: unknown) => ended(l, { exit: 125, problem: e instanceof Error ? e.message : String(e) }));
       return viewOf(job.id)!;
     },
@@ -266,6 +273,11 @@ export function createBastions(o: BastionsOptions): Bastions {
     if (!t) return { status: 404, no: `the job's bastion forwards to ${l.view.targets.map((x) => x.target).join(', ')}; not to ${target}` };
     if (l.view.state !== 'running') return { status: 409, no: `the job's bastion ${l.view.id} is ${l.view.state}: ask again in a few seconds` };
     if (!l.pipe) return { status: 503, no: 'the container runtime of the bastion\'s box starts no command in it: no relay reaches it' };
+    // Issue #2413: a forward that ended does not listen; kubectl's own words say why, not the connect command's refusal.
+    const forward = l.view.targets.find((x) => x.target === target);
+    if (forward?.listening === false) {
+      return { status: 503, no: `the bastion's forward to ${target} does not listen in the box: ${forward.said}. Its loop starts it again every 2 s; see where it stands with sh "$HOPPER_SKILL" bastion` };
+    }
     const said = await o.mayRelay({ jobId, template: l.view.template, target }).catch((e: unknown) => ({ allowed: false, reason: `Access could not be asked: ${e instanceof Error ? e.message : String(e)}` }));
     if (!said.allowed) {
       o.record({ type: 'bastion.relay_refused', jobId, data: { bastion: l.view.id, target, reason: said.reason } });

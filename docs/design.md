@@ -31469,6 +31469,13 @@ credential.
   the sandbox runs ledger, the sweep leaves it while it runs, and it is burned when it ends. Its command
   (`bastionCommand`) runs `kubectl port-forward --address 127.0.0.1` to each target in a loop that starts it again 2 s
   after it ends (a pod that restarted), each on a port of its own from 20000, its lines marked with its target.
+- **Whether each forward listens** (issue #2413, `forwardWatch`). A bastion once said "running" and listed its forwards
+  while each kubectl failed in the box (no RBAC, no kubectl), and every read answered only curl's "Failed to connect". The
+  hopper reads each forward's lines in the box's output as they come: a forward listens once kubectl says "Forwarding
+  from", and does not once its loop says it ended, with the last thing kubectl said (`BastionView.targets[].listening`,
+  `said`; absent while it said nothing yet). `bastion` shows each forward's state and, while it runs, the tail of its
+  output. A relay or a read to a forward that does not listen is a 503 with kubectl's words, and starts no command in the
+  box. A box step of an observe template still holds no kube credential: its port-forward is a bastion's (`OBSERVE_NO_STEP`).
 - **The tokens stay in the box** (`bastionKubeconfig`, `bastionTokens`). Each token is a vault secret file of the box
   (`$HOME/.hopper-need/secrets/kube-<context>`, copied in, mode 600, never in its environment); the kubeconfig names it as
   its user's `tokenFile`, which kubectl reads again within a minute. Every 5 minutes the hopper mints each observe again
