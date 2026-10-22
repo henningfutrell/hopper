@@ -125,4 +125,17 @@ describe('Park on a proposal (issue #2167)', () => {
     expect(row.querySelector('[data-slot="item-line"]')!.textContent).toBe('waits on its proposal: paint the shed');
     expect(row.querySelector('[data-slot="parked-by"]')!.textContent).toBe('parked by a person: Wait for the spring.');
   });
+
+  it('auto-parked on its proposal, it has no Pick up: Decide opens its card, and a link opens Proposals (issue #2415)', async () => {
+    const parkedJob = job('j4', { status: 'parked', resumeOn: 'local', parked: { at: T0, from: 'waiting_answer', auto: true, why: 'Parked automatically.' } });
+    await boot('#parked', { open: [proposal('j4')], parked: [], waiting: [], parkedJobs: [parkedJob] });
+    const row = await vi.waitFor(() => { const x = document.querySelector<HTMLElement>('[data-parked-job="j4"] [data-slot="waits-on"]'); expect(x).not.toBeNull(); return x!.closest<HTMLElement>('[data-parked-job]')!; });
+    expect(button(row, 'Pick up')).toBeUndefined();
+    const waits = row.querySelector('[data-slot="waits-on"]')!;
+    expect(waits.textContent).toContain('Waits on a person for its proposal: a decision on it picks it up. Pick up would only park it again.');
+    expect(waits.querySelector('a')!.getAttribute('href')).toBe('#proposals');
+    expect(row.querySelector('[data-slot="item-card"]')).toBeNull();
+    await click(button(waits, 'Decide'));
+    expect(row.querySelector('[data-slot="item-card"]')!.textContent).toContain('For you');
+  });
 });

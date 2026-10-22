@@ -6,7 +6,9 @@
 // up with its question still open waits on it again, and the question is back in Questions. A job with a checkpoint
 // (issue #921) says when it was taken, and Resume elsewhere, confirmed, picks it up on any machine from it; with its
 // question open, the answer comes first. The answer box is the one question form (issue #1169). A row says who parked the
-// job and why (issue #2167), and, for a job parked on a proposal or research report, that item's first line.
+// job and why (issue #2167), and, for a job parked on a proposal or research report, that item's first line. A job on a
+// person (issue #2415) says what it waits on and what picks it up; auto-parked, it has no Pick up — picked up, it would only
+// park again — but Answer, or its item's card inline with a link to its section.
 import { ChevronRight, CirclePause, MoveRight, Play } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
@@ -16,16 +18,17 @@ import { Empty, Panel } from '@/components/panel';
 import { QuestionForm } from '@/components/question-form';
 import { StatusBadge } from '@/components/status';
 import { canResumeElsewhere, machineName, parkedOrder, startsFresh } from '@/model/board';
-import { answerPicksUp } from '@/model/auto-park';
+import { answerPicksUp, pickUpRefused, type PersonWait } from '@/model/auto-park';
 import { goalOf } from '@/model/job';
 import { firstLine } from '@/model/questions';
 import { CardText, InlineMarkdown } from '@/components/markdown';
-import type { Job, QuestionView, ReviewKind } from '@/model/wire';
-import { REVIEW_UI, reviewKindOfJob } from '@/model/reviews';
+import type { Job, QuestionView, ReviewItemView, ReviewKind } from '@/model/wire';
+import { REVIEW_UI } from '@/model/reviews';
 import { ParkedBy } from '@/views/parked-items';
 import { act, actFor, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
-import { CancelButton, PickUpButton } from '@/views/dashboard/lanes';
+import { CancelButton, PickUpButton, personWaitText, usePersonWait } from '@/views/dashboard/lanes';
+import { ItemCard } from '@/views/review-section';
 import { ThreadState } from '@/components/thread-ask';
 
 /** The answer box of an expanded row: the answer is sent, then the job picked up; a fresh start is confirmed first. */
@@ -88,34 +91,53 @@ function ResumeElsewhereButton({ job, waits }: { job: Job; waits: boolean }) {
   );
 }
 
-/** The proposal or research report the job is parked on (issue #2167), with its first part, if it has one. */
-function useParkedItem(job: Job): { kind: ReviewKind; headline: string } | undefined {
-  const kind = reviewKindOfJob(job);
-  const review = useHopper((s) => (kind ? s.reviews[kind] : undefined));
-  const p = review?.parked.find((x) => x.jobId === job.id);
-  if (!kind || !p) return undefined;
-  const v = p.versions.at(-1)!;
-  const first = review?.type?.parts[0]?.[0];
-  return { kind, headline: (first && v.sections[first]) || v.text };
+/** The first part of the proposal or research report the job waits on (issue #2167), if it has one. */
+function useItemHeadline(item: ReviewItemView | undefined, kind: ReviewKind | undefined): string | undefined {
+  const type = useHopper((s) => (kind ? s.reviews[kind].type : null));
+  if (!item) return undefined;
+  const v = item.versions.at(-1)!;
+  const first = type?.parts[0]?.[0];
+  return (first && v.sections[first]) || v.text;
+}
+
+/** What the job waits on a person for, and what picks it up (issue #2415); auto-parked, Pick up would only park it again. */
+function WaitsOn({ wait, refused, onAnswer }: { wait: PersonWait; refused: boolean; onAnswer?: () => void }) {
+  const { noun, ends } = personWaitText(wait);
+  const section = wait === 'question' ? undefined : REVIEW_UI[wait];
+  return (
+    <div data-slot="waits-on" className="flex flex-wrap items-center gap-x-2 pl-8 text-xs text-question">
+      <span>{refused
+        ? `Waits on a person for its ${noun}: ${ends} picks it up. Pick up would only park it again.`
+        : `Waits on a person for its ${noun}: picked up, it parks again until ${ends} comes.`}</span>
+      {refused && onAnswer && <Button size="xs" variant="outline" onClick={onAnswer}><Play />{wait === 'question' ? 'Answer' : 'Decide'}</Button>}
+      {section && <a href={`#${section.section}`} className="underline">Open it in {section.label}</a>}
+    </div>
+  );
 }
 
 function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
   const machines = useHopper((s) => s.machines);
-  const item = useParkedItem(job);
+  const { wait, item, kind } = usePersonWait(job);
+  const itemType = useHopper((s) => (kind ? s.reviews[kind].type : null));
+  const headline = useItemHeadline(item, kind);
   const canOperate = useCanOperate();
   const [open, setOpen] = useState(false);
   const answered = job.pendingAnswer !== undefined && job.parked?.from === 'waiting_answer';
+  const refused = pickUpRefused(job, wait);
+  // Auto-parked on its item (issue #2415): the item's card, decided here, picks it up.
+  const card = refused && wait && wait !== 'question' && item && itemType ? { kind: wait, item, type: itemType } : undefined;
+  const folds = q !== undefined || card !== undefined;
   return (
     <div data-parked-job={job.id} className="space-y-1 px-4 py-2.5">
       <div className="flex items-start gap-2">
-        {q
-          ? <Button variant="ghost" size="icon-xs" aria-label={open ? 'Hide the question' : 'Show the question'} aria-expanded={open} onClick={() => setOpen(!open)} className="mt-0.5 text-muted-foreground">
+        {folds
+          ? <Button variant="ghost" size="icon-xs" aria-label={open ? `Hide the ${q ? 'question' : REVIEW_UI[card!.kind].noun}` : `Show the ${q ? 'question' : REVIEW_UI[card!.kind].noun}`} aria-expanded={open} onClick={() => setOpen(!open)} className="mt-0.5 text-muted-foreground">
               <ChevronRight className={open ? 'rotate-90 transition-transform' : 'transition-transform'} />
             </Button>
           : <span className="w-6 shrink-0" />}
         <JobTitle job={job} className="flex-1" />
         <PickUpButton job={job} />
-        <ResumeElsewhereButton job={job} waits={q !== undefined && job.pendingAnswer === undefined} />
+        <ResumeElsewhereButton job={job} waits={(q !== undefined || item !== undefined) && job.pendingAnswer === undefined} />
         <CancelButton job={job} />
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-8 text-xs text-muted-foreground">
@@ -129,7 +151,8 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
       </div>
       {job.parked?.why && <div data-slot="parked-why" className="pl-8 text-xs text-muted-foreground">{job.parked.why}</div>}
       <ParkedBy parked={job.parked} className="pl-8 text-xs text-muted-foreground" />
-      {item && <div data-slot="item-line" className="truncate pl-8 text-xs" title={item.headline}>waits on its {REVIEW_UI[item.kind].noun}: <InlineMarkdown text={firstLine(item.headline)} /></div>}
+      {wait && !answered && <WaitsOn wait={wait} refused={refused} {...(canOperate && folds && !open ? { onAnswer: () => setOpen(true) } : {})} />}
+      {kind && headline && <div data-slot="item-line" className="truncate pl-8 text-xs" title={headline}>waits on its {REVIEW_UI[kind].noun}: <InlineMarkdown text={firstLine(headline)} /></div>}
       {q && <ThreadState q={q} className="pl-8" />}
       {q && !open && <div data-slot="question-line" className="truncate pl-8 text-xs text-question" title={q.text}><InlineMarkdown text={firstLine(q.text)} /></div>}
       {q && open && (
@@ -138,6 +161,7 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
           {canOperate && !answered && <AnswerAndPickUp job={job} q={q} />}
         </div>
       )}
+      {card && open && <div data-slot="item-card" className="pt-1 pl-8"><ItemCard kind={card.kind} p={card.item} type={card.type} /></div>}
     </div>
   );
 }

@@ -13,7 +13,8 @@ import { StatusBadge } from '@/components/status';
 import { GROUP, canPickUp, laneJobState, laneRows, machineName, overCap, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
 import { goalOf, issuePointer } from '@/model/job';
 import { REVIEW_UI, reviewKindOfJob } from '@/model/reviews';
-import type { Job, ReviewKind } from '@/model/wire';
+import { personWait, pickUpRefused, type PersonWait } from '@/model/auto-park';
+import type { Job, QuestionView, ReviewItemView, ReviewKind } from '@/model/wire';
 import { act, useHopper } from '@/store';
 import { useJobBoard, useJobIndex } from '@/store/selectors';
 import { cn } from '@/lib/utils';
@@ -71,25 +72,42 @@ export function ParkButton({ job }: { job: Job }) {
   );
 }
 
+/** What a parked job waits on a person for (issue #2415), with its open question or its open item. */
+export function usePersonWait(job: Job): { wait: PersonWait | undefined; q: QuestionView | undefined; item: ReviewItemView | undefined; kind: ReviewKind | undefined } {
+  const kind = reviewKindOfJob(job);
+  const q = useHopper((s) => (job.questionId ? s.questions.find((x) => x.id === job.questionId && x.status === 'open') : undefined));
+  const item = useHopper((s) => (kind ? s.reviews[kind].items.find((p) => p.jobId === job.id) ?? s.reviews[kind].parked.find((p) => p.jobId === job.id) : undefined));
+  return { wait: personWait(q, item && kind ? { kind, stage: item.stage } : undefined), q, item, kind };
+}
+
+/** A person wait as people read it: its noun, and what ends it. */
+export const personWaitText = (wait: PersonWait): { noun: string; ends: string } =>
+  wait === 'question' ? { noun: 'question', ends: 'the answer' } : { noun: REVIEW_UI[wait].noun, ends: 'a decision on it' };
+
 /**
  * Pick up a parked job (issues #501, #565; `POST /ui/api/jobs/:id/requeue`): it returns to its machine and resumes its
  * agent session there. One with no agent session (issue #530) starts a fresh one in its kept work tree, told its
- * question and answer: the person confirms that first, never silently.
+ * question and answer: the person confirms that first, never silently. None for a job auto-park parked on a person
+ * (issue #2415): picked up, it would only park again; one a person parked on a person says it parks again.
  */
 export function PickUpButton({ job }: { job: Job }) {
   const authed = useCanOperate();
-  if (!authed || !canPickUp(job)) return null;
+  const { wait } = usePersonWait(job);
+  if (!authed || !canPickUp(job) || pickUpRefused(job, wait)) return null;
+  const waits = wait && job.pendingAnswer === undefined ? personWaitText(wait) : undefined;
+  const again = waits ? ` It waits on its ${waits.noun} again and parks again in a few seconds; ${waits.ends} picks it up.` : '';
+  const done = waits ? `Job picked up: it parks again until its ${waits.noun} is answered` : 'Job picked up';
   if (startsFresh(job)) {
     return (
-      <Confirm title="Pick up with a fresh session?" action="Pick up and start fresh" onConfirm={() => act(`/ui/api/jobs/${job.id}/requeue`, { freshSession: true }, 'Job picked up: it starts a fresh session')}
-        description={<>No agent session was recorded for “{goalOf(job)}”, so it cannot resume where it stopped. It starts a fresh session in its kept work tree, with its branch and work as they are, and is told its task{job.parked?.from === 'waiting_answer' ? ', its question and the answer' : ''} as context. It has none of the earlier session&apos;s history.</>}>
-        <Button size="xs" variant="outline" title="Pick up: back to its machine, in a fresh session"><Play />Pick up</Button>
+      <Confirm title="Pick up with a fresh session?" action="Pick up and start fresh" onConfirm={() => act(`/ui/api/jobs/${job.id}/requeue`, { freshSession: true }, waits ? done : 'Job picked up: it starts a fresh session')}
+        description={<>No agent session was recorded for “{goalOf(job)}”, so it cannot resume where it stopped. It starts a fresh session in its kept work tree, with its branch and work as they are, and is told its task{job.parked?.from === 'waiting_answer' ? ', its question and the answer' : ''} as context. It has none of the earlier session&apos;s history.{again}</>}>
+        <Button size="xs" variant="outline" title={`Pick up: back to its machine, in a fresh session.${again}`}><Play />Pick up</Button>
       </Confirm>
     );
   }
   return (
-    <Button size="xs" variant="outline" title="Pick up: back to its machine, resuming its agent session"
-      onClick={() => act(`/ui/api/jobs/${job.id}/requeue`, {}, 'Job picked up')}><Play />Pick up</Button>
+    <Button size="xs" variant="outline" title={`Pick up: back to its machine, resuming its agent session.${again}`}
+      onClick={() => act(`/ui/api/jobs/${job.id}/requeue`, {}, done)}><Play />Pick up</Button>
   );
 }
 

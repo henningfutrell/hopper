@@ -13157,7 +13157,8 @@ Verification: `test/integration/auto-park.test.ts` (a question parks its job 5 s
 question too; a job on its proposal parks 5 s after it reached the human stage, stays in Proposals and its send back resumes its session; on two
 machines over the fake herdr, the answer resumes a parked job on the other machine from the checkpoint marked on its park,
 with the same session, and its terminal is refused while it is parked), `test/integration/wait-release.test.ts` (a released
-wait's terminal is refused), `test/integration/thread-ask.test.ts` (picked up with its question open, it parks again 5 s later).
+wait's terminal is refused), `test/integration/thread-ask.test.ts` (parked for its thread question, its pick up is refused:
+issue #2415 below).
 
 ### Part 2: a wait the pane carried, rechecked by the hopper; a fork's parent parked (issue #2335, 2026-10-21)
 
@@ -13246,6 +13247,32 @@ recorded; a recheck only at a check-in), `test/domain/watched-items.test.ts` (`p
 `test/integration/job-wait.test.ts` (an outside wait's lost pane does not wake it; End the wait does),
 `test/integration/wait-release.test.ts` (two machines over the fake herdr: a gated wait has its pane closed, no lane, its
 checkpoint marked and condition `none`; after End the wait it resumes on the other machine with the same session).
+
+### No pick up of a job auto-parked on a person (issue #2415, 2026-10-21)
+
+Pick up on a job auto-park parked on a person had no lasting effect: the job went back to `waiting_answer` on the same
+open question, proposal or research report, and auto-park parked it again within seconds. The person saw a button that
+did nothing, and could press it again and again.
+
+- **What waits on a person** (`personWaitOf`, `src/engine/park.ts`): the job's open question at the human stage, else its
+  open proposal or research report at the human stage. A question or an item still with a reviewer level is not: picked
+  up, its level goes on.
+- **Refused.** `recordUnpark` refuses (409) a job whose park is auto-park's (`parked.auto`), that waits on a person and has
+  no answer kept: picked up, it would only park again. The answer to its question, or the decision on its item, picks it
+  up, as before. A question on the issue thread (issue #435) is the same: a reply there picks it up.
+- **A person's park still picks up.** A job a person parked on a person goes back to its question or item, as before, and
+  auto-park parks it again a few seconds later; then its pick up is refused. For an item this puts it back in its section
+  to be decided (issue #2167); for a question, the answer picks it up after that. An answer kept while it was parked
+  (`pendingAnswer`) picks it up as always.
+- **The UI.** The same rule, pure (`ui/src/model/auto-park.ts`: `personWait`, `pickUpRefused`). Pick up is not shown for
+  such a job, wherever parked jobs are listed. Its Parked row says what it waits on and what picks it up: Answer opens the
+  answer form; for a proposal or a research report, Decide opens its card inline, and a link opens its section. A job a
+  person parked on a person keeps Pick up, and the button and the row say that it parks again until the answer comes.
+- **Persisted state.** No change.
+
+Verification: `test/integration/auto-park.test.ts` (parked by a person, picked up, it parks again by itself; then its pick
+up is 409, it stays parked with one `job.unparked`, and the answer resumes it; a job auto-parked on its proposal: 409),
+`test/integration/thread-ask.test.ts`, `test/ui/auto-park.test.ts`, `test/ui/parked-view.test.ts`.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
