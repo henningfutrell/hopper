@@ -2,8 +2,7 @@
 import type { Clock } from '../../domain/ports.ts';
 import type { ChangeRule, Job } from '../../domain/types.ts';
 import type { PullRequestState } from './api.ts';
-import type { LabelDrift } from './item-labels.ts';
-import type { ReportContext } from './report.ts';
+import type { LabelSink, ReportContext } from './report.ts';
 
 /**
  * What following a pull request needs beyond the report's: whether the hopper may merge in a repository (yolo mode), and
@@ -32,5 +31,5 @@ export interface FollowContext extends PullRequestContext {
    * Keeps the label change of a follow's end on item `key` of `repo` (issue #1892 part 14), tagged with the end, and sends
    * it: the GitHub outbox's rows (act `follow`). A change of that end on its way already is not kept twice.
    */
-  labels: (key: string, repo: string, change: LabelDrift, tag: string) => Promise<void>;
+  labels: LabelSink;
 }

@@ -117,6 +117,36 @@ export function followLabels(f: FollowEnd, carried: readonly string[]): LabelDri
   return labelDrift(item, carried, facts);
 }
 
+/**
+ * How a job's report ends its item (issue #1892 part 15): its pull request waits (PR open, a whole or a part), no pull
+ * request is open (blocked), the issue was closed as complete, the job failed, or it was cancelled (a tend job cancelled by
+ * no person: its pull request waits again) or rejected at the queue gate.
+ */
+export type ReportEnd = { end: 'pr_open'; part: boolean } | { end: 'no_pr' | 'closed' | 'failed' | 'rejected' } | { end: 'cancelled'; tendAgain: boolean };
+
+/** The end label a report's end puts on: of the state it moves the item to, as `labelsFor` names it. */
+function reportAdd(r: ReportEnd): string | undefined {
+  switch (r.end) {
+    case 'pr_open': return labelsFor({ state: 'pr_open' }, { part: r.part })!.add;
+    case 'no_pr': return labelsFor({ state: 'blocked', blockedCause: 'no_pr' })!.add;
+    // A done item is judged only by its merge or a hand-off done by hand; an issue closed as complete is done all the same.
+    case 'closed': return LABEL_DONE;
+    case 'failed': return labelsFor({ state: 'failed', eventState: 'failed' }, { failureReported: true })!.add;
+    case 'cancelled': return r.tendAgain ? labelsFor({ state: 'pr_open' })!.add : undefined;
+    case 'rejected': return undefined;
+  }
+}
+
+/**
+ * The end label change of a report's end (issue #1892 part 15). With `carried`, the issue's labels as just read: every end
+ * label the state does not want comes off, and one it carries is not added again. Without it, only the label goes on.
+ */
+export function reportLabels(r: ReportEnd, carried?: readonly string[]): LabelDrift {
+  const add = reportAdd(r);
+  if (!carried) return { remove: [], add: add ? [add] : [] };
+  return { remove: carried.filter((l) => END_LABELS.includes(l) && l !== add), add: add && !carried.includes(add) ? [add] : [] };
+}
+
 /** One line for the log: the item's state and how its labels differ. */
 export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
   `${item.state}${item.blockedCause ? ` (${item.blockedCause})` : ''}: ${[

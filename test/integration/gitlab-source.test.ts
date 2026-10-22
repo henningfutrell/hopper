@@ -75,7 +75,9 @@ describe('a GitLab source', () => {
     await waitFor(() => gitlab.issues.find((i) => i.iid === 1)!.labels.includes('hopper:failed') || undefined, { what: 'the end label at GitLab' });
     expect(gitlab.requests.filter((r) => r.method === 'PUT').map((r) => [r.path, r.body])).toEqual([
       ['/api/v4/projects/ada%2Ftools/issues/1', { add_labels: 'hopper:claimed' }],
-      ['/api/v4/projects/ada%2Ftools/issues/1', { add_labels: 'hopper:failed', remove_labels: 'hopper:claimed' }],
+      // Outbox rows (issue #1892 part 17): the claim comes off, then the end label goes on.
+      ['/api/v4/projects/ada%2Ftools/issues/1', { remove_labels: 'hopper:claimed' }],
+      ['/api/v4/projects/ada%2Ftools/issues/1', { add_labels: 'hopper:failed' }],
     ]);
     expect(gitlab.issues.find((i) => i.iid === 1)!.labels).toEqual(['hopper', 'hopper:failed']);
 

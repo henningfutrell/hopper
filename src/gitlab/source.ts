@@ -7,7 +7,9 @@
 // judges done, and the issue's state gives the job's signals (issue #1642, completion.ts); the hopper follows it after the
 // job ends, labels the issue `hopper:pr-ready` while it waits, and merges it in yolo mode once its pipeline passed (part 2,
 // follow.ts). An issue of another origin is a request card a person approves (intake.ts), as on GitHub; the job runs the text
-// approved.
+// approved. Its label changes are rows of the user's outbox under its own name (issue #1892 part 17, outbox.ts): sent in
+// the follow's or the report's pass, and by the sync loop's flush when GitLab refused them for now. An issue whose rows are
+// not sent is not taken.
 import type { JobSource, SourceSignal } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -24,7 +26,12 @@ import { gitlabAutoApproval, gitlabIntakeAct, gitlabVerdict, projectOfKey, taken
 import { autoApprovedReason, LABEL_HIGH } from '../domain/intake-auto-approve.ts';
 import { openRequests, requestOutcome, withdrawRequests } from '../sources/github/origin.ts';
 import { checkJobs, notComplete } from './completion.ts';
-import { endLabels, followMergeRequest, readyMergeRequest } from './follow.ts';
+import { endChange, followMergeRequest, readyMergeRequest } from './follow.ts';
+import { gitlabLabelRows, gitlabOutboxSend } from './outbox.ts';
+import { createGitHubOutbox, memoryGitHubOutbox } from '../sources/github/outbox.ts';
+import type { GitHubOutboxRepository } from '../domain/github-outbox.ts';
+import type { LabelSink } from '../sources/github/report.ts';
+import { reportLabels } from '../sources/github/item-labels.ts';
 import { mergeRequestHold } from './done-criteria.ts';
 import type { JobAllowedDeletes, JobDoneCriteria } from '../sources/github/done-criteria.ts';
 
@@ -56,6 +63,8 @@ export interface GitLabSourceOptions {
    * request at the done check and before yolo mode's merge. Absent: none.
    */
   doneCriteria?: JobDoneCriteria; allowedDeletes?: JobAllowedDeletes;
+  /** The user's outbox (issue #1892 part 17): its label changes' rows, under the source's name. Absent: kept in memory. */
+  outbox?: GitHubOutboxRepository;
 }
 
 const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim();
@@ -85,13 +94,26 @@ async function gitlabCall<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * A done job's end on its issue (issue #1642 part 2): closed already, `hopper:done`; else `hopper:pr-ready`, and its ready merge
- * request kept to follow (`follow.ts`), or none named yet, which the follow looks for.
+ * request kept to follow (`follow.ts`), or none named yet, which the follow looks for. The end labels its state does not want
+ * come off (issue #1892 part 16).
  */
-async function finished(api: GitLabApi, project: string, iid: number, before: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const closed = (await api.issue(project, iid)).state === 'closed';
+async function finished(api: GitLabApi, labels: LabelSink, job: Job, project: string, iid: number, before: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const issue = await api.issue(project, iid);
+  const closed = issue.state === 'closed';
   const ready = closed ? undefined : await readyMergeRequest(api, project, iid);
-  await api.editLabels(project, iid, endLabels(closed));
+  const end = closed ? 'closed' : 'pr_open';
+  await labels(job.source!.key, project, endChange(reportLabels(closed ? { end: 'closed' } : { end: 'pr_open', part: false }, issue.labels), issue.labels), `${job.id}:${end}`, `${job.id}:claimed`);
   return { ...before, reported: 'finished', ...(closed ? {} : { ...(ready ? { pullRequest: ready.url } : {}), follow: 'open' }) };
+}
+
+/**
+ * The label change of an end the report writes with no read of the issue (issue #1892 part 16): the end label of the state it
+ * moves the item to, as `reportLabels` names it, and the claim off. A rejection keeps `hopper:rejected`: the GitLab source reads
+ * no rejection record, so the label keeps the issue out.
+ */
+function unreadEnd(kind: 'failed' | 'cancelled' | 'rejected'): { add: string[]; remove: string[] } {
+  const add = kind === 'rejected' ? [LABEL_REJECTED] : reportLabels(kind === 'failed' ? { end: 'failed' } : { end: 'cancelled', tendAgain: false }).add;
+  return { add, remove: [LABEL_CLAIMED] };
 }
 
 export function createGitLabSource(o: GitLabSourceOptions): JobSource {
@@ -106,6 +128,10 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
   /** The cards approved here that no sync since listed otherwise: key → the hash approved. The texts opened (`openRequests`). */
   const fresh = new Map<string, string>();
   const opened = new Set<string>();
+  const clock = o.clock ?? { now: () => new Date() };
+  const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock, connected: () => o.account.status().state === 'connected' });
+  const send = gitlabOutboxSend(o.account);
+  const labelRows = gitlabLabelRows(outbox, send);
   /** Yolo mode for a project, by its URL at the account's GitLab; no account connected: off. */
   const yolo = (project: string): boolean => {
     const s = o.account.status();
@@ -172,7 +198,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
     describe() {
       const s = o.account.status();
       const connected = 'account' in s ? { login: s.account, baseUrl: s.baseUrl, projects: s.projects } : {};
-      return { ...connected, label, issues: outcomes.length, ...(Object.keys(repoErrors).length ? { repoErrors } : {}), ...(Object.keys(checkErrors).length ? { checkErrors } : {}) };
+      return { ...connected, label, issues: outcomes.length, ...outbox.detail(), ...(Object.keys(repoErrors).length ? { repoErrors } : {}), ...(Object.keys(checkErrors).length ? { checkErrors } : {}) };
     },
     paused: () => o.account.paused(),
     async discover(): Promise<SourceItem[]> {
@@ -183,12 +209,14 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
       const listed: IntakeOutcome[] = [];
       const requests = new Map<string, IntakeRequest>();
       const errors: Record<string, string> = {};
+      const round = outbox.begin();
       for (const project of s.projects) {
         try {
           const issues = await o.account.issues(project, label);
           let branch: { name: string | undefined } | undefined;
           for (const i of issues) {
             const base = { key: i.url, title: i.title, repo: i.project };
+            if (outbox.held(i.url)) { listed.push({ ...base, reason: 'its label change is on its way to GitLab', group: 'other' }); continue; }
             const out = notTaken(i, s.account);
             if (out) { listed.push({ ...base, ...out }); continue; }
             let v: GitLabVerdict;
@@ -212,7 +240,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
         }
       }
       if (o.account.status().state !== 'connected') return clear(); // ended now: paused from the next sync
-      outcomes = listed; repoErrors = errors;
+      outcomes = listed; repoErrors = errors; outbox.listed(round);
       for (const [key, hash] of [...fresh]) if (requests.get(key)?.hash !== hash) fresh.delete(key);
       if (o.intake) {
         openRequests(o.name, o.intake, requests, opened);
@@ -233,18 +261,18 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
     notComplete: (job) => o.account.act((a) => notComplete(a, job, done)),
     mergesOnReady: (project) => yolo(project),
     follow: (job, act, at) => o.account.act((a) => followMergeRequest({
-      api: a, yolo: yolo(job.source?.repo ?? ''), now: (o.clock?.now() ?? new Date()).getTime(), hold: (m) => mergeRequestHold(a, job, m, done),
+      api: a, yolo: yolo(job.source?.repo ?? ''), now: clock.now().getTime(), hold: (m) => mergeRequestHold(a, job, m, done), labels: labelRows('follow'),
     }, job, act, at)),
+    flushOutbox: () => outbox.flush(send),
+    releaseOutbox: outbox.release,
     async report(r) {
       const before = r.job.sourceState?.source ?? {};
       const project = r.job.source?.repo, iid = r.job.source?.number;
       if (project === undefined || iid === undefined) throw new SourceError(`job ${r.job.id} names no GitLab issue`, true);
-      if (r.kind === 'finished') return gitlabCall(() => o.account.act(async (a) => finished(a, project, iid, before)));
-      const change = r.kind === 'claimed' ? { add: [LABEL_CLAIMED], remove: [] }
-        : r.kind === 'failed' ? (r.fixing ? { add: [], remove: [] } : { add: [LABEL_FAILED], remove: [LABEL_CLAIMED] })
-            : r.kind === 'rejected' ? { add: [LABEL_REJECTED], remove: [LABEL_CLAIMED] }
-              : { add: [], remove: [LABEL_CLAIMED] };
-      await gitlabCall(() => o.account.act((a) => a.editLabels(project, iid, change)));
+      if (r.kind === 'finished') return gitlabCall(() => o.account.act(async (a) => finished(a, labelRows('report'), r.job, project, iid, before)));
+      const key = r.job.source!.key, labels = labelRows('report');
+      if (r.kind === 'claimed') await labels(key, project, { add: [LABEL_CLAIMED], remove: [] }, `${r.job.id}:claimed`);
+      else if (!(r.kind === 'failed' && r.fixing)) await labels(key, project, unreadEnd(r.kind), `${r.job.id}:${r.kind}`, `${r.job.id}:claimed`);
       return { ...before, reported: r.kind };
     },
   };
