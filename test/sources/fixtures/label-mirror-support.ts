@@ -15,7 +15,7 @@ export const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; dropped?: string[]; tendAgain?: string[]; doneReported?: string[]; doneOpen?: Record<string, DoneReport>; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean; noJob?: string[]; fixing?: string[] } = {}) {
+export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; dropped?: string[]; tendAgain?: string[]; doneReported?: string[]; doneOpen?: Record<string, DoneReport>; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean; noJob?: string[]; fixing?: string[]; waits?: string[] } = {}) {
   const gh = o.gh ?? createFakeGitHub();
   let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -37,6 +37,7 @@ export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { 
       partOpen: (key) => o.parts?.includes(key) ?? false,
       failureReported: (key) => o.reported?.includes(key) ?? false,
       fixingReported: (key) => o.fixing?.includes(key) ?? false,
+      failureReportWaits: (key) => o.waits?.includes(key) ?? false,
       partsLeft: (key) => o.partsLeft?.includes(key) ?? false,
       doneReported: (key) => o.doneOpen?.[key] ?? (o.doneReported?.includes(key) ? 'closed' : undefined),
       dropReported: (key) => (o.tendAgain?.includes(key) ? 'pr_ready' : o.dropped?.includes(key) ? 'none' : undefined),
