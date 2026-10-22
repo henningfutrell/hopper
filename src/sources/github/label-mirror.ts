@@ -3,7 +3,7 @@
 // the discover already listed, and the ledger: no call of its own. A drift is logged once and counted. It is corrected:
 // the labels change through the GitHub outbox (act `mirror`, tagged with the state), coalesced, once, so `hopper:pr-ready`
 // comes off an item the item reconciler blocked, an end label comes off an item a job works, PR open gets its waiting
-// label, a failed item whose failure was reported as failed gets `hopper:failed` (`failureReported`, issue #1892), a partly done item with parts left loses its end labels (`partsLeft`), and so does an item whose job waits on a person; a hand-off whose failure was reported gets `hopper:failed`, an item a person dropped by Won't do gets `hopper:rejected`, and one they did by hand (Done on its hand-off) `hopper:done`. A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
+// label, a failed item whose failure was reported as failed gets `hopper:failed` (`failureReported`, issue #1892), a partly done item with parts left loses its end labels (`partsLeft`), and so does an item whose job waits on a person; a hand-off whose failure was reported gets `hopper:failed`, and so does an item the dismiss of its failed job dropped (part 20), an item a person dropped by Won't do gets `hopper:rejected`, and one they did by hand (Done on its hand-off) `hopper:done`. A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
 // last moments, that has outbox rows not sent, or that is given back now or was in the last moments (`busy`), is not judged:
 // the move's own writes are on their way. The source passes no issue its discover takes as a new job (issue #1954): that job
 // moves the item.
@@ -83,7 +83,8 @@ export function createLabelMirror(o: {
   /** What the item's labels are judged by besides its state: asked only for the state that needs it. */
   const facts = (key: string, item: WorkItem): LabelFacts =>
     item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' || item.state === 'needs_you' ? { failureReported: o.failureReported?.(key) ?? false }
-      : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : item.state === 'dropped' ? { dropReported: o.dropReported?.(key) ?? false } : {};
+      : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : item.state === 'dropped'
+        ? (item.dismissed === true ? { failureReported: o.failureReported?.(key) ?? false } : { dropReported: o.dropReported?.(key) ?? false }) : {};
   /** A person's label edit on the issue since `was`: an end label put on a request card, or the one its state wants taken off. */
   const editOf = (issue: Pick<GitHubIssue, 'url' | 'labels'>, was: { labels: string[]; at: string }, settledBefore: number): { item: WorkItem; put?: string; label?: string } | undefined => {
     const item = o.item(issue.url);
