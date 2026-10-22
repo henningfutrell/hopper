@@ -127,9 +127,10 @@ describe('the check a job names (checkAskOf, issue #1694 part 2)', () => {
     expect(checkAskOf('in 0m', at(0))).toBeUndefined();
   });
 
-  it('a check-in is kept between a minute and its cap; a time to wake at is never before the wait and at most a week after', () => {
+  it('a check-in is kept between a minute and a week; a time to wake at is never before the wait and at most a week after', () => {
     expect(checkAskOf('in 10s', at(0))).toEqual({ inMs: FIRST_CHECK_MS });
-    expect(checkAskOf('in 3h', at(0))).toEqual({ inMs: MAX_EVERY_MS });
+    expect(checkAskOf('in 12h', at(0))).toEqual({ inMs: 12 * 3600_000 });
+    expect(checkAskOf('in 30d', at(0))).toEqual({ inMs: 7 * 24 * 3600_000 });
     expect(checkAskOf('at 2026-10-17T09:00:00Z', at(0))).toEqual({ at: SINCE });
     expect(checkAskOf('after 30d', at(0))).toEqual({ at: new Date(at(7 * 24 * 3600_000)).toISOString() });
   });
@@ -162,9 +163,27 @@ describe('the check a job names (checkAskOf, issue #1694 part 2)', () => {
     expect(met.met && met.told).toContain('HOPPER_WAITING');
   });
 
-  it('a check-in sets the first check and the time between checks', () => {
+  it('a check-in sets the first check and the time between checks, at most MAX_EVERY_MS for a wait the hopper can test', () => {
     const c = newCheck(waiting({ on: { kind: 'item', number: 9 }, checkLine: 'in 20m' }), at(0));
     expect(c).toMatchObject({ nextCheckAt: new Date(at(20 * 60_000)).toISOString(), everyMs: 20 * 60_000 });
+    const long = newCheck(waiting({ on: { kind: 'item', number: 9 }, checkLine: 'in 3h' }), at(0));
+    expect(long).toMatchObject({ nextCheckAt: new Date(at(MAX_EVERY_MS)).toISOString(), everyMs: MAX_EVERY_MS });
+  });
+
+  it('a recheck at a long check-in (issue #2459): at that time, not at MAX_EVERY_MS, and the deadline after it', () => {
+    const gated = waiting({ on: { kind: 'outside', what: 'the gitops apply', why: 'gated' }, checkLine: 'in 12h' });
+    const at12 = new Date(at(12 * 3600_000)).toISOString();
+    const c = newCheck(gated, at(0));
+    expect(c).toMatchObject({ condition: { kind: 'recheck', at: at12 }, nextCheckAt: at12 });
+    const far = newCheck(waiting({ on: { kind: 'outside', what: 'the gitops apply', why: 'gated' }, checkLine: 'in 3d' }), at(0));
+    expect(Date.parse(far.deadline)).toBeGreaterThan(at(3 * 24 * 3600_000));
+    // Each check before its time, as after a restart, keeps it at its time.
+    let check = c;
+    for (let t = MAX_EVERY_MS; t < 12 * 3600_000; t += MAX_EVERY_MS) {
+      check = afterCheck(check, 'it rechecks at its time', at(t)).check;
+      expect(check.nextCheckAt).toBe(at12);
+      expect(recheckOutcome({ kind: 'recheck', at: at12 }, gated.wait!, at(t))).toMatchObject({ met: false });
+    }
   });
 
   it('a time to wake at is never passed by the backoff, and moves the deadline past it', () => {
