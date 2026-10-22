@@ -37,6 +37,17 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'failed', eventState: 'done' }, { fixingReported: true })).toBeUndefined();
   });
 
+  it('failed, its report not out yet (issue #1892 part 32): hopper:failed allowed, none added; no person event', () => {
+    const waits = { state: 'failed', eventState: 'failed' } as const;
+    expect(labelsFor(waits, { failureReportWaits: true })).toEqual({ allowed: ['hopper:failed'] });
+    expect(labelDrift(waits, ['hopper', 'hopper:claimed'], { failureReportWaits: true })).toBeUndefined();
+    expect(labelDrift(waits, ['hopper', 'hopper:failed'], { failureReportWaits: true })).toBeUndefined();
+    expect(labelDrift(waits, ['hopper', 'hopper:pr-ready', 'hopper:failed'], { failureReportWaits: true })).toEqual({ remove: ['hopper:pr-ready'], add: [] });
+    expect(labelTakenOff(waits, ['hopper', 'hopper:failed'], ['hopper'], { failureReportWaits: true })).toBeUndefined();
+    expect(labelPutOn(waits, ['hopper'], ['hopper', 'hopper:failed'], { failureReportWaits: true })).toBeUndefined();
+    expect(labelsFor({ state: 'failed', eventState: 'done' }, { failureReportWaits: true })).toBeUndefined();
+  });
+
   it('done (issue #1892): hopper:done once its pull request merged as the whole item; not judged else', () => {
     expect(labelsFor({ state: 'done', pullRequestState: 'merged', wholeMerged: true })).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
     expect(labelsFor({ state: 'done', pullRequestState: 'merged' })).toBeUndefined();
