@@ -92,7 +92,7 @@ describe('restoring a checkpoint whose head the remote holds (issue #2459)', () 
     expect(out.trim().split('\n').at(-1)).toBe('restored');
     expect(git(there, 'symbolic-ref', '--short', 'HEAD')).toBe('hopper/2459');
     expect(git(there, 'rev-parse', 'HEAD')).toBe(head);
-    expect(git(there, 'status', '--porcelain').split('\n').sort()).toEqual([' M a.txt', '?? new.txt']);
+    expect(git(there, 'status', '--porcelain').split('\n').map((l) => l.trim()).sort()).toEqual(['?? new.txt', 'M a.txt']);
     expect(readFileSync(join(there, 'd.txt'), 'utf8')).toBe('pushed\n');
     expect(readFileSync(join(there, 'a.txt'), 'utf8')).toBe('a\nchanged\n');
   });

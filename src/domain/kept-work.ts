@@ -50,6 +50,21 @@ export function proxyPushedOf(trail: readonly DomainEvent[]): Set<string> {
 }
 
 /**
+ * Pure (issue #2459): the branch a git push through the hopper moved to `head`, from the job's pushes (`trail`, newest
+ * first): `branch`, the job's own, when a push moved it there; else the newest such push's. Undefined when none did.
+ */
+export function pushedBranchOf(trail: readonly DomainEvent[], head: string, branch?: string): string | undefined {
+  const found: string[] = [];
+  for (const e of trail) {
+    const d = e.data as { op?: unknown; refs?: unknown; heads?: unknown };
+    const heads = d.heads;
+    if (d.op !== 'git.push' || !Array.isArray(d.refs) || !Array.isArray(heads)) continue;
+    d.refs.forEach((r, i) => { if (typeof r === 'string' && r.startsWith('refs/heads/') && heads[i] === head) found.push(r.slice('refs/heads/'.length)); });
+  }
+  return branch !== undefined && found.includes(branch) ? branch : found[0];
+}
+
+/**
  * Pure (issue #2087): the kept repositories whose work the hopper pushed for the job: each commit the reap named as holding
  * work no remote has (`tips`, a clean checkout's only) is one the hopper pushed. The push says so, though the checkout's
  * remote branches may not (gone, or not moved by the push). One with a change, or from a client older than this, names none.

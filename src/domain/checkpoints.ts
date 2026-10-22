@@ -17,6 +17,11 @@ export interface JobCheckpoint {
   base: string;
   /** The job's HEAD then. */
   head: string;
+  /**
+   * The branch the hopper pushed `head` to for the job (issue #2459), when `head` is not `base`: the remote holds the
+   * commits after `base`, though the worktree's remote branches did not say so. The job resumes on it at `head`.
+   */
+  pushedTo?: string;
   /** The commits after `base` then, newest first, `<short sha> <subject>`; at most CHECKPOINT_COMMITS. */
   commits: string[];
   /** The checkpoint's size: its patch and its session, compressed. */
