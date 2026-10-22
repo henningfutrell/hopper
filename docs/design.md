@@ -1665,7 +1665,11 @@ then `Revised after: <answer>`.
   Seen live (before the reconnect grace): restart recovery failed a job on a client target that had
   not dialled back in yet; the one cleanup it queued never reached the pane, Claude kept working, and a rerun of the issue started
   beside it seven minutes later. The two collided until the old pane was closed by hand.
-  `src/engine/cleanup.ts`: when `Executor.cleanup` rejects, the job gets `cleanupDeferred { at, error }`
+  `src/engine/cleanup.ts`: when `Executor.cleanup` rejects, it first reaps through the job's machine as it is reached now
+  (issue #2490): the first executor there whose `machineShell` reaches it, as the sweep does, stops the job's processes and
+  removes its scratch dir unless it holds work not pushed (kept for a timed-out job). Seen live: a job's executor state named
+  an ssh destination that no longer resolved, the machine dialled in as a client target, and every retry failed the same way.
+  The job's pane, if any, is not closed this way. When that reap rejects too, the job gets `cleanupDeferred { at, error }`
   and `job.cleanup_deferred { error }` (once per deferral). Every tick tries each deferred cleanup again
   that is not running; the first that goes through clears the field and records `job.cleaned_up
   { deferredAt }` (an engine trigger). The deferrals are read back from the store at start, so a
