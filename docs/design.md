@@ -15377,7 +15377,9 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
    (`ng <ref> refused: <reason>`, as in step 5; issue #2042);
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
-   a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
+   a shallow one is not taken: a shallow one's refusal names its ref updates, read past its `shallow` lines, issue #2481;
+   git's probe before a pack over its `http.postBuffer`, a flush packet only, is answered 200 and the chunked pack after it
+   is read as any other) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
    (read from GitHub) or a **release branch** (`main`, `master`, `dev`, `beta`, `stable`), never a delete. A forced update
    of a branch of the job's own work is allowed: a rebase pushes with `--force-with-lease`. A refusal is answered as
    git's own report (`ng <ref> <reason>`, in side band 1 when asked for), so git shows `! [remote rejected] … (<reason>)`;

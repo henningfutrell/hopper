@@ -1,7 +1,7 @@
 // GitHub through the hopper (issue #563, design.md "GitHub through the hopper").
 export { createProxyApi, MAX_DIFF_CHARS, ProxyGitHubError, tokenCaller, type ProxyApi, type ProxyResult, type RepoFacts, type TokenSource } from './api.ts';
 export { createGitHubProxy, type GitHubProxy, type ProxyAnswer, type ProxyConnection, type ProxyUser } from './broker.ts';
-export { checkPush, GIT_PATH, gitPath, jobGitConfig, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
+export { checkPush, GIT_PATH, gitPath, isProbe, jobGitConfig, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
 export { createGitProxy, refusedReport, type GitAnswer, type GitConnection, type GitProxy, type GitRequest, type GitUser } from './git-broker.ts';
 export { createGitPushes, GIT_PUSH_SAGA, PUSH_EVENTS, type GitPushData, type GitPushes } from './push-saga.ts';
 export { createProxyLimiter, PROXY_LIMITS, type LimitedOp, type ProxyLimiter } from './limits.ts';
