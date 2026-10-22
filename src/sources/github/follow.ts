@@ -57,8 +57,7 @@ import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type ReferencingPullRequest } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
 import { closesByKeyword, fromReleaseBranch, isClosedAsCompleted, isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
-import { followLabels, type FollowEnd } from './item-labels.ts';
-import { LABEL_BLOCKED } from './labels.ts';
+import { blockedForPullRequest, followLabels, type FollowEnd } from './item-labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
 import { closedByMerge, closesIssue, mergedByMarker, type OwnMerge } from './own-merge.ts';
@@ -397,9 +396,9 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       const open = await openPullRequestOf(ctx.api, repo, number);
       const found = open ?? await mergedPartOf(ctx.api, repo, number, job);
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}), ...('mention' in found && found.mention ? { mention: true } : {}) };
-      // Blocked for want of a pull request (issue #1891), one found open: its issue waits on it, as a report says.
+      // Blocked for want of a pull request (issue #1891), one found open: its issue waits on it, as a report says. The ledger says it is blocked (issue #1892 part 27).
       const carried = open ? (await ctx.api.getIssue(repo, number)).labels : [];
-      if (open && carried.includes(LABEL_BLOCKED)) await endLabels(ctx, key, repo, { end: 'found_open', part: open.part === true }, carried);
+      if (open && blockedForPullRequest(ctx.item?.(key), job.id, carried)) await endLabels(ctx, key, repo, { end: 'found_open', part: open.part === true }, carried);
     }
     const batched = !act && s.pullRequest ? seenFromBatch(ctx, job, s, s.pullRequest) : undefined;
     if (batched) {

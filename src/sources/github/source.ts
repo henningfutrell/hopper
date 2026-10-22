@@ -149,7 +149,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.intake ? { holder: o.intake.holder } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
-    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: labelRows('follow') });
+    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: labelRows('follow'), ...(o.intake?.workItem ? { item: o.intake.workItem } : {}) });
   /** A follow's or a report's label change (issue #1892 parts 14 and 15): outbox rows, once per end, sent in its own pass. */
   const labelRows = (act: 'follow' | 'report'): LabelSink => async (key, repo, change, tag, replaces) => {
     if (replaces !== undefined) outbox.drop(act, key, replaces);

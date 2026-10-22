@@ -1,6 +1,7 @@
 // The contexts of a pull request's follow (follow.ts, direct-follow.ts): what each needs from its source.
 import type { Clock } from '../../domain/ports.ts';
 import type { ChangeRule, Job } from '../../domain/types.ts';
+import type { WorkItem } from '../../domain/work-items.ts';
 import type { PullRequestState } from './api.ts';
 import type { LabelSink, ReportContext } from './report.ts';
 
@@ -32,4 +33,6 @@ export interface FollowContext extends PullRequestContext {
    * it: the GitHub outbox's rows (act `follow`). A change of that end on its way already is not kept twice.
    */
   labels: LabelSink;
+  /** The work item of issue `key` as the ledger has it (issue #1892 part 27); absent or undefined: its labels decide. */
+  item?: (key: string) => WorkItem | undefined;
 }
