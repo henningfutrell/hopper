@@ -5,11 +5,12 @@
 
 import { TERMINAL_LINE_MAX } from './client.ts';
 
-export type FakeRestore = 'restored' | 'kept' | 'failed' | 'no-way';
+export type FakeRestore = 'restored' | 'partly' | 'kept' | 'failed' | 'no-way';
 
 /** What the next restore says: the first of a list, the last one kept. */
 function nextRestore(o: FakeShellOptions): string[] {
   const r = Array.isArray(o.restore) ? (o.restore.length > 1 ? o.restore.shift()! : o.restore[0]) : o.restore;
+  if (r === 'partly') return ['hopper: left out src/a.ts', 'hopper: kept the whole patch in /w/.git/worktrees/j/hopper-checkpoint.patch', 'hopper-restore-partly'];
   return r === 'no-way' ? ['hopper: the job has no way to the hopper: HOPPER_URL is not set', 'hopper-restore-failed'] : [`hopper-restore-${r ?? 'restored'}`];
 }
 

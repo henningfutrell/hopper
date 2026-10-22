@@ -20531,6 +20531,12 @@ runs, and a parked job with such a copy can resume on any machine.
   <session>`, and the agent is sent `elsewhereBrief` (`src/engine/park.ts`): it moved, from which checkpoint, its new work
   tree, the commits not pushed then — uncommitted changes now, to commit again —, that work after the checkpoint is lost,
   then the answer. A restore that fails fails the job, with what the shell said. The next outcome clears it with `parked`.
+  **A patch that does not apply whole** (issue #2428: a job failed with `the patch did not apply`) does not fail the job:
+  the restore applies it file by file (`partly`), each file it cannot apply keeps the base's content and is said on a line
+  `hopper: left out <file>`, and the whole patch is kept in the worktree's git dir (`hopper-checkpoint.patch`, the list
+  in `hopper-checkpoint.patch.left-out`), where `git add` never takes it. The job's progress names the files; the agent
+  is told first (`restoredInPartNote`, `src/client/checkpoint.ts`) which files are not in its work tree and where the
+  patch is, so it makes those changes again.
 - **The no-way move** (issue #2355, `src/engine/no-way-move.ts`). A job picked up to resume elsewhere found no `HOPPER_URL`
   in its pane on a lane pod, and each new pane there had none either: it ended failed, "claude did not start in 3
   attempts", while a fresh start of its item ran on the same machine. Nothing of the job runs on that machine before its

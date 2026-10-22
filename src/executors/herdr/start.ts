@@ -17,7 +17,7 @@ import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from '
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/reap.ts';
 import { enterRuntime, enterSandbox } from './start-isolation.ts';
-import { RESTORE_MARK, RESTORE_NO_WAY, restoreOutcome } from '../../client/checkpoint.ts';
+import { restoreCheckpoint } from './restore.ts';
 import { windowsShellOf } from './windows-shell.ts';
 import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
@@ -38,7 +38,6 @@ const JOB_WORKTREE_WAIT_MS = 10 * 60000;
 const JOB_WORKTREE_RUNNING_WAIT_MS = 10000;
 const JOB_WORKTREE_TYPINGS = 3;
 /** How long restoring a checkpoint may take (issue #921): it gets the parts from the hopper and may fetch the base. */
-const RESTORE_WAIT_MS = 10 * 60000;
 /** How long sharing dependencies may take: the first job with a lockfile installs them (issue #410). */
 const DEPS_WAIT_MS = 15 * 60000;
 /** A machine's scratch age when it sets none: an entry of shared dependencies nothing links to goes after it. */
@@ -107,6 +106,8 @@ export interface PaneState {
   lapsesAt?: string;
   /** The login the turn waits on (issue #476): Claude going on by itself completes it. */
   login?: { id: string; tool: string };
+  /** What the resumed agent is told first: its checkpoint's patch applied only in part here (issue #2428). */
+  restoreNote?: string;
 }
 
 /** What the monitor needs to find one turn's outcome: design.md "Turn anchor (B1)". */
@@ -332,26 +333,6 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
   ctx.saveState({ ...s });
   ctx.workTree(path);
   return null;
-}
-
-/**
- * Rebuild a job's work from its checkpoint in its new worktree (issue #921, checkpoint.ts `restoreCommand`), in the
- * pane's shell, which has the job's way to the hopper: before its dependencies are linked, so the worktree it checks is
- * the job's own. A worktree that holds changes already is kept as it is. Null when done, else the failure. A pane with no
- * way to the hopper (issue #2316) fails marked `noWayToHopper` (issue #2355): a new pane on the same machine got none
- * either, so the engine places the job on another machine.
- */
-async function restoreCheckpoint(d: StartDeps, ctx: ExecutionContext, s: PaneState, command: string): Promise<ExecutionOutcome | null> {
-  if (!s.jobWorktree) return { kind: 'failed', error: `the job got no worktree of its own on ${ctx.machine.id} to restore its checkpoint into: it needs job worktrees, or a repository` };
-  ctx.progress('restoring the checkpoint in the job worktree');
-  await d.herdr.runInPane(s.paneId, command);
-  const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, RESTORE_MARK, restoreOutcome, RESTORE_WAIT_MS);
-  if (ctx.signal.aborted) return null;
-  if (outcome === 'restored' || outcome === 'kept') {
-    ctx.progress(outcome === 'restored' ? 'restored the checkpoint: its base checked out, its patch applied, its session in place' : 'the job worktree holds work already: kept it as it is'); return null;
-  }
-  const error = outcome ? `the checkpoint could not be restored on ${ctx.machine.id}: ${tail(screen, 10)}` : `pane ${s.paneId} never restored the checkpoint within ${RESTORE_WAIT_MS} ms: ${tail(screen, 10)}`;
-  return outcome && screen.includes(RESTORE_NO_WAY) ? { kind: 'failed', error, noWayToHopper: true } : { kind: 'failed', error };
 }
 
 /**
