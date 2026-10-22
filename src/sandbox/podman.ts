@@ -48,7 +48,6 @@ export async function podmanInfo(socket: RuntimeSocket, via: SocketCall = socket
 }
 
 export function createPodmanRuntime(socket: RuntimeSocket, via: SocketCall = socketCall): BuildingRuntime {
-  const at = socketName(socket);
   const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('podman', what, a);
   const read = async (id: string): Promise<Inspected | undefined> => {

@@ -30,9 +30,9 @@ import type {
   BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
 import type { GitLabAccountStatus } from '../../../src/domain/gitlab-account.ts';
-import type { PodmanHost, PodmanHostsView } from '../../../src/domain/podman-hosts.ts';
+import type { PodmanHost, PodmanHostStatus, PodmanHostsStatusView, PodmanHostsView } from '../../../src/domain/podman-hosts.ts';
 
-export type { GitLabAccountStatus, PodmanHost, PodmanHostsView };
+export type { GitLabAccountStatus, PodmanHost, PodmanHostStatus, PodmanHostsStatusView, PodmanHostsView };
 export type {
   AttachedMachine, PlaygroundLimits, PlaygroundSandbox, PlaygroundView, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   WindowsHost, WindowsHostsView, ClusterOverride, ClustersView,
