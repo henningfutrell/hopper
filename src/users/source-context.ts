@@ -81,6 +81,12 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
         const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
         return s?.follow === 'merged' && s.part === true && !allPartsDone(s.parts);
       },
+      // Its part merged and made every declared part done (issue #1892 part 35): the follow put hopper:done on.
+      lastPartMerged: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
+        return s?.follow === 'merged' && s.part === true && allPartsDone(s.parts);
+      },
       // Its cancelled or rejected job reported (issue #1892 parts 19, 23): no end label, unless a person put one on to keep it
       // out; a tend job cancelled not on purpose, hopper:pr-ready.
       // What its job's final report put on (issue #1892 parts 24, 28): hopper:done for an issue closed, else the follow's label.

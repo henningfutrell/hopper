@@ -194,6 +194,11 @@ export interface IntakeContext {
    */
   partsLeft?(key: string): boolean;
   /**
+   * Whether a partly done item's merged part made every declared part done (issue #1892 part 35): the follow recorded the
+   * merge of a part, and every declared part is done. The follow put `hopper:done` on with that merge.
+   */
+  lastPartMerged?(key: string): boolean;
+  /**
    * Whether a dropped item's job was cancelled or rejected and its final report went out (issue #1892 part 19): it then
    * carries no end label (`none`), unless a person put one on by hand to keep it out; a tend job cancelled by no person
    * and no source carries `hopper:pr-ready` (`pr_ready`, part 23). Undefined: not such a job, or not reported yet.

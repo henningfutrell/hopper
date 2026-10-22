@@ -1,0 +1,1 @@
+- When the last part of a larger issue is merged, the issue keeps its done label, also when a label on it was stale.
