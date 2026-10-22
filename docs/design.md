@@ -22549,7 +22549,7 @@ ended) was past its deadline, and its row was due for a check at once.
   A read of GitHub is no move: it does not set them again.
 - **The row's `owner` is still the state's owner**: who moves the item out of its state next. `movedBy` is who moved it in.
 
-**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's, part 20 a dismissed failure's), and milestone 4.
+**Not in this part:** milestone 2's other drops (part 19 judges a cancelled or rejected job's, part 20 a dismissed failure's, part 21 a person's Close PR's), and milestone 4.
 
 **Verification:** `test/domain/work-items-transition.test.ts` (the owner of each move kept, a mark keeps it, the reconciler's
 replay is its own; a move within working starts its deadline again; a mark does not), `test/store/work-items.test.ts` (the
@@ -22614,6 +22614,34 @@ planned; a done item with no whole merge that was not done by hand; a tend job's
 of a stale end label; taken off by hand, a Run again; not reported: the labels decide), `test/domain/work-items-dismissed.test.ts`
 (the fold: a dismiss marks the drop, a cancel does not, a hand-off or a new job forgets it),
 `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`, `labelPutOn` of such an item).
+
+### An item a person's Close PR dropped carries `hopper:pr-closed` (issue #1892 part 21, 2026-10-22)
+
+Milestone 2, part 21: one more of the drops part 9 left to the labels. A person's Close PR (issue #677) closes a finished
+job's pull request without a merge. Its follow records `job.pull_request_closed` with `person`, so the item moves from PR open
+to dropped, not to blocked as for a close on GitHub. The follow's end is `closed` all the same: it puts `hopper:pr-closed`
+on the issue through the GitHub outbox (part 14).
+
+- **The ledger keeps that a person's close dropped the item** (`closedByPerson`, in the item's JSON body: no migration;
+  `src/domain/work-items.ts`). Only `job.pull_request_closed` with `person` and no `superseded` marks it: a close as
+  superseded by another pull request is done, and its follow puts `hopper:done` on. The mark is kept while the item stays
+  dropped; a new job forgets it.
+- **`labelsFor` judges such an item: it wants `hopper:pr-closed`.** No fact is needed: the mirror does not judge an item
+  with outbox rows not sent, so the follow's own change goes out first. The mirror puts the label back when it is gone and
+  takes another end label off, and Intake gives the item the pr-closed reason (`ledgerReason`, `PR_CLOSED`).
+- **`hopper:pr-closed` taken off by hand is a Run again** (`work_item.label_edited` with `means: run_again`), as the issue
+  asks. An end label put on such an item is no edit: the item wants a label, so `labelPutOn` does not apply.
+- **The hopper's own close is not judged.** A close by pull request housekeeping (`byHopper`) also drops the item, and its
+  follow puts `hopper:pr-closed` on too, but no person asked for it; it stays with the labels for now.
+
+**Left to the labels:** an item dropped by a card withdrawn by its source, the hopper's own close or an issue closed as not
+planned; a done item with no whole merge that was not done by hand; a tend job's cancel. Milestone 4.
+
+**Verification:** `test/sources/github-label-closed-by-person.test.ts` (the pr-closed reason, `hopper:pr-closed` back in place
+of a stale end label; taken off by hand, a Run again; the hopper's own close: the labels decide),
+`test/domain/work-items-closed-by-person.test.ts` (the fold: a person's close marks the drop; the hopper's own close, a close
+as superseded and a close on GitHub do not; a new job forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor`,
+`labelDrift`, `labelTakenOff`, `labelPutOn` of such an item).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

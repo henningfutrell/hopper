@@ -21,8 +21,10 @@
 // kept every end label off. Not a tend job's cancel (its pull request may wait again). An end label a person puts on such an
 // item by hand (`labelPutOn`) keeps the issue out (`keptOut`): the item then carries that label. An item dropped by the dismiss
 // of its failed job's locked entry (`dismissed`, part 20) carries `hopper:failed` once its job's failure was reported as failed
-// (`failureReported`): the dismiss writes no label, so the issue keeps the report's. Not an item dropped any other way
-// (declined, Close PR, closed as not planned): what its issue carries then is not certain. Every other state is not judged.
+// (`failureReported`): the dismiss writes no label, so the issue keeps the report's. An item dropped by a person's Close PR
+// (`closedByPerson`, part 21) carries `hopper:pr-closed`: the follow of the close put it on, as for a close on GitHub. Not an
+// item dropped any other way (declined, the hopper's own close, closed as not planned): what its issue carries then is not
+// certain. Every other state is not judged.
 // Pure: no I/O, no clock.
 import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
 import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
@@ -47,7 +49,7 @@ export const dropReported = (job: Pick<Job, 'status' | 'spec' | 'sourceState'> |
   (job?.status === 'cancelled' || job?.status === 'rejected') && job.spec.tend !== true && job.sourceState?.sync?.finalReported === true;
 
 /** What the labels of an item are judged by: its state, its block's cause, whether its events alone put it there, its merge, and what it waits on. */
-export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'dismissed' | 'doneByHand'>>;
+export type LabelledItem = Pick<WorkItem, 'state' | 'blockedCause'> & Partial<Pick<WorkItem, 'eventState' | 'pullRequestState' | 'wholeMerged' | 'waitingOn' | 'wontDo' | 'keptOut' | 'dismissed' | 'closedByPerson' | 'doneByHand'>>;
 
 /** The end labels `item`'s state wants on its issue; undefined: the state is not judged. */
 export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLabels | undefined {
@@ -66,7 +68,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       return item.waitingOn !== undefined ? { allowed: [] } : undefined;
     case 'dropped': {
       if (item.eventState !== 'dropped') return undefined;
-      const label = item.wontDo === true ? LABEL_REJECTED : item.keptOut;
+      const label = item.wontDo === true ? LABEL_REJECTED : item.closedByPerson === true ? LABEL_PR_CLOSED : item.keptOut;
       if (label !== undefined) return { allowed: [label], add: label };
       if (item.dismissed === true) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
       return facts.dropReported ? { allowed: [] } : undefined;
@@ -175,7 +177,7 @@ export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
 
 /**
  * The end label a person took off the issue by hand (issue #1892): `item`'s state wants one of its labels on (PR open,
- * blocked, failed or handed off as reported, dropped by Won't do or kept out by a label a person put on), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
+ * blocked, failed or handed off as reported, dropped by Won't do or a person's Close PR or kept out by a label a person put on), one of them was on at the last discover (`before`), and none is on now. Undefined: no such edit — no label was
  * seen before (never read back as state), one is still on (a swap of PR open's waiting labels is none), or the state wants
  * no label. Whether the item moved since, or the hopper's own write took it off, the caller judges.
  */
