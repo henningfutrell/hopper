@@ -560,7 +560,8 @@ export interface UserStore {
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
   tx<T>(fn: () => T): T;
-  close(): void;
+  /** `reads`: the reads the HTTP read routes make off the event loop (issue #2392), through the read pool, never in `tx`. */
+  close(): void; reads: import('./store-reads.ts').UserReads;
 }
 
 /** The instance store: the instance schema (design.md "Users: one hopper, separate users"). */

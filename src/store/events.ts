@@ -2,6 +2,7 @@ import type { EventLog } from '../domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type EventType } from '../domain/types.ts';
 import { LEDGER_EVENT_TYPES, type WorkItemLedger } from '../domain/work-items.ts';
 import { parse, type StoreContext } from './context.ts';
+import type { ReadDb } from './read-pool.ts';
 
 type Listener = (event: DomainEvent) => void;
 
@@ -14,6 +15,12 @@ const toEvent = (r: Record<string, unknown>): DomainEvent => {
   if (r.question_id !== null) e.questionId = r.question_id as string;
   return e;
 };
+
+const BETWEEN = (types: readonly EventType[]): string => `SELECT * FROM events WHERE type IN (${types.map(() => '?').join(',')}) AND at >= ? ORDER BY seq`;
+
+/** EventLog.between read off the event loop (issue #2392). */
+export const eventsBetweenRead = (read: ReadDb) => async (types: readonly EventType[], since: string): Promise<DomainEvent[]> =>
+  (types.length === 0 ? [] : (await read.all(BETWEEN(types), ...types, since)).map(toEvent));
 
 /** The log, plus `flush`/`discard` for the transaction wrapper to call at the outermost end. */
 export interface EventLogInternals extends EventLog {
@@ -66,8 +73,7 @@ export function createEventLog(c: StoreContext, inTx: () => boolean, ledger?: Pi
       return c.db.all(`SELECT * FROM events ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY seq DESC LIMIT ?`, ...args, limit).map(toEvent);
     },
     between(types, since) {
-      if (types.length === 0) return [];
-      return c.db.all(`SELECT * FROM events WHERE type IN (${types.map(() => '?').join(',')}) AND at >= ? ORDER BY seq`, ...types, since).map(toEvent);
+      return types.length === 0 ? [] : c.db.all(BETWEEN(types), ...types, since).map(toEvent);
     },
     lastOfJobs(jobIds) {
       if (jobIds.length === 0) return [];

@@ -6,6 +6,7 @@ import {
 import { stampView } from '../domain/stamp-view.ts';
 import { waitEntryProblem } from '../domain/wait-on.ts';
 import type { Row } from './db.ts';
+import type { ReadDb } from './read-pool.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
 
 /** The most ids one statement names when it reads the bodies of the jobs that changed. */
@@ -30,7 +31,26 @@ const chunks = (ids: readonly string[]): string[][] => {
 /** The advisory lock of an item's jobs, by its source key (`lockItem`): one per item and schema. */
 export const ITEM_LOCK = "hashtext('hopper item ' || current_schema() || ' ' || ?)";
 
-export function createJobRepository(c: StoreContext, onStamped: (jobId: string, data: StampedEvent) => void = () => {}): JobRepository {
+/** The ids and versions of the jobs `filter` names, newest first; `every`: the list names every job. */
+function listQuery(filter?: JobFilter): { sql: string; args: (string | number)[]; every: boolean } {
+  const conds = [
+    ...(filter?.status?.length ? [`status IN (${filter.status.map(() => '?').join(',')})`] : []),
+    // Generated columns (job-filter-columns.ts): a filter parses no body.
+    ...(filter?.unassessed ? ['NOT assessed'] : []),
+    ...(filter?.undismissed ? ['NOT dismissed'] : []),
+    ...(filter?.followed ? ["follow IN ('open', 'closed', 'tended')"] : []),
+    ...(filter?.namesPullRequest ? ['pull_request IS NOT NULL', "COALESCE(follow, '') NOT IN ('merged', 'abandoned')"] : []),
+  ];
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';
+  const args = [...(filter?.status ?? []), ...(filter?.limit !== undefined ? [filter.limit] : [])];
+  return { sql: `SELECT id, xmin::text AS v FROM jobs ${where} ORDER BY created_at DESC, seq DESC ${limit}`, args, every: !conds.length && filter?.limit === undefined };
+}
+
+/** The repository, and its list read off the event loop (issue #2392): the same kept jobs, read by row version. */
+export type JobRepositoryInternals = JobRepository & { listRead(read: ReadDb, filter?: JobFilter): Promise<Job[]> };
+
+export function createJobRepository(c: StoreContext, onStamped: (jobId: string, data: StampedEvent) => void = () => {}): JobRepositoryInternals {
   const kept = new Map<string, { v: string; job: Job }>();
   /** The user's trust stamp key (issue #655): absent until the runtime gives it, and then no job is stamped or checked. */
   let stampKey: Buffer | undefined;
@@ -65,15 +85,24 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
     if (k && r && r.body == null) return k.job;
     return one(r, id);
   };
-  /** The jobs of `rows` (id and version, in order): the kept ones as kept, the others read now. */
-  const bodies = (rows: Row[]): Job[] => {
+  /** The ids of `rows` (id and version) whose kept job is not at that version, forgotten. */
+  const staleOf = (rows: Row[]): string[] => {
     const stale = rows.map((r) => String(r.id)).filter((id, i) => kept.get(id)?.v !== String(rows[i]!.v));
     for (const id of stale) kept.delete(id);
-    for (const ids of chunks(stale)) {
-      for (const r of c.db.all(`SELECT id, xmin::text AS v, body FROM jobs WHERE id IN (${marks(ids)})`, ...ids)) keep(r);
-    }
-    // A job deleted between the two reads is left out.
-    return rows.flatMap((r) => kept.get(String(r.id))?.job ?? []);
+    return stale;
+  };
+  const BODIES = (ids: string[]): string => `SELECT id, xmin::text AS v, body FROM jobs WHERE id IN (${marks(ids)})`;
+  // A job deleted between the two reads is left out.
+  const keptOf = (rows: Row[]): Job[] => rows.flatMap((r) => kept.get(String(r.id))?.job ?? []);
+  /** The jobs of `rows` (id and version, in order): the kept ones as kept, the others read now. */
+  const bodies = (rows: Row[]): Job[] => {
+    for (const ids of chunks(staleOf(rows))) for (const r of c.db.all(BODIES(ids), ...ids)) keep(r);
+    return keptOf(rows);
+  };
+  /** A list of every job forgets the jobs deleted since. */
+  const forgetOthers = (rows: Row[]): void => {
+    const ids = new Set(rows.map((r) => String(r.id)));
+    for (const id of kept.keys()) if (!ids.has(id)) kept.delete(id);
   };
   const write = (id: string, change: (cur: Job) => Job): Job => {
     const cur = get(id);
@@ -133,24 +162,17 @@ export function createJobRepository(c: StoreContext, onStamped: (jobId: string, 
       return new Map(bodies(rows).flatMap((j) => (j.source ? [[j.source.key, j] as const] : [])));
     },
     list(filter?: JobFilter) {
-      const conds = [
-        ...(filter?.status?.length ? [`status IN (${filter.status.map(() => '?').join(',')})`] : []),
-        // Generated columns (job-filter-columns.ts): a filter parses no body.
-        ...(filter?.unassessed ? ['NOT assessed'] : []),
-        ...(filter?.undismissed ? ['NOT dismissed'] : []),
-        ...(filter?.followed ? ["follow IN ('open', 'closed', 'tended')"] : []),
-        ...(filter?.namesPullRequest ? ['pull_request IS NOT NULL', "COALESCE(follow, '') NOT IN ('merged', 'abandoned')"] : []),
-      ];
-      const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-      const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';
-      const args = [...(filter?.status ?? []), ...(filter?.limit !== undefined ? [filter.limit] : [])];
-      const rows = c.db.all(`SELECT id, xmin::text AS v FROM jobs ${where} ORDER BY created_at DESC, seq DESC ${limit}`, ...args);
-      // A list of every job forgets the jobs deleted since.
-      if (!conds.length && filter?.limit === undefined) {
-        const ids = new Set(rows.map((r) => String(r.id)));
-        for (const id of kept.keys()) if (!ids.has(id)) kept.delete(id);
-      }
+      const q = listQuery(filter);
+      const rows = c.db.all(q.sql, ...q.args);
+      if (q.every) forgetOthers(rows);
       return bodies(rows);
+    },
+    async listRead(read, filter) {
+      const q = listQuery(filter);
+      const rows = await read.all(q.sql, ...q.args);
+      if (q.every) forgetOthers(rows);
+      for (const ids of chunks(staleOf(rows))) for (const r of await read.all(BODIES(ids), ...ids)) keep(r);
+      return keptOf(rows);
     },
     update(id, patch) {
       return write(id, (cur) => applyPatch<Job>(cur, patch));

@@ -28,12 +28,13 @@ export interface InfraPlans {
   /** Keep a job's plan; with auto-approve on, a plan an operator may approve is approved by the hopper in the same step. */
   record(job: Job, input: PlanInput, file?: Buffer): { plan: InfraPlan; view: PlanView } | PlanRefusal;
   get(id: string): InfraPlan | undefined;
-  /** One plan as the hopper shows it, with its text. */
-  view(id: string): (PlanView & { text: string }) | undefined;
+  /** One plan as the hopper shows it, with its text: read off the event loop (issue #2392). */
+  view(id: string): Promise<(PlanView & { text: string }) | undefined>;
   file(id: string): Buffer | undefined;
-  list(): PlanView[];
+  /** Read off the event loop (issue #2392), as `applies`. */
+  list(): Promise<PlanView[]>;
   /** The applies of the plans `list` answers, newest first: each credential the vault minted naming one of them. */
-  applies(plans: PlanView[]): PlanApply[];
+  applies(plans: PlanView[]): Promise<PlanApply[]>;
   approval(id: string): PlanApproval | undefined;
   /** A person of `role` approves the plan: a 403 when its risk needs a higher role (approverOf). */
   approve(id: string, by: string, role: UiRole): PlanView | PlanRefusal;
@@ -49,7 +50,7 @@ export interface InfraPlans {
 }
 
 export interface InfraPlansOptions {
-  store: Pick<UserStore, 'infraPlans' | 'events' | 'tx' | 'settings'>;
+  store: Pick<UserStore, 'infraPlans' | 'events' | 'tx' | 'settings' | 'reads'>;
   clock: Clock;
   /** The commit `ref` of `repo` is at now, on GitHub; throws, saying why, when it cannot be read. */
   head(repo: string, ref: string): Promise<string>;
@@ -116,17 +117,17 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
       return { plan, view: viewOf(plan) };
     },
     get: (id) => (PLAN_ID.test(id) ? plans.get(id) : undefined),
-    view(id) {
-      const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
-      return plan ? { ...viewOf(plan), text: plan.text } : undefined;
+    async view(id) {
+      const plan = PLAN_ID.test(id) ? await o.store.reads.infraPlan(id) : undefined;
+      return plan ? { ...withApprover(plan), text: plan.text } : undefined;
     },
     file: (id) => (PLAN_ID.test(id) ? plans.file(id) : undefined),
-    list: () => plans.list(LIST_MAX).map(withApprover),
-    applies(listed) {
+    list: async () => (await o.store.reads.infraPlans(LIST_MAX)).map(withApprover),
+    async applies(listed) {
       if (listed.length === 0) return [];
       const ids = new Set(listed.map((p) => p.id));
       const since = listed.reduce((min, p) => (p.createdAt < min ? p.createdAt : min), listed[0]!.createdAt);
-      return o.store.events.between(['vault.minted'], since).flatMap((e): PlanApply[] => {
+      return (await o.store.reads.eventsBetween(['vault.minted'], since)).flatMap((e): PlanApply[] => {
         const d = e.data as { plan?: string; operation: string; asset: PlanApply['asset']; job: string; expiresAt: string; renewal?: boolean; actions?: PlanApply['actions'] };
         return d.plan && ids.has(d.plan) ? [{ plan: d.plan, at: e.at, operation: d.operation, asset: d.asset, job: d.job, expiresAt: d.expiresAt, renewal: d.renewal === true, ...(d.actions?.length ? { actions: d.actions } : {}) }] : [];
       }).reverse();
