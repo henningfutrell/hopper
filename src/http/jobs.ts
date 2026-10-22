@@ -58,7 +58,8 @@ const BOM_BASELINE_MS = 86_400_000;
 export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   app.get('/api/jobs', async (req) => {
     const q = parseWith(jobsQuery, req.query);
-    return { jobs: o.tenant(req).store.jobs.list({ ...(q.status ? { status: q.status } : {}), limit: q.limit }).map(withPhase) };
+    // Off the event loop (issue #2392): through the read pool.
+    return { jobs: (await o.tenant(req).store.reads.jobs({ ...(q.status ? { status: q.status } : {}), limit: q.limit })).map(withPhase) };
   });
 
   // The newest event of each job /api/queue holds (issue #434): each Jobs view card's last event.

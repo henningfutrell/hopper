@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { planAsk, planNeedsPerson } from '../../domain/confirmation-asks.ts';
 import { approveRefusal, REJECTION_NOTE_MAX } from '../../domain/infra-plans.ts';
 import { isPlanRefusal } from '../../infra-plans/service.ts';
-import { askerOf, askPerson, byApiToken, shownAsks } from './confirmation-asks.ts';
+import { askerOf, askPerson, byApiToken, shownAsksRead } from './confirmation-asks.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -42,18 +42,18 @@ export function infraPlanReadRoutes(app: FastifyInstance, { tenant }: { tenant: 
   outOfBandReadRoutes(app, { tenant }); topologyReadRoutes(app, { tenant });
   app.get('/api/infra-plans', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    const infra = tenant(req).githubProxy.infraPlans;
-    const listed = infra.list();
-    const asked = shownAsks(tenant(req).store, 'infra-plan');
+    // Off the event loop (issue #2392): the plans, the asks and the applies, through the read pool.
+    const t = tenant(req), infra = t.githubProxy.infraPlans;
+    const [listed, asked] = await Promise.all([infra.list(), shownAsksRead(t.store, 'infra-plan')]);
     const plans = listed.map((p) => {
       const a = p.approval ? undefined : asked.get(p.id);
       return a ? { ...p, asked: a } : p;
     });
-    return { plans, applies: infra.applies(listed), settings: infra.settings(), watchers: infra.watchers() };
+    return { plans, applies: await infra.applies(listed), settings: infra.settings(), watchers: infra.watchers() };
   });
   app.get<{ Params: { id: string } }>('/api/infra-plans/:id', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    const plan = tenant(req).githubProxy.infraPlans.view(req.params.id);
+    const plan = await tenant(req).githubProxy.infraPlans.view(req.params.id);
     if (!plan) throw new HttpError(404, `no plan ${req.params.id}`);
     return { plan };
   });

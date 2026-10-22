@@ -3,16 +3,17 @@
 import { USER_CONFIG, type Clock, type IdGen, type UserStore } from '../domain/ports.ts';
 import { createArtifactRepository } from './artifacts.ts';
 import { createBugReportRepository } from './bug-reports.ts';
-import { createInfraPlanRepository } from './infra-plans.ts';
+import { createInfraPlanReads, createInfraPlanRepository } from './infra-plans.ts';
 import { createOutOfBandRepository } from './out-of-band.ts';
 import { createTopologyRepository } from './topology.ts';
 import { createSkillLibraryRepository } from './skill-library.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
+import { readDb } from './read-pool.ts';
 import { createDecisionRepository } from './decisions.ts';
 import { createConfigRecords } from './config.ts';
 import { createConnectedAccountRepository } from './connected-accounts.ts';
-import { createEventLog } from './events.ts';
+import { createEventLog, eventsBetweenRead } from './events.ts';
 import { createEventCursorRepository } from './event-cursors.ts';
 import { createJobRepository } from './jobs.ts';
 import { createJobStreamRepository } from './job-stream.ts';
@@ -80,8 +81,12 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
   jobStream = createJobStreamRepository(ctx);
   // Rebuilt when it missed an event: one the build before appended, or one a fold of users moved in (issue #1067).
   workItems.catchUp();
+  const jobs = createJobRepository(ctx, (jobId, data) => events.append({ type: 'intake.stamped', jobId, data }));
+  // The HTTP read routes' reads, off the event loop (issue #2392): the process's read pool, at this user's schema.
+  const read = readDb(o.url);
   return {
-    jobs: createJobRepository(ctx, (jobId, data) => events.append({ type: 'intake.stamped', jobId, data })),
+    jobs,
+    reads: { jobs: (filter) => jobs.listRead(read, filter), ...createInfraPlanReads(read), eventsBetween: eventsBetweenRead(read) },
     lanes: createLaneRepository(ctx),
     decisions: createDecisionRepository(ctx),
     events,

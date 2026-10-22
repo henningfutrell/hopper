@@ -8105,6 +8105,32 @@ sub-millisecond to a database on the same host or LAN, but put Postgres near the
 link × ~50 queries a tick is a second of stall). An async Store was rejected: ~230 call sites, and a
 new class of interleaving bug between the tick and the UI's mutations.
 
+**Reads off the loop** (issue #2392). Every write, and every read of the engine and the timers, stays on the
+synchronous Store port. The HTTP read routes that read many rows read through the **read pool**
+(`src/store/read-pool.ts`) instead: an async `pg.Pool` on the main thread, so a read that waits on the database holds
+no timer, no tick and no other request. Before, one slow read (a lock, a long scan) stopped the whole hopper while it
+waited, and a burst of small reads on a hot route did the same.
+- **Which reads.** A user store's `reads` (`src/domain/store-reads.ts`): the jobs list (`GET /api/jobs`); the Infra
+  plans (`GET /api/infra-plans`: the plans, the confirmation asks, the applies); one plan with its text, approval and
+  rejection in one read (`GET /api/infra-plans/:id`, a job's `GET /job/infra-plans/:id`). `GET /api/health` reads no
+  store, with a user or without: it answers each time the event loop is free. Other read routes move one at a time
+  (the job graph, the queue, the events, the vault view): a route moves when its reads are many or can wait.
+- **Consistent with the writes.** A write through the store's connection is committed when its call returns, or when
+  its `tx` ends. A pool read never runs inside a `tx` (a `tx` is synchronous: nothing awaits in it). So a read sees every
+  write that returned before it started: an action's own write is read by the read after it. Each statement of a read
+  is read committed on its own: the jobs list reads ids and versions, then the bodies of the rows it keeps no copy of; a
+  job written between the two is read at its newer version, a job deleted between them is left out, as the
+  synchronous list does.
+- **One job cache.** The jobs kept by row version (below) are one map for both paths. Each read keeps a body with the
+  `xmin` it was read at, so a kept job is never older than the version it is kept at.
+- **Cost.** At most `READ_POOL_SIZE` (4) more connections for each hopper process and database server, closed after
+  30 s idle; read only (`default_transaction_read_only`), the same `statement_timeout` as the store's own. Several
+  hoppers on one database each keep their own pool. It reads the same `HOPPER_DATABASE_URL` and takes no new setting, in
+  compose and in Kubernetes alike: size the database's `max_connections` for the store's connections (the instance's
+  and one for each user) and 4 for each hopper process. Each user schema is set on a pooled connection
+  (`SET search_path`) only when it is not the one it has, so the pool is shared by every user of the process.
+- **Rejected:** a pool for each user (4 connections times the users), and an async Store (above).
+
 **Jobs are read by row version** (issue #1154, `src/store/jobs.ts`). A job list asks Postgres for each row's id
 and version only (`xmin`), and reads the body only of a row the store holds no copy of at that version; it keeps
 each job it read, parsed, by that version. Every write of a row changes `xmin`, whoever writes it (a migration, the

@@ -99,7 +99,7 @@ describe('reads off the event loop (issue #2392)', () => {
 
   it('a read sees the write that returned before it: a job\'s update, a plan\'s approval', async () => {
     const { a, plan } = await start();
-    const job = a.user().store.jobs.create({ executor: 'test', prompt: 'one', cwd: '/tmp', env: {} }, 50);
+    const job = a.user().store.jobs.create({ executor: 'test', payload: {} }, 50);
     expect((await a.api('GET', '/api/jobs')).body.jobs.map((j: Job) => j.id)).toContain(job.id);
     a.user().store.jobs.update(job.id, { priority: 7 });
     expect((await a.api('GET', '/api/jobs')).body.jobs.find((j: Job) => j.id === job.id).priority).toBe(7);

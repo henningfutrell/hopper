@@ -26,3 +26,7 @@ export function askPerson(store: Pick<UserStore, 'events'>, reply: FastifyReply,
 /** The latest ask of each item of `kind` shown now, by its ref. */
 export const shownAsks = (store: Pick<UserStore, 'events'>, kind: ConfirmationKind): Map<string, AskedBy> =>
   latestAsks(store.events.between([ASKED], ago(ASK_SHOWN_HOURS * 3_600_000)), kind);
+
+/** As `shownAsks`, read off the event loop (issue #2392). */
+export const shownAsksRead = async (store: Pick<UserStore, 'reads'>, kind: ConfirmationKind): Promise<Map<string, AskedBy>> =>
+  latestAsks(await store.reads.eventsBetween([ASKED], ago(ASK_SHOWN_HOURS * 3_600_000)), kind);
