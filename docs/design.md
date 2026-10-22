@@ -23060,6 +23060,31 @@ withdrawn by its source or by an issue closed as not planned (not listed).
 **Verification:** `test/sources/github-label-culprit.test.ts` (a part's culprit with parts left: no reason, a stale
 `hopper:partly-done` taken off; the last part not judged), `test/sources/github-item-labels.test.ts`.
 
+### The last part, judged by the ledger (issue #1892 part 35, 2026-10-22)
+
+Parts 5 and 34 left the last part to the labels. A part's merge that makes every declared part done ("Declared parts") ends
+its follow as a whole merge: the follow puts `hopper:done` on. The item's events still say partly done (`job.pull_request_merged`
+with `part: true`). The fact `partsLeft` is false then, but it is also false when the follow did not record the merge yet, so
+no fact told the two apart.
+
+**As built** (`src/sources/github/item-labels.ts`, `label-mirror.ts`, `discover.ts`, `src/users/source-context.ts`):
+- **A new fact, `lastPartMerged`**: its job's follow recorded the merge of a part (`follow: merged`, `part: true`), and every
+  declared part is done (`allPartsDone`). It comes from the store, as `partsLeft` does.
+- **`labelsFor` of a partly done item** with `lastPartMerged` wants `hopper:done`. So does a reverted culprit of the last part
+  (failed, `eventState: partly_done`, its pull request merged).
+- **Intake reads the ledger for both**: done but open (`ledgerReason`), as the label said before; a reverted culprit of the
+  last part too.
+- **The mirror** asks the fact for a partly done and a failed item, and swaps a stale end label for `hopper:done`.
+- `hopper:done` taken off by hand is a Run again (`work_item.label_edited`), as for a done item.
+
+**Still left to the labels:** a partly done item or a culprit whose merge the follow did not record; a done item that a read
+of GitHub made done (the issue's labels are then what was on it before, which no record says); an item dropped by a card
+withdrawn by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-partly-done.test.ts` (done but open, a stale `hopper:partly-done` swapped,
+`hopper:done` taken off by hand is a Run again, a merge not recorded not judged), `test/sources/github-label-culprit.test.ts`,
+`test/sources/github-item-labels.test.ts`, `test/users/source-context-parts-left.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

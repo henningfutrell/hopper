@@ -8,7 +8,8 @@
 // culprit whose merge was reverted (failed by its landing, not by its job: its events say done, issue #1175) carries
 // `hopper:done` when it merged as the whole item (part 33): the follow put it on at the merge, the red batch writes no label to
 // its issue and no batch run closed it; a culprit that was a part with parts left (`partsLeft`, part 34) carries none: the follow
-// took `hopper:partly-done` off at its merge; not a culprit that was the last part; a failed item whose failure was told as one the
+// took `hopper:partly-done` off at its merge; a culprit that was the last part (`lastPartMerged`, part 35) carries `hopper:done`:
+// the follow put it on with that merge; a failed item whose failure was told as one the
 // hopper fixes itself (`fixingReported`, issue #1230, part 31) carries none: that report left the issue as it was, and while
 // its job worked the mirror kept every end label off; a failed item whose report waits (`failureReportWaits`, part 32) may
 // carry `hopper:failed` and no other end label: the report puts it on, or leaves the issue as it was, so none is put on before
@@ -20,7 +21,8 @@
 // for a part, while the pull request it follows waits; `hopper:blocked` while it found none. Not a done item a read of GitHub
 // made done. A partly done item carries none once its merged
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
-// runs. Not a last part that made every declared part done: the follow put `hopper:done` on. An item that needs a person carries
+// runs. A partly done item whose merged part made every declared part done (`lastPartMerged`, part 35) carries `hopper:done`:
+// the follow put it on with that merge. Not a merge the follow did not record. An item that needs a person carries
 // none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
 // A hand-off (`HANDOFF_WAIT`) carries `hopper:failed` once its job's failure was reported as failed (`failureReported`), as a
 // failed item does: its job failed, and the hand-off waits on a person; before, the labels decide. A request card (waiting for
@@ -50,11 +52,11 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
  * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
  * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done), and so of
- * a reverted culprit of a part. Of a done
+ * a reverted culprit of a part; or whether that merge made every declared part done (`lastPartMerged`, `hopper:done`). Of a done
  * item: what its job's final report put on (`doneReported`). Of a failed item: whether its job's failure was reported as one
  * the hopper fixes itself (`fixingReported`, no end label), or its report is not out yet (`failureReportWaits`).
  */
-export interface LabelFacts { part?: boolean; failureReported?: boolean; fixingReported?: boolean; failureReportWaits?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: DoneReport }
+export interface LabelFacts { part?: boolean; failureReported?: boolean; fixingReported?: boolean; failureReportWaits?: boolean; partsLeft?: boolean; lastPartMerged?: boolean; dropReported?: DropReport; doneReported?: DoneReport }
 
 /**
  * What the final report of a finished job put on its issue (issue #1892 parts 24, 28): `closed`, the issue was closed as
@@ -115,6 +117,8 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       if (item.eventState === 'done' && item.pullRequestState === 'merged' && item.wholeMerged === true) return { allowed: [LABEL_DONE], add: LABEL_DONE };
       // A reverted culprit of a part with parts left (part 34): the follow took `hopper:partly-done` off at its merge.
       if (item.eventState === 'partly_done' && item.pullRequestState === 'merged' && facts.partsLeft) return { allowed: [] };
+      // A reverted culprit of the last part (part 35): the follow put `hopper:done` on with that merge.
+      if (item.eventState === 'partly_done' && item.pullRequestState === 'merged' && facts.lastPartMerged) return { allowed: [LABEL_DONE], add: LABEL_DONE };
       if (item.eventState !== 'failed') return undefined;
       if (facts.failureReported) return { allowed: [LABEL_FAILED], add: LABEL_FAILED };
       return facts.fixingReported ? { allowed: [] } : facts.failureReportWaits ? { allowed: [LABEL_FAILED] } : undefined;
@@ -123,7 +127,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       if (item.eventState !== 'done' || facts.doneReported === undefined) return undefined;
       return facts.doneReported === 'no_pr' ? labelsFor({ state: 'blocked', blockedCause: 'no_pr' }) : labelsFor({ state: 'pr_open' }, { part: facts.doneReported === 'part' });
     }
-    case 'partly_done': return item.eventState === 'partly_done' && facts.partsLeft ? { allowed: [] } : undefined;
+    case 'partly_done': return item.eventState !== 'partly_done' ? undefined : facts.partsLeft ? { allowed: [] } : facts.lastPartMerged ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     case 'needs_you':
       if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
       return item.waitingOn !== undefined ? { allowed: [] } : undefined;
