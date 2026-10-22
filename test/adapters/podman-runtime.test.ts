@@ -191,7 +191,7 @@ describe('the Podman container runtime', () => {
     await expect(createPodmanRuntime(api.socket).build('localhost/x:1', 'FROM x\n')).rejects.toThrow('podman could not build localhost/x:1: sha256sum: WARNING: 1 computed checksum did NOT match');
   });
 
-  it('a one-shot container runs its script on a terminal, never restarted; wait answers its exit code, logs its output (issue #716)', async () => {
+  it('a one-shot container runs its script on a terminal, never restarted, its log in a file; wait answers its exit code, logs its output (issues #716, #2406)', async () => {
     // libpod frames its logs even on a terminal: a stream byte, three zeros, a four-byte length, the bytes.
     const frame = (s: string): string => `\u0001\u0000\u0000\u0000${String.fromCharCode(0, 0, 0, s.length)}${s}`;
     api = await startFakeRuntimeApi([
@@ -202,6 +202,8 @@ describe('the Podman container runtime', () => {
     const rt = createPodmanRuntime(api.socket);
     await rt.create({ ...spec, script: 'echo hi' });
     expect(api.seen[0]!.body).toMatchObject({ entrypoint: ['/bin/sh'], command: ['-c', 'echo hi'], terminal: true, restart_policy: 'no', cap_drop: ['ALL'], read_only_filesystem: true });
+    // Its log in a file, not journald, which drops a large output (issue #2406).
+    expect(api.seen[0]!.body).toMatchObject({ log_configuration: { driver: 'k8s-file' } });
     expect(await rt.wait('c1', 5000)).toBe(3);
     expect(api.seen[1]!.query.getAll('condition')).toEqual(['exited', 'stopped']);
     expect(await rt.logs('c1')).toBe('HOPPER-PROBE 0 1 aGkK\r\n');

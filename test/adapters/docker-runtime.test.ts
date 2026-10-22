@@ -38,7 +38,7 @@ describe('the Docker container runtime', () => {
     });
   });
 
-  it('a one-shot container runs its script on a TTY, never restarted; wait answers its exit code, logs its raw output (issue #716)', async () => {
+  it('a one-shot container runs its script on a TTY, never restarted, its log in a file (issue #2406); wait answers its exit code, logs its raw output (issue #716)', async () => {
     api = await startFakeRuntimeApi([
       on('POST', `${API}/containers/create`, { status: 201, body: { Id: 'd1' } }),
       on('POST', `${API}/containers/d1/wait`, { status: 200, body: { StatusCode: 0 } }),
@@ -46,7 +46,7 @@ describe('the Docker container runtime', () => {
     ]);
     const rt = createDockerRuntime(api.socket);
     await rt.create({ ...spec, script: 'echo hi' });
-    expect(api.seen[0]!.body).toMatchObject({ Entrypoint: ['/bin/sh'], Cmd: ['-c', 'echo hi'], Tty: true, HostConfig: { RestartPolicy: { Name: 'no' }, CapDrop: ['ALL'], ReadonlyRootfs: true } });
+    expect(api.seen[0]!.body).toMatchObject({ Entrypoint: ['/bin/sh'], Cmd: ['-c', 'echo hi'], Tty: true, HostConfig: { RestartPolicy: { Name: 'no' }, CapDrop: ['ALL'], ReadonlyRootfs: true, LogConfig: { Type: 'json-file' } } });
     expect(await rt.wait('d1', 5000)).toBe(0);
     expect(await rt.logs('d1')).toBe('HOPPER-PROBE 0 0 aGkK\r\n');
   });
