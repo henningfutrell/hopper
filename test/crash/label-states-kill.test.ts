@@ -1,5 +1,6 @@
-// The label mirror killed while it corrects items in more states (issue #1892 parts 25, 26, design.md "The item lifecycle"):
-// dropped by a person's Close PR, dropped by a person's Won't do, blocked with no pull request, and a hand-off. The next hopper changes each label once.
+// The label mirror killed while it corrects items in more states (issue #1892 parts 25, 26, 36, design.md "The item lifecycle"):
+// dropped by a person's Close PR, dropped by a person's Won't do, blocked with no pull request, a hand-off, failed and held on a
+// problem, and partly done with parts left. The next hopper changes each label once.
 import { afterEach, describe, it } from 'vitest';
 import { stopHosts } from './harness.ts';
 import { CORRECTION_KILL_POINTS, SCENARIO_MS } from './label-world.ts';
