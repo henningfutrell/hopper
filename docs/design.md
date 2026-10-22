@@ -22816,6 +22816,28 @@ dropped item leaves it to the next hopper with each label change once (`test/cra
 
 **Verification:** `test/crash/label-states-kill.test.ts`.
 
+### The label mirror's restart test, blocked and hand-off (issue #1892 part 26, 2026-10-22)
+
+The same restart test, for two more judged states. The world of part 25 seeds two more items, and the same three kill points
+apply (`test/crash/label-states-world.ts`).
+
+- **#14, blocked with no pull request** (`blockedCause: no_pr`). Its job ended done with no pull request, and its report went
+  out. Its issue carries a stale `hopper:pr-ready`. The next hopper takes it off and puts `hopper:blocked` on, each by one call.
+- **#15, a hand-off** (`waitingOn: a hand-off`, part 8). Its job failed, its failure was reported as failed, and the seed holds
+  its assessment, its failure record and its open hand-off, so the assessor does not hand it off again. Its issue carries a
+  stale `hopper:pr-ready`. The next hopper takes it off and puts `hopper:failed` on, each by one call.
+- Each correction is queued once, as one remove and one add, and each item stays in its state.
+
+**Decisions.**
+- **A seeded hand-off, not a seeded failed job.** The assessor hands off a failed job with no assessment at once, and a new
+  hand-off is not judged for the reconciler's grace (two minutes). The seed writes the hand-off ten minutes back, as the
+  assessor would have.
+- **No partly done item.** One with parts left wants no end label, so Intake takes it again and a new job runs its next part:
+  the item does not stay in its state.
+- **No code change.** The test found no defect.
+
+**Verification:** `test/crash/label-states-kill.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
