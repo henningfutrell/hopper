@@ -7,7 +7,9 @@
 // as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits, and not a
 // culprit whose merge was reverted (failed by its landing, not by its job); a failed item whose failure was told as one the
 // hopper fixes itself (`fixingReported`, issue #1230, part 31) carries none: that report left the issue as it was, and while
-// its job worked the mirror kept every end label off; a done item carries `hopper:done` once its pull
+// its job worked the mirror kept every end label off; a failed item whose report waits (`failureReportWaits`, part 32) may
+// carry `hopper:failed` and no other end label: the report puts it on, or leaves the issue as it was, so none is put on before
+// it; a done item carries `hopper:done` once its pull
 // request merged as the whole item (`wholeMerged`): the follow put it on with the merge; or once a person resolved its hand-off as
 // Done by hand (`doneByHand`): the resolution put it on; or once a job's end made it done and its job's final report found
 // the issue closed as complete (`doneReported`, part 24): the report put it on. A done item a job's end made while its issue
@@ -46,9 +48,9 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
  * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
  * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done). Of a done
  * item: what its job's final report put on (`doneReported`). Of a failed item: whether its job's failure was reported as one
- * the hopper fixes itself (`fixingReported`, no end label).
+ * the hopper fixes itself (`fixingReported`, no end label), or its report is not out yet (`failureReportWaits`).
  */
-export interface LabelFacts { part?: boolean; failureReported?: boolean; fixingReported?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: DoneReport }
+export interface LabelFacts { part?: boolean; failureReported?: boolean; fixingReported?: boolean; failureReportWaits?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: DoneReport }
 
 /**
  * What the final report of a finished job put on its issue (issue #1892 parts 24, 28): `closed`, the issue was closed as
@@ -106,7 +108,8 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     }
     case 'failed':
       if (item.eventState !== 'failed') return undefined;
-      return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : facts.fixingReported ? { allowed: [] } : undefined;
+      if (facts.failureReported) return { allowed: [LABEL_FAILED], add: LABEL_FAILED };
+      return facts.fixingReported ? { allowed: [] } : facts.failureReportWaits ? { allowed: [LABEL_FAILED] } : undefined;
     case 'done': {
       if ((item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && (item.doneByHand === true || facts.doneReported === 'closed'))) return { allowed: [LABEL_DONE], add: LABEL_DONE };
       if (item.eventState !== 'done' || facts.doneReported === undefined) return undefined;

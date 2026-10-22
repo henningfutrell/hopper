@@ -1,0 +1,1 @@
+- Intake now shows a failed issue as failed at once, before its report reaches GitHub, and an old end label on it comes off.

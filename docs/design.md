@@ -22974,6 +22974,36 @@ dropped by a card withdrawn by its source or by an issue closed as not planned (
 judged before the report), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`,
 `labelPutOn`), `test/users/source-context-fixing-reported.test.ts`, `test/gitlab/ledger-intake.test.ts`.
 
+### A failed item whose report waits, judged by the ledger (issue #1892 part 32, 2026-10-22)
+
+Milestone 4: the next failed item part 31 left to the labels. A job failed, and its final report is not out yet: it waits on
+the job's assessment (issue #1230: whether the hopper fixes the failure itself is not known yet), or it is on its way through
+the outbox. While the job worked, the mirror kept every end label off. The report then puts `hopper:failed` on, or, for a
+failure the hopper fixes itself, leaves the issue as it was. So `hopper:failed` is the one end label the issue may carry.
+
+**As built** (`src/sources/github/item-labels.ts`):
+- **A new fact, `failureReportWaits`** (`LabelFacts`, `IntakeContext.failureReportWaits`, `src/users/source-context.ts`): the
+  item's job failed, and its final report is not out (`sync.finalReported` not true). No new field is kept, so no migration.
+- **`labelsFor` of a failed item with `eventState: failed`** with that fact allows `hopper:failed` and adds none. The mirror
+  takes any other end label off, and never takes off the `hopper:failed` a report put on before its flag was written.
+  `labelTakenOff` finds no person event for it: the state adds no label.
+- **Intake reads the ledger for it** (`ledgerReason`): the failed reason, whatever end labels the issue carries. The job
+  failed; its item is not taken again before its end is reported (`isRerunnable`).
+- **GitLab too** (`src/gitlab/ledger.ts`): GitLab's report also puts `hopper:failed` on, or leaves the issue as it was.
+
+**Decisions.**
+- **The failed reason, not none.** The job failed, whatever its report says next. A failure the hopper then fixes itself loses
+  the reason once its report went out (part 31).
+- **A reverted culprit stays to the labels.** Its item is failed by its landing, not by its job (`eventState` is not
+  `failed`), and no report says what its issue carries.
+
+**Left to the labels:** a reverted culprit, a done item a read of GitHub made done, an item dropped by a card withdrawn by its
+source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-report-waits.test.ts` (Intake reason, a stale end label taken off, the report's
+`hopper:failed` kept and none put on, no person event), `test/sources/github-item-labels.test.ts`,
+`test/users/source-context-failure-report-waits.test.ts`, `test/gitlab/ledger-intake.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
