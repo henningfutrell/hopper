@@ -48,6 +48,15 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'failed', eventState: 'done' }, { failureReportWaits: true })).toBeUndefined();
   });
 
+  it('failed by its landing, a reverted culprit of a whole merge (issue #1892 part 33): hopper:done, as the follow put it on', () => {
+    const culprit = { state: 'failed', eventState: 'done', pullRequestState: 'merged', wholeMerged: true } as const;
+    expect(labelsFor(culprit)).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
+    expect(labelDrift(culprit, ['hopper', 'hopper:failed'])).toEqual({ remove: ['hopper:failed'], add: ['hopper:done'] });
+    expect(labelTakenOff(culprit, ['hopper', 'hopper:done'], ['hopper'])).toBe('hopper:done');
+    expect(labelsFor({ state: 'failed', eventState: 'partly_done', pullRequestState: 'merged' })).toBeUndefined();
+    expect(labelsFor({ state: 'failed', eventState: 'done', pullRequestState: 'merged' })).toBeUndefined();
+  });
+
   it('done (issue #1892): hopper:done once its pull request merged as the whole item; not judged else', () => {
     expect(labelsFor({ state: 'done', pullRequestState: 'merged', wholeMerged: true })).toEqual({ allowed: ['hopper:done'], add: 'hopper:done' });
     expect(labelsFor({ state: 'done', pullRequestState: 'merged' })).toBeUndefined();
