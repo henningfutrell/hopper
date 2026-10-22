@@ -14,6 +14,7 @@ import { existsSync, readFileSync, statfsSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, homedir, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { inCluster, podLimits, type Env } from './cluster.ts';
+import { nodeFloorOf } from './node-floor.ts';
 
 export interface ResourceReading {
   /** CPUs it may use: the host's, or a container's CPU quota (may be fractional). */
@@ -36,6 +37,10 @@ export interface ResourceReading {
   /** WSL only, with interop: the Windows host's physical memory, free and total. Absent: not read. */
   hostMemFreeBytes?: number;
   hostMemTotalBytes?: number;
+  /** The Node version this process runs (issue #2479), as `process.version` says it. */
+  node?: string;
+  /** The patched floor (node-floor.ts) its Node is below. Absent: patched. */
+  nodeFloor?: string;
 }
 
 /** A host's physical memory, free and total. */
@@ -59,6 +64,8 @@ export interface ResourceMeterDeps {
   hostMemory?: HostMemoryReader;
   /** Says whether it runs in a Kubernetes pod, and the pod's limits; default this process's. */
   env?: Env;
+  /** The Node version it runs; default this process's. */
+  node?: string;
 }
 
 /** How often the Windows host's memory is read again, at most. */
@@ -135,6 +142,8 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const pod = inCluster(env) ? podLimits(env) : undefined;
   const wsl = !pod && platform === 'linux' && /microsoft/i.test(text(join(root, 'proc/version')) ?? '');
   const hostMemory = d.hostMemory ?? windowsMemory;
+  const node = d.node ?? process.version;
+  const nodeFloor = nodeFloorOf(node);
   let host: { at: number; reading: HostMemory } | undefined;
   let hostAskedAt: number | undefined;
   let hostAsking = false;
@@ -212,6 +221,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       ...mem,
       ...(q !== undefined || pod ? { container: true as const } : {}),
       ...(wsl ? { wsl: true as const, ...hostNow(at) } : {}),
+      node, ...(nodeFloor ? { nodeFloor } : {}),
     };
   };
 }

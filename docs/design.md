@@ -27,7 +27,7 @@ plugin" is its current enactment; Phase 6 items are judged against it.
                               executors (plugin instances: herdr-claude, test)
 ```
 
-One process. Node ≥ 24 runs the TypeScript directly (type stripping) — the daemon has no build
+One process. Node ≥ 24, at the patched Node floor (`^24.22.1 || >=26.12.1`, "The patched Node floor" below), runs the TypeScript directly (type stripping) — the daemon has no build
 step. The UI is the one built part: `ui/` (React, shadcn/ui, Tailwind, d3) → `npm run build:ui`
 → `ui/dist`, which the daemon serves (issue #14, "UI rework" below).
 Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Deployable" below), zod for request validation.
@@ -15156,6 +15156,29 @@ answer checked), `test/adapters/ssh-machine.test.ts` (the probe answers them), `
 (the snapshot carries them, one sample per online machine, none offline, per-step peak, gaps, the finer step, every
 machine and one, `machine.recorded`, the shared retention), `test/ui/machine-history.test.ts` (the lines, colours and
 dashes, the sparkline, the card's text).
+
+## The patched Node floor (issue #2479, 2026-10-22)
+
+Node's security release of October 21, 2026 fixes a Brotli decoder RCE, TLS hostname-check bypasses and DNS name
+truncation. The hopper reaches GitHub, the cloud and its machines over TLS, so it stays on a version that has it. The
+**patched Node floor** is the lowest such version of each line: 24.22.1 on line 24, 26.12.1 on line 26
+(`src/client/node-floor.ts` `NODE_FLOORS`). A version of a line with no patched release (22, 25) is below the floor of
+the next patched line; a line newer than 26 is above it.
+
+- `engines` in `package.json` names the floors: `^24.22.1 || >=26.12.1`.
+- The images pin their Node base to a whole version at or above the floor (`Dockerfile` 26.12.1, the box image
+  24.22.1). Dependabot (`.github/dependabot.yml`) bumps each base inside its line, into `main`. Each image build runs
+  `node-floor.ts` as a file, which exits 1 below the floor, so no image is built on unpatched Node.
+  `test/scripts/node-floor-pins.test.ts` checks the pins, the build steps, the Dependabot config and `engines`.
+- At start, the daemon and the client each log one warning line below the floor. They do not refuse to run: a
+  client that stopped would leave its machine offline, with no word on the Machines page of why.
+- A machine's resources ("Machine resources over time") carry `node`, the Node version its hopper or client runs, and
+  `nodeFloor`, the floor it is below. The hopper judges `nodeFloor` from `node` itself, not from the client's word. An
+  ssh target says none. The Machines page shows the version, and a **Node unpatched** warning badge below the floor,
+  which is an alert.
+
+Tests: `test/client/node-floor.test.ts`, `test/client/resources.test.ts`, `test/adapters/machine-resources.test.ts`,
+`test/ui/machine-list.test.ts`, `test/scripts/node-floor-pins.test.ts`.
 
 ## GitHub through the hopper (issue #563, 2026-10-09)
 

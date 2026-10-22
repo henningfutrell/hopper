@@ -2,6 +2,7 @@
 // (src/client/resources.ts) at every list; an ssh target's from what RESOURCES_COMMAND prints in its probe —
 // two /proc/stat cpu lines a second apart, the load averages, the memory lines and the core count, each line
 // marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed.
+import { nodeFloorOf } from '../client/node-floor.ts';
 import { WINDOWS_LINK_URL, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
 const MARK = 'hopper-res ';
@@ -65,7 +66,15 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...(count(r.hostMemFreeBytes) && count(r.hostMemTotalBytes) && r.hostMemTotalBytes > 0 && r.hostMemFreeBytes <= r.hostMemTotalBytes
       ? { hostMemFreeBytes: r.hostMemFreeBytes, hostMemTotalBytes: r.hostMemTotalBytes } : {}),
     ...(r.wsl === true && windowsLinkOf(r.windowsLink) ? { windowsLink: windowsLinkOf(r.windowsLink)! } : {}),
+    ...nodeOf(r.node),
   };
+}
+
+/** A client's Node version (issue #2479), when it reads as one; its floor judged here, not taken from the client. */
+function nodeOf(v: unknown): Pick<ResourceReading, 'node' | 'nodeFloor'> {
+  if (typeof v !== 'string' || !/^v\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(v)) return {};
+  const floor = nodeFloorOf(v);
+  return { node: v, ...(floor ? { nodeFloor: floor } : {}) };
 }
 
 /** A client's Windows link (issue #712), when sane: a Windows link URL (`WINDOWS_LINK_URL`), `ok` and a time; a bad mode or status dropped, the reason cut short. */

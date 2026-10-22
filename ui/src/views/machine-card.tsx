@@ -12,7 +12,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
-import { machineBadges } from '@/model/machine-list';
+import { machineBadges, nodeText } from '@/model/machine-list';
 import { resourcesText } from '@/model/machine-history';
 import { hopperDiskText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
@@ -99,6 +99,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {res && <Fact label="CPU">{res.cpu}</Fact>}
         {res && <Fact label="memory">{res.memory}</Fact>}
         {m.resources?.windowsLink && <Fact label="Windows link"><span className={m.resources.windowsLink.ok ? undefined : `font-semibold ${TEXT.warn}`}>{windowsLinkText(m.resources.windowsLink)}</span></Fact>}
+        {m.resources?.node && <Fact label="Node"><span className={m.resources.nodeFloor ? `font-semibold ${TEXT.warn}` : undefined}>{nodeText(m.resources)}</span></Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
         {m.hopperDisk && <Fact label="hopper's disk use"><span className={m.hopperDisk.over ? `font-semibold ${TEXT.warn}` : undefined}>{hopperDiskText(m.hopperDisk)}</span></Fact>}
         {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
