@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 const kept = { jobId: 'j7', paths: ['/w/.worktrees/@scratch/j7/repo'], at: at(-10), status: 'failed', machineId: 'desk', actions: { push: { ok: true }, discard: { ok: true } } };
-const stuck = [{ cause: 'parked', ids: ['j4'], what: 'Parked jobs', todo: 'Answer its question in Parked, then pick it up.' }];
+const stuck = [{ cause: 'own_wait', ids: ['j4'], what: 'Jobs stuck on their own wait, past its deadline', todo: 'End its wait or cancel it, on the job.' }];
 
 describe('a page whose panels are its lists', () => {
   // The Failures page's own lists (Needs a person, Ended, Recent failures) leave their list boxes with issue #2353.
