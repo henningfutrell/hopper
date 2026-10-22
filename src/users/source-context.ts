@@ -62,11 +62,30 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
         const sync = (job?.sourceState?.sync ?? {}) as { finalReported?: boolean; fixingReported?: boolean };
         return job?.status === 'failed' && sync.finalReported === true && sync.fixingReported !== true;
       },
+      // Its job's failure reported as one the hopper fixes itself (issue #1892 part 31): no end label.
+      fixingReported: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const job = id === undefined ? undefined : store.jobs.get(id);
+        const sync = (job?.sourceState?.sync ?? {}) as { finalReported?: boolean; fixingReported?: boolean };
+        return job?.status === 'failed' && sync.finalReported === true && sync.fixingReported === true;
+      },
+      // Its job's failure not reported yet (issue #1892 part 32): hopper:failed or no end label.
+      failureReportWaits: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const job = id === undefined ? undefined : store.jobs.get(id);
+        return job?.status === 'failed' && job.sourceState?.sync?.finalReported !== true;
+      },
       // Its part merged with parts left (issue #1892): no end label, Intake takes it again; not a last part that made all done.
       partsLeft: (key) => {
         const id = store.workItems.get(key)?.jobId;
         const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
         return s?.follow === 'merged' && s.part === true && !allPartsDone(s.parts);
+      },
+      // Its part merged and made every declared part done (issue #1892 part 35): the follow put hopper:done on.
+      lastPartMerged: (key) => {
+        const id = store.workItems.get(key)?.jobId;
+        const s = (id === undefined ? undefined : store.jobs.get(id))?.sourceState?.source as { follow?: string; part?: boolean; parts?: Parts } | undefined;
+        return s?.follow === 'merged' && s.part === true && allPartsDone(s.parts);
       },
       // Its cancelled or rejected job reported (issue #1892 parts 19, 23): no end label, unless a person put one on to keep it
       // out; a tend job cancelled not on purpose, hopper:pr-ready.

@@ -179,10 +179,25 @@ export interface IntakeContext {
    */
   failureReported?(key: string): boolean;
   /**
+   * Whether the failure of a failed item's job was reported as one the hopper fixes itself (issue #1892 part 31, issue
+   * #1230): the report left the issue as it was, so it carries no end label.
+   */
+  fixingReported?(key: string): boolean;
+  /**
+   * Whether the failure of a failed item's job is not reported yet (issue #1892 part 32): the report puts `hopper:failed` on,
+   * or leaves the issue as it was, so the issue carries `hopper:failed` or no end label.
+   */
+  failureReportWaits?(key: string): boolean;
+  /**
    * Whether a partly done item's merged part leaves parts to run (issue #1892): the follow recorded the merge of a part, and
    * not every declared part is done. It then carries no end label, and Intake takes it again for its next part.
    */
   partsLeft?(key: string): boolean;
+  /**
+   * Whether a partly done item's merged part made every declared part done (issue #1892 part 35): the follow recorded the
+   * merge of a part, and every declared part is done. The follow put `hopper:done` on with that merge.
+   */
+  lastPartMerged?(key: string): boolean;
   /**
    * Whether a dropped item's job was cancelled or rejected and its final report went out (issue #1892 part 19): it then
    * carries no end label (`none`), unless a person put one on by hand to keep it out; a tend job cancelled by no person

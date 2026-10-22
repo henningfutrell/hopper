@@ -78,7 +78,7 @@ describe('a failed item: hopper:failed mirrors the ledger once its failure was r
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
   });
 
-  it('a failure not reported as failed (the hopper fixes it, or its report waits), or a reverted culprit: not judged, the labels decide', async () => {
+  it('a failure not reported as failed (the hopper fixes it, or its report waits), or a reverted culprit not of a whole merge (part 33 judges that one): not judged, the labels decide', async () => {
     const { gh, source, reason, edits } = setup({
       [url(1)]: { state: 'failed', jobId: 'job-1', failedJobId: 'job-1' },
       [url(2)]: { state: 'failed', eventState: 'done', jobId: 'job-2' },

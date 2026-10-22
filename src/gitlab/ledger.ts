@@ -38,11 +38,11 @@ export function gitlabLedger(o: { source: string; intake?: IntakeContext; outbox
   if (!intake || !item) return undefined;
   const judging = () => intake.mirrorHeld?.() !== false;
   const mirror = createLabelMirror({
-    source: o.source, outbox: o.outbox, item, part: () => false, failureReported: (key) => intake.failureReported?.(key) ?? false,
+    source: o.source, outbox: o.outbox, item, part: () => false, failureReported: (key) => intake.failureReported?.(key) ?? false, fixingReported: (key) => intake.fixingReported?.(key) ?? false, failureReportWaits: (key) => intake.failureReportWaits?.(key) ?? false,
     doneReported: (key) => gitlabDone(intake.doneReported?.(key)), now: () => o.now().toISOString(), log: (line) => console.warn(line), record: intake.record,
   });
   const facts = (key: string): LabelFacts => ({
-    part: false, failureReported: (intake.failureReported?.(key) ?? false) && !handoffSettling(item(key), o.now().getTime()), doneReported: gitlabDone(intake.doneReported?.(key)),
+    part: false, failureReported: (intake.failureReported?.(key) ?? false) && !handoffSettling(item(key), o.now().getTime()), fixingReported: intake.fixingReported?.(key) ?? false, failureReportWaits: intake.failureReportWaits?.(key) ?? false, doneReported: gitlabDone(intake.doneReported?.(key)),
   });
   return {
     edits: (issues) => mirror.edits(issues.map(asListed), judging()),

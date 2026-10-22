@@ -22940,6 +22940,151 @@ its issues too.
 **Verification:** `test/gitlab/ledger-intake.test.ts` (a lost label put back, a Run again by hand, a done item with no merge
 request yet, a hopper without the lease, an unknown issue by its labels); `test/gitlab/` all pass.
 
+### A failed item the hopper fixes itself, judged by the ledger (issue #1892 part 31, 2026-10-22)
+
+Milestone 4: one of the failed items part 3 left to the labels. A job that ended done while its own pull request's checks
+were red, or its pull request had merge conflicts or was a draft, fails (issue #1230, "Own PR checks red"). Once assessed,
+while its Continue is pending, its report tells it as one the hopper fixes (`fixingReported`): the issue stays as it is,
+claimed, with no end label. While the job worked, the mirror kept every end label off. So what the issue carries is certain.
+
+**As built** (`src/sources/github/item-labels.ts`):
+- **A new fact, `fixingReported`** (`LabelFacts`, `IntakeContext.fixingReported`, `src/users/source-context.ts`): the item's
+  job failed, its final report went out, and it went out as one the hopper fixes (`sync.fixingReported`). No new field is
+  kept, so no migration.
+- **`labelsFor` of a failed item with `eventState: failed`** wants no end label with that fact. The mirror takes a stale or a
+  hand-put end label off. `labelTakenOff` and `labelPutOn` find no person event for it: the state wants no label, and a
+  failed item is no card and no drop.
+- **Intake reads the ledger for it** (`ledgerReason`): no end-label reason, whatever end labels the issue carries. The claim
+  rules then decide, as they did when the issue carried no end label.
+- **GitLab too** (`src/gitlab/ledger.ts`): GitLab's report also leaves the issue as it is for such a failure.
+- **A hand-off opened for it** tells the end again (`src/sources/fixing-reports.ts`): `finalReported` is false while the report
+  goes out, so the item is not judged in that time; after it, the failure is reported as failed, and the hand-off wants
+  `hopper:failed` (part 8).
+
+**Decisions.**
+- **Not judged before the report.** Before the report goes out, the hopper does not know if it fixes the failure itself. A
+  report as failed then puts `hopper:failed` on, and the mirror must not take it off before the flag is written.
+- **A reverted culprit stays to the labels.** Its item is failed by its landing, not by its job (`eventState` is not
+  `failed`), and no report says what its issue carries.
+
+**Left to the labels:** a failure whose report waits, a reverted culprit, a done item a read of GitHub made done, an item
+dropped by a card withdrawn by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-fixing.test.ts` (Intake reason, the mirror's corrections, no person event, not
+judged before the report), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`,
+`labelPutOn`), `test/users/source-context-fixing-reported.test.ts`, `test/gitlab/ledger-intake.test.ts`.
+
+### A failed item whose report waits, judged by the ledger (issue #1892 part 32, 2026-10-22)
+
+Milestone 4: the next failed item part 31 left to the labels. A job failed, and its final report is not out yet: it waits on
+the job's assessment (issue #1230: whether the hopper fixes the failure itself is not known yet), or it is on its way through
+the outbox. While the job worked, the mirror kept every end label off. The report then puts `hopper:failed` on, or, for a
+failure the hopper fixes itself, leaves the issue as it was. So `hopper:failed` is the one end label the issue may carry.
+
+**As built** (`src/sources/github/item-labels.ts`):
+- **A new fact, `failureReportWaits`** (`LabelFacts`, `IntakeContext.failureReportWaits`, `src/users/source-context.ts`): the
+  item's job failed, and its final report is not out (`sync.finalReported` not true). No new field is kept, so no migration.
+- **`labelsFor` of a failed item with `eventState: failed`** with that fact allows `hopper:failed` and adds none. The mirror
+  takes any other end label off, and never takes off the `hopper:failed` a report put on before its flag was written.
+  `labelTakenOff` finds no person event for it: the state adds no label.
+- **Intake reads the ledger for it** (`ledgerReason`): the failed reason, whatever end labels the issue carries. The job
+  failed; its item is not taken again before its end is reported (`isRerunnable`).
+- **GitLab too** (`src/gitlab/ledger.ts`): GitLab's report also puts `hopper:failed` on, or leaves the issue as it was.
+
+**Decisions.**
+- **The failed reason, not none.** The job failed, whatever its report says next. A failure the hopper then fixes itself loses
+  the reason once its report went out (part 31).
+- **A reverted culprit stays to the labels.** Its item is failed by its landing, not by its job (`eventState` is not
+  `failed`), and no report says what its issue carries.
+
+**Left to the labels:** a reverted culprit, a done item a read of GitHub made done, an item dropped by a card withdrawn by its
+source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-report-waits.test.ts` (Intake reason, a stale end label taken off, the report's
+`hopper:failed` kept and none put on, no person event), `test/sources/github-item-labels.test.ts`,
+`test/users/source-context-failure-report-waits.test.ts`, `test/gitlab/ledger-intake.test.ts`.
+
+### A reverted culprit, judged by the ledger (issue #1892 part 33, 2026-10-22)
+
+Milestone 4: the failed item parts 31 and 32 left to the labels. A job's pull request merged into the landing branch as the
+whole item. A red batch then found it the **culprit** and reverted it ("Landing batches", issue #1175). Its item is failed by
+its landing, not by its job: its events say done (`eventState: done`), and `stateOf` gives failed for the landing stage. The
+follow put `hopper:done` on at the merge. Nothing took it off: the red batch writes no label to the culprit's issue, and no
+batch run closed the issue. So `hopper:done` is the end label the issue carries, and the next sync offers the item as a
+reopened card ("Issues fixed on the landing branch").
+
+**As built** (`src/sources/github/item-labels.ts`):
+- **`labelsFor` of a failed item with `eventState: done`**, its pull request merged as the whole item (`pullRequestState:
+  merged`, `wholeMerged`), wants `hopper:done`. No new fact and no new field: a failed state with done events comes only
+  from the landing stage. The mirror puts a lost `hopper:done` back and takes any other end label off.
+- **Intake reads the ledger for it** (`ledgerReason`, `src/sources/github/discover.ts`): the done-but-open reason
+  (`DONE_OPEN`), whatever end labels the issue carries. So the reopened card comes as before (`reopenedRequests`), also when a
+  stale label was on the issue.
+- **`hopper:done` taken off by hand is a Run again** (`labelTakenOff`), as for a done item.
+- **GitLab** reads the same `ledgerReason`; it has no landing batches, so no item there is in this state.
+
+**Decisions.**
+- **`hopper:done`, not `hopper:failed`.** The labels mirror what the hopper wrote and what the ledger knows: the follow wrote
+  `hopper:done`, and the done-but-open reason is what opens the reopened card. A new label write at the revert would be a
+  change of the batch runner, which the issue does not ask for.
+- **A culprit that was a part stays to the labels.** Its events say partly done; what the follow left on it depends on the
+  parts left, and no fact says so yet.
+
+**Left to the labels:** a culprit that was a part, a done item a read of GitHub made done, an item dropped by a card withdrawn
+by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-culprit.test.ts` (Intake reason, a stale end label swapped, a lost `hopper:done`
+put back, Run again by hand, a part's culprit not judged), `test/sources/github-item-labels.test.ts`.
+
+### A reverted culprit of a part, judged by the ledger (issue #1892 part 34, 2026-10-22)
+
+Part 33 left a culprit that was a part to the labels. Its part's pull request merged into the landing branch, and a red batch
+reverted it. Its events say partly done (`eventState: partly_done`, `pullRequestState: merged`, no `wholeMerged`), and
+`stateOf` gives failed for the landing stage. When parts are left to run, the follow took `hopper:partly-done` off at the
+merge, so the issue carries no end label, and Intake takes it again for the next part.
+
+**As built** (`src/sources/github/item-labels.ts`, `label-mirror.ts`):
+- **`labelsFor` of a failed item with `eventState: partly_done`**, its pull request merged, with the fact `partsLeft` (the
+  same fact as for a partly done item: its job's follow recorded the part's merge, and not every declared part is done), wants
+  no end label. The mirror asks `partsLeft` for a failed item too, and takes a stale end label off.
+- **Intake reads the ledger for it**: no reason (`ledgerReason` gives none for a failed item whose failure was not reported),
+  so it is taken again, as the labels did before.
+- No end label is wanted, so no label taken off is a Run again, and none put on is a person event: the mirror takes it off.
+
+**Decision.** **The last part stays to the labels.** Its follow put `hopper:done` on, but `partsLeft` false also means the
+follow did not record the merge yet; no fact tells the two apart.
+
+**Left to the labels:** a culprit that was the last part, a done item a read of GitHub made done, an item dropped by a card
+withdrawn by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-culprit.test.ts` (a part's culprit with parts left: no reason, a stale
+`hopper:partly-done` taken off; the last part not judged), `test/sources/github-item-labels.test.ts`.
+
+### The last part, judged by the ledger (issue #1892 part 35, 2026-10-22)
+
+Parts 5 and 34 left the last part to the labels. A part's merge that makes every declared part done ("Declared parts") ends
+its follow as a whole merge: the follow puts `hopper:done` on. The item's events still say partly done (`job.pull_request_merged`
+with `part: true`). The fact `partsLeft` is false then, but it is also false when the follow did not record the merge yet, so
+no fact told the two apart.
+
+**As built** (`src/sources/github/item-labels.ts`, `label-mirror.ts`, `discover.ts`, `src/users/source-context.ts`):
+- **A new fact, `lastPartMerged`**: its job's follow recorded the merge of a part (`follow: merged`, `part: true`), and every
+  declared part is done (`allPartsDone`). It comes from the store, as `partsLeft` does.
+- **`labelsFor` of a partly done item** with `lastPartMerged` wants `hopper:done`. So does a reverted culprit of the last part
+  (failed, `eventState: partly_done`, its pull request merged).
+- **Intake reads the ledger for both**: done but open (`ledgerReason`), as the label said before; a reverted culprit of the
+  last part too.
+- **The mirror** asks the fact for a partly done and a failed item, and swaps a stale end label for `hopper:done`.
+- `hopper:done` taken off by hand is a Run again (`work_item.label_edited`), as for a done item.
+
+**Still left to the labels:** a partly done item or a culprit whose merge the follow did not record; a done item that a read
+of GitHub made done (the issue's labels are then what was on it before, which no record says); an item dropped by a card
+withdrawn by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-partly-done.test.ts` (done but open, a stale `hopper:partly-done` swapped,
+`hopper:done` taken off by hand is a Run again, a merge not recorded not judged), `test/sources/github-label-culprit.test.ts`,
+`test/sources/github-item-labels.test.ts`, `test/users/source-context-parts-left.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

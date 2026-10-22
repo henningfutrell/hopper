@@ -7,12 +7,14 @@
 //   Scenario: an item in PR open whose label was lost is not taken, and gets hopper:pr-ready back
 //   Scenario: an end label taken off by hand is a Run again, and the issue is taken
 //   Scenario: a done item whose report found no merge request yet keeps hopper:pr-ready, as the report put it on
+//   Scenario: a failed item the hopper fixes itself loses a stale hopper:failed, and gets no end-label reason
+//   Scenario: a failed item whose report waits loses a stale end label, and gets the failed reason
 //   Scenario: a hopper that does not hold the mirror's lease writes and records nothing
 //   Scenario: an issue the hopper does not know is judged by its labels
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGitLabAccount } from '../../src/gitlab/account.ts';
 import { createGitLabSource } from '../../src/gitlab/source.ts';
-import { PR_READY } from '../../src/sources/github/discover.ts';
+import { FAILED, PR_READY } from '../../src/sources/github/discover.ts';
 import type { GitLabAccountRecord } from '../../src/domain/gitlab-account.ts';
 import type { GitLabActorRef } from '../../src/domain/access.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
@@ -27,7 +29,7 @@ const LONG_AGO = '2026-10-18T10:00:00.000Z';
 const access = async (actor: GitLabActorRef, actors: readonly GitLabActorRef[]) => ({ allowed: actors.some((a) => a.baseUrl === actor.baseUrl && a.userId === actor.userId), reason: '' });
 const ISSUE: FakeGitLabIssue = { project: 'ada/tools', iid: 1, title: 'Fix the parser', description: 'It drops the last line.', author: 'ada', assignees: ['ada'], labels: ['hopper'] };
 
-async function setup(o: { labels: string[]; item?: Partial<WorkItem>; reported?: boolean; doneReported?: DoneReport; held?: boolean }) {
+async function setup(o: { labels: string[]; item?: Partial<WorkItem>; reported?: boolean; fixing?: boolean; waits?: boolean; doneReported?: DoneReport; held?: boolean }) {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   const gitlab = await createFakeGitLab({ issues: [{ ...ISSUE, labels: o.labels }] });
   cleanups.push(() => gitlab.close());
@@ -52,6 +54,8 @@ async function setup(o: { labels: string[]; item?: Partial<WorkItem>; reported?:
       requestOpened: () => false, requestsWaiting: () => [],
       workItem: (k) => (k === key ? item : undefined),
       failureReported: () => o.reported ?? false,
+      fixingReported: () => o.fixing ?? false,
+      failureReportWaits: () => o.waits ?? false,
       doneReported: () => o.doneReported,
       ...(o.held === false ? { mirrorHeld: () => false } : {}),
     },
@@ -68,6 +72,24 @@ describe('GitLab\'s Intake reads the ledger', () => {
     expect(s.outcome()).toMatchObject({ reason: PR_READY, group: 'pr-waiting' });
     await s.source.flushOutbox!();
     expect(s.labels()).toEqual(['hopper', 'hopper:pr-ready']);
+  });
+
+  it('takes a stale hopper:failed off a failed item the hopper fixes itself (issue #1892 part 31), and gives it no end-label reason', async () => {
+    const s = await setup({ labels: ['hopper', 'hopper:failed'], item: { state: 'failed', jobId: 'job-1' }, fixing: true });
+    await s.source.discover();
+    expect(s.outcome()?.reason).toBeUndefined();
+    await s.source.flushOutbox!();
+    expect(s.labels()).toEqual(['hopper']);
+    expect(s.recorded).toEqual([]);
+  });
+
+  it('takes a stale end label off a failed item whose report waits (issue #1892 part 32), and gives it the failed reason', async () => {
+    const s = await setup({ labels: ['hopper', 'hopper:pr-ready'], item: { state: 'failed', jobId: 'job-1' }, waits: true });
+    await s.source.discover();
+    expect(s.outcome()?.reason).toBe(FAILED);
+    await s.source.flushOutbox!();
+    expect(s.labels()).toEqual(['hopper']);
+    expect(s.recorded).toEqual([]);
   });
 
   it('takes an end label taken off by hand as a Run again, and takes the issue', async () => {
