@@ -3,6 +3,7 @@
 import type { DomainEvent, Job, Leftover, MachineSnapshot } from '../../src/domain/types.ts';
 import type { Executor, MachineShell, Survey } from '../../src/domain/ports.ts';
 import { createSweep } from '../../src/engine/sweep.ts';
+import type { LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
 export const HOUR = 3600_000;
 export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
@@ -11,7 +12,7 @@ export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
 export const none: Survey = { scopes: [], processes: [], scratch: [] };
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[] } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[] } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -21,6 +22,7 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
   const events: { type: string; jobId?: string; machineId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
   // `proxied`: the jobs whose commit `tip-<id>` the hopper pushed (issue #2087); `tips`: the jobs whose kept repository names that tip.
   for (const id of o.proxied ?? []) events.push({ type: 'github_proxy.done', jobId: id, data: { requestId: 'r', op: 'git.push', repo: 'o/r', refs: ['refs/heads/x'], heads: [`tip-${id}`] } });
+  const ledger = o.ledger ?? [];
   const surveyed: string[][] = [];
   const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
   const logs: string[] = [];
@@ -81,7 +83,15 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       },
       workItems: { get: (key: string) => (o.itemDone?.some((id) => key === `item:${id}`) ? { key, state: 'done' } : undefined) },
       settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
+      // The resource ledger (issue #2504): `ledger`'s entries, closed in place.
+      resourceLedger: {
+        forJob: (id: string) => ledger.filter((e) => e.jobId === id),
+        close: (id: string, kind: string, locator: string, state: LedgerEntry['state'], at: string, reason?: string) => {
+          const e = ledger.find((x) => x.jobId === id && x.kind === kind && x.locator === locator && (x.state === 'live' || x.state === 'kept'));
+          if (e) Object.assign(e, { state, endedAt: at, ...(reason ? { reason } : {}) });
+        },
+      },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, jobs, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
+  return { sweep, jobs, ledger, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }
