@@ -23,11 +23,11 @@
 
 import { SourceError } from '../../domain/ports.ts';
 import type { SourceReport } from '../../domain/ports.ts';
-import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job, type ResolutionWrite } from '../../domain/types.ts';
+import { handedToFollowOns, type HandoffResolution, type Job, type ResolutionWrite } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
-import { reportLabels, type LabelDrift, type ReportEnd } from './item-labels.ts';
+import { reportLabels, tendTriedAgain, type LabelDrift, type ReportEnd } from './item-labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import { isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
@@ -153,12 +153,6 @@ async function pullRequestOf(api: GitHubApi, repo: string, number: number): Prom
   const part = newest(mentions.filter((pr) => pr.state === 'open' && parts.has(pr.url)));
   return part && { url: part.url, part: true };
 }
-
-/** A tend job (issue #967) cancelled by no person and no source (issue #1010): `tendRetryAt` tends its pull request again. */
-const tendTriedAgain = (job: Job): boolean => {
-  const reason = job.sourceState?.sync?.cancelReason;
-  return job.spec.tend === true && !(typeof reason === 'string' && DELIBERATE_CANCELS.includes(reason));
-};
 
 async function apply(ctx: JobReportContext, r: SourceReport, state: State): Promise<State> {
   const { job } = r;

@@ -22611,7 +22611,7 @@ kept every end label off (a job at work wants none). So once the report went out
   its labels and assignment let it, as it did before when no end label was on. A job rejected at the queue gate still keeps
   its item out by its rejection (`REJECTED_BY_YOU`), until the issue is assigned again.
 - **Not a tend job's cancel.** A tend job cancelled by no person puts `hopper:pr-ready` back, and its pull request may be
-  tended again: its labels decide.
+  tended again: its labels decide. (Part 23 judges it: it wants `hopper:pr-ready`.)
 - **An end label a person puts on such an item by hand keeps the issue out** (`labelPutOn`). Before the discover judges
   Intake, the mirror finds an end label that was not on the issue at the last discover and is on now, with the item not
   moved since. It records `work_item.label_edited` with `means: keep_out` and the label, once. The ledger keeps the label on
@@ -22715,6 +22715,33 @@ with no whole merge that was not done by hand; a tend job's cancel. Milestone 4.
 stale end label; taken off by hand, a Run again), `test/domain/work-items-closed-by-hopper.test.ts` (the fold: the hopper's
 own close marks the drop; a person's Close PR and a close on GitHub do not; the issue closed before or after forgets it, and a
 reopen does not bring it back; a new job forgets it), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`,
+`labelTakenOff`, `labelPutOn` of such an item).
+
+### A tend job's cancel not on purpose carries `hopper:pr-ready` (issue #1892 part 23, 2026-10-22)
+
+Milestone 2, part 23: the tend job's cancel that part 19 left to the labels. A tend job (issue #967) that is cancelled drops
+its item, as any cancelled job does. Its report then takes the claim off. A tend job cancelled by no person and no source
+(its `cancelReason` is not one of `DELIBERATE_CANCELS`, issue #1010) also puts `hopper:pr-ready` back: its pull request
+waits, and `tendRetryAt` tends it again.
+
+- **`dropReported` now says what the report left** (`DropReport`, `src/sources/github/item-labels.ts`): `none` (only the
+  claim came off: a cancelled or rejected job, a tend job cancelled on purpose or rejected) or `pr_ready` (a tend job
+  cancelled not on purpose). Undefined: not such a job, or its report did not go out yet. `tendTriedAgain` moved from
+  `report.ts` to `item-labels.ts`, so the report and the ledger decide this one way.
+- **`labelsFor` judges the `pr_ready` drop: it wants `hopper:pr-ready`.** The mirror puts it back when it is gone and takes
+  another end label off, and Intake gives the item PR open's reason (`ledgerReason`, `PR_READY`), so Intake does not take
+  the issue while its pull request waits to be tended again.
+- **`hopper:pr-ready` taken off by hand is a Run again** (`work_item.label_edited` with `means: run_again`), as on an item in
+  PR open. An end label put on by hand does not keep such an item out: it wants a label, so `labelPutOn` finds no edit.
+- **The next tend job moves the item** (queued), and from then its state decides its labels.
+
+**Left to the labels:** an item dropped by a card withdrawn by its source or by an issue closed as not planned (neither issue
+is listed open with the source label, so no discover judges it); a done item with no whole merge that was not done by hand.
+Milestone 4.
+
+**Verification:** `test/sources/github-label-cancelled.test.ts` (a tend job's cancel as reported: the pr-ready reason,
+`hopper:pr-ready` in place of a stale end label; taken off by hand, a Run again), `test/sources/github-item-labels.test.ts`
+(`dropReported` of a tend job cancelled on purpose, not on purpose, rejected and not reported; `labelsFor`, `labelDrift`,
 `labelTakenOff`, `labelPutOn` of such an item).
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
