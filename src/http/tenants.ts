@@ -15,6 +15,7 @@ import type { GitLabAccount } from '../gitlab/account.ts';
 import type { Outbound } from '../outbound/index.ts';
 import type { DirectJobs } from '../direct-jobs/index.ts';
 import type { UserSearch } from '../search/index.ts';
+import type { RuntimeSocket } from '../sandbox/socket-http.ts';
 import type { Vault } from '../vault/vault.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import type { UserArtifacts } from '../artifacts/index.ts';
@@ -109,6 +110,8 @@ export interface TenantParts {
   githubProxy: UserGitHubProxy;
   /** Windows sandbox steps (issue #731): the user's Windows hosts, and their jobs' steps on them. */
   windowsSteps: WindowsSteps;
+  /** A Podman host's ssh stream by name (issue #2272), for its status on Machines; undefined: no such host. */
+  podmanHostSocket(name: string): RuntimeSocket | undefined;
   /** need steps (issue #1007): their jobs' steps in need boxes of a template that covers their needs. */
   needSteps: NeedSteps;
   /** Bastions (issue #2146): each job's one need box that outlives a step, forwarding to its targets. */

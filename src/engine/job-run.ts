@@ -18,7 +18,7 @@ import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { keepTokenUse } from './checkpoints.ts';
 import { agentSignIn, placeCredentials, Unreached } from './credentials.ts';
-import { noWayMove } from './no-way-move.ts';
+import { moveNoWay, noWayMove } from './no-way-move.ts';
 import { moveLost, type Lost } from './lost-move.ts';
 import { nudgeCheck } from './nudge-check.ts';
 import { runNotes } from './notes.ts';
@@ -213,7 +213,8 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
  * The job's way to the hopper placed on `on` (credentials.ts). A machine that cannot reach the hopper (issue #1920) is
  * held, so it takes no new job for a while, and a fresh start there is queued again to be placed elsewhere
  * (`e.unreached`), never failed for the machine it was placed on; so is a job that resumes elsewhere from its checkpoint
- * (issue #2355). Any other resuming job returns to the pane it holds there: it fails.
+ * (issue #2355), and one that reopens its session in a new pane there (issue #2427). Any other resuming job returns to the
+ * pane it holds there: it fails.
  */
 async function place(
   c: EngineContext, e: RunEntry, j: Job, on: MachineSnapshot, shell: MachineShell | undefined, scratch: string, make: boolean, note: (line: string) => void,
@@ -223,7 +224,8 @@ async function place(
   } catch (err) {
     if (err instanceof Unreached) {
       // A check that failed while the hopper's own loop was held holds no machine (issue #2427): the job goes elsewhere.
-      if (!err.loopHeld) c.reachHolds?.hold(on.id, err.message);
+      // Nor does a machine whose address problem the job met: it takes no new job already, and its hold is not made longer.
+      if (!err.loopHeld && on.addressProblem === undefined) c.reachHolds?.hold(on.id, err.message);
       // A job that resumes elsewhere goes back to the queue too (issue #2355, no-way-move.ts).
       const moved = j.pendingAnswer === undefined ? (c.reachHolds ? `machine ${on.id}: ${err.message}` : undefined) : noWayMove(c, j, on.id, err.message);
       if (moved !== undefined) e.unreached = moved;
@@ -324,6 +326,8 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       const cancel = d.cancel ?? cancelOf(e).cancel;
       // Its machine lost (issue #1569): it resumes there in its kept work tree, or elsewhere from its checkpoint, when it can.
       if (d.lost && outcome.kind === 'failed' && !cancel && moveLost(c, job.id, d.laneId, d.lost, d.lostWhy ?? outcome.error)) return {};
+      // Its session had no way to the hopper (issue #2427): it resumes elsewhere from a checkpoint taken now, its commits in it.
+      if (!d.lost && outcome.kind === 'failed' && !cancel && await moveNoWay(c, job.id, d.laneId, outcome.error)) return {};
       // What the run spent, read once more before its end is recorded (issue #2302): the last turns are in the token ledger.
       if (!d.lost) await c.checkpoints?.tokens(job.id);
       const recorded = recordOutcome(c, job, d.laneId, outcome, cancel, await machineOf(c, d.laneId));

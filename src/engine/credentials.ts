@@ -11,7 +11,8 @@
 // A job that resumes elsewhere gets its checkpoint from the hopper (issue #2355): on a machine that gives it no way to the
 // hopper (no URL its jobs reach the hopper at there, or no shell), it cannot go on there, and says why. A reach check that
 // fails while the hopper's own event loop is held (issue #2427) is checked again once the loop is free; one that fails in a
-// hold again says so (`Unreached.loopHeld`), so its machine is not held for it.
+// hold again says so (`Unreached.loopHeld`), so its machine is not held for it. No job runs on a
+// machine with an address problem with no URL: a resumed session once came back there with no HOPPER_URL.
 import type { JobProxyCredentials, MachineShell } from '../domain/ports.ts';
 import type { Job, MachineSnapshot } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
@@ -49,6 +50,9 @@ export async function placeCredentials(
 ): Promise<Record<string, string>> {
   const proxy: JobProxyCredentials | undefined = shell ? c.jobProxy(job, machine) : undefined;
   if (!proxy || !shell) {
+    // A machine the hopper knows its jobs cannot reach it from (issue #2427): a job placed there meanwhile would have no
+    // HOPPER_URL and no way to push its commits.
+    if (!proxy && shell && machine.addressProblem !== undefined) throw new Unreached(`this machine cannot reach the hopper: ${machine.addressProblem}. ${REACH_ACTION}`);
     if (!job.parked?.elsewhere) return {};
     throw new Unreached(`this machine cannot reach the hopper: ${shell ? 'the hopper has no URL its jobs reach it at' : 'the hopper has no shell'} on ${machine.id}, and the job needs it to restore its checkpoint. ${REACH_ACTION}`);
   }

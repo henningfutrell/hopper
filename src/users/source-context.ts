@@ -70,7 +70,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       },
       // Its cancelled or rejected job reported (issue #1892 parts 19, 23): no end label, unless a person put one on to keep it
       // out; a tend job cancelled not on purpose, hopper:pr-ready.
-      // Its job's final report found the issue closed as complete (issue #1892 part 24): hopper:done is its label.
+      // What its job's final report put on (issue #1892 parts 24, 28): hopper:done for an issue closed, else the follow's label.
       doneReported: (key) => { const id = store.workItems.get(key)?.jobId; return doneReported(id === undefined ? undefined : store.jobs.get(id)); },
       dropReported: (key) => { const id = store.workItems.get(key)?.jobId; return dropReported(id === undefined ? undefined : store.jobs.get(id)); },
       promotedOpen: (key) => promotedOpen(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined),

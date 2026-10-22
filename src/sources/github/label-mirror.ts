@@ -3,7 +3,7 @@
 // the discover already listed, and the ledger: no call of its own. A drift is logged once and counted. It is corrected:
 // the labels change through the GitHub outbox (act `mirror`, tagged with the state), coalesced, once, so `hopper:pr-ready`
 // comes off an item the item reconciler blocked, an end label comes off an item a job works, PR open gets its waiting
-// label, a failed item whose failure was reported as failed gets `hopper:failed` (`failureReported`, issue #1892), a partly done item with parts left loses its end labels (`partsLeft`), and so does an item whose job waits on a person; a hand-off whose failure was reported gets `hopper:failed`, and so does an item the dismiss of its failed job dropped (part 20), an item a person's Close PR or the hopper's own close dropped gets `hopper:pr-closed` (parts 21, 22), an item a person dropped by Won't do gets `hopper:rejected`, and one they did by hand (Done on its hand-off) `hopper:done`, as does a done item whose job's report found its issue closed as complete (`doneReported`, part 24). A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
+// label, a failed item whose failure was reported as failed gets `hopper:failed` (`failureReported`, issue #1892), a partly done item with parts left loses its end labels (`partsLeft`), and so does an item whose job waits on a person; a hand-off whose failure was reported gets `hopper:failed`, and so does an item the dismiss of its failed job dropped (part 20), an item a person's Close PR or the hopper's own close dropped gets `hopper:pr-closed` (parts 21, 22), an item a person dropped by Won't do gets `hopper:rejected`, and one they did by hand (Done on its hand-off) `hopper:done`, as does a done item whose job's report found its issue closed as complete (`doneReported`, part 24); one whose report found it open gets what that report put on (part 28). A drift whose act went through and that the next discover still lists is only logged. An item that moved in the
 // last moments, that has outbox rows not sent, or that is given back now or was in the last moments (`busy`), is not judged:
 // the move's own writes are on their way. The source passes no issue its discover takes as a new job (issue #1954): that job
 // moves the item.
@@ -30,7 +30,7 @@ import type { WorkItem } from '../../domain/work-items.ts';
 import { killPoint } from '../../sagas/kill-points.ts';
 import { labelCorrected, labelDriftSeen } from '../../telemetry/sources.ts';
 import type { GitHubIssue } from './api.ts';
-import { driftWords, labelDrift, labelPutOn, labelTakenOff, type DropReport, type LabelFacts } from './item-labels.ts';
+import { driftWords, labelDrift, labelPutOn, labelTakenOff, type DoneReport, type DropReport, type LabelFacts } from './item-labels.ts';
 import type { GitHubOutbox } from './outbox.ts';
 
 /** A kill point of the mirror: after a correction's rows are queued, or after a label edit is recorded. */
@@ -62,8 +62,8 @@ export function createLabelMirror(o: {
   partsLeft?(key: string): boolean;
   /** What a dropped item's cancelled or rejected job's report left (issue #1892 parts 19, 23): only once reported is it judged. */
   dropReported?(key: string): DropReport | undefined;
-  /** Whether a done item's job's final report put `hopper:done` on (issue #1892 part 24): only then is a done a job's end made judged. */
-  doneReported?(key: string): boolean;
+  /** What a done item's job's final report put on (issue #1892 parts 24, 28): only then is a done a job's end made judged. */
+  doneReported?(key: string): DoneReport | undefined;
   /**
    * When the listing of a repository was read (issue #1892): a correction any hopper sent after it is not queued again, as
    * that listing may not show it. Absent: only this hopper's own sends count.
@@ -85,7 +85,7 @@ export function createLabelMirror(o: {
   /** What the item's labels are judged by besides its state: asked only for the state that needs it. */
   const facts = (key: string, item: WorkItem): LabelFacts =>
     item.state === 'pr_open' ? { part: o.part(key) } : item.state === 'failed' || item.state === 'needs_you' ? { failureReported: o.failureReported?.(key) ?? false }
-      : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : item.state === 'done' ? { doneReported: o.doneReported?.(key) ?? false } : item.state === 'dropped'
+      : item.state === 'partly_done' ? { partsLeft: o.partsLeft?.(key) ?? false } : item.state === 'done' ? { doneReported: o.doneReported?.(key) } : item.state === 'dropped'
         ? (item.dismissed === true ? { failureReported: o.failureReported?.(key) ?? false } : { dropReported: o.dropReported?.(key) }) : {};
   /** A person's label edit on the issue since `was`: an end label put on a request card, or the one its state wants taken off. */
   const editOf = (issue: Pick<GitHubIssue, 'url' | 'labels'>, was: { labels: string[]; at: string }, settledBefore: number): { item: WorkItem; put?: string; label?: string } | undefined => {

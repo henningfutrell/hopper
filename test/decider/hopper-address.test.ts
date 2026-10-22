@@ -56,4 +56,23 @@ describe('machines whose jobs cannot reach the hopper', () => {
     const pinned = decide(inputs({ machines: [...seats, machine({ id: 'client', maxLanes: 0 })], waiting: [job('a', { machineId: 'client' })] }), 'd1');
     expect(pinned.wait).toEqual([{ jobId: 'a', reason: "waiting for a lane: machine client's lane cap is 0, all 0 in use" }]);
   });
+
+  // Issue #2427: a parked, continued or released job reopens its session in a new pane, which gets its way to the hopper
+  // there. A job placed on such a machine had none: it could not push its commits, and failed.
+  it.each([
+    ['parked', { parked: { at: '2026-10-21T00:00:00.000Z', from: 'running' as const } }],
+    ['continued', { continued: { at: '2026-10-21T00:00:00.000Z', handoffId: 'h-1' } }],
+    ['released', { waitReleased: { at: '2026-10-21T00:00:00.000Z', on: 'pr 1 checks' } }],
+  ])('a %s job that reopens in a new pane is held off such a machine', (_kind, reopens) => {
+    const pinned = job('a', { machineId: 'box', pendingAnswer: 'go on', ...reopens } as Parameters<typeof job>[1]);
+    const d = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED }), machine({ id: 'host' })], waiting: [pinned] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.hold).toEqual([{ jobId: 'a', reason: `pinned machine box is off-network: ${UNREACHED}` }]);
+  });
+
+  it('a job that resumes in the pane it holds there is not held', () => {
+    const pinned = job('a', { machineId: 'box', pendingAnswer: 'go on' });
+    const d = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED })], waiting: [pinned] }), 'd1');
+    expect(d.start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'box' })]);
+  });
 });

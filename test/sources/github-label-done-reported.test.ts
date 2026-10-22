@@ -1,8 +1,8 @@
 // A done item a job's end made, with no whole merge and not by hand (issue #1892 part 24, milestone 2). When its job's final
 // report found the issue closed as complete, the report put `hopper:done` on (`doneReported`): the ledger then says so, not
 // the labels. Once the issue is open again (reopened), the mirror swaps a stale end label for `hopper:done`, Intake says done,
-// and `hopper:done` taken off by hand is a Run again. A report that found the issue open set the labels by what the issue
-// said then: not judged, the labels decide.
+// and `hopper:done` taken off by hand is a Run again. Before the report is out, not judged: the labels decide. A report that
+// found the issue open is part 28's (github-label-done-open.test.ts).
 import { describe, expect, it } from 'vitest';
 import { BLOCKED, DONE_OPEN } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
@@ -38,7 +38,7 @@ describe('a done item whose report put hopper:done on (issue #1892 part 24)', ()
     expect(edits()).toHaveLength(1);
   });
 
-  it('a report that found the issue open: not judged, the labels decide', async () => {
+  it('no report out yet: not judged, the labels decide', async () => {
     const { gh, source, reason, edits } = setup({ [url(1)]: done });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:blocked'] });
     await source.discover();

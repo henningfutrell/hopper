@@ -1,6 +1,7 @@
 // A user's client targets, as the sandbox module runs a need step, a read-only check or a burn on one (issue #708).
 import { runtimeRelay } from '../executors/client.ts';
 import type { ClientTargets } from '../sandbox/runtime.ts';
+import type { RuntimeSocket } from '../sandbox/socket-http.ts';
 import type { UserMachineLink } from './runtime.ts';
 
 type Runtime = { user: { id: string }; machineLink: Pick<UserMachineLink, 'client'> };
@@ -21,3 +22,18 @@ export const sandboxClientsOf = (runtimes: { get(id: string): Runtime | undefine
     known: (userId: string, machine: string) => runtimes.get(userId)?.machineLink.client.named(machine) !== undefined,
   },
 );
+
+type HostsRuntime = { user: { id: string }; engine: { sandboxHost: { hosts(): readonly string[] } }; podmanHostSocket(name: string): RuntimeSocket | undefined };
+
+/**
+ * Every user's Podman hosts in use (issue #2272): each one the user's sandbox host names, or an open sandbox run of theirs
+ * names, with its ssh stream. What the remote box meter reads.
+ */
+export const podmanHostsInUse = (runtimes: { all(): HostsRuntime[] }, open: () => readonly { userId: string; machine: string }[]) => (): { userId: string; name: string; socket: RuntimeSocket }[] =>
+  runtimes.all().flatMap((rt) => {
+    const names = new Set([...rt.engine.sandboxHost.hosts(), ...open().filter((r) => r.userId === rt.user.id).map((r) => r.machine)]);
+    return [...names].flatMap((name) => {
+      const socket = rt.podmanHostSocket(name);
+      return socket ? [{ userId: rt.user.id, name, socket }] : [];
+    });
+  });

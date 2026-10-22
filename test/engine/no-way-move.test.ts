@@ -1,5 +1,5 @@
 // Issue #2355: a job that resumes elsewhere and gets no way to the hopper on its machine goes back to the queue, a few
-// times at most; any other job does not. Fakes only at the store's events.
+// times at most; so does one that reopens in a new pane (issue #2427). A job that returns to the pane it holds does not. Fakes only at the store's events.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { MAX_NO_WAY_MOVES, NO_WAY_MOVE, noWayMove } from '../../src/engine/no-way-move.ts';
@@ -20,8 +20,17 @@ describe('noWayMove (issue #2355)', () => {
     expect(noWayMove(engine([...moves, requeued(`machine spare: ${NO_WAY_MOVE}: no URL`)]), elsewhere, 'other', 'no URL')).toBeUndefined();
   });
 
-  it('a job that does not resume elsewhere does not', () => {
-    expect(noWayMove(engine([]), { ...elsewhere, parked: { at: AT } } as Job, 'host', 'no URL')).toBeUndefined();
+  // Issue #2427: a parked, continued or released job reopens its session in a new pane: nothing of it ran there yet either.
+  it.each([
+    ['parked', { parked: { at: AT } }],
+    ['continued', { continued: { at: AT, handoffId: 'h-1' } }],
+    ['released', { waitReleased: { at: AT } }],
+  ])('a %s job that reopens in a new pane goes back to the queue too', (_kind, reopens) => {
+    expect(noWayMove(engine([]), { id: 'job-2', pendingAnswer: 'go on', ...reopens } as unknown as Job, 'host', 'no URL')).toBe(`machine host: ${NO_WAY_MOVE}: no URL`);
+  });
+
+  it('a job that resumes in the pane it holds does not', () => {
+    expect(noWayMove(engine([]), { id: 'job-2', pendingAnswer: 'go on' } as Job, 'host', 'no URL')).toBeUndefined();
     expect(noWayMove(engine([]), { id: 'job-2' } as Job, 'host', 'no URL')).toBeUndefined();
   });
 });
