@@ -1,0 +1,22 @@
+# Dependabot (issue #2479): bumps the Node base images of the hopper's image and the box image, so they stay on a
+# patched Node. A bump stays in its Node line (no major version): the box image is on line 24, the hopper's on 26.
+# test/scripts/node-floor-pins.test.ts checks each base against the patched floor. Pull requests go to main, the
+# landing branch.
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "daily"
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: "docker"
+    directory: "/scripts/box"
+    target-branch: "main"
+    schedule:
+      interval: "daily"
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

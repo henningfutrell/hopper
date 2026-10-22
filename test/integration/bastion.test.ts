@@ -50,17 +50,24 @@ function bastionBoxes(b: Booted): (name: string) => string {
   writeFileSync(join(bin, 'kubectl'), FAKE_KUBECTL);
   chmodSync(join(bin, 'kubectl'), 0o755);
   const running = new Map<string, ChildProcess>();
+  const outputs = new Map<string, string>();
   // A check box (part 5) runs the check's script with the fake cloud tools, as in the read-only check's tests.
   const check = b.runtime.runScript;
   b.runtime.runScript = (spec) => (spec.name.startsWith('hopper-check-') && check ? check(spec) : new Promise((resolve) => {
     const child = spawn('sh', ['-c', spec.script ?? ''], { env: { ...spec.env, HOME: homeOf(spec.name), PATH: `${bin}:${process.env.PATH}` }, detached: true });
     running.set(spec.name, child);
     children.push(child);
-    let output = '';
-    child.stdout.on('data', (d: Buffer) => { output += d.toString(); });
-    child.stderr.on('data', (d: Buffer) => { output += d.toString(); });
-    child.on('exit', (code) => resolve({ exit: code ?? 143, output }));
+    const add = (d: Buffer): void => { outputs.set(spec.name, (outputs.get(spec.name) ?? '') + d.toString()); };
+    child.stdout.on('data', add);
+    child.stderr.on('data', add);
+    child.on('exit', (code) => resolve({ exit: code ?? 143, output: outputs.get(spec.name) ?? '' }));
   }));
+  // The box's output while it runs, as a runtime's log gives it: the bastion reads each forward's state there (issue #2484).
+  const logs = b.runtime.logs.bind(b.runtime);
+  b.runtime.logs = async (id) => {
+    const c = [...b.runtime.boxes.values()].find((x) => x.id === id);
+    return c && running.has(c.spec.name) ? outputs.get(c.spec.name) ?? '' : logs(id);
+  };
   b.runtime.copyIn = async (id, dir, tar) => {
     const c = [...b.runtime.boxes.values()].find((x) => x.id === id)!;
     const to = dir.replace(HOME, homeOf(c.spec.name));

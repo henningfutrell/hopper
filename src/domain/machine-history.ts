@@ -28,6 +28,10 @@ export interface ResourceReading {
   hostMemTotalBytes?: number;
   /** WSL only, a client that dials the hopper on loopback (issue #712): whether Windows reaches the hopper. Absent: not tested. */
   windowsLink?: WindowsLink;
+  /** The Node version its hopper or client runs (issue #2479). Absent: not said (an ssh target, an older client). */
+  node?: string;
+  /** The patched floor (src/client/node-floor.ts) its Node is below: the Machines page warns. Absent: patched, or not said. */
+  nodeFloor?: string;
 }
 
 /**

@@ -183,7 +183,8 @@ const ENDED = 'the forward ended:';
 /**
  * Reads the bastion's output as it comes (bastionCommand marks each forward's lines with its target): a forward listens
  * once kubectl says "Forwarding from", and stops when its loop says it ended, which keeps the last thing kubectl said.
- * A connection it handles, or an error of one connection, does not end it. A line cut over two chunks is read whole.
+ * A connection it handles, or an error of one connection, does not end it. A line cut over two chunks is read whole;
+ * a "Forwarding from" counts before its new line.
  */
 export function forwardWatch(): { add(chunk: string): void; of(target: string): ForwardState | undefined; problem(target: string): ForwardProblem | undefined } {
   const states = new Map<string, ForwardState>();
@@ -207,6 +208,10 @@ export function forwardWatch(): { add(chunk: string): void; of(target: string): 
       const lines = (rest + chunk).split('\n');
       rest = lines.pop()!;
       for (const l of lines) line(l);
+      // Issue #2484: the need box holds back a last new line (it may start its outputs' mark), so kubectl's "Forwarding
+      // from", often its last line for a long time, comes with no new line: it counts before its new line comes.
+      const m = FORWARD_LINE.exec(rest);
+      if (m?.[2]?.startsWith('Forwarding from ')) states.set(m[1]!, { listening: true });
     },
     of: (target) => states.get(target),
     problem: (target) => problems.get(target),

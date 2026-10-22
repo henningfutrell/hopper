@@ -59,6 +59,8 @@ function bastions(o: Partial<BastionsOptions> & { pipe?: (cmd: readonly string[]
   const asked: string[] = [];
   const run = async (b: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: Omit<NeedBoxIo, 'phases'>): Promise<NeedBoxResult> => {
     boxes.push(b);
+    // Each forward listens, as kubectl says in the box (issue #2484: a read waits for that).
+    io.log([...(b.env.HOPPER_STEP_COMMAND ?? '').matchAll(/ '([^']+)' &$/gm)].map((m) => `[${m[1]}] Forwarding from 127.0.0.1 -> remote\n`).join(''));
     io.running?.({ renew: async () => {}, ...(o.pipe ? { pipe: o.pipe } : {}) });
     await new Promise((r) => { io.signal.addEventListener('abort', r, { once: true }); });
     return { exit: 125, problem: 'stopped', stopped: 'cancelled' };

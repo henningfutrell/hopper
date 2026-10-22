@@ -3,9 +3,14 @@
 # depends on the machine it runs on. The container is not a machine (issue #141): jobs run on attached
 # machines only, in their herdr sessions (HOPPER_LOCAL_MACHINE=false).
 
+# The Node base is pinned to a patched version (issue #2479: 26.12.1 or later, Node's October 21, 2026 security
+# release); Dependabot bumps it (.github/dependabot.yml), and the image workflow refuses an image below the floor
+# (scripts/check-node-floor.ts).
 # ---- the UI bundle (the one built part) --------------------------------------------------------
-FROM node:26-bookworm-slim AS ui
+FROM node:26.12.1-bookworm-slim AS ui
 WORKDIR /build
+COPY src/client/node-floor.ts ./node-floor.ts
+RUN node node-floor.ts
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY ui ./ui
@@ -16,7 +21,7 @@ COPY scripts/copy-artifact-libs.ts ./scripts/copy-artifact-libs.ts
 RUN npm run build:ui && test -s ui/dist/index.html
 
 # ---- the daemon --------------------------------------------------------------------------------
-FROM node:26-bookworm-slim
+FROM node:26.12.1-bookworm-slim
 # What an update prunes when this image is replaced (docs/deploy.md "Update"); the published image carries it too.
 LABEL org.opencontainers.image.title=hopper
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
@@ -55,6 +60,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY src ./src
+RUN node src/client/node-floor.ts
 COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
 COPY scripts ./scripts
 COPY WHATS-NEW.md ./

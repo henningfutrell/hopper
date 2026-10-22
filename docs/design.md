@@ -27,7 +27,7 @@ plugin" is its current enactment; Phase 6 items are judged against it.
                               executors (plugin instances: herdr-claude, test)
 ```
 
-One process. Node ≥ 24 runs the TypeScript directly (type stripping) — the daemon has no build
+One process. Node ≥ 24, at the patched Node floor (`^24.22.1 || >=26.12.1`, "The patched Node floor" below), runs the TypeScript directly (type stripping) — the daemon has no build
 step. The UI is the one built part: `ui/` (React, shadcn/ui, Tailwind, d3) → `npm run build:ui`
 → `ui/dist`, which the daemon serves (issue #14, "UI rework" below).
 Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Deployable" below), zod for request validation.
@@ -15157,6 +15157,29 @@ answer checked), `test/adapters/ssh-machine.test.ts` (the probe answers them), `
 machine and one, `machine.recorded`, the shared retention), `test/ui/machine-history.test.ts` (the lines, colours and
 dashes, the sparkline, the card's text).
 
+## The patched Node floor (issue #2479, 2026-10-22)
+
+Node's security release of October 21, 2026 fixes a Brotli decoder RCE, TLS hostname-check bypasses and DNS name
+truncation. The hopper reaches GitHub, the cloud and its machines over TLS, so it stays on a version that has it. The
+**patched Node floor** is the lowest such version of each line: 24.22.1 on line 24, 26.12.1 on line 26
+(`src/client/node-floor.ts` `NODE_FLOORS`). A version of a line with no patched release (22, 25) is below the floor of
+the next patched line; a line newer than 26 is above it.
+
+- `engines` in `package.json` names the floors: `^24.22.1 || >=26.12.1`.
+- The images pin their Node base to a whole version at or above the floor (`Dockerfile` 26.12.1, the box image
+  24.22.1). Dependabot (`.github/dependabot.yml`) bumps each base inside its line, into `main`. Each image build runs
+  `node-floor.ts` as a file, which exits 1 below the floor, so no image is built on unpatched Node.
+  `test/scripts/node-floor-pins.test.ts` checks the pins, the build steps, the Dependabot config and `engines`.
+- At start, the daemon and the client each log one warning line below the floor. They do not refuse to run: a
+  client that stopped would leave its machine offline, with no word on the Machines page of why.
+- A machine's resources ("Machine resources over time") carry `node`, the Node version its hopper or client runs, and
+  `nodeFloor`, the floor it is below. The hopper judges `nodeFloor` from `node` itself, not from the client's word. An
+  ssh target says none. The Machines page shows the version, and a **Node unpatched** warning badge below the floor,
+  which is an alert.
+
+Tests: `test/client/node-floor.test.ts`, `test/client/resources.test.ts`, `test/adapters/machine-resources.test.ts`,
+`test/ui/machine-list.test.ts`, `test/scripts/node-floor-pins.test.ts`.
+
 ## GitHub through the hopper (issue #563, 2026-10-09)
 
 Owner requirement: a job that needs a GitHub operation — filing an issue, most often — must not log in to GitHub
@@ -15354,7 +15377,9 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
    (`ng <ref> refused: <reason>`, as in step 5; issue #2042);
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
-   a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
+   a shallow one is not taken: a shallow one's refusal names its ref updates, read past its `shallow` lines, issue #2481;
+   git's probe before a pack over its `http.postBuffer`, a flush packet only, is answered 200 and the chunked pack after it
+   is read as any other) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
    (read from GitHub) or a **release branch** (`main`, `master`, `dev`, `beta`, `stable`), never a delete. A forced update
    of a branch of the job's own work is allowed: a rebase pushes with `--force-with-lease`. A refusal is answered as
    git's own report (`ng <ref> <reason>`, in side band 1 when asked for), so git shows `! [remote rejected] … (<reason>)`;
@@ -32082,6 +32107,13 @@ credential.
   `said`; absent while it said nothing yet). `bastion` shows each forward's state and, while it runs, the tail of its
   output. A relay or a read to a forward that does not listen is a 503 with kubectl's words, and starts no command in the
   box. A box step of an observe template still holds no kube credential: its port-forward is a bastion's (`OBSERVE_NO_STEP`).
+- **A connection waits for its forward to listen** (issue #2484). A job's `bastion --wait` answered a running bastion,
+  and its first read right after got only curl's "Failed to connect": kubectl had said nothing of the forward yet, and
+  the hopper started the read's command all the same. A relay connection, and so a bastion read, to a forward that has
+  said nothing yet now waits up to 10 s for the bastion to run and the forward to say whether it listens; still
+  nothing is a 503 `does not listen in the box yet`, as `bastion` says ("not listening yet"), and starts no command.
+  The need box holds back the last new line of its output (it may start the outputs' mark), and "Forwarding from" is
+  often kubectl's last line for a long time: `forwardWatch` counts it before its new line comes.
 - **The tokens stay in the box** (`bastionKubeconfig`, `bastionTokens`). Each token is a vault secret file of the box
   (`$HOME/.hopper-need/secrets/kube-<context>`, copied in, mode 600, never in its environment); the kubeconfig names it as
   its user's `tokenFile`, which kubectl reads again within a minute. Every 5 minutes the hopper mints each observe again
@@ -32246,7 +32278,7 @@ hopper proves it can do nothing more before a bastion of its template starts.
   with the credential of its own need (`CheckCredential.operation`, `ProbeRun.operation`).
 - **The probes under observe** (`Probe.operations`, `src/sandbox/probes.ts`). `kube.get` must work; `kube.create-namespace`,
   `kube.delete-pod` and `egress.kube` must be refused, as under a read; and two of observe's own must be refused:
-  `observe.exec` (`pods/exec`, by a POST and by a GET of the exec subresource of a pod that is not there: the API asks the
+  `observe.exec` (`pods/exec`, by a POST and by a GET — a WebSocket upgrade, issue #2477 — of the exec subresource of a pod that is not there: the API asks the
   authorization before it looks for the pod, so an allowed exec answers NotFound) and `observe.secret-read` (a list of the
   Secrets in the namespace, or in every namespace for a cluster, and a get of one). Each passes only when both of its
   requests are Forbidden. A result under observe says so (`ProbeResult.operation`: `<probe> on <asset> under observe`).
@@ -32283,6 +32315,21 @@ an allow.
   port or a tunnel, and the role has view only, that cluster has **no hopper metrics read**: the bastion's forward is
   refused, and the hopper has no other path, by design (the owner's ruling above). The observability skill says so, and
   a job that needs such a read waits with `on: outside: gated: pods/portforward for hopper-observe on <cluster>/<namespace>`.
+
+**The exec probe's get is a WebSocket upgrade (issue #2477).** EKS's AmazonEKSViewPolicy gives `get` on `pods/exec`, not
+`create`. A plain GET of the exec subresource asks `get` only, so the API allowed it and answered NotFound, and
+`observe.exec` read as allowed for an identity that cannot exec. `kubectl exec` sends its GET as a WebSocket upgrade, and
+for an upgrade the API server asks `create` on `pods/exec` too.
+- **The get as `kubectl exec` sends it** (`UPGRADE`, `src/sandbox/probes.ts`): curl, with the server, token and CA that
+  `kubectl config view` gives of the check's kubeconfig, the token from a header file (mode 600, removed after), never in
+  argv. A server that asks `create` for an upgrade refuses it with a Forbidden; a server that does not lets a `get` exec
+  over a WebSocket, so the upgrade answers NotFound and the probe is allowed, as it must be.
+- **A box with no curl errs.** The upgrade then ends 127 with no Forbidden: the probe's outcome is `error`, never a refusal.
+  The hopper's box images carry curl.
+
+Tests (issue #2477): `test/sandbox/check-observe.test.ts` (a view role that may get `pods/exec` but not create it passes;
+the get is an upgrade with the kubeconfig's server, the token not in argv), `test/support/fake-cloud-tools.ts` (`view-exec`,
+a fake curl).
   Opening it is the cluster's RBAC change, a person's, not the hopper's.
 
 Tests: `test/sandbox/check-observe.test.ts` (a credential the cluster does not take errs on both probes and the check

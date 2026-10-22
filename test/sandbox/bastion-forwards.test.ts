@@ -34,6 +34,18 @@ describe('what the bastion\'s output says of each forward (issue #2413)', () => 
     expect(w.of(GRAFANA)).toBeUndefined();
   });
 
+  it('a forward listens once kubectl says so, before the new line of that line comes (issue #2484)', () => {
+    const w = forwardWatch();
+    w.add(`hopper-bastion: forwarding 2 targets\n[${PROM}] Forwarding from 127.0.0.1:20000 -> 9090`);
+    expect(w.of(PROM)).toEqual({ listening: true });
+    w.add(`\n[${GRAFANA}] Forwarding from 127.0.0.1:20001`);
+    expect(w.of(GRAFANA)).toEqual({ listening: true });
+    w.add(` -> 80\n[${PROM}] ${FORBIDDEN}\n[${PROM}] the forward ended: it starts again in 2 s`);
+    expect(w.of(PROM)).toEqual({ listening: true });
+    w.add('\n');
+    expect(w.of(PROM)).toEqual({ listening: false, said: FORBIDDEN });
+  });
+
   it('a forward that ended does not listen, and keeps the last thing kubectl said, also from lines cut over two chunks', () => {
     const w = forwardWatch();
     w.add(`[${PROM}] Forwarding from 127.0.0.1:20000 -> 9090\n[${PROM}] ${FORBIDDEN.slice(0, 30)}`);
@@ -114,7 +126,7 @@ describe('a bastion whose forward does not listen (issue #2413)', () => {
     const { b, started, say } = bastions();
     await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => b.of('job-1')?.state === 'running');
-    say(`[${PROM}] ${FORBIDDEN}\n[${PROM}] the forward ended: it starts again in 2 s\n`);
+    say(`[${PROM}] ${FORBIDDEN}\n[${PROM}] the forward ended: it starts again in 2 s\n[${GRAFANA}] Forwarding from 127.0.0.1:20001 -> 80\n`);
     const no = { status: 503, no: `the bastion's forward to ${PROM} does not listen in the box: ${FORBIDDEN}. Its loop starts it again every 2 s; see where it stands with sh "$HOPPER_SKILL" bastion` };
     expect(await b.relay('job-1', PROM)).toEqual(no);
     expect(await b.read('job-1', { target: PROM, method: 'GET', path: '/api/v1/query?query=up' })).toEqual(no);

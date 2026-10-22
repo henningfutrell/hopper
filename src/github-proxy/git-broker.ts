@@ -24,13 +24,15 @@
 // so a refusal there — the hopper's (`refused: …`) or GitHub's error answer (`GitHub refused the push (HTTP n): …`) — is
 // answered as git's own refusal, an `ng` line per ref. GitHub's error answer to a push's ref advertisement is plain text,
 // which git shows as a `remote:` line.
+// A push git sends otherwise is answered so too (issue #2481): one from a shallow clone, refused with its ref updates read past
+// its `shallow` lines; git's probe (a flush packet) before a pack over its post buffer is taken, and the chunked pack is checked.
 import { Readable } from 'node:stream';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { isGitLabItem } from '../domain/gitlab-account.ts'; import { isDirectQuery, LOOK_ONLY } from '../domain/direct-jobs.ts';
 import type { RepoFacts } from './api.ts';
-import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
+import { checkPush, gitPath, isProbe, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
 import { CONTRIBUTION_OFF } from './policy.ts';
 import { parseProxyToken } from './token.ts';
 import type { ProxyUser } from './broker.ts';
@@ -141,12 +143,24 @@ const pkt = (s: string | Buffer): Buffer => {
   return Buffer.concat([Buffer.from((b.length + 4).toString(16).padStart(4, '0')), b]);
 };
 
+/** The capabilities of a push: after the NUL of its first ref update, which a shallow clone's `shallow` lines come before. */
+function capabilitiesOf(body: Buffer): string {
+  for (let at = 0; at + 4 <= body.length;) {
+    const size = parseInt(body.toString('latin1', at, at + 4), 16);
+    if (!(size >= 4) || at + size > body.length) return '';
+    const line = body.toString('utf8', at + 4, at + size);
+    if (line.includes('\0')) return line.split('\0')[1] ?? '';
+    at += size;
+  }
+  return '';
+}
+
 /**
  * git's own answer to a push it refused, as receive-pack writes one: `unpack ok`, then `ng <ref> <reason>` for every ref,
  * in side band 1 when the push asked for a side band. git shows each as `! [remote rejected] … (<reason>)`.
  */
 export function refusedReport(body: Buffer, commands: readonly RefUpdate[], reason: string): GitAnswer {
-  const caps = body.toString('utf8', 4, Math.min(body.length, 4 + parseInt(body.toString('latin1', 0, 4), 16))).split('\0')[1] ?? '';
+  const caps = capabilitiesOf(body);
   const report = Buffer.concat([pkt('unpack ok\n'), ...commands.map((c) => pkt(`ng ${c.ref} ${reason}\n`)), Buffer.from('0000')]);
   const band = /\bside-band(-64k)?\b/.test(caps);
   const out = band ? Buffer.concat([pkt(Buffer.concat([Buffer.from([1]), report])), Buffer.from('0000')]) : report;
@@ -219,10 +233,12 @@ export function createGitProxy(o: GitProxyOptions) {
       if (pack && (!r.contentEncoding || r.contentEncoding === 'gzip')) {
         try { plain = r.contentEncoding === 'gzip' ? await unpack(r.body ?? Buffer.alloc(0)) : r.body ?? Buffer.alloc(0); } catch { plain = undefined; }
       }
+      // git's probe before a pack it sends chunked (issue #2481): taken, so the pack comes; the pack is checked and recorded.
+      if (plain && isProbe(plain)) return { status: 200, headers: { 'content-type': 'application/x-git-receive-pack-result', 'cache-control': 'no-cache' }, body: Buffer.alloc(0) };
       const read = plain ? receivePackCommands(plain) : undefined;
       const refuse = (reason: string): GitAnswer => {
-        if (push) record('github_proxy.refused', { reason, ...(read?.ok ? { refs: read.commands.map((c) => c.ref) } : {}) });
-        return plain && read?.ok ? refusedReport(plain, read.commands, `refused: ${reason}`) : text(403, `refused: ${reason}`);
+        if (push) record('github_proxy.refused', { reason, ...(read && read.commands.length > 0 ? { refs: read.commands.map((c) => c.ref) } : {}) });
+        return plain && read && read.commands.length > 0 ? refusedReport(plain, read.commands, `refused: ${reason}`) : text(403, `refused: ${reason}`);
       };
       if (push && isDirectQuery(job)) return refuse(LOOK_ONLY); // issue #2184: a direct query's job pushes nothing
       const toOwn = own !== undefined && same(own, at.repo);

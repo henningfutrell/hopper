@@ -32,27 +32,37 @@ export function gitPath(path: string, service: string | undefined): { repo: stri
 /**
  * The ref updates at the head of a receive-pack request: pkt-lines up to the first flush, the first carrying git's
  * capabilities after a NUL; and the pack after them (issue #1096: the shrink guard reads it). A signed push and a push from a shallow clone are not read: neither is what a job sends.
+ * A refused one still gives the ref updates it read (issue #2481: a shallow clone's `shallow` lines come before them), so
+ * the refusal is git's own, an `ng` line per ref.
  */
-export function receivePackCommands(body: Buffer): { ok: true; commands: RefUpdate[]; pack: Buffer } | { ok: false; reason: string } {
+export function receivePackCommands(body: Buffer): { ok: true; commands: RefUpdate[]; pack: Buffer } | { ok: false; reason: string; commands: RefUpdate[] } {
   const commands: RefUpdate[] = [];
   let at = 0;
+  let shallow = false;
   for (;;) {
     const size = /^[0-9a-f]{4}$/.test(body.toString('latin1', at, at + 4)) ? parseInt(body.toString('latin1', at, at + 4), 16) : -1;
-    if (size < 0 || (size > 0 && size < 4) || at + Math.max(size, 4) > body.length) return { ok: false, reason: 'not a git push' };
+    if (size < 0 || (size > 0 && size < 4) || at + Math.max(size, 4) > body.length) return { ok: false, reason: 'not a git push', commands: [] };
     if (size === 0) { at += 4; break; }
     const line = body.toString('utf8', at + 4, at + size).replace(/\n$/, '').split('\0')[0]!;
     at += size;
-    if (line === 'push-cert') return { ok: false, reason: 'a signed push (push-cert) is not taken' };
-    if (line.startsWith('shallow ')) return { ok: false, reason: 'a push from a shallow clone is not taken: fetch the full history first' };
+    if (line === 'push-cert') return { ok: false, reason: 'a signed push (push-cert) is not taken', commands: [] };
+    if (line.startsWith('shallow ')) { shallow = true; continue; }
     const [old, next, ref, ...rest] = line.split(' ');
-    if (!old || !next || !ref || rest.length > 0 || !SHA.test(old) || !SHA.test(next)) return { ok: false, reason: 'not a git push' };
+    if (!old || !next || !ref || rest.length > 0 || !SHA.test(old) || !SHA.test(next)) return { ok: false, reason: 'not a git push', commands: [] };
     commands.push({ old, new: next, ref });
   }
+  if (shallow) return { ok: false, reason: 'a push from a shallow clone is not taken: fetch the full history first (git fetch --unshallow), then push again', commands };
   // The pack follows the commands (after the push options, when git sends any); none when the push sends no object.
   const packAt = body.indexOf('PACK', at, 'latin1');
   const pack = packAt < 0 ? Buffer.alloc(0) : body.subarray(packAt);
-  return commands.length === 0 ? { ok: false, reason: 'the push names no ref' } : { ok: true, commands, pack };
+  return commands.length === 0 ? { ok: false, reason: 'the push names no ref', commands } : { ok: true, commands, pack };
 }
+
+/**
+ * git's probe before a push whose pack is over its `http.postBuffer` (issue #2481): a flush packet only, to learn whether
+ * the request is taken before it sends the pack chunked. git shows nothing of the probe's answer but its HTTP status.
+ */
+export const isProbe = (body: Buffer): boolean => body.length === 4 && body.toString('latin1') === '0000';
 
 /**
  * Whether a job may make these ref updates on a repository whose default branch is `defaultBranch`. `direct` (issue #1806):
