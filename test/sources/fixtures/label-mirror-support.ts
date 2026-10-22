@@ -15,14 +15,14 @@ export const itemOf = (key: string, o: Partial<WorkItem>): WorkItem => ({
   key, state: 'blocked', stateSince: LONG_AGO, eventState: o.state ?? 'blocked', eventAt: LONG_AGO, keptWork: [], version: 3, ...o,
 });
 
-export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; dropped?: string[]; tendAgain?: string[]; doneReported?: string[]; doneOpen?: Record<string, DoneReport>; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean } = {}) {
+export function labelMirrorSetup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; reported?: string[]; partsLeft?: string[]; dropped?: string[]; tendAgain?: string[]; doneReported?: string[]; doneOpen?: Record<string, DoneReport>; outbox?: ReturnType<typeof memoryGitHubOutbox>; rerunnable?: string[]; listings?: ReturnType<typeof memoryListings>; gh?: ReturnType<typeof createFakeGitHub>; at?: string; held?: () => boolean; noJob?: string[] } = {}) {
   const gh = o.gh ?? createFakeGitHub();
   let now = Date.parse(o.at ?? '2026-10-18T12:00:00.000Z');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   const recorded: { type: string; data: Record<string, unknown> }[] = [];
   const source = createGitHubSource({
     name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig({}), api: gh,
-    trust: testTrust(), ...(o.outbox ? { outbox: o.outbox } : {}), ...(o.listings ? { listings: o.listings } : {}), clock: { now: () => new Date(now) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k])),
+    trust: testTrust(), ...(o.outbox ? { outbox: o.outbox } : {}), ...(o.listings ? { listings: o.listings } : {}), clock: { now: () => new Date(now) }, knownKeys: (keys) => new Set(keys.filter((k) => items[k] && !o.noJob?.includes(k))),
     rerunnable: (keys: string[]) => new Set(keys.filter((k) => o.rerunnable?.includes(k))),
     intake: {
       holder: 'a1b2c3d4e5f6', othersKnown: () => new Set(), migration: () => ({ at: LONG_AGO, changes: [] }), migrated: () => {},
