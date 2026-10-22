@@ -23036,6 +23036,30 @@ by its source or by an issue closed as not planned (not listed).
 **Verification:** `test/sources/github-label-culprit.test.ts` (Intake reason, a stale end label swapped, a lost `hopper:done`
 put back, Run again by hand, a part's culprit not judged), `test/sources/github-item-labels.test.ts`.
 
+### A reverted culprit of a part, judged by the ledger (issue #1892 part 34, 2026-10-22)
+
+Part 33 left a culprit that was a part to the labels. Its part's pull request merged into the landing branch, and a red batch
+reverted it. Its events say partly done (`eventState: partly_done`, `pullRequestState: merged`, no `wholeMerged`), and
+`stateOf` gives failed for the landing stage. When parts are left to run, the follow took `hopper:partly-done` off at the
+merge, so the issue carries no end label, and Intake takes it again for the next part.
+
+**As built** (`src/sources/github/item-labels.ts`, `label-mirror.ts`):
+- **`labelsFor` of a failed item with `eventState: partly_done`**, its pull request merged, with the fact `partsLeft` (the
+  same fact as for a partly done item: its job's follow recorded the part's merge, and not every declared part is done), wants
+  no end label. The mirror asks `partsLeft` for a failed item too, and takes a stale end label off.
+- **Intake reads the ledger for it**: no reason (`ledgerReason` gives none for a failed item whose failure was not reported),
+  so it is taken again, as the labels did before.
+- No end label is wanted, so no label taken off is a Run again, and none put on is a person event: the mirror takes it off.
+
+**Decision.** **The last part stays to the labels.** Its follow put `hopper:done` on, but `partsLeft` false also means the
+follow did not record the merge yet; no fact tells the two apart.
+
+**Left to the labels:** a culprit that was the last part, a done item a read of GitHub made done, an item dropped by a card
+withdrawn by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-culprit.test.ts` (a part's culprit with parts left: no reason, a stale
+`hopper:partly-done` taken off; the last part not judged), `test/sources/github-item-labels.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

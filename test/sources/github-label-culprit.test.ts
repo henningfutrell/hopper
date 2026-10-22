@@ -3,7 +3,9 @@
 // events say done. The follow put `hopper:done` on at the merge, and nothing took it off: the red batch writes no label to the
 // culprit's issue, and no batch run closed it. So the ledger says what the issue carries: the mirror puts back a lost
 // `hopper:done` and takes a stale end label off, Intake gives the done-but-open reason (the next sync offers it as a reopened
-// card, as before), and `hopper:done` taken off by hand is a Run again. A culprit that was a part stays to the labels.
+// card, as before), and `hopper:done` taken off by hand is a Run again. A culprit that was a part with parts left carries
+// no end label (part 34): the follow took `hopper:partly-done` off at its merge, so Intake takes it again. The last part stays
+// to the labels.
 import { describe, expect, it } from 'vitest';
 import { DONE_OPEN, PARTLY_DONE } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
@@ -50,7 +52,21 @@ describe('a reverted culprit: judged by the ledger (issue #1892 part 33)', () =>
     expect(reason(1)?.reason).not.toBe(DONE_OPEN);
   });
 
-  it('a culprit that was a part stays to the labels', async () => {
+  it('a culprit that was a part with parts left carries no end label, and Intake takes it again (part 34)', async () => {
+    const part = { ...culprit, eventState: 'partly_done' as const, wholeMerged: undefined };
+    const { gh, source, reason, edits } = setup({ [url(1)]: part, [url(2)]: part }, { partsLeft: [url(1), url(2)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:partly-done'] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
+    await source.discover();
+    expect(reason(1)?.reason).toBeUndefined();
+    expect(reason(2)?.reason).toBeUndefined();
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+    expect(gh.issue(REPO, 2).labels).toEqual(['hopper']);
+    expect(edits()).toEqual([]);
+  });
+
+  it('a culprit that was the last part stays to the labels', async () => {
     const { gh, source, reason } = setup({ [url(1)]: { ...culprit, eventState: 'partly_done', wholeMerged: undefined } });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:partly-done'] });
     await source.discover();
