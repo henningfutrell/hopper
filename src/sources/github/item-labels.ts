@@ -5,7 +5,9 @@
 // `hopper:pr-ready`, or `hopper:partly-done` for a part (either is allowed; the one to add follows `part`, issue #1933); a blocked item carries `hopper:blocked`, or `hopper:pr-closed`
 // when its pull request was closed without a merge; a failed item carries `hopper:failed` once its job's failure was reported
 // as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits, and not a
-// culprit whose merge was reverted (failed by its landing, not by its job); a done item carries `hopper:done` once its pull
+// culprit whose merge was reverted (failed by its landing, not by its job); a failed item whose failure was told as one the
+// hopper fixes itself (`fixingReported`, issue #1230, part 31) carries none: that report left the issue as it was, and while
+// its job worked the mirror kept every end label off; a done item carries `hopper:done` once its pull
 // request merged as the whole item (`wholeMerged`): the follow put it on with the merge; or once a person resolved its hand-off as
 // Done by hand (`doneByHand`): the resolution put it on; or once a job's end made it done and its job's final report found
 // the issue closed as complete (`doneReported`, part 24): the report put it on. A done item a job's end made while its issue
@@ -43,9 +45,10 @@ export interface WantedLabels { allowed: readonly string[]; add?: string }
  * Of an item in PR open: whether its open pull request is a part (`hopper:partly-done`, not `hopper:pr-ready`). Of a failed
  * item, a hand-off or an item a dismiss dropped: whether its job's failure was reported to its issue as failed (`hopper:failed`). Of a partly done item: whether the
  * follow recorded its part's merge and parts are left to run (no end label; not when every declared part is done). Of a done
- * item: what its job's final report put on (`doneReported`).
+ * item: what its job's final report put on (`doneReported`). Of a failed item: whether its job's failure was reported as one
+ * the hopper fixes itself (`fixingReported`, no end label).
  */
-export interface LabelFacts { part?: boolean; failureReported?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: DoneReport }
+export interface LabelFacts { part?: boolean; failureReported?: boolean; fixingReported?: boolean; partsLeft?: boolean; dropReported?: DropReport; doneReported?: DoneReport }
 
 /**
  * What the final report of a finished job put on its issue (issue #1892 parts 24, 28): `closed`, the issue was closed as
@@ -101,7 +104,9 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
       const label = item.blockedCause === 'pr_closed' ? LABEL_PR_CLOSED : LABEL_BLOCKED;
       return { allowed: [label], add: label };
     }
-    case 'failed': return item.eventState === 'failed' && facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
+    case 'failed':
+      if (item.eventState !== 'failed') return undefined;
+      return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : facts.fixingReported ? { allowed: [] } : undefined;
     case 'done': {
       if ((item.pullRequestState === 'merged' && item.wholeMerged === true) || (item.eventState === 'done' && (item.doneByHand === true || facts.doneReported === 'closed'))) return { allowed: [LABEL_DONE], add: LABEL_DONE };
       if (item.eventState !== 'done' || facts.doneReported === undefined) return undefined;

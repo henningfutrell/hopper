@@ -1,0 +1,1 @@
+- An old end label on an issue whose failed job the hopper fixes by itself now comes off, and Intake shows the issue by what the hopper knows.

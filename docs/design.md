@@ -22940,6 +22940,40 @@ its issues too.
 **Verification:** `test/gitlab/ledger-intake.test.ts` (a lost label put back, a Run again by hand, a done item with no merge
 request yet, a hopper without the lease, an unknown issue by its labels); `test/gitlab/` all pass.
 
+### A failed item the hopper fixes itself, judged by the ledger (issue #1892 part 31, 2026-10-22)
+
+Milestone 4: one of the failed items part 3 left to the labels. A job that ended done while its own pull request's checks
+were red, or its pull request had merge conflicts or was a draft, fails (issue #1230, "Own PR checks red"). Once assessed,
+while its Continue is pending, its report tells it as one the hopper fixes (`fixingReported`): the issue stays as it is,
+claimed, with no end label. While the job worked, the mirror kept every end label off. So what the issue carries is certain.
+
+**As built** (`src/sources/github/item-labels.ts`):
+- **A new fact, `fixingReported`** (`LabelFacts`, `IntakeContext.fixingReported`, `src/users/source-context.ts`): the item's
+  job failed, its final report went out, and it went out as one the hopper fixes (`sync.fixingReported`). No new field is
+  kept, so no migration.
+- **`labelsFor` of a failed item with `eventState: failed`** wants no end label with that fact. The mirror takes a stale or a
+  hand-put end label off. `labelTakenOff` and `labelPutOn` find no person event for it: the state wants no label, and a
+  failed item is no card and no drop.
+- **Intake reads the ledger for it** (`ledgerReason`): no end-label reason, whatever end labels the issue carries. The claim
+  rules then decide, as they did when the issue carried no end label.
+- **GitLab too** (`src/gitlab/ledger.ts`): GitLab's report also leaves the issue as it is for such a failure.
+- **A hand-off opened for it** tells the end again (`src/sources/fixing-reports.ts`): `finalReported` is false while the report
+  goes out, so the item is not judged in that time; after it, the failure is reported as failed, and the hand-off wants
+  `hopper:failed` (part 8).
+
+**Decisions.**
+- **Not judged before the report.** Before the report goes out, the hopper does not know if it fixes the failure itself. A
+  report as failed then puts `hopper:failed` on, and the mirror must not take it off before the flag is written.
+- **A reverted culprit stays to the labels.** Its item is failed by its landing, not by its job (`eventState` is not
+  `failed`), and no report says what its issue carries.
+
+**Left to the labels:** a failure whose report waits, a reverted culprit, a done item a read of GitHub made done, an item
+dropped by a card withdrawn by its source or by an issue closed as not planned (not listed).
+
+**Verification:** `test/sources/github-label-fixing.test.ts` (Intake reason, the mirror's corrections, no person event, not
+judged before the report), `test/sources/github-item-labels.test.ts` (`labelsFor`, `labelDrift`, `labelTakenOff`,
+`labelPutOn`), `test/users/source-context-fixing-reported.test.ts`, `test/gitlab/ledger-intake.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

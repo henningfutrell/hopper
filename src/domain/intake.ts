@@ -179,6 +179,11 @@ export interface IntakeContext {
    */
   failureReported?(key: string): boolean;
   /**
+   * Whether the failure of a failed item's job was reported as one the hopper fixes itself (issue #1892 part 31, issue
+   * #1230): the report left the issue as it was, so it carries no end label.
+   */
+  fixingReported?(key: string): boolean;
+  /**
    * Whether a partly done item's merged part leaves parts to run (issue #1892): the follow recorded the merge of a part, and
    * not every declared part is done. It then carries no end label, and Intake takes it again for its next part.
    */
