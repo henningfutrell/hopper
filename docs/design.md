@@ -961,11 +961,11 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `hopper-removed-container <id>` and `hopper-removed-volume <name>`; `Reaped.removed` carries them, and the engine records
   `job.containers_removed { containers, volumes }`. Asked with `keep` it removes none, nor does a client's isolation
   stop: neither is the job's end.
-- **The sweep** (issue #410, `src/engine/sweep.ts`). The reap runs when a pane closes; a hopper that
+- **The sweep** (issue #410, `src/engine/sweep.ts`; when it is due, `src/engine/sweep-due.ts`). The reap runs when a pane closes; a hopper that
   crashed, a lost pane, a machine that rebooted or could not be reached left nothing to run it. So at
   startup, after recovery and the reap of each job it ended, and then on each machine every
   `reapEveryMinutes` (a `local`, `ssh` and `client` machine option, default 10; checked every minute, read
-  at each sweep), the engine asks the machine — through the first of its executors that reaches it,
+  at each sweep; and at once when the machine's disk turns low, issue #2490), the engine asks the machine — through the first of its executors that reaches it,
   `Executor.machineShell` — what jobs left there (the survey: the `hopper-job-*` scopes, the
   `HOPPER_JOB_ID`s of its processes, and the scratch dirs and the job worktrees in `.worktrees`
   (`.worktrees/<name>/<job id>`, issue #1188; and the layout before's) under the work trees of the newest 2000 jobs, with their ages; a
@@ -979,8 +979,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
     outlives its job;
   - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder;
-  - over the disk budget (issue #1120, "Hopper's own disk use"): every ended job's scratch dir at once, whatever its
-    age, with the reap's rule. Each pass also measures the hopper's own disk use there, which Machines shows.
+  - over the disk budget (issue #1120, "Hopper's own disk use"), or on a machine whose disk is low (issue #2490, "A
+    machine's disk"): every ended job's scratch dir at once, whatever its age, with the reap's rule. Each pass also measures the hopper's own disk use there, which Machines shows.
   - an ended job with a **job container** still there (issue #1120, the survey's `hopper-container <job id>`, read
     through the `hopper.job` label of each container and volume): reaped at once, whatever its age, which removes it
     (`job.containers_removed`).
@@ -4059,7 +4059,13 @@ that runs its executor; when none can take it for that reason alone, it is held 
 `disk low on <machine> (<n> GiB free), …: no new job is claimed there` (pinned: `pinned machine <machine>
 disk low (…)`), which the queue shows under the job. A job resuming on the machine (an answered
 question) returns to its pane as before, and running jobs go on. The reap ("Work tree") is what keeps
-the disk flat; this keeps new work off a machine it could not keep flat.
+the disk flat; this keeps new work off a machine it could not keep flat. **A low disk is swept** (issue #2490,
+`src/engine/sweep-due.ts`): when a machine's disk turns low, the sweep ("The sweep") runs there at once, not at its
+next interval, and then by its interval while the disk stays low. Each of those passes reaps every ended job's scratch
+dir and job worktree whatever its age, as over the disk budget, with the reap's rule: work not pushed is kept, and a
+parked or live job's work is never touched. One log line each pass says so. Kept in memory: after a restart, the
+first pass sweeps every machine. Reported from a real machine: a disk filled with the dirs of ended jobs while the
+low disk only held new jobs off it.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`

@@ -25,6 +25,9 @@
 // scratch dir at once, whatever its age (work not pushed is still kept), and measures again; still over, a person is told
 // once (machine.disk_over_budget), and once more when it is back within it (machine.disk_within_budget). Kept in memory:
 // after a restart, the first pass measures again, and a machine still over is told again.
+// A machine whose disk is low (issue #2490, design.md "A machine's disk") takes no new job; the sweep frees what it may there:
+// it sweeps the machine at once when its disk turns low (then by its interval), and reaps every ended job's scratch dir
+// whatever its age, as over the budget.
 // An ended job with a container or a volume labelled with its id still on the machine (issue #1120) is reaped at once,
 // whatever its age: the reap removes them. What any reap removed of them is recorded as job.containers_removed.
 // Job pods (issue #1570): at startup, then every `SWEEP_EVERY_MINUTES`, each executor that starts work outside any machine
@@ -41,8 +44,7 @@ import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { createLeftovers } from './sweep-leftovers.ts';
-
-export const SWEEP_EVERY_MINUTES = 10;
+import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 export const SCRATCH_MAX_AGE_HOURS = 24;
 /** How often the engine looks for a machine whose sweep is due. */
 export const SWEEP_CHECK_MS = 60000;
@@ -127,7 +129,6 @@ export function goneKept(found: Survey, kept: readonly KeptWork[], jobOf: (id: s
   return out.sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
 
-const minutes = (m: MachineSnapshot): number => m.sweep?.everyMinutes ?? SWEEP_EVERY_MINUTES;
 const maxAgeMs = (m: MachineSnapshot): number => (m.sweep?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS) * 3600_000;
 
 export interface Sweep {
@@ -166,7 +167,7 @@ const gb = (bytes: number): string => `${(bytes / 1e9).toFixed(1)} GB`;
 const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' : 's'}`;
 
 export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.warn(l)): Sweep {
-  const last = new Map<string, number>();
+  const schedule = createSweepDue();
   /** Each machine's last measure (issue #1120), and the machines told over the disk budget. */
   const measured = new Map<string, { paths: HopperDiskPath[]; at: string }>();
   const told = new Set<string>();
@@ -276,9 +277,10 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     }
     const budget = budgetNow();
     const pressed = hopperDiskOf(found.usage, '', budget);
-    if (pressed?.over) log(`hopper: the hopper's own disk use on ${m.id} is ${gb(pressed.bytes)}, over its disk budget of ${gb(budget!.bytes)}: the sweep reaps every ended job's scratch dir now, whatever its age`);
+    if (m.disk?.low) log(`hopper: disk low on ${m.id} (${gb(m.disk!.freeBytes)} free): the sweep reaps every ended job's scratch dir now, whatever its age`);
+    else if (pressed?.over) log(`hopper: the hopper's own disk use on ${m.id} is ${gb(pressed.bytes)}, over its disk budget of ${gb(budget!.bytes)}: the sweep reaps every ended job's scratch dir now, whatever its age`);
     const running = new Set([...found.scopes, ...found.processes]);
-    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, pressed?.over ? 0 : maxAgeMs(m)), jobOf, kept, running);
+    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, m.disk?.low || pressed?.over ? 0 : maxAgeMs(m)), jobOf, kept, running);
     if (c.stopping()) return;
     // What the reaps freed, measured again; a survey that fails then keeps the first measure.
     const after = pressed?.over && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
@@ -396,7 +398,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
           podsAt = now;
           await sweepPods();
         }
-        const due = (await c.machines.list()).filter((m) => m.online && !m.containerImage && (all || now - (last.get(m.id) ?? -Infinity) >= minutes(m) * 60_000));
+        const due = schedule.due(await c.machines.list(), now, all);
         if (due.length === 0) return;
         const recent = c.store.jobs.list({ limit: JOBS_SWEPT });
         const byId = new Map(recent.map((j) => [j.id, j]));
@@ -406,7 +408,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         const discards = recent.filter((j) => j.discard && j.discard.error === undefined);
         for (const m of due) {
           if (c.stopping()) return;
-          last.set(m.id, now);
+          schedule.swept(m, now);
           const shell = shellOf(m);
           if (!shell) continue;
           await sweepOne(m, shell, roots, jobOf, kept, discards).catch((e: unknown) => log(`hopper: the sweep could not survey ${m.id}: ${(e as Error).message}`));
