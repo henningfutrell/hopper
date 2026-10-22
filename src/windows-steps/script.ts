@@ -96,7 +96,8 @@ Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stop
 
 Only a template this job's own sandbox request was approved for. The hopper keeps each step until it ends: a broken
 connection does not stop it, and a hopper that stops never runs it twice (the step then ends with exit ${STEP_NOT_RUN} and
-says so). Stop hopper-step (a signal) and the step stops. Inputs: at most 32 MiB.
+says so). Stop hopper-step (a signal) and the step stops. Inputs: at most 32 MiB. Outputs: at most 16 MiB in all, as
+a tar; over it, none come back and the step says their size.
 
 Credentials. The hopper mints a short-lived credential for each of the template's AWS roles, clusters and namespaces,
 for that step only, after Access: its reads, and with --plan-id its changes too. They are in the sandbox's environment,
@@ -164,7 +165,7 @@ or namespace is a kubectl context named for it (a namespace: <cluster>-<ns>), th
 A step is on this job's timeline: its box, needs, command, exit code and time. Never print a credential.
 The hopper keeps each step until it ends: a broken connection does not stop it, and a hopper that stops never runs it
 twice (the step then ends with exit ${STEP_NOT_RUN} and says so). Stop hopper-step (a signal) and the step stops. Inputs:
-at most 32 MiB.
+at most 32 MiB. Outputs: at most 16 MiB in all, as a tar; over it, none come back and the step says their size.
 
 Example: who am I in an account, read only.
   sh "$HOPPER_STEP" need "read/aws-role/123456789012/readonly" --why "Check which role the dig runs as" --command "aws sts get-caller-identity"

@@ -117,7 +117,7 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
     },
 
     async create(spec) {
-      const a = await call('POST', `/containers/create?name=${enc(spec.name)}`, dockerCreateBody(spec));
+      const a = await call('POST', `/containers/create?name=${enc(spec.name)}`, dockerCreateBody(spec, { fileLog: guarded }));
       if (!ok(a)) throw refusal(`create the box ${spec.name}`, a);
       return String((JSON.parse(a.text) as { Id: string }).Id);
     },

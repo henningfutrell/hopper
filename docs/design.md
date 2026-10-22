@@ -21623,7 +21623,13 @@ above holds the Windows half; this section the Linux half.
   kept with the step's result (`outputsSha256`, in `step.finished`), sent in `x-hopper-step-outputs-sha256`, and
   `hopper-step` checks it again on the job's machine before it unpacks the tar. The digest is of the tar, not of each
   file: the tar holds every output file whole, so one digest covers each byte of each file, and the hopper needs no tar
-  parser. The box's output is read every second and streamed with
+  parser. **The outputs' limit** (issue #2406): their tar holds at most 16 MiB (`NEED_BOX_OUTPUTS_MAX_BYTES`). Over it,
+  the box sends none of it, only its size (`HOPPER-STEP-TOO-BIG`), and the step's problem names the size and the limit:
+  all or none, as a part of the outputs is not what the job asked for. A one-shot box beside the hopper or on a Podman
+  host keeps its log in a file (`k8s-file` on Podman, `json-file` on Docker; `libpodCreateBody`, `dockerCreateBody`):
+  journald, Podman's default on a systemd host, kept less than 1 MB of a 2 MB output, so outputs over about 1 MB never
+  came back. A box on a machine of the user's keeps its runtime's log setting (its client takes none); a log cut short
+  there names how much of the outputs came. The box's output is read every second and streamed with
   each credential's value masked (`maskSecrets`); the exit code is the command's; a timeout or the job's request gone
   stops the box. The box and its home volume are removed after it, whatever came before.
 - **`terraform apply` in a need box.** A step with `--plan-id` gets, after its write credential is minted through the apply

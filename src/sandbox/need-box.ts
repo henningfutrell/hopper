@@ -49,6 +49,9 @@ const FILES_WAIT_S = 600;
 const OUTPUTS_MARK = 'HOPPER-STEP-OUTPUTS';
 const END_MARK = 'HOPPER-STEP-END';
 const SHA256_MARK = 'HOPPER-STEP-SHA256';
+/** In place of the outputs: their tar's size, over the limit (issue #2406); the box sends none of it. */
+const TOO_BIG_MARK = 'HOPPER-STEP-TOO-BIG';
+const MAX_MIB = NEED_BOX_OUTPUTS_MAX_BYTES / (1024 * 1024);
 
 /** One need's minted credential, as the need box takes it. */
 export interface NeedCredential { profile: OperationProfile; minted: Minted; reach: MintReach }
@@ -151,16 +154,30 @@ if [ -n "$outputs" ]; then
 $outputs
 HOPPER_OUTPUTS
   tar -cf "$HOME/.hopper-outputs.tar" -- "$@" 2>"$HOME/.tar-errors"
+  size=$(($(wc -c < "$HOME/.hopper-outputs.tar" 2>/dev/null)))
   printf '\\n${OUTPUTS_MARK}\\n'
-  base64 < "$HOME/.hopper-outputs.tar"
-  sha=$(sha256sum < "$HOME/.hopper-outputs.tar" 2>/dev/null) || sha=
-  printf '${SHA256_MARK} %s\\n${END_MARK}\\n' "\${sha%% *}"
+  if [ "$size" -gt ${NEED_BOX_OUTPUTS_MAX_BYTES} ]; then
+    printf '${TOO_BIG_MARK} %s\\n' "$size"
+  else
+    base64 < "$HOME/.hopper-outputs.tar"
+    sha=$(sha256sum < "$HOME/.hopper-outputs.tar" 2>/dev/null) || sha=
+    printf '${SHA256_MARK} %s\\n' "\${sha%% *}"
+  fi
+  printf '${END_MARK}\\n'
   cat "$HOME/.tar-errors" 2>/dev/null
 fi
 exit "$code"`;
 
 /** Where the outputs' mark begins, with the line end before it (`\r\n` on the box's terminal); -1: not there. */
 const markAt = (text: string): number => /\r?\nHOPPER-STEP-OUTPUTS/.exec(text)?.index ?? -1;
+
+/** The problem of outputs over the limit (issue #2406): their size and the limit; none come back, the small ones neither. */
+const tooBigOutputs = (bytes: number): string =>
+  `the outputs total ${bytes} bytes, over the limit of ${MAX_MIB} MiB (${NEED_BOX_OUTPUTS_MAX_BYTES} bytes): none were sent back; bring back less, or split it over more steps`;
+
+/** The problem of outputs whose log was cut short (issue #2406): how much of them came. */
+const cutShort = (bytes: number): string =>
+  `the outputs did not all come back: the box's log ends after ${bytes} bytes of them (the limit is ${MAX_MIB} MiB); its container runtime did not keep all of its log`;
 
 /** The problem of outputs whose sha256 here is not the one the box made (issue #2288). */
 export const damagedOutputs = (box: string, here: string): string => `the outputs came back damaged: their sha256 in the box is ${box}, here ${here}`;
@@ -174,13 +191,16 @@ export function splitOutput(text: string): { log: string; outputs?: Buffer; outp
   if (at === -1) return { log: text };
   const rest = text.slice(text.indexOf(OUTPUTS_MARK, at) + OUTPUTS_MARK.length);
   const end = rest.indexOf(END_MARK);
-  if (end === -1) return { log: text.slice(0, at), problem: 'the outputs did not all come back' };
+  // Cut short (issue #2406): the runtime kept only part of the box's log, as journald does with a large output.
+  if (end === -1) return { log: text.slice(0, at), problem: cutShort(Math.floor(rest.replace(/\s+/g, '').length * 3 / 4)) };
   const after = rest.slice(end + END_MARK.length).replace(/^\r?\n/, '');
   const log = text.slice(0, at) + after;
   const body = rest.slice(0, end);
+  const tooBig = new RegExp(`^\\s*${TOO_BIG_MARK} (\\d+)`).exec(body);
+  if (tooBig) return { log, problem: tooBigOutputs(Number(tooBig[1])) };
   const shaAt = body.indexOf(SHA256_MARK);
   const outputs = Buffer.from((shaAt === -1 ? body : body.slice(0, shaAt)).replace(/\s+/g, ''), 'base64');
-  if (outputs.length > NEED_BOX_OUTPUTS_MAX_BYTES) return { log, problem: `the outputs hold more than ${NEED_BOX_OUTPUTS_MAX_BYTES / (1024 * 1024)} MiB` };
+  if (outputs.length > NEED_BOX_OUTPUTS_MAX_BYTES) return { log, problem: tooBigOutputs(outputs.length) };
   const boxSha = shaAt === -1 ? '' : body.slice(shaAt + SHA256_MARK.length).trim();
   if (!/^[0-9a-f]{64}$/.test(boxSha)) return { log, problem: 'the box gave no sha256 of the outputs (its image has no sha256sum): they could not be checked' };
   const here = createHash('sha256').update(outputs).digest('hex');
