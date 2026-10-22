@@ -51,16 +51,13 @@ async function hopper(a: TestApp, argv: string[]) {
 }
 
 describe('hopper report (issue #694)', () => {
-  it('prints the context of a report on a job, masked', async () => {
+  it('prints the context of a report: the System line only', async () => {
     const { app } = await start();
-    const job = await app.pull({ op: 'fail', ms: 0, message: 'push to 10.1.2.3 failed' });
-    await app.waitForStatus(job.id, 'failed');
-    const r = await hopper(app, ['report', 'context', '--job', job.id]);
+    const r = await hopper(app, ['report', 'context']);
     expect(r.code).toBe(0);
     const answer = JSON.parse(r.out) as { context: string; repo: string };
     expect(answer.repo).toBe(REPO);
-    expect(answer.context).toContain(`Job: ${job.id}`);
-    expect(answer.context).not.toContain('10.1.2.3');
+    expect(answer.context).toMatch(/^- System: [^\n]+$/);
   });
 
   it('files a report as the person, with the hopper\'s context, and lists it in Your reports', async () => {
@@ -71,7 +68,7 @@ describe('hopper report (issue #694)', () => {
     const issue = github.issues.find((i) => i.repo === REPO)!;
     expect(issue).toMatchObject({ title: 'The board hangs', author: 'reporter', labels: ['user-report'] });
     expect(issue.body).toContain('### What I expected\n\nIt shows the failure.');
-    expect(issue.body).toMatch(/### Context\n\n- Hopper: /);
+    expect(issue.body).toMatch(/### Context\n\n- System: [^\n]+\n\n---\n/);
 
     const list = await hopper(app, ['report', 'list']);
     expect(list.code).toBe(0);
@@ -85,14 +82,14 @@ describe('hopper report (issue #694)', () => {
     const { app, github } = await start();
     const dir = mkdtempSync(join(tmpdir(), 'hopper-report-'));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-    writeFileSync(join(dir, 'context.md'), '- Install: host, edited');
+    writeFileSync(join(dir, 'context.md'), '- System: linux, edited');
     writeFileSync(join(dir, 'happened.md'), 'It stopped twice.');
     const r = await hopper(app, ['report', 'bug', '--title', 'The board hangs', '--happened-file', join(dir, 'happened.md'), '--context-file', join(dir, 'context.md')]);
     expect(r.code).toBe(0);
     const issue = github.issues.find((i) => i.repo === REPO)!;
     expect(issue.body).toContain('It stopped twice.');
-    expect(issue.body).toContain('### Context\n\n- Install: host, edited');
-    expect(issue.body).not.toContain('- Hopper:');
+    expect(issue.body).toContain('### Context\n\n- System: linux, edited');
+    expect(issue.body).not.toContain('- System: linux 6');
   });
 
   it('answers a similar open report first; --comment-on adds the report to it', async () => {

@@ -52,21 +52,32 @@ async function start(o: { connected?: boolean } = {}) {
 
 const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
 
-const REPORT = { title: 'The board hangs when a job fails', happened: 'The board stopped.', expected: 'The board shows the failure.', context: '- Install: host' };
+const REPORT = { title: 'The board hangs when a job fails', happened: 'The board stopped.', expected: 'The board shows the failure.', context: '- System: linux 6.18.2 (x64), Node v24.3.0' };
 
 describe('Report a bug', () => {
-  it('answers the context of a report on a job, redacted', async () => {
+  it('answers the context of a report: the System line only, never the version, install type or a job (issue #2478)', async () => {
     const { app, token } = await start();
-    const job = await app.pull({ op: 'fail', ms: 0, message: `push to 10.1.2.3 failed with ghu_${'A1b2'.repeat(9)}` });
-    await app.waitForStatus(job.id, 'failed');
-    const r = await app.ui<{ context: string; repo: string }>('/ui/api/bug-reports/context', { jobId: job.id }, { token });
+    const r = await app.ui<{ context: string; repo: string }>('/ui/api/bug-reports/context', {}, { token });
     expect(r.status).toBe(200);
     expect(r.body.repo).toBe(REPO);
-    expect(r.body.context).toContain(`Job: ${job.id} (failed: it stopped with an error)`);
-    expect(r.body.context).toContain('Install: host');
-    expect(r.body.context).not.toContain('10.1.2.3');
-    expect(r.body.context).not.toContain('ghu_A1b2');
-    expect((await app.ui('/ui/api/bug-reports/context', { jobId: 'no-such-job' }, { token })).status).toBe(404);
+    expect(r.body.context).toMatch(/^- System: \S+ \S+ \(\S+\), Node v\d+\.\d+\.\d+$/);
+    const job = await app.pull({ op: 'fail', ms: 0, message: 'push failed' });
+    await app.waitForStatus(job.id, 'failed');
+    expect((await app.ui('/ui/api/bug-reports/context', { jobId: job.id }, { token })).status).toBe(400);
+  });
+
+  it('files a report on a failed job whose context is the System line only (issue #2478)', async () => {
+    const { app, github, token } = await start();
+    const job = await app.pull({ op: 'fail', ms: 0, message: 'push failed' });
+    await app.waitForStatus(job.id, 'failed');
+    const { context } = (await app.ui<{ context: string }>('/ui/api/bug-reports/context', {}, { token })).body;
+    const r = await app.ui<{ kind: string }>('/ui/api/bug-reports', { ...REPORT, context, jobId: job.id, force: true }, { token });
+    expect(r.body.kind).toBe('filed');
+    const body = github.issues.find((i) => i.repo === REPO)!.body;
+    const section = body.split('### Context\n\n')[1]!.split('\n\n---\n')[0];
+    expect(section).toBe(context);
+    expect(section.split('\n')).toEqual([expect.stringMatching(/^- System: /)]);
+    expect(body).not.toContain(job.id);
   });
 
   it('files the report as the person, labelled user-report, never as a job', async () => {
@@ -77,7 +88,7 @@ describe('Report a bug', () => {
     const issue = github.issues.find((i) => i.repo === REPO)!;
     expect(issue).toMatchObject({ title: REPORT.title, author: 'reporter', labels: ['user-report'], assignees: [] });
     expect(issue.body).toContain('### What happened\n\nThe board stopped.');
-    expect(issue.body).toContain('### Context\n\n- Install: host');
+    expect(issue.body).toContain('### Context\n\n- System: linux 6.18.2 (x64), Node v24.3.0');
     const create = github.requests.find((q) => q.method === 'POST' && q.path.endsWith(`/repos/${REPO}/issues`))!;
     expect(create.auth).toContain('test-account-token');
     expect(eventsOf(app, 'bug_report.filed').map((e) => e.data)).toEqual([
