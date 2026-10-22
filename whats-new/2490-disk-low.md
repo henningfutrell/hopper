@@ -1,0 +1,1 @@
+- When a machine runs low on disk space, the hopper now removes what ended jobs left there at once, instead of only keeping new jobs off it.

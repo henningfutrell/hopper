@@ -3,8 +3,11 @@
 // That transaction writes the cleanup's record (`cleanupDue`, issue #1570): a hopper that stops before the cleanup went
 // through does it from the record at its next start (`resume`), and records `job.cleaned_up` with `dueAt`.
 // A cleanup that could not reach the job's machine is deferred (issue #371): recorded on the job, tried
-// again on every tick until it goes through, and meanwhile a waiting job of the same item is held.
-import { keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job } from '../domain/types.ts';
+// again on every tick until it goes through, and meanwhile a waiting job of the same item is held. A cleanup the job's own
+// route cannot do (issue #2490: its ssh name no longer resolves) reaps through the machine as it is reached now.
+import { jobScratchOf } from '../domain/job-layout.ts';
+import type { MachineShell, Reaped } from '../domain/ports.ts';
+import { keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
@@ -28,12 +31,35 @@ const ENDED = TERMINAL_STATUSES;
 /** The cleanup's record, for the patch of the transaction that records the job's end (issue #1570). */
 export const cleanupDue = (c: Pick<EngineContext, 'clock'>): Pick<Job, 'cleanupDue'> => ({ cleanupDue: { at: nowIso(c) } });
 
-export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'keepPanes' | 'clock' | 'trigger' | 'stopping'>): Cleanups {
+export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'keepPanes' | 'clock' | 'trigger' | 'stopping'>): Cleanups {
   const running = new Set<string>();
   /** The jobs whose cleanup `resume` found due from a stop: said so once it goes through. */
   const resumed = new Set<string>();
   /** Deferred cleanups by job id: the job's item key, and why. Seeded from the store by `resume`, so a restart keeps them. */
   const deferred = new Map<string, { sourceKey?: string; error: string }>();
+
+  /** The machine as the first executor there that reaches it does, as the sweep reaches it. */
+  const shellOf = (m: MachineSnapshot): MachineShell | undefined => {
+    for (const name of m.executors) {
+      const shell = c.executors.get(name)?.machineShell?.(m);
+      if (shell) return shell;
+    }
+    return undefined;
+  };
+
+  /**
+   * The reap of the job's scratch dir through its machine as it is reached now (issue #2490), when its own route failed:
+   * its processes stopped, its scratch dir removed unless it holds work not pushed (kept when it timed out, issue #630).
+   * Rejects with its own route's error when the machine is not reached this way either.
+   */
+  async function reapThroughMachine(job: Job, error: unknown): Promise<Reaped> {
+    const cwd = (job.executorState as { cwd?: unknown } | undefined)?.cwd;
+    const id = machineRanOn(job);
+    const m = typeof cwd === 'string' && cwd.startsWith('/') && id ? (await c.machines.list().catch(() => [])).find((x) => x.id === id) : undefined;
+    const shell = m && !m.containerImage ? shellOf(m) : undefined;
+    if (!shell || typeof cwd !== 'string') throw error;
+    try { return await shell.reap(job.id, jobScratchOf(cwd, job.id), job.liveness !== undefined); } catch { throw error; }
+  }
 
   const run: Cleanup = async (jobId) => {
     // Scheduled with setImmediate after the tx that ended the job, so a stop and the store's close can come first (issue #828).
@@ -47,7 +73,7 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
     }
     running.add(jobId);
     try {
-      const said = await executor.cleanup(job);
+      const said = await executor.cleanup(job).catch((e: unknown) => reapThroughMachine(job, e));
       if (c.stopping()) return;
       // Work the hopper pushed for the job (issue #2087) is not work not pushed, whatever its remote branches say: the
       // sweep removes it.

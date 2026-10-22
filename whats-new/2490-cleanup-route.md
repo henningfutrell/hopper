@@ -1,0 +1,1 @@
+- When the hopper cannot reach a machine the way an ended job reached it, it now cleans up that job's files the way it reaches the machine now.

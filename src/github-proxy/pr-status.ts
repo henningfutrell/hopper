@@ -72,6 +72,28 @@ export function withReadChecks(known: PullRequestStatus, read: Record<string, un
 }
 
 /**
+ * Whether the records' answer is of a pull request a tend job works on, or worked on and failed (issue #2497): its job
+ * follows it no more (`follow: tended`, issue #736), so what the records saw is from before the tend — merge conflicts the
+ * tend job's push removed, checks of a head it replaced. Nothing tells the hopper when it changes.
+ */
+export const tendedAnswer = (s: PullRequestStatus): boolean => s.waits === 'tending' || s.waits === 'tend failed';
+
+/**
+ * A tended pull request's answer from the records with what GitHub reads now (issue #2497): its state, draft, merge
+ * conflicts and checks are the read's; the card's wait and the work item stay. A read with no state: `known`.
+ */
+export function withReadPullRequest(known: PullRequestStatus, read: Record<string, unknown>): PullRequestStatus {
+  const r = read as Partial<PullRequestStatus>;
+  if (r.state === undefined) return known;
+  const checked = withReadChecks(known, read);
+  return { ...checked, state: r.state, draft: r.draft ?? known.draft, mergeable: r.mergeable ?? known.mergeable };
+}
+
+/** Why `pr wait --for mergeable` opens no watch on a tended pull request (issue #2497). */
+export const TENDED_WAIT_NOTE = 'A tend job works on this pull request, so the hopper does not follow it now: no event tells the hopper when its merge '
+  + 'conflicts change. This answer is read on GitHub. Ask pr status again after a push, or check the merge with git merge-tree.';
+
+/**
  * Whether a wait on a pull request's checks (`pr wait`, issue #1072 part 2) is over: its checks ended (passing, failing, or
  * checks the hopper may not read), or it is merged or closed. Checks that run keep a job waiting, and so do no checks
  * (issue #2322): right after a push, GitHub has not made the head's check runs yet, and they start queued.

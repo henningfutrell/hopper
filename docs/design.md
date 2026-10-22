@@ -925,7 +925,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      when it makes no change from the default branch (`origin/HEAD`), or when the default branch or one of
      the 30 newest remote branches has each of its patches (`git cherry`; not when it holds a merge of its
      own the remote does not have) or has every file it changed from the default branch with the same
-     content. Then nothing is removed and each such repository is printed; a pushed git worktree
+     content. A stash is work too (issue #2494): a clone keeps for any entry of its stash; a worktree, whose
+     stash is its repository's, keeps for an entry made on its own `HEAD` (the stash commit's first parent),
+     so another worktree at the same commit keeps too, never one too few. Then nothing is removed and each such repository is printed; a pushed git worktree
      of a repository outside is removed through `git worktree remove`, never with `--force` (its
      `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees,
      `<work tree>/.worktrees/<name>/<job id>` (issue #1188), are read and removed with the scratch dir by the same
@@ -937,7 +939,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      `github_proxy.done` and `gitlab_proxy.done`). A kept repository whose every tip the hopper pushed for the job
      (`keptPushedOf`, `src/domain/kept-work.ts`) is no work not pushed: the cleanup at the job's end records no
      `job.work_kept` for it, and the sweep removes it as a discard does (`job.work_removed` with `reason` `pushed` when
-     it was kept before). A repository with a change names no tip and stays kept; so does every repository a client
+     it was kept before). A repository with a change or a stash names no tip and stays kept; so does every repository a client
      older than this keeps.
   4. removes what the layout before issue #1188 left ("Job worktrees in `.worktrees`" below): the job's scratch dir and
      worktrees there by the same rule, and, once that layout holds no job's, the rest of it. Then `git worktree
@@ -961,11 +963,11 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `hopper-removed-container <id>` and `hopper-removed-volume <name>`; `Reaped.removed` carries them, and the engine records
   `job.containers_removed { containers, volumes }`. Asked with `keep` it removes none, nor does a client's isolation
   stop: neither is the job's end.
-- **The sweep** (issue #410, `src/engine/sweep.ts`). The reap runs when a pane closes; a hopper that
+- **The sweep** (issue #410, `src/engine/sweep.ts`; when it is due, `src/engine/sweep-due.ts`). The reap runs when a pane closes; a hopper that
   crashed, a lost pane, a machine that rebooted or could not be reached left nothing to run it. So at
   startup, after recovery and the reap of each job it ended, and then on each machine every
   `reapEveryMinutes` (a `local`, `ssh` and `client` machine option, default 10; checked every minute, read
-  at each sweep), the engine asks the machine — through the first of its executors that reaches it,
+  at each sweep; and at once when the machine's disk turns low, issue #2490), the engine asks the machine — through the first of its executors that reaches it,
   `Executor.machineShell` — what jobs left there (the survey: the `hopper-job-*` scopes, the
   `HOPPER_JOB_ID`s of its processes, and the scratch dirs and the job worktrees in `.worktrees`
   (`.worktrees/<name>/<job id>`, issue #1188; and the layout before's) under the work trees of the newest 2000 jobs, with their ages; a
@@ -979,8 +981,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
     outlives its job;
   - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder;
-  - over the disk budget (issue #1120, "Hopper's own disk use"): every ended job's scratch dir at once, whatever its
-    age, with the reap's rule. Each pass also measures the hopper's own disk use there, which Machines shows.
+  - over the disk budget (issue #1120, "Hopper's own disk use"), or on a machine whose disk is low (issue #2490, "A
+    machine's disk"): every ended job's scratch dir at once, whatever its age, with the reap's rule. Each pass also measures the hopper's own disk use there, which Machines shows.
   - an ended job with a **job container** still there (issue #1120, the survey's `hopper-container <job id>`, read
     through the `hopper.job` label of each container and volume): reaped at once, whatever its age, which removes it
     (`job.containers_removed`).
@@ -1665,7 +1667,11 @@ then `Revised after: <answer>`.
   Seen live (before the reconnect grace): restart recovery failed a job on a client target that had
   not dialled back in yet; the one cleanup it queued never reached the pane, Claude kept working, and a rerun of the issue started
   beside it seven minutes later. The two collided until the old pane was closed by hand.
-  `src/engine/cleanup.ts`: when `Executor.cleanup` rejects, the job gets `cleanupDeferred { at, error }`
+  `src/engine/cleanup.ts`: when `Executor.cleanup` rejects, it first reaps through the job's machine as it is reached now
+  (issue #2490): the first executor there whose `machineShell` reaches it, as the sweep does, stops the job's processes and
+  removes its scratch dir unless it holds work not pushed (kept for a timed-out job). Seen live: a job's executor state named
+  an ssh destination that no longer resolved, the machine dialled in as a client target, and every retry failed the same way.
+  The job's pane, if any, is not closed this way. When that reap rejects too, the job gets `cleanupDeferred { at, error }`
   and `job.cleanup_deferred { error }` (once per deferral). Every tick tries each deferred cleanup again
   that is not running; the first that goes through clears the field and records `job.cleaned_up
   { deferredAt }` (an engine trigger). The deferrals are read back from the store at start, so a
@@ -4059,7 +4065,13 @@ that runs its executor; when none can take it for that reason alone, it is held 
 `disk low on <machine> (<n> GiB free), …: no new job is claimed there` (pinned: `pinned machine <machine>
 disk low (…)`), which the queue shows under the job. A job resuming on the machine (an answered
 question) returns to its pane as before, and running jobs go on. The reap ("Work tree") is what keeps
-the disk flat; this keeps new work off a machine it could not keep flat.
+the disk flat; this keeps new work off a machine it could not keep flat. **A low disk is swept** (issue #2490,
+`src/engine/sweep-due.ts`): when a machine's disk turns low, the sweep ("The sweep") runs there at once, not at its
+next interval, and then by its interval while the disk stays low. Each of those passes reaps every ended job's scratch
+dir and job worktree whatever its age, as over the disk budget, with the reap's rule: work not pushed is kept, and a
+parked or live job's work is never touched. One log line each pass says so. Kept in memory: after a restart, the
+first pass sweeps every machine. Reported from a real machine: a disk filled with the dirs of ended jobs while the
+low disk only held new jobs off it.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`
@@ -24965,7 +24977,14 @@ job does not. A repo query (issue #1074, "Repo queries"): `source` says where th
    3 below — the head as it is now, the newest run of each check —, from the repo-query cache while fresh
    (`withReadChecks`): `checks` and `failedChecks` are the read's, what the follow read of a failed check (`reported`)
    stays with the same run, by its URL, and a `checks failing` wait the read does not bear out is dropped. `source`
-   stays `hopper`. A read the rate limits refuse, or that fails on GitHub, leaves the records' answer.
+   stays `hopper`. A read the rate limits refuse, or that fails on GitHub, leaves the records' answer. A second
+   exception (issue #2497): an open pull request a tend job works on, or worked on and failed (its card waits `tending`
+   or `tend failed`, `tendedAnswer`). Its job follows it no more (`follow: tended`, issue #736), so the records are from
+   before the tend: merge conflicts the tend job's push removed, checks of a head it replaced. It is read again the same
+   way, whole (`withReadPullRequest`): `state`, `draft`, `mergeable`, `checks` and `failedChecks` are the read's; the
+   card's wait and the work item stay. `pr wait` opens no watch on it, since no follow would end the watch: with
+   `--for mergeable` it measures from the records, so a read that shows other merge conflicts answers `wait: settled`
+   at once; else `wait: none` with a `note` that says why.
 2. `cache` — the repo-query cache (`repo-query.ts`): a GitHub read of the same `pr.status` query kept less than
    `REPO_QUERY_FRESH_MS` (30 s) ago, or of a merged pull request, with the item as the ledger says now. Counted against
    the rate limits as every repo query.
@@ -25109,7 +25128,7 @@ Nobody saw them, and nothing removed them.
   none does, the next reap in that work tree removes the rest of it, mirrors too, as before (issue #1188).
 - **The listing.** After its reaps, each pass asks the machine (`MachineShell.leftovers`; a client target's `POST /leftovers
   {roots}`) about the work trees the survey found. The script only reads: each leftover with its age, whether it holds work
-  not pushed (by the reap's own rule, `UNPUSHED_SH` in `src/client/reap.ts`: a change, or a commit no remote has; for a
+  not pushed (by the reap's own rule, `UNPUSHED_SH` in `src/client/reap.ts`: a change, a commit no remote has, or a stash; for a
   mirror, a branch of its own no remote has), the worktrees that still use a mirror, and its size (one `du -skx` per work
   tree, cut off at 20 s; none where `timeout` is missing). The sweep keeps the leftovers it does not judge per machine, in
   memory (`Sweep.leftovers`), as it keeps the disk measure. A listing that fails keeps the last one and is logged once; a
