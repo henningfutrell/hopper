@@ -117,7 +117,7 @@ describe('the sandbox boxes on a client target', () => {
     const socket = { name: 'box-vm', connect: () => { streams++; return connect(api.socket); } };
     const meter = createRemoteBoxMeter({
       instanceId: 'i-1', records: () => [], clients: () => undefined,
-      podmanHosts: () => [{ name: 'box-vm', socket }, { name: 'down-vm', socket: { name: 'down-vm', connect: () => connect('/nonexistent/podman.sock') } }],
+      podmanHosts: () => [{ userId: 'u1', name: 'box-vm', socket }, { userId: 'u1', name: 'down-vm', socket: { name: 'down-vm', connect: () => connect('/nonexistent/podman.sock') } }],
     });
     const read = await meter.read();
     expect(read.map((r) => r.machine)).toEqual(['box-vm', 'down-vm']);

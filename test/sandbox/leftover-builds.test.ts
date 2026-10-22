@@ -144,7 +144,7 @@ describe('leftover box builds (issue #1120)', () => {
     const seen = { named: withImages(named, [tools('aaaa'), own]), ran: withImages(ran, [stage('sha256:s1')]), idle: withImages(idle, [tools('bbbb')]) };
     const hosts = new Map([['box-vm', named], ['old-vm', ran], ['idle-vm', idle]]);
     const runs = memorySandboxRuns();
-    runs.start({ id: 'r1', userId: 'u1', machine: 'old-vm', box: 'hopper-need-x', jobId: 'j1', step: 's1', template: 't', startedAt: NOW.toISOString() });
+    runs.start({ id: 'r1', userId: 'u1', machine: 'old-vm', box: 'hopper-need-x', jobId: 'j1', template: 't', startedAt: NOW.toISOString() });
     const lines: string[] = [];
     const sandboxes = createSandboxes({
       runtime: undefined, repo: memoryRepo(), runs, instanceId: 'test', network: 'host', users: () => ['u1'],
