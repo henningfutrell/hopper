@@ -11,6 +11,7 @@
 //   Scenario: a runtime that lists no images removes nothing
 //   Scenario: the reconcile pass removes leftover builds at most once an hour
 //   Scenario: the reconcile pass removes leftover builds on a client target too, through its client (issue #1202)
+//   Scenario: the reconcile pass removes leftover builds on each Podman host the sandbox host or an open run names (issue #2272)
 import { describe, expect, it } from 'vitest';
 import type { ListedImage, RuntimeRelay, SandboxRecord } from '../../src/domain/sandboxes.ts';
 import type { SandboxRepository } from '../../src/domain/store.ts';
@@ -136,5 +137,24 @@ describe('leftover box builds (issue #1120)', () => {
     await sandboxes.burnLaunched();
     expect(removed).toEqual([id('a')]);
     expect(lines).toContain('hopper: removed 1 leftover box build on studio (images it built for box tools more than 7 days ago that no box uses)');
+  });
+
+  it('the reconcile pass removes leftover builds on each Podman host the sandbox host or an open run names (issue #2272)', async () => {
+    const named = createFakeContainerRuntime(), ran = createFakeContainerRuntime(), idle = createFakeContainerRuntime();
+    const seen = { named: withImages(named, [tools('aaaa'), own]), ran: withImages(ran, [stage('sha256:s1')]), idle: withImages(idle, [tools('bbbb')]) };
+    const hosts = new Map([['box-vm', named], ['old-vm', ran], ['idle-vm', idle]]);
+    const runs = memorySandboxRuns();
+    runs.start({ id: 'r1', userId: 'u1', machine: 'old-vm', box: 'hopper-need-x', jobId: 'j1', step: 's1', template: 't', startedAt: NOW.toISOString() });
+    const lines: string[] = [];
+    const sandboxes = createSandboxes({
+      runtime: undefined, repo: memoryRepo(), runs, instanceId: 'test', network: 'host', users: () => ['u1'],
+      sandboxHost: () => ['box-vm'], podmanHosts: (userId, name) => (userId === 'u1' ? hosts.get(name) : undefined),
+      clock: { now: () => NOW }, logger: { info: (l: string) => lines.push(l), warn() {} },
+    });
+    await sandboxes.burnLaunched();
+    expect(seen.named.removed).toEqual(['sha256:taaaa']);
+    expect(seen.ran.removed).toEqual(['sha256:s1']);
+    expect(seen.idle.removed).toEqual([]);
+    expect(lines).toContain('hopper: removed 1 leftover box build on box-vm (images it built for box tools more than 7 days ago that no box uses)');
   });
 });
