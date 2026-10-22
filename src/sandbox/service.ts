@@ -84,6 +84,8 @@ export interface SandboxesOptions {
   sandboxHost?: (userId: string) => readonly string[];
   /** A user's Podman host by name (issue #2272), read at each look; absent: none. */
   podmanHosts?: PodmanHosts;
+  /** Every user whose sandbox host is read for the Podman hosts it names (issue #2272); absent: none. */
+  users?: () => readonly string[];
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
   /** The templates the read-only check reads, and where it keeps a check (issue #716). Absent: no check runs. */
@@ -148,9 +150,14 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const clientPlaces = (also: { userId: string; machine: string }[]): { userId: string; machine: string; key: string }[] =>
     [...new Map([...(o.clients?.allDialledIn() ?? []), ...also].filter((g) => g.machine !== LOCAL).map((g) => [`${g.userId}\0${g.machine}`, g])).entries()]
       .map(([key, g]) => ({ userId: g.userId, machine: g.machine, key }));
-  /** The hopper's own runtime, then each client target: one dialled in, or one that holds a recorded box. */
+  /** Each Podman host (issue #2272) a user's sandbox host names, or an open sandbox run names. */
+  const podmanPlaces = (): { userId: string; machine: string }[] => o.podmanHosts ? [
+    ...(o.users?.() ?? []).flatMap((userId) => (o.sandboxHost?.(userId) ?? []).map((machine) => ({ userId, machine }))),
+    ...o.runs.open(),
+  ].filter((g) => g.machine !== LOCAL && o.podmanHosts!(g.userId, g.machine) !== undefined) : [];
+  /** The hopper's own runtime, then each client target (one dialled in, or one that holds a recorded box) and Podman host. */
   const pass = async (now: Date): Promise<void> => {
-    const groups = [...(o.runtime ? [{ machine: LOCAL, key: LOCAL, userId: undefined }] : []), ...clientPlaces(o.repo.list())];
+    const groups = [...(o.runtime ? [{ machine: LOCAL, key: LOCAL, userId: undefined }] : []), ...clientPlaces([...o.repo.list(), ...podmanPlaces()])];
     for (const g of groups) {
       const runtime = places.runtimeOf(g.userId ?? '', g.machine);
       if (!runtime) continue;
@@ -163,7 +170,8 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
         down.set(g.key, reason);
       }
     }
-    // The leftover box builds (issue #1120), beside the hopper and on each client target it reached now (issue #1202).
+    // The leftover box builds (issue #1120), beside the hopper and on each client target (issue #1202) and Podman host
+    // (issue #2272) it reached now.
     if (now.getTime() - buildsAt >= LEFTOVER_PASS_MS) {
       buildsAt = now.getTime();
       const inUse = o.repo.list().map((r) => r.image);
