@@ -4,8 +4,8 @@
 // culprit's issue, and no batch run closed it. So the ledger says what the issue carries: the mirror puts back a lost
 // `hopper:done` and takes a stale end label off, Intake gives the done-but-open reason (the next sync offers it as a reopened
 // card, as before), and `hopper:done` taken off by hand is a Run again. A culprit that was a part with parts left carries
-// no end label (part 34): the follow took `hopper:partly-done` off at its merge, so Intake takes it again. The last part stays
-// to the labels.
+// no end label (part 34): the follow took `hopper:partly-done` off at its merge, so Intake takes it again. One that was the last
+// part (`lastPartMerged`, part 35) carries `hopper:done`: the follow put it on with that merge.
 import { describe, expect, it } from 'vitest';
 import { DONE_OPEN, PARTLY_DONE } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
@@ -66,11 +66,18 @@ describe('a reverted culprit: judged by the ledger (issue #1892 part 33)', () =>
     expect(edits()).toEqual([]);
   });
 
-  it('a culprit that was the last part stays to the labels', async () => {
-    const { gh, source, reason } = setup({ [url(1)]: { ...culprit, eventState: 'partly_done', wholeMerged: undefined } });
+  it('a culprit that was the last part (part 35): Intake says done but open, and the mirror swaps a stale end label for hopper:done', async () => {
+    const last: Partial<WorkItem> = { ...culprit, eventState: 'partly_done', wholeMerged: undefined };
+    const { gh, source, reason, edits } = setup({ [url(1)]: last, [url(2)]: last }, { lastPart: [url(1)] });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:partly-done'] });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:partly-done'] });
     await source.discover();
-    expect(reason(1)?.reason).toBe(PARTLY_DONE);
-    expect(await source.flushOutbox!()).toEqual({ due: 0, wrote: [] });
+    expect(reason(1)?.reason).toBe(DONE_OPEN);
+    // No fact: the follow did not record the merge, and the labels decide.
+    expect(reason(2)?.reason).toBe(PARTLY_DONE);
+    await source.flushOutbox!();
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.issue(REPO, 2).labels).toEqual(['hopper', 'hopper:partly-done']);
+    expect(edits()).toEqual([]);
   });
 });
