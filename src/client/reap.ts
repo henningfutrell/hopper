@@ -106,8 +106,9 @@ const REAP_SCRIPT = [
   `n=$w/${LAYOUT.scratch}/$id; o=$w/${LAYOUT.oldScratch}/$id;`,
   // The job's credentials (issue #441) go whatever else is kept: they are the hopper's, not the job's work.
   'rm -rf "$n/credentials" "$o/credentials";',
-  // Removes $1, a dir of the job's: a read-only dir in it (a Go module cache) made writable first when a plain remove left it (issue #1452).
-  'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+w "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
+  // Removes $1, a dir of the job's: a read-only dir in it (a Go module cache, issue #1452), or one its owner cannot read (an
+  // overlay work dir, issue #2490), made readable, writable and searchable first when a plain remove left it.
+  'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+rwX "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
   'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
   'repos() { { dirs | while IFS= read -r d; do find "$d" -name node_modules -prune -o -name .git -print -prune; done; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
