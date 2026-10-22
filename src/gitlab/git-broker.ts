@@ -12,7 +12,7 @@ import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { sourceItemOf, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { isGitLabItem, isGitLabProject } from '../domain/gitlab-account.ts';
-import { checkPush, receivePackCommands, refusedReport, parseProxyToken, type GitAnswer, type GitRequest, type GitService, type ProxyUser, type RefUpdate } from '../github-proxy/index.ts';
+import { checkPush, isProbe, receivePackCommands, refusedReport, parseProxyToken, type GitAnswer, type GitRequest, type GitService, type ProxyUser, type RefUpdate } from '../github-proxy/index.ts';
 import type { GitLabAccount } from './account.ts';
 
 /** The route on the hopper's URL a GitLab job's git goes to: `<HOPPER_URL>/job/gitlab-git/<project>.git/…`. */
@@ -109,7 +109,13 @@ export function createGitLabGitProxy(o: GitLabGitProxyOptions) {
         if (r.contentEncoding && r.contentEncoding !== 'gzip') return refuse(`a push sent as ${r.contentEncoding} is not taken`);
         let plain: Buffer;
         try { plain = r.contentEncoding === 'gzip' ? await unpack(r.body ?? Buffer.alloc(0)) : r.body ?? Buffer.alloc(0); } catch { return refuse('not a git push'); }
+        // git's probe before a pack it sends chunked, and a shallow clone's push, as the GitHub broker answers them (issue #2481).
+        if (isProbe(plain)) return { status: 200, headers: { 'content-type': 'application/x-git-receive-pack-result', 'cache-control': 'no-cache' }, body: Buffer.alloc(0) };
         const read = receivePackCommands(plain);
+        if (!read.ok && read.commands.length > 0) {
+          record('gitlab_proxy.refused', { refs: read.commands.map((c) => c.ref), reason: read.reason });
+          return refusedReport(plain, read.commands, `refused: ${read.reason}`);
+        }
         if (!read.ok) return refuse(read.reason);
         refs = read.commands;
         let defaultBranch: string | undefined;

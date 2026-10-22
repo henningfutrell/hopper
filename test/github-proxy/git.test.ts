@@ -21,11 +21,13 @@ describe('the ref updates of a push', () => {
     });
   });
 
-  it('a signed push, a shallow line or text that is no pkt-line is not read', () => {
-    expect(receivePackCommands(request(`push-cert\0report-status`))).toEqual({ ok: false, reason: 'a signed push (push-cert) is not taken' });
-    expect(receivePackCommands(request(`shallow ${A}`, `${A} ${B} refs/heads/x\0report-status`))).toEqual({ ok: false, reason: 'a push from a shallow clone is not taken: fetch the full history first' });
-    expect(receivePackCommands(Buffer.from('zzzz'))).toEqual({ ok: false, reason: 'not a git push' });
-    expect(receivePackCommands(request())).toEqual({ ok: false, reason: 'the push names no ref' });
+  it('a signed push, a shallow line or text that is no pkt-line is not read; a shallow push keeps its ref updates (issue #2481)', () => {
+    expect(receivePackCommands(request(`push-cert\0report-status`))).toEqual({ ok: false, reason: 'a signed push (push-cert) is not taken', commands: [] });
+    expect(receivePackCommands(request(`shallow ${A}`, `${A} ${B} refs/heads/x\0report-status`))).toEqual({
+      ok: false, reason: 'a push from a shallow clone is not taken: fetch the full history first (git fetch --unshallow), then push again', commands: [{ old: A, new: B, ref: 'refs/heads/x' }],
+    });
+    expect(receivePackCommands(Buffer.from('zzzz'))).toEqual({ ok: false, reason: 'not a git push', commands: [] });
+    expect(receivePackCommands(request())).toEqual({ ok: false, reason: 'the push names no ref', commands: [] });
   });
 });
 
