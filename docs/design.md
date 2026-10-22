@@ -24977,7 +24977,14 @@ job does not. A repo query (issue #1074, "Repo queries"): `source` says where th
    3 below — the head as it is now, the newest run of each check —, from the repo-query cache while fresh
    (`withReadChecks`): `checks` and `failedChecks` are the read's, what the follow read of a failed check (`reported`)
    stays with the same run, by its URL, and a `checks failing` wait the read does not bear out is dropped. `source`
-   stays `hopper`. A read the rate limits refuse, or that fails on GitHub, leaves the records' answer.
+   stays `hopper`. A read the rate limits refuse, or that fails on GitHub, leaves the records' answer. A second
+   exception (issue #2497): an open pull request a tend job works on, or worked on and failed (its card waits `tending`
+   or `tend failed`, `tendedAnswer`). Its job follows it no more (`follow: tended`, issue #736), so the records are from
+   before the tend: merge conflicts the tend job's push removed, checks of a head it replaced. It is read again the same
+   way, whole (`withReadPullRequest`): `state`, `draft`, `mergeable`, `checks` and `failedChecks` are the read's; the
+   card's wait and the work item stay. `pr wait` opens no watch on it, since no follow would end the watch: with
+   `--for mergeable` it measures from the records, so a read that shows other merge conflicts answers `wait: settled`
+   at once; else `wait: none` with a `note` that says why.
 2. `cache` — the repo-query cache (`repo-query.ts`): a GitHub read of the same `pr.status` query kept less than
    `REPO_QUERY_FRESH_MS` (30 s) ago, or of a merged pull request, with the item as the ledger says now. Counted against
    the rate limits as every repo query.
