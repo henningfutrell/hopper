@@ -5,7 +5,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readReap, reapArgv } from '../../src/client/reap.ts';
+import { KEPT_REASONS as SAID, readReap, reapArgv } from '../../src/client/reap.ts';
+import { KEPT_REASONS } from '../../src/domain/kept-work.ts';
 
 const JOB = 'job-2494-reasons';
 
@@ -71,6 +72,8 @@ describe('the reap names why it kept a checkout (issue #2494)', () => {
     writeFileSync(join(tree, 'c.txt'), 'c\n');
     expect(reap()).toEqual({ kept: [tree], reasons: { [tree]: ['dirty', 'stash', 'unpushed'] } });
   });
+
+  it('names the reasons the domain knows, and no other', () => expect(SAID).toEqual(KEPT_REASONS));
 
   it('a reap that names no reason (a client older than this) reads as none', () => {
     expect(readReap(`hopper-kept ${tree}\nhopper-kept-why bogus ${tree}\nhopper-kept-why dirty /elsewhere\nhopper-reaped\n`)).toEqual({ kept: [tree] });
