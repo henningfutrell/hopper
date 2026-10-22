@@ -262,7 +262,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan, heldSince: loop.heldSince });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
-  const { proxy: github, prWaits } = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
+  const { proxy: github, prWaits } = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
   jobGitRoutes(app, { tenants: o.tenants, ...(o.gitPushes ? { pushes: o.gitPushes } : {}) });
   jobCheckpointRoutes(app, { tenants: o.tenants });
   // A running job says what came of a login it asked for (issue #1110), with the same token.

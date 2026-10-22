@@ -13,7 +13,7 @@
 // hopper follows run: the watch it opens is on the job's stream (job-stream.ts), ended when the hopper sees them end.
 import type { FastifyInstance } from 'fastify';
 import { BugReportRefused, REPORT_REPO } from '../bug-reports/index.ts';
-import type { Clock, Updater } from '../domain/ports.ts';
+import type { Clock } from '../domain/ports.ts';
 import { createGitHubProxy, createPrWaits, createProxyLimiter, PROXY_PATH, REPORT_OP, type GitHubProxy, type PrWaits, type ProxyAnswer, type ReportRequest } from '../github-proxy/index.ts';
 import type { Tenants } from './tenants.ts';
 import { bugReportsOf } from './ui/bug-reports.ts';
@@ -24,11 +24,11 @@ const similarText = (similar: { number: number; title: string; url: string }[]):
   + `Add yours to one with --comment-on ${similar[0]!.number}, or file a new one with --force`;
 
 /** A job's bug report, by the path a person's takes (src/bug-reports/), as the proxy answers it. */
-async function reportForJob(o: { tenants: Tenants; updater: Pick<Updater, 'status'> }, userId: string, jobId: string, req: ReportRequest): Promise<ProxyAnswer> {
+async function reportForJob(o: { tenants: Tenants }, userId: string, jobId: string, req: ReportRequest): Promise<ProxyAnswer> {
   const parts = o.tenants.user(userId);
   if (!parts) return { status: 401, body: { error: 'refused: the job\'s user is not on this hopper' } };
   try {
-    const a = await bugReportsOf(parts, o.updater, (line) => console.warn(line)).fileForJob(jobId, {
+    const a = await bugReportsOf(parts, (line) => console.warn(line)).fileForJob(jobId, {
       title: req.title, body: req.body, ...(req.commentOn !== undefined ? { commentOn: req.commentOn } : {}), ...(req.force ? { force: true } : {}),
     });
     if (a.kind === 'similar') return { status: 409, body: { error: similarText(a.similar), similar: a.similar } };
@@ -63,7 +63,7 @@ function prWaitsOf(tenants: Tenants): PrWaits {
 }
 
 /** The routes; the proxy, and `pr wait`'s watches, for the job stream's route to answer again when a job subscribes. */
-export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clock: Clock; updater: Pick<Updater, 'status'> }): { proxy: GitHubProxy; prWaits: PrWaits } {
+export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clock: Clock }): { proxy: GitHubProxy; prWaits: PrWaits } {
   const prWaits = prWaitsOf(o.tenants);
   const proxy = createGitHubProxy({
     user: (id) => o.tenants.user(id)?.githubProxy.user,

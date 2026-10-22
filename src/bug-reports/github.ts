@@ -10,8 +10,8 @@ import { makeRequest, splitRepo, statusOf } from '../sources/github/http/http.ts
 export interface SimilarReport { number: number; title: string; url: string }
 
 export interface ReportGitHub {
-  /** The open issues of `repo` with `label` whose title (or body) has any of `terms`; best match first is the caller's. */
-  search(repo: string, label: string, terms: string[], where?: 'title' | 'body'): Promise<SimilarReport[]>;
+  /** The open issues of `repo` with `label` whose title has any of `terms`; best match first is the caller's. */
+  search(repo: string, label: string, terms: string[]): Promise<SimilarReport[]>;
   create(repo: string, issue: { title: string; body: string; labels: string[] }): Promise<{ number: number; url: string }>;
   comment(repo: string, number: number, body: string): Promise<{ number: number; url: string }>;
   /** The issue's state now (Your reports); closed: when, and why (issue #1147: `completed`, its fix landed). */
@@ -51,8 +51,8 @@ export function createReportGitHub(o: { apiUrl: string } & TokenSource): ReportG
   };
   const headers = (token: string) => ({ authorization: `token ${token}` });
   return {
-    search: (repo, label, terms, where = 'title') => withToken(async (token) => {
-      const q = `repo:${repo} is:issue is:open label:${label} in:${where} ${terms.map(term).join(' OR ')}`;
+    search: (repo, label, terms) => withToken(async (token) => {
+      const q = `repo:${repo} is:issue is:open label:${label} in:title ${terms.map(term).join(' OR ')}`;
       const d = (await req('GET /search/issues', { q, per_page: SEARCH_LIMIT, headers: headers(token) })).data as { items: { number: number; title: string; html_url: string; pull_request?: unknown }[] };
       return d.items.filter((i) => i.pull_request === undefined).map((i) => ({ number: i.number, title: i.title, url: i.html_url }));
     }, failed(`the search of ${repo}`)),

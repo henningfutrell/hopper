@@ -19,7 +19,7 @@ async function render(props: { jobId?: string } = {}) {
   vi.stubGlobal('fetch', vi.fn(async (path: string, init: RequestInit = {}) => {
     const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
     posts.push({ path: String(path), body });
-    if (path === '/ui/api/bug-reports/context') return json({ context: '- Hopper: beta at c0ffee100000\n- Install: container', repo: 'henningfutrell/hopper' });
+    if (path === '/ui/api/bug-reports/context') return json({ context: '- System: linux 6.18.2 (x64), Node v24.3.0', repo: 'henningfutrell/hopper' });
     return json(answers.shift());
   }));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -54,8 +54,8 @@ afterEach(async () => {
 describe('Report a bug', () => {
   it('fills in the context for the job, editable, and sends nothing without a title and what happened', async () => {
     await render({ jobId: 'job-1' });
-    expect(posts[0]).toEqual({ path: '/ui/api/bug-reports/context', body: { jobId: 'job-1' } });
-    expect(field('Context').value).toContain('Install: container');
+    expect(posts[0]).toEqual({ path: '/ui/api/bug-reports/context', body: {} });
+    expect(field('Context').value).toBe('- System: linux 6.18.2 (x64), Node v24.3.0');
     expect(button(/Send report/)?.disabled).toBe(true);
     await type(field('Title'), 'Board hangs');
     expect(button(/Send report/)?.disabled).toBe(true);
@@ -68,9 +68,9 @@ describe('Report a bug', () => {
     await render({ jobId: 'job-1' });
     await type(field('Title'), 'Board hangs');
     await type(field('What happened'), 'It stopped.');
-    await type(field('Context'), '- Install: container');
+    await type(field('Context'), '- System: linux');
     await click(button(/Send report/));
-    expect(posts.at(-1)).toEqual({ path: '/ui/api/bug-reports', body: { title: 'Board hangs', happened: 'It stopped.', expected: '', context: '- Install: container', jobId: 'job-1' } });
+    expect(posts.at(-1)).toEqual({ path: '/ui/api/bug-reports', body: { title: 'Board hangs', happened: 'It stopped.', expected: '', context: '- System: linux', jobId: 'job-1' } });
     const sent = document.querySelector('[data-slot="bug-report-sent"]')!;
     expect(sent.textContent).toContain('Report filed as issue #12.');
     expect(sent.querySelector('a')?.getAttribute('href')).toBe('https://github.com/henningfutrell/hopper/issues/12');

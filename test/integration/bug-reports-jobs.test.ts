@@ -1,6 +1,5 @@
 // Issue #694, part 2: a job reports a hopper bug through the hopper, with no GitHub login of its own, by the same code
-// path as a person's report; and the duplicate search finds a report of the same error by its failure signature. The
-// daemon, store and HTTP edge are real; GitHub is a fake on loopback (test/support/fake-forges.ts); the job runs the real
+// path as a person's report. The daemon, store and HTTP edge are real; GitHub is a fake on loopback (test/support/fake-forges.ts); the job runs the real
 // `hopper-gh` script (sh and curl) on a machine double whose credential files are real files.
 //
 // Feature: Jobs report hopper bugs
@@ -9,16 +8,12 @@
 //     When the job runs `sh "$HOPPER_GH" report bug --title … --body-file …`
 //     Then an issue is filed on henningfutrell/hopper with the job's user's own GitHub connection
 //     And it has the label user-report, no assignee, and says a job filed it
-//     And its text is masked, and it carries the job's context
+//     And its text is masked, and its context is the System line only, with no job id (issue #2478)
 //     And the job is answered the issue's link, and bug_report.filed marks it as the job's
 //   Scenario: a similar open report is offered to the job first
 //     Then nothing is filed; the job reads the similar reports, and adds its report to one or files a new one
 //   Scenario: a job files at most three reports a day
 //     Then the fourth is refused with the reason, and nothing reaches GitHub
-//   Scenario: a report on a failed job finds an open report of the same error by its signature
-//     Given an open user-report issue whose body names the failure's signature, with an unlike title
-//     When the person sends a report on the failed job with its context
-//     Then that issue is offered as similar
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,8 +81,9 @@ describe('A job reports a hopper bug (issue #694)', () => {
     expect(issue).toMatchObject({ title: 'The pull request view answers 500', author: 'reporter', labels: ['user-report'], assignees: [] });
     expect(issue!.body).toContain('### What happened\n\nhopper-gh pr view answered 500 from');
     expect(issue!.body).not.toContain('10.20.30.40');
-    expect(issue!.body).toContain(`- Job: ${job.id} (running)`);
-    expect(issue!.body).toContain(`Filed by a job (${job.id}) with Report a bug in a hopper.`);
+    expect(issue!.body).toMatch(/### Context\n\n- System: [^\n]+\n\n---\n/);
+    expect(issue!.body).toContain('Filed by a job with Report a bug in a hopper.');
+    expect(issue!.body).not.toContain(job.id);
     const create = t.github.requests.find((q) => q.method === 'POST' && q.path.endsWith(`/repos/${REPO}/issues`))!;
     expect(create.auth).toContain('test-account-token');
     expect(eventsOf(t.app, 'bug_report.filed')).toEqual([expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ repo: REPO, kind: 'issue', number: 1, fromJob: true }) })]);
@@ -133,31 +129,5 @@ describe('A job reports a hopper bug (issue #694)', () => {
     expect(r.code).toBe(1);
     expect(String(json(r).error)).toMatch(/^refused: not a request the hopper takes \(title:/);
     expect((await hopperGh(t.root, env, ['help'])).stdout).toContain('sh "$HOPPER_GH" report bug --title TITLE');
-  });
-});
-
-describe('The duplicate search by error signature (issue #694)', () => {
-  it('offers an open report whose body names the failed job\'s signature, whatever its title', async () => {
-    const github = await createFakeGitHub({ clientId: 'gh-client-id' });
-    cleanups.push(() => github.close());
-    github.tokens.set('test-account-token', 'reporter');
-    const db = tempDbPath();
-    cleanups.push(db.cleanup);
-    const app = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_GITHUB_URL: github.url, HOPPER_GITHUB_CLIENT_ID: 'gh-client-id', HOPPER_GITHUB_APP_SLUG: 'hopper-test' } });
-    apps.push(app);
-    connectGitHub(app, ['octo/tools'], { login: 'reporter' });
-    const token = await app.login();
-    const job = await app.pull({ op: 'fail', ms: 0, message: 'the lane lock was lost' });
-    await app.waitForStatus(job.id, 'failed');
-    const record = await waitFor(async () => app.user().store.failures.forJob(job.id), { what: 'the failure record' });
-    github.issues.push({ repo: REPO, number: 3, title: 'Something odd', body: `- Signature: ${record.signature}`, author: 'someone', labels: ['user-report'], assignees: [] });
-
-    const { context } = (await app.ui<{ context: string }>('/ui/api/bug-reports/context', { jobId: job.id }, { token })).body;
-    expect(context).toContain(`- Signature: ${record.signature}`);
-    const r = await app.ui<{ kind: string; similar: { number: number }[] }>('/ui/api/bug-reports', { title: 'Jobs stop at random', happened: 'It stopped.', context, jobId: job.id }, { token });
-    expect(r.body).toMatchObject({ kind: 'similar', similar: [{ number: 3 }] });
-
-    const without = await app.ui<{ kind: string }>('/ui/api/bug-reports', { title: 'Jobs stop at random', happened: 'It stopped.', context: '- Install: host', jobId: job.id }, { token });
-    expect(without.body.kind).toBe('filed');
   });
 });
