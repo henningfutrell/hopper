@@ -55,7 +55,7 @@ async function setup(o: { issue?: Partial<FakeGitLabIssue>; mergeRequest?: Parti
 
 const job = (source: Record<string, unknown> = {}): Job => ({
   id: 'j1', status: 'finished', createdAt: BEGAN,
-  source: { source: 'gitlab-account', kind: 'gitlab-account', key: 'k', url: 'u', title: 't', author: 'ada', assignee: 'ada', repo: 'ada/tools', number: 1, labels: [] },
+  source: { source: 'gitlab-account', kind: 'gitlab-account', key: 'https://gitlab.test/ada/tools/-/issues/1', url: 'u', title: 't', author: 'ada', assignee: 'ada', repo: 'ada/tools', number: 1, labels: [] },
   sourceState: { source },
 } as unknown as Job);
 

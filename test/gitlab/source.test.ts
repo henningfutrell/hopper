@@ -18,7 +18,6 @@ import { createGitLabSource } from '../../src/gitlab/source.ts';
 import { REQUEST_REASON } from '../../src/sources/github/origin.ts';
 import type { GitLabAccountRecord } from '../../src/domain/gitlab-account.ts';
 import type { GitLabActorRef } from '../../src/domain/access.ts';
-import { SourceError } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitLab, type FakeGitLabIssue } from '../support/fake-gitlab.ts';
 import { memoryAccountStore, systemOf } from '../support/system-secrets.ts';
@@ -61,7 +60,7 @@ async function connected(o: Parameters<typeof setup>[0] = {}) {
   return s;
 }
 
-const jobOf = (project: string, iid: number): Job => ({ id: 'j1', source: { source: 'gitlab-account', kind: 'gitlab-account', key: 'k', url: 'u', title: 't', author: 'ada', repo: project, number: iid, labels: [] } } as unknown as Job);
+const jobOf = (project: string, iid: number): Job => ({ id: 'j1', source: { source: 'gitlab-account', kind: 'gitlab-account', key: `https://gitlab.test/${project}/-/issues/${iid}`, url: 'u', title: 't', author: 'ada', repo: project, number: iid, labels: [] } } as unknown as Job);
 
 describe('the GitLab source', () => {
   it('takes an issue the account wrote, labelled and assigned to itself, as a job\'s item', async () => {
@@ -145,10 +144,13 @@ describe('the GitLab source', () => {
     expect(issue().labels).toEqual(['hopper', 'hopper:high', 'hopper:pr-ready']);
     await s.source.report({ kind: 'failed', job: jobOf('acme/platform/api', 9) });
     expect(s.gitlab.issues.find((i) => i.iid === 9)!.labels).toEqual(['hopper', 'hopper:failed']);
-    expect(s.gitlab.requests.filter((r) => r.method === 'PUT').at(-1)).toMatchObject({ path: '/api/v4/projects/acme%2Fplatform%2Fapi/issues/9', body: { add_labels: 'hopper:failed', remove_labels: 'hopper:claimed' } });
-    const missing = await s.source.report({ kind: 'claimed', job: jobOf('ada/tools', 77) }).catch((e: unknown) => e);
-    expect(missing).toBeInstanceOf(SourceError);
-    expect(missing).toMatchObject({ permanent: true });
+    expect(s.gitlab.requests.filter((r) => r.method === 'PUT').slice(-2)).toMatchObject([
+      { path: '/api/v4/projects/acme%2Fplatform%2Fapi/issues/9', body: { remove_labels: 'hopper:claimed' } },
+      { path: '/api/v4/projects/acme%2Fplatform%2Fapi/issues/9', body: { add_labels: 'hopper:failed' } },
+    ]);
+    // An issue GitLab does not find fails its row for good (issue #1892 part 17), not the report: a person's Retry sends it again.
+    await s.source.report({ kind: 'claimed', job: jobOf('ada/tools', 77) });
+    expect(s.source.describe().outboxFailed).toEqual([expect.objectContaining({ act: 'report', repo: 'ada/tools', error: expect.stringContaining('404') })]);
   });
 
   it('names a project GitLab does not answer and lists the others; none answering is the source\'s error', async () => {
