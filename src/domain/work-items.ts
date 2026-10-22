@@ -8,7 +8,7 @@ import type { DomainEvent, EventType } from './types.ts';
 import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, landingOf, type ItemLanding } from './work-item-landing.ts';
 import type { ChangeKind } from './change-kinds.ts';
 import { waitOnLabel, type WaitOn } from './wait-on.ts';
-import { BLOCKED_CAUSES, BLOCKED_WORDS, closedOnGitHub, hasReference, type BlockedCause } from './item-lifecycle.ts';
+import { BLOCKED_CAUSES, BLOCKED_WORDS, closedOnGitHub, hasReference, transitionOwner, type BlockedCause, type ItemOwner } from './item-lifecycle.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -71,8 +71,12 @@ export interface WorkItem {
   stateSince: string;
   /** Where the events alone put it. */
   eventState: WorkItemState;
-  /** When the newest event that moved it happened: a read of GitHub older than it says nothing new. */
-  eventAt: string;
+  /**
+   * When the newest event that moved it happened: a read of GitHub older than it says nothing new. Its next check and its
+   * deadline run from it (issue #1892): a move within a state is a move. `movedBy`: who made that move (`transitionOwner`);
+   * absent on an item last moved before issue #1892 part 18, until the ledger is rebuilt.
+   */
+  eventAt: string; movedBy?: ItemOwner;
   /** The job that works it now: its newest. */
   jobId?: string;
   pullRequest?: string;
@@ -173,8 +177,8 @@ const resultText = (data: Record<string, unknown>): string => {
 
 type Base = Omit<WorkItem, 'state' | 'stateSince' | 'version'>;
 
-/** The item after `event`; `job` is the job the event names, `key` the item's. Undefined: the event does not touch it. */
-export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 'type' | 'at' | 'data'>, key: string, job?: LedgerJob): WorkItem | undefined {
+/** The item after `event`; `job` is the job the event names, `key` the item's; `by`, who made the move when not the event's own owner (a replay's). Undefined: the event does not touch it. */
+export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 'type' | 'at' | 'data'>, key: string, job?: LedgerJob, by?: ItemOwner): WorkItem | undefined {
   if (!LEDGER_EVENT_TYPES.has(event.type)) return undefined;
   const d = event.data;
   const base: Base = item
@@ -182,7 +186,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     : { key, eventState: 'queued', eventAt: event.at, keptWork: [] };
   // A state that needs a pull request is never written without one (issue #1891): with none, the item is blocked on it.
   const move = (eventState: WorkItemState, change: Partial<Base> = {}): WorkItem => {
-    const next: Base = { ...base, ...change, eventState, eventAt: event.at };
+    const next: Base = { ...base, ...change, eventState, eventAt: event.at, movedBy: by ?? transitionOwner(event.type, d) };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
     if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
     delete next.runAgainAsked; if (change.wontDo !== true || next.eventState !== 'dropped') delete next.wontDo; if (change.doneByHand !== true || next.eventState !== 'done') delete next.doneByHand; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
@@ -211,7 +215,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   // The item reconciler's correction (issue #1891): folded again from its job's end, or blocked. Only from the state it saw.
   if (event.type === 'work_item.reconciled') {
     if (!item || item.state !== d.from) return undefined; const replay = d.replay as { type: EventType; data: Record<string, unknown> } | undefined;
-    if (replay) return job && job.id === item.jobId ? applyEvent(item, { type: replay.type, at: event.at, data: replay.data }, key, job) : undefined;
+    if (replay) return job && job.id === item.jobId ? applyEvent(item, { type: replay.type, at: event.at, data: replay.data }, key, job, 'reconciler') : undefined;
     const cause = BLOCKED_CAUSES.find((c) => c === d.cause);
     // Partly done: its merged part is history, so it is not read as the whole item's merge (`stateOf`).
     return cause ? move('blocked', { blockedCause: cause, waitingOn: BLOCKED_WORDS[cause], ...(base.eventState === 'partly_done' ? { pullRequest: undefined, pullRequestState: undefined } : {}) }) : undefined;
