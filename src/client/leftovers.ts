@@ -53,7 +53,7 @@ const REMOVE_SCRIPT = [
   'p=$1;',
   `case $p in */${OLD}/repos/*/*.git) w=\${p%/${OLD}/repos/*};; */${OLD}/*) w=\${p%/${OLD}/*};; *) exit 2;; esac;`,
   `x=$w/${OLD};`,
-  'gone() { rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+w "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
+  'gone() { rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+rwX "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
   'if [ ! -e "$p" ] && [ ! -L "$p" ]; then printf "%s\\n" hopper-leftover-gone;',
   'elif [ -L "$p" ] || [ ! -d "$p" ]; then printf "hopper-leftover-left %s\\n" "$p";',
   'else gone "$p"; case $p in "$x"/repos/*) rmdir "${p%/*}" 2>/dev/null;; esac;',

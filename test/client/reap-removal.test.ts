@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  execFileSync('chmod', ['-R', 'u+w', root]);
+  execFileSync('chmod', ['-R', 'u+rwX', root]);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -36,6 +36,17 @@ describe.skipIf(process.getuid?.() === 0)('a scratch dir that resists its remova
     writeFileSync(join(mod, 'x@v1', 'x.go'), 'package x\n');
     chmodSync(join(mod, 'x@v1'), 0o555);
     chmodSync(mod, 0o555);
+    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(existsSync(scratch)).toBe(false);
+  });
+
+  // A container's overlay storage in the scratch dir (issue #2490): the kernel leaves its `work/work` dir write-only
+  // (mode 200), so a remove cannot list it, and a dir made writable only still cannot be read.
+  it('removes one that holds a directory its owner cannot read, as an overlay work dir', () => {
+    const work = join(scratch, 'containers', 'storage', 'overlay', 'abc', 'work');
+    mkdirSync(join(work, 'work', 'inner'), { recursive: true });
+    chmodSync(join(work, 'work'), 0o200);
+    chmodSync(work, 0o000);
     expect(readReap(reap())).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
   });
