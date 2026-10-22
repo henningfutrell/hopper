@@ -105,4 +105,18 @@ describe('placeCredentials (issues #563, #2040)', () => {
     expect(await placeCredentials(none, parked, MACHINE, shell(), SCRATCH, false, () => {})).toEqual({});
     expect(await placeCredentials(none, fresh, MACHINE, shell(), SCRATCH, false, () => {})).toEqual({});
   });
+
+  // Issue #2427: a stall of the hopper's loop failed every seat's address probe. A parked job picked up on its seat then
+  // reopened with no URL to reach the hopper at: its new pane had no HOPPER_URL, and it could not push its commits.
+  it('a job on a machine with an address problem gets no way to the hopper there: it throws, never runs without it', async () => {
+    const none = { jobProxy: () => undefined };
+    const cutOff = { id: 'seat-1', addressProblem: 'the hopper cannot be reached from it: http://hopper:4790 (no connection)' } as MachineSnapshot;
+    for (const job of [parked, continued, fresh]) {
+      const placed = placeCredentials(none, job, cutOff, shell(), SCRATCH, false, () => {});
+      await expect(placed).rejects.toBeInstanceOf(Unreached);
+      await expect(placed).rejects.toThrow(/cannot reach the hopper: the hopper cannot be reached from it: http:\/\/hopper:4790 \(no connection\)/);
+      const message = await placed.then(() => '', (e: Error) => e.message);
+      expect(matchCause(message, 'sig', [])?.id).toBe(NO_WAY_TO_HOPPER);
+    }
+  });
 });
