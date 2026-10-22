@@ -1,7 +1,7 @@
 // The Machines list view (ui/src/model/machine-list.ts, issue #2352), pure: a machine's badges as its card and its row show
 // them, whether it has an alert, its row's short readings, and the view mode read back from browser storage.
 import { describe, expect, it } from 'vitest';
-import { machineBadges, machineHasAlert, machineRow, parseMachinesMode } from '../../ui/src/model/machine-list.ts';
+import { machineBadges, machineHasAlert, machineRow, nodeText, parseMachinesMode } from '../../ui/src/model/machine-list.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const NOW = Date.parse('2026-10-21T12:00:00.000Z');
@@ -32,6 +32,16 @@ describe('a machine\'s badges and alert', () => {
     const m = desk({ infraCredentials: ['aws'], credentialAcceptance: { credentials: ['aws'], acceptedAt: '2026-10-21T11:00:00.000Z' } } as unknown as Partial<MachineView>);
     expect(machineBadges(m, NOW)).toContainEqual({ status: 'credentials acknowledged', tone: 'muted' });
     expect(machineHasAlert(m, NOW)).toBe(false);
+  });
+
+  it('a machine below the patched Node floor has a Node unpatched warning, and its card says what to update to (issue #2479)', () => {
+    const resources = { cores: 2, memTotalBytes: 8, memAvailableBytes: 4, node: 'v26.8.2', nodeFloor: '26.12.1' };
+    const m = desk({ resources } as unknown as Partial<MachineView>);
+    expect(machineBadges(m, NOW)).toEqual([{ status: 'Node unpatched', tone: 'warn' }, { status: 'online' }]);
+    expect(machineHasAlert(m, NOW)).toBe(true);
+    expect(nodeText(resources)).toBe('v26.8.2: it lacks the October 21, 2026 security release. Update Node there to 26.12.1 or later');
+    expect(nodeText({ node: 'v26.12.1' })).toBe('v26.12.1');
+    expect(machineHasAlert(desk({ resources: { ...resources, node: 'v26.12.1', nodeFloor: undefined } } as unknown as Partial<MachineView>), NOW)).toBe(false);
   });
 
   it('a work tree problem is an alert with no badge', () => {

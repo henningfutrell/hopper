@@ -21,11 +21,11 @@ const put = (path: string, text: string) => {
 const cpu = (busy: number, idle: number): CpuTimes => ({ user: busy, nice: 0, sys: 0, idle, irq: 0 });
 
 /** A meter over a fake root and fake os readings: the clock and the CPU times move as the test says. */
-function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader; env?: Record<string, string> } = {}) {
+function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader; env?: Record<string, string>; node?: string } = {}) {
   let t = 1_000_000;
   let times = [cpu(0, 0), cpu(0, 0)];
   const read = createResourceMeter({
-    root, platform: o.platform ?? 'linux', now: () => t, env: o.env ?? {}, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}),
+    root, platform: o.platform ?? 'linux', now: () => t, env: o.env ?? {}, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}), ...(o.node ? { node: o.node } : {}),
     cpus: o.cpus ?? (() => times), parallelism: () => 2, loadavg: () => [0.5, 0.75, 1], totalmem: () => 16 * GIB, freemem: () => 4 * GIB,
   });
   return { read, advance(ms: number, next: CpuTimes[]) { t += ms; times = next; } };
@@ -60,6 +60,13 @@ describe('a machine\'s resources', () => {
     const r = meter().read();
     expect(r).toMatchObject({ memTotalBytes: 16 * GIB, memAvailableBytes: 10 * GIB, swapTotalBytes: 8 * GIB, swapUsedBytes: 2 * GIB, load: [0.5, 0.75, 1] });
     expect(r).not.toHaveProperty('container');
+  });
+
+  it('says the Node version it runs, and the patched floor it is below (issue #2479)', () => {
+    expect(meter({ node: 'v26.12.1' }).read()).toMatchObject({ node: 'v26.12.1' });
+    expect(meter({ node: 'v26.12.1' }).read()).not.toHaveProperty('nodeFloor');
+    expect(meter({ node: 'v26.8.2' }).read()).toMatchObject({ node: 'v26.8.2', nodeFloor: '26.12.1' });
+    expect(meter().read().node).toBe(process.version);
   });
 
   it('elsewhere (Windows, macOS), memory from the OS, no swap; no load on Windows, which has none', () => {
