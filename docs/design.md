@@ -815,7 +815,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   same link as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
   the owner. A payload cannot turn the countdown back on. It also gets `CHECKPOINT_DISABLE=1` (`JOB_TOOL_ENV`, issue #1502): terraform's
-  version check writes `~/.terraform.d` on the machine, which the credential check reads as infra credentials.
+  version check writes `~/.terraform.d` on the machine, which the credential check reads as infra credentials. And
+  `GRADLE_OPTS` ends with `-Dorg.gradle.daemon.idletimeout=300000` (`jobToolEnv`, issue #2489), after the payload's own:
+  a Gradle daemon idles 3 hours by default, so one stayed after its build; now it ends 5 minutes after its last build.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows
@@ -909,6 +911,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
      unset, so it never matches itself. Linux only (`/proc`); elsewhere this step is skipped.
+     With them, every process whose executable is in the job's scratch dir, when the reap names one (issue #2489): a
+     Gradle daemon of a JDK the job put there idled for hours after its build at about 2 GB, outside the job's scope and
+     its environment. A reap that names no scratch dir (a park's) stops none by its executable.
      Then the job's own container runtime (issue #1295), unless the reap keeps (`keep`): its containers and volumes
      printed as removed, a `podman system reset --force` of it alone, and its runtime dir removed ("Each job its own
      container runtime" below).

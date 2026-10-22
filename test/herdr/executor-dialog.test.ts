@@ -45,4 +45,16 @@ describe('herdr-claude executor: a dialog as a question', () => {
     await executor.run(contextFor(jobWith({ prompt: 'go', env: { CHECKPOINT_DISABLE: '' } })).ctx);
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CHECKPOINT_DISABLE: '1' } });
   });
+
+  // Issue #2489: a Gradle daemon idles 3 hours after its build by default, and so outlived the job's work. Every job's tab
+  // gives Gradle a 5-minute idle timeout, after the payload's own GRADLE_OPTS, which it keeps.
+  it("gives Gradle's daemon a short idle timeout, and keeps the payload's own GRADLE_OPTS", async () => {
+    const idle = '-Dorg.gradle.daemon.idletimeout=300000';
+    const plain = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
+    await plain.executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(plain.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { GRADLE_OPTS: idle } });
+    const own = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
+    await own.executor.run(contextFor(jobWith({ prompt: 'go', env: { GRADLE_OPTS: '-Xmx1g' } })).ctx);
+    expect(own.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { GRADLE_OPTS: `-Xmx1g ${idle}` } });
+  });
 });

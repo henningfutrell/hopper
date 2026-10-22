@@ -17,7 +17,7 @@ import { commandOn, run, type Ran } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
 import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter, waitFields } from './herdr/screen.ts';
-import { JOB_TOOL_ENV, jobScratchOf, jobTmpOf, linkTmpCommand, mkScratchCommand } from './herdr/start.ts';
+import { jobScratchOf, jobTmpOf, jobToolEnv, linkTmpCommand, mkScratchCommand } from './herdr/start.ts';
 import { clientShell, localShell, sshShell } from './machine-shell.ts';
 import { clientTurn, type ClientTransport } from './client.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
@@ -156,9 +156,9 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const scratch = jobScratchOf(cwd, ctx.job.id);
     // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
     // and the one a run would hand them is never closed (issue #307).
-    // The job's way to the hopper (issues #563, #652: no GitHub token, git through the hopper), HOPPER_JOB_ID, the scratch dir and JOB_TOOL_ENV (issue #1502) come from the hopper; a payload cannot move them.
+    // The job's way to the hopper (issues #563, #652: no GitHub token, git through the hopper), HOPPER_JOB_ID, the scratch dir and JOB_TOOL_ENV (issue #1502) with Gradle's idle timeout (issue #2489) come from the hopper; a payload cannot move them.
     const credentials = await ctx.credentials?.(scratch);
-    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...JOB_TOOL_ENV }).map(([k, v]) => shellQuote(`${k}=${v}`));
+    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...jobToolEnv(p.env) }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.

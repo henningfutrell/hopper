@@ -29,7 +29,7 @@ if (process.env.FAKE_AGENT_KIND === 'opencode' && argv[0] === 'session' && argv[
 const log = join(process.env.FAKE_AGENT_DIR, 'agent-calls.jsonl');
 appendFileSync(log, JSON.stringify({
   argv, cwd: process.cwd(), stdin,
-  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, CHECKPOINT_DISABLE: process.env.CHECKPOINT_DISABLE, HOPPER_REPO: process.env.HOPPER_REPO, HOPPER_URL: process.env.HOPPER_URL },
+  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, CHECKPOINT_DISABLE: process.env.CHECKPOINT_DISABLE, GRADLE_OPTS: process.env.GRADLE_OPTS, HOPPER_REPO: process.env.HOPPER_REPO, HOPPER_URL: process.env.HOPPER_URL },
   // Where it runs (issue #1295): in the job's sandbox, with podman a client of the job's socket.
   sandbox: { sandboxed: process.env.HOPPER_SANDBOXED, containerHost: process.env.CONTAINER_HOST, pid: process.pid },
 }) + '\n');
