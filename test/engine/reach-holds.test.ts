@@ -13,9 +13,10 @@ describe('reach holds (issue #1920)', () => {
     const holds = createReachHolds({ now: () => new Date(now) }, 1000);
     const machines = holds.source(source([machine({ id: 'box' }), machine({ id: 'seat' })]));
     holds.hold('box', 'this machine cannot reach the hopper at http://h');
-    expect((await machines.list()).map((m) => m.addressProblem)).toEqual(['this machine cannot reach the hopper at http://h', undefined]);
+    const held = 'this machine cannot reach the hopper at http://h (held since 1970-01-01T00:00:00.000Z; a job placed there after 1970-01-01T00:00:01.000Z checks again)';
+    expect((await machines.list()).map((m) => m.addressProblem)).toEqual([held, undefined]);
     now = 999;
-    expect((await machines.list())[0]!.addressProblem).toBe('this machine cannot reach the hopper at http://h');
+    expect((await machines.list())[0]!.addressProblem).toBe(held);
     now = 1000;
     expect((await machines.list())[0]!.addressProblem).toBeUndefined();
   });
