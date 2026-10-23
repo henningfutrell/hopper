@@ -3,8 +3,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { profileRef } from '../domain/confirmation-asks.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
-import { looseAsks, looseGrantAsks, runCards } from '../domain/run-cards.ts';
-import { grantKeyOf } from '../domain/vault-grants.ts';
+import { looseAsks, runCards } from '../domain/run-cards.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import { knownClusters, shortClusters, unknownAssets, type ClusterFacts } from '../domain/unknown-assets.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
@@ -50,11 +49,9 @@ export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & 
   }));
   const requests = parts.sandboxRequests?.list() ?? [];
   const actions = actionAsks(parts.store, new Date());
-  const runs = runCards({ templates, requests, waits: parts.sandboxRequests?.waits() ?? [], job: (id) => cardJob(parts.store, id), actionAsks: actions, ...(view.grantAsks ? { granted: (id: string) => granted(parts.store, id) } : {}) });
+  const runs = runCards({ templates, requests, waits: parts.sandboxRequests?.waits() ?? [], job: (id) => cardJob(parts.store, id), actionAsks: actions });
   return {
-    ...view, templates,
-    // Issue #2639 part 3: a grant ask a run card holds is decided on the card.
-    ...(view.grantAsks ? { grantAsks: looseGrantAsks(view.grantAsks, runs) } : {}), readPolicy: parts.store.settings.getReadPolicy()?.assets ?? [], ...(asks.length ? { asks } : {}),
+    ...view, templates, readPolicy: parts.store.settings.getReadPolicy()?.assets ?? [], ...(asks.length ? { asks } : {}),
     // Sandboxes jobs start (issue #991): the toggles, and the requests of jobs at work.
     // The auto-approve policy (issue #1001) answered in full, the default where none was set.
     sandboxApprovals: approvalsInFull(parts.store.settings.getSandboxApprovals() ?? NO_SKIPS), sandboxRequests: requests, runs,
@@ -72,12 +69,6 @@ function cardJob(store: TenantParts['store'], id: string): { title?: string; url
   if (!job || !LIVE.includes(job.status)) return undefined;
   const title = job.source?.title ?? job.spec.goal, url = job.source?.url;
   return { ...(title ? { title } : {}), ...(url ? { url } : {}) };
-}
-
-/** Whether a job's item has a vault grant (issue #2639 part 3); an unknown job, as granted: its card grants nothing. */
-function granted(store: TenantParts['store'], id: string): boolean {
-  const job = store.jobs.get(id);
-  return !job || store.vaultGrants.get(grantKeyOf(job)) !== undefined;
 }
 
 /** The time limit for remembered write approvals (issue #1001) answered too, the default where none was set. */
