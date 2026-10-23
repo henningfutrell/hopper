@@ -30,6 +30,12 @@
     },
     "repo": {
       "type": "string"
+    },
+    "pushRequirements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

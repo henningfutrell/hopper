@@ -186,7 +186,7 @@ export const pointedJobEvents = {
   'pointed_job.created': strict({ id: z.string(), repo: z.string(), pointer: strict({ kind: z.enum(POINTER_KINDS), number: z.number().int(), url: z.string() }), source: z.string(), by: z.string() }),
   'pointed_job.status_changed': strict({ id: z.string(), from: pointedJobStatus, to: pointedJobStatus, lane: z.string().optional(), by: z.string() }),
   // Direct jobs (issue #901, src/direct-jobs/): who submitted one and what they authorized; never its title or brief.
-  'direct_job.submitted': strict({ id: z.string(), by: z.string(), via: z.enum(ACTION_VIAS), labels: z.array(z.string()), authorizations: z.array(z.string()), repo: z.string().optional() }),
+  'direct_job.submitted': strict({ id: z.string(), by: z.string(), via: z.enum(ACTION_VIAS), labels: z.array(z.string()), authorizations: z.array(z.string()), repo: z.string().optional(), pushRequirements: z.array(z.string()).optional() }),
   'direct_job.promoted': strict({ id: z.string(), repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), by: z.string(), artifacts: z.number().int(), update: z.boolean() }),
   'direct_job.promotion_revoked': strict({ id: z.string(), repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), by: z.string() }),
   'direct_query.accepted': strict({ id: z.string(), requestId: z.string(), by: z.string(), via: z.enum(ACTION_VIAS), callback: z.string().optional() }), 'direct_query.answered': strict({ id: z.string(), requestId: z.string(), jobId: z.string(), answer: z.unknown(), artifacts: z.array(strict({ id: z.string(), title: z.string(), url: z.string() })), url: z.string(), callback: z.string().optional() }),

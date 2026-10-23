@@ -1,12 +1,24 @@
 // Direct jobs in the UI (issue #901, design.md "Direct jobs"), pure: the submit form's draft, why it cannot be sent yet,
 // the request it sends to POST /ui/api/direct-jobs, and how a direct job reads back — its state, its result, who
 // submitted it and the way.
-import type { DirectJobInput, DirectJobView } from './wire.ts';
+import type { DirectJobInput, DirectJobView, PushRequirement } from './wire.ts';
 
-/** What the form keeps: every field as typed. Labels split at commas and lines, authorizations at lines. */
-export interface DirectJobDraft { title: string; brief: string; labels: string; authorizations: string; repo: string; priority: string; promoteWhenDone: boolean }
+/**
+ * What the form keeps: every field as typed. Labels split at commas and lines, authorizations at lines. Push requirements
+ * (issue #2555 part 3): the job's own, as JSON — a list, or a requirements file's value `{ requirements: [...] }`.
+ */
+export interface DirectJobDraft { title: string; brief: string; labels: string; authorizations: string; repo: string; priority: string; promoteWhenDone: boolean; pushRequirements: string }
 
-export const emptyDirectDraft = (): DirectJobDraft => ({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '', promoteWhenDone: false });
+export const emptyDirectDraft = (): DirectJobDraft => ({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '', promoteWhenDone: false, pushRequirements: '' });
+
+/** The push requirements typed, as a list; undefined: none typed; null: no list of JSON. The daemon checks each one. */
+function requirementsTyped(text: string): PushRequirement[] | undefined | null {
+  if (text.trim() === '') return undefined;
+  let v: unknown;
+  try { v = JSON.parse(text); } catch { return null; }
+  const list = Array.isArray(v) ? v : (v as { requirements?: unknown } | null)?.requirements;
+  return Array.isArray(list) ? list as PushRequirement[] : null;
+}
 
 const REPO = /^[^/\s]+\/[^/\s]+$/;
 const PRIORITY = /^\d{1,3}$/;
@@ -18,6 +30,7 @@ export function directDraftProblem(d: DirectJobDraft): string | undefined {
   if (d.repo.trim() !== '' && !REPO.test(d.repo.trim())) return 'Give the repository as owner/name';
   const p = d.priority.trim();
   if (p !== '' && (!PRIORITY.test(p) || Number(p) > 100)) return 'Give the priority as a whole number from 0 to 100';
+  if (requirementsTyped(d.pushRequirements) === null) return 'Give the push requirements as JSON: [{ "id", "when", "checks" }]';
   return undefined;
 }
 
@@ -27,9 +40,11 @@ const words = (text: string, at: RegExp): string[] => [...new Set(text.split(at)
 export function directJobRequest(d: DirectJobDraft): DirectJobInput {
   const repo = d.repo.trim();
   const priority = d.priority.trim();
+  const pushRequirements = requirementsTyped(d.pushRequirements);
   return {
     title: d.title.trim(), brief: d.brief.trim(), labels: words(d.labels, /[,\n]/), authorizations: words(d.authorizations, /\n/),
     ...(repo ? { repo } : {}), ...(priority ? { priority: Number(priority) } : {}), ...(d.promoteWhenDone ? { promoteWhenDone: true } : {}),
+    ...(pushRequirements ? { pushRequirements } : {}),
   };
 }
 

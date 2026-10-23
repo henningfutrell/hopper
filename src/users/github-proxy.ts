@@ -11,7 +11,7 @@ import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrin
 import type { CheckFastForward, CountPushLines } from '../git-mirror/push-lines.ts';
 import type { HoldsRequirements } from '../git-mirror/push-requirements-at.ts';
 import { REQUIREMENTS_CLIENT, REQUIREMENTS_CLIENT_FILE, REQUIREMENTS_SCRIPT, REQUIREMENTS_SCRIPT_FILE, REQUIREMENTS_SCRIPT_VARIABLE } from '../github-proxy/requirements-script.ts';
-import { PUSH_REQUIREMENTS_EVALUATED, pushRequirementsGate } from './push-requirements.ts';
+import { PUSH_REQUIREMENTS_EVALUATED, pushRequirementsGate } from './push-requirements.ts'; import { pushRequirementOverride } from '../domain/direct-jobs.ts';
 import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, directPushFor, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import { ownsPullRequest } from './owns-pull-request.ts';
@@ -384,7 +384,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         recorded: (jobId, requestId) => o.store.events.recent(500, [...PUSH_EVENTS], jobId).some((e) => (e.data as { requestId?: unknown }).requestId === requestId),
         ...(o.fastForward ? { fastForward: ({ repo, ...push }: Parameters<CheckFastForward>[2] & { repo: string }) => o.fastForward!(repo, mirrorRemote(repo), push) } : {}),
         // Push requirements (issue #2555): the job's evaluations, else the commit's tree in the mirror and the hopper's defaults.
-        pushRequirements: pushRequirementsGate({ evaluations: (jobId) => o.store.events.recent(500, [PUSH_REQUIREMENTS_EVALUATED], jobId), defaults: () => o.store.settings.getPushRequirementDefaults(), job: (jobId) => o.store.jobs.get(jobId), ...(o.holdsRequirements ? { holds: o.holdsRequirements } : {}), remote: mirrorRemote }),
+        pushRequirements: pushRequirementsGate({ evaluations: (jobId) => o.store.events.recent(500, [PUSH_REQUIREMENTS_EVALUATED], jobId), defaults: () => o.store.settings.getPushRequirementDefaults(), job: (jobId) => o.store.jobs.get(jobId), override: (job) => pushRequirementOverride(job, (id) => o.store.directJobs.get(id)), ...(o.holdsRequirements ? { holds: o.holdsRequirements } : {}), remote: mirrorRemote }),
       },
     },
   };

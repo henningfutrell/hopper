@@ -13,7 +13,7 @@ const view = (job?: DirectJobView['job']): DirectJobView => ({
 
 describe('the direct job form', () => {
   it('starts empty, with no repository and the default priority', () => {
-    expect(emptyDirectDraft()).toEqual({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '', promoteWhenDone: false });
+    expect(emptyDirectDraft()).toEqual({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '', promoteWhenDone: false, pushRequirements: '' });
   });
 
   it('says what is missing or wrong before it can be sent', () => {
@@ -31,6 +31,15 @@ describe('the direct job form', () => {
       title: 'Unlock a sign-in', brief: 'Look up the lockout and clear it.', labels: ['sme:identity', 'urgent'], authorizations: ['keycloak:otp-reset', 'read the audit log'],
     });
     expect(directJobRequest(draft({ repo: ' acme/identity ', priority: '75' }))).toMatchObject({ repo: 'acme/identity', priority: 75 });
+  });
+
+  it('sends its own push requirements as JSON, a list or a requirements file\'s value, and says when it is no JSON (issue #2555 part 3)', () => {
+    const lint = { id: 'lint', checks: [{ name: 'lint', run: 'npm run lint' }] };
+    expect(directDraftProblem(draft({ pushRequirements: '[{ id: lint' }))).toBe('Give the push requirements as JSON: [{ "id", "when", "checks" }]');
+    expect(directDraftProblem(draft({ pushRequirements: '{"id":"lint"}' }))).toBe('Give the push requirements as JSON: [{ "id", "when", "checks" }]');
+    expect(directJobRequest(draft({ pushRequirements: JSON.stringify([lint]) }))).toMatchObject({ pushRequirements: [lint] });
+    expect(directJobRequest(draft({ pushRequirements: JSON.stringify({ requirements: [lint] }) }))).toMatchObject({ pushRequirements: [lint] });
+    expect(directJobRequest(draft({ pushRequirements: '  ' }))).not.toHaveProperty('pushRequirements');
   });
 });
 
