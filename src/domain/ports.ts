@@ -107,10 +107,9 @@ export type ExecutionOutcome =
    * timeout's (issue #630), what the job showed of its progress then. `linkLost` (issue #752): its machine's link dropped
    * while its work was watched, so that work may live on there; the engine holds the job and reattaches it when the link is back.
    * `noWayToHopper` (issue #2355): its pane on this machine had no way to the hopper before anything of the job ran there;
-   * a job that resumes elsewhere goes back to the queue for another machine. `remoteOutOfReach` (issue #2639): its
-   * checkpoint's restore could not fetch the base, the remote not answering; it goes back to the queue the same way.
+   * a job that resumes elsewhere goes back to the queue for another machine.
    */
-  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness; linkLost?: true; noWayToHopper?: true; remoteOutOfReach?: true }
+  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness; linkLost?: true; noWayToHopper?: true }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion }
   /**
