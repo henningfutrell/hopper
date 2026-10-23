@@ -60,7 +60,7 @@ function causeOf(s: MachineStateWithCredentialHold, job: Job, pl: PriorityLanesI
   const gated = gateKeeps(m.id, job, s.gate);
   if (gated) return `is gated: ${gated}`;
   if (!fitsLane(s, job, pl)) return `is full: ${laneFull(s, job, pl)}`;
-  if (!memoryAdmits(s.memory, cost)) return `is short of memory: ${memoryShort(s.memory!, cost)}`;
+  if (!memoryAdmits(s.memory, cost)) return `is short of memory: ${memoryShort(s.memory!, cost, m.id)}`;
   return 'was not picked';
 }
 

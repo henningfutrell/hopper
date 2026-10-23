@@ -187,7 +187,8 @@ describe('a host pool (issue #2499)', () => {
     expect(d.start.map((s) => s.jobId)).toEqual(['j1']);
     expect(d.wait.map((w) => w.jobId)).toEqual(['j2']);
     expect(d.wait[0]!.reason).toMatch(/^waiting for memory: /);
-    expect(d.wait[0]!.reason).toContain("a's host (shared with b) has 4 GiB available, 2 GiB of it kept for 1 job started lately, and a new job needs 2 GiB over its floor of 1.4 GiB");
+    // The seat that took j1 is short of its own memory; the other is short of the host's.
+    expect(d.wait[0]!.reason).toMatch(/(a's host \(shared with b\)|b's host \(shared with a\)) has 4 GiB available, 2 GiB of it kept for 1 job started lately, and a new job needs 2 GiB over its floor of 1\.4 GiB/);
   });
 
   it('seats on different kernels are not pooled', () => {
@@ -196,7 +197,7 @@ describe('a host pool (issue #2499)', () => {
   });
 
   it('Windows\' free memory that one machine of the pool reads counts for every machine of it', () => {
-    const local = machine({ id: 'local', maxLanes: 3, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 1 * GIB, wsl: true, bootId: 'boot-1', hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB } });
+    const local = machine({ id: 'local', maxLanes: 3, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 10 * GIB, wsl: true, bootId: 'boot-1', hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB } });
     // The seat has room of its own and the kernel has 10 GiB, but Windows has 3 GiB free: 3 - 2 < 1.4.
     const d = decide(inputs({ machines: [local, seat('a', 10, 'boot-1', { wsl: true })], waiting: burst(1) }), 'd1');
     expect(d.start).toEqual([]);

@@ -1,0 +1,1 @@
+- Machines that share one computer, such as containers on one virtual machine, now share its memory: a job starts there only when that computer still has room for it, and a job that waits for memory says so.

@@ -4,7 +4,8 @@
 // there last is paused: parked on the Park button's path, its work kept, and queued again to resume there. One pause
 // per machine at a time. Issues #2303, #2326: the agent of every job on its own wait ends (its session kept), memory short or
 // not, so no waiting job holds memory. Issue #2499: the memory a job's scope still holds with no lane is in the reading, and the
-// wait names it. Pure: the clock is `at`.
+// wait names it. Machines whose readings name one kernel are a host pool: a job also needs room in that kernel's memory,
+// less what every machine of the pool keeps, over the kernel's own floor. Pure: the clock is `at`.
 import {
   MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_PAUSE_EVERY_MS, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
   type ExpectedCost, type Job, type JobId, type Lane, type MachineSnapshot, type MemoryPausePlan, type ResourceReading,
@@ -18,7 +19,13 @@ const gib = (bytes: number): string => `${Math.round((bytes / GIB) * 10) / 10} G
  * A machine's memory as one Decision counts it: what it has, its floor, a job's need, and what is kept and for how many jobs.
  * `waitingBytes` (issue #2499): of what it has in use, what its job scopes hold for `waiting` jobs with no lane in use there.
  */
-export interface MemoryRoom { availableBytes: number; floorBytes: number; perJobBytes: number; keptBytes: number; kept: number; waitingBytes: number; waiting: number }
+export interface MemoryRoom { availableBytes: number; floorBytes: number; perJobBytes: number; keptBytes: number; kept: number; waitingBytes: number; waiting: number; pool?: HostPool }
+
+/**
+ * Issue #2499: the memory of one kernel that the machines of a host pool share, one object for all of them: its memory
+ * available (Windows' free memory when one of them reads it lower), its floor, and what each of them keeps.
+ */
+export interface HostPool { machines: string[]; availableBytes: number; floorBytes: number; keptBytes: number; kept: number }
 
 /** The memory available the floor reads: Linux's, or on WSL Windows' own free memory when that is lower (issue #868). */
 const availableOf = (r: ResourceReading): number =>
@@ -49,27 +56,80 @@ export function memoryRoom(m: MachineSnapshot, lanes: readonly Lane[], running: 
   return { ...f, keptBytes: kept * f.perJobBytes, kept, waitingBytes: waiting.reduce((n, [, b]) => n + b, 0), waiting: waiting.length };
 }
 
+/**
+ * Issue #2499: join the machines on one kernel (the same `bootId`) into a host pool. The kernel's memory is a reading's
+ * own when it is not in a container, else the kernel's as it says it; the lowest of them counts, and Windows' free memory
+ * when one of them reads it lower. A pool is two machines or more, or one in a container: else its own room says it all.
+ * Only machines with a memory room count: a floor of 0 keeps a machine out.
+ */
+export function poolHosts(states: readonly { machine: MachineSnapshot; memory?: MemoryRoom }[]): void {
+  const byBoot = new Map<string, { machine: MachineSnapshot; memory: MemoryRoom }[]>();
+  for (const s of states) {
+    const boot = s.machine.resources?.bootId;
+    if (boot !== undefined && s.memory) byBoot.set(boot, [...(byBoot.get(boot) ?? []), { machine: s.machine, memory: s.memory }]);
+  }
+  for (const members of byBoot.values()) {
+    if (members.length < 2 && !members.some((s) => s.machine.resources?.container)) continue;
+    const kernels = members.flatMap(({ machine: { resources: r } }) => (!r ? []
+      : !r.container ? [{ total: r.memTotalBytes, available: r.memAvailableBytes }]
+        : r.kernelMemTotalBytes !== undefined && r.kernelMemAvailableBytes !== undefined ? [{ total: r.kernelMemTotalBytes, available: r.kernelMemAvailableBytes }] : []));
+    if (!kernels.length) continue;
+    const windows = members.flatMap(({ machine: { resources: r } }) => (r?.wsl && r.hostMemFreeBytes !== undefined ? [r.hostMemFreeBytes] : []));
+    const total = Math.max(...kernels.map((k) => k.total));
+    const pool: HostPool = {
+      machines: members.map((s) => s.machine.id).sort(),
+      availableBytes: Math.min(...kernels.map((k) => k.available), ...windows),
+      floorBytes: Math.max(MEMORY_FLOOR_MIN_GIB * GIB, (total * MEMORY_FLOOR_PERCENT) / 100),
+      keptBytes: members.reduce((n, s) => n + s.memory.keptBytes, 0),
+      kept: members.reduce((n, s) => n + s.memory.kept, 0),
+    };
+    for (const s of members) s.memory.pool = pool;
+  }
+}
+
 /** What a new job needs: a job's memory, or its expected memory peak when that is more. */
 const needOf = (room: MemoryRoom, cost: ExpectedCost | undefined): number => Math.max(room.perJobBytes, cost?.memoryBytes?.peak ?? 0);
 
-/** Whether a new job fits the machine's memory room. No room counted (no reading, floor off): it fits. */
-export const memoryAdmits = (room: MemoryRoom | undefined, cost?: ExpectedCost): boolean =>
-  !room || room.availableBytes - room.keptBytes - needOf(room, cost) >= room.floorBytes;
+const ownAdmits = (room: MemoryRoom, cost: ExpectedCost | undefined): boolean => room.availableBytes - room.keptBytes - needOf(room, cost) >= room.floorBytes;
+const poolAdmits = (room: MemoryRoom, cost: ExpectedCost | undefined): boolean =>
+  !room.pool || room.pool.availableBytes - room.pool.keptBytes - needOf(room, cost) >= room.pool.floorBytes;
 
-/** Count a job placed on the machine, for the jobs placed after it in this Decision. */
+/** Whether a new job fits the machine's memory room, and its host pool's. No room counted (no reading, floor off): it fits. */
+export const memoryAdmits = (room: MemoryRoom | undefined, cost?: ExpectedCost): boolean => !room || (ownAdmits(room, cost) && poolAdmits(room, cost));
+
+/** Count a job placed on the machine, and on its host pool, for the jobs placed after it in this Decision. */
 export function keepMemory(room: MemoryRoom | undefined, cost: ExpectedCost | undefined): void {
   if (!room) return;
-  room.keptBytes += needOf(room, cost);
-  room.kept += 1;
+  for (const r of room.pool ? [room, room.pool] : [room]) {
+    r.keptBytes += needOf(room, cost);
+    r.kept += 1;
+  }
 }
 
-/** What a machine's memory room holds against a new job's need. */
-export const memoryShort = (r: MemoryRoom, cost: ExpectedCost | undefined): string =>
-  `${gib(r.availableBytes)} available${r.waiting ? ` (${gib(r.waitingBytes)} is held by ${r.waiting} job${r.waiting === 1 ? '' : 's'} with no lane)` : ''}${r.kept ? `, ${gib(r.keptBytes)} of it kept for ${r.kept} job${r.kept === 1 ? '' : 's'} started lately` : ''}, and a new job needs ${gib(needOf(r, cost))} over its floor of ${gib(r.floorBytes)}`;
+const keptText = (r: { keptBytes: number; kept: number }): string => (r.kept ? `, ${gib(r.keptBytes)} of it kept for ${r.kept} job${r.kept === 1 ? '' : 's'} started lately` : '');
+
+/** The host a machine of a host pool shares, and with which machines. */
+const hostOf = (id: string, pool: HostPool): string => {
+  const others = pool.machines.filter((m) => m !== id);
+  return `host${others.length ? ` (shared with ${others.join(', ')})` : ''}`;
+};
+
+/** What a machine's memory room, or else its host pool's, holds against a new job's need; `of`: the machine, for its host. */
+export function memoryShort(r: MemoryRoom, cost: ExpectedCost | undefined, of?: string): string {
+  if (ownAdmits(r, cost) && r.pool) {
+    const p = r.pool;
+    return `its ${hostOf(of ?? '', p)} has ${gib(p.availableBytes)} available${keptText(p)}, and a new job needs ${gib(needOf(r, cost))} over its floor of ${gib(p.floorBytes)}`;
+  }
+  return `${gib(r.availableBytes)} available${r.waiting ? ` (${gib(r.waitingBytes)} is held by ${r.waiting} job${r.waiting === 1 ? '' : 's'} with no lane)` : ''}${keptText(r)}, and a new job needs ${gib(needOf(r, cost))} over its floor of ${gib(r.floorBytes)}`;
+}
 
 /** The wait reason of a job that has a lane on these machines but whose memory none of them holds. */
 export function memoryWait(states: readonly { machine: MachineSnapshot; memory?: MemoryRoom }[], cost: ExpectedCost | undefined): string {
-  const each = states.flatMap(({ machine: m, memory: r }) => (r ? [`${m.id} has ${memoryShort(r, cost)}`] : []));
+  const each = states.flatMap(({ machine: m, memory: r }) => {
+    if (!r) return [];
+    const short = memoryShort(r, cost, m.id);
+    return [short.startsWith('its ') ? `${m.id}'s ${short.slice(4)}` : `${m.id} has ${short}`];
+  });
   return `${MEMORY_WAIT}: ${each.join('; ')}`;
 }
 
