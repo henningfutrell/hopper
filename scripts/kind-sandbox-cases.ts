@@ -197,9 +197,9 @@ export async function isolation(o: Box & { namespace: string; hopperService: str
   return left.length > 0 ? `isolation: left after the boxes ended: ${left.join(', ')}` : null;
 }
 
-/** The hopper's resident memory in its pod, as the kernel counts it: for the person to read, never asserted. */
+/** The hopper's resident memory in its pod, as the kernel counts it: for the person to read, never asserted. PID 1 is tini (issue #2623). */
 function hopperMemory(k: Kubectl): string {
-  const r = k(['exec', 'deploy/hopper', '-c', 'hopper', '--', 'cat', '/proc/1/status']);
+  const r = k(['exec', 'deploy/hopper', '-c', 'hopper', '--', 'sh', '-c', 'for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = node ] && exec cat "$p/status"; done']);
   return /VmRSS:\s*(\d+ kB)/.exec(r.stdout)?.[1] ?? 'not read';
 }
 
