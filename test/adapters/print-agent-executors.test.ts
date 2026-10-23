@@ -120,7 +120,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(out).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'I wrote greeting.txt.', chatId: session } });
     const [call] = calls();
     expect(call!.cwd).toBe(work);
-    expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, CHECKPOINT_DISABLE: '1', GRADLE_OPTS: '-Dorg.gradle.daemon.idletimeout=300000', HOPPER_REPO: 'o/r', HOPPER_URL: 'http://hopper.test' });
+    expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, CHECKPOINT_DISABLE: '1', GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process -Dorg.gradle.daemon.idletimeout=300000', MAVEN_OPTS: '-Xmx2g', HOPPER_REPO: 'o/r', HOPPER_URL: 'http://hopper.test' });
     expect(call!.argv.slice(0, -1)).toEqual(first('m-1'));
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
   });
