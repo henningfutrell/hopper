@@ -5,6 +5,7 @@ import type { Executor, MachineShell, Survey } from '../../src/domain/ports.ts';
 import { createSweep } from '../../src/engine/sweep.ts';
 import type { LedgerEntry } from '../../src/domain/resource-ledger.ts';
 import type { DiskMeasure } from '../../src/domain/hopper-disk.ts';
+import type { Pruned } from '../../src/domain/storage-prune.ts';
 
 export const HOUR = 3600_000;
 export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
@@ -15,7 +16,7 @@ export const none: Survey = { scopes: [], processes: [], scratch: [] };
 export const day = (_job: Job, ageMs: number): boolean => ageMs >= 24 * HOUR;
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[]; measures?: Map<string, DiskMeasure>; told?: { type: string; machineId: string; data: unknown }[] } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[]; measures?: Map<string, DiskMeasure>; told?: { type: string; machineId: string; data: unknown }[]; pruned?: Pruned | 'old client' } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -36,7 +37,14 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
   // The leftovers listings asked (issue #1116), with their work trees, and the removals asked.
   const listings: string[][] = [];
   const removals: string[] = [];
+  // The storage prunes asked (issue #2494): the age and the containers; `pruned` what each one says.
+  const prunes: { days: number; containers: string[] }[] = [];
   const shell: MachineShell = {
+    async prune(days, containers) {
+      prunes.push({ days, containers });
+      if (o.pruned === 'old client') throw new Error('client m runs an older client release: /prune not found');
+      return o.pruned ?? { removed: [] };
+    },
     async leftovers(roots) {
       listings.push(roots);
       if (o.leftovers === 'old client') throw new Error('client m runs an older client release: /leftovers not found');
@@ -101,5 +109,5 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, jobs, ledger, measures, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
+  return { sweep, jobs, ledger, measures, surveyed, reaps, events, logs, listings, removals, prunes, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }
