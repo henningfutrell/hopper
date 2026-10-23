@@ -4,7 +4,7 @@ import { remoteAccessRecord, type RemoteAccessSettings } from '../domain/remote-
 import type { IntakeActorSettings } from '../domain/intake-origin.ts'; import type { IntakeAutoApproval } from '../domain/intake-auto-approve.ts'; import type { IntakeDeclineDefaults } from '../domain/intake-decline.ts'; import type { IntakeStrictness } from '../domain/intake-strictness.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { InfraPlanSettings } from '../domain/infra-plans.ts';
+import type { InfraPlanSettings } from '../domain/infra-plans.ts'; import type { DeliverySettings } from '../domain/delivery-settings.ts';
 import type { AutoAnswerSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountKey, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
 import type { TokenBudgetSettings } from '../domain/token-budget.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
@@ -213,6 +213,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos, ...(settings.changeKinds ? { changeKinds: settings.changeKinds } : {}), ...(settings.push?.length ? { push: settings.push } : {}) }));
     },
     getLandingBatches() { const text = read('landingBatches'); return text === undefined ? undefined : JSON.parse(text) as LandingBatchSettings; }, setLandingBatches(settings) { write('landingBatches', JSON.stringify({ repos: settings.repos })); },
+    getDeliverySettings() { const text = read('deliverySettings'); return text === undefined ? undefined : JSON.parse(text) as DeliverySettings; }, setDeliverySettings(settings) { write('deliverySettings', JSON.stringify({ repos: settings.repos })); },
     getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; }, setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); }, getShrinkGuard() { const text = read('shrinkGuard'); return text === undefined ? undefined : JSON.parse(text) as ShrinkGuardSettings; }, setShrinkGuard(settings) { write('shrinkGuard', JSON.stringify({ percent: settings.percent })); },
     getInfraPlans() { const text = read('infraPlans'); return text === undefined ? undefined : JSON.parse(text) as InfraPlanSettings; },
     setInfraPlans(settings) { write('infraPlans', JSON.stringify({ autoApprove: settings.autoApprove })); }, getInfraWatchers() { const text = read('infraWatchers'); return text === undefined ? undefined : JSON.parse(text) as Record<string, string[]>; }, setInfraWatchers(watchers) { write('infraWatchers', JSON.stringify(watchers)); },

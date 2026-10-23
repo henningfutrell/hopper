@@ -57,7 +57,7 @@ describe('GET /api/delivery-forecast', () => {
     seed(a, now);
     const r = await a.api<DeliveryForecastView>('GET', `/api/delivery-forecast?issue=${encodeURIComponent(`${REPO}#9`)}`);
     expect(r.status).toBe(200);
-    const asked = Date.parse(r.body.forecast.now);
+    const asked = Date.parse(r.body.forecast!.now);
     expect(asked - now).toBeLessThan(60_000);
     expect(relative(r.body, asked)).toEqual({
       jobId: 'c9', repo: REPO, issue: `${REPO}#9`, pullRequest: pr(109), historyDays: 30,
@@ -85,7 +85,7 @@ describe('GET /api/delivery-forecast', () => {
     const r = await a.api<DeliveryForecastView>('GET', `/api/delivery-forecast?pr=${encodeURIComponent(pr(109))}`);
     expect(r.status).toBe(200);
     expect(r.body.jobId).toBe('c9');
-    const ends = r.body.forecast.normal.steps.flatMap((s) => (s.end ? [[Date.parse(s.end), Date.parse(s.endP90!)]] : []));
+    const ends = r.body.forecast!.normal.steps.flatMap((s) => (s.end ? [[Date.parse(s.end), Date.parse(s.endP90!)]] : []));
     expect(ends.length).toBe(3);
     for (let i = 1; i < ends.length; i++) {
       expect(ends[i]![0]).toBeGreaterThanOrEqual(ends[i - 1]![0]!);
@@ -101,8 +101,8 @@ describe('GET /api/delivery-forecast', () => {
     expect(r.status).toBe(200);
     // A job with no repository has no history: every step left is unknown, and no time is made up.
     expect(r.body).toMatchObject({ jobId: job.id, historyDays: 30, forecast: { step: 'pr_checks' } });
-    expect(r.body.forecast.normal.steps.map((s) => s.basis)).toEqual(['unknown', 'unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
-    expect(r.body.forecast.normal.productionAt).toBeUndefined();
+    expect(r.body.forecast!.normal.steps.map((s) => s.basis)).toEqual(['unknown', 'unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
+    expect(r.body.forecast!.normal.productionAt).toBeUndefined();
   });
 
   it('refuses a bad query (400), an unknown change (404) and a job that ended with no merge (409)', async () => {

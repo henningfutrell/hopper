@@ -1,0 +1,1 @@
+- An admin can now give each repository a release schedule and name who signs off each release step, in Settings under Delivery. The forecast of a change then gives times for its release set, its test sign-off and production, and shows when it waits on a person. You can also ask about one release set by its number.

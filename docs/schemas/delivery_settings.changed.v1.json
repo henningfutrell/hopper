@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "schedule": {
+                "type": "object",
+                "properties": {
+                  "timeZone": {
+                    "type": "string"
+                  },
+                  "cutoffs": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "weekday": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "time": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "weekday",
+                        "time"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "testGateAfterMinutes": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "productionAfterMinutes": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "epoch": {
+                    "type": "string"
+                  },
+                  "expedite": {
+                    "type": "string",
+                    "enum": [
+                      "out_of_cadence",
+                      "none"
+                    ]
+                  }
+                },
+                "required": [
+                  "timeZone",
+                  "cutoffs",
+                  "testGateAfterMinutes",
+                  "productionAfterMinutes",
+                  "epoch",
+                  "expedite"
+                ],
+                "additionalProperties": false
+              },
+              "gates": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "coding",
+                    "pr_checks",
+                    "landing",
+                    "landing_checks",
+                    "promotion_set",
+                    "test_gate",
+                    "production"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "owner": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "owner"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "gates"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "schedule": {
+                "type": "object",
+                "properties": {
+                  "timeZone": {
+                    "type": "string"
+                  },
+                  "cutoffs": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "weekday": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "time": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "weekday",
+                        "time"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "testGateAfterMinutes": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "productionAfterMinutes": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "epoch": {
+                    "type": "string"
+                  },
+                  "expedite": {
+                    "type": "string",
+                    "enum": [
+                      "out_of_cadence",
+                      "none"
+                    ]
+                  }
+                },
+                "required": [
+                  "timeZone",
+                  "cutoffs",
+                  "testGateAfterMinutes",
+                  "productionAfterMinutes",
+                  "epoch",
+                  "expedite"
+                ],
+                "additionalProperties": false
+              },
+              "gates": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "coding",
+                    "pr_checks",
+                    "landing",
+                    "landing_checks",
+                    "promotion_set",
+                    "test_gate",
+                    "production"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "owner": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "owner"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "gates"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

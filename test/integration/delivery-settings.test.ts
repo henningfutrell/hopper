@@ -116,7 +116,7 @@ describe('forecasts with a promotion set schedule', () => {
 
   it('a change past its cutoff at a gated test gate waits on the owner since the cutoff, and slips', async () => {
     const { a, firstCutoff } = await withSchedule({ test_gate: { owner: 'release-owner' } });
-    const f = (await forecastOf(a, 'job=g1')).body.forecast!;
+    const f = (await forecastOf(a, `issue=${encodeURIComponent(`${REPO}#20`)}`)).body.forecast!;
     const since = new Date(firstCutoff).toISOString();
     expect(f).toMatchObject({ step: 'test_gate', since, wait: { kind: 'human_gate', owner: 'release-owner', since }, slipping: { blocker: 'human_gate' } });
     expect(f.normal.remaining!.humanMs).toBe(0);
@@ -125,7 +125,7 @@ describe('forecasts with a promotion set schedule', () => {
 
   it('with no gate, a change past the end of production is delivered', async () => {
     const { a, firstCutoff } = await withSchedule({});
-    const r = await forecastOf(a, 'job=g1');
+    const r = await forecastOf(a, `issue=${encodeURIComponent(`${REPO}#20`)}`);
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ jobId: 'g1', deliveredAt: new Date(firstCutoff + 120 * MIN).toISOString() });
     expect(r.body.forecast).toBeUndefined();

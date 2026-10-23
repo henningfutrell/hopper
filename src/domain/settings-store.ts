@@ -8,7 +8,7 @@ import type { IntakeDeclineDefaults } from './intake-decline.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
 import type { GitLabAccountRecord } from './gitlab-account.ts';
-import type { ReadPolicy } from './read-policy.ts';
+import type { ReadPolicy } from './read-policy.ts'; import type { DeliverySettings } from './delivery-settings.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
@@ -147,6 +147,8 @@ export interface UserSettingsRepository {
   /** Landing batches (issue #1073): per repository, its tested branch and when a batch run starts; absent: never set (none). */
   getLandingBatches(): LandingBatchSettings | undefined;
   setLandingBatches(settings: LandingBatchSettings): void;
+  /** Delivery settings (issue #2554 part 3): per repository, its promotion set schedule and delivery gates; absent: never set (none). */
+  getDeliverySettings(): DeliverySettings | undefined; setDeliverySettings(settings: DeliverySettings): void;
   /** Contribution (issue #429): whether jobs may work through a fork of a repository their user cannot push to; absent: off. */
   getContribution(): ContributionSettings | undefined;
   setContribution(settings: ContributionSettings): void;
