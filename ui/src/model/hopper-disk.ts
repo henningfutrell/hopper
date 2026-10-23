@@ -1,6 +1,7 @@
 // The hopper's own disk use on a Machines card, and the disk budget an admin sets there (issue #1120, design.md "Hopper's
 // own disk use" → "Part 2"). The budget is in GB in the form and in bytes on the wire. Pure.
 import type { CacheKind, CacheUse, ContainerStorage, DiskBudget, HopperDisk } from '../../../src/domain/types.ts';
+import type { MachineCleanupLeftovers } from '../../../src/domain/resource-ledger.ts';
 
 const size = (bytes: number): string => (bytes >= 1e9 ? `${bytes >= 1e10 ? Math.round(bytes / 1e9) : (bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
 
@@ -40,3 +41,9 @@ export function budgetBody(text: string): { budget: DiskBudget | null } | string
 
 /** The form's GB for the budget set; empty when there is none. */
 export const budgetDraft = (b: DiskBudget | null): string => (b ? String(b.bytes / 1e9) : '');
+
+/** The cleanup leftovers on a machine (issue #2504 part 3): what ended jobs left there after the grace period. */
+export function cleanupLeftoversText(l: MachineCleanupLeftovers): string {
+  const n = (k: number, what: string): string => `${k} ${what}${k === 1 ? '' : 's'}`;
+  return `${n(l.entries, 'thing')} of ${n(l.jobs, 'ended job')}, ${l.failed > 0 ? `${n(l.failed, 'removal')} failed: see Failures` : 'not removed yet'}`;
+}

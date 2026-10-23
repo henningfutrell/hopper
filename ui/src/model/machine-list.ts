@@ -29,6 +29,7 @@ export function machineBadges(m: MachineView, now: number): MachineBadge[] {
     ...warn(m.disk?.low, 'disk low'),
     ...(credential ? [{ status: credential.badge, tone: credential.state === 'acknowledged' ? 'muted' as const : 'warn' as const }] : []),
     ...warn(m.hopperDisk?.over, 'over disk budget'),
+    ...warn(m.cleanupLeftovers !== undefined, 'cleanup leftovers'),
     ...warn(m.resources?.windowsLink?.ok === false, 'Windows link broken'),
     ...warn(m.resources?.nodeFloor, 'Node unpatched'),
     { status: m.online ? 'online' : 'offline' },

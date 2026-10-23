@@ -100,7 +100,7 @@ export interface LoginsRead {
   logins: LoginView[];
 }
 
-export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; credentialAcceptance?: import('../../../src/domain/machine-credentials.ts').CredentialAcceptance; credentialHeld?: boolean };
+export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; cleanupLeftovers?: import('../../../src/domain/resource-ledger.ts').MachineCleanupLeftovers; credentialAcceptance?: import('../../../src/domain/machine-credentials.ts').CredentialAcceptance; credentialHeld?: boolean };
 
 export interface Health {
   ok: boolean;
