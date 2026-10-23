@@ -225,7 +225,8 @@ stays pure — every time it compares is `inputs.at`.
   machine with the most placement pressure: headroom of the binding (most used) week window — to the
   hard limit, to 100% while it burns — per hour left before its reset. An account that resets in 11
   hours with 80% left goes before one that resets in 4 days. Ties, and machines with no week window
-  that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
+  that names its reset (pressure 0), fall back to most real room and memory room (issue #2499, "The memory floor"),
+  then most room, then id. The start reason gives the
   pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
   it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
 - **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). It preempts
@@ -13117,6 +13118,16 @@ never a hold, read from a machine reading taken before the burst took its memory
   no new job and no job back, whatever its memory available: `waiting for memory: a's memory is under pressure: its tasks
   waited on memory 35% of the last 10 s, and a new job starts only below 20%`. A floor of 0 turns this check off too. It
   pauses nothing: the memory pause still reads the memory available only.
+- **Placement by memory room** (issue #2499, `better` in `src/decider/assign.ts`). A machine's lane cap is a count of jobs,
+  and 9 lanes of 2 GiB each did not fit a 14 GiB VM. So of the machines a job may go to, after placement pressure, the one
+  with the most **real room** goes first: its lane room, only as far as its **memory room** holds jobs (its memory over its
+  floor, the lower of its own and its host pool's, less what is kept, divided by a job's memory; none under memory
+  pressure). Then the one with the most memory over its floor, then the most lane room, then the lowest id. A machine with
+  no memory room counted is judged by its lanes alone. Each place in the Decision lowers the machine's memory room, so a
+  burst spreads over the machines by what they hold now. The Decision's reasons name each machine's memory room:
+  `b: memory for 5 more jobs (10.6 GiB over its floor of 1.4 GiB)`. A machine with free lanes, a waiting job and no memory
+  room says so on its lane plan: `memory holds no more job: 3 GiB available, and a new job needs 2 GiB over its floor of
+  1.4 GiB`. The lane cap itself stays as configured: a lane cap below its busy lanes would drain them.
 - **The memory pause** (step 7c, `memoryPauses`). An online machine whose memory available is below the floor itself
   pauses the running job that started there last: its executor parks (`parkingExecutors`, now an input of every
   Decision, whatever the preemption setting), it has an agent session, and no preemption names it. One per machine every

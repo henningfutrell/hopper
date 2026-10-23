@@ -6,7 +6,7 @@ import { windowsFits } from '../domain/windows-jobs.ts';
 import { roomToElbowIn } from './elbow-in.ts'; import { awayFrom, takeIdle } from './lane-health.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
-import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryWait, type MemoryRoom } from './memory-floor.ts';
+import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryHeadroom, memoryLanes, memoryWait, type MemoryRoom } from './memory-floor.ts';
 import { jevPicked } from './lane-calls.ts'; import { leftOut, waitReason } from './wait-reason.ts';
 import { SIGN_IN, signedOutFor } from './signed-out.ts';
 import { addressHolds, credentialHolds, heldOff, herdrHolds, notReady, offNetwork, opensPane, workTreeHolds } from './machine-holds.ts';
@@ -323,13 +323,24 @@ function elbowsIn(s: MachineStateWithCredentialHold, job: Job): boolean {
   return eligible(s, job) && e !== undefined && roomToElbowIn(s, e.band);
 }
 
-/** Of two machines, the better pick for `job`: most placement pressure, then most room, then lowest id. */
+/**
+ * Of two machines, the better pick for `job`: most placement pressure, then most real room — its lane room, only as far as
+ * its memory holds jobs —, then most memory over its floor (issue #2499), then most lane room, then lowest id. A machine
+ * with no memory room counted (no reading, floor off) is judged by its lanes alone.
+ */
 function better(a: MachineStateWithCredentialHold, b: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): MachineStateWithCredentialHold {
   const pa = a.executors.get(job.spec.executor)!.pressure;
   const pb = b.executors.get(job.spec.executor)!.pressure;
   if (pa !== pb) return pb > pa ? b : a;
   const ra = roomForJob(a, job, pl);
   const rb = roomForJob(b, job, pl);
+  if (a.memory && b.memory) {
+    const real = (s: MachineStateWithCredentialHold, r: number): number => Math.min(r, memoryLanes(s.memory!));
+    if (real(a, ra) !== real(b, rb)) return real(b, rb) > real(a, ra) ? b : a;
+    const ha = memoryHeadroom(a.memory);
+    const hb = memoryHeadroom(b.memory);
+    if (ha !== hb) return hb > ha ? b : a;
+  }
   if (ra !== rb) return rb > ra ? b : a;
   return b.machine.id < a.machine.id ? b : a;
 }

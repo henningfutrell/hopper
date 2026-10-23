@@ -7,7 +7,7 @@ import { laneSlots } from './priority-lanes.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
 import { laneEffect, machinePolicy, placementPressure } from './usage.ts';
 import { signedOutNote } from './signed-out.ts';
-import { preempt } from './preempt.ts'; import { memoryPauses, memoryRoom, poolHosts, waitReleases, type MemoryRoom } from './memory-floor.ts';
+import { preempt } from './preempt.ts'; import { headroomNote, memoryPauses, memoryRoom, poolHosts, waitReleases, type MemoryRoom } from './memory-floor.ts';
 import { numberNewLanes, outAt, outReason, withoutOut } from './lane-health.ts';
 
 /** A machine's own usage limits (issue #1860) and soft lanes (issue #2091), as its usage reason names them; nothing when the user's apply. */
@@ -73,6 +73,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     };
   });
   poolHosts(states);
+  for (const s of states) if (s.memory) reasons.push(headroomNote(s.machine.id, s.memory));
   const idleByMachine = new Map<string, Lane[]>(states.map((s) => [s.machine.id, [...s.freeIdle]]));
 
   const hold: Decision['hold'] = [];
