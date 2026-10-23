@@ -24325,8 +24325,8 @@ runs and the one it ran before (read from the hopper's container before the stac
   `.worktrees` (issue #1188; and for what the layout before left, while it is there), by `du -skx` (a link, such as a worktree's `node_modules`, counts as a link).
   Each measure is cut off at 20 s by `timeout`, so a slow disk never holds the survey (and so the sweep) up; one cut off
   says nothing, and a machine with no `timeout` (macOS by default) or a client older than this measures nothing.
-- **The sweep keeps it.** Each machine's last measure (`Sweep.disk`), in memory: after a restart the first pass, at
-  startup, measures again. `GET /api/machines` carries it on each machine it measured as `hopperDisk` — each place, their
+- **The sweep keeps it.** Each machine's last measure (`Sweep.disk`), in the store since issue #2494 (part 7 below): a
+  restart still shows it until the first pass, at startup, measures again. `GET /api/machines` carries it on each machine it measured as `hopperDisk` — each place, their
   sum, when, and the disk budget now —, and each Machines card says it, "over disk budget" when over.
 - **The disk budget** (`diskBudget`, a user setting; none by default): `POST /ui/api/machines/disk-budget` (admin, `null`
   turns it off), `GET /api/machines/disk-budget`, the Disk budget panel on Machines. One budget for each machine.
@@ -24334,8 +24334,9 @@ runs and the one it ran before (read from the hopper's container before the stac
   reaped at once, not after `scratchMaxAgeHours`; the reap's rule still keeps work not pushed, and a parked or live job's
   work is never touched. When a reap removed one, it surveys again for the measure.
 - **Still over, a person is told**: `machine.disk_over_budget` (the use, the budget, each place), once while it stays over;
-  `machine.disk_within_budget` once it is back within it. Webhooks take them. The budget turned off forgets who was told. Kept
-  in memory, as the memory alert: a machine still over after a restart is told again.
+  `machine.disk_within_budget` once it is back within it. Webhooks take them. The budget turned off forgets who was told. Since
+  issue #2494 (part 7 below), what the event log last told of each machine stands after a restart: a machine still over is
+  not told again.
 
 **Part 3: a job's containers and volumes** (`src/client/reap.ts` `JOB_LABEL`; `src/engine/sweep.ts`; `src/engine/cleanup.ts`).
 The exited per-job database containers and the orphaned volumes came from jobs' own test runs: a job killed at its end
@@ -24418,7 +24419,19 @@ showed none of it. This part measures them; a cache policy and an image prune ar
   and through a client target's `/survey`; a client older than this measures neither.
 - **Shown with the disk use.** `hopperDisk` on `GET /api/machines` carries them as `caches` (per kind, biggest first) and
   `storage`, and each Machines card says them (`caches`, `container storage`). They are not the hopper's own disk use:
-  the disk budget does not count them, and the sweep removes none of them. Kept in memory with the rest of the measure.
+  the disk budget does not count them, and the sweep removes none of them. Kept with the rest of the measure.
+
+**Part 7: the measure in the store** (issue #2494, `src/store/disk-measures.ts`, tenant migration 94; `src/engine/sweep.ts`).
+The measure lived in memory only, so a restart showed no disk use on Machines until the first pass, and a machine still
+over its disk budget was told again.
+- **One row per machine** (`machine_disk_measures`): its last measure (`DiskMeasure`: when, each place, and the caches and
+  container storage as the survey said them), as JSON. Each pass that measured something replaces it. The disk budget
+  is not in the row: each read applies the budget now, as before.
+- **Read once.** The sweep reads every row at its first read (`Sweep.disk`, or its first pass), then keeps them in memory
+  and writes each new measure through.
+- **Told once across restarts.** The sweep reads, once, the newest `machine.disk_over_budget` or
+  `machine.disk_within_budget` of each machine (`overBudgetTold`): a machine whose newest is over counts as told.
+- A machine removed keeps its row; nothing reads it, as `GET /api/machines` lists only the machines there are.
 
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
@@ -24434,7 +24447,9 @@ survey for real, with a fake container runtime), `test/engine/sweep.test.ts` ("a
 `test/integration/work-kept.test.ts` (the event at a job's end), `test/support-run.test.ts` (the tests' labels). Part 4:
 `test/sandbox/leftover-builds.test.ts` (which builds are leftover, their removal, once an hour from the reconcile pass),
 `test/adapters/runtime-images.test.ts` (the image calls of both runtimes), `test/sandbox/tools.test.ts` (the stage label). Part 5: `test/client/survey-roots.test.ts` (each checkout measured, not a plain folder or a link). Part 6: `test/client/survey-disk-use.test.ts` (the caches and the
-container storage for real, with a fake runtime), `test/domain/hopper-disk.test.ts`, `test/ui/hopper-disk.test.ts`.
+container storage for real, with a fake runtime), `test/domain/hopper-disk.test.ts`, `test/ui/hopper-disk.test.ts`. Part 7:
+`test/store/disk-measures.test.ts` (a row per machine, read back after a restart), `test/engine/sweep-disk-kept.test.ts`
+(the measure written and shown after a restart; told once across a restart).
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 

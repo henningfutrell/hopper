@@ -24,8 +24,9 @@
 // The survey also measures the hopper's own disk use in each work tree (issue #1120, design.md "Hopper's own disk use"): the
 // sweep keeps each machine's last measure, which Machines shows. Over the user's disk budget, it reaps every ended job's
 // scratch dir at once, whatever its age (work not pushed is still kept), and measures again; still over, a person is told
-// once (machine.disk_over_budget), and once more when it is back within it (machine.disk_within_budget). Kept in memory:
-// after a restart, the first pass measures again, and a machine still over is told again.
+// once (machine.disk_over_budget), and once more when it is back within it (machine.disk_within_budget). The last measure
+// is kept in the store too (issue #2494), so a restart still shows it, and what the event log last told of each machine
+// stands: a machine still over is not told again.
 // A machine whose disk is low (issue #2490, design.md "A machine's disk") takes no new job; the sweep frees what it may there:
 // it sweeps the machine at once when its disk turns low (then by its interval), and reaps every ended job's scratch dir
 // whatever its age, as over the budget.
@@ -38,9 +39,9 @@
 // issue #1188 left in the `.hopper-scratch` of each work tree the survey found, with size, age and whether it holds work not
 // pushed, and keeps, in memory, the leftovers it does not judge — a dir of no job the hopper knows, and the repository mirrors.
 // Machines shows them; a person keeps or removes each one (`decideLeftover`). The sweep removes none by itself.
-import type { ActingPerson, Discarding, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
+import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
-import { discardingOf, discardReasonOf, hopperDiskOf, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -170,9 +171,9 @@ const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' :
 
 export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.warn(l)): Sweep {
   const schedule = createSweepDue();
-  /** Each machine's last measure (issue #1120), and the machines told over the disk budget. */
-  const measured = new Map<string, { paths: HopperDiskPath[]; at: string; more: Pick<Survey, 'caches' | 'storage'> }>();
-  const told = new Set<string>();
+  /** Each machine's last measure (issue #1120), read from the store once (issue #2494), and the machines told over the disk budget. */
+  let kept: Map<string, DiskMeasure> | undefined, toldOver: Set<string> | undefined;
+  const measured = (): Map<string, DiskMeasure> => (kept ??= new Map(c.store.diskMeasures.all())), told = (): Set<string> => (toldOver ??= overBudgetTold(c.store.events.recent(KEPT_EVENTS, [...BUDGET_EVENTS])));
   /** The jobs, by `<machine>/<job id>`, whose dirs the reap could not remove, told once (issue #1452), with when to try again (issue #1613). */
   const stuck = new Map<string, number>();
   let busy = false;
@@ -218,14 +219,14 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   function measure(m: MachineSnapshot, found: Survey, budget: DiskBudget | undefined): void {
     const at = c.clock.now().toISOString();
     const more = { caches: found.caches, storage: found.storage }, disk = hopperDiskOf(found.usage, at, budget, more);
-    if (!disk) return;
-    measured.set(m.id, { paths: disk.paths, at, more });
-    if (!budget) { told.delete(m.id); return; }
-    if (disk.over && !told.has(m.id)) {
-      told.add(m.id);
+    if (!disk) return; const last: DiskMeasure = { at, paths: disk.paths, ...(found.caches?.length ? { caches: found.caches } : {}), ...(found.storage?.length ? { storage: found.storage } : {}) };
+    measured().set(m.id, last); c.store.diskMeasures.keep(m.id, last);
+    if (!budget) { told().delete(m.id); return; }
+    if (disk.over && !told().has(m.id)) {
+      told().add(m.id);
       log(`hopper: the hopper's own disk use on ${m.id} is ${gb(disk.bytes)}, still over its disk budget of ${gb(budget.bytes)}`);
       c.store.events.append({ type: 'machine.disk_over_budget', machineId: m.id, data: { machineId: m.id, usedBytes: disk.bytes, budgetBytes: budget.bytes, paths: disk.paths } });
-    } else if (!disk.over && told.delete(m.id)) {
+    } else if (!disk.over && told().delete(m.id)) {
       c.store.events.append({ type: 'machine.disk_within_budget', machineId: m.id, data: { machineId: m.id, usedBytes: disk.bytes, budgetBytes: budget.bytes } });
     }
   }
@@ -360,8 +361,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
 
   return {
     disk(machineId) {
-      const m = measured.get(machineId);
-      return m ? hopperDiskOf(m.paths, m.at, budgetNow(), m.more) : undefined;
+      const m = measured().get(machineId);
+      return m ? hopperDiskOf(m.paths, m.at, budgetNow(), m) : undefined;
     },
     leftovers: (machineId) => leftovers.view(machineId),
     decideLeftover: (machineId, path, decision, by) => leftovers.decide(machineId, path, decision, by),

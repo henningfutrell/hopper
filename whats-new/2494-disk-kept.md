@@ -1,0 +1,1 @@
+- After the hopper restarts, each machine card still shows its last disk use, and a machine over its disk budget does not send the alert again.
