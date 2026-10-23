@@ -28,10 +28,11 @@ export const WORK_ITEM_STATES = [
 ] as const;
 export type WorkItemState = typeof WORK_ITEM_STATES[number];
 
-/** What an item handed to a person on its failure waits on: Needs a person's count. */
-export const HANDOFF_WAIT = 'a hand-off';
-/** What an item waits on while its job waits on a person's decision (issue #2693): its question, proposal or research report. */
-export const DECISION_WAITS: readonly string[] = ['a question', 'a proposal', 'a research report'];
+/**
+ * What an item handed to a person on its failure waits on: Needs a person's count. `DECISION_WAITS`: what it waits on while its
+ * job waits on a person's decision (issue #2693), its question, proposal or research report.
+ */
+export const HANDOFF_WAIT = 'a hand-off'; export const DECISION_WAITS: readonly string[] = ['a question', 'a proposal', 'a research report'];
 /** What an item whose job the hopper parked to move it off its machine waits on (issue #1892): the move's pick up. */
 export const MOVE_WAIT = 'a move to another machine';
 
