@@ -66,13 +66,8 @@ export async function boot(policy: string[], o: { container?: boolean } = {}): P
 export async function runningJob(a: TestApp): Promise<string> {
   const job = await a.pull({ op: 'sleep', ms: 60000 });
   await a.waitForStatus(job.id, 'running', 10000);
-  return jobCredentials(a, job.id);
-}
-
-/** A credentials dir for job `jobId`: its proxy token, and the skill script beside it. */
-export function jobCredentials(a: TestApp, jobId: string): string {
   const dir = temp('job-credentials-');
-  writeFileSync(join(dir, 'token'), `${proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, jobId)}\n`, { mode: 0o600 });
+  writeFileSync(join(dir, 'token'), `${proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, job.id)}\n`, { mode: 0o600 });
   writeFileSync(join(dir, 'skill'), SKILL_SCRIPT, { mode: 0o700 });
   return dir;
 }

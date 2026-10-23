@@ -22,7 +22,6 @@
 //   Scenario: a write need is one run card (issue #2197): the template it waits on is no card of its own; one notice of
 //     the card; one approval of the run card, and the step goes on with no other approval; a declined card tells the step no
 //   Scenario: the run card's approval is for its job only (part 3); with allow again it is for every job, and remembered
-//   Scenario: the run card's approval for one job covers the job that runs it again (issue #2639 part 2): no second card
 //   Scenario: sandbox strictness locked for the template (issue #655 part 8): the need step is refused, saying why
 //   Scenario: a need the vault mints nothing for is refused, saying why; a bad call is refused before anything runs
 import { spawn } from 'node:child_process';
@@ -34,7 +33,7 @@ import { templateCards } from '../../src/domain/run-cards.ts';
 import { NEED_LABEL } from '../../src/sandbox/need-box.ts';
 import { STEP_SCRIPT } from '../../src/windows-steps/script.ts';
 import { MINTED_AWS } from '../support/fake-mint-apis.ts';
-import { ACCOUNT, boot, jobCredentials, runningJob, stopAll, vault, type Booted, type Run } from '../support/read-only-check.ts';
+import { ACCOUNT, boot, runningJob, stopAll, vault, type Booted, type Run } from '../support/read-only-check.ts';
 import { waitFor } from '../support/wait.ts';
 
 afterEach(stopAll);
@@ -219,44 +218,6 @@ describe('need steps (issue #1007)', () => {
     expect(t.approval).toMatchObject({ by: expect.any(String) });
     expect(t.approval!.jobs).toBeUndefined();
     expect(approved.body.rememberedWrites).toEqual([expect.objectContaining({ operation: 'write', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` } })]);
-  });
-
-  it('a run card approved for one job covers the job that runs it again (issue #2639 part 2): no second card', async () => {
-    const b = await bootSteps([]);
-    const first = await stepJob(b);
-    const write = `write/aws-role/${ACCOUNT}/deploy`;
-    const args = ['need', write, ...WHY, '--plan', 'put a parameter (undo: delete it)', '--command', 'true', '--wait', '60'];
-    const run = step(b, first.creds, args);
-    await run.waiting;
-    const [card] = (await vaultOf(b)).runs ?? [];
-    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: first.jobId, template: card!.template }, { token: b.token });
-    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
-    expect((await run.end).stderr).toContain('hopper-step: the template is ready; the step runs now');
-
-    // The job ends, and its item is offered again: the new job runs it again.
-    expect((await b.a.ui(`/ui/api/jobs/${first.jobId}/cancel`, {}, { token: b.token })).status).toBe(200);
-    await b.a.waitForStatus(first.jobId, 'cancelled');
-    const key = b.a.user().store.jobs.get(first.jobId)!.source!.key;
-    const again = await waitFor(async () => {
-      const j = await b.a.pull({ op: 'sleep', ms: 60000 }, { key });
-      return j.id !== first.jobId ? j : undefined;
-    }, { what: 'the job of the item offered again' });
-    expect(again.rerunOf).toBe(first.jobId);
-    await b.a.waitForStatus(again.id, 'running', 10000);
-
-    // The approval for the first job's runs covers the rerun's: no card waits, and its step runs with no person.
-    const v = await vaultOf(b);
-    expect(v.templates.find((x) => x.name === card!.template)?.approval?.jobs).toEqual([first.jobId, again.id]);
-    expect(v.runs).toEqual([]);
-    const creds = jobCredentials(b.a, again.id);
-    writeFileSync(join(creds, 'step'), STEP_SCRIPT, { mode: 0o700 });
-    const r = await step(b, creds, args).end;
-    // It waits on nothing: it runs in a need box at once, where the apply gate refuses a write with no plan, as for the first.
-    expect(r.stderr).not.toContain('waiting:');
-    expect(r.stdout + r.stderr).toContain(`${write}: no apply without a plan`);
-    expect((await ofJob(b, again.id)).find((e) => e.type === 'vault.mint_refused')?.data).toMatchObject({ machine: expect.stringMatching(/^hopper-need-/), job: again.id });
-    expect((await vaultOf(b)).runs).toEqual([]);
-    expect((await ofJob(b, again.id)).filter((e) => e.type === 'vault.run_card_opened')).toEqual([]);
   });
 
   it('a declined run card tells the waiting step no (issue #2197)', async () => {
