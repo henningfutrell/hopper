@@ -40,6 +40,24 @@ describe('the work-item ledger in the database', () => {
     store.close();
   });
 
+  it('a job\'s end names the pull request it opened through the hopper, before its report or GitHub names one (issue #2693)', () => {
+    const store = t.open(t.url());
+    const a = store.jobs.create(spec, 50, ref(KEY, 1));
+    const opened = (url: string) => store.events.append({ type: 'github_proxy.done', jobId: a.id, data: { requestId: 'r1', machine: 'desk', as: 'octocat', op: 'pr.create', repo: 'o/r', number: 3, url } });
+    store.events.append({ type: 'job.queued', jobId: a.id, data: { spec, priority: 50 } });
+    store.events.append({ type: 'job.started', jobId: a.id, data: {} });
+    store.events.append({ type: 'github_proxy.done', jobId: a.id, data: { requestId: 'r0', machine: 'desk', as: 'octocat', op: 'pr.status', repo: 'o/r', number: 3 } });
+    opened(PR);
+    store.events.append({ type: 'job.finished', jobId: a.id, data: { result: 'pull request ready for review' } });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'pr_open', pullRequest: PR, pullRequestState: 'open' });
+    // One it opened after its end is not what that end waits on: a rebuild reads the same.
+    opened('https://github.com/o/r/pull/9');
+    const live = store.workItems.list();
+    store.workItems.rebuild();
+    expect(store.workItems.list()).toEqual(live);
+    store.close();
+  });
+
   it('an event that fails rolls its item back with it', () => {
     const store = t.open(t.url());
     const a = store.jobs.create(spec, 50, ref(KEY, 1));
