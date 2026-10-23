@@ -6,7 +6,7 @@ import type { DeliverySettingsView } from '../../src/domain/delivery-settings.ts
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
 import { promotionSetOf } from '../../src/domain/promotion-sets.ts';
 import type { EventType } from '../../src/domain/types.ts';
-import type { DeliveryForecastView, PromotionSetForecastView } from '../../src/http/delivery-forecast.ts';
+import type { DeliveryForecastView, PromotionSetForecastView } from '../../src/domain/delivery-forecast.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];
@@ -140,8 +140,16 @@ describe('forecasts with a promotion set schedule', () => {
     expect(r.body.changes).toEqual([{ jobId: 'g1', issue: `${REPO}#20`, pullRequest: pr(120), step: 'test_gate' }]);
   });
 
+  it('a repository alone: its open promotion set, the one a change that lands now goes in (part 7)', async () => {
+    const { a, now } = await withSchedule({ test_gate: { owner: 'release-owner' } });
+    const r = await a.api<PromotionSetForecastView>('GET', `/api/delivery-forecast?repo=${encodeURIComponent(REPO)}`);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ repo: REPO, set: { set: promotionSetOf(schedule(now), new Date(now).toISOString())!.set }, forecast: { step: 'promotion_set' } });
+  });
+
   it('refuses a set with no repository or set 0 (400), and a repository with no schedule (404)', async () => {
     const a = await boot();
+    expect((await a.api('GET', `/api/delivery-forecast?repo=${encodeURIComponent(REPO)}`)).status).toBe(404);
     expect((await a.api('GET', '/api/delivery-forecast?set=3')).status).toBe(400);
     expect((await a.api('GET', `/api/delivery-forecast?repo=${encodeURIComponent(REPO)}&set=0`)).status).toBe(400);
     expect((await a.api('GET', `/api/delivery-forecast?repo=${encodeURIComponent(REPO)}&set=3`)).status).toBe(404);

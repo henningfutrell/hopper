@@ -8174,6 +8174,8 @@ whose job's end was reported after the listing (the listing does not know that e
 Nor for an item whose job was made, or ended, after the pass started (issue #2570): another hopper on the same database
 made it from the same Run again while this pass read GitHub, and the listing knows nothing of it. Its end is reported by
 the time this pass reaches the item, so "reported after the listing" alone does not catch it; the pass's start does.
+The job's transaction stamps its creation before it commits, so a pass can start between the stamp and the commit and not
+see the job (issue #2617). Its end report is written after the commit, so a job changed after the pass started counts too.
 A loop whose items each wait on real I/O already (a shell, git, a GitHub call: the sweep, the tends, the failure sweep's
 runs) needs no yield. The engine's Decision is one step and never yields. The rule needs no second connection pool; an
 asynchronous pool for the HTTP reads is a separate path of the same issue. It is checked in review: a new loop over a list
@@ -34286,3 +34288,32 @@ Verification: `test/domain/delivery-ledger.test.ts` (scheduled actuals, ungated,
 schedule, agreement with `scheduledPlace`), `test/integration/delivery-ledger.test.ts` (a change run end to end has a
 predicted and an actual time for every step and the accuracy report its error; a later pass keeps the first prediction;
 400), `test/cli/forecast.test.ts`.
+
+**Part 7 (2026-10-23): the delivery view and the accuracy over time.** Settings → Delivery shows, above the delivery
+settings (`ui/src/views/delivery-forecasts.tsx`, its pure part `ui/src/model/delivery-forecast.ts`): for each repository
+with a promotion set schedule, its **open promotion set** — the one a change that ends its landing checks now goes in,
+`GET /api/delivery-forecast?repo=owner/name` with no `set` (`hopper forecast --repo`) — and the two sets before it, each
+with its cutoff, test gate and production times, its step, the person a gate waits on and since when, a slip, the time
+left split into a person's wait, the wait for a cutoff and machine time, its changes, and a button per gated step left
+that clears it (`POST /ui/api/delivery-gate`, operator); a change looked up by its job id, `owner/name#N` or pull
+request URL, with the same parts and its expedited path; and the forecast's error over time. Every time is on the
+owner's wall clock: the time zone of the repository's promotion set schedule (`zonedTime`, by `Intl`), else the
+browser's, named beside the times. `GET /api/delivery-ledger` answers `overTime` too (`accuracyOverTime`,
+`src/domain/forecast-accuracy.ts`): the mean absolute error of the predicted ends per `period` (`day`, or `week` from
+its Monday, the default) of the actual end and per step, in `timeZone` (default: the schedule's of the repository the
+rows are of, else UTC); `hopper forecast --ledger --period day|week --time-zone <zone>`. The answers' types moved to
+`src/domain/` (`DeliveryForecastView`, `PromotionSetForecastView` in `delivery-forecast.ts`, `DeliveryLedgerView` in
+`forecast-accuracy.ts`), so the UI reads them as types.
+
+Decisions: the view is in Settings → Delivery, beside the schedule it depends on, not a page of its own (the nav has no
+room for one more home). A job's page does not show its forecast: each forecast reads the 30-day window, too much for
+every job page a person opens; the lookup reads it on request. A period is placed by the actual end, the time the error
+is known. With no `timeZone` and rows of more than one repository, the error over time is in UTC.
+
+Left: none; part 7 closes issue #2554.
+
+Verification: `test/domain/forecast-accuracy.test.ts` (per day in a time zone, per week from its Monday, the same rows
+twice), `test/integration/delivery-ledger.test.ts` (`overTime` per day, a named zone, the default period, 400 for a bad
+period or zone), `test/integration/delivery-settings.test.ts` (the open set, 404 with no schedule),
+`test/cli/forecast.test.ts`, `test/ui/delivery-forecast.test.ts` (times across the end of daylight saving time, durations,
+the time zone, the query, the rows, the gates to clear).

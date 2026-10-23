@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { DeliveryExpediteView } from '../../src/domain/delivery-expedite.ts';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
 import type { EventType } from '../../src/domain/types.ts';
-import type { DeliveryForecastView, PromotionSetForecastView } from '../../src/http/delivery-forecast.ts';
+import type { DeliveryForecastView, PromotionSetForecastView } from '../../src/domain/delivery-forecast.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];
