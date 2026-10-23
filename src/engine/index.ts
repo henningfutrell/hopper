@@ -247,9 +247,16 @@ export function createEngine(o: EngineOptions): Engine {
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
       // On several hosts on one database (issues #1627, #1662), only the sweep lease's holder sweeps; a host that takes it
       // sweeps every machine. Only the cleanups lease's holder does the owed cleanups, at its start and when it takes the lease.
-      // With each sweep pass, the leftover check (issue #2504): an ended job whose cleanup left something is told once; and
-      // the maids (part 14): each ledger entry its cleanup left, reaped again after its backoff.
-      const sweepIfHeld = (): Promise<void> => { const h = passes.hold('sweep'); if (h.held) { void leftoverCheck(); void maids(); } return h.held ? sweep.run(h.taken) : Promise.resolve(); };
+      // With each sweep pass, the leftover check (issue #2504): an ended job whose cleanup left something is told once; and,
+      // once the pass ends, the maids (part 14): each ledger entry its cleanup left, reaped again after its backoff. After the
+      // pass, never beside it: two reaps of one job's dirs at once would race, and the pass would not see what it frees.
+      let sweeping: Promise<void> | undefined;
+      const sweepIfHeld = (): Promise<void> => {
+        const h = passes.hold('sweep');
+        if (!h.held) return Promise.resolve();
+        void leftoverCheck();
+        return sweeping ??= sweep.run(h.taken).then(maids).finally(() => { sweeping = undefined; });
+      };
       const resumeIfHeld = (): Promise<void> => { const h = passes.hold('cleanups'); return h.taken ? cleanups.resume() : Promise.resolve(); };
       void resumeIfHeld().then(sweepIfHeld);
       sweepTimer = setInterval(() => { void sweepIfHeld(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);

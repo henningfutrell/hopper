@@ -33899,8 +33899,9 @@ for the sweep's reap a day later, and a deferral was tried again on every tick.
   no `cleanupDeferred`: that cleanup judges the entries first), past its retention (`retainedUntil`) and its next attempt
   (`maidWorkOf`, `src/domain/maids.ts`, pure). Never a herdr pane: only the job's executor closes one (part 13). A job the
   store does not know is not judged.
-- **The maids** (`createMaids`, `src/engine/maids.ts`) run with each sweep check, on the sweep lease's holder, beside the
-  leftover check; one pass at a time. For each job and machine with an item due, one reap there through the machine's own
+- **The maids** (`createMaids`, `src/engine/maids.ts`) run with each sweep check, on the sweep lease's holder, once the
+  sweep's pass ends, never beside it: two reaps of one job's dirs at once would race, and the pass would not record what it
+  freed. One pass at a time; a sweep check while the pass and the maids run waits for them. For each job and machine with an item due, one reap there through the machine's own
   shell (this machine, ssh, a client target: the first executor there that gives one, as the sweep), given the job's scratch
   dir as its entries name it (`maidScratchOf`: the scratch dir, the container runtime's dir, or the job worktree's work tree).
   The reap is the one the job's cleanup and the sweep use: it stops the scope and the processes, removes the job's
