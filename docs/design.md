@@ -61,10 +61,10 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it, and for a job's done criteria a pipeline's jobs, a job's log, a merge request's notes and changed files and a commit's time (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), a GitLab job's done criteria on its merge request (`done-criteria.ts`, issue #1924 part 4), its label changes as rows of the user's outbox and their send (`outbox.ts`, issue #1892 part 17), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
-| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), a write a crash left found by its post key and the proxy's kill points (`resend.ts`, issue #1959 part 2, "The GitHub proxy under crashes"), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), a write a crash left found by its post key and the proxy's kill points (`resend.ts`, issue #1959 part 2, "The GitHub proxy under crashes"), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts`; `hopper-requirements`, the client a job runs to check its push requirements (`requirements-script.ts`, issue #2555, "Push requirements"), its route `src/http/job-requirements.ts`, the gate at the push `src/users/push-requirements.ts`, the rules `src/domain/push-requirements.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
-| `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076) | engine, http, store, plugins, decider, sources |
+| `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076); whether a job's pushed commit holds a requirements file, in the same quarantine (`push-requirements-at.ts`, issue #2555) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8), and its kill points for the crash harness (issue #1954) | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
@@ -33636,3 +33636,98 @@ leftover bytes on Machines.
 `goneClosures` reaps a kept entry that is gone, keeps one still there, and never judges a reaped one again);
 `test/engine/sweep-ledger.test.ts` (the sweep surveys the work tree of kept work no job in the job list used, and closes the
 entry once its dir is gone).
+
+
+## Push requirements (issue #2555, 2026-10-22)
+
+**The problem.** Jobs pushed without the repository's CI gates run first. In one repository, 8 of 9 red pull request runs
+passed the whole test job (12–15 minutes) and then failed only the changed-files coverage gate, by 2–7 lines or branches.
+Each miss cost about 47 billed minutes and one more CI round. The gate's own command runs in a minute on the job's machine.
+
+**The rule.** A **push requirement** is a rule a repository keeps in its **requirements file**, `.hopper/requirements.yaml`:
+an `id`, a **requirement condition** (`when`), the checks to run, and their pass criteria (`src/domain/push-requirements.ts`,
+pure).
+
+```yaml
+requirements:
+  - id: kotlin-coverage
+    when: { paths: ["src/**/*.kt"] }
+    checks:
+      - name: changed-files coverage
+        run: ./gradlew koverVerify
+        thresholds: { changedLines: { min: 80 }, changedBranches: { min: 70 } }
+  - id: migrations
+    when: { any: [{ paths: ["**/*.sql"] }, { paths: ["**/migrations/**"] }] }
+    checks: [{ name: migration tests, run: ./gradlew migrationTest }]
+  - id: workflows
+    when: { workflows: true }
+    checks: [{ name: actionlint, run: actionlint }]
+```
+
+- **Conditions.** `paths` (globs of the files the commit changes against where it leaves its base; a glob with no slash
+  matches a file name in any folder, as a skill rule's), `fileTypes`, `repos`, `branches`, `bases` (globs), `kinds` (the
+  job's kind of work), `labels` (its item's), `dependencies` (a dependency manifest or lock file changed), `workflows` (a
+  file in `.github/workflows/` changed), combined with `all`, `any` and `not`, nested. No `when`: it always applies. Each
+  condition says in words why it holds or not; a requirement that does not apply is **skipped** with that reason (no
+  changed files match `**/*.sql`).
+- **Checks.** A shell command (`sh -c`), at the top of the work tree, with `env` if it names one. It passes when it exits 0
+  and each of its thresholds holds on what it measured: it prints a line `hopper-measure <name>=<number>`, and gets each
+  bound as `HOPPER_MIN_<name>` and `HOPPER_MAX_<name>`. A threshold it measured nothing for fails, saying which line it
+  must print. So the pass criteria are the CI gate's own, by the same command.
+- **Levels.** The hopper's default, the repository's file, a folder's `.hopper/requirements.yaml` (**path-scoped**: its
+  requirements apply only when the commit changes a file in that folder, and their checks run in it), the job's override.
+  A requirement of the same id at a higher level replaces a lower one whole, its thresholds too, stricter or looser
+  (`effectiveRequirements`). A deeper folder's replaces a shallower one's.
+- **A file that cannot be read** (not YAML, an unknown condition, an id twice) is said with its path, and no evaluation of
+  the commit is made: its push stays refused until the file is fixed.
+
+**The evaluation.** `hopper-requirements` (`src/github-proxy/requirements-script.ts`), kept in the job's credentials dir
+as `hopper-relay` is — a POSIX sh line that runs a Node module with no dependency, the job's token in a header — runs in
+the job's work tree: `sh "$HOPPER_REQUIREMENTS" check`.
+
+1. It reads the commit checked out (HEAD, on a branch; changes not committed are refused: an evaluation is of a commit),
+   each requirements file in the commit, and the repository from `origin`.
+2. It asks the hopper the branch's base (`POST /job/requirements`, `op: base`): the base the git proxy judges the push
+   against, as the shrink guard's — the open pull request's base, else the landing branch, else the default branch
+   (`baseBranchOf`). `--base` names one.
+3. It fetches the base, and lists the files the commit changes from their merge base (`git diff --no-renames`).
+4. The hopper plans (`op: plan`): which requirements apply, with the job's kind of work and labels, and why each other one
+   is skipped.
+5. It runs each check of each requirement that applies, here, on the job's machine, and keeps the output here.
+6. The hopper judges the runs (`op: record`) and records `push_requirements.evaluated` on the job's timeline: the repository,
+   branch, base and commit; each requirement `passed`, `failed` or `skipped` with its reason, each check's command, exit
+   code, thresholds and measured values, and a failed one's `problem`. Never a check's output: it can hold anything.
+7. It prints each requirement, and for a failed check the last 200 lines of its output, and exits 1 when one failed.
+
+`sh "$HOPPER_REQUIREMENTS" dry-run` does steps 1–4 and prints what applies, with the commands and thresholds, and what is
+skipped and why; it runs and records nothing. `--json` prints the hopper's answer.
+
+Not taken: the hopper runs the checks. The hopper's machine has no work tree of the job's and none of its toolchain; the
+job's machine has both, and its sandbox already holds what the job runs. Not taken: the hopper evaluates the conditions
+in the client. One copy of the rules, in the domain, tested once; the client only gathers and runs.
+
+**The gate** (`src/users/push-requirements.ts`, the git broker's `pushRequirements`). In the git proxy, after the shrink
+guard, each branch a job's push moves to a commit is judged: the job's newest evaluation of that commit in that
+repository passed, the push goes on; it failed, the push is refused with the requirements that failed. With no
+evaluation of the commit, the commit's tree is read in the user's mirror, in the push's quarantine
+(`src/git-mirror/push-requirements-at.ts`): no requirements file, the push goes on, as before; one, the push is refused,
+as git's own refusal: `octo/tools has push requirements, and 4f1c2a9e8b7d has no passing evaluation: run sh
+"$HOPPER_REQUIREMENTS" check in the work tree at that commit, fix what fails, and push again`. A new commit (an amend, a
+rebase) needs a new evaluation. Git cannot say (no credential, git failing): the push goes on, as with the shrink guard —
+a net, not a gate a broken mirror may close on every push. A branch deleted is not judged.
+
+**Trust.** The job runs its checks and reports their exit codes: a job that lies passes its own gate. The gate is for a
+job that works as asked, to catch in a minute what CI catches in fifteen; CI still runs every gate on the pull request.
+
+**Left for later parts.** The hopper's default requirements (a user's setting, edited in the UI) and the job's override
+(from its item or a direct job), which the levels above already take; the evaluation summarized on the pull request; the
+count of CI runs that failed on a check a requirement that applied should have caught here, and the billed minutes saved.
+
+**Verification.** `test/domain/push-requirements.test.ts` (the file read and refused; every condition and `all`, `any`,
+`not` nested, table-driven over paths, branch and base, labels and kind of work; the skip reasons; the levels, with a
+stricter and a looser threshold; a path-scoped requirement; the plan; the judgement: two requirements, one failing; a
+threshold missed, a measure not printed, checks not run); `test/integration/push-requirements.test.ts` (a real hopper, a
+fake GitHub's git, the real client: the dry run lists exactly the plan and records nothing; a push with no evaluation is
+refused and nothing changes on GitHub; a check under its threshold fails with its output, and the push is still refused;
+after the fix the evaluation passes, is recorded with its command, thresholds and measured values, and the push goes
+through; changes not committed are refused; a repository with no requirements file takes a push with no evaluation).
