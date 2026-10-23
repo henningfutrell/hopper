@@ -38,4 +38,10 @@ describe('a direct job as an item (issue #901)', () => {
     expect(item.prompt).not.toContain('ada@example.com');
     expect(item.author).toBe('ada@example.com');
   });
+
+  it('names its own push requirements, and none when it has none (issue #2555 part 3)', () => {
+    expect(directItem(job, 'u').prompt).not.toContain('push requirements');
+    const item = directItem({ ...job, pushRequirements: [{ id: 'kotlin-coverage', checks: [{ name: 'coverage', run: './gradlew koverVerify' }] }] }, 'u');
+    expect(item.prompt).toContain('push requirements: the submitter set kotlin-coverage. Before each push, run sh "$HOPPER_REQUIREMENTS" check');
+  });
 });
