@@ -7,6 +7,7 @@
 // only the database: no call to GitHub. One correction is no event: an item blocked because its pull request was closed
 // without a merge, the first time in a row, runs again (`runAgain`: its ended job's Run again, by `reconciler`, with a brief
 // that names the closed pull request), off the pass; its new job's `job.queued` moves it. One run again per item at a time.
+// So does an item whose job ended with no pull request and named none since (issue #2693), with a brief that says so.
 // A blocked item that is stuck work for a person gets one notice: `work_item.person_asked`, which a notifier sends on.
 // A block of an item whose job is a GitHub job writes its issue's label change as GitHub outbox rows (act `mirror`, part 8)
 // in the event's transaction: the move and its rows are kept together or not at all, and the source's outbox sends them.
@@ -35,6 +36,13 @@ export const closedBrief = (pullRequest: string | undefined): string =>
   `The earlier pull request of this issue${pullRequest ? ` (${pullRequest})` : ''} was closed without a merge. Read its comments `
   + 'and reviews, and the comments of the issue, to learn why. Then do the work again so that it answers why. Open a new pull '
   + 'request: do not reopen the closed one.';
+
+/** The brief of the job that runs an item again after its job ended with no pull request (issue #2693). */
+export const noPullRequestBrief = (): string =>
+  'The earlier job of this issue ended with no pull request. Read the issue and its comments again, and look for a pull '
+  + 'request of the issue that is open already: continue it if there is one. Else do the work and open a pull request that '
+  + 'closes the issue. When you need a decision from a person, ask it as a question. When the issue needs no code change, '
+  + 'close it as completed.';
 
 /** The kinds of a GitHub job source: a connected account's (`github-account`, every account's), the app's, and `github`. */
 const GITHUB_KINDS: ReadonlySet<string> = new Set(['github', 'github-account', 'github-app']);
@@ -72,11 +80,11 @@ export function createItemReconciler(o: {
     if (!o.runAgain || running.has(c.key)) return false;
     running.add(c.key);
     killPoint(itemKillPoint('run_again', 'before-call'));
-    void o.runAgain(c.jobId, closedBrief(c.pullRequest))
+    void o.runAgain(c.jobId, c.cause === 'no_pr' ? noPullRequestBrief() : closedBrief(c.pullRequest))
       .then((r) => { killPoint(itemKillPoint('run_again', 'after-call')); if (!r.ok) o.log(`hopper: the item reconciler could not run ${c.key} again, tries again later: ${r.message}`); })
       .catch((e: unknown) => o.log(`hopper: the item reconciler could not run ${c.key} again, tries again later: ${(e as Error).message}`))
       .finally(() => running.delete(c.key));
-    o.log(`hopper: the item reconciler runs ${c.key} again: its pull request was closed without a merge`);
+    o.log(`hopper: the item reconciler runs ${c.key} again: ${c.cause === 'no_pr' ? 'its job ended with no pull request' : 'its pull request was closed without a merge'}`);
     return true;
   }
 

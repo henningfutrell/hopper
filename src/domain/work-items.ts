@@ -8,7 +8,7 @@ import type { DomainEvent, EventType } from './types.ts';
 import { applyLanding, isLandingUndone, LANDING_LEDGER_EVENTS, landingOf, type ItemLanding } from './work-item-landing.ts';
 import type { ChangeKind } from './change-kinds.ts';
 import { waitOnLabel, type WaitOn } from './wait-on.ts';
-import { BLOCKED_CAUSES, BLOCKED_WORDS, closedOnGitHub, hasReference, transitionOwner, type BlockedCause, type ItemOwner } from './item-lifecycle.ts';
+import { BLOCKED_CAUSES, BLOCKED_WORDS, closedOnGitHub, hasReference, noPullRequestEndsAfter, ROW_ENDS, transitionOwner, type BlockedCause, type ItemOwner } from './item-lifecycle.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -116,7 +116,11 @@ export interface WorkItem {
   /** A person resolved its hand-off as Done by hand (issue #1892): its job's work is done, by them; kept while it stays done. */
   doneByHand?: true;
   /** How many of its pull requests in a row were closed without a merge on GitHub (issue #1891); a merge ends the row. */
-  closedWithoutMerge?: number;
+  /**
+   * How many of its jobs in a row ended with no pull request to wait on (issue #2693): the item reconciler runs it again by
+   * itself while it is at most `NO_PR_RUNS_AGAIN`. A pull request to wait on, a merge or a done end ends the row.
+   */
+  closedWithoutMerge?: number; noPullRequestEnds?: number;
   /** The jobs of it whose work was kept, not pushed (`job.work_kept`), until removed. */
   keptWork: string[];
   /** Its merged pull request on its way from the landing branch to the tested branch (issue #1073): `work-item-landing.ts`. */
@@ -197,7 +201,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   const move = (eventState: WorkItemState, change: Partial<Base> = {}): WorkItem => {
     const next: Base = { ...base, ...change, eventState, eventAt: event.at, movedBy: by ?? transitionOwner(event.type, d) };
     for (const k of Object.keys(change) as (keyof Base)[]) if (change[k] === undefined) delete next[k];
-    if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr });
+    if (!hasReference(eventState, next)) Object.assign(next, { eventState: 'blocked', blockedCause: 'no_pr', waitingOn: BLOCKED_WORDS.no_pr, noPullRequestEnds: noPullRequestEndsAfter(base) }); else if (ROW_ENDS.includes(next.eventState)) delete next.noPullRequestEnds;
     delete next.runAgainAsked; delete next.keptOut; if (change.wontDo !== true || next.eventState !== 'dropped') delete next.wontDo; if (change.dismissed !== true || next.eventState !== 'dropped') delete next.dismissed; if (change.closedByPerson !== true || next.eventState !== 'dropped') delete next.closedByPerson; if (change.closedByHopper !== true || next.eventState !== 'dropped') delete next.closedByHopper; if (change.doneByHand !== true || next.eventState !== 'done') delete next.doneByHand; if (next.eventState !== 'blocked') delete next.blockedCause; if (next.eventState !== 'blocked' || base.eventState !== 'blocked' || next.blockedCause !== base.blockedCause) delete next.personAsked;
     return settled(item, next, event.at);
   };
