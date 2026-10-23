@@ -116,6 +116,33 @@ function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDra
 const looksAt = (pr: ReferencingPullRequest, repo: string, job: Job): boolean =>
   pr.repo.toLowerCase() === repo.toLowerCase() || isOwnOrReworked(pr, job) || isUpdatedBy(pr, job);
 
+/** The pull requests a job opened through the hopper's GitHub proxy (issue #2510): their URLs, the newest first. */
+export type JobOpenedPullRequests = (jobId: string) => readonly string[];
+
+/** How many of the pull requests a job opened through the hopper are read for its own open one (issue #2510). */
+const MAX_OPENED = 5;
+
+/**
+ * The job's own open pull request that the issue's links in its repository miss (issue #2510): one of another repository
+ * that mentions the issue, opened or updated by the job (`looksAt`, issue #2004), and not another issue's work; else the
+ * newest one the job opened through the hopper (`opened`) that is still open, in any repository, whatever its text or branch
+ * says: the job reported it, so a base-branch update by someone else or a closing keyword only in its title does not unlink it.
+ * A part ("Part of #N") is said so. `mentions`: the pull requests that mention the issue, as just read. Undefined: none.
+ * An error asking GitHub throws.
+ */
+export async function ownOpenPullRequestOf(api: GitHubApi, job: Job, repo: string, number: number, mentions: readonly ReferencingPullRequest[], opened?: JobOpenedPullRequests): Promise<{ url: string; part: boolean } | undefined> {
+  const elsewhere = mentions
+    .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() !== repo.toLowerCase() && looksAt(pr, repo, job)
+      && (isPartOf(pr, repo, number) || !worksOnAnotherIssue(pr, repo, number)))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (elsewhere) return { url: elsewhere.url, part: isPartOf(elsewhere, repo, number) };
+  for (const url of (opened?.(job.id) ?? []).slice(0, MAX_OPENED)) {
+    const pr = await pullRequestOrNone(api, pullRequestRepo(url, repo), numberOf(url));
+    if (pr?.state === 'open') return { url: pr.url, part: false };
+  }
+  return undefined;
+}
+
 /** An issue whose deliverable is an artifact, not a code change (issue #673): a line of its body says `Deliverable: artifact`. */
 const DELIVERABLE_ARTIFACT = /^\s*deliverable:\s*artifact\s*$/im;
 export const isArtifactDeliverable = (issue: Pick<GitHubIssue, 'body'>): boolean => DELIVERABLE_ARTIFACT.test(issue.body);

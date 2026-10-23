@@ -22089,7 +22089,11 @@ and the writes held while a sign-in has ended are the next parts.
   with no pull request.
 - **No `hopper:pr-ready` with no pull request** (`src/sources/github/report.ts` `finished`). The report names the newest
   ready pull request that closes the issue, references it or is on a branch named for it; else the newest open one of
-  those in any state of review; else the newest open part, with `hopper:partly-done`. None open: `hopper:blocked` (a new
+  those in any state of review; else the job's own open one those miss (issue #2510, `ownOpenPullRequestOf` in
+  `completion.ts`): one in another repository that mentions the issue, opened or pushed to by the job (issue #2004), else
+  the newest one the job opened through the hopper (`github_proxy.done` of `pr.create`) that is still open, whatever its
+  text or branch says, so a base-branch update by someone else or a closing keyword only in its title does not unlink it;
+  else the newest open part, with `hopper:partly-done`. None open: `hopper:blocked` (a new
   end label, which keeps the issue out of Intake as the others do and comes off with Run again), and the follow looks
   again at each sync. One it finds open swaps `hopper:blocked` for `hopper:pr-ready` (or `hopper:partly-done`); the follow's
   end takes `hopper:blocked` off with the other waiting labels.
