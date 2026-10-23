@@ -23,11 +23,14 @@
 // it shows as one run card; a person who declines that card declines the job's run of the template before it is asked.
 // Each new run card is one `vault.run_card_opened` on the job's timeline, which the notifiers send (part 2): when a run
 // waits for a person (not while Jev reads it), or an ask waits on a template for a person; once per job and template.
+// Issue #2639 part 2: a person's approval of a job's runs of a template carries to the jobs that run it again (`earlier`):
+// a rerun's run of the same template is approved at once, by that approval, when its trust lets a run go with no person.
+// The approvals of a job that ended are kept for that (`KEPT`, the newest), in memory as the requests are.
 import { randomUUID } from 'node:crypto';
 import type { MinorDecisionMode, MinorDecisionOutcome } from '../domain/minor-decisions.ts';
 import { checkedVerdict, jevChecks, sandboxCheckText, type SandboxHistoryItem } from '../domain/sandbox-check.ts';
 import {
-  AUTO_APPROVER, autoApproves, HOLD_TIMEOUT, JEV_APPROVER, NO_PERSON, SANDBOX_HOLD_MS, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
+  AUTO_APPROVER, autoApproves, carriedApprovalBy, HOLD_TIMEOUT, JEV_APPROVER, NO_PERSON, SANDBOX_HOLD_MS, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
 } from '../domain/sandbox-approvals.ts';
 import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
 import type { ReadPolicy } from '../domain/read-policy.ts';
@@ -53,6 +56,8 @@ export interface SandboxRequestsOptions {
   /** Sandbox strictness, brake 2 (issue #655 part 8), read at each ask. Absent: standard, so the toggles decide. */
   strictness?(): SandboxStrictness;
   jobTitle?(jobId: string): string | undefined;
+  /** The jobs `jobId` runs again, newest first (issue #2639 part 2, src/domain/rerun-chain.ts). Absent: none. */
+  earlier?(jobId: string): string[];
   /** The job's issue or pull request (issue #1001). */
   jobUrl?(jobId: string): string | undefined;
   /** A person's write approvals the hopper remembers now (issue #1001), ended ones left out; absent: none. */
@@ -74,6 +79,12 @@ export interface SandboxRequestsOptions {
 }
 
 const HOLD_REASON = `no person answered it within ${SANDBOX_HOLD_MS / 3_600_000} hours`;
+
+/** How many runs of jobs that ended a person approved are kept for their reruns (issue #2639 part 2). */
+export const KEPT = 500;
+
+/** Whether `by` is a person: a run one approved counts while its job runs, whatever its trust is now. */
+const person = (by: string | undefined): boolean => by !== undefined && !NO_PERSON.includes(by);
 
 export type SandboxRequestResult = { ok: true } | { ok: false; code: 'not_found' | 'conflict'; error: string };
 
@@ -119,6 +130,13 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   const waitedOn = new Map<string, TemplateWait>();
   /** `<job> <template>`: the run cards opened (issue #2197), so each card is one notice. */
   const opened = new Set<string>();
+  /** `<job> <template>`: the runs of jobs that ended a person approved (issue #2639 part 2), oldest first. */
+  const kept = new Set<string>();
+  const keep = (r: SandboxRequestView): void => {
+    if (r.state !== 'approved' || !person(r.approvedBy)) return;
+    kept.add(`${r.jobId} ${r.template}`);
+    for (const k of kept) { if (kept.size <= KEPT) break; kept.delete(k); }
+  };
   const open = (jobId: string, template: string, waits: { template: boolean; run: boolean }, purpose?: string): void => {
     const key = `${jobId} ${template}`;
     if (opened.has(key)) return;
@@ -147,7 +165,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
 
   /** The requests of jobs that ended forgotten, and the overdue ones declined: how many were declined. */
   const forget = (): number => {
-    for (const [id, r] of requests) if (!o.live(r.jobId)) requests.delete(id);
+    for (const [id, r] of requests) if (!o.live(r.jobId)) { keep(r); requests.delete(id); }
     for (const [k, w] of waitedOn) if (!o.live(w.jobId)) waitedOn.delete(k);
     for (const k of opened) if (!o.live(k.slice(0, k.indexOf(' ')))) opened.delete(k);
     return expire();
@@ -165,12 +183,18 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   const withNoPerson = (jobId: string, template: string): boolean =>
     o.autoApprovable?.(jobId) !== false && !(o.strictness && personBrake(o.strictness(), o.template(template)));
 
+  /** The newest job `jobId` runs again whose run of `template` a person approved (issue #2639 part 2), if one did. */
+  const carriedFrom = (jobId: string, template: string): string | undefined => (o.earlier?.(jobId) ?? []).find((id) =>
+    kept.has(`${id} ${template}`) || [...requests.values()].some((r) => r.jobId === id && r.template === template && r.state === 'approved' && person(r.approvedBy)));
+
   const approverOf = (jobId: string, template: string): { by: string; radius?: string } | undefined => {
     if (!withNoPerson(jobId, template)) return undefined;
     if (o.approvals().skipSandboxApproval) return { by: SKIP_SANDBOX_APPROVER };
     const t = o.template(template);
     if (!t) return undefined;
     if (autoApproves(o.approvals(), t.radius?.level)) return { by: AUTO_APPROVER, radius: t.radius.level };
+    const carried = carriedFrom(jobId, template);
+    if (carried) return { by: carriedApprovalBy(carried) };
     if (o.remembered && rememberedCovers({ secrets: t.secrets ?? [], profiles: t.profiles ?? [] }, o.remembered(), readApprovedWithoutPerson(o.policy?.(), o.approvals()))) return { by: REMEMBERED_APPROVER };
     const person = t.approval?.by;
     // Issue #2197 part 3: and only when that approval covers the job's runs.
@@ -295,7 +319,6 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       return [...requests.values()].map((r) => ({ ...r }));
     },
     runnable(jobId) {
-      const person = (by: string | undefined): boolean => by !== undefined && !NO_PERSON.includes(by);
       return [...requests.values()]
         .filter((r) => r.jobId === jobId && r.state === 'approved' && (person(r.approvedBy) || withNoPerson(jobId, r.template)) && !outside(jobId, r.template))
         .map((r) => r.template);
