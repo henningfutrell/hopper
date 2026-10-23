@@ -85,8 +85,11 @@ describe('the prune (issue #2494)', () => {
   });
 
   it('removes only the anonymous volumes no container uses, never a named one or a job\'s, with their size', () => {
+    // Its size is what du says of its mount point: the file, and on some filesystems (ext4) the directory's own block too.
+    const bytes = Number(execFileSync('du', ['-sk', join(fake, 'mnt', ANON)], { encoding: 'utf8' }).split('\t')[0]) * 1024;
+    expect(bytes).toBeGreaterThanOrEqual(64 * 1024);
     const said = readPrune(run(pruneArgv(30, [])));
-    expect(said?.removed.filter((r) => r.kind === 'volume')).toEqual([{ runtime: 'podman', kind: 'volume', id: ANON, bytes: 64 * 1024 }]);
+    expect(said?.removed.filter((r) => r.kind === 'volume')).toEqual([{ runtime: 'podman', kind: 'volume', id: ANON, bytes }]);
     expect(lines('volumes').map((l) => l.split(' ')[0])).toEqual([NAMED, JOBVOL, USED]);
     expect(lines('calls').filter((l) => l.startsWith('volume rm'))).toEqual([`volume rm ${ANON}`]);
   });
