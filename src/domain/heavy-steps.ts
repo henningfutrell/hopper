@@ -29,6 +29,16 @@ export function heavyNeedOf(kind: HeavyKind, peaks: readonly number[]): { bytes:
 /** What the job's client is told while it waits, and how often it asks again. */
 export const HEAVY_RETRY_S = 5;
 
+/**
+ * Part 7: a heavy step as the Machines page shows it: the job, its machine, kind and command, since when, the memory it keeps
+ * (`recorded`: its repository's peak) and since when it is paused; or `waiting`, since its first ask. `reason`: why it is
+ * paused or waits.
+ */
+export interface HeavyStepView {
+  jobId: string; machineId: string; kind: HeavyKind; command: string; since: string;
+  bytes?: number; recorded?: boolean; paused?: string; waiting?: true; reason?: string;
+}
+
 const JVM_BUILDS = ['gradle', 'gradlew', 'mvn', 'mvnw'];
 const INSTALLERS = ['npm', 'pnpm', 'yarn'];
 const INSTALL_WORDS = ['install', 'i', 'ci', 'add', 'install-test', 'it'];

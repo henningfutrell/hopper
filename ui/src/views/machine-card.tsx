@@ -12,7 +12,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
-import { allocFailureBurst, machineBadges, nodeText } from '@/model/machine-list';
+import { allocFailureBurst, heavyStepLines, machineBadges, nodeText } from '@/model/machine-list';
 import { jobsUseText, resourcesText } from '@/model/machine-history';
 import { cachesText, cleanupLeftoversText, hopperDiskText, jobsDiskText, storageText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
@@ -57,6 +57,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const now = useNow();
   const kind: MachineKind = kindOf(ctx.config, m.id);
   const busyLanes = m.lanes.filter((l) => l.state !== 'idle').length;
+  const heavySteps = heavyStepLines(m, now);
   const updateLine = clientUpdateLine(m.client, window.location.origin);
   const editing = ctx.editing === m.id;
   const [graph, setGraph] = useState(false);
@@ -128,6 +129,12 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       )}
       {allocFailureBurst(m.resources) && (
         <p role="alert" className="text-sm text-warn">Large memory allocations fail: its kernel logged {m.resources?.memAllocFailures?.count} page allocation failures of order 4 or more in the last 10 minutes. Its memory is full and fragmented. On a WSL host, wsl.exe and the link to Windows can hang next. Drain it, or stop builds there, until they stop.</p>
+      )}
+      {heavySteps.length > 0 && (
+        <div className="grid gap-1 text-xs">
+          <p className="text-muted-foreground">Heavy steps, as the heavy-step gate holds them:</p>
+          <ul className="grid gap-0.5 font-mono break-words text-foreground/85">{heavySteps.map((line) => <li key={line}>{line}</li>)}</ul>
+        </div>
       )}
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>

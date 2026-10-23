@@ -1,7 +1,8 @@
 // Issue #2622 part 3: the heavy-step gate one user's jobs ask before a heavy step (`POST /job/heavy`). It keeps the steps
 // it let run, each on a lease the job's client renews; a step whose job stopped renewing it is let go.
 import { describe, expect, it } from 'vitest';
-import { HEAVY_LEASE_MS, HEAVY_RENEW_S, createHeavyGate } from '../../src/engine/heavy-gate.ts';
+import { HEAVY_LEASE_MS, HEAVY_RENEW_S, HEAVY_WAIT_SEEN_MS, createHeavyGate } from '../../src/engine/heavy-gate.ts';
+import { HEAVY_RETRY_S } from '../../src/domain/heavy-steps.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { NOW, job, machine } from '../decider/support.ts';
 
@@ -128,5 +129,51 @@ describe('the heavy-step gate sheds on memory pressure (issue #2622 part 5)', ()
     expect(await gate.renew(at(2), newest.slot)).toEqual({ ok: true });
     expect(gate.held().map((s) => s.paused)).toEqual([undefined, undefined]);
     expect(await gate.take(at(3), ['npm', 'install'])).toHaveProperty('slot');
+  });
+});
+
+// Issue #2622 part 7: the Machines page shows each machine's heavy steps: those that run, those paused and why, and those
+// that wait and why. A wait is kept while its job asks again; a job that stopped asking is no longer listed.
+describe('the heavy-step gate\'s view (issue #2622 part 7)', () => {
+  it('lists the steps that run and those that wait, with the reason and since when', async () => {
+    const { gate, at, pass } = rig();
+    await gate.take(at(1), ['./gradlew', 'test']);
+    await gate.take(at(2), ['./gradlew', 'test']);
+    await gate.take(at(3), ['./gradlew', 'build']);
+    pass(HEAVY_RETRY_S * 1000);
+    await gate.take(at(3), ['./gradlew', 'build']);
+    expect(gate.view().map((s) => [s.jobId, s.machineId, s.kind, s.command, s.waiting === true])).toEqual([
+      ['j1', 'local', 'build', 'gradlew test', false], ['j2', 'local', 'build', 'gradlew test', false], ['j3', 'local', 'build', 'gradlew build', true],
+    ]);
+    const wait = gate.view().find((s) => s.waiting)!;
+    expect(wait.since).toBe(NOW);
+    expect(wait.reason).toContain('local runs 2 JVM builds, and holds at most 2 at once');
+  });
+
+  it('a wait ends when its step takes a slot, or when its job stops asking', async () => {
+    const { gate, at, pass } = rig();
+    const first = (await gate.take(at(1), ['./gradlew', 'test'])) as { slot: string };
+    await gate.take(at(2), ['./gradlew', 'test']);
+    await gate.take(at(3), ['./gradlew', 'test']);
+    gate.release(at(1), first.slot);
+    await gate.take(at(3), ['./gradlew', 'test']);
+    expect(gate.view().filter((s) => s.waiting)).toEqual([]);
+    await gate.take(at(4), ['./gradlew', 'test']);
+    expect(gate.view().filter((s) => s.waiting).map((s) => s.jobId)).toEqual(['j4']);
+    pass(HEAVY_WAIT_SEEN_MS + 1);
+    expect(gate.view().filter((s) => s.waiting)).toEqual([]);
+  });
+
+  it('a paused step says why', async () => {
+    const m = machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 10 * GIB } });
+    const { gate, at, pass } = rig([m]);
+    await gate.take(at(1), ['./gradlew', 'test']);
+    pass(1000);
+    const newest = (await gate.take(at(2), ['npm', 'install'])) as { slot: string };
+    m.resources = { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 1 * GIB };
+    await gate.renew(at(2), newest.slot);
+    const paused = gate.view().find((s) => s.jobId === 'j2')!;
+    expect(paused.paused).toBeDefined();
+    expect(paused.reason).toContain('the newest heavy step is paused until it clears');
   });
 });
