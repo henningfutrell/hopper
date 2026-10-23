@@ -10,6 +10,8 @@ export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
   id, spec: { executor: 'x', payload: {}, machineId: 'm' }, priority: 50, status, approved: false, createdAt: '', updatedAt: '', attempts: 1, executorState: { cwd },
 });
 export const none: Survey = { scopes: [], processes: [], scratch: [] };
+/** The plan's retention when the machine sets none: an ended job's dir goes once 24 hours old. */
+export const day = (_job: Job, ageMs: number): boolean => ageMs >= 24 * HOUR;
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
 export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[] } = {}) {

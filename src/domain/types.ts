@@ -380,7 +380,7 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    */
   template?: { name: string; waiting?: string };
   /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. `memoryFloor`: its own memory floor (issue #2291); absent: the defaults. */
-  sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number }; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
+  sweep?: import('./machines.ts').SweepSettings; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */

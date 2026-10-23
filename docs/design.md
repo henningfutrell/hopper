@@ -988,7 +988,14 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     waiting on an answer, or led by an operator);
   - an ended job's scratch dir once it is `scratchMaxAgeHours` old (a machine option, default 24), or at
     once while its work was kept (`job.work_kept`), with the reap's rule: work not pushed is never
-    removed. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
+    removed. The **retention** per job status (issue #2494, `src/domain/retention.ts`): the machine options
+    `retainFinishedHours`, `retainFailedHours`, `retainCancelledHours` and `retainRejectedHours` (0 or more, each
+    absent by default) set, for a job that ended in that status, how many hours its scratch dir and job worktrees stay,
+    counted from its end (`finishedAt`; a job with none, from the dir's age) in place of `scratchMaxAgeHours`. Above 0,
+    the cleanup at the job's end asks the reap to keep the scratch dir (`Executor.cleanup` with `keepScratch`, the
+    reap's `keep`, as a timed-out job's), so it is there for a person to read; the sweep removes it once the retention is
+    over, with the reap's rule. A low disk or the disk budget still reaps it at once. A status with no retention is
+    reaped at its end, as before. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
     keeps the first time, as `job.work_kept`. A job worktree `<name>/<job id>` of an ended job is reaped
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
     outlives its job;

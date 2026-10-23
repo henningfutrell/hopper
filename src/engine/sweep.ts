@@ -4,7 +4,8 @@
 // 10), the sweep asks the machine what jobs left there — through an executor that reaches it — and reaps:
 // - a scope or a process of a job this hopper knows that is not live (claimed, running, waiting on an
 //   answer, or led by an operator): stopped;
-// - an ended job's scratch dir, once it is `sweep.scratchMaxAgeHours` old (default 24), or at once while its
+// - an ended job's scratch dir, once it is `sweep.scratchMaxAgeHours` old (default 24) — or, with a retention set for the
+//   status it ended in (`sweep.retainHours`, issue #2494), that many hours after its end —, or at once while its
 //   work was kept (job.work_kept): removed unless it still holds work not pushed. Its job worktree in the work tree's
 //   `.worktrees` (issue #1188) goes or stays with it, and one whose scratch dir is gone is reaped by that dir all the same. Work kept that the sweep
 //   then removes is recorded as job.work_removed; work it keeps for the first time, as job.work_kept.
@@ -45,7 +46,7 @@ import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger } from './resource-ledger.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
-export const SCRATCH_MAX_AGE_HOURS = 24;
+import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
 export const SWEEP_CHECK_MS = 60000;
 /** The jobs whose work trees are swept: the newest this many. */
@@ -80,8 +81,11 @@ function treeJob(path: string, jobOf: (id: string) => Job | undefined): Job | un
   return undefined;
 }
 
-/** Pure: what to reap on one machine, from what its survey found. `kept`: jobs whose work was kept and not removed since. */
-export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>, maxAgeMs: number): SweepReap[] {
+/**
+ * Pure: what to reap on one machine, from what its survey found. `kept`: jobs whose work was kept and not removed since.
+ * `over`: whether an ended job's work, its dir that old, is past its retention (issue #2494).
+ */
+export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>, over: (job: Job, ageMs: number) => boolean): SweepReap[] {
   const plan = new Map<string, SweepReap>();
   for (const id of new Set([...found.scopes, ...found.processes])) {
     const job = jobOf(id);
@@ -94,13 +98,13 @@ export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined,
   for (const dir of found.scratch) {
     const job = jobOf(dir.jobId);
     if (!job || !TERMINAL_STATUSES.includes(job.status)) continue;
-    if (dir.ageMs >= maxAgeMs || kept.has(dir.jobId)) plan.set(dir.jobId, { jobId: dir.jobId, scratch: dir.path });
+    if (over(job, dir.ageMs) || kept.has(dir.jobId)) plan.set(dir.jobId, { jobId: dir.jobId, scratch: dir.path });
   }
   for (const tree of found.trees ?? []) {
     const job = treeJob(tree.path, jobOf);
     if (!job || !TERMINAL_STATUSES.includes(job.status) || plan.get(job.id)?.scratch) continue;
     const root = worktreeParts(tree.path)!.workTree;
-    if (tree.ageMs >= maxAgeMs || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: jobScratchOf(root, job.id) });
+    if (over(job, tree.ageMs) || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: jobScratchOf(root, job.id) });
   }
   return [...plan.values()].sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
@@ -128,8 +132,6 @@ export function goneKept(found: Survey, kept: readonly KeptWork[], jobOf: (id: s
   }
   return out.sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
-
-const maxAgeMs = (m: MachineSnapshot): number => (m.sweep?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS) * 3600_000;
 
 export interface Sweep {
   /** Sweep every online machine that is due (`all`: every online machine now). Never throws; one at a time. */
@@ -281,7 +283,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     if (m.disk?.low) log(`hopper: disk low on ${m.id} (${gb(m.disk!.freeBytes)} free): the sweep reaps every ended job's scratch dir now, whatever its age`);
     else if (pressed?.over) log(`hopper: the hopper's own disk use on ${m.id} is ${gb(pressed.bytes)}, over its disk budget of ${gb(budget!.bytes)}: the sweep reaps every ended job's scratch dir now, whatever its age`);
     const running = new Set([...found.scopes, ...found.processes]);
-    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, m.disk?.low || pressed?.over ? 0 : maxAgeMs(m)), jobOf, kept, running);
+    const now = c.clock.now().getTime(), over = (job: Job, ageMs: number): boolean => m.disk?.low === true || pressed?.over === true || retentionOver(m.sweep, job, ageMs, now);
+    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, over), jobOf, kept, running);
     if (c.stopping()) return;
     // What the reaps freed, measured again; a survey that fails then keeps the first measure.
     const after = pressed?.over && removed > 0 ? await shell.survey(roots).catch(() => found) : found;

@@ -407,12 +407,13 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     // Read on the job's machine through its own connection, never the pane (issue #921): its worktree and agent session.
     checkpoint: (job) => checkpointOn(job, herdrOn),
 
-    async cleanup(job) {
+    async cleanup(job, o) {
       const state = paneStateOf(job);
       // Parked (issue #501), or released on its wait (issue #2303): its pane closed then, and its id may name another job's pane by now. Only the reap runs.
-      if (state && (job.parked || job.waitReleased)) return reap(herdrOn(state), heldOf(state, job.id));
-      // Timed out (issue #630): its scratch dir stays, as a parked job's, until it goes on or the sweep removes it.
-      const open = state ? await exitAndClose(heldOf(state, job.id), job.liveness ? 'keep' : 'remove') : undefined;
+      // Timed out (issue #630), or a retention set for its status (issue #2494): its scratch dir stays, as a parked job's,
+      // until it goes on or the sweep removes it.
+      const scratch = job.liveness || o?.keepScratch ? 'keep' : 'remove'; if (state && (job.parked || job.waitReleased)) return reap(herdrOn(state), heldOf(state, job.id), scratch);
+      const open = state ? await exitAndClose(heldOf(state, job.id), scratch) : undefined;
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
       const said = reaped.get(job.id);
       reaped.delete(job.id);

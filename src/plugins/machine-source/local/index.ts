@@ -10,7 +10,8 @@
 // `usageLimits`: its own usage limits, in place of the user's (issue #1860).
 // `diskLowBelowGiB` / `diskLowBelowPercent`: when its disk is low and it takes no new job (issue #410).
 // `memoryFloorGiB` / `memoryPerJobGiB`: its memory floor (issue #2291).
-// `reapEveryMinutes` / `scratchMaxAgeHours`: how the sweep treats it (issue #410).
+// `reapEveryMinutes` / `scratchMaxAgeHours`: how the sweep treats it (issue #410); `retain<Status>Hours`: how long an
+// ended job's work stays, by the status it ended in (issue #2494).
 import { createLocalMachineSource } from '../../../machines/index.ts';
 import { ensureHerdrSession, sessionProblem } from '../../../executors/herdr/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
@@ -20,6 +21,7 @@ import type { UsageLimitPair } from '../../../domain/usage.ts'; import type { Re
 export interface LocalOptions {
   lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors?: string[]; session?: string; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number;
+  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number;
 }
 
 /** Starts this machine's herdr session when it is not running; rejects with the reason. */
