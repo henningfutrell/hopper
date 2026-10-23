@@ -26,7 +26,7 @@ import { classifyRequest, peerList, type Lan } from './reach.ts';
 import { tunnelAgentRoutes, type RemoteAccess } from './remote-access.ts';
 import { githubDeliveryRoutes, type GitHubDeliveries } from './github-deliveries.ts';
 import { installTunnelEdge } from './tunnel.ts';
-import { jobRoutes } from './jobs.ts'; import { tokenLedgerRoutes } from './token-ledger.ts'; import { deliveryForecastRoutes } from './delivery-forecast.ts';
+import { jobRoutes } from './jobs.ts'; import { tokenLedgerRoutes } from './token-ledger.ts'; import { deliveryForecastRoutes } from './delivery-forecast.ts'; import { deliveryLedgerRoutes } from './delivery-ledger.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
 import type { GitPushes } from '../github-proxy/index.ts';
@@ -217,7 +217,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   helpRoutes(app, o.version);
-  jobRoutes(app, tenant); tokenLedgerRoutes(app, tenant); deliveryForecastRoutes(app, { ...tenant, clock: o.clock });
+  jobRoutes(app, tenant); tokenLedgerRoutes(app, tenant); deliveryForecastRoutes(app, { ...tenant, clock: o.clock }); deliveryLedgerRoutes(app, tenant);
   stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port, sandboxes: o.sandboxes, stall: loop.last });
   questionRoutes(app, tenant);
   reviewRoutes(app, tenant);

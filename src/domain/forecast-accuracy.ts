@@ -16,6 +16,16 @@ export interface DeliveryLedgerRow {
   predictedEnd?: string;
   actualStart?: string;
   actualEnd?: string;
+  /** When the prediction kept was made (issue #2554 part 6): the first forecast that gave the step a time. */
+  predictedAt?: string;
+}
+
+/** The delivery ledger kept (issue #2554 part 6, tenant migration 99): a step's first prediction stays, its actual times are the newest. */
+export interface DeliveryLedgerRepository {
+  /** Keeps each row: its prediction only when the step has none yet (made at `at`), its actual times when it has them. */
+  record(rows: readonly DeliveryLedgerRow[], at: string): void;
+  /** The rows of one change (`key`) or of one repository, else every row; by change, then step order. */
+  list(q?: { key?: string; repo?: string }): DeliveryLedgerRow[];
 }
 
 export interface AccuracyReport {

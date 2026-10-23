@@ -23,6 +23,8 @@ export const PASS_LEASES = {
   classifier: 'classifier',
   /** Each machine's discovery (issue #542). */
   discovery: 'discovery',
+  /** The delivery ledger pass (issue #2554 part 6). */
+  deliveryLedger: 'delivery-ledger',
   /** The wakes a stop lost (issue #1571). */
   missedWakes: 'missed-wakes',
 } as const;

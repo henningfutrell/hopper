@@ -36,6 +36,7 @@ import { INTAKE_ARRIVAL_TABLE } from './intake-arrivals.ts'; import { INFRA_PLAN
 import { RESOURCE_LEDGER_TABLE } from './resource-ledger.ts';
 import { observeTemplatesChecked } from './migration-observe-checked.ts';
 import { DISK_MEASURE_TABLE } from './disk-measures.ts';
+import { DELIVERY_LEDGER_TABLE } from './delivery-ledger.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -197,4 +198,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // default and one with none: the build before runs on it, and names its columns when it writes.
   `ALTER TABLE job_resource_ledger ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE job_resource_ledger ADD COLUMN next_attempt_at TEXT`,
+  // 99: The delivery ledger (issue #2554 part 6): each step of each change, its first prediction and its actual times. A
+  // table only: the build before runs on it, and never reads it.
+  DELIVERY_LEDGER_TABLE,
 ];
