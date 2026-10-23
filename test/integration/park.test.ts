@@ -194,7 +194,7 @@ describe('the Parked section (issue #565)', () => {
   const sectionsOf = async (a: TestApp) => (await a.api<{ sections: Section[] }>('GET', '/api/sections')).body.sections;
   const one = (s: Section[], kind: string) => s.find((x) => x.kind === kind)!;
 
-  it('a parked job leaves the Questions count with its question and is counted in Parked; picked up, its open question comes back', async () => {
+  it('a parked job is counted in Parked, and its question stays in the Questions count (issue #2634); picked up, it leaves Parked', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
     const a = await boot(herdr);
     const token = await a.login();
@@ -207,7 +207,7 @@ describe('the Parked section (issue #565)', () => {
     await a.waitForStatus(job.id, 'parked');
     const parked = await sectionsOf(a);
     expect(parked.map((s) => s.kind)).toEqual(['questions', 'proposals', 'research', 'logins', 'failures', 'parked']);
-    expect(one(parked, 'questions')).toMatchObject({ open: 0, waiting: 0, high: 0 });
+    expect(one(parked, 'questions')).toMatchObject({ open: 1, waiting: 1, high: 1 });
     expect(one(parked, 'parked')).toMatchObject({ open: 1, waiting: 1, high: 1, events: ['job.parked', 'job.unparked'] });
     // Parked only (issue #2414): a parked job waits by design, so Failures neither lists nor counts it.
     expect(one(parked, 'failures')).toMatchObject({ open: 0, waiting: 0, high: 0 });

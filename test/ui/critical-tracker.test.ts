@@ -174,6 +174,35 @@ describe('the critical job tracker', () => {
     await vi.waitFor(() => expect(posts).toContainEqual({ path: '/ui/api/questions/q1/answer', body: { answer: 'the second one' } }));
   });
 
+  it('a parked critical direct job\'s question is in Questions and its badge too, and an answer clears it from both (issue #2634)', async () => {
+    const parked = job('dq', {
+      status: 'parked', questionId: 'q7', laneId: undefined, resumeOn: 'm1', parked: { at, from: 'waiting_answer', auto: true },
+      source: { source: 'direct', kind: 'direct', key: 'direct:d7', title: 'Why did the sign-in lock?' },
+    });
+    const q = { id: 'q7', jobId: 'dq', text: 'Which realm do I check first?', status: 'open', tier: 'human', createdAt: at, recentOutput: '', attempts: [], priority: 100, high: true, notifyCount: 1 };
+    daemon = { queue: { ...EMPTY_QUEUE, parked: [parked] }, questions: [q], vault: VAULT, events: [] };
+    await boot('#questions');
+    await vi.waitFor(() => expect(card('dq')).not.toBeNull());
+    await expand('dq');
+    expect(wait('dq', 'question')).not.toBeNull();
+    await vi.waitFor(() => expect(document.querySelector('[data-question="q7"]')).not.toBeNull());
+    const badge = () => [...document.querySelectorAll('[data-slot="nav-badge"]')].find((b) => b.closest('a')?.getAttribute('href') === '#questions');
+    expect(badge()!.getAttribute('title')).toBe('1 question waits on you; 1 high priority');
+
+    // Answered, it leaves the open questions, as the daemon lists them.
+    daemon.questions = [];
+    await click(button('Answer', wait('dq', 'question')!));
+    const box = wait('dq', 'question')!.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'the local one');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(button('Send answer', wait('dq', 'question')!));
+    await vi.waitFor(() => expect(posts).toContainEqual({ path: '/ui/api/questions/q7/answer', body: { answer: 'the local one' } }));
+    await vi.waitFor(() => expect(document.querySelector('[data-question="q7"]')).toBeNull());
+    expect(wait('dq', 'question')).toBeNull();
+  });
+
   it('keeps an ended job until a person dismisses it, and the dismissal holds after a reload', async () => {
     daemon = { queue: { ...EMPTY_QUEUE, ended: [job('done', { status: 'finished', finishedAt: at })], running: [job('live')] }, questions: [], vault: VAULT, events: [] };
     await boot('#dashboard');
