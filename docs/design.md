@@ -15124,7 +15124,11 @@ memory total and available (available, not free), and swap total and used where 
   (30 s). A client older than this says none; its next update loads the meter like any client file.
 - **an ssh target**: its probe prints two `/proc/stat` cpu lines a second apart, `/proc/loadavg`, the memory lines and
   the core count, each marked `hopper-res ` (`RESOURCES_COMMAND`); a machine with no /proc prints none. The second's
-  wait is in the probe's background call, never in a Decision.
+  wait is in the probe's background call, never in a Decision. It also prints each cgroup (v2) with a memory limit on
+  the path `/proc/self/cgroup` names, up to the root, and its user manager's (`user@<uid>.service`), with its use, page
+  cache and memory pressure (issue #2499 part 10). The tightest is its memory, as in a container below: a seat reached
+  over ssh reads its 4 GiB, not the VM's total, with the kernel's own memory and the limited cgroup's pressure. A limit
+  over the kernel's memory is none.
 - **in a container**: a meter whose cgroup (v2) sets a memory limit reads the limit as its total and its own use less
   the page cache it could drop (`inactive_file`). The limit may sit on a cgroup above its own (issue #2499): a seat's
   container seen from the host's cgroup namespace, or a systemd unit's `MemoryMax`. The meter walks up from the cgroup
