@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { Executor, MachineShell } from '../../src/domain/ports.ts';
-import type { DiscoveryFacts, DomainEvent, Job } from '../../src/domain/types.ts';
+import type { DiscoveryFacts, DomainEvent, Job, ResourceReading } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakePull } from './fake-forges.ts';
 import { connectGitHub } from './github-account.ts';
@@ -44,7 +44,8 @@ export async function bareRepo(root: string, repo: string): Promise<void> {
   rmSync(seed, { recursive: true, force: true });
 }
 
-export async function start() {
+/** `localResources`: this machine's memory reading, for the heavy-step gate's tests (issue #2622 part 3). */
+export async function start(o: { localResources?: () => ResourceReading } = {}) {
   const gitRoot = mkdtempSync(join(tmpdir(), 'hopper-git-forge-'));
   cleanups.push(() => rmSync(gitRoot, { recursive: true, force: true }));
   for (const repo of ['octo/tools', 'octo/site', 'elsewhere/lib']) await bareRepo(gitRoot, repo);
@@ -84,7 +85,7 @@ export async function start() {
   cleanups.push(() => { for (const j of held.values()) j.end(); });
   const app = await startTestApp({
     dbPath: db.dbPath,
-    seams: { executors: [executor] },
+    seams: { executors: [executor], ...(o.localResources ? { localResources: o.localResources } : {}) },
     plugins: { executors: [{ name: 'test', plugin: 'test' }] },
     env: { HOPPER_GITHUB_URL: github.url, HOPPER_GITHUB_CLIENT_ID: 'gh-client-id', HOPPER_GITHUB_APP_SLUG: 'hopper-test' },
   });
