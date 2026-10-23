@@ -33204,6 +33204,36 @@ run card and no template card; one `approve-run` and the step runs in a need box
 tells the step no), `test/ui/sandbox-runs-view.test.ts` (the cards, one post each; a person's own template card),
 `test/ui/needs-you.test.ts` (the count, high-priority first), `test/cli/sandbox-runs.test.ts`.
 
+**Approvals a rerun keeps (issue #2639 part 2, 2026-10-23).** Seen on a hopper: a critical job's restore failed during a
+network outage, and the assessor ran it again as a new job. The rerun asked for the same template, and a person approved
+its sandbox runs a second time, although the item, the template and the access were the same. A rerun (`Job.rerunOf`: the
+assessor's, a person's Run again, or the source's offer of the item again) now keeps what a person approved for the job it
+runs again:
+
+- **A template approved for a job's runs only** (`approval.jobs`, part 3) covers the jobs that run it again. The vault's
+  view widens the list (`withReruns`, `src/domain/vault.ts`) with each job's reruns (`laterRuns`,
+  `src/domain/rerun-chain.ts`: from the item's newest job back along `rerunOf`), so every reader of `approvalCovers` — the
+  run cards, the sandbox requests, the template request, the start hold — sees it. The stored template does not change.
+- **A run a person approved** (a sandbox request approved by a person, or by an approval that names one) carries too: the
+  rerun's request of the same template is approved at once, `by` `the approval of job <id>, which it runs again`
+  (`carriedApprovalBy`). The requests are in memory, so the person's approvals of jobs that ended are kept for this, the
+  newest 500 (`KEPT`, `src/sandbox/requests.ts`). The rerun's trust stamp must still let a run go with no person (issue
+  #655 parts 7, 8 and 16): below `approved`, under a brake that asks a person, or outside its stamp, it waits as before.
+- **A vault grant** needed nothing: it is kept for the item (`grantKeyOf`), so every job of the item has it.
+
+A decline is not carried: the rerun asks, and a person decides again. Nothing else carries — a fork or a follow-on is
+another item's job. The chain is walked 20 jobs at most (`RERUN_DEPTH`).
+
+**Decided here.** Every rerun keeps the approvals, not only the assessor's: a vault grant was already kept for the item
+across Run again, and a person who runs an item again expects the same access. A restart forgets the kept run approvals
+as it forgets the requests; the template's approval for the job stays, so a rerun then gets one card for its run only
+when the run itself needs a person.
+
+Verification: `test/domain/rerun-chain.test.ts` (both ways along the chain, other items, the depth, a loop; the widened
+approval), `test/sandbox/requests.test.ts` (a carried run, to a second rerun too; no decline carried; a job not a rerun
+waits; a rerun below the trust waits), `test/integration/need-steps.test.ts` (real daemon: a run card approved for one job,
+the job cancelled and its item offered again, and the rerun's write step runs with no card).
+
 ## A job waits on an infra plan (issue #2205, 2026-10-19)
 
 Before: a job that waited on a person's approval of an infra plan could only say so as an outside event. The hopper did
