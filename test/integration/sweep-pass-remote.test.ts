@@ -39,8 +39,6 @@ const git = (cwd: string, ...args: string[]): void => { execFileSync('git', ['-c
 /**
  * Each run leaves its scratch dir and a job worktree in `work`, and finishes; a job whose payload says `unpushed` leaves a
  * repository with a commit no remote has (its payload names `unpushed`). Its own cleanup reaps nothing: only the sweep, on the client target, can.
- * It says so as a real cleanup's reap does, so the job's ledger entries close: open ones the maids (issue #2504 part 14)
- * would reap at any pass, also before the sweep reached the machine, and the pass would then have nothing to remove.
  */
 function createLeaver(work: string, shell: () => MachineShell): Executor {
   return {
@@ -64,7 +62,7 @@ function createLeaver(work: string, shell: () => MachineShell): Executor {
       ctx.saveState({ cwd: work });
       return { kind: 'finished', result: {} };
     },
-    async cleanup() { return { kept: [] }; },
+    async cleanup() {},
     machineShell: () => shell(),
   };
 }
