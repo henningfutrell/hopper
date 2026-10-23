@@ -29,16 +29,16 @@ function accessOf() {
   return { access, fga, instance };
 }
 
-const ASK = { userId: 'u1', jobId: 'j1', template: 'observe-uat', target: 'uat/monitoring/svc/grafana:80' };
+const ASK = { userId: 'u1', jobId: 'j1', template: 'observe-utility', target: 'utility/monitoring/svc/grafana:80' };
 
 describe('a relay connection in Access (issue #2146, part 3)', () => {
   it('allows a target approved with the template; denies one that is not, asking OpenFGA each time', async () => {
     const { access, fga } = accessOf();
-    expect(await access.decideRelay({ ...ASK, approved: true })).toMatchObject({ allowed: true, reason: 'job:u1/j1 may relay to uat/monitoring/svc/grafana:80' });
-    expect(await access.decideRelay({ ...ASK, approved: false })).toMatchObject({ allowed: false, reason: 'job:u1/j1 may not relay to uat/monitoring/svc/grafana:80' });
+    expect(await access.decideRelay({ ...ASK, approved: true })).toMatchObject({ allowed: true, reason: 'job:u1/j1 may relay to utility/monitoring/svc/grafana:80' });
+    expect(await access.decideRelay({ ...ASK, approved: false })).toMatchObject({ allowed: false, reason: 'job:u1/j1 may not relay to utility/monitoring/svc/grafana:80' });
     const asked = fga.checks.filter((c) => c.tuple.object.startsWith('bastion:'));
     expect(asked).toHaveLength(2);
-    expect(asked[0]!.tuple).toEqual({ subject: 'job:u1/j1', relation: 'can_relay', object: 'bastion:u1/uat%2Fmonitoring%2Fsvc%2Fgrafana%3A80' });
+    expect(asked[0]!.tuple).toEqual({ subject: 'job:u1/j1', relation: 'can_relay', object: 'bastion:u1/utility%2Fmonitoring%2Fsvc%2Fgrafana%3A80' });
   });
 
   it('a model without bastions denies every relay, and still decides mints', async () => {

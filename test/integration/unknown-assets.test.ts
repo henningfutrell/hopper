@@ -3,9 +3,9 @@
 //
 // Feature: an unknown asset
 //   Scenario: a request for an unknown cluster is refused at once, with the known clusters
-//     Given the topology lists the EKS clusters staging-eks and control-plane-eks
+//     Given the topology lists the EKS clusters staging-eks and central-eks
 //     When the operator asks for a template of read/cluster/stage
-//     Then the answer is "no cluster stage; known: staging-eks, control-plane-eks", with the needs to ask for
+//     Then the answer is "no cluster stage; known: staging-eks, central-eks", with the needs to ask for
 //     And no template is saved, so nothing waits
 //     When the operator asks for read/cluster/staging-eks
 //     Then the template is saved
@@ -41,7 +41,7 @@ async function boot(): Promise<TestApp> {
   });
   const source: TopologySource = {
     key: 'aws/111111111111/us-east-1', source: { kind: 'aws', account: '111111111111', region: 'us-east-1' }, reporter: 'topology discovery', lastRead: { at: AT, ok: true },
-    lastGood: { at: AT, links: [], nodes: ['staging-eks', 'control-plane-eks'].map((name) => ({ id: `arn:aws:eks:us-east-1:111111111111:cluster/${name}`, kind: 'cluster' as const, name })) },
+    lastGood: { at: AT, links: [], nodes: ['staging-eks', 'central-eks'].map((name) => ({ id: `arn:aws:eks:us-east-1:111111111111:cluster/${name}`, kind: 'cluster' as const, name })) },
   };
   t.user().store.topology.put(source);
   return t;
@@ -62,7 +62,7 @@ describe('an unknown asset (issue #2067)', () => {
     const a = await boot();
     const r = await hopper(a, ['template', 'request', '--needs', 'read/cluster/stage']);
     expect(r.code).not.toBe(0);
-    expect(r.err).toContain('no cluster stage; known: staging-eks, control-plane-eks');
+    expect(r.err).toContain('no cluster stage; known: staging-eks, central-eks');
     expect(r.err).toContain('--needs "read/cluster/staging-eks"');
     expect(await templates(a)).toEqual([]);
 
@@ -72,10 +72,10 @@ describe('an unknown asset (issue #2067)', () => {
 
   it('a template saved before with an unknown asset shows unknown asset in hopper template list', async () => {
     const a = await boot();
-    expect((await hopper(a, ['template', 'save', 'old', '--image', IMAGE, '--profile', 'read/cluster/platform'])).code).toBe(0);
+    expect((await hopper(a, ['template', 'save', 'old', '--image', IMAGE, '--profile', 'read/cluster/pipeline'])).code).toBe(0);
     const [old] = await templates(a);
-    expect(old!.unknownAsset).toBe('unknown asset: no cluster platform; known: staging-eks, control-plane-eks');
-    expect(old!.unknownAssets).toEqual([{ asset: { kind: 'cluster', name: 'platform' }, cluster: 'platform', known: ['staging-eks', 'control-plane-eks'] }]);
+    expect(old!.unknownAsset).toBe('unknown asset: no cluster pipeline; known: staging-eks, central-eks');
+    expect(old!.unknownAssets).toEqual([{ asset: { kind: 'cluster', name: 'pipeline' }, cluster: 'pipeline', known: ['staging-eks', 'central-eks'] }]);
   });
 
   it('a template of a short cluster name is no unknown asset, and names the cluster it resolves to (issue #2168)', async () => {

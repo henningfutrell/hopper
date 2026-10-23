@@ -11071,8 +11071,8 @@ check, one for that cluster drops it and the next pass passes), `test/skills/tem
 `test/sandbox/check-transient.test.ts`.
 
 **Unknown assets (issue #2067, 2026-10-19).** Reported from a real run: jobs asked for `read/cluster/staging`,
-`read/cluster/control-plane` and `read/cluster/platform`, while EKS names those clusters `staging-eks`,
-`control-plane-eks` and `platform-cluster-eks`. The templates were approved by the read policy, their checks marked
+`read/cluster/central` and `read/cluster/pipeline`, while EKS names those clusters `staging-eks`,
+`central-eks` and `pipeline-eks`. The templates were approved by the read policy, their checks marked
 every probe `not-run`, and the jobs waited for days on a name that never resolves, until a person ended each wait.
 - **What is unknown** (`unknownAssets`, `src/domain/unknown-assets.ts`, pure). A need on a cluster (`cluster/<name>`, or
   the cluster part of a `namespace` or an `argocd-app`) that **cluster discovery** would look for — no minting credential
@@ -11094,11 +11094,11 @@ Tests: `test/domain/unknown-assets.test.ts`, `test/skills/template-request-unkno
 `test/ui/unknown-assets.test.ts`, `test/integration/unknown-assets.test.ts` (the real daemon and the operator CLI).
 
 **Short cluster names (issue #2168, 2026-10-19).** Reported from an install: the Access requests badge showed 29 with no
-approval open. Templates named clusters by short names (`uat` for `uat-eks`), each an unknown asset, and the badge added
+approval open. Templates named clusters by short names (`utility` for `utility-eks`), each an unknown asset, and the badge added
 the unknown assets to the approvals.
 - **A short name resolves** (`matchCluster`, `src/domain/unknown-assets.ts`, pure). A need's cluster with no minting
   credential and no cluster override is matched against the clusters the topology lists: its full name first; else the
-  one cluster whose name it starts (`uat` → `uat-eks`); else, when it starts several, it is **ambiguous** — an unknown
+  one cluster whose name it starts (`utility` → `utility-eks`); else, when it starts several, it is **ambiguous** — an unknown
   asset with its `candidates`, never a guess; else no match. A cluster override (the configured alias) wins over it.
 - **Discovery finds it so.** `mintSourceFor` takes the clusters the topology lists (`readKnownClusters`, read at each
   mint, as the overrides are) and looks for a short name by the full name it resolves to; an ambiguous one is refused
@@ -11111,7 +11111,7 @@ the unknown assets to the approvals.
   requests for each candidate of an ambiguous one) saves the template through `save-template` with each need on that
   cluster renamed; a changed profile waits for approval again, as any edit of its needs does.
 - **Residual risk, stated.** A short name follows the topology: when a second cluster that it starts appears, it turns
-  ambiguous and its mints are refused until a person points the template at one. A read approved for `cluster/uat` reads
+  ambiguous and its mints are refused until a person points the template at one. A read approved for `cluster/utility` reads
   the cluster the topology resolves it to; **Point at** writes that name into the template, so the approval names it.
 
 Tests: `test/domain/unknown-assets.test.ts` (no match, ambiguous, a cluster renamed after the template was saved),
@@ -14039,7 +14039,7 @@ job rules are one text for every job of a user; what is true for one repository,
   (`GET /api/repo-job-rules`, `POST /ui/api/repo-job-rules`, admin, `src/http/ui/repo-job-rules.ts`).
   `hopper config set repo-job-rules` from the CLI.
 - **A job's own context** is its issue's text and the person's notes (issue #997): no record for it.
-- **Left of part 4.** A default read-only credential for every job (`cluster/uat-view`): AGENTS.md "The vault gives only to
+- **Left of part 4.** A default read-only credential for every job (`cluster/utility-view`): AGENTS.md "The vault gives only to
   a job a person granted it" does not allow it without a grant, so it waits for a person's decision. A repository's rules can
   tell its jobs to ask for that read through the skills (`hopper-skill`).
 
@@ -18866,14 +18866,14 @@ out ("Git through the hopper", residual risk).
 
 ### The standing read grant (issue #1472, 2026-10-16)
 
-Owner decision on issue #1472 (part 4, a default read-only `cluster/uat-view` for every job): **a per-user setting, off
+Owner decision on issue #1472 (part 4, a default read-only `cluster/utility-view` for every job): **a per-user setting, off
 by default**, that grants with no person only what is read-only. It reverses issue #652 option 1 ("a grant per job, asked
 when it is needed") for read-only grants only; every other grant is a person's, as above.
 
 **What it covers** (`readsOnlyInPolicy`, `src/domain/vault-grants.ts`): a template that has needs, every one a `read`
 the user's read policy holds ("Templates on request"), and no vault secret. A write, sync or apply, a read outside the
 policy, a vault secret, or no needs at all: not covered, and the job's ask becomes a grant ask for a person as before.
-`cluster/uat-view` is the first case: a template of `read cluster/uat` with `cluster/uat` in the read policy.
+`cluster/utility-view` is the first case: a template of `read cluster/utility` with `cluster/utility` in the read policy.
 
 **The grant** (`withVaultGrants`, `src/vault/grants.ts`). The gate checks a person's grant first. With none, and the
 toggle on, a box job whose box's template is covered passes, and `vault.granted { job, key, by: "standing read grant" }`
@@ -26252,7 +26252,7 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began
   (but not for a wait on an outside event, issue #2219 below), `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
   only), `job.wait_ended { by: hopper, note }`. A read that fails is logged and asked again at the next sync.
-- **An item that does not exist** (issue #1691). A wait named `gss#330`, a repository that does not exist, and was read
+- **An item that does not exist** (issue #1691). A wait named `ledger#330`, a repository that does not exist, and was read
   again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
   run does not exist (404, 410, GraphQL's "Could not resolve to …") is permanent, not a failed read: the item is
   `not_found`. A job one of whose items is `not_found` is woken at once, whatever its other items, with

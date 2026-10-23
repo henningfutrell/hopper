@@ -136,10 +136,10 @@ describe('a plan input', () => {
 });
 
 describe('a plan\'s read credential (part 5)', () => {
-  const minted = [readProfileOf(ROLE), readProfileOf({ kind: 'cluster', name: 'uat' })];
+  const minted = [readProfileOf(ROLE), readProfileOf({ kind: 'cluster', name: 'utility' })];
 
   it('is the profile of a read the vault minted, as a plan names it', () => {
-    expect(minted).toEqual(['read/aws-role/123456789012/deploy', 'read/cluster/uat']);
+    expect(minted).toEqual(['read/aws-role/123456789012/deploy', 'read/cluster/utility']);
   });
 
   it('may be left out: the plan names no read credential', () => {
@@ -149,8 +149,8 @@ describe('a plan\'s read credential (part 5)', () => {
   it('must be a read the vault minted for the plan\'s job', () => {
     expect(readRefusal('read/aws-role/123456789012/deploy', minted)).toBeUndefined();
     expect(readRefusal('read/aws-role/123456789012/other', minted))
-      .toBe('read names read/aws-role/123456789012/other, but the vault minted this job no such read credential (it minted read/aws-role/123456789012/deploy, read/cluster/uat): a plan names the read credential it was made with');
-    expect(readRefusal('read/cluster/uat', [])).toMatch(/minted this job no such read credential \(it minted none\)/);
+      .toBe('read names read/aws-role/123456789012/other, but the vault minted this job no such read credential (it minted read/aws-role/123456789012/deploy, read/cluster/utility): a plan names the read credential it was made with');
+    expect(readRefusal('read/cluster/utility', [])).toMatch(/minted this job no such read credential \(it minted none\)/);
   });
 });
 

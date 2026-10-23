@@ -16,9 +16,9 @@ function at87(...templates: Record<string, unknown>[]): Db {
 
 const stored = (raw: Db) => raw.all('SELECT body FROM templates ORDER BY name').map((r) => JSON.parse(String(r.body)) as Record<string, unknown>);
 const base = (name: string) => ({ name, image: 'img', secrets: [], savedBy: 'job j', savedAt: '2026-10-20T10:00:00Z' });
-const observe = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
-const read = { operation: 'read', asset: { kind: 'cluster', name: 'uat' } };
-const write = { operation: 'write', asset: { kind: 'namespace', name: 'uat/web' } };
+const observe = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
+const read = { operation: 'read', asset: { kind: 'cluster', name: 'utility' } };
+const write = { operation: 'write', asset: { kind: 'namespace', name: 'utility/web' } };
 
 describe('tenant migration 88: a template of read and observe needs takes the read-only check', () => {
   it('marks a template of observes, or of reads and observes, readOnly; leaves the others', () => {

@@ -9,14 +9,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PendingApprovalsView } from '../../src/domain/types.ts';
 
 const VIEW: PendingApprovalsView = {
-  orgs: ['acme', 'platform-co'], checkedAt: '2026-10-19T12:00:00.000Z',
+  orgs: ['acme', 'widget-co'], checkedAt: '2026-10-19T12:00:00.000Z',
   approvals: [
-    { repo: 'acme/gss', runId: 9, workflow: 'promote', title: 'Promote build 9', environments: ['production-approval'], waitingSince: '2026-10-19T09:00:00Z', url: 'https://github.com/acme/gss/actions/runs/9', stale: false },
-    { repo: 'acme/gss', runId: 5, workflow: 'promote', title: 'Promote build 5', environments: ['production-approval'], waitingSince: '2026-10-08T10:00:00Z', url: 'https://github.com/acme/gss/actions/runs/5', stale: true },
+    { repo: 'acme/ledger', runId: 9, workflow: 'promote', title: 'Promote build 9', environments: ['production-approval'], waitingSince: '2026-10-19T09:00:00Z', url: 'https://github.com/acme/ledger/actions/runs/9', stale: false },
+    { repo: 'acme/ledger', runId: 5, workflow: 'promote', title: 'Promote build 5', environments: ['production-approval'], waitingSince: '2026-10-08T10:00:00Z', url: 'https://github.com/acme/ledger/actions/runs/5', stale: true },
   ],
   problems: [
-    { where: 'platform-co/infra', error: 'GitHub answered 403 to platform-co/infra: Resource not accessible by integration' },
-    { where: 'platform-co/web', error: 'GitHub answered 502 to platform-co/web: Bad Gateway' },
+    { where: 'widget-co/infra', error: 'GitHub answered 403 to widget-co/infra: Resource not accessible by integration' },
+    { where: 'widget-co/web', error: 'GitHub answered 502 to widget-co/web: Bad Gateway' },
   ],
 };
 const EMPTY: PendingApprovalsView = { orgs: ['acme'], checkedAt: '2026-10-19T12:00:00.000Z', approvals: [], problems: [] };
@@ -80,9 +80,9 @@ describe('the Pending approvals page', () => {
     const rows = [...document.querySelectorAll('[data-slot="pending-approval"]')];
     expect(rows).toHaveLength(2);
     const first = rows[0]!;
-    for (const text of ['acme/gss', 'promote', 'Promote build 9', 'production-approval']) expect(first.textContent).toContain(text);
+    for (const text of ['acme/ledger', 'promote', 'Promote build 9', 'production-approval']) expect(first.textContent).toContain(text);
     expect(first.querySelector('[data-slot="pending-approval-since"]')?.getAttribute('title')).toBe('2026-10-19T09:00:00Z');
-    const link = first.querySelector('a[href="https://github.com/acme/gss/actions/runs/9"]')!;
+    const link = first.querySelector('a[href="https://github.com/acme/ledger/actions/runs/9"]')!;
     expect(link.getAttribute('target')).toBe('_blank');
     expect(first.querySelector('[data-slot="pending-approval-stale"]')).toBeNull();
     const stale = rows[1]!.querySelector('[data-slot="pending-approval-stale"]')!;
@@ -94,12 +94,12 @@ describe('the Pending approvals page', () => {
   it('says the orgs it reads, when, and what could not be read as one collapsed line with its count; it offers no approve or reject', async () => {
     await bootView(VIEW);
     const page = document.getElementById('root')!;
-    expect(page.querySelector('[data-slot="pending-approvals-orgs"]')?.textContent).toContain('acme, platform-co');
+    expect(page.querySelector('[data-slot="pending-approvals-orgs"]')?.textContent).toContain('acme, widget-co');
     const problems = page.querySelector<HTMLDetailsElement>('details[data-slot="pending-approvals-problems"]')!;
     expect(problems.open).toBe(false);
     expect(problems.querySelector('summary')?.textContent).toBe('2 repositories could not be checked');
     expect(problems.querySelectorAll('li')).toHaveLength(2);
-    expect(problems.querySelector('li')?.textContent).toContain('platform-co/infra');
+    expect(problems.querySelector('li')?.textContent).toContain('widget-co/infra');
     expect([...page.querySelectorAll('button')].map((b) => b.textContent ?? '').filter((t) => /approve|reject/i.test(t))).toEqual([]);
   });
 

@@ -7,7 +7,7 @@ import { needsYouRows, type NeedsYouCounts } from '../../ui/src/model/needs-you.
 import { approvalText, unknownAssetLines } from '../../ui/src/model/vault.ts';
 import type { TemplateView, VaultView } from '../../ui/src/model/wire.ts';
 
-const unknown = { asset: { kind: 'cluster' as const, name: 'staging' }, cluster: 'staging', known: ['staging-eks', 'control-plane-eks'] };
+const unknown = { asset: { kind: 'cluster' as const, name: 'staging' }, cluster: 'staging', known: ['staging-eks', 'central-eks'] };
 const template = {
   name: 'asked-e7c588b627d7', image: 'img', secrets: [], profiles: [{ operation: 'read', asset: unknown.asset }], savedBy: 'job j0', savedAt: '',
   approval: { image: 'img', secrets: [], by: 'the read policy', at: '' }, pending: { secrets: [], image: false, egress: [], profiles: [] }, gives: [],
@@ -22,12 +22,12 @@ const counts = (o: Partial<NeedsYouCounts> = {}): NeedsYouCounts => ({
 
 describe('an unknown asset (issue #2067)', () => {
   it('the template card says unknown asset, with the known clusters', () => {
-    expect(approvalText(template)).toBe('unknown asset: no cluster staging; known: staging-eks, control-plane-eks');
+    expect(approvalText(template)).toBe('unknown asset: no cluster staging; known: staging-eks, central-eks');
   });
 
   it('Needs you counts it in a row of its own, one line each, and Access requests counts only approvals', () => {
     const lines = unknownAssetLines({ templates: [template, { ...template, name: 'kube', unknownAssets: undefined }] } as unknown as VaultView);
-    expect(lines).toEqual(['template asked-e7c588b627d7: unknown asset: no cluster staging; known: staging-eks, control-plane-eks']);
+    expect(lines).toEqual(['template asked-e7c588b627d7: unknown asset: no cluster staging; known: staging-eks, central-eks']);
     const rows = needsYouRows(counts({ access: 1, unknownAssets: lines }));
     const access = rows.find((r) => r.kind === 'access')!;
     expect(access.n).toBe(1);
@@ -43,7 +43,7 @@ describe('an unknown asset (issue #2067)', () => {
   });
 
   it('an ambiguous cluster says so, with its candidates', () => {
-    const ambiguous = { ...template, unknownAssets: [{ asset: { kind: 'cluster', name: 'uat' }, cluster: 'uat', known: ['uat-eks', 'uat-gke'], candidates: ['uat-eks', 'uat-gke'] }] } as unknown as TemplateView;
-    expect(approvalText(ambiguous)).toBe('unknown asset: cluster uat is ambiguous: uat-eks, uat-gke');
+    const ambiguous = { ...template, unknownAssets: [{ asset: { kind: 'cluster', name: 'utility' }, cluster: 'utility', known: ['utility-eks', 'utility-gke'], candidates: ['utility-eks', 'utility-gke'] }] } as unknown as TemplateView;
+    expect(approvalText(ambiguous)).toBe('unknown asset: cluster utility is ambiguous: utility-eks, utility-gke');
   });
 });

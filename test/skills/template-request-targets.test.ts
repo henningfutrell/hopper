@@ -1,5 +1,5 @@
 // Issue #2146 (the bastion path, part 3): a template request that names bastion targets. `sandbox-template --needs
-// "observe/namespace/uat/monitoring" --targets "uat/monitoring/svc/grafana:80"` saves a template that names the targets,
+// "observe/namespace/utility/monitoring" --targets "utility/monitoring/svc/grafana:80"` saves a template that names the targets,
 // under a name of its own; each target needs an observe of the request on its namespace or cluster. The targets are
 // approved with the template, as its observe is: by a person. The template takes the read-only check (part 5).
 import { describe, expect, it } from 'vitest';
@@ -8,8 +8,8 @@ import { askOf, extrasOf } from '../../src/skills/template-ask.ts';
 import { requestedName, requestTemplate, type TemplateRequestUser } from '../../src/skills/template-request.ts';
 
 const IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
-const GRAFANA = 'uat/monitoring/svc/grafana:80';
-const ASK = { needs: 'observe/namespace/uat/monitoring', targets: `${GRAFANA} uat/monitoring/svc/prometheus-server:9090` };
+const GRAFANA = 'utility/monitoring/svc/grafana:80';
+const ASK = { needs: 'observe/namespace/utility/monitoring', targets: `${GRAFANA} utility/monitoring/svc/prometheus-server:9090` };
 
 function user() {
   const templates = new Map<string, TemplateView>();
@@ -42,9 +42,9 @@ describe('a template request with bastion targets (issue #2146, part 3)', () => 
     const r = await requestTemplate(u, ASK, 'job j1', 'j1');
     expect(r.status).toBe(202);
     expect(saved).toEqual([expect.objectContaining({
-      bastionTargets: [GRAFANA, 'uat/monitoring/svc/prometheus-server:9090'], profiles: [{ operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } }],
+      bastionTargets: [GRAFANA, 'utility/monitoring/svc/prometheus-server:9090'], profiles: [{ operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } }],
     })]);
-    expect(saved[0]!.name).not.toBe(requestedName([{ operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } }]));
+    expect(saved[0]!.name).not.toBe(requestedName([{ operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } }]));
   });
 
   it('uses the template it made again for the same targets, in any order; other targets name another', async () => {
@@ -52,7 +52,7 @@ describe('a template request with bastion targets (issue #2146, part 3)', () => 
     const first = await requestTemplate(u, ASK, 'job j1', 'j1');
     const name = 'template' in first ? first.template : '';
     await u.approve(name, 'a person');
-    const again = await requestTemplate(u, { ...ASK, targets: `uat/monitoring/svc/prometheus-server:9090 ${GRAFANA}` }, 'job j2', 'j2');
+    const again = await requestTemplate(u, { ...ASK, targets: `utility/monitoring/svc/prometheus-server:9090 ${GRAFANA}` }, 'job j2', 'j2');
     expect(again).toMatchObject({ status: 200, template: name });
     expect('text' in again && again.text).toContain(`bastion target ${GRAFANA}`);
     await requestTemplate(u, { ...ASK, targets: GRAFANA }, 'job j3', 'j3');
@@ -64,12 +64,12 @@ describe('a template request with bastion targets (issue #2146, part 3)', () => 
     const r = await requestTemplate(u, { ...ASK, targets: 'prod/monitoring/svc/grafana:80' }, 'job j1', 'j1');
     expect(r.status).toBe(400);
     expect('reason' in r && r.reason).toContain('observe/namespace/prod/monitoring');
-    expect(extrasOf({ targets: 'uat/monitoring/grafana:80' })).toMatch(/a target is <cluster>\/<namespace>/);
+    expect(extrasOf({ targets: 'utility/monitoring/grafana:80' })).toMatch(/a target is <cluster>\/<namespace>/);
   });
 
   it('reads the targets sorted, each once, from a skill request body', () => {
-    expect(extrasOf({ targets: `uat/monitoring/svc/prometheus-server:9090 ${GRAFANA} ${GRAFANA}` })).toEqual({ secrets: [], egress: [], targets: [GRAFANA, 'uat/monitoring/svc/prometheus-server:9090'] });
-    const body: Record<string, string> = { needs: 'observe/namespace/uat/monitoring', targets: GRAFANA };
+    expect(extrasOf({ targets: `utility/monitoring/svc/prometheus-server:9090 ${GRAFANA} ${GRAFANA}` })).toEqual({ secrets: [], egress: [], targets: [GRAFANA, 'utility/monitoring/svc/prometheus-server:9090'] });
+    const body: Record<string, string> = { needs: 'observe/namespace/utility/monitoring', targets: GRAFANA };
     expect(askOf((k) => body[k])).toEqual(body);
   });
 });

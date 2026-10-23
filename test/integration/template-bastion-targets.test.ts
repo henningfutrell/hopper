@@ -12,9 +12,9 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
-const GRAFANA = 'uat/monitoring/svc/grafana:80';
-const PROMETHEUS = 'uat/monitoring/svc/prometheus-server:9090';
-const OBSERVE = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
+const GRAFANA = 'utility/monitoring/svc/grafana:80';
+const PROMETHEUS = 'utility/monitoring/svc/prometheus-server:9090';
+const OBSERVE = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
 
 let t: TestApp | undefined;
 const cleanups: (() => void)[] = [];
@@ -33,7 +33,7 @@ async function boot(): Promise<{ a: TestApp; session: string }> {
 
 type Template = { name: string; bastionTargets?: string[]; approval?: { bastionTargets?: string[] }; pending: { bastionTargets: string[] } };
 const edit = (a: TestApp, session: string, body: Record<string, unknown>) => a.ui<{ error?: string }>('/ui/api/vault', body, { token: session });
-const save = (a: TestApp, session: string, more: Record<string, unknown>) => edit(a, session, { action: 'save-template', name: 'observe-uat', image: IMAGE, secrets: [], profiles: [OBSERVE], ...more });
+const save = (a: TestApp, session: string, more: Record<string, unknown>) => edit(a, session, { action: 'save-template', name: 'observe-utility', image: IMAGE, secrets: [], profiles: [OBSERVE], ...more });
 const template = async (a: TestApp, name: string): Promise<Template | undefined> =>
   ((await a.api('GET', '/api/vault')).body.templates as Template[]).find((x) => x.name === name);
 
@@ -41,9 +41,9 @@ describe('a template\'s bastion targets (issue #2146, part 3)', () => {
   it('wait for a person with the template; the approval names them', async () => {
     const { a, session } = await boot();
     expect((await save(a, session, { bastionTargets: [PROMETHEUS, GRAFANA, GRAFANA] })).status).toBe(200);
-    expect(await template(a, 'observe-uat')).toMatchObject({ bastionTargets: [GRAFANA, PROMETHEUS], pending: { bastionTargets: [GRAFANA, PROMETHEUS] } });
-    expect((await edit(a, session, { action: 'approve-template', name: 'observe-uat' })).status).toBe(200);
-    expect(await template(a, 'observe-uat')).toMatchObject({ approval: { bastionTargets: [GRAFANA, PROMETHEUS] }, pending: { bastionTargets: [] } });
+    expect(await template(a, 'observe-utility')).toMatchObject({ bastionTargets: [GRAFANA, PROMETHEUS], pending: { bastionTargets: [GRAFANA, PROMETHEUS] } });
+    expect((await edit(a, session, { action: 'approve-template', name: 'observe-utility' })).status).toBe(200);
+    expect(await template(a, 'observe-utility')).toMatchObject({ approval: { bastionTargets: [GRAFANA, PROMETHEUS] }, pending: { bastionTargets: [] } });
     const events = await a.events();
     expect(events.find((e) => e.type === 'template.saved')?.data).toMatchObject({ bastionTargets: [GRAFANA, PROMETHEUS] });
     expect(events.find((e) => e.type === 'vault.approved')?.data).toMatchObject({ bastionTargets: [GRAFANA, PROMETHEUS] });
@@ -52,18 +52,18 @@ describe('a template\'s bastion targets (issue #2146, part 3)', () => {
   it('a new target waits again; a save that leaves them out keeps them; a target removed needs no approval', async () => {
     const { a, session } = await boot();
     await save(a, session, { bastionTargets: [GRAFANA] });
-    await edit(a, session, { action: 'approve-template', name: 'observe-uat' });
+    await edit(a, session, { action: 'approve-template', name: 'observe-utility' });
     await save(a, session, { bastionTargets: [GRAFANA, PROMETHEUS] });
-    expect(await template(a, 'observe-uat')).toMatchObject({ pending: { bastionTargets: [PROMETHEUS] } });
+    expect(await template(a, 'observe-utility')).toMatchObject({ pending: { bastionTargets: [PROMETHEUS] } });
     await save(a, session, {});
-    expect(await template(a, 'observe-uat')).toMatchObject({ bastionTargets: [GRAFANA, PROMETHEUS] });
+    expect(await template(a, 'observe-utility')).toMatchObject({ bastionTargets: [GRAFANA, PROMETHEUS] });
     await save(a, session, { bastionTargets: [GRAFANA] });
-    expect(await template(a, 'observe-uat')).toMatchObject({ bastionTargets: [GRAFANA], pending: { bastionTargets: [] } });
+    expect(await template(a, 'observe-utility')).toMatchObject({ bastionTargets: [GRAFANA], pending: { bastionTargets: [] } });
   });
 
   it('refuses a target that is not one, and one no observe of the template reaches', async () => {
     const { a, session } = await boot();
-    for (const target of ['uat/monitoring/grafana:80', 'uat/monitoring/svc/grafana', 'uat/monitoring/secret/grafana:80']) {
+    for (const target of ['utility/monitoring/grafana:80', 'utility/monitoring/svc/grafana', 'utility/monitoring/secret/grafana:80']) {
       const r = await save(a, session, { bastionTargets: [target] });
       expect(r.status, target).toBe(400);
       expect(r.body.error, target).toMatch(/target/);

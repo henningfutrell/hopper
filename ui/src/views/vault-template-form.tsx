@@ -111,7 +111,7 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
       </label>
       <label className="block space-y-1"><Label>Bastion targets — what a bastion of it may forward to, each on a cluster or namespace it has an observe on</Label>
         <Input aria-label="Bastion targets" className="h-9 font-mono text-sm" value={targets} maxLength={8000} autoCapitalize="off" autoCorrect="off" spellCheck={false} disabled={busy}
-          placeholder="uat/monitoring/svc/prometheus-server:9090" aria-invalid={badTarget !== undefined} onChange={(e) => setTargets(e.target.value)} />
+          placeholder="utility/monitoring/svc/prometheus-server:9090" aria-invalid={badTarget !== undefined} onChange={(e) => setTargets(e.target.value)} />
         {badTarget && <span className="block text-xs text-destructive">{badTarget} is not &lt;cluster&gt;/&lt;namespace&gt;/&lt;svc|pod|deploy&gt;/&lt;name&gt;:&lt;port&gt;.</span>}
       </label>
       <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />

@@ -18,10 +18,10 @@ import { createBastions, type BastionView } from '../../src/sandbox/bastions.ts'
 import type { NeedBoxIo, NeedBoxResult } from '../../src/sandbox/need-box.ts';
 import { bastionText } from '../../src/skills/bastion-skill.ts';
 
-const PROM = 'uat/monitoring/svc/prometheus:9090';
-const LOKI = 'uat/monitoring/svc/loki:3100';
-const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
-const TEMPLATE = { name: 'observe-uat', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: [LOKI, PROM], pending: { bastionTargets: [] } } as unknown as TemplateView;
+const PROM = 'utility/monitoring/svc/prometheus:9090';
+const LOKI = 'utility/monitoring/svc/loki:3100';
+const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
+const TEMPLATE = { name: 'observe-utility', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: [LOKI, PROM], pending: { bastionTargets: [] } } as unknown as TemplateView;
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
 const TARGETS = parseTargets(`${PROM} ${LOKI}`) as BastionTarget[];
 const STREAM_ERROR = 'E1022 14:00:00.000000 portforward.go:413] an error occurred forwarding 20000 -> 9090: error forwarding port 9090 to pod prometheus-0: connection refused';
@@ -61,7 +61,7 @@ function bastions() {
       io.log([...(box.env.HOPPER_STEP_COMMAND ?? '').matchAll(/ '([^']+)' &$/gm)].map((m, i) => `[${m[1]}] Forwarding from 127.0.0.1:${20000 + i} -> remote\n`).join(''));
       io.running?.({ renew: async () => {}, pipe });
     }),
-    mint: async () => ({ minted: { kind: 'kube', token: 'token-1', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://uat.example:6443' } }),
+    mint: async () => ({ minted: { kind: 'kube', token: 'token-1', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://utility.example:6443' } }),
     release: async (box) => { released.push(box); }, mayRelay: async () => ({ allowed: true, reason: 'job:u1/job-1 may relay' }),
   });
   ended.push(async () => { const all = b.stopAll(); for (const x of boxes) x.gone(); await all; });
@@ -83,7 +83,7 @@ describe('a stopped bastion, and the next one (issue #2474)', () => {
     expect(boxes).toHaveLength(2);
     await until(() => b.of('job-1')?.state === 'running');
     expect(b.of('job-1')?.id).toBe(second.id);
-    expect(bastionText(b.of('job-1')!)).toContain(`bastion ${second.id} of template observe-uat is running`);
+    expect(bastionText(b.of('job-1')!)).toContain(`bastion ${second.id} of template observe-utility is running`);
     expect(b.list().map((v) => v.id)).toEqual([second.id]);
     expect('no' in await b.relay('job-1', PROM)).toBe(false);
 

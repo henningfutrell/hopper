@@ -121,19 +121,19 @@ describe('the extras read (issue #1875)', () => {
 });
 
 describe('a template request with box tools (issue #2146)', () => {
-  const OBSERVE = { needs: 'read/cluster/uat', tools: 'promtool jq logcli' };
+  const OBSERVE = { needs: 'read/cluster/utility', tools: 'promtool jq logcli' };
 
   it('adds the tools it names to the needs\' tools, under a name of its own, and the read policy approves it', async () => {
-    const { u, saved, calls } = user({ policy: ['cluster/uat'] });
+    const { u, saved, calls } = user({ policy: ['cluster/utility'] });
     const r = await requestTemplate(u, OBSERVE, 'job j1', 'j1');
     const name = 'template' in r ? r.template : '';
-    expect(saved).toEqual([expect.objectContaining({ tools: ['helm', 'jq', 'kubectl', 'logcli', 'promtool'], secrets: [], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'uat' } }], readOnly: true })]);
-    expect(name).not.toBe(requestedName([{ operation: 'read', asset: { kind: 'cluster', name: 'uat' } }]));
+    expect(saved).toEqual([expect.objectContaining({ tools: ['helm', 'jq', 'kubectl', 'logcli', 'promtool'], secrets: [], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'utility' } }], readOnly: true })]);
+    expect(name).not.toBe(requestedName([{ operation: 'read', asset: { kind: 'cluster', name: 'utility' } }]));
     expect(calls).toEqual([`approve ${name} by the read policy`]);
   });
 
   it('uses the template it made again, and the answer names the tools', async () => {
-    const { u, templates } = user({ policy: ['cluster/uat'] });
+    const { u, templates } = user({ policy: ['cluster/utility'] });
     const first = await requestTemplate(u, OBSERVE, 'job j1', 'j1');
     const r = await requestTemplate(u, { ...OBSERVE, tools: 'jq,logcli promtool' }, 'job j2', 'j2');
     expect(r).toMatchObject({ template: 'template' in first ? first.template : '' });
@@ -149,7 +149,7 @@ describe('a template request with box tools (issue #2146)', () => {
   it('reads the tools in the catalog\'s order, each once, and takes them from a skill request body', () => {
     expect(extrasOf({ tools: 'promtool JQ jq' })).toEqual({ secrets: [], egress: [], tools: ['jq', 'promtool'] });
     expect(extrasOf({ tools: ' ' })).toEqual({ secrets: [], egress: [] });
-    const body: Record<string, string> = { needs: 'read/cluster/uat', tools: 'jq' };
-    expect(askOf((k) => body[k])).toEqual({ needs: 'read/cluster/uat', tools: 'jq' });
+    const body: Record<string, string> = { needs: 'read/cluster/utility', tools: 'jq' };
+    expect(askOf((k) => body[k])).toEqual({ needs: 'read/cluster/utility', tools: 'jq' });
   });
 });

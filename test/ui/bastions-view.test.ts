@@ -8,9 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const JOB = 'de987f4a-0000-4000-8000-000000000001';
 const BASTION = {
-  id: 'b1b2b3b4-0000-4000-8000-000000000001', jobId: JOB, template: 'observe-uat', box: 'hopper-bastion-observe-uat-b1b2b3b4',
-  targets: [{ target: 'uat/monitoring/svc/grafana:80', local: 20000 }, { target: 'uat/monitoring/svc/prometheus-server:9090', local: 20001 }],
-  state: 'running', startedAt: '2026-10-20T12:00:00.000Z', expiresAt: '2026-10-20T13:00:00.000Z', log: '[uat/monitoring/svc/grafana:80] Forwarding from 127.0.0.1:20000 -> 3000\n',
+  id: 'b1b2b3b4-0000-4000-8000-000000000001', jobId: JOB, template: 'observe-utility', box: 'hopper-bastion-observe-utility-b1b2b3b4',
+  targets: [{ target: 'utility/monitoring/svc/grafana:80', local: 20000 }, { target: 'utility/monitoring/svc/prometheus-server:9090', local: 20001 }],
+  state: 'running', startedAt: '2026-10-20T12:00:00.000Z', expiresAt: '2026-10-20T13:00:00.000Z', log: '[utility/monitoring/svc/grafana:80] Forwarding from 127.0.0.1:20000 -> 3000\n',
 };
 let VIEW: Record<string, unknown> = { secrets: [], templates: [], bastions: [BASTION] };
 
@@ -81,12 +81,12 @@ describe('Access requests: the bastions of jobs (issue #2146)', () => {
     const daemon = await boot();
     await vi.waitFor(() => expect(card()).not.toBeNull());
     const c = card()!;
-    expect(c.textContent).toContain('observe-uat');
+    expect(c.textContent).toContain('observe-utility');
     expect(c.textContent).toContain('running');
     expect(c.textContent).toContain(JOB.slice(0, 8));
     expect(c.querySelector(`a[href="#job/${JOB}"]`)).not.toBeNull();
-    expect(c.textContent).toContain('uat/monitoring/svc/grafana:80');
-    expect(c.textContent).toContain('uat/monitoring/svc/prometheus-server:9090');
+    expect(c.textContent).toContain('utility/monitoring/svc/grafana:80');
+    expect(c.textContent).toContain('utility/monitoring/svc/prometheus-server:9090');
     expect(c.textContent).toContain('2026-10-20 13:00');
     await act(async () => { button(c, 'Stop').click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/bastions/stop')).toMatchObject({ method: 'POST', body: { job: JOB } }));

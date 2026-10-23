@@ -21,8 +21,8 @@ const scratch = (): string => { const d = mkdtempSync(join(tmpdir(), 'bastion-re
 
 describe('a bastion read as the job asks for it', () => {
   it('is a GET of a path, with the vault secret for its header', () => {
-    expect(parseRead({ target: 'uat/monitoring/svc/grafana:80', path: '/api/search?query=latency&type=dash-db', secret: 'grafana-viewer' })).toEqual({
-      target: 'uat/monitoring/svc/grafana:80', path: '/api/search?query=latency&type=dash-db', method: 'GET', secret: 'grafana-viewer',
+    expect(parseRead({ target: 'utility/monitoring/svc/grafana:80', path: '/api/search?query=latency&type=dash-db', secret: 'grafana-viewer' })).toEqual({
+      target: 'utility/monitoring/svc/grafana:80', path: '/api/search?query=latency&type=dash-db', method: 'GET', secret: 'grafana-viewer',
     });
   });
 

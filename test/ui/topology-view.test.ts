@@ -86,7 +86,7 @@ describe('the Applies and drift feed', () => {
     const { InfraTimeline } = (await import(feed)) as { InfraTimeline: (p: Props) => ReturnType<typeof createElement> };
     const timeline: TimelineEntry[] = [
       { at: '2026-10-17T09:30:00.000Z', kind: 'drift', words: 'Terraform drift on prod-vpc', subject: { target: 'prod-vpc' } },
-      { at: '2026-10-17T09:00:00.000Z', kind: 'plan', words: 'Plan for a workspace', subject: { asset: { kind: 'terraform-workspace', name: 'uat' } } },
+      { at: '2026-10-17T09:00:00.000Z', kind: 'plan', words: 'Plan for a workspace', subject: { asset: { kind: 'terraform-workspace', name: 'utility' } } },
     ];
     const picked: string[] = [];
     const el = mount(createElement(InfraTimeline, { timeline, g: good(), onNode: (id) => picked.push(id) }));

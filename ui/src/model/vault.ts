@@ -196,7 +196,7 @@ export function sandboxApprovalsText(a: SandboxApprovals | undefined): string {
   return `${policy}A person approves each ${levels.length ? 'other ' : ''}new template and sandbox run.`;
 }
 
-/** Its reason in words (issue #2123): `no cluster staging; known: …`, or `cluster uat is ambiguous: …` (issue #2168), each unknown asset once. */
+/** Its reason in words (issue #2123): `no cluster staging; known: …`, or `cluster utility is ambiguous: …` (issue #2168), each unknown asset once. */
 export const unknownReason = (t: TemplateView): string => (t.unknownAssets ?? [])
   .map((u) => (u.candidates ? `cluster ${u.cluster} is ambiguous: ${u.candidates.join(', ')}` : `no cluster ${u.cluster}; known: ${u.known.join(', ')}`)).join('; ');
 

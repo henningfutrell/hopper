@@ -9,12 +9,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake, sandboxBrakeOf, sandboxBrakeText, type SandboxStrictness } from '../../src/domain/sandbox-strictness.ts';
 
-const S: SandboxStrictness = { default: 'standard', radius: { high: 'strict' }, templates: { 'aws-prod': 'locked', 'uat-view': 'relaxed' } };
+const S: SandboxStrictness = { default: 'standard', radius: { high: 'strict' }, templates: { 'aws-prod': 'locked', 'utility-view': 'relaxed' } };
 
 describe('sandbox strictness (issue #655, brake 2)', () => {
   it('a template wins over its radius level, and that over the default', () => {
     expect(sandboxBrakeOf(S, { name: 'aws-prod', radius: { level: 'low' } })).toEqual({ strictness: 'locked', at: { template: 'aws-prod' } });
-    expect(sandboxBrakeOf(S, { name: 'uat-view', radius: { level: 'high' } })).toEqual({ strictness: 'relaxed', at: { template: 'uat-view' } });
+    expect(sandboxBrakeOf(S, { name: 'utility-view', radius: { level: 'high' } })).toEqual({ strictness: 'relaxed', at: { template: 'utility-view' } });
     expect(sandboxBrakeOf(S, { name: 'other', radius: { level: 'high' } })).toEqual({ strictness: 'strict', at: { radius: 'high' } });
     expect(sandboxBrakeOf(S, { name: 'other', radius: { level: 'medium' } })).toEqual({ strictness: 'standard', at: 'default' });
     expect(sandboxBrakeOf(S, undefined)).toEqual({ strictness: 'standard', at: 'default' });

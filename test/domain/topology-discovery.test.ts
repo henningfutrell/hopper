@@ -48,11 +48,11 @@ describe('what a discovery run reads', () => {
       ...(good ? { lastGood: { at: 't', nodes: [], links: [] } } : {}),
     });
     const sources = [
-      kept('uat', DISCOVERY_REPORTER, false), kept('arn:aws:eks:us-east-2:111111111111:cluster/uat-eks', DISCOVERY_REPORTER, false),
+      kept('utility', DISCOVERY_REPORTER, false), kept('arn:aws:eks:us-east-2:111111111111:cluster/utility-eks', DISCOVERY_REPORTER, false),
       kept('prod', DISCOVERY_REPORTER, true), kept('lab', 'a check', false),
       { key: 'aws/111111111111/eu-west-1', source: { kind: 'aws', account: '111111111111', region: 'eu-west-1' }, reporter: DISCOVERY_REPORTER, lastRead: { at: 't', ok: false } } satisfies TopologySource,
     ];
-    expect(neverReadClusters(sources, ['arn:aws:eks:us-east-2:111111111111:cluster/uat-eks'])).toEqual(['kubernetes/uat']);
+    expect(neverReadClusters(sources, ['arn:aws:eks:us-east-2:111111111111:cluster/utility-eks'])).toEqual(['kubernetes/utility']);
   });
 
   it('reads each region of an account but the home region without the global lists, and the home region alone when none are listed', () => {

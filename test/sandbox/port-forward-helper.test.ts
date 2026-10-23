@@ -65,9 +65,9 @@ describe('the port-forward helper (issue #2146)', () => {
   });
 
   it('the command\'s exit code is the helper\'s, and the forward stops then too', () => {
-    const r = run(['--context', 'uat', 'svc/grafana', '3000', '--', 'sh', '-c', 'exit 3']);
+    const r = run(['--context', 'utility', 'svc/grafana', '3000', '--', 'sh', '-c', 'exit 3']);
     expect(r.status).toBe(3);
-    expect(readFileSync(join(dir, 'args'), 'utf8')).toBe('--context uat port-forward --address 127.0.0.1 svc/grafana 3000\n');
+    expect(readFileSync(join(dir, 'args'), 'utf8')).toBe('--context utility port-forward --address 127.0.0.1 svc/grafana 3000\n');
     expect(alive()).toBe(false);
   });
 

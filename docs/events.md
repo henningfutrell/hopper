@@ -5415,10 +5415,10 @@ Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (iss
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "template": "observe-uat",
-  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "template": "observe-utility",
+  "box": "hopper-bastion-observe-utility-5c1d2e3f",
   "targets": [
-    "uat/monitoring/svc/prometheus-server:9090"
+    "utility/monitoring/svc/prometheus-server:9090"
   ],
   "expiresAt": "2026-10-20T13:00:00.000Z"
 }
@@ -5440,8 +5440,8 @@ Version 1 (`docs/schemas/bastion.ended.v1.json`). A bastion ended (issue #2146):
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "template": "observe-uat",
-  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "template": "observe-utility",
+  "box": "hopper-bastion-observe-utility-5c1d2e3f",
   "reason": "stopped",
   "by": "job"
 }
@@ -5461,7 +5461,7 @@ Version 1 (`docs/schemas/bastion.relayed.v1.json`). A job's relay connection to 
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "target": "uat/monitoring/svc/prometheus-server:9090",
+  "target": "utility/monitoring/svc/prometheus-server:9090",
   "openedAt": "2026-10-20T12:10:00.000Z",
   "ms": 1500
 }
@@ -5480,8 +5480,8 @@ Version 1 (`docs/schemas/bastion.relay_refused.v1.json`). A job's relay connecti
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "target": "uat/monitoring/svc/grafana:80",
-  "reason": "job:u1/j1 may not relay to uat/monitoring/svc/grafana:80"
+  "target": "utility/monitoring/svc/grafana:80",
+  "reason": "job:u1/j1 may not relay to utility/monitoring/svc/grafana:80"
 }
 ```
 
@@ -5503,7 +5503,7 @@ Version 1 (`docs/schemas/bastion.read.v1.json`). A bastion read ran (issue #2146
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "target": "uat/monitoring/svc/grafana:80",
+  "target": "utility/monitoring/svc/grafana:80",
   "method": "GET",
   "path": "/api/search?query=latency",
   "status": 200,

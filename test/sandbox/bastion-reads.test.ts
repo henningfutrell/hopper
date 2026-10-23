@@ -16,9 +16,9 @@ import { parseTargets, type BastionTarget } from '../../src/sandbox/bastion.ts';
 import { readCommand, READ_MAX_BYTES } from '../../src/sandbox/bastion-read.ts';
 import { createBastions, type BastionsOptions } from '../../src/sandbox/bastions.ts';
 
-const GRAFANA = 'uat/monitoring/svc/grafana:80';
+const GRAFANA = 'utility/monitoring/svc/grafana:80';
 const TEMPLATE = {
-  name: 'observe-uat', image: 'img', profiles: [{ operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } }], bastionTargets: [GRAFANA],
+  name: 'observe-utility', image: 'img', profiles: [{ operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } }], bastionTargets: [GRAFANA],
   pending: { bastionTargets: [] }, gives: ['grafana-viewer'],
 } as unknown as TemplateView;
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
@@ -67,7 +67,7 @@ function bastions(o: Partial<BastionsOptions> & { pipe?: (cmd: readonly string[]
   };
   const b = createBastions({
     userId: 'u1', dir, run, record: (e) => { events.push(e); }, log: () => {}, atWork: () => true,
-    mint: async () => ({ minted: { kind: 'kube', token: 'kube-token', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://uat.example:6443' } }),
+    mint: async () => ({ minted: { kind: 'kube', token: 'kube-token', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://utility.example:6443' } }),
     release: async () => {}, mayRelay: async () => ({ allowed: true, reason: 'job:u1/job-1 may relay' }),
     secret: async (a) => { asked.push(`${a.name} ${a.job} ${a.host} ${a.template}`); return { value: 'glsa_viewer\n' }; },
     ...o,
@@ -83,8 +83,8 @@ describe('a bastion\'s vault secrets (issue #2146, part 6)', () => {
     if ('no' in v) throw new Error(v.no);
     expect(v.secrets).toEqual(['grafana-viewer']);
     await until(() => boxes.length === 1);
-    expect(asked).toEqual([`grafana-viewer job-1 ${v.box} observe-uat`]);
-    expect(boxes[0]!.files?.secrets).toEqual({ 'kube-uat-monitoring': 'kube-token', 'read-grafana-viewer': 'Authorization: Bearer glsa_viewer\n' });
+    expect(asked).toEqual([`grafana-viewer job-1 ${v.box} observe-utility`]);
+    expect(boxes[0]!.files?.secrets).toEqual({ 'kube-utility-monitoring': 'kube-token', 'read-grafana-viewer': 'Authorization: Bearer glsa_viewer\n' });
     expect(JSON.stringify(boxes[0]!.env)).not.toContain('glsa_viewer');
     expect(events[0]).toMatchObject({ type: 'bastion.started', data: { secrets: ['grafana-viewer'] } });
     expect(JSON.stringify(events)).not.toContain('glsa_viewer');
@@ -92,7 +92,7 @@ describe('a bastion\'s vault secrets (issue #2146, part 6)', () => {
 
   it('refuses a secret the template does not give, or one the vault refuses (no grant); nothing starts', async () => {
     const { b, boxes } = bastions({ secret: async () => ({ refused: 'job job-1 has no vault grant: a person grants it the vault on Access requests, then ask again' }) });
-    expect(await b.start(JOB, TEMPLATE, TARGETS, ['other'])).toEqual({ status: 403, no: 'template observe-uat does not give other now: ask for a template with --secrets "other", which a person approves' });
+    expect(await b.start(JOB, TEMPLATE, TARGETS, ['other'])).toEqual({ status: 403, no: 'template observe-utility does not give other now: ask for a template with --secrets "other", which a person approves' });
     expect(await b.start(JOB, TEMPLATE, TARGETS, ['grafana-viewer'])).toEqual({
       status: 403, no: 'the vault gave no grafana-viewer: job job-1 has no vault grant: a person grants it the vault on Access requests, then ask again',
     });

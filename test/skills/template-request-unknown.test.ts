@@ -10,7 +10,7 @@ import { needsOf, previewTemplate, requestedName, requestTemplate, type Template
 
 const IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
 const SAVED = '2030-01-02T00:00:00.000Z';
-const KNOWN = ['control-plane-eks', 'platform-cluster-eks', 'staging-eks'];
+const KNOWN = ['central-eks', 'pipeline-eks', 'staging-eks'];
 
 function user(kept: TemplateView[] = [], known = KNOWN) {
   const templates = new Map(kept.map((t) => [t.name, t]));
@@ -27,25 +27,25 @@ function user(kept: TemplateView[] = [], known = KNOWN) {
 describe('a request for an unknown cluster (issue #2067)', () => {
   it('is refused at once with the known clusters, and no template is saved', async () => {
     const { u, saved } = user();
-    const r = await requestTemplate(u, { needs: 'read/cluster/stage read/cluster/ctrl-plane' }, 'job j1', 'j1');
+    const r = await requestTemplate(u, { needs: 'read/cluster/stage read/cluster/cntrl' }, 'job j1', 'j1');
     expect(r.status).toBe(400);
     const reason = 'reason' in r ? r.reason : '';
     expect(reason).toContain('no cluster stage; known: staging-eks,');
-    expect(reason).toContain('no cluster ctrl-plane; known: control-plane-eks,');
-    expect(reason).toContain('--needs "read/cluster/staging-eks read/cluster/control-plane-eks"');
+    expect(reason).toContain('no cluster cntrl; known: central-eks,');
+    expect(reason).toContain('--needs "read/cluster/staging-eks read/cluster/central-eks"');
     expect(saved).toEqual([]);
   });
 
   it('refuses a template saved before for it, which waits on its check', async () => {
-    const profiles = needsOf('read/cluster/plat') as OperationProfile[];
+    const profiles = needsOf('read/cluster/pipe') as OperationProfile[];
     const t = {
       name: requestedName(profiles), image: IMAGE, secrets: [], profiles, readOnly: true, savedBy: 'job j0', savedAt: SAVED,
       approval: { image: IMAGE, secrets: [], by: 'the read policy', at: SAVED }, pending: { secrets: [], image: false, egress: [], profiles: [] },
       gives: [], radius: { level: 'low', reasons: [] },
     } as unknown as TemplateView;
-    const r = await requestTemplate(user([t], [...KNOWN, 'platform-gke']).u, { needs: 'read/cluster/plat' }, 'job j1', 'j1');
+    const r = await requestTemplate(user([t], [...KNOWN, 'pipeline-gke']).u, { needs: 'read/cluster/pipe' }, 'job j1', 'j1');
     expect(r.status).toBe(400);
-    expect('reason' in r && r.reason).toContain('cluster plat is ambiguous: platform-cluster-eks, platform-gke');
+    expect('reason' in r && r.reason).toContain('cluster pipe is ambiguous: pipeline-eks, pipeline-gke');
   });
 
   it('a known cluster is asked for as before', async () => {
