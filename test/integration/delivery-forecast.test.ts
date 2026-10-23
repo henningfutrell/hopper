@@ -2,7 +2,7 @@
 // the step its change is in and the expected end of each step left, from the step durations of its repository's jobs,
 // read from their events. Real daemon and database; the history is events appended to the user's log.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DeliveryForecastView } from '../../src/http/delivery-forecast.ts';
+import type { DeliveryForecastView } from '../../src/domain/delivery-forecast.ts';
 import type { EventType } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
