@@ -8171,6 +8171,9 @@ one synchronous step, as the engine's Decision does. And the loop keeps no state
 meanwhile: it reads what an item needs after its yield (the sync's intake reads the item's job then, not before the loop).
 What it read before the loop is older than what another step did meanwhile: the sync's intake takes no new job for an item
 whose job's end was reported after the listing (the listing does not know that end yet; the next sync lists it again).
+Nor for an item whose job was made, or ended, after the pass started (issue #2570): another hopper on the same database
+made it from the same Run again while this pass read GitHub, and the listing knows nothing of it. Its end is reported by
+the time this pass reaches the item, so "reported after the listing" alone does not catch it; the pass's start does.
 A loop whose items each wait on real I/O already (a shell, git, a GitHub call: the sweep, the tends, the failure sweep's
 runs) needs no yield. The engine's Decision is one step and never yields. The rule needs no second connection pool; an
 asynchronous pool for the HTTP reads is a separate path of the same issue. It is checked in review: a new loop over a list
