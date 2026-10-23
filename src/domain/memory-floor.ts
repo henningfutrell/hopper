@@ -9,6 +9,11 @@ export interface MemoryFloor { floorGiB?: number; perJobGiB?: number }
 /** The default floor: this share of the machine's memory, in percent, and at least `MEMORY_FLOOR_MIN_GIB`. */
 export const MEMORY_FLOOR_PERCENT = 10;
 export const MEMORY_FLOOR_MIN_GIB = 1;
+/**
+ * Issue #2499: a machine whose memory pressure (PSI `some` avg10) is at or above this share, in percent, takes no new job:
+ * its tasks already wait on memory, as a seat near its cgroup limit does while it still reads memory available.
+ */
+export const MEMORY_PRESSURE_PERCENT = 20;
 /** The default memory a new job needs, in GiB: room for an agent and a JVM build. */
 export const MEMORY_PER_JOB_GIB = 2;
 /** A job that started (or resumed) less than this ago has not taken its memory yet: it still reserves a job's memory. */

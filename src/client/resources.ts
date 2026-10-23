@@ -7,7 +7,7 @@
 // may sit on a cgroup above the process's own (issue #2499): a seat's container, or a systemd unit's MemoryMax.
 // Each job scope's memory is read too (issue #2499): one outside the limited cgroup is taken off its memory available.
 // It names its kernel by its boot id and, under a cgroup limit, says the kernel's own memory (issue #2499): the hopper
-// counts the machines on one host as one pool.
+// counts the machines on one host as one pool. It says its memory pressure (PSI): the limited cgroup's, else the kernel's.
 // In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
 // (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
 // In a Kubernetes pod (issue #1289) it is never WSL, whatever the node's kernel, and always a container: its limits are
@@ -52,6 +52,8 @@ export interface ResourceReading {
   /** Issue #2499: under a cgroup limit, the kernel's own memory (/proc/meminfo), total and available. */
   kernelMemTotalBytes?: number;
   kernelMemAvailableBytes?: number;
+  /** Issue #2499: the share of the last 10 s, in percent, that some task and every task waited on memory (PSI). Absent: not read. */
+  memPressure?: { someAvg10: number; fullAvg10: number };
 }
 
 /** A host's physical memory, free and total. */
@@ -142,6 +144,17 @@ function fields(t: string | undefined): Map<string, number> {
 }
 
 const clamp = (v: number): number => Math.min(1, Math.max(0, v));
+
+/** A PSI file's `some` and `full` avg10 (issue #2499); undefined when it does not say both. */
+export function pressureOf(t: string | undefined): { someAvg10: number; fullAvg10: number } | undefined {
+  const avg = (kind: string): number | undefined => {
+    const v = new RegExp(`^${kind} avg10=(\\d+(?:\\.\\d+)?)\\b`, 'm').exec(t ?? '')?.[1];
+    return v === undefined ? undefined : Number(v);
+  };
+  const some = avg('some');
+  const full = avg('full');
+  return some !== undefined && full !== undefined ? { someAvg10: some, fullAvg10: full } : undefined;
+}
 
 /** A meter: each call reads the machine now. Keeps the last CPU times, so each read's CPU busy is over the time between. */
 export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceReading {
@@ -236,7 +249,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     }));
   };
 
-  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes'>;
+  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes' | 'memPressure'>;
   const memory = (): Memory => {
     const parts = platform === 'linux' ? ownCgroup() : [];
     const scopes = platform === 'linux' ? jobScopes(parts) : [];
@@ -246,11 +259,14 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     const kib = (k: string) => (info.has(k) ? info.get(k)! * 1024 : undefined);
     const total = kib('MemTotal');
     const available = kib('MemAvailable');
+    // Issue #2499: the limited cgroup's memory pressure, else the kernel's.
+    const psi = platform === 'linux' ? pressureOf((limited ? text(cgroup(join(limited.dir, 'memory.pressure'))) : undefined) ?? text(join(root, 'proc/pressure/memory'))) : undefined;
+    const pressure = psi ? { memPressure: psi } : {};
     if (limited) {
       // A scope outside the limited cgroup is not in its use, but takes the same machine's memory.
       const outside = scopes.filter((s) => limited.dir !== '' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
       const kernel = total !== undefined && available !== undefined && available <= total ? { kernelMemTotalBytes: total, kernelMemAvailableBytes: available } : {};
-      return { memTotalBytes: limited.memTotalBytes, memAvailableBytes: Math.max(0, limited.memAvailableBytes - outside), container: true, ...kernel, ...jobs };
+      return { memTotalBytes: limited.memTotalBytes, memAvailableBytes: Math.max(0, limited.memAvailableBytes - outside), container: true, ...kernel, ...jobs, ...pressure };
     }
     const swapTotal = kib('SwapTotal');
     const swapFree = kib('SwapFree');
@@ -260,7 +276,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       memAvailableBytes: available ?? (d.freemem ?? freemem)(),
       ...(wsl && total !== undefined && free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}),
       ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
-      ...jobs,
+      ...jobs, ...pressure,
     };
   };
 

@@ -13106,6 +13106,14 @@ never a hold, read from a machine reading taken before the burst took its memory
   need, at or above the pool's floor. Else it waits: `waiting for memory: a's host (shared with b) has 4 GiB available,
   2 GiB of it kept for 1 job started lately, and a new job needs 2 GiB over its floor of 1.4 GiB`. A machine with a floor of
   0 is in no pool. The memory pause still reads each machine's own memory only.
+- **Memory pressure** (issue #2499). A seat near its cgroup limit reclaims all the time (`memory.events` `max` in the tens
+  of thousands): its tasks stall on memory while its reading still shows memory available. Each reading says its **memory
+  pressure** (`memPressure`, PSI): the share of the last 10 s that some task (`someAvg10`) and every task (`fullAvg10`)
+  waited on memory, from `memory.pressure` of the cgroup whose limit it reads, else `/proc/pressure/memory`; an ssh target's
+  probe prints `/proc/pressure/memory`. A machine whose `someAvg10` is at or above 20% (`MEMORY_PRESSURE_PERCENT`) takes
+  no new job and no job back, whatever its memory available: `waiting for memory: a's memory is under pressure: its tasks
+  waited on memory 35% of the last 10 s, and a new job starts only below 20%`. A floor of 0 turns this check off too. It
+  pauses nothing: the memory pause still reads the memory available only.
 - **The memory pause** (step 7c, `memoryPauses`). An online machine whose memory available is below the floor itself
   pauses the running job that started there last: its executor parks (`parkingExecutors`, now an input of every
   Decision, whatever the preemption setting), it has an agent session, and no preemption names it. One per machine every
@@ -13130,7 +13138,8 @@ never a hold, read from a machine reading taken before the burst took its memory
 
 Verification: `test/decider/memory-floor.test.ts` (a burst of 7 starts what fits, jobs started lately keep memory, a
 resume waits, the better machine, own options and 0, no reading, the expected peak, WSL, no preemption for memory; the
-host pool: two seats on one kernel, two kernels, Windows' free memory for the pool, no pool alone or with a floor of 0; the
+host pool: two seats on one kernel, two kernels, Windows' free memory for the pool, no pool alone or with a floor of 0; memory
+pressure: at 20% no new job, below it one, the machine not under pressure, a floor of 0; the
 pause: the newest job, at the floor nothing, one at a time, executors that cannot park and no session, off),
 `test/decider/placement-cost.test.ts`, `test/plugins/memory-floor-options.test.ts`, and
 `test/integration/memory-floor.test.ts` (the real daemon over the fake herdr: a burst of 7 queued jobs on 8 lanes starts
@@ -15098,6 +15107,9 @@ memory total and available (available, not free), and swap total and used where 
 - **its kernel** (issue #2499): on Linux each reading names its kernel's boot id (`bootId`); an ssh target's probe prints
   it as `boot <id>`. Under a cgroup limit the meter also says the kernel's own memory (`kernelMemTotalBytes`,
   `kernelMemAvailableBytes`), so the decider counts the machines on one host as one **host pool** ("The memory floor").
+- **its memory pressure** (issue #2499): PSI's `some` and `full` avg10 (`memPressure`), of the cgroup whose limit it reads,
+  else the kernel's; an ssh target's probe prints `/proc/pressure/memory`. Absent where there is no PSI. The decider reads it
+  ("The memory floor"); no machine sample keeps it yet.
 - Per lane (an agent's process tree): not built; a job's scope is the nearest.
 
 **Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop
