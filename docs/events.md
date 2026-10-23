@@ -3357,6 +3357,36 @@ Version 1 (`docs/schemas/machine.disk_trim_ran.v1.json`). The sweep ran fstrim o
 }
 ```
 
+## `machine.caches_cleared`
+
+Version 1 (`docs/schemas/machine.caches_cleared.v1.json`). The sweep cleared caches on a machine (`machineId`) that sets a cap for them (issue #2494, `cacheCap<Kind>GiB`, design.md "Hopper's own disk use" → "Part 10"): each kind whose places took more than its cap, or, while the disk there is `low`, each kind with a cap. `removed`: each place it removed, by its `kind` and `path` under the home, with its size in `bytes` as the survey before measured it; `bytes`, their sum. Only while no job there had not ended and the survey found no job's scope or process there; at most once an hour; only when it removed something. Never `~/.claude`, the rest of `~/.cache`, or a place that is a link.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `bytes` | number | yes |
+| `low` | boolean | no |
+| `removed` | object[] | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "bytes": 9000000000,
+  "removed": [
+    {
+      "kind": "gradle",
+      "path": "/home/seat/.gradle/caches",
+      "bytes": 8000000000
+    },
+    {
+      "kind": "npm",
+      "path": "/home/seat/.npm",
+      "bytes": 1000000000
+    }
+  ]
+}
+```
+
 ## `machine.leftover_kept`
 
 Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.

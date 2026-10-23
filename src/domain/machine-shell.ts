@@ -7,6 +7,7 @@ import type { Leftover } from './leftovers.ts';
 import type { KeptReason } from './kept-work.ts';
 import type { ExitedContainer, Pruned } from './storage-prune.ts';
 import type { Trimmed } from './disk-trim.ts';
+import type { CappedKind, Cleared } from './cache-caps.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
@@ -119,4 +120,6 @@ export interface MachineShell {
   prune?(days: number, containers: string[]): Promise<Pruned>;
   /** The trim (issue #2494): fstrim on the filesystem the machine's home is on; says how it ended. Absent: the shell trims nothing. */
   trim?(): Promise<Trimmed>;
+  /** The cache clear (issue #2494): removes the machine's cache places of the kinds; says what it removed. Absent: the shell clears none. */
+  clearCaches?(kinds: CappedKind[]): Promise<Cleared>;
 }
