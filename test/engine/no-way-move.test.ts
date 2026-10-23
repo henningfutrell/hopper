@@ -2,7 +2,7 @@
 // times at most; so does one that reopens in a new pane (issue #2427). A job that returns to the pane it holds does not. Fakes only at the store's events.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
-import { MAX_NO_WAY_MOVES, NO_WAY_MOVE, noWayMove } from '../../src/engine/no-way-move.ts';
+import { MAX_NO_WAY_MOVES, NO_WAY_MOVE, noWayMove, REMOTE_MOVE } from '../../src/engine/no-way-move.ts';
 
 const AT = '2026-10-21T00:00:00.000Z';
 const elsewhere = { id: 'job-1', pendingAnswer: 'go on', parked: { at: AT, elsewhere: { at: AT, checkpointAt: AT, from: 'seat' } } } as Job;
@@ -32,5 +32,15 @@ describe('noWayMove (issue #2355)', () => {
   it('a job that resumes in the pane it holds does not', () => {
     expect(noWayMove(engine([]), { id: 'job-2', pendingAnswer: 'go on' } as Job, 'host', 'no URL')).toBeUndefined();
     expect(noWayMove(engine([]), { id: 'job-2' } as Job, 'host', 'no URL')).toBeUndefined();
+  });
+
+  // Issue #2639: the remote out of reach at a restore is its own move, counted apart from the no-way moves.
+  it('a restore with the remote out of reach goes back to the queue with its own words, counted apart', () => {
+    expect(noWayMove(engine([]), elsewhere, 'host', 'no remote', REMOTE_MOVE)).toBe(`machine host: ${REMOTE_MOVE}: no remote`);
+    const noWays = Array.from({ length: MAX_NO_WAY_MOVES }, () => requeued(`machine host: ${NO_WAY_MOVE}: no URL`));
+    expect(noWayMove(engine(noWays), elsewhere, 'host', 'no remote', REMOTE_MOVE)).toBeDefined();
+    const remotes = Array.from({ length: MAX_NO_WAY_MOVES }, () => requeued(`machine host: ${REMOTE_MOVE}: no remote`));
+    expect(noWayMove(engine(remotes), elsewhere, 'host', 'no remote', REMOTE_MOVE)).toBeUndefined();
+    expect(noWayMove(engine(remotes), elsewhere, 'host', 'no URL')).toBeDefined();
   });
 });
