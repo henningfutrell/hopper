@@ -46,7 +46,7 @@ import { CHECKPOINT_TIMEOUT_MS, checkpointOf } from './checkpoint.ts';
 import { runArgv } from './run.ts';
 import { readReap, REAP_TIMEOUT_MS, reapArgv, scriptArgvOf, SURVEY_TIMEOUT_MS } from './reap.ts';
 import { leftoverArgvOf, LEFTOVER_REMOVE_TIMEOUT_MS, LEFTOVERS_TIMEOUT_MS } from './leftovers.ts';
-import { PRUNE_TIMEOUT_MS, pruneArgvOf } from './prune.ts';
+import { PRUNE_TIMEOUT_MS, pruneArgvOf } from './prune.ts'; import { TRIM_TIMEOUT_MS, trimArgv } from './trim.ts';
 import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
 import { createSignInRoute, startSignIn } from './sign-in.ts';
@@ -149,7 +149,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime', '/sign-in', '/leftovers', '/leftover-remove', '/prune', '/turn']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime', '/sign-in', '/leftovers', '/leftover-remove', '/prune', '/trim', '/turn']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -188,7 +188,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   watch.heard();
   if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), infraCredentials: infraCredentialsAt(homedir()), resources: withWindowsLink(resources(), o.windowsLink?.()), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
   if (path === '/load') return load(o, releases, stream, body, answer);
-  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint' || path === '/leftovers' || path === '/leftover-remove' || path === '/prune') return fixed(path, body, answer);
+  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint' || path === '/leftovers' || path === '/leftover-remove' || path === '/prune' || path === '/trim') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.
   if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
@@ -221,18 +221,18 @@ const ok = (status: unknown): boolean => typeof status === 'number' && status >=
  * A signed call of a fixed script, run with no shell of the request's: a reap or survey, its argv from the
  * body; a running job's credential (issue #441), its content on stdin; the machine's work tree made (issue #361); the reach check (issue #695); or a checkpoint (issue #921).
  */
-async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach' | '/checkpoint' | '/leftovers' | '/leftover-remove' | '/prune', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach' | '/checkpoint' | '/leftovers' | '/leftover-remove' | '/prune' | '/trim', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return answer(400, { error: 'body must be JSON' }); }
   if (path === '/work-tree') { const r = workTreeCall(parsed, homedir()); return answer(r.status, r.payload); }
   // The reach check (issue #695): the fixed script, its one argument a URL.
   // A checkpoint (issue #921): the fixed script, which only reads the job's own worktree and session.
   // The leftovers (issue #1116): the listing only reads; a removal takes one leftover's path in a work tree's .hopper-scratch.
-  // The storage prune (issue #2494): an age in days and exited containers by runtime and hex id, checked again there.
+  // The storage prune (issue #2494): an age in days and exited containers by runtime and hex id, checked again there. The trim: no argument.
   const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : path === '/checkpoint' ? checkpointOf(parsed)
-    : path === '/leftovers' || path === '/leftover-remove' ? leftoverArgvOf(path, parsed) : path === '/prune' ? pruneArgvOf(parsed) : scriptArgvOf(path, parsed);
+    : path === '/leftovers' || path === '/leftover-remove' ? leftoverArgvOf(path, parsed) : path === '/prune' ? pruneArgvOf(parsed) : path === '/trim' ? trimArgv() : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
-  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : path === '/reap' ? REAP_TIMEOUT_MS : path === '/survey' ? SURVEY_TIMEOUT_MS : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS : path === '/prune' ? PRUNE_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
+  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : path === '/reap' ? REAP_TIMEOUT_MS : path === '/survey' ? SURVEY_TIMEOUT_MS : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS : path === '/prune' ? PRUNE_TIMEOUT_MS : path === '/trim' ? TRIM_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
   answer(200, Array.isArray(call) ? await runArgv(call, timeout) : await runArgv(call.argv, timeout, call.input));
 }
 

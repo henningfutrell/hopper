@@ -173,6 +173,7 @@
         "machine.disk_low",
         "machine.disk_ok",
         "machine.storage_pruned",
+        "machine.disk_trim_ran",
         "machine.leftover_kept",
         "machine.leftover_removed",
         "machine.drained",
