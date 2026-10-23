@@ -1,0 +1,1 @@
+- A sandbox run card now also gives the job its access to the vault, so one approval is enough for a job and its sandbox.
