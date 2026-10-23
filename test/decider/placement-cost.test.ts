@@ -44,9 +44,9 @@ describe('placement by expected cost', () => {
     machine({ id: 'a', label: 'a', ...(a ? { resources: a } : {}) }), machine({ id: 'b', label: 'b', ...(b ? { resources: b } : {}) }),
   ];
 
-  it('without an expected cost, the job goes where it went before: the lowest id among equals', () => {
+  it('without an expected cost, the job goes where it went before: the most memory over its floor (issue #2499), and no cost note', () => {
     const d = decide(inputs({ machines: two(res(4), res(12)), waiting: [job('j')] }), 'd1');
-    expect(d.start).toEqual([expect.objectContaining({ jobId: 'j', machineId: 'a' })]);
+    expect(d.start).toEqual([expect.objectContaining({ jobId: 'j', machineId: 'b' })]);
     expect(d.start[0]!.reason).not.toContain('expected cost');
   });
 

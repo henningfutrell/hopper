@@ -8,8 +8,9 @@
 // its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708); `POST /turn` a print-mode agent's turn (issue #865). One session per link: a client that dials in again is a new link.
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { CHECKPOINT_TIMEOUT_MS } from '../client/checkpoint.ts';
-import { REAP_TIMEOUT_MS } from '../client/reap.ts';
+import { REAP_TIMEOUT_MS, SURVEY_TIMEOUT_MS } from '../client/reap.ts';
 import { LEFTOVER_REMOVE_TIMEOUT_MS, LEFTOVERS_TIMEOUT_MS } from '../client/leftovers.ts';
+import { PRUNE_TIMEOUT_MS } from '../client/prune.ts'; import { TRIM_TIMEOUT_MS } from '../client/trim.ts';
 import { infraCredentialsOf } from '../client/infra-credentials.ts';
 import { SIGN_IN_PASTE_MS, SIGN_IN_URL_MS, type SignInRun } from '../client/sign-in.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
@@ -169,9 +170,9 @@ function clientHome(home: unknown): string | undefined {
 }
 
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
-export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach' | '/checkpoint' | '/leftovers' | '/leftover-remove', body: Record<string, unknown>): Promise<ClientAnswer> {
-  return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS + 15000 : path === '/reap' ? REAP_TIMEOUT_MS + 15000
-    : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS + 15000 : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS + 15000 : 60000);
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach' | '/checkpoint' | '/leftovers' | '/leftover-remove' | '/prune' | '/trim', body: Record<string, unknown>): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS + 15000 : path === '/reap' ? REAP_TIMEOUT_MS + 15000 : path === '/survey' ? SURVEY_TIMEOUT_MS + 15000
+    : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS + 15000 : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS + 15000 : path === '/prune' ? PRUNE_TIMEOUT_MS + 15000 : path === '/trim' ? TRIM_TIMEOUT_MS + 15000 : 60000);
 }
 
 /**

@@ -45,7 +45,7 @@ describe('a wait release (issues #2303, #2326)', () => {
       seams: { herdr: seat, herdrSessions: { 'seat-s': seat, 'host-s': host }, herdrSession: async () => {}, levels: [] },
     });
     const admin = await a.login();
-    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained }, { token: admin })).status).toBe(200);
+    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained, ...(drained ? { reason: 'test' } : {}) }, { token: admin })).status).toBe(200);
 
     // It starts on seat (host drained), and goes on its own wait.
     await drain('host', true);
@@ -97,7 +97,7 @@ describe('a wait release (issues #2303, #2326)', () => {
       seams: { herdr: seat, herdrSessions: { 'seat-s': seat, 'host-s': host }, herdrSession: async () => {}, levels: [] },
     });
     const admin = await a.login();
-    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained }, { token: admin })).status).toBe(200);
+    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained, ...(drained ? { reason: 'test' } : {}) }, { token: admin })).status).toBe(200);
     await drain('host', true);
     const waiter = await a.pull({}, { executor: 'herdr-claude', prompt: 'Deploy it', env: {} });
     const waiting = await a.waitForStatus(waiter.id, 'waiting_on', 8000);

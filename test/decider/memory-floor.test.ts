@@ -164,4 +164,100 @@ describe('the memory floor on a seat, and a job\'s demand from its history (issu
     expect(d.start.map((s) => s.jobId)).toEqual(['j1', 'j2']);
     expect(d.wait[0]!.reason).toMatch(/a new job needs 3 GiB over its floor/);
   });
+
+  it('the memory a waiting job\'s scope holds is counted, and its wait names it', () => {
+    const resources = { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 3 * GIB, jobMemoryBytes: { w1: 2.5 * GIB, r1: 1 * GIB } };
+    const d = decide(inputs({ machines: [machine({ maxLanes: 8, resources })], lanes: [busy(1, 'r1')], running: [run('r1', 1, 30)], waiting: [job('a')] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe('waiting for memory: local has 3 GiB available (2.5 GiB is held by 1 job with no lane), and a new job needs 2 GiB over its floor of 1.4 GiB');
+  });
+});
+
+// Issue #2499 part 4: machines whose readings name one kernel (its boot id) share that kernel's memory: a host pool.
+describe('a host pool (issue #2499)', () => {
+  /** A seat in a container with a 4 GiB limit and 3.5 GiB of it available, on the kernel `boot`, which has `kernel` GiB available of 14. */
+  const seat = (id: string, kernel: number, boot = 'boot-1', over: Partial<MachineSnapshot['resources'] & object> = {}): MachineSnapshot => machine({
+    id, maxLanes: 3,
+    resources: { cores: 2, memTotalBytes: 4 * GIB, memAvailableBytes: 3.5 * GIB, container: true, bootId: boot, kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: kernel * GIB, ...over },
+  });
+
+  it('two seats on one kernel take only as many jobs as the kernel\'s memory holds, each with room of its own', () => {
+    // Each seat alone: 3.5 - 2 >= its floor of 1 GiB. The kernel: 4 GiB available, its floor 1.4 GiB: one job, not two.
+    const d = decide(inputs({ machines: [seat('a', 4), seat('b', 4)], waiting: burst(2) }), 'd1');
+    expect(d.start.map((s) => s.jobId)).toEqual(['j1']);
+    expect(d.wait.map((w) => w.jobId)).toEqual(['j2']);
+    expect(d.wait[0]!.reason).toMatch(/^waiting for memory: /);
+    // The seat that took j1 is short of its own memory; the other is short of the host's.
+    expect(d.wait[0]!.reason).toMatch(/(a's host \(shared with b\)|b's host \(shared with a\)) has 4 GiB available, 2 GiB of it kept for 1 job started lately, and a new job needs 2 GiB over its floor of 1\.4 GiB/);
+  });
+
+  it('seats on different kernels are not pooled', () => {
+    const d = decide(inputs({ machines: [seat('a', 4, 'boot-1'), seat('b', 4, 'boot-2')], waiting: burst(2) }), 'd1');
+    expect(d.start).toHaveLength(2);
+  });
+
+  it('Windows\' free memory that one machine of the pool reads counts for every machine of it', () => {
+    const local = machine({ id: 'local', maxLanes: 3, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 10 * GIB, wsl: true, bootId: 'boot-1', hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB } });
+    // The seat has room of its own and the kernel has 10 GiB, but Windows has 3 GiB free: 3 - 2 < 1.4.
+    const d = decide(inputs({ machines: [local, seat('a', 10, 'boot-1', { wsl: true })], waiting: burst(1) }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toContain("a's host (shared with local) has 3 GiB available");
+  });
+
+  it('one machine alone on its kernel, not in a container, is no pool: its own floor decides, also when it is off', () => {
+    const off = machine({ maxLanes: 3, memoryFloor: { floorGiB: 0 }, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 1 * GIB, bootId: 'boot-1' } });
+    expect(decide(inputs({ machines: [off], waiting: burst(2) }), 'd1').start).toHaveLength(2);
+  });
+
+  it('one seat alone in a container is checked against its kernel too', () => {
+    const d = decide(inputs({ machines: [seat('a', 3)], waiting: burst(1) }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe("waiting for memory: a's host has 3 GiB available, and a new job needs 2 GiB over its floor of 1.4 GiB");
+  });
+});
+
+// Issue #2499 part 5: memory pressure (PSI). A seat near its cgroup limit reclaims all the time: its tasks stall on memory
+// while its reading still shows memory available. A machine whose tasks waited on memory too long takes no new job.
+describe('memory pressure (issue #2499)', () => {
+  const pressed = (some: number, over: Partial<MachineSnapshot> = {}): MachineSnapshot =>
+    machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 4 * GIB, memAvailableBytes: 3.6 * GIB, memPressure: { someAvg10: some, fullAvg10: 1 } }, ...over });
+
+  it('a machine whose tasks waited on memory 20% of the last 10 s or more takes no new job, though its memory holds one', () => {
+    const d = decide(inputs({ machines: [pressed(35)], waiting: burst(1) }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe("waiting for memory: local's memory is under pressure: its tasks waited on memory 35% of the last 10 s, and a new job starts only below 20%");
+  });
+
+  it('below 20% the machine takes the job, and a job goes to the machine not under pressure', () => {
+    expect(decide(inputs({ machines: [pressed(19.9)], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+    const d = decide(inputs({ machines: [pressed(50, { id: 'a' }), pressed(2, { id: 'b' })], waiting: burst(1) }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['b']);
+  });
+
+  it('a floor of 0 turns the pressure check off too', () => {
+    expect(decide(inputs({ machines: [pressed(80, { memoryFloor: { floorGiB: 0 } })], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+  });
+});
+
+// Issue #2499 part 7: a seat at its cgroup limit has processes killed for memory (OOM kills) while its reading can still
+// show memory available. A machine that saw an OOM kill less than 10 minutes ago takes no new job.
+describe('OOM kills (issue #2499)', () => {
+  const killed = (minutesAgo: number, over: Partial<MachineSnapshot> = {}): MachineSnapshot =>
+    machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 4 * GIB, memAvailableBytes: 3.6 * GIB, memOomKillAt: ago(minutesAgo) }, ...over });
+
+  it('a machine that saw a process killed for memory less than 10 minutes ago takes no new job, though its memory holds one', () => {
+    const d = decide(inputs({ machines: [killed(3)], waiting: burst(1) }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe("waiting for memory: local's memory killed a process 3 min ago (out of memory), and a new job starts only 10 min after");
+  });
+
+  it('10 minutes after, the machine takes the job, and a job goes to the machine with no OOM kill', () => {
+    expect(decide(inputs({ machines: [killed(10)], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+    const d = decide(inputs({ machines: [killed(1, { id: 'a' }), killed(60, { id: 'b' })], waiting: burst(1) }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['b']);
+  });
+
+  it('a floor of 0 turns the OOM kill check off too', () => {
+    expect(decide(inputs({ machines: [killed(1, { memoryFloor: { floorGiB: 0 } })], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+  });
 });

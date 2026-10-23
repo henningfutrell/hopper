@@ -29,7 +29,7 @@ import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { reportLabels, tendTriedAgain, type LabelDrift, type ReportEnd } from './item-labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
-import { isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
+import { isPartOf, namesIssue, openClosingWork, ownOpenPullRequestOf, worksOnAnotherIssue, type JobOpenedPullRequests } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
 import type { OutboxChange } from '../../domain/github-outbox.ts';
 import type { GitHubOutbox } from './outbox.ts';
@@ -42,6 +42,8 @@ export interface ReportContext {
   holder?: string;
   /** Tell the ledger the issue `key` was read closed (issue #1892), when it does not hold that yet; absent: it is not told. */
   issueClosed?(key: string, reason: string | undefined): void;
+  /** The pull requests each job opened through the hopper (issue #2510); absent: none is known. */
+  opened?: JobOpenedPullRequests;
 }
 
 /**
@@ -125,7 +127,7 @@ async function finished(ctx: JobReportContext, job: Job, repo: string, number: n
   }
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
   // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.
-  const open = await pullRequestOf(ctx.api, repo, number);
+  const open = await pullRequestOf(ctx, job, repo, number);
   await settle(ctx, job, repo, open ? { end: 'pr_open', part: open.part } : { end: 'no_pr' }, issue.labels);
   return { ...state, ...(open ? { pullRequest: open.url } : {}), ...(open?.part ? { part: true } : {}), follow: 'open' };
 }
@@ -133,16 +135,19 @@ async function finished(ctx: JobReportContext, job: Job, repo: string, number: n
 /**
  * The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it —
  * never a part (issue #721): it ships part of the issue, on whatever branch. None ready (issue #1891): the newest open one
- * of those in any state of review, else the newest open part (`part`); undefined when none is open.
+ * of those in any state of review; else the job's own open one the issue's links in its repository miss (issue #2510: in
+ * another repository, or one it opened through the hopper); else the newest open part (`part`); undefined when none is open.
  */
-async function pullRequestOf(api: GitHubApi, repo: string, number: number): Promise<{ url: string; part: boolean } | undefined> {
+async function pullRequestOf(ctx: JobReportContext, job: Job, repo: string, number: number): Promise<{ url: string; part: boolean } | undefined> {
+  const { api } = ctx;
   const newest = <P extends { createdAt: string }>(prs: P[]): P | undefined => [...prs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   const ready = <P extends { isDraft: boolean; conflicting: boolean; createdAt: string }>(prs: P[]): P | undefined => newest(prs.filter((pr) => !pr.isDraft && !pr.conflicting));
   const whole = (url: string) => ({ url, part: false });
   const closing = await openClosingWork(api, repo, number);
   const closes = ready(closing);
   if (closes) return whole(closes.url);
-  const mentions = (await api.referencingPullRequests(repo, number))
+  const referencing = await api.referencingPullRequests(repo, number);
+  const mentions = referencing
     .filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr, repo, number));
   const parts = new Set(mentions.filter((pr) => isPartOf(pr, repo, number)).map((pr) => pr.url));
   const others = mentions.filter((pr) => pr.state === 'open' && !parts.has(pr.url));
@@ -151,6 +156,8 @@ async function pullRequestOf(api: GitHubApi, repo: string, number: number): Prom
   const branch = (await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url));
   const any = ready(branch) ?? newest(closing) ?? newest(others) ?? newest(branch);
   if (any) return whole(any.url);
+  const own = await ownOpenPullRequestOf(api, job, repo, number, referencing, ctx.opened);
+  if (own) return own;
   const part = newest(mentions.filter((pr) => pr.state === 'open' && parts.has(pr.url)));
   return part && { url: part.url, part: true };
 }

@@ -87,10 +87,20 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
     const d = e.data as { machineId: string; usedBytes: number; budgetBytes: number; paths?: { path: string; bytes: number }[] };
     return { ...b, machineId: d.machineId, usedBytes: d.usedBytes, budgetBytes: d.budgetBytes, ...(d.paths ? { paths: d.paths } : {}) };
   }
+  // A machine's disk turned low or critical, and no longer low (issue #2494): its id, its name, its free and total bytes.
+  if (e.type === 'machine.disk_low' || e.type === 'machine.disk_ok') {
+    const d = e.data as { machineId: string; label: string; freeBytes: number; totalBytes: number; critical?: boolean };
+    return { ...b, machineId: d.machineId, label: d.label, freeBytes: d.freeBytes, totalBytes: d.totalBytes, ...(d.critical !== undefined ? { critical: d.critical } : {}) };
+  }
   // A machine offline for two minutes, and back (issue #1497): its id, its name, since when it is offline.
   if (e.type === 'machine.offline' || e.type === 'machine.back_online') {
     const d = e.data as { machineId: string; label: string; since: string };
     return { ...b, machineId: d.machineId, label: d.label, since: d.since };
+  }
+  // A drained machine idle with a backlog (issue #2499): the drain's end and reason, its free lanes, the jobs queued.
+  if (e.type === 'machine.drained_idle') {
+    const d = e.data as { machineId: string; label: string; since: string; drainedAt: string; until: string; reason?: string; freeLanes: number; queued: number };
+    return { ...b, machineId: d.machineId, label: d.label, since: d.since, drainedAt: d.drainedAt, until: d.until, ...(d.reason ? { reason: d.reason } : {}), freeLanes: d.freeLanes, queued: d.queued };
   }
   return b;
 }

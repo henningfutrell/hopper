@@ -38,8 +38,20 @@ export interface MachineInfraCredentials { infraCredentials?: string[] }
  */
 export interface MachineLeaving { leaving?: true }
 
-/** Who drained a machine, the way, and when (issue #1511): kept in the user's settings, per machine id. */
-export interface MachineDrain { person: string; via: ActionVia; at: string }
+/**
+ * Who drained a machine, the way, and when (issue #1511): kept in the user's settings, per machine id. Issue #2499: why
+ * (`reason`), and when it ends by itself (`until`); a drain kept before them has neither, and ends a day after `at`.
+ */
+export interface MachineDrain { person: string; via: ActionVia; at: string; reason?: string; until?: string }
+
+/** How long a drain lasts when its drain names no hours, and the most it may name (issue #2499). */
+export const DRAIN_DEFAULT_HOURS = 24;
+export const DRAIN_MAX_HOURS = 720;
+/** How long a drained machine stays online with free lanes while a job it could run is queued before it is told (issue #2499). */
+export const DRAINED_IDLE_AFTER_MS = 10 * 60_000;
+
+/** When a drain ends by itself: its `until`, or `DRAIN_DEFAULT_HOURS` after it began. */
+export const drainEnds = (d: MachineDrain): string => d.until ?? new Date(Date.parse(d.at) + DRAIN_DEFAULT_HOURS * 3_600_000).toISOString();
 
 /** The drained machines (issue #1511), keyed by machine id. */
 export type MachineDrains = Readonly<Record<string, MachineDrain>>;
@@ -60,9 +72,9 @@ export interface UnhealthyLane { laneId: LaneId; failures: number; error: string
 /** A machine's unhealthy lanes, as its snapshot (`MachineSnapshot`) carries them (issue #2234). Absent: none. */
 export interface MachineLaneHealth { unhealthyLanes?: UnhealthyLane[] }
 
-/** The machines with the drained ones marked (issue #1511). A drain of a machine not listed marks nothing. */
-export const withDrains = <M extends { id: string }>(machines: readonly M[], drains: MachineDrains): (M & MachineDrained)[] =>
-  machines.map((m) => { const d = drains[m.id]; return d ? { ...m, drained: d } : m; });
+/** The machines with the drained ones marked at `at` (issue #1511). A drain of a machine not listed, or one ended (issue #2499), marks nothing. */
+export const withDrains = <M extends { id: string }>(machines: readonly M[], drains: MachineDrains, at: string): (M & MachineDrained)[] =>
+  machines.map((m) => { const d = drains[m.id]; return d && Date.parse(drainEnds(d)) > Date.parse(at) ? { ...m, drained: d } : m; });
 
 /** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
 export interface MachineHerdr {
@@ -90,6 +102,8 @@ interface AttachedBase {
   diskLow?: DiskThresholds;
   /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. `memoryFloor`: its memory floor (issue #2291); absent fields take the defaults. */
   sweep?: SweepSettings; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
+  /** Its limits for each job's scope (issue #2498); absent: none. Never on a container target. */
+  jobLimits?: import('./job-limits.ts').JobLimits;
   /** Lanes kept for jobs pinned to it (issue #372). */
   reservedLanes?: number;
   /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */
@@ -241,14 +255,27 @@ export type MachineEditOutcome =
 /** A machine's disk (issue #401): bytes free and in all, and whether it is low by the machine's thresholds. */
 export type DiskReading = NonNullable<MachineSnapshot['disk']>;
 
-/** A machine's thresholds for a low disk (issue #410): below this many GiB free, or below this share free; absent, 5 GiB and 10%. */
-export interface DiskThresholds { belowGiB?: number; belowPercent?: number }
+/**
+ * A machine's thresholds for a low disk (issue #410): below this many GiB free, or below this share free; absent, 5 GiB and 10%.
+ * Critical (issue #2494) below `criticalBelowGiB` or `criticalBelowPercent`; absent, 1 GiB and 2%.
+ */
+export interface DiskThresholds { belowGiB?: number; belowPercent?: number; criticalBelowGiB?: number; criticalBelowPercent?: number }
+
+/** The statuses a job ends in (`TERMINAL_STATUSES`), each with its own retention (issue #2494). */
+export type EndStatus = 'finished' | 'failed' | 'cancelled' | 'rejected';
 
 /**
  * How the sweep treats a machine (issue #410): it is swept every `everyMinutes` (absent, 10), and an ended
- * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24).
+ * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24). `retainHours` (issue #2494): for a
+ * status named, the job's work stays this many hours from its end instead (`src/domain/retention.ts`).
  */
-export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: number }
+export interface SweepSettings {
+  everyMinutes?: number; scratchMaxAgeHours?: number; retainHours?: Partial<Record<EndStatus, number>>;
+  /** The storage prune's age in days (issue #2494, src/domain/storage-prune.ts); absent: the sweep prunes nothing there. */
+  pruneAfterDays?: number;
+  /** The trim's threshold in GiB (issue #2494, src/engine/sweep-trim.ts): fstrim once the cleanups freed this much; absent: never. */
+  trimAboveGiB?: number;
+}
 
 /** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */
 export interface JobMachineLink {

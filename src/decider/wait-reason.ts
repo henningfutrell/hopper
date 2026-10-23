@@ -1,16 +1,17 @@
 // Why a job waits for a lane (issues #381, #2499): the lane cap that binds on the machine with the most lanes for it, then
 // every other machine that runs its executor and why it was left out — offline, leaving, drained, held, full, at a usage
-// limit, short of memory —, so a drained or paced machine never hides behind the one named. Pure.
+// limit, short of memory, throttled —, so a drained or paced machine never hides behind the one named. Pure.
 import type { ExpectedCost, Job, MachineSnapshot, PriorityLanesInput } from '../domain/types.ts';
 import { isWindowsJob, windowsFits } from '../domain/windows-jobs.ts';
 import { freePriority, keptFor, priorityLaneNames } from './priority-lanes.ts';
 import { gateKeeps } from './gate.ts';
-import { memoryAdmits, memoryShort } from './memory-floor.ts';
+import { memoryAdmits, memoryShort, memoryWait } from './memory-floor.ts';
+import { cpuThrottled, cpuWait, throttleShort } from './cpu-throttle.ts';
 import { signedOutFor } from './signed-out.ts';
 import { addressHolds, credentialHolds, herdrHolds, notReady, offNetwork, workTreeHolds } from './machine-holds.ts';
 import type { CapBand } from './usage.ts';
 import {
-  diskHolds, drainedHolds, eligible, fitsLane, freeOf, homeless, leavingHolds, leftHolds, pinOf, problemHits, room, roomFor, templateHolds,
+  diskHolds, diskWord, drainedHolds, eligible, fitsLane, freeOf, homeless, leavingHolds, leftHolds, pinOf, problemHits, room, roomFor, templateHolds,
   unpinnedCap, type MachineState, type MachineStateWithCredentialHold,
 } from './assign.ts';
 
@@ -47,7 +48,7 @@ function causeOf(s: MachineStateWithCredentialHold, job: Job, pl: PriorityLanesI
   if (drainedHolds(m, job)) return `is drained since ${m.drained!.at}`;
   if (leftHolds(m, job)) return 'is the lost machine the job moved off';
   if (homeless(m)) return 'has not answered a probe: its home is not known';
-  if (diskHolds(m, job)) return `has low disk (${freeOf(m)})`;
+  if (diskHolds(m, job)) return `has ${diskWord(m)} disk (${freeOf(m)})`;
   if (workTreeHolds(m, job)) return `has no usable work tree: ${m.workTreeProblem}`;
   if (addressHolds(m, job)) return offNetwork(m);
   if (credentialHolds(m, job, s.credentialHeld)) return notReady(m);
@@ -60,7 +61,8 @@ function causeOf(s: MachineStateWithCredentialHold, job: Job, pl: PriorityLanesI
   const gated = gateKeeps(m.id, job, s.gate);
   if (gated) return `is gated: ${gated}`;
   if (!fitsLane(s, job, pl)) return `is full: ${laneFull(s, job, pl)}`;
-  if (!memoryAdmits(s.memory, cost)) return `is short of memory: ${memoryShort(s.memory!, cost)}`;
+  if (!memoryAdmits(s.memory, cost)) return `is short of memory: ${memoryShort(s.memory!, cost, m.id)}`;
+  if (cpuThrottled(m)) return `is throttled: ${throttleShort(m)}`;
   return 'was not picked';
 }
 
@@ -73,6 +75,17 @@ export function leftOut(job: Job, states: readonly MachineStateWithCredentialHol
   const each = states.filter((s) => s.machine.executors.includes(job.spec.executor) && !named.includes(s.machine.id))
     .map((s) => `${s.machine.id} ${causeOf(s, job, pl, cost)}`);
   return each.length ? `; left out: ${each.join('; ')}` : '';
+}
+
+/**
+ * Why a job that has a lane on the machines `laned` waits (issues #2291, #2499): none's memory holds it, else the CPU quota
+ * throttles each one whose memory does; then the machines left out.
+ */
+export function roomWait(job: Job, states: readonly MachineStateWithCredentialHold[], laned: readonly MachineStateWithCredentialHold[], pl?: PriorityLanesInput, cost?: ExpectedCost): string {
+  const roomy = laned.filter((s) => memoryAdmits(s.memory, cost));
+  const named = roomy.length ? roomy : laned;
+  const head = roomy.length ? cpuWait(roomy.map((s) => s.machine)) : memoryWait(laned, cost);
+  return `${head}${leftOut(job, states, named.map((s) => s.machine.id), pl, cost)}`;
 }
 
 /** Why a job no machine has a lane for waits (issue #381): the lane cap that binds on the machine with the most of them, then the machines left out. */

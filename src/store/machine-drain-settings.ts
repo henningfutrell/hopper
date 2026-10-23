@@ -16,7 +16,7 @@ export function machineDrainSettings(read: (key: string) => string | undefined, 
     },
     setMachineDrains(drains) {
       write('machineDrains', JSON.stringify(Object.fromEntries(Object.entries(drains).sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, d]) => [id, { person: d.person, via: d.via, at: d.at }]))));
+        .map(([id, d]) => [id, { person: d.person, via: d.via, at: d.at, ...(d.reason !== undefined ? { reason: d.reason } : {}), ...(d.until !== undefined ? { until: d.until } : {}) }]))));
     },
     getSandboxHost() {
       const text = read('sandboxHost');

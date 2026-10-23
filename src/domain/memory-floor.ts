@@ -9,6 +9,21 @@ export interface MemoryFloor { floorGiB?: number; perJobGiB?: number }
 /** The default floor: this share of the machine's memory, in percent, and at least `MEMORY_FLOOR_MIN_GIB`. */
 export const MEMORY_FLOOR_PERCENT = 10;
 export const MEMORY_FLOOR_MIN_GIB = 1;
+/**
+ * Issue #2499: a machine whose memory pressure (PSI `some` avg10) is at or above this share, in percent, takes no new job:
+ * its tasks already wait on memory, as a seat near its cgroup limit does while it still reads memory available.
+ */
+export const MEMORY_PRESSURE_PERCENT = 20;
+/**
+ * Issue #2499: a machine whose memory pressure is at or above this share, in percent, pauses the job that started there
+ * last, as a machine below its floor does. Twice the admission's share, so a machine that only takes no new job pauses none.
+ */
+export const MEMORY_PRESSURE_PAUSE_PERCENT = 40;
+/**
+ * Issue #2499: a machine that saw an OOM kill (a process killed for memory) less than this ago takes no new job: it is at
+ * its memory limit, though its reading may show memory available again once the kill freed it.
+ */
+export const MEMORY_OOM_KILL_MS = 10 * 60_000;
 /** The default memory a new job needs, in GiB: room for an agent and a JVM build. */
 export const MEMORY_PER_JOB_GIB = 2;
 /** A job that started (or resumed) less than this ago has not taken its memory yet: it still reserves a job's memory. */

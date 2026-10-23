@@ -19,8 +19,11 @@ import { createGitMirrors } from '../git-mirror/mirrors.ts';
 import { graphKeys } from '../search/index.ts';
 import { allPartsDone } from '../sources/github/parts.ts';
 import { doneReported, dropReported } from '../sources/github/item-labels.ts';
+import { openedPullRequests } from '../domain/direct-jobs.ts';
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
+/** How many of a job's newest proxy events say which pull requests it opened (issue #2510). */
+const OPENED_READ = 1000;
 
 export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: string[]) => Set<string>) | undefined, decideActor: DecideIntakeActor | undefined,
   mirrors?: { dataDir: string; logger: { warn(line: string): void } }, graphRead?: (keys: string[]) => void, clock: () => Date = () => new Date(),
@@ -104,6 +107,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     jobArtifacts: (jobId) => store.artifacts.list({ jobId }).map((a) => ({ id: a.id, ...(a.issue ? { issue: a.issue.url } : {}) })),
     jobDoneCriteria: (jobId) => doneCriteriaOfJob(store, jobId),
     jobAllowedDeletes: (jobId) => allowedDeletesOfJob(store, jobId),
+    jobOpenedPullRequests: (jobId) => openedPullRequests(store.events.recent(OPENED_READ, ['github_proxy.done'], jobId)),
   };
 }
 

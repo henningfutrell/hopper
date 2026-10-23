@@ -52,3 +52,19 @@ export function worktreeParts(path: string): { workTree: string; name: string; o
   const old = new RegExp(`^(/.*)/${OLD_WORKTREES_DIR}/([^/]+)$`).exec(path);
   return old ? { workTree: old[1]!, name: old[2]!, old: true } : undefined;
 }
+
+/**
+ * The known job a job worktree is of: `<job id>` its name (issue #1188), or `<name>-<job id>` in the layout before, whose
+ * name may hold `-` too, so each split is tried.
+ */
+export function worktreeJobOf<T>(path: string, jobOf: (id: string) => T | undefined): T | undefined {
+  const tree = worktreeParts(path);
+  if (!tree) return undefined;
+  const name = tree.name;
+  if (!tree.old) return jobOf(name);
+  for (let at = name.indexOf('-'); at >= 0; at = name.indexOf('-', at + 1)) {
+    const job = jobOf(name.slice(at + 1));
+    if (job !== undefined) return job;
+  }
+  return undefined;
+}

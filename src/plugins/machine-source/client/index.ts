@@ -4,7 +4,7 @@
 // machine key — the public half of its link key, recorded when it joined: who it is, never a secret.
 import type { ClientMachine } from '../../../domain/types.ts';
 import type { PluginDefinition } from '../../sdk.ts';
-import { attachedBase, attachedShape, diskLowShape, memoryFloorShape, reach, sweepShape, workTreeOption, workTreesOption, type AttachedOptions } from '../attached.ts';
+import { attachedBase, attachedShape, diskLowShape, jobLimitsShape, memoryFloorShape, reach, sweepShape, workTreeOption, workTreesOption, type AttachedOptions } from '../attached.ts';
 
 export interface ClientOptions extends AttachedOptions { key: string; template?: string; pool?: true; pod?: string }
 
@@ -28,7 +28,7 @@ const client: PluginDefinition<'machine-source', ClientOptions> = {
     ...attachedShape(z, ['herdr-claude']),
     workTree: workTreeOption(z),
     workTrees: workTreesOption(z),
-    ...diskLowShape(z), ...memoryFloorShape(z),
+    ...diskLowShape(z), ...memoryFloorShape(z), ...jobLimitsShape(z),
     ...sweepShape(z),
   }),
   async detect() { return { status: 'available' }; },

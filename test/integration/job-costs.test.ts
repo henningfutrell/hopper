@@ -42,7 +42,7 @@ async function boot(): Promise<TestApp> {
  * minutes with one lane — 30% CPU, 6 GiB, 51 GiB, one minute at 7 GiB — while the job runs, and the machine's session
  * usage goes from 10% to 16%. The job finished; a second job that was parked has no profile.
  */
-function seed(a: TestApp): { start: number } {
+function seed(a: TestApp, waiting = 0): { start: number } {
   const store = a.user().store;
   const start = Date.now() - 24 * 60 * MIN;
   const samples: MachineSample[] = [];
@@ -51,8 +51,8 @@ function seed(a: TestApp): { start: number } {
     const busy = i >= 20 ? 1 : 0;
     samples.push({
       machineId: 'laptop', at: new Date(start + i * MIN).toISOString(), cores: 8, cpuBusyFrac: busy ? 0.3 : 0.1,
-      memTotalBytes: 16 * GIB, memAvailableBytes: (busy ? (i === 30 ? 9 : 10) : 12) * GIB, diskFreeBytes: (busy ? 49 : 50) * GIB, diskTotalBytes: 100 * GIB,
-      lanesBusy: busy, lanesMax: 2,
+      memTotalBytes: 16 * GIB, memAvailableBytes: ((busy ? (i === 30 ? 9 : 10) : 12) - (busy ? waiting : 0)) * GIB, diskFreeBytes: (busy ? 49 : 50) * GIB, diskTotalBytes: 100 * GIB,
+      ...(busy && waiting ? { waitingMemBytes: waiting * GIB } : {}), lanesBusy: busy, lanesMax: 2,
     });
     if (busy) usage.push({ source: 'plan', machineId: 'laptop', window: 'session', used: 10 + (i - 20) * 0.2, limit: 100, unit: '%', at: new Date(start + i * MIN).toISOString() });
   }
@@ -97,6 +97,15 @@ describe('job cost profiles', () => {
     expect(r.body.groups.repo).toEqual([expect.objectContaining({ key: 'o/r', jobs: 1, failed: 0, durationMs: 30 * MIN })]);
     expect(r.body.groups.kind.map((g) => g.key)).toEqual(['code']);
     expect(r.body.groups.template).toEqual([]);
+  });
+
+  // Issue #2499: a job on its own wait holds no lane, but its scope keeps memory. That memory is not the running job's.
+  it('memory held by jobs with no lane is not counted as the running job\'s', async () => {
+    const a = await boot();
+    seed(a, 1.5);
+    const [p] = (await a.api<JobCosts>('GET', '/api/lanes/costs')).body.jobs;
+    expect(p!.memoryBytes!.avg / GIB).toBeCloseTo(2 + 1 / 30);
+    expect(p!.memoryBytes!.peak / GIB).toBeCloseTo(3);
   });
 
   it('`hopper lanes costs` answers the same as the route', async () => {

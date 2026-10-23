@@ -1080,6 +1080,32 @@ Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used
 }
 ```
 
+## `job.cleanup_leftover`
+
+Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Failures lists the job as stuck work (`cleanup_leftover`) while an entry stays.
+
+| field | type | required |
+|---|---|---|
+| `endedAt` | string | yes |
+| `graceMinutes` | number | yes |
+| `entries` | object[] | yes |
+
+```json
+{
+  "endedAt": "2026-10-22T09:00:00.000Z",
+  "graceMinutes": 60,
+  "entries": [
+    {
+      "machineId": "desk",
+      "kind": "scratch_dir",
+      "locator": "/home/me/work/.worktrees/@scratch/f3b1c2d4",
+      "state": "failed",
+      "reason": "/home/me/work/.worktrees/@scratch/f3b1c2d4/containers is still there"
+    }
+  ]
+}
+```
+
 ## `job.parked`
 
 Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650, #2335: `auto`, its question waited on a person a few seconds, or its proposal or research report reached the human stage; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. `move` (issue #1892): the hopper parked it to move it off its machine with no person — `signed_out` (issue #1211), `busy_machine` (issue #1977) or `lost_machine` (issue #1569; also a run whose session had no way to the hopper, issue #2427, its `why` says so) — and picks it up elsewhere (`job.unparked`); its work item goes back to queued, not to needs you, and a stop before the pick up leaves the move to its next pass. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
@@ -3226,6 +3252,111 @@ Version 1 (`docs/schemas/machine.disk_within_budget.v1.json`). A machine told ov
 }
 ```
 
+## `machine.disk_low`
+
+Version 1 (`docs/schemas/machine.disk_low.v1.json`). A machine's disk (the filesystem its home is on) turned low by its thresholds (issue #2494, `diskLowBelowGiB` / `diskLowBelowPercent`, default 5 GiB / 10%): `freeBytes` of `totalBytes` free. It takes no new job, and the sweep reaps every ended job's scratch dir there at once, whatever its age. `critical`: below its critical thresholds (`diskCriticalBelowGiB` / `diskCriticalBelowPercent`, default 1 GiB / 2%), where it takes no job at all, a job back to its pane included. Once when it turns low, and once more when it turns critical; after a restart of the hopper, not again. `label` is its name on the Machines view. Webhooks and notifiers take it.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `freeBytes` | number | yes |
+| `totalBytes` | number | yes |
+| `critical` | boolean | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "label": "seat l1",
+  "freeBytes": 4000000000,
+  "totalBytes": 250000000000,
+  "critical": false
+}
+```
+
+## `machine.disk_ok`
+
+Version 1 (`docs/schemas/machine.disk_ok.v1.json`). A machine told by `machine.disk_low` has its disk no longer low (issue #2494): `freeBytes` of `totalBytes` free now. It takes jobs again.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `freeBytes` | number | yes |
+| `totalBytes` | number | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "label": "seat l1",
+  "freeBytes": 40000000000,
+  "totalBytes": 250000000000
+}
+```
+
+## `machine.storage_pruned`
+
+Version 1 (`docs/schemas/machine.storage_pruned.v1.json`). The sweep pruned the container storage of a machine (`machineId`) whose `pruneAfterDays` option is set (issue #2494, design.md "Hopper's own disk use" → "Part 8"), once a day, or once an hour while its disk is low: `removed`, each by its container `runtime`, `kind` and full `id`, with its size in `bytes` when the runtime said it — the exited containers stopped more than `olderThanDays` days ago with no label the prune keeps (the stack's, the hopper's boxes', a kind node's, a job's), each with its anonymous volumes; the anonymous volumes no container uses; and the images no container uses built more than `olderThanDays` days ago, never one titled `hopper`. `bytes`: the sum of the sizes said. Nothing is forced, and a named volume (a seat's home, the stack's) is never removed. Only when it removed something.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `olderThanDays` | number | yes |
+| `bytes` | number | yes |
+| `removed` | object[] | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "olderThanDays": 30,
+  "bytes": 1500004096,
+  "removed": [
+    {
+      "runtime": "podman",
+      "kind": "container",
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 4096
+    },
+    {
+      "runtime": "podman",
+      "kind": "volume",
+      "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "runtime": "podman",
+      "kind": "image",
+      "id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "bytes": 1500000000
+    }
+  ]
+}
+```
+
+## `machine.disk_trim_ran`
+
+Version 1 (`docs/schemas/machine.disk_trim_ran.v1.json`). The sweep ran fstrim on a machine (`machineId`) whose `trimAboveGiB` option is set (issue #2494, design.md "Hopper's own disk use" → "Part 9"), on the filesystem its home is on (`mount`), once its cleanups there had freed that many GiB since the last trim: `freedBytes`, what the storage prune said it removed and the drop of the hopper's own disk use its reaps made. `outcome`: `trimmed`, with the bytes fstrim said it trimmed in `trimmedBytes`; `refused`, only root may and sudo did not let it with no password; `unsupported`, no fstrim there or a filesystem with no discard; `failed`, anything else; `said`, what fstrim said when it did not trim. `hostCompaction`: the machine is a WSL distro, whose virtual disk on the host shrinks only once it is compacted there (design.md says how), which the hopper cannot do from inside.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `freedBytes` | number | yes |
+| `mount` | string | yes |
+| `outcome` | `trimmed` \| `refused` \| `unsupported` \| `failed` | yes |
+| `trimmedBytes` | number | no |
+| `said` | string | no |
+| `hostCompaction` | boolean | no |
+
+```json
+{
+  "machineId": "seat-l1",
+  "freedBytes": 12000000000,
+  "mount": "/",
+  "outcome": "trimmed",
+  "trimmedBytes": 14500000000,
+  "hostCompaction": true
+}
+```
+
 ## `machine.leftover_kept`
 
 Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.
@@ -3273,19 +3404,23 @@ Version 1 (`docs/schemas/machine.leftover_removed.v1.json`). A person removes a 
 
 ## `machine.drained`
 
-Version 1 (`docs/schemas/machine.drained.v1.json`). A person drained `machineId` (issue #1511): from now on no new job is placed on it, and the jobs on it run to their end. A job resuming there returns to its pane. Kept across restarts until a person undrains it. `person` and `via` say who and the way.
+Version 1 (`docs/schemas/machine.drained.v1.json`). A person drained `machineId` (issue #1511): from now on no new job is placed on it, and the jobs on it run to their end. A job resuming there returns to its pane. Kept across restarts until a person undrains it, or until `until`, when it ends by itself (`machine.drain_expired`, issue #2499). `person` and `via` say who and the way; `reason` why (issue #2499).
 
 | field | type | required |
 |---|---|---|
 | `machineId` | string | yes |
 | `person` | string | yes |
 | `via` | `ui` \| `cli` \| `api` | yes |
+| `reason` | string | no |
+| `until` | string | no |
 
 ```json
 {
   "machineId": "desk",
   "person": "Pat",
-  "via": "cli"
+  "via": "cli",
+  "reason": "seat rebuild",
+  "until": "2026-10-23T09:00:00.000Z"
 }
 ```
 
@@ -3304,6 +3439,58 @@ Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machin
   "machineId": "desk",
   "person": "Pat",
   "via": "ui"
+}
+```
+
+## `machine.drain_expired`
+
+Version 1 (`docs/schemas/machine.drain_expired.v1.json`). The drain of `machineId` reached its end, `until`, and ended by itself (issue #2499): new jobs are placed on it again. `person` and `via` say who drained it and the way, `at` when, `reason` why. A drain recorded before drains had an end ends a day after `at`.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+| `at` | string | yes |
+| `until` | string | yes |
+| `reason` | string | no |
+
+```json
+{
+  "machineId": "desk",
+  "person": "Pat",
+  "via": "cli",
+  "at": "2026-10-22T09:00:00.000Z",
+  "until": "2026-10-23T09:00:00.000Z",
+  "reason": "seat rebuild"
+}
+```
+
+## `machine.drained_idle`
+
+Version 1 (`docs/schemas/machine.drained_idle.v1.json`). A drained machine stayed online with `freeLanes` free lanes, while `queued` jobs it could run waited, from `since` for ten minutes (issue #2499): told once, so a person can undrain it. Told again after the backlog clears, the machine is undrained, offline or full, and it is idle with a backlog again. `drainedAt`, `until` and `reason` are its drain's.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `since` | string | yes |
+| `drainedAt` | string | yes |
+| `until` | string | yes |
+| `reason` | string | no |
+| `freeLanes` | integer | yes |
+| `queued` | integer | yes |
+
+```json
+{
+  "machineId": "desk",
+  "label": "desk",
+  "since": "2026-10-22T10:00:00.000Z",
+  "drainedAt": "2026-10-22T09:00:00.000Z",
+  "until": "2026-10-23T09:00:00.000Z",
+  "reason": "seat rebuild",
+  "freeLanes": 2,
+  "queued": 31
 }
 ```
 
@@ -3863,7 +4050,7 @@ Version 1 (`docs/schemas/job.preempted.v1.json`). A Decision preempted this runn
 
 ## `job.memory_paused`
 
-Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job started there last. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision's.
+Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job started there last. Issue #2499: or its machine's memory pressure is at or above 40% (`availableBytes` and `floorBytes` its own), or its host pool has `availableBytes` below the pool's floor `floorBytes` and this job started last on any machine of it. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision's.
 
 | field | type | required |
 |---|---|---|

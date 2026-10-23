@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "since": {
+      "type": "string"
+    },
+    "drainedAt": {
+      "type": "string"
+    },
+    "until": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "freeLanes": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "queued": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "machineId",
+    "label",
+    "since",
+    "drainedAt",
+    "until",
+    "freeLanes",
+    "queued"
+  ],
+  "additionalProperties": false
+}

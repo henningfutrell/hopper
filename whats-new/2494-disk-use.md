@@ -1,0 +1,1 @@
+- Each machine card now shows how much disk the package caches (NuGet, Gradle, Go, npm, pip and others) and the container images and volumes take there.

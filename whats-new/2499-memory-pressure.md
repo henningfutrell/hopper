@@ -1,0 +1,1 @@
+- A machine whose programs already wait for memory, such as a container near its memory limit, now takes no new job until that pressure falls, and a job that waits says why.

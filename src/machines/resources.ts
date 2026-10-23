@@ -1,15 +1,21 @@
 // A machine's resources (issue #560, design.md "Machine resources over time"): this machine's from its meter
 // (src/client/resources.ts) at every list; an ssh target's from what RESOURCES_COMMAND prints in its probe —
-// two /proc/stat cpu lines a second apart, the load averages, the memory lines and the core count, each line
-// marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed.
+// two /proc/stat cpu lines a second apart, the load averages, the memory lines, the memory pressure and the core count, each line
+// marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed. An ssh target's probe
+// also prints each cgroup on its own path with a memory limit, and its user manager's (issue #2499): a seat's container
+// or a slice's MemoryMax; the tightest is its memory, as this machine's meter reads it.
 import { nodeFloorOf } from '../client/node-floor.ts';
-import { WINDOWS_LINK_URL, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
+import { pressureOf } from '../client/resources.ts';
+import { WINDOWS_LINK_URL, type JobUseNow, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
 const MARK = 'hopper-res ';
 
 /** What an ssh target's probe runs: nothing printed where there is no /proc (the reading is then absent). */
 export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { head -n1 /proc/stat; sleep 1; head -n1 /proc/stat; cat /proc/loadavg;`
-  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
+  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); cat /proc/pressure/memory;`
+  + ` p=$(sed -n 's/^0:://p' /proc/self/cgroup); u=$(id -u); for d in $(while :; do echo "$p"; case $p in /|'') break;; esac; p=\${p%/*}; [ -n "$p" ] || p=/; done) /user.slice/user-$u.slice/user@$u.service;`
+  + ` do f=/sys/fs/cgroup\${d%/}; [ -r $f/memory.max ] || continue; echo cg $d $(cat $f/memory.max) $(cat $f/memory.current) $(sed -n 's/^inactive_file //p' $f/memory.stat); sed "s|^|cgp $d |" $f/memory.pressure; done;`
+  + ` nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
 
 /** Busy and total jiffies of a `cpu` line: iowait counts as idle; guest time is already in user. */
 function jiffies(line: string): { busy: number; total: number } | undefined {
@@ -35,15 +41,55 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const swapFree = mem.get('SwapFree');
   const free = mem.get('MemFree');
   const wsl = lines.some((l) => l.trim() === 'wsl');
-  return {
+  const limited = cgroupLimitOf(lines, total);
+  const psi = pressureOf((limited ? cgroupPressure(lines, limited.dir) : undefined) ?? lines.join('\n'));
+  const boot = bootOf(lines.map((l) => /^boot (\S+)\s*$/.exec(l)?.[1]).find((b) => b));
+  const cpu = {
     cores,
     ...(busy !== undefined ? { cpuBusyFrac: busy } : {}),
     ...(load ? { load: [Number(load[1]), Number(load[2]), Number(load[3])] as [number, number, number] } : {}),
+  };
+  if (limited) {
+    return {
+      ...cpu, memTotalBytes: limited.total, memAvailableBytes: limited.available, container: true,
+      kernelMemTotalBytes: total, kernelMemAvailableBytes: available, ...boot, ...(psi ? { memPressure: psi } : {}),
+    };
+  }
+  return {
+    ...cpu,
     memTotalBytes: total, memAvailableBytes: available,
     ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
     ...(wsl ? { wsl: true as const, ...(free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}) } : {}),
+    ...boot,
+    ...(psi ? { memPressure: psi } : {}),
   };
 }
+
+/**
+ * Issue #2499: the tightest of the cgroup memory limits an ssh target printed (`cg <dir> <max> <current> [inactive_file]`),
+ * its use less the page cache it could drop; a line not whole, or a limit over the kernel's memory, is none.
+ */
+function cgroupLimitOf(lines: string[], kernelTotal: number): { dir: string; total: number; available: number } | undefined {
+  let tightest: { dir: string; total: number; available: number } | undefined;
+  for (const l of lines) {
+    const m = /^cg (\/\S*) (\d+) (\d+)(?: (\d+))?\s*$/.exec(l);
+    if (!m) continue;
+    const total = Number(m[2]);
+    if (total <= 0 || total > kernelTotal) continue;
+    const available = Math.max(0, total - Math.max(0, Number(m[3]) - Number(m[4] ?? 0)));
+    if (!tightest || available < tightest.available) tightest = { dir: m[1]!, total, available };
+  }
+  return tightest;
+}
+
+/** The memory pressure lines an ssh target printed for one cgroup (`cgp <dir> <line>`); undefined when none. */
+function cgroupPressure(lines: string[], dir: string): string | undefined {
+  const own = lines.filter((l) => l.startsWith(`cgp ${dir} `)).map((l) => l.slice(`cgp ${dir} `.length));
+  return own.length ? own.join('\n') : undefined;
+}
+
+/** A kernel's boot id (issue #2499), when it reads as one. */
+const bootOf = (v: unknown): Pick<ResourceReading, 'bootId'> => (typeof v === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(v) ? { bootId: v } : {});
 
 const count = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 
@@ -57,6 +103,7 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
   return {
     cores: r.cores,
     ...(busy !== undefined ? { cpuBusyFrac: busy } : {}),
+    ...(count(r.cpuThrottledFrac) && r.cpuThrottledFrac <= 1 ? { cpuThrottledFrac: r.cpuThrottledFrac } : {}),
     ...(load ? { load: [load[0], load[1], load[2]] } : {}),
     memTotalBytes: r.memTotalBytes, memAvailableBytes: r.memAvailableBytes,
     ...(count(r.swapTotalBytes) && count(r.swapUsedBytes) ? { swapTotalBytes: r.swapTotalBytes, swapUsedBytes: r.swapUsedBytes } : {}),
@@ -67,7 +114,41 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
       ? { hostMemFreeBytes: r.hostMemFreeBytes, hostMemTotalBytes: r.hostMemTotalBytes } : {}),
     ...(r.wsl === true && windowsLinkOf(r.windowsLink) ? { windowsLink: windowsLinkOf(r.windowsLink)! } : {}),
     ...nodeOf(r.node),
+    ...jobMemoryOf(r.jobMemoryBytes),
+    ...jobUseOf(r.jobUse),
+    ...bootOf(r.bootId),
+    ...(count(r.kernelMemTotalBytes) && count(r.kernelMemAvailableBytes) && r.kernelMemTotalBytes > 0 && r.kernelMemAvailableBytes <= r.kernelMemTotalBytes
+      ? { kernelMemTotalBytes: r.kernelMemTotalBytes, kernelMemAvailableBytes: r.kernelMemAvailableBytes } : {}),
+    ...pressureOfClient(r.memPressure),
+    ...(typeof r.memOomKillAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,3})?Z$/.test(r.memOomKillAt) && Number.isFinite(Date.parse(r.memOomKillAt))
+      ? { memOomKillAt: r.memOomKillAt } : {}),
   };
+}
+
+/** A client's memory pressure (issue #2499), when both shares read as 0..100. */
+function pressureOfClient(v: unknown): Pick<ResourceReading, 'memPressure'> {
+  if (typeof v !== 'object' || v === null) return {};
+  const { someAvg10: some, fullAvg10: full } = v as Record<string, unknown>;
+  return count(some) && count(full) && some <= 100 && full <= 100 ? { memPressure: { someAvg10: some, fullAvg10: full } } : {};
+}
+
+/** A client's job scope memory (issue #2499): each entry whose key reads as a job id and whose value as bytes; none, when none does. */
+function jobMemoryOf(v: unknown): Pick<ResourceReading, 'jobMemoryBytes'> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return {};
+  const kept = Object.entries(v).filter(([id, bytes]) => /^[A-Za-z0-9_-]{1,64}$/.test(id) && count(bytes));
+  return kept.length ? { jobMemoryBytes: Object.fromEntries(kept) as Record<string, number> } : {};
+}
+
+/** A client's job scope use (issue #2498): per job id, each field that reads as a count; a job with none is left out. */
+function jobUseOf(v: unknown): Pick<ResourceReading, 'jobUse'> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return {};
+  const kept = Object.entries(v).flatMap(([id, u]): [string, JobUseNow][] => {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || typeof u !== 'object' || u === null) return [];
+    const x = u as Record<string, unknown>;
+    const use: JobUseNow = Object.fromEntries((['memoryPeakBytes', 'cpuSeconds', 'oomKills', 'cpuCores'] as const).flatMap((k) => (count(x[k]) ? [[k, x[k]]] : [])));
+    return Object.keys(use).length ? [[id, use]] : [];
+  });
+  return kept.length ? { jobUse: Object.fromEntries(kept) } : {};
 }
 
 /** A client's Node version (issue #2479), when it reads as one; its floor judged here, not taken from the client. */

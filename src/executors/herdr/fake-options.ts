@@ -105,6 +105,8 @@ export interface FakeHerdrOptions {
   sandbox?: 'on' | 'none' | 'failed';
   /** The status Claude exits with, as the pane's shell says it after Claude (issue #2432). Default 0. */
   claudeExitCode?: number;
+  /** The OOM kills in the job's scope, as the pane's shell reads them after Claude (issue #2498). Default 0. */
+  oomKills?: number;
   /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
   scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */

@@ -1,0 +1,1 @@
+- Machines now shows how many things finished jobs left on each machine. When a person removes such a thing by hand, the hopper sees it is gone and no longer lists it as left behind.

@@ -21,11 +21,11 @@ const put = (path: string, text: string) => {
 const cpu = (busy: number, idle: number): CpuTimes => ({ user: busy, nice: 0, sys: 0, idle, irq: 0 });
 
 /** A meter over a fake root and fake os readings: the clock and the CPU times move as the test says. */
-function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader; env?: Record<string, string>; node?: string } = {}) {
+function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader; env?: Record<string, string>; node?: string; uid?: number } = {}) {
   let t = 1_000_000;
   let times = [cpu(0, 0), cpu(0, 0)];
   const read = createResourceMeter({
-    root, platform: o.platform ?? 'linux', now: () => t, env: o.env ?? {}, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}), ...(o.node ? { node: o.node } : {}),
+    root, platform: o.platform ?? 'linux', now: () => t, env: o.env ?? {}, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}), ...(o.node ? { node: o.node } : {}), ...(o.uid !== undefined ? { uid: o.uid } : {}),
     cpus: o.cpus ?? (() => times), parallelism: () => 2, loadavg: () => [0.5, 0.75, 1], totalmem: () => 16 * GIB, freemem: () => 4 * GIB,
   });
   return { read, advance(ms: number, next: CpuTimes[]) { t += ms; times = next; } };
@@ -107,6 +107,122 @@ describe('a machine\'s resources', () => {
     const r = meter().read();
     expect(r).toMatchObject({ container: true, memTotalBytes: 4 * GIB });
     expect(r.memAvailableBytes).toBeCloseTo(0.4 * GIB, -3);
+  });
+
+  // Issue #2499 part 4: seats on one VM share its kernel. The reading names the kernel (its boot id) and, under a cgroup
+  // limit, the kernel's own memory, so the hopper counts the machines on one host as one pool.
+  it('names its kernel by its boot id; under a cgroup limit it says the kernel\'s memory too', () => {
+    put('proc/sys/kernel/random/boot_id', 'b0a1-c2d3\n');
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    expect(meter().read()).toMatchObject({ bootId: 'b0a1-c2d3', memTotalBytes: 14 * GIB });
+    expect(meter().read()).not.toHaveProperty('kernelMemTotalBytes');
+    put('sys/fs/cgroup/memory.max', `${4 * GIB}\n`);
+    put('sys/fs/cgroup/memory.current', `${1 * GIB}\n`);
+    expect(meter().read()).toMatchObject({ bootId: 'b0a1-c2d3', memTotalBytes: 4 * GIB, kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: 10 * GIB });
+  });
+
+  // Issue #2499 part 5: memory pressure (PSI). A seat near its cgroup limit reclaims, and its tasks stall on memory
+  // although some memory is still available. The reading says the share of the last 10 s a task waited on memory.
+  it('says its memory pressure: the limited cgroup\'s, else the kernel\'s', () => {
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    put('proc/pressure/memory', 'some avg10=1.50 avg60=0.80 avg300=0.10 total=12345\nfull avg10=0.25 avg60=0.10 avg300=0.00 total=678\n');
+    expect(meter().read()).toMatchObject({ memPressure: { someAvg10: 1.5, fullAvg10: 0.25 } });
+    put('proc/self/cgroup', '0::/machine.slice/seat.scope\n');
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.max', `${4 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.current', `${3 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.pressure', 'some avg10=42.00 avg60=30.00 avg300=9.00 total=99\nfull avg10=12.00 avg60=8.00 avg300=1.00 total=9\n');
+    expect(meter().read()).toMatchObject({ memTotalBytes: 4 * GIB, memPressure: { someAvg10: 42, fullAvg10: 12 } });
+  });
+
+  // Issue #2499 part 7: a seat at its cgroup limit has processes killed for memory (memory.events oom_kill) while its
+  // reading can still show memory available. The meter says when it last saw that count grow: the hopper starts no job
+  // there for a while after. The first read has no count before it, so it says none.
+  it('says when it last saw a process killed for memory: the limited cgroup\'s memory.events, else the kernel\'s', () => {
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    put('proc/vmstat', 'nr_free_pages 1\noom_kill 3\n');
+    const m = meter();
+    expect(m.read()).not.toHaveProperty('memOomKillAt');
+    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(m.read()).not.toHaveProperty('memOomKillAt');
+    put('proc/vmstat', 'nr_free_pages 1\noom_kill 4\n');
+    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(m.read().memOomKillAt).toBe(new Date(1_060_000).toISOString());
+    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(m.read().memOomKillAt).toBe(new Date(1_060_000).toISOString());
+
+    put('proc/self/cgroup', '0::/machine.slice/seat.scope\n');
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.max', `${4 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.current', `${3 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.events', 'low 0\nhigh 0\nmax 21000\noom 5\noom_kill 5\n');
+    const seat = meter();
+    expect(seat.read()).not.toHaveProperty('memOomKillAt');
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.events', 'low 0\nhigh 0\nmax 23000\noom 6\noom_kill 6\n');
+    put('proc/vmstat', 'oom_kill 4\n');
+    seat.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(seat.read()).toMatchObject({ memTotalBytes: 4 * GIB, memOomKillAt: new Date(1_030_000).toISOString() });
+  });
+
+  it('no pressure file (an older kernel, PSI off): no memory pressure', () => {
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    expect(meter().read()).not.toHaveProperty('memPressure');
+  });
+
+  // Issue #2499: a job on its own wait holds no lane, but its scope keeps its builds. Each job scope's memory is read, and
+  // a scope outside the cgroup whose limit the reading is (a sibling of the hopper's own unit) is taken off its memory.
+  describe('job scopes (issue #2499)', () => {
+    const USER = 'sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service';
+    const scope = (id: string, current: number, inactive: number) => {
+      put(`${USER}/app.slice/hopper-job-${id}.scope/memory.current`, `${current}\n`);
+      put(`${USER}/app.slice/hopper-job-${id}.scope/memory.stat`, `anon 1\ninactive_file ${inactive}\n`);
+    };
+
+    it('a scope outside the limited cgroup: its memory is said, and taken off the memory available', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/user.slice/user-1000.slice/user@1000.service/app.slice/hopper.service\n');
+      put(`${USER}/app.slice/hopper.service/memory.max`, `${4 * GIB}\n`);
+      put(`${USER}/app.slice/hopper.service/memory.current`, `${1 * GIB}\n`);
+      scope('j1', 1.5 * GIB, 0.5 * GIB);
+      put(`${USER}/app.slice/other.scope/memory.current`, `${1 * GIB}\n`);
+      const r = meter().read();
+      expect(r).toMatchObject({ container: true, memTotalBytes: 4 * GIB, memAvailableBytes: 2 * GIB, jobMemoryBytes: { j1: 1 * GIB } });
+    });
+
+    it('a scope inside the limited cgroup: its memory is said, and is already in the use read', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/user.slice/user-1000.slice/user@1000.service/app.slice/hopper.service\n');
+      put(`${USER}/memory.max`, `${6 * GIB}\n`);
+      put(`${USER}/memory.current`, `${3 * GIB}\n`);
+      scope('j1', 1 * GIB, 0);
+      scope('j2', 0.5 * GIB, 0);
+      expect(meter().read()).toMatchObject({ memTotalBytes: 6 * GIB, memAvailableBytes: 3 * GIB, jobMemoryBytes: { j1: 1 * GIB, j2: 0.5 * GIB } });
+    });
+
+    it('no cgroup limit: the scopes of its own user manager are said; the host\'s memory has them', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/\n');
+      scope('j1', 2 * GIB, 0);
+      const r = meter({ uid: 1000 }).read();
+      expect(r).toMatchObject({ memTotalBytes: 14 * GIB, memAvailableBytes: 10 * GIB, jobMemoryBytes: { j1: 2 * GIB } });
+      expect(meter({ uid: 1001 }).read()).not.toHaveProperty('jobMemoryBytes');
+    });
+
+    // Issue #2498: what a running job's scope uses now — its peak memory, CPU time, OOM kills, and the CPU cores busy
+    // since the read before (none at its first read) — so its parts list and Machines show it while it runs.
+    it('each scope\'s peak memory, CPU time, OOM kills and cores busy since the read before', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/\n');
+      scope('j1', 2 * GIB, 0);
+      const dir = `${USER}/app.slice/hopper-job-j1.scope`;
+      put(`${dir}/memory.peak`, `${3 * GIB}\n`);
+      put(`${dir}/cpu.stat`, 'usage_usec 60000000\nuser_usec 1\n');
+      put(`${dir}/memory.events`, 'low 0\nhigh 0\nmax 4\noom 1\noom_kill 1\n');
+      scope('j2', 1 * GIB, 0);
+      const m = meter({ uid: 1000 });
+      expect(m.read().jobUse).toEqual({ j1: { memoryPeakBytes: 3 * GIB, cpuSeconds: 60, oomKills: 1 } });
+      put(`${dir}/cpu.stat`, 'usage_usec 90000000\n');
+      m.advance(20_000, [cpu(0, 0), cpu(0, 0)]);
+      expect(m.read().jobUse).toEqual({ j1: { memoryPeakBytes: 3 * GIB, cpuSeconds: 90, oomKills: 1, cpuCores: 1.5 } });
+    });
   });
 
   it('a cgroup with no limits (`max`) reads the host', () => {

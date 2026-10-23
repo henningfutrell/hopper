@@ -1,6 +1,8 @@
 import type { HoldPlan, JobId, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
 import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
 import { SIGN_IN, signedOutEvery } from './signed-out.ts';
+import { memoryAdmits, memoryShort } from './memory-floor.ts';
+import { cpuThrottled, throttleShort } from './cpu-throttle.ts';
 
 /**
  * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
@@ -76,12 +78,14 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (m.drained) return `drained: ${NO_NEW_JOB}`;
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
   if (m.template?.waiting) return `${m.template.waiting}: ${NO_NEW_JOB}`;
-  if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
+  if (m.disk?.low) return `disk ${m.disk.critical ? 'critical' : 'low'}: ${NO_NEW_JOB}`;
   const out = signedOutEvery(m.id, m.executors, s.signedOut);
   if (out) return `${out.service} signed out: ${SIGN_IN}; ${NO_NEW_JOB}`;
   const gated = s.gate?.gated.find((g) => g.machineId === m.id);
   if (gated && used === 0) return `gated by blast radius: ${gated.reason}; only jobs let through the gate run here`;
   if (used >= s.cap) return `usage pacing: lane cap ${s.cap} of ${m.maxLanes} (${s.band}${s.band === 'soft' || s.band === 'hard' ? `, used ${Math.round(s.usedFrac * 100)}%` : ''})`;
+  if (wait.length > 0 && s.memory && !memoryAdmits(s.memory)) return `memory holds no more job: ${memoryShort(s.memory, undefined, m.id)}`;
+  if (wait.length > 0 && cpuThrottled(m)) return `CPU holds no more job: ${throttleShort(m)}`;
   if (wait.length > 0 && s.unpinned >= unpinnedCap(s) && (m.reservedLanes ?? 0) > 0) {
     const kept = m.reservedLanes!;
     return `reserved: ${kept} lane${kept === 1 ? '' : 's'} kept for jobs pinned to this machine`;

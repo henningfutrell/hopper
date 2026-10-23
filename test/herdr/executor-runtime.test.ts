@@ -35,11 +35,21 @@ describe('herdr-claude executor: the job\'s own container runtime (issue #1295)'
     expect(typed.findIndex((c) => c.includes(' hopper-runtime '))).toBe(guards + 1);
   });
 
+  it('is saved in the job\'s state once set up, for its resource ledger (issue #2504): its dir in the scratch dir', async () => {
+    const { executor } = setup({ turns: [DONE], scopes: true, runtime: 'own' });
+    const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    const first = saved.findIndex((s) => typeof s.containerRuntime === 'string');
+    expect(saved[first]!.containerRuntime).toMatch(new RegExp(`/\\.worktrees/@scratch/${JOB_ID}/containers$`));
+    expect(saved.slice(first).every((s) => s.containerRuntime === saved[first]!.containerRuntime)).toBe(true);
+  });
+
   it('a machine with no podman: the job runs, told it has no runtime', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
-    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
+    const { ctx, progress, saved } = contextFor(jobWith({ prompt: 'go' }));
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
     expect(herdr.agentStarts).toHaveLength(1);
+    expect(saved.some((s) => s.containerRuntime !== undefined)).toBe(false);
     expect(progress.some((p) => p.message?.includes('container runtime: none for the job here'))).toBe(true);
   });
 

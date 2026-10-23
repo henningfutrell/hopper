@@ -5,10 +5,15 @@
 // A cleanup that could not reach the job's machine is deferred (issue #371): recorded on the job, tried
 // again on every tick until it goes through, and meanwhile a waiting job of the same item is held. A cleanup the job's own
 // route cannot do (issue #2490: its ssh name no longer resolves) reaps through the machine as it is reached now.
+// With a retention set for the status the job ended in on its machine (issue #2494), the reap keeps its scratch dir: the
+// sweep removes it once the retention is over.
 import { jobScratchOf } from '../domain/job-layout.ts';
 import type { MachineShell, Reaped } from '../domain/ports.ts';
 import { keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
+import { closeLedger, retainLedger } from './resource-ledger.ts';
+import { retainedUntilOf, retainsAtEnd } from '../domain/retention.ts';
+import type { SweepSettings } from '../domain/machines.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
 export type Cleanup = (jobId: string) => Promise<void>;
@@ -52,13 +57,21 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
    * its processes stopped, its scratch dir removed unless it holds work not pushed (kept when it timed out, issue #630).
    * Rejects with its own route's error when the machine is not reached this way either.
    */
-  async function reapThroughMachine(job: Job, error: unknown): Promise<Reaped> {
+  async function reapThroughMachine(job: Job, error: unknown, keep: boolean): Promise<Reaped> {
     const cwd = (job.executorState as { cwd?: unknown } | undefined)?.cwd;
     const id = machineRanOn(job);
     const m = typeof cwd === 'string' && cwd.startsWith('/') && id ? (await c.machines.list().catch(() => [])).find((x) => x.id === id) : undefined;
     const shell = m && !m.containerImage ? shellOf(m) : undefined;
     if (!shell || typeof cwd !== 'string') throw error;
-    try { return await shell.reap(job.id, jobScratchOf(cwd, job.id), job.liveness !== undefined); } catch { throw error; }
+    try { return await shell.reap(job.id, jobScratchOf(cwd, job.id), job.liveness !== undefined || keep); } catch { throw error; }
+  }
+
+  /** How the job's machine sweeps (issue #2494), for its retention; machines that cannot be read keep none, as before. */
+  async function sweepOf(job: Job): Promise<SweepSettings | undefined> {
+    const id = machineRanOn(job);
+    if (!id) return undefined;
+    const machines = await Promise.resolve().then(() => c.machines.list()).catch(() => []);
+    return machines.find((m) => m.id === id)?.sweep;
   }
 
   const run: Cleanup = async (jobId) => {
@@ -73,7 +86,11 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
     }
     running.add(jobId);
     try {
-      const said = await executor.cleanup(job).catch((e: unknown) => reapThroughMachine(job, e));
+      // A retention set for the status it ended in, on its machine (issue #2494): the reap keeps its scratch dir for the sweep.
+      const sweep = await sweepOf(job), keepScratch = retainsAtEnd(sweep, job.status);
+      // Until when that reap, or a timed-out job's, keeps it (issue #2504 part 5): its ledger entries stay open until then.
+      const retainedUntil = retainedUntilOf(sweep, job, c.clock.now().getTime());
+      const said = await executor.cleanup(job, { keepScratch }).catch((e: unknown) => reapThroughMachine(job, e, keepScratch));
       if (c.stopping()) return;
       // Work the hopper pushed for the job (issue #2087) is not work not pushed, whatever its remote branches say: the
       // sweep removes it.
@@ -92,6 +109,10 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         }
         // What the job's scope used (issue #2498), as its reap read it before it stopped the scope.
         if (reaped?.used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: reaped.used });
+        // Its resource ledger (issue #2504) closed as the reap said: reaped, kept with the work, or failed with why.
+        // A reap that kept the scratch dir for a time (part 5) closes the scope only; the sweep judges the rest after.
+        if (said) closeLedger(c.store, jobId, said, nowIso(c), retainedUntil === undefined);
+        if (said && retainedUntil) retainLedger(c.store, jobId, retainedUntil);
         // Work an earlier end kept, pushed by the job that went on with it (issue #1010): no longer kept.
         const before = reaped && reaped.kept.length === 0 ? keptWorkOf(c.store.events.recent(1, [...WORK_EVENTS], jobId))[0] : undefined;
         if (before) c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [keptScratchOf(before, job) ?? before.paths[0]!] } });

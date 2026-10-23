@@ -1,0 +1,1 @@
+- A running job's parts list now shows how much memory and CPU it uses now, and each machine shows what its jobs use together.

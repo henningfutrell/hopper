@@ -22,6 +22,12 @@ export { JOB_LABEL };
  */
 export const REAP_TIMEOUT_MS = 180000;
 
+/**
+ * How long a survey may take (issue #2494): each work tree's measure, the caches' two and each container runtime's
+ * `system df`, each cut off at 20 s.
+ */
+export const SURVEY_TIMEOUT_MS = 120000;
+
 export const REAP_DONE = 'hopper-reaped';
 export const SURVEY_DONE = 'hopper-surveyed';
 
@@ -177,6 +183,26 @@ const REAP_SCRIPT = [
 // (`workspace/<name>` with a `.git`, part 5): one `du -skx` per work tree, so a link, such as a worktree's node_modules,
 // counts as a link, and one in the workspace is not measured. Only where `timeout` is: the measure is cut off at 20 s, so
 // a slow disk never holds the survey up; a place not measured by then says nothing.
+/**
+ * The caches the tools keep in a machine's home (issue #2494), by kind, relative to `$HOME`: the survey measures each one
+ * there and nothing else of the home. `cache` is `~/.cache` whole, measured apart, so the hopper counts its rest.
+ */
+export const CACHE_DIRS = [
+  ['nuget', '.nuget/packages'], ['gradle', '.gradle/caches'], ['gradle', '.gradle/wrapper/dists'], ['go', 'go/pkg/mod'], ['go', '.cache/go-build'],
+  ['npm', '.npm'], ['pnpm', '.local/share/pnpm/store'], ['yarn', '.cache/yarn'], ['yarn', '.yarn/berry/cache'], ['pip', '.cache/pip'],
+] as const;
+export type CacheDirKind = typeof CACHE_DIRS[number][0] | 'cache';
+
+// `du -skx` of the dirs of $1 (`cache` or `dirs`) under the home that are there and no link, as `hopper-cache <KiB> <path>`.
+const CACHES_SH = [
+  `cachedu() { set --; for c in ${CACHE_DIRS.map(([, rel]) => rel).join(' ')}; do p=$HOME/$c; [ -d "$p" ] && [ ! -L "$p" ] && set -- "$@" "$p"; done;`,
+  '  [ $# -gt 0 ] && $to du -skx "$@" 2>/dev/null | awk -F \'\t\' \'$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-cache " k " " $0 }\';',
+  '  p=$HOME/.cache; [ -d "$p" ] && [ ! -L "$p" ] && $to du -skx "$p" 2>/dev/null | awk -F \'\t\' \'$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-cache " k " " $0 }\'; };',
+  // Each runtime's storage as its `system df` says it, `hopper-df|<runtime>|<type>|<size>|<reclaimable>`.
+  'storage() { for rt in docker podman; do command -v "$rt" >/dev/null 2>&1 || continue;',
+  '  $to "$rt" system df --format "{{.Type}}|{{.Size}}|{{.Reclaimable}}" 2>/dev/null | sed "s/^/hopper-df|$rt|/"; done; };',
+];
+
 const SURVEY_SCRIPT = [
   'if command -v systemctl >/dev/null 2>&1; then',
   '  systemctl --user list-units --type=scope --plain --no-legend "hopper-job-*" 2>/dev/null | sed -n "s/^hopper-job-\\([^ ]*\\)\\.scope .*/hopper-scope \\1/p";',
@@ -190,6 +216,8 @@ const SURVEY_SCRIPT = [
   'for rt in docker podman; do command -v "$rt" >/dev/null 2>&1 || continue;',
   `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
   `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
+  // Each exited container (issue #2494), for the storage prune: `hopper-exited|<runtime>|<id>|<stopped at>|<label keys>`.
+  `  x=$($to "$rt" ps -aq --filter status=exited 2>/dev/null); [ -n "$x" ] && $to "$rt" container inspect --format '{{.Id}}|{{.State.FinishedAt}}|{{range $k, $v := .Config.Labels}}{{$k}} {{end}}' $x 2>/dev/null | sed "s/^/hopper-exited|$rt|/";`,
   'done;',
   // Each job's own container runtime left (issue #1295, job-runtime.ts), as a job with a container left.
   SURVEY_RUNTIME_SH,
@@ -207,6 +235,9 @@ const SURVEY_SCRIPT = [
   '  [ -n "$to" ] && measure;',
   `fi; ages dir "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; ages tree "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*;`,
   'done;',
+  // The machine's caches and container storage (issue #2494), once per survey, only where `timeout` cuts each call off.
+  ...CACHES_SH,
+  'if [ -n "$to" ] && [ -n "$HOME" ] && [ -d "$HOME" ]; then cachedu; fi; [ -n "$to" ] && storage;',
   'printf "%s\\n" hopper-surveyed',
 ].map((l) => l.trim()).join(' ');
 
@@ -301,8 +332,27 @@ export interface SurveyedTree { path: string; ageMs: number }
  * left, or a repository checkout in its workspace (part 5).
  */
 export interface SurveyedUsage { path: string; bytes: number }
+/** One cache place the survey measured (issue #2494): its kind by where it is, see CACHE_DIRS. */
+export interface SurveyedCache { kind: CacheDirKind; path: string; bytes: number }
+/** What one container runtime's storage of one kind takes, as its `system df` said (issue #2494). */
+export interface SurveyedStorage { runtime: 'docker' | 'podman'; kind: 'images' | 'containers' | 'volumes' | 'build-cache'; bytes: number; reclaimableBytes: number }
+/** One exited container the survey found (issue #2494), for the storage prune: its full id, when it stopped as the runtime said, its label keys. */
+export interface SurveyedExited { runtime: 'docker' | 'podman'; id: string; finishedAt: string; labels: string[] }
 /** What a finished survey found. Undefined when it did not finish. */
-export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[] }
+export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[]; caches?: SurveyedCache[]; storage?: SurveyedStorage[]; exited?: SurveyedExited[] }
+
+const STORAGE_KINDS: Record<string, SurveyedStorage['kind']> = { 'Images': 'images', 'Containers': 'containers', 'Local Volumes': 'volumes', 'Build Cache': 'build-cache' };
+const UNITS: Record<string, number> = { '': 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 };
+/** A size as a runtime prints it (`2.5GB`, `512kB`, `0B`, decimal units), in bytes; undefined when it is not one. */
+function sizeOf(text: string | undefined): number | undefined {
+  const m = /^(\d+(?:\.\d+)?)\s*([kKMGTP]?)B\b/.exec(text?.trim() ?? '');
+  return m ? Math.round(Number(m[1]) * UNITS[m[2]!]!) : undefined;
+}
+/** The kind of a cache place by its path, see CACHE_DIRS; undefined when it is none of them. */
+function cacheKindOf(path: string): CacheDirKind | undefined {
+  if (path.endsWith('/.cache')) return 'cache';
+  return CACHE_DIRS.find(([, rel]) => path.endsWith(`/${rel}`))?.[0];
+}
 
 export function readSurvey(stdout: string): Survey | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
@@ -312,7 +362,21 @@ export function readSurvey(stdout: string): Survey | undefined {
   const trees: SurveyedTree[] = [];
   const roots: string[] = [];
   const usage: SurveyedUsage[] = [];
+  const caches: SurveyedCache[] = [];
+  const storage: SurveyedStorage[] = [];
+  const exited: SurveyedExited[] = [];
   for (const l of lines) {
+    const ca = /^hopper-cache (\d+) (\/.*)$/.exec(l);
+    const kind = ca ? cacheKindOf(ca[2]!) : undefined;
+    if (ca && kind) caches.push({ kind, path: ca[2]!, bytes: Number(ca[1]) * 1024 });
+    const [mark, runtime, type, size, reclaimable] = l.split('|');
+    const bytes = sizeOf(size);
+    if (mark === 'hopper-df' && (runtime === 'docker' || runtime === 'podman') && type && Object.hasOwn(STORAGE_KINDS, type) && bytes !== undefined) {
+      storage.push({ runtime, kind: STORAGE_KINDS[type]!, bytes, reclaimableBytes: sizeOf(reclaimable) ?? 0 });
+    }
+    if (mark === 'hopper-exited' && (runtime === 'docker' || runtime === 'podman') && type && /^[0-9a-f]{64}$/.test(type) && size) {
+      exited.push({ runtime, id: type, finishedAt: size, labels: (reclaimable ?? '').split(' ').filter(Boolean) });
+    }
     const u = /^hopper-du (\d+) (\/.*\/(?:\.worktrees|\.hopper-scratch|workspace\/[^/]+))$/.exec(l);
     if (u) usage.push({ path: u[2]!, bytes: Number(u[1]) * 1024 });
     const r = /^hopper-root (\/.*)$/.exec(l);
@@ -322,7 +386,7 @@ export function readSurvey(stdout: string): Survey | undefined {
     const t = /^hopper-tree (\d+) (\/.*\/(?:\.worktrees\/[^/@][^/]*\/[^/]+|workspace\/worktrees\/[^/]+))$/.exec(l);
     if (t) trees.push({ path: t[2]!, ageMs: Number(t[1]) * 1000 });
   }
-  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container ') };
+  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container '), caches, storage, ...(exited.length ? { exited } : {}) };
 }
 
 /** A scratch dir a reap may name: absolute, one line, and the job's own, of either layout. */

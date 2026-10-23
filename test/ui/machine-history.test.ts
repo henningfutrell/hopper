@@ -4,7 +4,7 @@
 // facts its card says now; on one machine's graph, the usage that limits it and its lane changes (issue #688). Pure.
 import { describe, expect, it } from 'vitest';
 import type { LaneChange, ResourceSeries, UsageSeries } from '../../src/domain/types.ts';
-import { allMachineLines, machineLines, resourcesText, sparkValues } from '../../ui/src/model/machine-history.ts';
+import { allMachineLines, jobsUseText, machineLines, resourcesText, sparkValues } from '../../ui/src/model/machine-history.ts';
 
 const GIB = 1e9;
 const at = (h: number) => new Date(Date.parse('2026-10-08T00:00:00.000Z') + h * 3_600_000).toISOString();
@@ -94,7 +94,32 @@ describe('a machine row', () => {
     expect(resourcesText(r)!.memory).toBe('7.0 GB used of 20 GB (35%) · VM holds 19 GB');
   });
 
+  // Issue #2498: what the hopper's own jobs use there now, beside the machine's whole use.
+  it('a machine\'s jobs: their memory now, their CPU cores busy and their OOM kills, all its job scopes together', () => {
+    const r = { cores: 8, memTotalBytes: 16 * GIB, memAvailableBytes: 4 * GIB };
+    expect(jobsUseText({ ...r, jobMemoryBytes: { j1: 2 * GIB, j2: 1.5 * GIB }, jobUse: { j1: { cpuCores: 1.25, oomKills: 1 }, j2: { cpuCores: 0.5, oomKills: 0 } } }))
+      .toBe('2 jobs use 3.5 GB · 1.8 cores busy · 1 OOM kill');
+    expect(jobsUseText({ ...r, jobMemoryBytes: { j1: 2 * GIB } })).toBe('1 job uses 2.0 GB');
+    expect(jobsUseText(r)).toBeNull();
+    expect(jobsUseText(undefined)).toBeNull();
+  });
+
   it('memory held and host memory are named lines', () => {
     expect(machineLines([series('win', 'held', 0.9), series('win', 'host', 0.8)]).map((l) => l.label)).toEqual(['memory held', 'host memory']);
+  });
+
+  // Issue #2499: the signals admission reads, as the card says them now.
+  it('says memory pressure, CPU throttle and the last OOM kill', () => {
+    const now = Date.parse('2026-10-22T12:00:00.000Z');
+    const r = { cores: 4, memTotalBytes: 4 * GIB, memAvailableBytes: 1 * GIB, container: true as const,
+      memPressure: { someAvg10: 23.4, fullAvg10: 2 }, cpuThrottledFrac: 0.62, memOomKillAt: '2026-10-22T11:57:00.000Z' };
+    expect(resourcesText(r, now)).toEqual({
+      cpu: '4 cores (container limit) · throttled in 62% of its periods',
+      memory: '3.0 GB used of 4.0 GB (75%, container limit) · pressure 23% · last OOM kill 3m ago',
+    });
+  });
+
+  it('memory pressure and CPU throttle are named lines', () => {
+    expect(machineLines([series('a', 'pressure', 0.2), series('a', 'throttle', 0.5)]).map((l) => l.label)).toEqual(['memory pressure', 'CPU throttle']);
   });
 });

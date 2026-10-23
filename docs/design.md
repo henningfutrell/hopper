@@ -37,14 +37,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/domain/` | the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); the event loop given back between a long timer loop's items (`yield-loop.ts`, issue #2392); how long the event loop was held since a moment, one reading per process that the watchdog gives (`loop-held.ts`, issue #2427); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `token-usage.ts` the token ledger — a session's token use, its estimated cost, the rollups (pure, issue #2302); `token-waste.ts` its waste signals and tokens per merged pull request (pure, issue #2302 part 4); `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
-| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211); the memory floor and the memory pause (`memory-floor.ts`, issue #2291); the holds a machine's own problems make and their reasons, and the machines held off for reach that a hold or wait names (`machine-holds.ts`, issue #2427) | everything but `domain/` |
+| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211); the memory floor (`memory-floor.ts`, issue #2291) and the memory pause (`memory-pause.ts`); the holds a machine's own problems make and their reasons, and the machines held off for reach that a hold or wait names (`machine-holds.ts`, issue #2427) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `token-ledger.ts` (tenant 89) the token ledger (issue #2302; tenant 90 its failed test runs); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), what a quarantine takes back — the job's steps and its item's vault grant (`quarantine.ts`, issue #655 part 6), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the dedupe keys, hashed, through `OutboundKeyRepository` in the database (issue #1627); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/container/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads, its deliveries kept in memory when the feed gives no store; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `turn.ts` (a print-mode agent's turn, `POST /turn`, issue #865), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `prune.ts` (the storage prune, `POST /prune`, issue #2494; shared with `src/executors/machine-shell.ts`), `trim.ts` (the trim, fstrim on the home's filesystem, `POST /trim`, issue #2494; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `turn.ts` (a print-mode agent's turn, `POST /turn`, issue #865), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; a container target is online while a command box can start, issue #865), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key and the keys the hopper issues (`lane-pool.ts`, issues #1284, #1454), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
@@ -225,7 +225,8 @@ stays pure — every time it compares is `inputs.at`.
   machine with the most placement pressure: headroom of the binding (most used) week window — to the
   hard limit, to 100% while it burns — per hour left before its reset. An account that resets in 11
   hours with 80% left goes before one that resets in 4 days. Ties, and machines with no week window
-  that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
+  that names its reset (pressure 0), fall back to most real room and memory room (issue #2499, "The memory floor"),
+  then most room, then id. The start reason gives the
   pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
   it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
 - **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). It preempts
@@ -890,7 +891,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   environment or session. The new shell drops what is typed before its prompt, so the executor asks it
   where it runs (`/proc/self/cgroup`) until it answers (`hopper-scope-entered`; the pane state records
   `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
-  without a scope; a shell that never answers within 60000 ms fails the job, pane closed.
+  without a scope; a shell that never answers within 60000 ms fails the job, pane closed. A machine's **job limits**
+  (issue #2498, its `jobMemoryMaxGiB` and `jobCpuPercent` options) are scope properties, `-p MemoryMax=<bytes> -p
+  CPUQuota=<percent>%`, in the trial run too: a systemd that refuses them makes no scope, and the job runs without one.
 - **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
   below). After the scope, the pane's shell runs the runtime command, in two steps that each fit a terminal line (issue
   #2234, "Unhealthy lanes" below): the guards first (`hopper-guards-written`), then the setup: the job gets a podman of its own — its runtime dir
@@ -988,7 +991,14 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     waiting on an answer, or led by an operator);
   - an ended job's scratch dir once it is `scratchMaxAgeHours` old (a machine option, default 24), or at
     once while its work was kept (`job.work_kept`), with the reap's rule: work not pushed is never
-    removed. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
+    removed. The **retention** per job status (issue #2494, `src/domain/retention.ts`): the machine options
+    `retainFinishedHours`, `retainFailedHours`, `retainCancelledHours` and `retainRejectedHours` (0 or more, each
+    absent by default) set, for a job that ended in that status, how many hours its scratch dir and job worktrees stay,
+    counted from its end (`finishedAt`; a job with none, from the dir's age) in place of `scratchMaxAgeHours`. Above 0,
+    the cleanup at the job's end asks the reap to keep the scratch dir (`Executor.cleanup` with `keepScratch`, the
+    reap's `keep`, as a timed-out job's), so it is there for a person to read; the sweep removes it once the retention is
+    over, with the reap's rule. A low disk or the disk budget still reaps it at once. A status with no retention is
+    reaped at its end, as before. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
     keeps the first time, as `job.work_kept`. A job worktree `<name>/<job id>` of an ended job is reaped
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
     outlives its job;
@@ -4084,6 +4094,18 @@ dir and job worktree whatever its age, as over the disk budget, with the reap's 
 parked or live job's work is never touched. One log line each pass says so. Kept in memory: after a restart, the
 first pass sweeps every machine. Reported from a real machine: a disk filled with the dirs of ended jobs while the
 low disk only held new jobs off it.
+**A critical disk holds every job** (issue #2494): below a second, stricter threshold — the options
+`diskCriticalBelowGiB` (default 1) and `diskCriticalBelowPercent` (default 2) — the reading is also `critical`
+(`MachineSnapshot.disk.critical`), and a critical disk is low whatever the low thresholds say. A critical machine takes
+no job at all: a job resuming there (an answered question) waits too, held as `pinned machine <machine> disk critical
+(…)`, since its turn would only fail as the disk fills. Running jobs go on. **A person is told** (issue #2494,
+`src/machines/disk-watch.ts`): at each record of the resource recorder the disk watch sees every machine, and tells a
+disk that turns low once (`machine.disk_low`, `critical` false), again when it turns critical (`critical` true), and
+once more when it is no longer low (`machine.disk_ok`); webhooks and notifiers take them. A machine offline or with no
+reading keeps its state. The watch starts from the newest disk events of the event log, so a restart of the hopper tells
+nothing twice. The header shows the machines whose disk is low on every screen, each with its free space, a link to
+Machines (`ui/src/model/disk-alert.ts`); critical when one of them is. The card says `critical, no job runs here until
+it frees`.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`
@@ -12815,7 +12837,8 @@ one press per cause where the hopper can move each item.
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
   tend its source refused (`tend_refused`); a job on a wait that names nothing it waits on (`wait_unnamed`,
   "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
-  item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891).
+  item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891); an ended job with a cleanup leftover
+  (`cleanup_leftover`, issue #2504, "The resource ledger").
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
   `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed`, `stranded` (else 400;
@@ -13066,10 +13089,66 @@ never a hold, read from a machine reading taken before the burst took its memory
   each such machine after a `;`, then the machines left out (step 7, issue #2499). A job's need is the flat 2 GiB, or its
   expected memory peak from its repository's or kind's job cost group when that is more ("Job cost profiles"): a
   repository whose jobs peak at 3 GiB reserves 3 GiB a job.
+  Issue #2499: the memory a job holds with no lane in use (its **waiting memory**, "Machine resources over time") is in
+  the reading, so it is counted; the wait names it after the memory available: `local has 3 GiB available (2.5 GiB is held
+  by 1 job with no lane), and a new job needs …`. A machine sample keeps it (`waiting_mem`, tenant migration 93, a nullable
+  column the build before never writes), and the job costs ("Job cost profiles") and the lane load leave it out of the
+  memory used, so a job on its own wait no longer raises the expected peak of the job that runs beside it.
   A wait for memory preempts nothing: preemption frees a lane, not memory. This holds for an elbow-in and a critical job
   too, and for a job resuming on its pane.
 - **WSL.** The memory available is Linux's in the VM, or Windows' own free memory (`hostMemFreeBytes`, issue #868) when
   that is lower. A machine with no reading (a container target, an old client, offline) has no floor.
+- **A host pool** (issue #2499, `poolHosts`). Seats in containers on one VM each read their own cgroup limit, so each had
+  room while the VM they share did not, and only the hopper's own machine read Windows' free memory. A reading names its
+  kernel by its boot id (`bootId`, `/proc/sys/kernel/random/boot_id`, the same in every container on one kernel) and,
+  under a cgroup limit, the kernel's own memory (`kernelMemTotalBytes`, `kernelMemAvailableBytes`, from /proc/meminfo).
+  The machines with a memory room whose readings name one boot id are a **host pool**: two machines or more, or one in a
+  container. Its memory available is the lowest kernel reading of its machines (a reading not in a container is the
+  kernel's), or Windows' free memory when one of its machines reads that lower; its floor is 10% of the kernel's memory
+  and at least 1 GiB. A job there needs room in its machine's memory and in the pool's: the pool's available less a
+  job's memory for each job that any of its machines keeps (started lately, or placed in this Decision), less its own
+  need, at or above the pool's floor. Else it waits: `waiting for memory: a's host (shared with b) has 4 GiB available,
+  2 GiB of it kept for 1 job started lately, and a new job needs 2 GiB over its floor of 1.4 GiB`. A machine with a floor of
+  0 is in no pool. A pool below its floor pauses a job ("The memory pause").
+- **Memory pressure** (issue #2499). A seat near its cgroup limit reclaims all the time (`memory.events` `max` in the tens
+  of thousands): its tasks stall on memory while its reading still shows memory available. Each reading says its **memory
+  pressure** (`memPressure`, PSI): the share of the last 10 s that some task (`someAvg10`) and every task (`fullAvg10`)
+  waited on memory, from `memory.pressure` of the cgroup whose limit it reads, else `/proc/pressure/memory`; an ssh target's
+  probe prints `/proc/pressure/memory`. A machine whose `someAvg10` is at or above 20% (`MEMORY_PRESSURE_PERCENT`) takes
+  no new job and no job back, whatever its memory available: `waiting for memory: a's memory is under pressure: its tasks
+  waited on memory 35% of the last 10 s, and a new job starts only below 20%`. A floor of 0 turns this check off too. At
+  40% or more (`MEMORY_PRESSURE_PAUSE_PERCENT`) it also pauses a job ("The memory pause").
+- **OOM kills** (issue #2499). A seat at its cgroup limit has processes killed for memory, and once a kill frees memory its
+  reading shows memory available again. Each reading says its **last OOM kill** (`memOomKillAt`): when its meter last saw
+  the count `oom_kill` grow, in `memory.events` of the cgroup whose limit it reads (that cgroup and every cgroup under it),
+  else in `/proc/vmstat`. A count is a counter, so the meter compares it with its read before: its first read, and a read
+  of another cgroup, see no kill. A machine whose last OOM kill is less than 10 minutes old (`MEMORY_OOM_KILL_MS`) takes
+  no new job and no job back, and has no memory room: `waiting for memory: a's memory killed a process 3 min ago (out of
+  memory), and a new job starts only 10 min after`. A floor of 0 turns this check off too. An ssh target's probe keeps no
+  count from one read to the next, so it says none. `memory.events` `max` (the limit was hit and memory reclaimed) is not
+  read: a cgroup full of page cache hits it in normal work, and the memory pressure already says when the reclaim stalls tasks.
+- **The CPU throttle** (issue #2499, `src/decider/cpu-throttle.ts`). A seat with a CPU quota (`cpu.max`) whose tasks want
+  more CPU than the quota gives is throttled, while its CPU busy can read below resource pressure. Each reading says its
+  **CPU throttle** (`cpuThrottledFrac`): of each cgroup on its path with a quota, its own and those above it, the share of
+  its CPU periods throttled since the read before (`cpu.stat` `nr_throttled` of `nr_periods`), the most of them. A machine
+  whose CPU throttle is 50% or more (`CPU_THROTTLE_FRAC`) takes no new job and no job back, and no job elbows in there:
+  `waiting for CPU: a's CPU quota held its tasks back in 62% of its periods lately, and a new job starts only below 50%`.
+  A memory wait comes first: the CPU wait names only machines whose memory holds the job. A machine with free lanes and a
+  waiting job says so on its lane plan (`CPU holds no more job: …`), and a wait names it as left out (`a is throttled: …`).
+  It is not turned off by a floor of 0, since it is no memory check. A machine with no quota, an ssh target and a first
+  read say none.
+- **Placement by memory room** (issue #2499, `better` in `src/decider/assign.ts`). A machine's lane cap is a count of jobs,
+  and 9 lanes of 2 GiB each did not fit a 14 GiB VM. So of the machines a job may go to, after placement pressure, the one
+  with the most **real room** goes first: its lane room, only as far as its **memory room** holds jobs (its memory over its
+  floor, the lower of its own and its host pool's, less what is kept, divided by a job's memory; none under memory
+  pressure). Then the one with the most memory over its floor, then the most lane room, then the lowest id. A machine with
+  no memory room counted is judged by its lanes alone. Each place in the Decision lowers the machine's memory room, so a
+  burst spreads over the machines by what they hold now. The Decision's reasons name each machine's memory room:
+  `b: memory for 5 more jobs (10.6 GiB over its floor of 1.4 GiB)`. A machine with free lanes, a waiting job and no memory
+  room says so on its lane plan: `memory holds no more job: 3 GiB available, and a new job needs 2 GiB over its floor of
+  1.4 GiB`. The lane cap itself stays as configured: a lane cap below its busy lanes would drain them.
+  The lane recommendation ("Lane tuning") is never more than the jobs the machine's memory holds in all (its **memory
+  lanes**), so an admin who applies it gets a lane cap that the memory holds.
 - **The memory pause** (step 7c, `memoryPauses`). An online machine whose memory available is below the floor itself
   pauses the running job that started there last: its executor parks (`parkingExecutors`, now an input of every
   Decision, whatever the preemption setting), it has an agent session, and no preemption names it. One per machine every
@@ -13080,6 +13159,15 @@ never a hold, read from a machine reading taken before the burst took its memory
   (`preemptRunning`, `requeuePreempted`): lane freed, pane and agent ended, work tree, agent session and checkpoint kept,
   then queued at once, pinned to its machine, to resume its session. It starts again only when the memory holds it; its
   start clears the mark.
+  Issue #2499 (`src/decider/memory-pause.ts`): a machine whose memory pressure is at or above 40%
+  (`MEMORY_PRESSURE_PAUSE_PERCENT`, twice the admission's share, so a machine that only takes no new job pauses none)
+  pauses too, whatever its memory available: `pauses r2 on local/lane-2: local's memory is under pressure: its tasks
+  waited on memory 45% of the last 10 s, at or above 40%; r2 started there last`. And a host pool whose kernel memory
+  available (as admission reads it, Windows' free memory when lower) is below the pool's floor pauses the job that started
+  last on any of its machines, though each has memory of its own: `pauses r2 on b/lane-1: the host of a, b has 1 GiB
+  available, below its floor of 1.4 GiB; r2 started there last`. One pause at a time for the pool: a recent pause on any
+  of its machines holds the next, and a pool pauses none when one of its machines pauses in the same Decision. The event
+  carries the pool's memory available and floor, and the job's own machine.
 - **The API stays up.** The hopper runs on the machine it guards, so keeping the machine off its memory limit is what
   keeps `/api/health` and the UI answering; the held-loop health port (issue #1383) still tells a held event loop apart.
 - **Settings.** Plain options of the `local`, `ssh` and `client` machine sources (`memoryFloorShape`), read at every
@@ -13094,8 +13182,12 @@ never a hold, read from a machine reading taken before the burst took its memory
 
 Verification: `test/decider/memory-floor.test.ts` (a burst of 7 starts what fits, jobs started lately keep memory, a
 resume waits, the better machine, own options and 0, no reading, the expected peak, WSL, no preemption for memory; the
+host pool: two seats on one kernel, two kernels, Windows' free memory for the pool, no pool alone or with a floor of 0; memory
+pressure: at 20% no new job, below it one, the machine not under pressure, a floor of 0; the
 pause: the newest job, at the floor nothing, one at a time, executors that cannot park and no session, off),
-`test/decider/placement-cost.test.ts`, `test/plugins/memory-floor-options.test.ts`, and
+`test/decider/memory-pause.test.ts` (issue #2499: a host pool below its floor pauses the newest job of any of its machines,
+none at its floor or across kernels, one at a time for the pool, a machine's own pause first; memory pressure at 40% pauses,
+below it none, a floor of 0), `test/decider/placement-cost.test.ts`, `test/plugins/memory-floor-options.test.ts`, and
 `test/integration/memory-floor.test.ts` (the real daemon over the fake herdr: a burst of 7 queued jobs on 8 lanes starts
 2, the rest wait for memory while `/api/health` answers; below the floor the newest job is paused, queued again, and
 resumes its own session once the memory holds it).
@@ -13139,7 +13231,8 @@ the queue moved only when waits ended by chance.
   cost ("Job cost profiles") takes each run's highest sample of the machine's memory used over its idle baseline (samples with
   no busy lane), split over the busy lanes, and the group's mean of those peaks. Memory of jobs on their own wait holds no
   lane, so a waiting agent that started after the baseline counts as the running job's: with 50 agents resident, the expected
-  peaks grew with them. With waits released while a job waits for memory, that share falls away. The floor of 1.4 GiB is 10%
+  peaks grew with them. With waits released while a job waits for memory, that share falls away; what their scopes still
+  hold is left out since issue #2499 (waiting memory). The floor of 1.4 GiB is 10%
   of the 14 GiB VM, as set. Not changed here: the expected peak still counts when it is more than the job's memory.
 - **Not built.** A count of each agent's memory. (Releasing a wait before a job waits for memory: issue #2326, below.)
 - **Persisted state.** No schema change: `waitReleased` is in the job's JSON, `waitSessions` and `waitRelease` in the
@@ -15042,7 +15135,11 @@ memory total and available (available, not free), and swap total and used where 
   (30 s). A client older than this says none; its next update loads the meter like any client file.
 - **an ssh target**: its probe prints two `/proc/stat` cpu lines a second apart, `/proc/loadavg`, the memory lines and
   the core count, each marked `hopper-res ` (`RESOURCES_COMMAND`); a machine with no /proc prints none. The second's
-  wait is in the probe's background call, never in a Decision.
+  wait is in the probe's background call, never in a Decision. It also prints each cgroup (v2) with a memory limit on
+  the path `/proc/self/cgroup` names, up to the root, and its user manager's (`user@<uid>.service`), with its use, page
+  cache and memory pressure (issue #2499 part 10). The tightest is its memory, as in a container below: a seat reached
+  over ssh reads its 4 GiB, not the VM's total, with the kernel's own memory and the limited cgroup's pressure. A limit
+  over the kernel's memory is none.
 - **in a container**: a meter whose cgroup (v2) sets a memory limit reads the limit as its total and its own use less
   the page cache it could drop (`inactive_file`). The limit may sit on a cgroup above its own (issue #2499): a seat's
   container seen from the host's cgroup namespace, or a systemd unit's `MemoryMax`. The meter walks up from the cgroup
@@ -15050,7 +15147,23 @@ memory total and available (available, not free), and swap total and used where 
   the VM's total; a CPU quota is its cores, and CPU busy is its own `usage_usec` against
   the quota. `container: true` says so; the card says "container limit". A container target (a command box per command) is not read,
   as its disk is not.
-- Per lane (an agent's process tree): not built.
+- **job scopes** (issue #2499): on Linux the meter also reads each job scope (`hopper-job-<id>.scope`, "The job's scope") of
+  its systemd user manager — the `user@<uid>.service` its own cgroup is in, else its user's —, in any slice there: its
+  memory in use less the page cache it could drop, by job id (`jobMemoryBytes`). A scope outside the cgroup whose limit the
+  reading is (a sibling of the hopper's own unit with a `MemoryMax`) is not in that cgroup's use, but takes the same
+  machine's memory: it is taken off the memory available. A client target's client says the same in its `/release`
+  answer, checked by `resourcesOf`; an ssh target says none. What the scopes hold for jobs with no lane in use there — a
+  job on its own wait, parked, or queued to resume, whose builds still run — is the machine's **waiting memory**.
+- **its kernel** (issue #2499): on Linux each reading names its kernel's boot id (`bootId`); an ssh target's probe prints
+  it as `boot <id>`. Under a cgroup limit the meter also says the kernel's own memory (`kernelMemTotalBytes`,
+  `kernelMemAvailableBytes`), so the decider counts the machines on one host as one **host pool** ("The memory floor").
+- **its memory pressure** (issue #2499): PSI's `some` and `full` avg10 (`memPressure`), of the cgroup whose limit it reads,
+  else the kernel's; an ssh target's probe prints `/proc/pressure/memory`. Absent where there is no PSI. The decider reads it
+  ("The memory floor"); each machine sample keeps `someAvg10` as a share (`mem_pressure`, tenant migration 96).
+- **its CPU throttle** (issue #2499): the share of CPU periods a CPU quota of its cgroup or one above it throttled since the
+  read before (`cpuThrottledFrac`), the most of them; absent with no quota and at the first read. The decider reads it
+  ("The memory floor", "The CPU throttle"); each machine sample keeps it (`cpu_throttled`, tenant migration 96).
+- Per lane (an agent's process tree): not built; a job's scope is the nearest.
 
 **Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop
 (`createRecordLoop`, `src/usage/history.ts`): every minute it lists the user's machines and keeps a **machine sample**
@@ -15065,15 +15178,17 @@ machines for 90 days are about 520 000 rows, aggregated in SQL per step.
 the usage graph's (`range` or `from`/`to`, `tz`); no saved view, default the last day. Its **resource step** is finer
 than the usage graph's, since a machine is read every minute (`resourceStepMs`): 15 minutes up to a day, an hour up to
 4, 6 hours up to 14, a day up to 60, else a week. Per machine and step, each resource's peak share: CPU busy, memory
-used (1 − available / total), swap used, disk used, lanes in use / lane cap. Gaps by the usage history's rule: a
+used (1 − available / total), swap used, disk used, lanes in use / lane cap, and (issue #2499) memory pressure (`some`
+avg10 / 100) and CPU throttle where the sample has them. Gaps by the usage history's rule: a
 stretch with no sample longer than 3 × the machine's usual spacing (at least 5 minutes).
 
 **UI.** The usage graph card (`ui/src/components/usage-graph-card.tsx`) draws it, with its own lines (`linesOf`,
 `ui/src/model/machine-history.ts`) and redrawn on `machine.recorded`. On Machines, each card says CPU and memory now,
 draws a CPU sparkline of the last day, and *Resources, lanes and usage* opens its graph: CPU, memory, swap, disk and lanes in
-use, one colour each (lanes dashed), with the usage that limits it and its lane changes (issue #688, "Lane tuning"). On the Usage page, *Machine resources over time* sits under the usage limits, at
+use, one colour each (lanes dashed), memory pressure and CPU throttle dotted (issue #2499), with the usage that limits it and its lane changes (issue #688, "Lane tuning"). On the Usage page, *Machine resources over time* sits under the usage limits, at
 the same day range as their usage line: every machine one colour, CPU solid, memory dashed, disk dotted; swap and lanes
-hidden until shown from the legend.
+hidden until shown from the legend, and so are memory pressure and CPU throttle. A card's CPU line also says its CPU
+throttle, and its memory line its memory pressure and its last OOM kill (issue #2499).
 
 **WSL and the memory alert** (issue #868). On a Windows machine whose clients run in WSL 2, the VM held about 15 GB at
 rest and Windows ran out of memory, while the samples showed no pressure: Linux counts the VM's page cache as available,
@@ -17007,7 +17122,15 @@ the usage limits the decider uses (`policyOf`).
 Below the soft limit by more than 10% (`free`), the recommendation is the headroom. Within 10% of the soft limit
 (`near`), past it (`soft`) or at the hard limit (`hard`), it is never more than the configured lanes: the decider's
 lane cap already scales the lanes down from there, so the recommendation adds none, and high-priority work keeps its
-lanes (issue #535). Then it is kept within the machine's bounds. Auto-tune off, the machine offline, or no headroom yet
+lanes (issue #535). It is never more than the machine's **memory lanes** (issue #2499, `memoryLaneCaps` in
+`src/decider/memory-floor.ts`): its memory total less its memory floor ("The memory floor"), divided by a job's memory;
+on a host pool, the lower of that and the kernel's memory less the pool's floor and a job's memory for each configured
+lane of the pool's other machines. 9 lanes of 2 GiB each did not fit a 14 GiB VM, and a lane count that history showed
+free of pressure said nothing of it. The reason then ends `; its memory holds 3 jobs: 8 GiB less its floor of 1 GiB, at
+2 GiB a job: no more than 3 lanes`, or `; its host (shared with b) holds 4 jobs: 14 GiB less its floor of 1.4 GiB and
+4 GiB for the 2 lanes of b, at 2 GiB a job: …`. It reads the memory total, not the memory available, so the
+recommendation does not move with each reading; a machine with no memory reading, or a floor of 0, has none. Then it is
+kept within the machine's bounds. Auto-tune off, the machine offline, or no headroom yet
 (not enough history): the configured lanes, confidence 0. **Confidence** is the samples the headroom stands on per hour
 (60 samples: 1).
 
@@ -19599,7 +19722,7 @@ job's own graph with each part as a node, a timeline newest first, and the parts
 stay live, and what waits on the person is pinned at the top.
 
 **The model** (`jobBom`, `src/domain/job-bom.ts`, pure; its types go out through `job-graph.ts`, as `types.ts` is at its
-line limit). Nothing new is recorded: the parts are read from what the job's record, its events and its rows already say.
+line limit). Nothing new is recorded for it: the parts are read from what the job's record, its events and its rows already say (since issue #2504 also its resource ledger's rows).
 
 | Group | Parts, and where each comes from |
 |---|---|
@@ -19609,7 +19732,7 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 | Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`); the help pages and What's new lines among the files its pull request changes (part 2) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
 | Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
-| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); its latest checkpoint only, one part however many were taken (`job.checkpoint`, with how many `job.checkpointed` say were taken, issue #1975), with its commits and whether it holds the session; each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below) |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); its latest checkpoint only, one part however many were taken (`job.checkpoint`, with how many `job.checkpointed` say were taken, issue #1975), with its commits and whether it holds the session; each Windows sandbox step (`step.started`); each container its reap removed, a database image's as a **test database** (`job.containers_removed`, issue #975, below); its cleanup status and each entry of its **resource ledger** (issue #2504, "The resource ledger") |
 
 Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
 piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
@@ -19647,12 +19770,49 @@ their environment. Three decisions:
    `hopper-used <bytes> <µs> <kills>`, `-` for a file it could not read; `readReap` reads it as `used`, and the cleanup
    records `job.resources_used` with the job's machine. A cgroup path with `..` is never read.
 2. *What it misses.* A job with no scope there (no systemd user manager), a scope that ended before the reap (a parked
-   job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job,
-   the current use of a running job, and memory or CPU limits on the scope are not read or set here: later parts of
-   issue #2498.
+   job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job
+   is not read here: a later part of issue #2498.
 3. *What the part shows.* One part, `resources` in the machines group: "Peak memory <n>, CPU <time>", the OOM kills when
    there were any, and the machines. A job reaped on more than one machine (moved, resumed elsewhere) shows the highest
    peak, and the CPU time and OOM kills of all of them (`src/domain/job-resources.ts`).
+
+**Resources in use now** (issue #2498 part 3). The reap reads a job's use only at its end; a person who looks at a running
+job, or at a machine that is full, could not see which job holds what. Three decisions:
+
+1. *Who reads it.* The machine's resource meter (`src/client/resources.ts`), which already reads each job scope's memory
+   in use for the memory floor (issue #2499, `jobMemoryBytes`). At each read it also reads the same three files as the
+   reap (`memory.peak`, `cpu.stat` `usage_usec`, `memory.events` `oom_kill`) and says them as `jobUse`, per job id, with
+   the CPU cores the scope kept busy since the read before (`cpuCores`; none at its first read, and a read sooner than a
+   second after keeps the one before). A client's reading is checked field by field before it is believed
+   (`src/machines/resources.ts`). No second reader and no new probe: a machine with no systemd user manager, an ssh
+   target and an older client say none.
+2. *Where it shows.* The job's parts list: one part `resources-now:<machine>` in the machines group, status `running`,
+   "Memory <n> now, peak <n>, CPU <n> cores", and the CPU time so far, the OOM kills and the machine
+   (`resourcesNow` in `src/domain/job-resources.ts`). `GET /api/jobs/:id/bom` reads the machines' last readings only for
+   a job that has not ended (`liveUseOf`, `Queries.getLiveUse`). On Machines, each card says what its jobs use together:
+   "<n> jobs use <memory> · <n> cores busy · <n> OOM kills" (`jobsUseText`). `GET /api/machines` has both fields in each
+   machine's `resources`.
+3. *What it is not.* No sample keeps it: the machine samples keep the waiting memory only (issue #2499), and the job's
+   record at its end is still the reap's `job.resources_used`. A seat's total is its machines' totals: a seat's jobs run
+   on its machines.
+
+**Job limits and resource-limit failures** (issue #2498 part 2). A job that used all of a machine's memory stopped the
+other jobs there too. Three decisions:
+
+1. *Where the limit is.* On the job's scope, as it is made ("The job's scope"): `MemoryMax` from the machine's
+   `jobMemoryMaxGiB`, `CPUQuota` from its `jobCpuPercent` (percent of one CPU), plain options of local, ssh and client
+   machines (`src/plugins/machine-source/attached.ts` `jobLimitsShape`, `MachineSnapshot.jobLimits`), off by default.
+   Past `MemoryMax`, the kernel's OOM killer stops a process of that scope only. No limit per seat: a seat's jobs are on
+   its machines, and the memory floor (issue #2291) keeps the machine's own headroom.
+2. *How it is seen.* When Claude exits, the pane's shell, which runs in the job's scope, says its exit code and then the
+   scope's `memory.events` `oom_kill` count (`src/executors/herdr/exited.ts` `oomKillsCommand`), read from its own cgroup
+   and only when that is `hopper-job-<job id>.scope`. A count above 0 makes the failure `claude exited (…) at a resource
+   limit: the kernel's OOM killer stopped <n> processes in the job's scope: …`. A machine OOM, with no job limit, counts
+   too: the job's process was stopped for want of memory all the same.
+3. *What happens.* The known cause **Resource limit** (`resource-limit`): transient, retry, first of the causes, so a
+   text Claude printed as it died never names another. The job runs again with backoff, by the retry limit, and the
+   memory floor decides where it starts. It is no lane fault: the lane is not wrong. An OOM kill of a build daemon that
+   Claude lives through fails nothing; the parts list counts it ("Resources used").
 
 **The route.** `GET /api/jobs/:id/bom` (`src/http/jobs.ts`), the user's own; 404 for a job it does not know. It reads the
 job's newest 2000 events (`EventLog.recent` takes a job now, over the `events_job` index of tenant migration 45), its
@@ -22089,7 +22249,11 @@ and the writes held while a sign-in has ended are the next parts.
   with no pull request.
 - **No `hopper:pr-ready` with no pull request** (`src/sources/github/report.ts` `finished`). The report names the newest
   ready pull request that closes the issue, references it or is on a branch named for it; else the newest open one of
-  those in any state of review; else the newest open part, with `hopper:partly-done`. None open: `hopper:blocked` (a new
+  those in any state of review; else the job's own open one those miss (issue #2510, `ownOpenPullRequestOf` in
+  `completion.ts`): one in another repository that mentions the issue, opened or pushed to by the job (issue #2004), else
+  the newest one the job opened through the hopper (`github_proxy.done` of `pr.create`) that is still open, whatever its
+  text or branch says, so a base-branch update by someone else or a closing keyword only in its title does not unlink it;
+  else the newest open part, with `hopper:partly-done`. None open: `hopper:blocked` (a new
   end label, which keeps the issue out of Intake as the others do and comes off with Run again), and the follow looks
   again at each sync. One it finds open swaps `hopper:blocked` for `hopper:pr-ready` (or `hopper:partly-done`); the follow's
   end takes `hopper:blocked` off with the other waiting labels.
@@ -24253,8 +24417,8 @@ runs and the one it ran before (read from the hopper's container before the stac
   `.worktrees` (issue #1188; and for what the layout before left, while it is there), by `du -skx` (a link, such as a worktree's `node_modules`, counts as a link).
   Each measure is cut off at 20 s by `timeout`, so a slow disk never holds the survey (and so the sweep) up; one cut off
   says nothing, and a machine with no `timeout` (macOS by default) or a client older than this measures nothing.
-- **The sweep keeps it.** Each machine's last measure (`Sweep.disk`), in memory: after a restart the first pass, at
-  startup, measures again. `GET /api/machines` carries it on each machine it measured as `hopperDisk` — each place, their
+- **The sweep keeps it.** Each machine's last measure (`Sweep.disk`), in the store since issue #2494 (part 7 below): a
+  restart still shows it until the first pass, at startup, measures again. `GET /api/machines` carries it on each machine it measured as `hopperDisk` — each place, their
   sum, when, and the disk budget now —, and each Machines card says it, "over disk budget" when over.
 - **The disk budget** (`diskBudget`, a user setting; none by default): `POST /ui/api/machines/disk-budget` (admin, `null`
   turns it off), `GET /api/machines/disk-budget`, the Disk budget panel on Machines. One budget for each machine.
@@ -24262,8 +24426,9 @@ runs and the one it ran before (read from the hopper's container before the stac
   reaped at once, not after `scratchMaxAgeHours`; the reap's rule still keeps work not pushed, and a parked or live job's
   work is never touched. When a reap removed one, it surveys again for the measure.
 - **Still over, a person is told**: `machine.disk_over_budget` (the use, the budget, each place), once while it stays over;
-  `machine.disk_within_budget` once it is back within it. Webhooks take them. The budget turned off forgets who was told. Kept
-  in memory, as the memory alert: a machine still over after a restart is told again.
+  `machine.disk_within_budget` once it is back within it. Webhooks take them. The budget turned off forgets who was told. Since
+  issue #2494 (part 7 below), what the event log last told of each machine stands after a restart: a machine still over is
+  not told again.
 
 **Part 3: a job's containers and volumes** (`src/client/reap.ts` `JOB_LABEL`; `src/engine/sweep.ts`; `src/engine/cleanup.ts`).
 The exited per-job database containers and the orphaned volumes came from jobs' own test runs: a job killed at its end
@@ -24330,6 +24495,95 @@ each fetch. The measure left it out, so a machine could be over its disk budget 
   (each start fetches under the start lock with gc in the foreground, issue #1075). Over the budget, the checkouts are in
   `machine.disk_over_budget`'s `paths`, so a person sees why it stays over.
 
+**Part 6: the caches and the container storage** (issue #2494, `src/client/reap.ts` survey, `src/domain/hopper-disk.ts`).
+Seat homes grew to 20–30 GB each, mostly package caches (NuGet, Gradle, Go, npm) and container storage, and Machines
+showed none of it. This part measures them; a cache policy and an image prune are later parts of issue #2494.
+- **The survey measures the caches** in the home of the user it runs as, once per survey: each place of `CACHE_DIRS`
+  (`~/.nuget/packages`, `~/.gradle/caches`, `~/.gradle/wrapper/dists`, `~/go/pkg/mod`, `~/.cache/go-build`, `~/.npm`,
+  `~/.local/share/pnpm/store`, `~/.cache/yarn`, `~/.yarn/berry/cache`, `~/.cache/pip`) that is there and no link, by one
+  `du -skx`, and `~/.cache` whole by a second, each cut off at 20 s: `hopper-cache <KiB> <path>`. Fixed places only, with
+  no variable that could name another: nothing else of the home is read, `~/.claude` least of all. The hopper counts in
+  `cache` only what the other kinds' places in `~/.cache` do not hold (`cacheUseOf`).
+- **It measures the container storage**: each runtime there (`docker`, `podman`) answers `system df` (cut off at 20 s),
+  `hopper-df|<runtime>|<type>|<size>|<reclaimable>`; the hopper reads `Images`, `Containers`, `Local Volumes` and
+  `Build Cache` and their sizes in decimal units, and leaves any other type out.
+- Neither runs where `timeout` is missing. The survey may now take 120 s (`SURVEY_TIMEOUT_MS`), on this machine, over ssh
+  and through a client target's `/survey`; a client older than this measures neither.
+- **Shown with the disk use.** `hopperDisk` on `GET /api/machines` carries them as `caches` (per kind, biggest first) and
+  `storage`, and each Machines card says them (`caches`, `container storage`). They are not the hopper's own disk use:
+  the disk budget does not count them, and the sweep removes none of them. Kept with the rest of the measure.
+
+**Part 7: the measure in the store** (issue #2494, `src/store/disk-measures.ts`, tenant migration 94; `src/engine/sweep.ts`).
+The measure lived in memory only, so a restart showed no disk use on Machines until the first pass, and a machine still
+over its disk budget was told again.
+- **One row per machine** (`machine_disk_measures`): its last measure (`DiskMeasure`: when, each place, and the caches and
+  container storage as the survey said them), as JSON. Each pass that measured something replaces it. The disk budget
+  is not in the row: each read applies the budget now, as before.
+- **Read once.** The sweep reads every row at its first read (`Sweep.disk`, or its first pass), then keeps them in memory
+  and writes each new measure through.
+- **Told once across restarts.** The sweep reads, once, the newest `machine.disk_over_budget` or
+  `machine.disk_within_budget` of each machine (`overBudgetTold`): a machine whose newest is over counts as told.
+- A machine removed keeps its row; nothing reads it, as `GET /api/machines` lists only the machines there are.
+
+**Part 8: the storage prune** (issue #2494, `src/client/prune.ts`, `src/domain/storage-prune.ts`, `src/engine/sweep-prune.ts`).
+Container storage grew on seats with nothing to remove it: images no container used, exited containers, and the anonymous
+volumes they left. Part 6 measures it; this part removes the old part of it, on a machine that asks for it.
+- **Off by default.** A machine option, `pruneAfterDays` (whole days, 1–3650), turns it on for that machine. On a
+  person's own machine, the images no container uses may be theirs, so no default prunes them.
+- **The survey lists the exited containers** of each runtime there (`docker`, `podman`), each by its full id, when it
+  stopped (`State.FinishedAt`, docker's RFC 3339 time or podman's Go time) and its label keys:
+  `hopper-exited|<runtime>|<id>|<stopped at>|<label keys>` (`Survey.exited`).
+- **The hopper chooses the containers** (`containersToPrune`, pure): stopped more than `pruneAfterDays` days ago, and with
+  no label it keeps: `com.docker.compose.project` and `io.podman.compose.project` (the stack), `io.x-k8s.kind.cluster` (a kind
+  node), `hopper.job` (a **job container**, which its job's reap removes) and any `io.hopper.` key (boxes, need and check
+  boxes, which their own sweeps remove). A container with no stop time is never chosen.
+- **The prune runs through the machine's own connection** (this machine, ssh, a client target's `/prune`), a fixed sh
+  script, each runtime call cut off at 60 s, the whole in 300 s (`PRUNE_TIMEOUT_MS`). It checks each container again there:
+  still exited and still with no label it keeps (the client takes only `<runtime>:<hex id>`). Then, in this order:
+  - each chosen container, by `rm -v` (with its anonymous volumes; a named volume stays), its writable layer's size read first;
+  - each volume no container uses (`dangling=true`) that is anonymous — a 64-hex name, and podman's `Anonymous`, or docker's
+    `com.docker.volume.anonymous` label — with no label it keeps, by `volume rm`, its size read from its mount point where
+    the hopper's user can read it. A seat's home or the stack's database is a named volume: never removed;
+  - the images no container uses, built more than `pruneAfterDays` days ago, by the runtime's own
+    `image prune -a -f --filter until=<hours>h --filter label!=org.opencontainers.image.title=hopper`, so the hopper's own
+    images (the one it runs and the one before, part 1) stay; each one's size from the image list before the prune.
+  - Nothing is forced: the runtime keeps a container that runs, a volume or an image a container uses.
+- **When.** The sweep prunes last in a pass, once a day per machine (`PRUNE_EVERY_MS`), or once an hour while the machine's
+  disk is low (`PRUNE_LOW_MS`). The time of the last prune is in memory: a restart prunes again at its first pass.
+- **Recorded.** A prune that removed something is one `machine.storage_pruned` event: each item with its runtime, kind,
+  id and size where the runtime said it, their sum (`bytes`) and the age. A prune that fails (a client older than this has
+  no `/prune`) is logged once while it fails, and the pass goes on.
+- **Residual risk.** On a machine with the option, an image a person pulled and does not use is removed after its age, and
+  a person's container stopped that long goes with its writable layer. The runtime pulls an image again when a container
+  needs it. Docker before 23 does not label its anonymous volumes: none of them is removed there.
+
+**Part 9: the trim** (issue #2494, `src/client/trim.ts`, `src/domain/disk-trim.ts`, `src/engine/sweep-trim.ts`). A thin
+disk (an EBS volume, a WSL distro's virtual disk) gets back a block the hopper freed only when the filesystem tells it, by
+a discard. Nothing told it: the space the reaps and the prune freed stayed taken below the filesystem.
+- **Off by default.** A machine option, `trimAboveGiB` (GiB, more than 0), turns it on for that machine.
+- **What a pass freed.** The sweep adds up, per machine, what its passes there freed since the last trim: the bytes the
+  storage prune said it removed (part 8), and the drop of the hopper's own disk use its reaps made. On a machine with the
+  option, a pass whose reaps removed a scratch dir measures again after them (as one over its disk budget does) for that
+  drop. A job that writes meanwhile hides some of it: the sum is at most what was freed.
+- **The trim.** Once the sum reaches the option, the sweep runs a fixed sh script through the machine's own connection
+  (this machine, ssh, a client target's `/trim`), with no argument: `fstrim -v` on the mount point of the filesystem the
+  home is on (`df -P "$HOME"`), cut off at 240 s, the whole in 300 s (`TRIM_TIMEOUT_MS`). fstrim needs root. When it is
+  refused and the user is not root, the script asks `sudo -n` (no password: it never waits on one) and runs fstrim by its
+  full path. Then the sum starts again from nothing, whatever the outcome.
+- **Recorded.** Each trim is one `machine.disk_trim_ran` event: the freed bytes that started it, the mount point, the
+  outcome (`trimmed` with the bytes fstrim said, `refused`, `unsupported` — no fstrim, or no discard there —, `failed`)
+  and what fstrim said when it did not trim. A trim that cannot run (a client older than this has no `/trim`) is logged
+  once while it fails, and the pass goes on.
+- **WSL: the compaction report.** In a WSL distro (`WSL_DISTRO_NAME`, or `microsoft` in `/proc/version`), the event says
+  `hostCompaction`: the virtual disk file on the Windows drive shrinks only once it is compacted there, and the hopper
+  cannot do that from inside. The event is the report that a compaction is worth it: it comes only after the option's
+  bytes were freed. A person on the Windows host runs one of:
+  - `wsl --manage <distro> --set-sparse true` once (WSL 2.0 or later): the virtual disk then gives back what a trim frees;
+  - or, with the distro stopped (`wsl --shutdown`), `Optimize-VHD -Path <its ext4.vhdx> -Mode Full` (Hyper-V module), or
+    `diskpart`'s `compact vdisk`.
+- **Residual risk.** On a machine where the hopper's user has sudo with no password, the hopper runs `fstrim` as root, with
+  its full path and the mount point only. fstrim on a busy filesystem slows its disk for a short time.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24343,7 +24597,13 @@ removed, none on a failed update), `test/integration/disk-budget.test.ts` (the s
 survey for real, with a fake container runtime), `test/engine/sweep.test.ts` ("a job's containers and volumes"),
 `test/integration/work-kept.test.ts` (the event at a job's end), `test/support-run.test.ts` (the tests' labels). Part 4:
 `test/sandbox/leftover-builds.test.ts` (which builds are leftover, their removal, once an hour from the reconcile pass),
-`test/adapters/runtime-images.test.ts` (the image calls of both runtimes), `test/sandbox/tools.test.ts` (the stage label). Part 5: `test/client/survey-roots.test.ts` (each checkout measured, not a plain folder or a link).
+`test/adapters/runtime-images.test.ts` (the image calls of both runtimes), `test/sandbox/tools.test.ts` (the stage label). Part 5: `test/client/survey-roots.test.ts` (each checkout measured, not a plain folder or a link). Part 6: `test/client/survey-disk-use.test.ts` (the caches and the
+container storage for real, with a fake runtime), `test/domain/hopper-disk.test.ts`, `test/ui/hopper-disk.test.ts`. Part 7:
+`test/store/disk-measures.test.ts` (a row per machine, read back after a restart), `test/engine/sweep-disk-kept.test.ts`
+(the measure written and shown after a restart; told once across a restart). Part 8: `test/client/storage-prune.test.ts`
+(the survey's listing and the prune for real, with a fake runtime), `test/domain/storage-prune.test.ts`,
+`test/engine/sweep-prune.test.ts`. Part 9: `test/client/disk-trim.test.ts` (the trim for real, with a fake fstrim and sudo),
+`test/engine/sweep-trim.test.ts`.
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
@@ -27309,6 +27569,28 @@ cancel or park it.
 
 Tests: `test/decider/drained.test.ts` (placement, holds, the idle reason), `test/integration/machine-drain.test.ts` (the route,
 the events, a restart, the CLI), `test/ui/machine-drain.test.ts` (the card).
+
+**A drain's reason and end** (issue #2499, 2026-10-22). A seat sat drained for about 30 hours, with free lanes, while 31
+jobs were queued: the drain said neither why nor until when, and nothing told a person.
+- **A drain names its reason** (`reason`, 1 to 300 characters) and the hours until it ends by itself (`hours`, 1 to 720,
+  default `DRAIN_DEFAULT_HOURS` 24). A drain with no reason is a 400 (`hopper machine drain <machine> --reason TEXT
+  [--hours N]`; on the card, Drain stays off until a reason is typed). Kept as `reason` and `until` with who, the way and
+  when, and on `machine.drained`. A drain of a drained machine changes nothing: to change its reason or end, undrain it and
+  drain it again.
+- **It ends by itself** (`src/domain/machines.ts` `drainEnds`, `withDrains`): a machine is listed drained only before
+  `until`, so the decider places jobs there again at once. A drain kept before this has no `until`, and ends a day after it
+  began: no migration of the setting, which keeps its shape. The **drain watch** (`src/machines/drain-watch.ts`, at each
+  record of the resource recorder) then ends it in the settings (`MachineDrains.expire`), records `machine.drain_expired`
+  with who drained it, when, why and its end, and asks for a Decision.
+- **A drained machine idle with a backlog is told.** The drain watch tells `machine.drained_idle` once when a drained machine
+  stays online, with a free lane under its lane cap, while a queued job it runs the executor of waits, for
+  `DRAINED_IDLE_AFTER_MS` (10 minutes): its free lanes, the jobs queued, and its drain. Its stretch ends when one of these
+  stops; a new stretch is told again. Kept in memory: after a restart a machine still idle is told again. The queued jobs
+  are read only while a drained machine has a free lane. Webhooks and the Grok Bot routine take it.
+- **Shown.** The card says why it is drained and when it ends by itself.
+
+Tests: `test/domain/machine-drain-expiry.test.ts`, `test/machines/drain-watch.test.ts`, `test/integration/machine-drain.test.ts`
+(the reason, the hours, the CLI), `test/ui/machine-drain.test.ts` (the dialog and the card), `test/plugins/grokbot-intake.test.ts`.
 
 ## More than one GitHub account (issue #1448, part 1, 2026-10-16)
 
@@ -33068,6 +33350,8 @@ stopped.
 - **Exit at start** (glossary). Claude gone during startup is `claude exited at startup (…)`. Claude gone in the task's
   turn (its anchor is the protocol footer, which only a new session is sent) before the watch saw any line of output is
   `claude exited at the start of a new session, before any output (…)`. Any other exit is `claude exited (…)`.
+- **The known cause Resource limit** (`resource-limit`, issue #2498): an exit after OOM kills in the job's scope is
+  never an exit at start or a sign-in, whatever Claude printed ("Job limits and resource-limit failures").
 - **The known cause Exited at start** (`exited-at-start`): transient, retry, after Login expired, Disk full, Machine
   offline and Herdr outdated, so a text Claude printed that names one of those keeps that cause. It is a **lane fault**:
   the rerun avoids the lane — another machine when one may take it, else another lane ("Unhealthy lanes", issue #2234) —
@@ -33079,3 +33363,232 @@ stopped.
 **Verification.** `test/herdr/exit-at-start.test.ts`: the exit code read and its command's echo not taken as one; the text
 after the command line; an exit in the task's turn with nothing shown is an exit at start, with its code and signal, and
 one after output is not; the cause, the lane fault, the assessor's retry, and the rerun's avoided lane.
+
+## The resource ledger (issue #2504, part 1, 2026-10-22)
+
+Requirement (issue #2504): a job that ends leaves nothing behind. Each thing the hopper makes for a job is recorded when it
+is made, a durable cleanup reaps each one on its own machine, work not pushed is kept and flagged, a reconciler reaps what
+no live job holds, and each job shows its cleanup status. The cleanup itself exists already: the **reap** at the job's end,
+its **cleanup record** (issue #1570) and **deferred cleanup** (issue #371), and the **sweep** (issue #410). What was
+missing is the record of what each job has: the reap and the sweep find a job's things by path and job id only, and no
+one can ask "what does this job still hold, and why".
+
+**Part 1: the ledger.** The `job_resource_ledger` table (tenant migration 92, `src/store/resource-ledger.ts`, pure rules in
+`src/domain/resource-ledger.ts`), one **ledger entry** per job, kind and locator:
+
+| Kind | Locator | Recorded from |
+|---|---|---|
+| `scratch_dir` | `<work tree>/.worktrees/@scratch/<job id>` | the executor's saved state, its `cwd` |
+| `job_worktree` | its path | the saved state's `jobWorktree` |
+| `job_scope` | `hopper-job-<job id>.scope` | the saved state's `scope` |
+
+- **When it is recorded.** Each `saveState` of a job's executor writes the job's state and its ledger entries in one
+  transaction (`recordLedger`, `src/engine/resource-ledger.ts`), on the machine the job runs on. An entry already there is
+  left as it is, so a later save changes nothing. An executor that saves none of these fields records nothing.
+- **How it is closed.** Each reap that ends — the cleanup at the job's end (`src/engine/cleanup.ts`), the sweep's reaps and
+  a discard (`src/engine/sweep.ts`) — closes the job's entries as it says (`reapClosures`): a dir it names as still there is
+  `failed`, with that path as the reason; with work kept, the scratch dir and the job worktree are `kept` together, as the
+  reap keeps them; else each is `reaped`. A scope is always `reaped`. A reap that did not look at the scratch dir (the
+  sweep stops only a scope or processes) closes only the scope. A `kept` entry a later reap removes becomes `reaped`, and so
+  does a `failed` one (part 2); a `reaped` entry is not judged again. A reap that could not reach the machine closes nothing: the entries
+  stay `live` until a reap goes through.
+- **Cleanup status** (`cleanupStatusOf`). `none` with no entry; `in_use` while the job has not ended; `pending` while its
+  cleanup is deferred or an entry is still `live`; `in_progress` while its cleanup record is owed; then `failed` if an
+  entry failed, `kept_work` if one is kept, else `done`.
+- **Shown.** The job's parts list (`GET /api/jobs/:id/bom`, the job page) has, in the machines group, a part `cleanup` with
+  the cleanup status and how many entries are closed, and one part per entry with its locator and state. An entry is a
+  record, but one whose removal failed counts as `failed`.
+
+**Verification.** `test/domain/resource-ledger.test.ts` (the entries from a state, the closures, the status);
+`test/engine/sweep-ledger.test.ts` (the sweep closes entries: kept work later removed, a dir left, a scope-only reap);
+`test/integration/resource-ledger.test.ts` (a job that ends cancelled, finished or failed has every entry reaped; work kept;
+a removal that failed; the parts list).
+
+### Part 2: cleanup leftovers (2026-10-22)
+
+A failed removal or a cleanup that never reached its machine stayed in the ledger with nothing to say so: the job's page
+showed it only to a person who opened that job. The issue asks that a leftover found after a grace period is never silently
+ignored.
+
+- **Cleanup leftover** (`cleanupLeftoversOf`, `src/domain/resource-ledger.ts`, pure). An ended job's entries still `live`
+  or `failed` once `CLEANUP_GRACE_MINUTES` (60) passed after its end (`finishedAt`, else `updatedAt`). A job that has not
+  ended, and a job the store does not know, is no leftover here. The store reads the candidates in one query
+  (`ResourceLedgerRepository.open`: every entry `live` or `failed`).
+- **A failed entry is judged again.** A later reap that removed a `failed` entry's dir — the sweep reaps an ended job's
+  scratch dir again at each pass while it is there — closes it `reaped`; one that still leaves it keeps it `failed`, with
+  the new reason when it changed. Only a `reaped` entry is final. So a leftover ends when a reap removes it.
+- **The leftover check** (`src/engine/cleanup-leftovers.ts`). With each sweep pass, only on the host that holds the sweep
+  lease, before the sweep: each leftover is recorded once per job as `job.cleanup_leftover` (its end, the grace period, and
+  each entry: machine, kind, locator, state, reason) and logged. A job already told — in memory, or by its event after a
+  restart — is not told again. A check that fails is logged and throws nothing.
+- **Failures.** The stuck cause `cleanup_leftover` ("Ended jobs whose cleanup left something on a machine") lists each such
+  job while it stays, with what a person does. It has no bulk action: the hopper already tries again at each sweep pass.
+
+**Left for later parts** of issue #2504: containers, volumes, processes, agent sessions, herdr panes and build daemons as
+entries; the cleanup as a persisted work item per entry with backoff, on each machine's own transport, and container storage
+that only a `podman unshare` removes; the reconciler that compares each machine with the live jobs, also for a job outside
+the job-list window and what was left before the ledger — and that closes an entry whose thing is no longer there (removed
+by hand), which today stays a leftover; leftover counts and bytes on Machines.
+
+**Verification (part 2).** `test/domain/resource-ledger.test.ts` (`cleanupLeftoversOf`; a failed entry reaped later);
+`test/domain/stuck.test.ts` (the cause); `test/engine/cleanup-leftovers.test.ts` (told once, also after a restart; a check
+that fails); `test/integration/resource-ledger.test.ts` (real database: Failures lists the job after the grace period, and
+not after a reap removes the entry).
+
+### Part 3: the reconciler closes what is gone; Machines counts leftovers (2026-10-22)
+
+An entry whose thing a person removed by hand (or a cleanup outside the hopper) stayed `live` or `failed` for ever: no reap
+looks for a dir that is not there, so the job stayed a cleanup leftover. And Machines did not show which machine holds them.
+
+- **The reconciler** (`goneClosures`, `src/domain/resource-ledger.ts`, pure; `closeGone`, `src/engine/resource-ledger.ts`).
+  With each sweep of a machine, after its survey and before its reaps, each open entry (`live` or `failed`) on that machine
+  of an ended job whose thing the survey no longer found is closed `reaped`, with the reason `not found on the machine`:
+  a scratch dir only in a work tree the survey looked in (`Survey.roots`); a job worktree only when the survey lists job
+  worktrees (`Survey.trees`; a client older than that lists none, so none is judged); a scope that no longer runs. A job
+  that has not ended, a job the store does not know and another machine's entry are not judged. It removes nothing: what
+  the survey still finds, the sweep's reaps remove as before. It reads the ledger, not the job list, so a job outside the
+  job-list window is judged too.
+- **Kept work that is gone** (issue #1120's `goneKept`, `job.work_removed` with `gone`) now also closes the job's entries
+  `reaped`.
+- **Machines** (`GET /api/machines`, `cleanupLeftovers`): each machine's cleanup leftovers, counted — jobs, entries, and how
+  many entries failed —, absent when none. The card shows them as a fact and a warning badge.
+
+**Left for later parts** of issue #2504: containers, volumes, processes, agent sessions, herdr panes and build daemons as
+entries; the cleanup as a persisted work item per entry with backoff, on each machine's own transport, and container storage
+that only a `podman unshare` removes; the reconciler for things the ledger does not name (a scratch dir of a job the hopper
+does not know, what was left before the ledger) and for machines no longer known; leftover bytes on Machines (the survey
+measures no size per job dir).
+
+**Verification (part 3).** `test/domain/resource-ledger.test.ts` (`goneClosures`, `machineLeftoversOf`);
+`test/engine/sweep-ledger.test.ts` (an entry removed by hand is reaped; kept work gone); `test/ui/hopper-disk.test.ts` (the
+card's text); `test/integration/resource-ledger.test.ts` (real database: `GET /api/machines` counts the leftover on its
+machine after the grace period).
+
+### Part 4: the job's container runtime as an entry (2026-10-22)
+
+The containers, volumes and storage a job makes in its own container runtime (issue #1295) were not in the ledger. They are
+the largest part of what a job leaves, and the storage can hold files of the job's user namespace that a plain `rm` cannot
+remove. The reap already resets that runtime (`podman system reset`, then `podman unshare rm` of its storage); the ledger
+did not say so.
+
+- **The entry.** Kind `container_runtime`, locator `<scratch dir>/containers`: the runtime's dir, with its storage, its
+  config and its guards. The herdr executor saves it in the job's state (`containerRuntime`) once the runtime is set up
+  (`src/executors/herdr/start-isolation.ts`), and the next `saveState` records it as the other entries. A machine with no
+  podman gives the job no runtime and no entry.
+- **Closed.** As the scratch dir's entries (`reapClosures`), but work kept does not keep it: the reap resets the runtime
+  whatever the scratch dir holds. A dir in it the reap names as still there (`left`) fails it, with that path. A reap that
+  did not look at the scratch dir does not judge it.
+- **Gone.** The reconciler closes it `reaped` when its scratch dir is gone from a work tree the survey looked in
+  (`goneClosures`).
+- Shown in the parts list as "Container runtime on <machine>", and in `job.cleanup_leftover` as any other entry.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; the reconciler for things the ledger does
+not name and for machines no longer known; leftover bytes on Machines.
+
+**Verification (part 4).** `test/domain/resource-ledger.test.ts` (the entry from a state; closed with work kept; failed
+while its storage stays; gone with its scratch dir); `test/herdr/executor-runtime.test.ts` (saved once set up, none with no
+podman); `test/engine/sweep-ledger.test.ts` (the sweep closes it with the scratch dir, not with a scope-only reap).
+
+### Part 5: entries kept for a retention (2026-10-22)
+
+With a retention set for the status a job ended in (issue #2494, `retainHours`), and for a timed-out job (`liveness`), the
+reap at the job's end keeps its scratch dir and job worktrees for the sweep. That reap said nothing kept, so the ledger
+closed those entries `reaped` while they stayed on the machine. And had it left them open, the leftover check would have
+told a leftover 60 minutes after the end, long before the retention ends.
+
+- **Until when** (`retainedUntilOf`, `src/domain/retention.ts`, pure). The job's end (`finishedAt`, else now) plus the hours
+  its machine keeps the status; a timed-out job's, plus the sweep's scratch age (`scratchMaxAgeHours`, absent 24). None: the
+  reap keeps nothing for a time.
+- **The cleanup at the end** (`src/engine/cleanup.ts`). Such a reap closes the scope only, as a reap that did not look at the
+  scratch dir. Each other entry still `live` or `failed` (`retainedEntriesOf`) gets `retainedUntil` (tenant migration 95,
+  column `retained_until`; `ResourceLedgerRepository.retain`, which does not change a closed entry). The sweep's reap once
+  the retention is over closes them as before; the column stays as the record.
+- **Leftovers.** An entry with `retainedUntil` is a cleanup leftover only `CLEANUP_GRACE_MINUTES` after the later of the
+  job's end and its `retainedUntil` (`cleanupLeftoversOf`); the job's other entries are judged from its end as before.
+- **Cleanup status** `retained` ("Cleanup: work kept for its retention") while every `live` entry has `retainedUntil` and
+  none failed; each such entry's part says "kept until <time>".
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; the reconciler for things the ledger does
+not name and for machines no longer known; leftover bytes on Machines.
+
+**Verification (part 5).** `test/domain/retention.test.ts` (`retainedUntilOf`); `test/domain/resource-ledger.test.ts`
+(`retainedEntriesOf`, the leftover after the retention, the status and the part); `test/engine/cleanup-retention.test.ts`
+(the cleanup keeps the scratch dir's entry open with its retention, and closes the scope); `test/integration/resource-ledger.test.ts`
+(real database: `retain` kept, and kept on a later close).
+
+### Part 6: the reconciler records what the ledger does not name (2026-10-23)
+
+What a job left before the ledger existed, and what a reap never recorded, had no entry: the sweep still removed it by its
+age, but a removal that failed was no **cleanup leftover**, so it was silently left. The issue asks that the reconciler
+reap what no live job holds, whether the ledger names it or not, also for a job outside the job-list window.
+
+- **The records** (`unledgeredEntriesOf`, `src/domain/resource-ledger.ts`, pure; `reconcileLedger`,
+  `src/engine/resource-ledger.ts`). With each sweep of a machine, after its survey and the closures of part 3, and before
+  its reaps: each scratch dir, job worktree (either layout) and running scope the survey found there of an ended job the
+  store knows, which no entry on that machine names (`ResourceLedgerRepository.onMachine`), is recorded `live` on that
+  machine, made now. The sweep's reaps then close it as any other entry.
+- **Kept until the sweep's reap.** A recorded scratch dir or job worktree gets `retainedUntil` (`ResourceLedgerRepository.record`
+  now takes it) set to when the sweep reaps it (`sweepReapAtOf`, `src/domain/retention.ts`, pure, as `retentionOver`
+  judges it): the dir's birth plus the scratch age, or with a retention for the status, the job's end plus it. So a
+  dir younger than that is no leftover; one whose reap fails or never comes is one 60 minutes after that time. A scope has
+  none: the sweep stops it in the same pass.
+- **Not recorded.** A thing of a job that has not ended (it records its own), and of a job the store does not know — another
+  hopper's, a test's —, which the sweep never touches. A key the ledger has, in any state, is left as it is.
+- **The job list.** The sweep looks up a job id not in its newest 2000 jobs in the store, so a job outside the window is
+  reaped, and recorded, as any other.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known;
+leftover bytes on Machines; the work trees the sweep looks in come from the newest jobs' saved state, so a work tree only
+an older job used is not surveyed.
+
+**Verification (part 6).** `test/domain/retention.test.ts` (`sweepReapAtOf`); `test/domain/resource-ledger.test.ts`
+(`unledgeredEntriesOf`: what is recorded, and what is not); `test/engine/sweep-ledger.test.ts` (a recorded dir whose reap
+failed is `failed`, its scope `reaped`; a job the hopper does not know is neither recorded nor reaped; an entry the ledger
+names is left as it is); `test/integration/resource-ledger.test.ts` (real database: `record` with `retainedUntil`, never
+over an entry there, and `onMachine`).
+
+### Part 7: the sweep looks in the work trees the ledger names (2026-10-23)
+
+The sweep surveyed only the work trees that the newest jobs' saved state names (their `cwd`). An entry in a work tree that
+only an older job used was never surveyed again: the reconciler could not close it as gone, and the sweep's reaps never
+found it. So it stayed a **cleanup leftover** for good, also after the thing was removed.
+
+- **The roots** (`ledgerRootsOf`, `src/domain/resource-ledger.ts`, pure; `sweptRoots`, `src/engine/resource-ledger.ts`).
+  On each machine, the sweep surveys the work trees the job list names, plus the work tree of each open entry (`live` or
+  `failed`) on that machine: a scratch dir's and a container runtime's (its scratch dir's) work tree, and a job worktree's,
+  in either layout. A scope has none. Another machine's entries add nothing here.
+- **What follows.** The survey of that work tree lets the reconciler close what is gone (part 3), record what the ledger does
+  not name (part 6), and lets the sweep's reaps remove what is old, as in any other work tree. A work tree with no
+  `.worktrees` is not in the survey's `roots`, so nothing in it is closed as gone.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known;
+leftover bytes on Machines; a `kept` entry in a work tree no job in the job list used is not surveyed.
+
+**Verification (part 7).** `test/domain/resource-ledger.test.ts` (`ledgerRootsOf`: each kind, once, sorted; closed entries,
+scopes and another machine's add nothing); `test/engine/sweep-ledger.test.ts` (the sweep surveys a work tree only an open
+entry names, and closes that entry when its dir is gone).
+
+### Part 8: kept work in the reconciler (2026-10-23)
+
+A `kept` entry (work not pushed) was not in the work trees the sweep surveys (part 7 took only `live` and `failed`), and the
+reconciler judged only `live` and `failed` entries. Kept work of a job in the job list was closed when gone (`goneKept`), but
+kept work of an older job stayed `kept` for good, also after a person removed it.
+
+- **The roots** (`ledgerRootsOf`, `sweptRoots`). The sweep surveys the work tree of each entry on the machine that is not
+  `reaped`: `live`, `failed` or `kept`. The sweep reads them with `onMachine`, as the reconciler already does.
+- **The closures** (`goneClosures`, `closeGone`). A `kept` entry of an ended job whose scratch dir or job worktree the
+  survey no longer found is closed `reaped`, with the reason "not found on the machine". A `kept` entry still there stays
+  `kept`: the reconciler removes nothing, and the reap keeps work not pushed as before.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known;
+leftover bytes on Machines.
+
+**Verification (part 8).** `test/domain/resource-ledger.test.ts` (`ledgerRootsOf` names a kept entry's work tree;
+`goneClosures` reaps a kept entry that is gone, keeps one still there, and never judges a reaped one again);
+`test/engine/sweep-ledger.test.ts` (the sweep surveys the work tree of kept work no job in the job list used, and closes the
+entry once its dir is gone).

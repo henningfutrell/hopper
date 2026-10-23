@@ -24,7 +24,7 @@ export function githubAccountPlugin(seam?: GitHubApi): PluginDefinition<'job-sou
       if (!o.enabled) return { disabled: { kind: 'github-account', detail: {} } };
       const source = createAccountSource({
         name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, rejections: ctx.rejections, intake: ctx.intake(ctx.instanceName), trust: ctx.intakeTrust, yoloMode: ctx.yoloMode, changeRule: ctx.changeRule, ...(ctx.landingBranch ? { landingBranch: ctx.landingBranch } : {}),
-        jobArtifacts: ctx.jobArtifacts, ...(ctx.jobDoneCriteria ? { doneCriteria: (jobId: string) => ctx.jobDoneCriteria!(jobId) } : {}), ...(ctx.jobAllowedDeletes ? { allowedDeletes: (jobId: string) => ctx.jobAllowedDeletes!(jobId) } : {}), issueGraph: ctx.issueGraph, ...(ctx.gitMirrors ? { gitMirrors: ctx.gitMirrors } : {}), ...(ctx.githubListings ? { listings: ctx.githubListings } : {}), ...(ctx.githubOutbox ? { outbox: ctx.githubOutbox } : {}),
+        jobArtifacts: ctx.jobArtifacts, ...(ctx.jobOpenedPullRequests ? { openedPullRequests: (jobId: string) => ctx.jobOpenedPullRequests!(jobId) } : {}), ...(ctx.jobDoneCriteria ? { doneCriteria: (jobId: string) => ctx.jobDoneCriteria!(jobId) } : {}), ...(ctx.jobAllowedDeletes ? { allowedDeletes: (jobId: string) => ctx.jobAllowedDeletes!(jobId) } : {}), issueGraph: ctx.issueGraph, ...(ctx.gitMirrors ? { gitMirrors: ctx.gitMirrors } : {}), ...(ctx.githubListings ? { listings: ctx.githubListings } : {}), ...(ctx.githubOutbox ? { outbox: ctx.githubOutbox } : {}),
         key: o.account as ConnectedAccountKey, accounts: ctx.connectedAccounts, ...(seam ? { api: seam } : {}),
       }, o);
       return { source, pollMs: o.pollSeconds * 1000 };

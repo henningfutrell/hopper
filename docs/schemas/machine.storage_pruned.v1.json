@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "olderThanDays": {
+      "type": "number"
+    },
+    "bytes": {
+      "type": "number"
+    },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "docker",
+              "podman"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "container",
+              "volume",
+              "image"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "runtime",
+          "kind",
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "machineId",
+    "olderThanDays",
+    "bytes",
+    "removed"
+  ],
+  "additionalProperties": false
+}

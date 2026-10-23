@@ -4,7 +4,8 @@
 // 10), the sweep asks the machine what jobs left there — through an executor that reaches it — and reaps:
 // - a scope or a process of a job this hopper knows that is not live (claimed, running, waiting on an
 //   answer, or led by an operator): stopped;
-// - an ended job's scratch dir, once it is `sweep.scratchMaxAgeHours` old (default 24), or at once while its
+// - an ended job's scratch dir, once it is `sweep.scratchMaxAgeHours` old (default 24) — or, with a retention set for the
+//   status it ended in (`sweep.retainHours`, issue #2494), that many hours after its end —, or at once while its
 //   work was kept (job.work_kept): removed unless it still holds work not pushed. Its job worktree in the work tree's
 //   `.worktrees` (issue #1188) goes or stays with it, and one whose scratch dir is gone is reaped by that dir all the same. Work kept that the sweep
 //   then removes is recorded as job.work_removed; work it keeps for the first time, as job.work_kept.
@@ -23,8 +24,9 @@
 // The survey also measures the hopper's own disk use in each work tree (issue #1120, design.md "Hopper's own disk use"): the
 // sweep keeps each machine's last measure, which Machines shows. Over the user's disk budget, it reaps every ended job's
 // scratch dir at once, whatever its age (work not pushed is still kept), and measures again; still over, a person is told
-// once (machine.disk_over_budget), and once more when it is back within it (machine.disk_within_budget). Kept in memory:
-// after a restart, the first pass measures again, and a machine still over is told again.
+// once (machine.disk_over_budget), and once more when it is back within it (machine.disk_within_budget). The last measure
+// is kept in the store too (issue #2494), so a restart still shows it, and what the event log last told of each machine
+// stands: a machine still over is not told again.
 // A machine whose disk is low (issue #2490, design.md "A machine's disk") takes no new job; the sweep frees what it may there:
 // it sweeps the machine at once when its disk turns low (then by its interval), and reaps every ended job's scratch dir
 // whatever its age, as over the budget.
@@ -37,15 +39,17 @@
 // issue #1188 left in the `.hopper-scratch` of each work tree the survey found, with size, age and whether it holds work not
 // pushed, and keeps, in memory, the leftovers it does not judge — a dir of no job the hopper knows, and the repository mirrors.
 // Machines shows them; a person keeps or removes each one (`decideLeftover`). The sweep removes none by itself.
-import type { ActingPerson, Discarding, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
+// The storage prune (issue #2494, sweep-prune.ts): last, on a machine with `sweep.pruneAfterDays`, once a day.
+// The trim (issue #2494, sweep-trim.ts): then, on a machine with `sweep.trimAboveGiB`, fstrim once the cleanups freed that much.
+import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
-import { discardingOf, discardReasonOf, hopperDiskOf, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
-import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
+import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { jobScratchOf, scratchParts, worktreeJobOf as treeJob, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
-export const SCRATCH_MAX_AGE_HOURS = 24;
+import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
 export const SWEEP_CHECK_MS = 60000;
 /** The jobs whose work trees are swept: the newest this many. */
@@ -65,23 +69,10 @@ const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'wa
 export interface SweepReap { jobId: string; scratch?: string }
 
 /**
- * The known job a job worktree is of: `<job id>` its name (issue #1188), or `<name>-<job id>` in the layout before, whose
- * name may hold `-` too, so each split is tried.
+ * Pure: what to reap on one machine, from what its survey found. `kept`: jobs whose work was kept and not removed since.
+ * `over`: whether an ended job's work, its dir that old, is past its retention (issue #2494).
  */
-function treeJob(path: string, jobOf: (id: string) => Job | undefined): Job | undefined {
-  const tree = worktreeParts(path);
-  if (!tree) return undefined;
-  const name = tree.name;
-  if (!tree.old) return jobOf(name);
-  for (let at = name.indexOf('-'); at >= 0; at = name.indexOf('-', at + 1)) {
-    const job = jobOf(name.slice(at + 1));
-    if (job) return job;
-  }
-  return undefined;
-}
-
-/** Pure: what to reap on one machine, from what its survey found. `kept`: jobs whose work was kept and not removed since. */
-export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>, maxAgeMs: number): SweepReap[] {
+export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>, over: (job: Job, ageMs: number) => boolean): SweepReap[] {
   const plan = new Map<string, SweepReap>();
   for (const id of new Set([...found.scopes, ...found.processes])) {
     const job = jobOf(id);
@@ -94,13 +85,13 @@ export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined,
   for (const dir of found.scratch) {
     const job = jobOf(dir.jobId);
     if (!job || !TERMINAL_STATUSES.includes(job.status)) continue;
-    if (dir.ageMs >= maxAgeMs || kept.has(dir.jobId)) plan.set(dir.jobId, { jobId: dir.jobId, scratch: dir.path });
+    if (over(job, dir.ageMs) || kept.has(dir.jobId)) plan.set(dir.jobId, { jobId: dir.jobId, scratch: dir.path });
   }
   for (const tree of found.trees ?? []) {
     const job = treeJob(tree.path, jobOf);
     if (!job || !TERMINAL_STATUSES.includes(job.status) || plan.get(job.id)?.scratch) continue;
     const root = worktreeParts(tree.path)!.workTree;
-    if (tree.ageMs >= maxAgeMs || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: jobScratchOf(root, job.id) });
+    if (over(job, tree.ageMs) || kept.has(job.id)) plan.set(job.id, { jobId: job.id, scratch: jobScratchOf(root, job.id) });
   }
   return [...plan.values()].sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
@@ -128,8 +119,6 @@ export function goneKept(found: Survey, kept: readonly KeptWork[], jobOf: (id: s
   }
   return out.sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
-
-const maxAgeMs = (m: MachineSnapshot): number => (m.sweep?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS) * 3600_000;
 
 export interface Sweep {
   /** Sweep every online machine that is due (`all`: every online machine now). Never throws; one at a time. */
@@ -168,9 +157,9 @@ const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' :
 
 export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.warn(l)): Sweep {
   const schedule = createSweepDue();
-  /** Each machine's last measure (issue #1120), and the machines told over the disk budget. */
-  const measured = new Map<string, { paths: HopperDiskPath[]; at: string }>();
-  const told = new Set<string>();
+  /** Each machine's last measure (issue #1120), read from the store once (issue #2494), and the machines told over the disk budget. */
+  let kept: Map<string, DiskMeasure> | undefined, toldOver: Set<string> | undefined;
+  const measured = (): Map<string, DiskMeasure> => (kept ??= new Map(c.store.diskMeasures.all())), told = (): Set<string> => (toldOver ??= overBudgetTold(c.store.events.recent(KEPT_EVENTS, [...BUDGET_EVENTS])));
   /** The jobs, by `<machine>/<job id>`, whose dirs the reap could not remove, told once (issue #1452), with when to try again (issue #1613). */
   const stuck = new Map<string, number>();
   let busy = false;
@@ -189,7 +178,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     return undefined;
   };
   /** The leftovers the sweep does not judge (issue #1116), listed after each pass's reaps. */
-  const leftovers = createLeftovers(c, shellOf, log);
+  const leftovers = createLeftovers(c, shellOf, log); const prune = createPrune(c, log), trim = createTrim(c, log);
 
   /** The commits the hopper pushed for the job (issue #2087). */
   const pushedFor = (jobId: string): Set<string> => proxyPushedOf(c.store.events.recent(PUSHES_READ, [...PROXY_PUSH_EVENTS], jobId));
@@ -203,9 +192,10 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     return discardReasonOf(job, key !== undefined && c.store.workItems.get(key)?.state === 'done', key === undefined ? undefined : c.store.jobs.getBySourceKey(key), kept);
   };
 
-  /** What a reap removed of the job's containers and volumes (issue #1120), recorded. */
-  function recordRemoved(jobId: string, m: MachineSnapshot, said: Reaped): void {
-    if (!said.removed) return;
+  /** What a reap removed of the job's containers and volumes (issue #1120), recorded; `scratch` false: it did not look at the scratch dir. */
+  function recordRemoved(jobId: string, m: MachineSnapshot, said: Reaped, scratch = true): void {
+    // Its resource ledger (issue #2504) closed as the reap said.
+    closeLedger(c.store, jobId, said, c.clock.now().toISOString(), scratch); if (!said.removed) return;
     const { containers, volumes } = said.removed;
     log(`hopper: removed ${count(containers.length, 'container')} and ${count(volumes.length, 'volume')} of job ${jobId} on ${m.id}`);
     c.store.events.append({ type: 'job.containers_removed', jobId, machineId: m.id, data: said.removed });
@@ -214,15 +204,15 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** The machine's measure kept, and a person told when it goes over the budget or back within it. */
   function measure(m: MachineSnapshot, found: Survey, budget: DiskBudget | undefined): void {
     const at = c.clock.now().toISOString();
-    const disk = hopperDiskOf(found.usage, at, budget);
-    if (!disk) return;
-    measured.set(m.id, { paths: disk.paths, at });
-    if (!budget) { told.delete(m.id); return; }
-    if (disk.over && !told.has(m.id)) {
-      told.add(m.id);
+    const more = { caches: found.caches, storage: found.storage }, disk = hopperDiskOf(found.usage, at, budget, more);
+    if (!disk) return; const last: DiskMeasure = { at, paths: disk.paths, ...(found.caches?.length ? { caches: found.caches } : {}), ...(found.storage?.length ? { storage: found.storage } : {}) };
+    measured().set(m.id, last); c.store.diskMeasures.keep(m.id, last);
+    if (!budget) { told().delete(m.id); return; }
+    if (disk.over && !told().has(m.id)) {
+      told().add(m.id);
       log(`hopper: the hopper's own disk use on ${m.id} is ${gb(disk.bytes)}, still over its disk budget of ${gb(budget.bytes)}`);
       c.store.events.append({ type: 'machine.disk_over_budget', machineId: m.id, data: { machineId: m.id, usedBytes: disk.bytes, budgetBytes: budget.bytes, paths: disk.paths } });
-    } else if (!disk.over && told.delete(m.id)) {
+    } else if (!disk.over && told().delete(m.id)) {
       c.store.events.append({ type: 'machine.disk_within_budget', machineId: m.id, data: { machineId: m.id, usedBytes: disk.bytes, budgetBytes: budget.bytes } });
     }
   }
@@ -269,24 +259,26 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       if (machineRanOn(job) === m.id && await removeDiscard(job.id, m, shell)) discarded.add(job.id);
     }
     const kept = new Set(keptWork.filter((k) => !discarded.has(k.jobId)).map((k) => k.jobId));
-    const found = await shell.survey(roots);
+    // The resource ledger reconciled (issue #2504 parts 3, 6): entries whose thing is gone closed, also kept work's; what it does not name recorded.
+    const found = await shell.survey(roots), at = c.clock.now().toISOString(); reconcileLedger(c.store, m, found, jobOf, at);
     for (const g of goneKept(found, keptWork.filter((k) => kept.has(k.jobId)), jobOf, m.id)) {
       if (c.stopping()) return;
       log(`hopper: job ${g.jobId}'s kept work is gone from ${m.id}: its scratch dir ${g.scratch} is no longer there`);
-      c.store.events.append({ type: 'job.work_removed', jobId: g.jobId, data: { paths: [g.scratch], gone: true } });
+      c.store.events.append({ type: 'job.work_removed', jobId: g.jobId, data: { paths: [g.scratch], gone: true } }); closeLedger(c.store, g.jobId, { kept: [] }, at);
     }
     const budget = budgetNow();
     const pressed = hopperDiskOf(found.usage, '', budget);
     if (m.disk?.low) log(`hopper: disk low on ${m.id} (${gb(m.disk!.freeBytes)} free): the sweep reaps every ended job's scratch dir now, whatever its age`);
     else if (pressed?.over) log(`hopper: the hopper's own disk use on ${m.id} is ${gb(pressed.bytes)}, over its disk budget of ${gb(budget!.bytes)}: the sweep reaps every ended job's scratch dir now, whatever its age`);
     const running = new Set([...found.scopes, ...found.processes]);
-    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, m.disk?.low || pressed?.over ? 0 : maxAgeMs(m)), jobOf, kept, running);
+    const now = c.clock.now().getTime(), over = (job: Job, ageMs: number): boolean => m.disk?.low === true || pressed?.over === true || retentionOver(m.sweep, job, ageMs, now);
+    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, over), jobOf, kept, running);
     if (c.stopping()) return;
-    // What the reaps freed, measured again; a survey that fails then keeps the first measure.
-    const after = pressed?.over && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
+    // What the reaps freed, measured again (for the budget, or the trim); a survey that fails then keeps the first measure.
+    const after = (pressed?.over || m.sweep?.trimAboveGiB) && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
     measure(m, after, budget);
     if (c.stopping()) return;
-    await leftovers.list(m, shell, found.roots ?? [], jobOf);
+    await leftovers.list(m, shell, found.roots ?? [], jobOf); if (!c.stopping()) await trim.pass(m, shell, freedBetween(found, after) + await prune.pass(m, shell, found));
   }
 
   /** The reaps of one pass on the machine; how many scratch dirs they removed. */
@@ -309,7 +301,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         log(`hopper: the sweep could not reap job ${r.jobId} on ${m.id}: ${(e as Error).message}`);
         continue;
       }
-      recordRemoved(r.jobId, m, said);
+      recordRemoved(r.jobId, m, said, r.scratch !== undefined);
       // A dir the reap could not remove is still there (issue #1452): never said removed, and told once while it stays.
       if (said.left?.length) {
         if (!stuck.has(where)) log(`hopper: the sweep could not remove job ${r.jobId}'s scratch dir on ${m.id}: ${said.left.join(', ')} is still there`);
@@ -356,8 +348,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
 
   return {
     disk(machineId) {
-      const m = measured.get(machineId);
-      return m ? hopperDiskOf(m.paths, m.at, budgetNow()) : undefined;
+      const m = measured().get(machineId);
+      return m ? hopperDiskOf(m.paths, m.at, budgetNow(), m) : undefined;
     },
     leftovers: (machineId) => leftovers.view(machineId),
     decideLeftover: (machineId, path, decision, by) => leftovers.decide(machineId, path, decision, by),
@@ -411,7 +403,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
           schedule.swept(m, now);
           const shell = shellOf(m);
           if (!shell) continue;
-          await sweepOne(m, shell, roots, jobOf, kept, discards).catch((e: unknown) => log(`hopper: the sweep could not survey ${m.id}: ${(e as Error).message}`));
+          await sweepOne(m, shell, sweptRoots(c.store, m.id, roots), jobOf, kept, discards).catch((e: unknown) => log(`hopper: the sweep could not survey ${m.id}: ${(e as Error).message}`));
         }
       } catch (e) {
         log(`hopper: the sweep failed: ${(e as Error).message}`);

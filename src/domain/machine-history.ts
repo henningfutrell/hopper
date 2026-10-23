@@ -10,6 +10,12 @@ export interface ResourceReading {
   cores: number;
   /** Share of CPU time busy since the read before, 0..1. Absent: its first read. */
   cpuBusyFrac?: number;
+  /**
+   * Issue #2499: its **CPU throttle**, the share of CPU periods a CPU quota (`cpu.max`) of its own cgroup or one above it
+   * throttled since the read before (`cpu.stat` `nr_throttled` of `nr_periods`), 0..1, the most of them. Absent: no quota,
+   * its first read (an ssh target, Windows, macOS, an older client).
+   */
+  cpuThrottledFrac?: number;
   /** Load averages over 1, 5 and 15 minutes. Absent: Windows, which has none. */
   load?: [number, number, number];
   memTotalBytes: number;
@@ -32,7 +38,44 @@ export interface ResourceReading {
   node?: string;
   /** The patched floor (src/client/node-floor.ts) its Node is below: the Machines page warns. Absent: patched, or not said. */
   nodeFloor?: string;
+  /**
+   * Issue #2499: each job scope's memory in use, by job id (`hopper-job-<id>.scope`). A job with no lane in use there (on its
+   * own wait, parked, queued to resume) still holds it: its **waiting memory**. Absent: none read (no systemd, an ssh target, an older client).
+   */
+  jobMemoryBytes?: Record<string, number>;
+  /** Issue #2498: what each job scope used so far, by job id, and its CPU cores busy now. Absent: none read, as above. */
+  jobUse?: Record<string, JobUseNow>;
+  /**
+   * Issue #2499: its kernel's boot id (`/proc/sys/kernel/random/boot_id`). Machines whose readings name one are on one host:
+   * a **host pool**. Absent: not read (Windows, macOS, an older client).
+   */
+  bootId?: string;
+  /** Issue #2499: under a cgroup limit (`container`), the kernel's own memory, total and available, as /proc/meminfo says. */
+  kernelMemTotalBytes?: number;
+  kernelMemAvailableBytes?: number;
+  /**
+   * Issue #2499: its **memory pressure** (PSI), as `memory.pressure` of the limited cgroup or `/proc/pressure/memory` says
+   * it: the share of the last 10 s, in percent, that some task (`someAvg10`) or every task (`fullAvg10`) waited on memory.
+   * Absent: not read (no PSI, Windows, macOS, an older client).
+   */
+  memPressure?: MemoryPressure;
+  /**
+   * Issue #2499: when its meter last saw a process killed for memory (an **OOM kill**): the count `oom_kill` of the limited
+   * cgroup's `memory.events`, else of `/proc/vmstat`, grew since the read before. Absent: not seen (none since the meter
+   * started, an ssh target, Windows, macOS, an older client).
+   */
+  memOomKillAt?: string;
 }
+
+/** A memory pressure reading (issue #2499): the share of the last 10 s, 0..100, that some task and every task waited on memory. */
+export interface MemoryPressure { someAvg10: number; fullAvg10: number }
+
+/**
+ * What a running job's scope used so far (issue #2498), as its machine's meter read it: its peak memory (cgroup
+ * `memory.peak`), its CPU time (`cpu.stat` `usage_usec`), the OOM kills in it (`memory.events` `oom_kill`), and its CPU
+ * cores busy since the read before; each absent where its cgroup has none, or at its first read for the cores.
+ */
+export interface JobUseNow { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; cpuCores?: number }
 
 /**
  * The Windows link (issue #712): what a client in WSL found when Windows, through PowerShell, opened the hopper's address
@@ -72,15 +115,21 @@ export interface MachineSample {
   vmHeldBytes?: number;
   hostMemFreeBytes?: number;
   hostMemTotalBytes?: number;
+  /** Issue #2499: the memory its job scopes hold for jobs with no lane in use there (waiting memory); absent, none read. */
+  waitingMemBytes?: number;
+  /** Issue #2499: its memory pressure (`memPressure.someAvg10`) as a share, 0..1, and its CPU throttle; absent, not read. */
+  memPressureFrac?: number;
+  cpuThrottledFrac?: number;
   lanesBusy: number;
   lanesMax: number;
 }
 
 /**
  * What the resource graph draws per machine: each a share, 0..1. A WSL machine (issue #868) adds memory held (the memory
- * its VM holds, of its memory total) and host memory (Windows' memory used).
+ * its VM holds, of its memory total) and host memory (Windows' memory used); a machine with PSI or a CPU quota (issue
+ * #2499) its memory pressure and its CPU throttle.
  */
-export const MACHINE_RESOURCES = ['cpu', 'memory', 'held', 'host', 'swap', 'disk', 'lanes'] as const;
+export const MACHINE_RESOURCES = ['cpu', 'memory', 'held', 'host', 'swap', 'disk', 'lanes', 'pressure', 'throttle'] as const;
 export type MachineResource = typeof MACHINE_RESOURCES[number];
 
 /** One line of the resource graph: one machine's resource, per graph step its peak share; the gaps where the machine gave no sample. */

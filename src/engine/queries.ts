@@ -1,5 +1,7 @@
 // Read models for the HTTP edge.
 import { credentialHeld } from '../domain/machine-credentials.ts';
+import { cleanupLeftoversOf, machineLeftoversOf, type MachineCleanupLeftovers } from '../domain/resource-ledger.ts';
+import { liveUseOf, type LiveUse } from '../domain/job-resources.ts';
 import { isLocked } from '../domain/locked.ts';
 import type { InFlight, WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
@@ -50,12 +52,15 @@ export const ENDED_WINDOW_MS = 24 * 3_600_000;
 /**
  * `hopperDisk`: the hopper's own disk use there, as the sweep last measured it (issue #1120); absent, never measured.
  * `leftovers`: the leftovers there the sweep does not judge, for a person to keep or remove (issue #1116); absent, none listed.
+ * `cleanupLeftovers`: the cleanup leftovers there (issue #2504 part 3), counted; absent, none.
  */
-export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers };
+export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; cleanupLeftovers?: MachineCleanupLeftovers };
 
 export interface Queries {
   getQueue(): QueueView;
   getMachines(): Promise<MachineView[]>;
+  /** What a job's scope uses now (issue #2498), on each machine whose last reading has it. */
+  getLiveUse(jobId: string): Promise<LiveUse[]>;
   getUsage(): Promise<UsageReading[]>;
   /** Every reading, every usage source's state, the limits, and the lane effect per machine (the decider's steps 1-2). */
   getUsageReport(): Promise<UsageReport>;
@@ -104,14 +109,18 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
       const lanes = c.store.lanes.list();
       const acceptanceMap = new Map(c.store.credentialAcceptances.list().map((a) => [a.machineKey, a]));
       const { strict } = c.store.credentialAcceptances.settings();
+      const ended = cleanupLeftoversOf(c.store.resourceLedger.open(), (id) => c.store.jobs.get(id), c.clock.now().getTime());
       return machines.map((m) => {
         const hopperDisk = diskOf(m.id);
-        const leftovers = leftoversOf(m.id);
+        const leftovers = leftoversOf(m.id), cleanupLeftovers = machineLeftoversOf(ended, m.id);
         const acceptance = acceptanceMap.get(m.id);
         // Issue #1467: the decider's own rule, so the card never says other than what it does.
         const held = credentialHeld(m.infraCredentials, acceptance, strict);
-        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}), ...(leftovers ? { leftovers } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}), ...(held ? { credentialHeld: true } : {}) };
+        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}), ...(leftovers ? { leftovers } : {}), ...(cleanupLeftovers ? { cleanupLeftovers } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}), ...(held ? { credentialHeld: true } : {}) };
       });
+    },
+    async getLiveUse(jobId) {
+      return liveUseOf(await c.machines.list(), jobId);
     },
     getUsage,
     getUsageSources,

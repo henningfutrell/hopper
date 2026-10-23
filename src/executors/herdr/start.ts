@@ -90,6 +90,8 @@ export interface PaneState {
   jobWorktree?: string;
   /** The checkout of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #1103). */
   checkout?: string;
+  /** The job's own container runtime's dir in its scratch dir (issue #1295), when it got one: its resource ledger names it (issue #2504). */
+  containerRuntime?: string;
   /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
   scope?: string;
   /** The job worktree's node_modules links to dependencies shared with the repository's other jobs (issue #410). */
@@ -281,7 +283,7 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
  * done, else the failure (the shell never answered: the pane is gone or hung).
  */
 async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<StartTimedOut | null> {
-  await d.herdr.runInPane(s.paneId, enterScopeCommand(ctx.job.id));
+  await d.herdr.runInPane(s.paneId, enterScopeCommand(ctx.job.id, ctx.machine.jobLimits));
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
     if (await d.herdr.waitOutput(s.paneId, SCOPE_MARK, SCRATCH_WAIT_MS)) {

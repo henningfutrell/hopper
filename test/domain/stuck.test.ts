@@ -22,7 +22,7 @@ const kept = (jobId: string, push: Allowed, handoffId?: string): KeptWorkView =>
 const card = (jobId: string, over: Partial<PullRequestCard>): PullRequestCard => ({ jobId, repo: 'o/r', state: 'open', ...over }) as PullRequestCard;
 const job = (id: string, over: Partial<Job>): Job => ({ id, status: 'parked', ...over }) as Job;
 
-const empty = { handoffs: [], recent: [], keptWork: [], pullRequests: [], jobs: [], prOpen: [] };
+const empty = { handoffs: [], recent: [], keptWork: [], pullRequests: [], jobs: [], prOpen: [], leftovers: [] };
 
 describe('stuck work by cause (issue #1010)', () => {
   it('nothing stuck: no cause', () => {
@@ -135,5 +135,12 @@ describe('stuck work by cause (issue #1010)', () => {
   it('the bulk causes come first', () => {
     const causes = stuckOf({ ...empty, jobs: [job('j1', { status: 'waiting_on', wait: { for: 'x', since: 's', ownCommand: true, stuckAt: 't' } })], recent: [record('r1', OK)] });
     expect(causes.map((c) => c.cause)).toEqual(['retry', 'own_wait']);
+  });
+
+  it('lists ended jobs whose cleanup left something, with what a person does (issue #2504)', () => {
+    const causes = stuckOf({ ...empty, leftovers: ['j1', 'j2'] });
+    expect(causes.map((c) => [c.cause, c.ids])).toEqual([['cleanup_leftover', ['j1', 'j2']]]);
+    expect(causes[0]).toMatchObject({ what: 'Ended jobs whose cleanup left something on a machine' });
+    expect(causes[0]?.act).toBeUndefined();
   });
 });

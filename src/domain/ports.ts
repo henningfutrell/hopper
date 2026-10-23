@@ -232,8 +232,10 @@ export interface Executor extends ExecutorTerminal {
    * Answers what the reap kept, when it ran. Idempotent. Rejects only when it could not reach where
    * the job's work lives (its machine not dialled in or not answering), so that work may still run:
    * the engine defers the cleanup and tries it again until it goes through (issue #371).
+   * `keepScratch` (issue #2494): the reap keeps the scratch dir, as a timed-out job's: a retention is set for the status
+   * the job ended in on its machine, and the sweep removes it once that is over.
    */
-  cleanup?(job: Job): Promise<Reaped | void>;
+  cleanup?(job: Job, o?: { keepScratch?: boolean }): Promise<Reaped | void>;
   /**
    * The machine as this executor reaches it, for the sweep (issue #410); undefined when it cannot reach
    * that machine. Absent → the sweep reaches no machine through it.

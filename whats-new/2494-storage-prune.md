@@ -1,0 +1,1 @@
+- A machine can now remove old stopped containers, unused images and leftover anonymous volumes by itself once a day. Turn it on for a machine and choose how many days old they must be.

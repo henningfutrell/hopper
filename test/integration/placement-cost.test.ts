@@ -20,7 +20,10 @@ const GIB = 1024 ** 3;
 const MIN = 60_000;
 const res = (availGib: number): ResourceReading => ({ cores: 8, cpuBusyFrac: 0.1, load: [1, 1, 1], memTotalBytes: 16 * GIB, memAvailableBytes: availGib * GIB });
 
-/** Two ssh machines with equal lanes: `desk` (12 GiB of 16 in use, above its memory floor) and `laptop` (4 GiB in use). A `where` executor says where it ran. */
+/**
+ * Two ssh machines with equal lanes: `desk` (12 GiB of 16 in use) and `laptop` (4 GiB in use). A `where` executor says
+ * where it ran. Their memory floor is off, so no memory room (issue #2499) prefers `laptop`: only the expected cost does.
+ */
 async function boot(): Promise<TestApp> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
@@ -35,7 +38,7 @@ async function boot(): Promise<TestApp> {
   writePlugins(db.dbPath, {
     version: 1,
     executors: [{ name: 'where', plugin: 'where' }],
-    machines: ['desk', 'laptop'].map((name) => ({ name, plugin: 'ssh', options: { ssh: name, lanes: 2, executors: ['where'] } })),
+    machines: ['desk', 'laptop'].map((name) => ({ name, plugin: 'ssh', options: { ssh: name, lanes: 2, executors: ['where'], memoryFloorGiB: 0 } })),
   });
   const probe = (name: string): MachineProbe => ({
     online: true, home: '/home/far', disk: { freeBytes: 50 * GIB, totalBytes: 100 * GIB, low: false }, resources: res(name === 'desk' ? 4 : 12),

@@ -239,11 +239,14 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       const notes = ctx.notes?.take('resume');
       return turn(ctx, s.cwd, notes ? `${answer}\n\n${notes}` : answer, s.chatId);
     },
-    /** The reap (issue #410): the job's scope and processes stopped, its scratch dir removed unless it holds work not pushed. */
-    async cleanup(job) {
+    /**
+     * The reap (issue #410): the job's scope and processes stopped, its scratch dir removed unless it holds work not pushed,
+     * or kept for the retention of its status (issue #2494).
+     */
+    async cleanup(job, o) {
       const s = job.executorState as Partial<PrintAgentState> | undefined;
       if (!s?.cwd) return undefined;
-      return shellOn(s).reap(job.id, jobScratchOf(s.cwd, job.id));
+      return shellOn(s).reap(job.id, jobScratchOf(s.cwd, job.id), o?.keepScratch === true);
     },
     machineShell: (machine: MachineSnapshot) => (machine.containerImage ? undefined : shellOn(machine.client ? { client: machine.id } : { ssh: machine.ssh })),
   };

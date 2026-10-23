@@ -1,0 +1,1 @@
+- A machine can now give the space the hopper cleaned up back to its disk, when the disk is thin, such as a cloud volume or a WSL disk. Turn it on for a machine and choose how much must be freed first.

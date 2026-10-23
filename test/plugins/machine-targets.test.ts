@@ -43,6 +43,8 @@ describe('disk thresholds (issue #410)', () => {
       const props = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === id)!).properties as Record<string, unknown>;
       expect(props).toHaveProperty('diskLowBelowGiB');
       expect(props).toHaveProperty('diskLowBelowPercent');
+      expect(props).toHaveProperty('diskCriticalBelowGiB');
+      expect(props).toHaveProperty('diskCriticalBelowPercent');
     }
     const container = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === 'container')!).properties as Record<string, unknown>;
     expect(container).not.toHaveProperty('diskLowBelowGiB');
@@ -52,6 +54,9 @@ describe('disk thresholds (issue #410)', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', diskLowBelowGiB: 20, diskLowBelowPercent: 15 } }))
       .toMatchObject({ diskLow: { belowGiB: 20, belowPercent: 15 } });
     expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY } })).not.toHaveProperty('diskLow');
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', diskCriticalBelowGiB: 3, diskCriticalBelowPercent: 4 } }))
+      .toMatchObject({ diskLow: { criticalBelowGiB: 3, criticalBelowPercent: 4 } });
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', diskCriticalBelowPercent: 101 } }))).not.toBe('accepted');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', diskLowBelowPercent: 120 } }))).not.toBe('accepted');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', diskLowBelowGiB: 0 } }))).not.toBe('accepted');
   });
@@ -75,6 +80,16 @@ describe('sweep settings (issue #410)', () => {
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reapEveryMinutes: 0 } }))).not.toBe('accepted');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reapEveryMinutes: 1.5 } }))).not.toBe('accepted');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', scratchMaxAgeHours: 0 } }))).not.toBe('accepted');
+  });
+
+  it('the retention per job status (issue #2494) rides on the sweep settings; 0 is allowed, a negative is refused', () => {
+    for (const id of ['local', 'ssh', 'client']) {
+      const props = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === id)!).properties as Record<string, unknown>;
+      for (const k of ['retainFinishedHours', 'retainFailedHours', 'retainCancelledHours', 'retainRejectedHours']) expect(props).toHaveProperty(k);
+    }
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', retainFailedHours: 48, retainFinishedHours: 0 } }))
+      .toMatchObject({ sweep: { retainHours: { failed: 48, finished: 0 } } });
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', retainCancelledHours: -1 } }))).not.toBe('accepted');
   });
 });
 

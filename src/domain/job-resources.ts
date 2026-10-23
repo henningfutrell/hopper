@@ -1,6 +1,8 @@
 // What a job used in its parts list (issue #2498, design.md "A job's parts list" → "Resources used"): its scope's peak
-// memory, CPU time and OOM kills, as each reap read them (`job.resources_used`), beside job-bom.ts for its size. Pure.
+// memory, CPU time and OOM kills, as each reap read them (`job.resources_used`), beside job-bom.ts for its size; and while
+// it runs (part 3), what its scope uses now, as its machine's meter last read it (`jobMemoryBytes`, `jobUse`). Pure.
 import type { BomPart } from './job-bom.ts';
+import type { JobUseNow, ResourceReading } from './machine-history.ts';
 import type { ResourceUse } from './machine-shell.ts';
 import type { DomainEvent } from './types.ts';
 
@@ -32,4 +34,31 @@ export function resourcesUsed(events: readonly DomainEvent[]): BomPart[] {
   const detail = [ooms.length && kills > 0 ? `${kills} OOM kill${kills === 1 ? '' : 's'}` : undefined, machines.length ? `on ${machines.join(' and ')}` : undefined].filter(Boolean).join(', ');
   const at = read.map((e) => e.at).sort().at(-1);
   return [{ id: 'resources', group: 'machines', kind: 'resources', label, status: 'recorded', ...(at ? { at } : {}), ...(detail ? { detail } : {}), href: '#machines' }];
+}
+
+/** What a job's scope uses now on one machine (part 3): its memory in use, and what it used so far. */
+export interface LiveUse { machineId: string; memoryBytes?: number; use?: JobUseNow }
+
+/** Each machine whose last reading has the job's scope: what it uses there now. */
+export function liveUseOf(machines: readonly { id: string; resources?: ResourceReading }[], jobId: string): LiveUse[] {
+  return machines.flatMap((m) => {
+    const memory = m.resources?.jobMemoryBytes?.[jobId], use = m.resources?.jobUse?.[jobId];
+    return memory !== undefined || use ? [{ machineId: m.id, ...(memory !== undefined ? { memoryBytes: memory } : {}), ...(use ? { use } : {}) }] : [];
+  });
+}
+
+const coresText = (cores: number): string => `${Math.round(cores * 10) / 10} core${Math.round(cores * 10) === 10 ? '' : 's'}`;
+
+/** One part for each machine where the job's scope runs now: its memory now and peak, its CPU cores busy, so far. */
+export function resourcesNow(live: readonly LiveUse[], now: string): BomPart[] {
+  return live.map((l) => {
+    const u = l.use ?? {};
+    const label = [
+      l.memoryBytes !== undefined ? `Memory ${memoryText(l.memoryBytes)} now` : undefined, u.memoryPeakBytes !== undefined ? `peak ${memoryText(u.memoryPeakBytes)}` : undefined,
+      u.cpuCores !== undefined ? `CPU ${coresText(u.cpuCores)}` : undefined,
+    ].filter(Boolean).join(', ') || 'Resources in use';
+    const kills = u.oomKills ?? 0;
+    const detail = [u.cpuSeconds !== undefined ? `CPU ${cpuText(u.cpuSeconds)} so far` : undefined, kills > 0 ? `${kills} OOM kill${kills === 1 ? '' : 's'}` : undefined, `on ${l.machineId}`].filter(Boolean).join(', ');
+    return { id: `resources-now:${l.machineId}`, group: 'machines', kind: 'resources', label, status: 'running', at: now, detail, href: '#machines' };
+  });
 }

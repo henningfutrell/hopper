@@ -2,8 +2,11 @@
 // from it) for its size.
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { CheckpointCapture } from './checkpoints.ts';
+import type { ContainerStorage, SurveyedCache } from './hopper-disk.ts';
 import type { Leftover } from './leftovers.ts';
 import type { KeptReason } from './kept-work.ts';
+import type { ExitedContainer, Pruned } from './storage-prune.ts';
+import type { Trimmed } from './disk-trim.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
@@ -56,6 +59,12 @@ export interface Survey {
   usage?: { path: string; bytes: number }[];
   /** Jobs with a container or a volume labelled with their id there (issue #1120); absent (a client older than this), none known. */
   containers?: string[];
+  /** Each cache place in the home there (issue #2494); absent or empty: not measured (a client older than this, no `timeout`). */
+  caches?: SurveyedCache[];
+  /** Each container runtime's storage there by kind (issue #2494); absent or empty: no runtime answered, or not measured. */
+  storage?: ContainerStorage[];
+  /** Each exited container of each container runtime there (issue #2494), for the storage prune; absent, none (or a client older than this). */
+  exited?: ExitedContainer[];
 }
 
 /**
@@ -102,4 +111,12 @@ export interface MachineShell {
    * `left` when it is still there. Absent: the shell removes none.
    */
   removeLeftover?(path: string): Promise<'removed' | 'gone' | 'left'>;
+  /**
+   * The storage prune (issue #2494): removes `containers` (`<runtime>:<id>`, exited ones the hopper chose) while they are still
+   * exited and carry no label it keeps, each anonymous volume no container uses, and each image no container uses built more
+   * than `days` ago but the hopper's own; never forced. Says what it removed. Absent: the shell prunes nothing.
+   */
+  prune?(days: number, containers: string[]): Promise<Pruned>;
+  /** The trim (issue #2494): fstrim on the filesystem the machine's home is on; says how it ended. Absent: the shell trims nothing. */
+  trim?(): Promise<Trimmed>;
 }

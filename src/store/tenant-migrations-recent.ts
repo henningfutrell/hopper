@@ -33,7 +33,9 @@ import { containerTargets } from './migration-container-target.ts';
 import { SKILL_LIBRARY_TABLE } from './skill-library.ts';
 import { originPendingOffered, originPendingStarted } from './migration-origin-pending.ts';
 import { INTAKE_ARRIVAL_TABLE } from './intake-arrivals.ts'; import { INFRA_PLAN_REJECTION_TABLE } from './infra-plans.ts'; import { TOKEN_LEDGER_FAILED_TESTS_COLUMN, TOKEN_LEDGER_TABLE } from './token-ledger.ts';
+import { RESOURCE_LEDGER_TABLE } from './resource-ledger.ts';
 import { observeTemplatesChecked } from './migration-observe-checked.ts';
+import { DISK_MEASURE_TABLE } from './disk-measures.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -171,4 +173,20 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 91: A person's rejection of an infra plan (issue #2368): a row of its own, as an approval is. A table only: the build
   // before runs on it, and never reads it.
   INFRA_PLAN_REJECTION_TABLE,
+  // 92: The resource ledger (issue #2504): each thing the hopper made for a job on a machine, and where it stands. A table
+  // only: the build before runs on it, and never reads it.
+  RESOURCE_LEDGER_TABLE,
+  // 93: The memory a machine's job scopes hold for jobs with no lane in use there (issue #2499), in each machine sample. A
+  // column with no default: the build before runs on it, and names its columns when it writes.
+  'ALTER TABLE machine_samples ADD COLUMN waiting_mem DOUBLE PRECISION',
+  // 94: Each machine's last disk measure (issue #2494), so a restart still shows it. A table only: the build before runs on
+  // it, and never reads it.
+  DISK_MEASURE_TABLE,
+  // 95: Until when the reap at a job's end kept a resource ledger entry for a retention (issue #2504 part 5). A column with
+  // no default: the build before runs on it, and names its columns when it writes.
+  'ALTER TABLE job_resource_ledger ADD COLUMN retained_until TEXT',
+  // 96: Each machine sample's memory pressure and CPU throttle (issue #2499). Columns with no default: the build before runs
+  // on it, and names its columns when it writes.
+  `ALTER TABLE machine_samples ADD COLUMN mem_pressure DOUBLE PRECISION;
+   ALTER TABLE machine_samples ADD COLUMN cpu_throttled DOUBLE PRECISION`,
 ];

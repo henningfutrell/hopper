@@ -24,8 +24,8 @@ const GIB = 1024 ** 3;
 const MIN = 60_000;
 const RES: ResourceReading = { cores: 8, cpuBusyFrac: 0.1, load: [1, 1, 1], memTotalBytes: 16 * GIB, memAvailableBytes: 12 * GIB };
 
-/** One attached machine `laptop` with 2 lanes, online, its probe reading RES. */
-async function boot(): Promise<TestApp> {
+/** One attached machine `laptop` with 2 lanes, online, its probe reading `resources`. */
+async function boot(resources: ResourceReading = RES): Promise<TestApp> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   writePlugins(db.dbPath, {
@@ -33,7 +33,7 @@ async function boot(): Promise<TestApp> {
     executors: [{ name: 'test', plugin: 'test' }],
     machines: [{ name: 'laptop', plugin: 'ssh', options: { label: 'arch-laptop', ssh: 'laptop', lanes: 2, executors: ['test'] } }],
   });
-  const probe: MachineProbe = { online: true, home: '/home/far', disk: { freeBytes: 50 * GIB, totalBytes: 100 * GIB, low: false }, resources: RES };
+  const probe: MachineProbe = { online: true, home: '/home/far', disk: { freeBytes: 50 * GIB, totalBytes: 100 * GIB, low: false }, resources };
   const a = await startTestApp({ dbPath: db.dbPath, seams: { machineProbe: () => Promise.resolve(probe) } });
   apps.push(a);
   await waitFor(async () => ((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === 'laptop' && m.online));
@@ -113,6 +113,16 @@ describe('lane tuning', () => {
     expect(await laptop(a)).toMatchObject({
       configured: 2, lanes: 1, headroom: 1, confidence: 0.33, apply: { to: 1 },
       reason: 'slow progress at 2 lanes in use (4 of 4 runs failed; 0 of 4 at fewer lanes): 1 lane runs without it',
+    });
+  });
+
+  it('recommends no more lanes than the machine\'s memory holds (issue #2499)', async () => {
+    const a = await boot({ ...RES, memTotalBytes: 8 * GIB, memAvailableBytes: 6 * GIB });
+    seed(a);
+    expect(await laptop(a)).toMatchObject({
+      configured: 2, lanes: 3, headroom: 4, apply: { to: 3 },
+      reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more; '
+        + 'its memory holds 3 jobs: 8 GiB less its floor of 1 GiB, at 2 GiB a job: no more than 3 lanes',
     });
   });
 

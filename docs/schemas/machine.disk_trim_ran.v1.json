@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "freedBytes": {
+      "type": "number"
+    },
+    "mount": {
+      "type": "string"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "trimmed",
+        "refused",
+        "unsupported",
+        "failed"
+      ]
+    },
+    "trimmedBytes": {
+      "type": "number"
+    },
+    "said": {
+      "type": "string"
+    },
+    "hostCompaction": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "machineId",
+    "freedBytes",
+    "mount",
+    "outcome"
+  ],
+  "additionalProperties": false
+}

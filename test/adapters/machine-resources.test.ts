@@ -37,6 +37,52 @@ describe('resources an ssh target prints', () => {
     expect(readResources(printed.replace('hopper-res 8', `hopper-res MemFree:        ${1 * GIB / KIB} kB\nhopper-res 8`))).not.toHaveProperty('vmHeldBytes');
   });
 
+  it('its kernel\'s boot id (issue #2499), so machines on one host are one pool', () => {
+    expect(readResources(printed.replace('hopper-res 8', 'hopper-res boot 0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b\nhopper-res 8'))).toMatchObject({ bootId: '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b' });
+  });
+
+  it('its memory pressure (issue #2499 part 5), the share of the last 10 s a task waited on memory', () => {
+    const psi = 'hopper-res some avg10=33.10 avg60=20.00 avg300=5.00 total=1\nhopper-res full avg10=4.00 avg60=1.00 avg300=0.00 total=1\nhopper-res 8';
+    expect(readResources(printed.replace('hopper-res 8', psi))).toMatchObject({ memPressure: { someAvg10: 33.1, fullAvg10: 4 } });
+    expect(readResources(printed)).not.toHaveProperty('memPressure');
+  });
+
+  it('its tightest cgroup memory limit on its path (issue #2499 part 10): the limit is its total, the kernel\'s memory kept apart', () => {
+    // A seat's container (its cgroup namespace root) limits 4 GiB; a slice above its session limits 6 GiB; "max" is no limit.
+    const cg = [
+      `hopper-res cg / ${4 * GIB} ${3 * GIB} ${GIB / 2}`,
+      `hopper-res cg /user.slice ${6 * GIB} ${2 * GIB} 0`,
+      'hopper-res cg /user.slice/user-1000.slice/session-3.scope max 1000 0',
+      'hopper-res 8',
+    ].join('\n');
+    expect(readResources(printed.replace('hopper-res 8', cg))).toEqual({
+      cores: 8, cpuBusyFrac: 300 / 800, load: [0.52, 0.61, 0.7],
+      memTotalBytes: 4 * GIB, memAvailableBytes: 1.5 * GIB, container: true,
+      kernelMemTotalBytes: 16 * GIB, kernelMemAvailableBytes: 10 * GIB,
+    });
+  });
+
+  it('under a cgroup limit, that cgroup\'s memory pressure, not the kernel\'s (issue #2499 part 10)', () => {
+    const cg = [
+      `hopper-res cg /seat ${4 * GIB} ${GIB}`,
+      'hopper-res cgp /seat some avg10=41.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res cgp /seat full avg10=9.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res cgp /other some avg10=99.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res cgp /other full avg10=99.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res some avg10=2.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res full avg10=0.00 avg60=0.00 avg300=0.00 total=1',
+      'hopper-res 8',
+    ].join('\n');
+    expect(readResources(printed.replace('hopper-res 8', cg))).toMatchObject({ memTotalBytes: 4 * GIB, memAvailableBytes: 3 * GIB, memPressure: { someAvg10: 41, fullAvg10: 9 } });
+  });
+
+  it('a cgroup line that is not whole, or a limit over the kernel\'s memory, is no limit (issue #2499 part 10)', () => {
+    const bad = ['hopper-res cg /a 1234', `hopper-res cg /b ${4 * GIB} x`, `hopper-res cg /c ${32 * GIB} ${GIB}`, 'hopper-res 8'].join('\n');
+    const r = readResources(printed.replace('hopper-res 8', bad))!;
+    expect(r.memTotalBytes).toBe(16 * GIB);
+    expect(r).not.toHaveProperty('container');
+  });
+
   it('no resource lines (a machine with no /proc): none', () => {
     expect(readResources('/home/far\nhopper-disk 1 1\nhopper-work-tree-ok')).toBeUndefined();
   });
@@ -58,8 +104,48 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, memTotalBytes: 'x' })).toBeUndefined();
     expect(resourcesOf({ ...r, cores: 0 })).toBeUndefined();
     expect(resourcesOf({ ...r, memAvailableBytes: 9 * GIB })).toBeUndefined();
+    // Issue #2499: its kernel's boot id and memory are kept when sane, else dropped.
+    const kernel = { bootId: 'b0a1-c2d3', kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: 3 * GIB };
+    expect(resourcesOf({ ...r, ...kernel })).toEqual({ ...r, ...kernel });
+    expect(resourcesOf({ ...r, bootId: 'x'.repeat(65), kernelMemTotalBytes: 1, kernelMemAvailableBytes: 2 })).toEqual(r);
     // A CPU busy outside 0..1 or a bad load is dropped, the rest kept.
     expect(resourcesOf({ ...r, cpuBusyFrac: 2, load: ['a'] })).toEqual({ cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB });
+  });
+
+  it('a client\'s job scope memory (issue #2499): kept per job id when sane, the rest dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, jobMemoryBytes: { j1: GIB, 'a-b_2': 2 } })).toEqual({ ...r, jobMemoryBytes: { j1: GIB, 'a-b_2': 2 } });
+    expect(resourcesOf({ ...r, jobMemoryBytes: { j1: -1, 'x y': 1, j2: 'a' } })).toEqual(r);
+    expect(resourcesOf({ ...r, jobMemoryBytes: [1] })).toEqual(r);
+  });
+
+  it('a client\'s memory pressure (issue #2499 part 5): kept when both shares are 0..100, else dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3 } })).toEqual({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3 } });
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 101, fullAvg10: 3 } })).toEqual(r);
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 2 } })).toEqual(r);
+  });
+
+  it('a client\'s CPU throttle (issue #2499 part 9): kept when it is a share 0..1, else dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, cpuThrottledFrac: 0.62 })).toEqual({ ...r, cpuThrottledFrac: 0.62 });
+    expect(resourcesOf({ ...r, cpuThrottledFrac: 1.2 })).toEqual(r);
+    expect(resourcesOf({ ...r, cpuThrottledFrac: 'a' })).toEqual(r);
+  });
+
+  it('a client\'s last process killed for memory (issue #2499 part 7): kept when it reads as a time, else dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, memOomKillAt: '2026-10-22T10:00:00.000Z' })).toEqual({ ...r, memOomKillAt: '2026-10-22T10:00:00.000Z' });
+    expect(resourcesOf({ ...r, memOomKillAt: 'yesterday' })).toEqual(r);
+    expect(resourcesOf({ ...r, memOomKillAt: 5 })).toEqual(r);
+  });
+
+  it('a client\'s job scope use (issue #2498): each sane field kept per job id, the rest dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    const use = { memoryPeakBytes: 3 * GIB, cpuSeconds: 60.5, oomKills: 1, cpuCores: 1.5 };
+    expect(resourcesOf({ ...r, jobUse: { j1: use } })).toEqual({ ...r, jobUse: { j1: use } });
+    expect(resourcesOf({ ...r, jobUse: { j1: { memoryPeakBytes: -1, cpuSeconds: 2, extra: 1 }, 'x y': use, j2: 'a', j3: {} } })).toEqual({ ...r, jobUse: { j1: { cpuSeconds: 2 } } });
+    expect(resourcesOf({ ...r, jobUse: [use] })).toEqual(r);
   });
 
   it('a client\'s Node version (issue #2479): kept when it reads as one, its floor judged here, not taken from the client', () => {

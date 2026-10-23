@@ -6,8 +6,8 @@ import { windowsFits } from '../domain/windows-jobs.ts';
 import { roomToElbowIn } from './elbow-in.ts'; import { awayFrom, takeIdle } from './lane-health.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
-import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryWait, type MemoryRoom } from './memory-floor.ts';
-import { jevPicked } from './lane-calls.ts'; import { leftOut, waitReason } from './wait-reason.ts';
+import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryHeadroom, memoryLanes, type MemoryRoom } from './memory-floor.ts'; import { cpuThrottled } from './cpu-throttle.ts';
+import { jevPicked } from './lane-calls.ts'; import { roomWait, waitReason } from './wait-reason.ts';
 import { SIGN_IN, signedOutFor } from './signed-out.ts';
 import { addressHolds, credentialHolds, heldOff, herdrHolds, notReady, offNetwork, opensPane, workTreeHolds } from './machine-holds.ts';
 
@@ -65,9 +65,13 @@ export function pinOf(job: Job): string | undefined {
 
 /**
  * A machine whose disk is low takes no new job (issue #410): a job resuming there returns to the pane it
- * holds. Low is judged by the machine's own thresholds (src/machines/disk.ts).
+ * holds. One whose disk is critical takes no job at all (issue #2494): a job resuming there waits too. Both are judged by
+ * the machine's own thresholds (src/machines/disk.ts).
  */
-export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low === true && job.pendingAnswer === undefined;
+export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.critical === true || (m.disk?.low === true && job.pendingAnswer === undefined);
+
+/** How a disk that holds jobs is named: low, or critical (issue #2494). */
+export const diskWord = (m: MachineSnapshot): string => (m.disk?.critical ? 'critical' : 'low');
 
 /**
  * A sandbox box whose template is not approved takes no new job (issue #602): the job waits for a machine that can
@@ -139,7 +143,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (credentialHolds(pinned, job, credentialHeld?.includes(pinned.id) ?? false)) return `pinned machine ${pin} ${notReady(pinned)}`;
   if (herdrHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.herdrProblem}`;
   if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
-  if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
+  if (diskHolds(pinned, job)) return `pinned machine ${pin} disk ${diskWord(pinned)} (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   const out = signedOutFor(pin, job, signedOut);
   if (out) return `pinned machine ${pin}: ${out.service} signed out (usage source ${out.source}): ${SIGN_IN}`;
   return undefined;
@@ -158,7 +162,7 @@ function reachedHold(job: Job, reached: MachineSnapshot[], signedOut?: readonly 
   const working = reaching.filter((m) => !herdrHolds(m, job));
   if (working.every((m) => templateHolds(m, job))) return `${working.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
   const usable = working.filter((m) => !templateHolds(m, job));
-  if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
+  if (usable.every((m) => diskHolds(m, job))) return `disk ${usable.every((m) => m.disk?.critical) ? 'critical' : 'low'} on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
   const roomy = usable.filter((m) => !diskHolds(m, job));
   const out = roomy.map((m) => signedOutFor(m.id, job, signedOut));
   if (out.every((t) => t !== undefined)) {
@@ -319,13 +323,24 @@ function elbowsIn(s: MachineStateWithCredentialHold, job: Job): boolean {
   return eligible(s, job) && e !== undefined && roomToElbowIn(s, e.band);
 }
 
-/** Of two machines, the better pick for `job`: most placement pressure, then most room, then lowest id. */
+/**
+ * Of two machines, the better pick for `job`: most placement pressure, then most real room — its lane room, only as far as
+ * its memory holds jobs —, then most memory over its floor (issue #2499), then most lane room, then lowest id. A machine
+ * with no memory room counted (no reading, floor off) is judged by its lanes alone.
+ */
 function better(a: MachineStateWithCredentialHold, b: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): MachineStateWithCredentialHold {
   const pa = a.executors.get(job.spec.executor)!.pressure;
   const pb = b.executors.get(job.spec.executor)!.pressure;
   if (pa !== pb) return pb > pa ? b : a;
   const ra = roomForJob(a, job, pl);
   const rb = roomForJob(b, job, pl);
+  if (a.memory && b.memory) {
+    const real = (s: MachineStateWithCredentialHold, r: number): number => Math.min(r, memoryLanes(s.memory!));
+    if (real(a, ra) !== real(b, rb)) return real(b, rb) > real(a, ra) ? b : a;
+    const ha = memoryHeadroom(a.memory);
+    const hb = memoryHeadroom(b.memory);
+    if (ha !== hb) return hb > ha ? b : a;
+  }
   if (ra !== rb) return rb > ra ? b : a;
   return b.machine.id < a.machine.id ? b : a;
 }
@@ -353,11 +368,11 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     const elbowed = elbowing.length > 0;
     const squeezed = fits.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
     const laned = elbowed ? elbowing : squeezed ? checked.filter((s) => squeezes(s, job)) : fits;
-    // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it.
-    const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]));
+    // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it, and no CPU throttle (issue #2499).
+    const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]) && !cpuThrottled(s.machine));
     if (able.length === 0) {
       // Every other machine of its executor is named with why it was left out (issues #2427, #2499).
-      wait.push({ jobId: job.id, reason: laned.length ? `${memoryWait(laned, costs?.[job.id])}${leftOut(job, checked, laned.map((s) => s.machine.id), pl, costs?.[job.id])}` : waitReason(job, checked, pl, costs?.[job.id]) });
+      wait.push({ jobId: job.id, reason: laned.length ? roomWait(job, checked, laned, pl, costs?.[job.id]) : waitReason(job, checked, pl, costs?.[job.id]) });
       continue;
     }
     const { options: fit, note: costed } = fitting(awayFrom(able, avoid[job.id]), costs?.[job.id]);

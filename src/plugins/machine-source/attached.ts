@@ -4,7 +4,7 @@
 // reaches it through the machine-source context's `target`, never on its own.
 import type { z as Z } from 'zod';
 import type { AttachedMachine } from '../../domain/types.ts';
-import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts'; import type { MemoryFloor } from '../../domain/memory-floor.ts';
+import type { DiskThresholds, EndStatus, SweepSettings } from '../../domain/machines.ts'; import type { MemoryFloor } from '../../domain/memory-floor.ts'; import type { JobLimits } from '../../domain/job-limits.ts';
 import type { UsageLimitPair } from '../../domain/usage.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
@@ -79,6 +79,10 @@ export const diskLowShape = (z: typeof Z) => ({
     .meta({ description: 'its disk is low below this many GiB free (default 5); a machine with a low disk takes no new job' }),
   diskLowBelowPercent: z.number().min(0).max(100).optional()
     .meta({ description: 'its disk is low below this share free, in percent (default 10); a machine with a low disk takes no new job' }),
+  diskCriticalBelowGiB: z.number().positive().optional()
+    .meta({ description: 'its disk is critical below this many GiB free (default 1); a machine with a critical disk takes no job at all, not even a job back to its pane' }),
+  diskCriticalBelowPercent: z.number().min(0).max(100).optional()
+    .meta({ description: 'its disk is critical below this share free, in percent (default 2); a machine with a critical disk takes no job at all, not even a job back to its pane' }),
 });
 
 /**
@@ -100,12 +104,49 @@ export const memoryFloorOf = (o: { memoryFloorGiB?: number; memoryPerJobGiB?: nu
     ...(o.memoryPerJobGiB !== undefined ? { perJobGiB: o.memoryPerJobGiB } : {}),
   });
 
-/** The thresholds the disk options set; undefined when neither is. */
-export const diskLowOf = (o: { diskLowBelowGiB?: number; diskLowBelowPercent?: number }): DiskThresholds | undefined =>
-  (o.diskLowBelowGiB === undefined && o.diskLowBelowPercent === undefined ? undefined : {
+/**
+ * Its limits for each job (issue #2498, design.md "The job's scope"): set on the job's scope as it is made, where the machine
+ * runs a systemd user manager. Plain options, read at every list. Not on a container target, which makes no job scope.
+ */
+export const jobLimitsShape = (z: typeof Z) => ({
+  jobMemoryMaxGiB: z.number().positive().optional()
+    .meta({ description: 'the most memory in GiB each job there may use (its scope\'s MemoryMax); past it the OOM killer stops a process of that job only, and the job runs again; absent: no limit' }),
+  jobCpuPercent: z.number().int().positive().optional()
+    .meta({ description: 'the most CPU each job there may use, in percent of one CPU (its scope\'s CPUQuota; 200 is two CPUs); absent: no limit' }),
+});
+
+/** The job limits the options set; undefined when neither is. */
+export const jobLimitsOf = (o: { jobMemoryMaxGiB?: number; jobCpuPercent?: number }): JobLimits | undefined =>
+  (o.jobMemoryMaxGiB === undefined && o.jobCpuPercent === undefined ? undefined : {
+    ...(o.jobMemoryMaxGiB !== undefined ? { memoryMaxGiB: o.jobMemoryMaxGiB } : {}),
+    ...(o.jobCpuPercent !== undefined ? { cpuPercent: o.jobCpuPercent } : {}),
+  });
+
+/** The disk options (issue #410, critical: issue #2494). */
+export type DiskOptions = { diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number };
+
+/** The thresholds the disk options set; undefined when none is. */
+export function diskLowOf(o: DiskOptions): DiskThresholds | undefined {
+  const t: DiskThresholds = {
     ...(o.diskLowBelowGiB !== undefined ? { belowGiB: o.diskLowBelowGiB } : {}),
     ...(o.diskLowBelowPercent !== undefined ? { belowPercent: o.diskLowBelowPercent } : {}),
-  });
+    ...(o.diskCriticalBelowGiB !== undefined ? { criticalBelowGiB: o.diskCriticalBelowGiB } : {}),
+    ...(o.diskCriticalBelowPercent !== undefined ? { criticalBelowPercent: o.diskCriticalBelowPercent } : {}),
+  };
+  return Object.keys(t).length > 0 ? t : undefined;
+}
+
+/** The retention option of each status a job ends in (issue #2494), by the status. */
+const RETAIN_OPTIONS = { finished: 'retainFinishedHours', failed: 'retainFailedHours', cancelled: 'retainCancelledHours', rejected: 'retainRejectedHours' } as const;
+type RetainOptions = { [K in (typeof RETAIN_OPTIONS)[EndStatus]]?: number };
+
+/** The retention per job status (issue #2494): how long an ended job's work stays here, from its end. */
+const retainOption = (z: typeof Z, status: EndStatus) => z.number().min(0).optional()
+  .meta({ description: `a job that ended ${status}: the reap at its end keeps its scratch dir and worktrees, and the sweep removes them this many hours after its end (absent: removed at its end, else by the scratch age); work not pushed is never removed` });
+const retainShape = (z: typeof Z) => ({
+  retainFinishedHours: retainOption(z, 'finished'), retainFailedHours: retainOption(z, 'failed'),
+  retainCancelledHours: retainOption(z, 'cancelled'), retainRejectedHours: retainOption(z, 'rejected'),
+});
 
 /**
  * How the sweep treats a machine (issue #410): how often it is swept for what ended jobs left, and how old an
@@ -117,14 +158,25 @@ export const sweepShape = (z: typeof Z) => ({
     .meta({ description: 'the sweep: every this many minutes (default 10), what jobs that are no longer live left here is stopped, and their old scratch dirs removed' }),
   scratchMaxAgeHours: z.number().positive().optional()
     .meta({ description: 'the sweep removes an ended job\'s scratch dir here once it is this many hours old (default 24); work not pushed is never removed' }),
+  ...retainShape(z),
+  pruneAfterDays: z.number().int().min(1).max(3650).optional()
+    .meta({ description: 'the storage prune (absent: off): once a day, the sweep removes here the exited containers stopped this many days ago, the anonymous volumes no container uses and the images no container uses built this many days ago; never the stack\'s, the hopper\'s own image, a box\'s or a job\'s' }),
+  trimAboveGiB: z.number().positive().max(100000).optional()
+    .meta({ description: 'the trim (absent: off): once the sweep\'s cleanups here freed this many GiB, it runs fstrim on the filesystem the home is on (needs root, or sudo with no password for fstrim)' }),
 });
 
-/** The sweep settings the options set; undefined when neither is. */
-export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number }): SweepSettings | undefined =>
-  (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined ? undefined : {
+/** The sweep settings the options set; undefined when none is. */
+export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number; pruneAfterDays?: number; trimAboveGiB?: number } & RetainOptions): SweepSettings | undefined => {
+  const retainHours: Partial<Record<EndStatus, number>> = {};
+  for (const [status, key] of Object.entries(RETAIN_OPTIONS) as [EndStatus, keyof RetainOptions][]) if (o[key] !== undefined) retainHours[status] = o[key];
+  const retains = Object.keys(retainHours).length > 0;
+  return (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined && o.pruneAfterDays === undefined && o.trimAboveGiB === undefined && !retains ? undefined : {
     ...(o.reapEveryMinutes !== undefined ? { everyMinutes: o.reapEveryMinutes } : {}),
     ...(o.scratchMaxAgeHours !== undefined ? { scratchMaxAgeHours: o.scratchMaxAgeHours } : {}),
+    ...(retains ? { retainHours } : {}),
+    ...(o.pruneAfterDays !== undefined ? { pruneAfterDays: o.pruneAfterDays } : {}), ...(o.trimAboveGiB !== undefined ? { trimAboveGiB: o.trimAboveGiB } : {}),
   });
+};
 
 /** The options every attached machine has; `executors` defaults to what its connection runs. */
 export function attachedShape(z: typeof Z, executors: readonly string[]) {
@@ -141,19 +193,20 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 }
 
 export interface AttachedOptions {
-  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
-  reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number;
+  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number;
+  reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number; jobMemoryMaxGiB?: number; jobCpuPercent?: number;
+  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number; pruneAfterDays?: number; trimAboveGiB?: number;
 }
 
 /** The plain fields of an attached machine named `name`. */
 export const attachedBase = (name: string, o: AttachedOptions) => {
   const diskLow = diskLowOf(o);
-  const sweep = sweepOf(o); const memoryFloor = memoryFloorOf(o);
+  const sweep = sweepOf(o); const memoryFloor = memoryFloorOf(o); const jobLimits = jobLimitsOf(o);
   return {
     name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
     ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), ...usageLimitsOf(o), executors: [...o.executors],
     ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
-    ...(memoryFloor ? { memoryFloor } : {}),
+    ...(memoryFloor ? { memoryFloor } : {}), ...(jobLimits ? { jobLimits } : {}),
   };
 };
 

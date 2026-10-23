@@ -209,6 +209,8 @@ export interface JobSourceContext {
   changeRule(repo: string): ChangeRule;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
+  /** The pull requests a job opened through the hopper's GitHub proxy (issue #2510), their URLs, the newest first. Absent: none. */
+  jobOpenedPullRequests?(jobId: string): string[];
   /** The done criteria of the conditional skills a job got (issue #1924), by skill: what the done check verifies itself. Absent: none. */
   jobDoneCriteria?(jobId: string): { skill: string; done: DoneCriterion[]; paths?: string[] }[];
   /** The deletes a job's issue allows by resource address (issue #1924 part 2), from the text it runs. Absent: none. */

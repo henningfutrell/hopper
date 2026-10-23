@@ -370,8 +370,11 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    * client door, the loopback URL there its jobs reach the hopper at, given to each as HOPPER_URL (issue #695).
    */
   client?: { release?: string; current?: boolean; update?: { problem: string }; vault?: string; door?: string };
-  /** The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410). Absent: not read (a container target, a client older than this). */
-  disk?: { freeBytes: number; totalBytes: number; low: boolean };
+  /**
+   * The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410).
+   * `critical` (issue #2494) by its critical thresholds: it takes no job at all, a job back to its pane included. Absent: not read (a container target, a client older than this).
+   */
+  disk?: { freeBytes: number; totalBytes: number; low: boolean; critical?: true };
   /** Its CPU, memory and swap, as last read (issue #560): this machine at every list, an ssh target in its probe, a client target by its client. Absent: not read (a container target, a client older than this, offline). */
   resources?: ResourceReading;
   /**
@@ -379,8 +382,8 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    * not approved (issue #602): not saved, never approved, approval revoked, or its image changed since. Absent `waiting`: approved.
    */
   template?: { name: string; waiting?: string };
-  /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. `memoryFloor`: its own memory floor (issue #2291); absent: the defaults. */
-  sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number }; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
+  /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. `memoryFloor`: its own memory floor (issue #2291); absent: the defaults. `jobLimits`: its limits for each job's scope (issue #2498); absent: none. */
+  sweep?: import('./machines.ts').SweepSettings; memoryFloor?: import('./memory-floor.ts').MemoryFloor; jobLimits?: import('./job-limits.ts').JobLimits;
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */
