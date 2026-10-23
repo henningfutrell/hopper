@@ -39,7 +39,7 @@ import { WindowsHosts } from '@/views/windows-hosts';
 import { PodmanHosts } from '@/views/podman-hosts';
 import { Clusters } from '@/views/clusters';
 import { YoloMode } from '@/views/yolo-mode';
-import { LandingBatches } from '@/views/landing-batches'; import { DeliverySettings } from '@/views/delivery-settings';
+import { LandingBatches } from '@/views/landing-batches'; import { DeliverySettings } from '@/views/delivery-settings'; import { DeliveryForecasts } from '@/views/delivery-forecasts';
 import { IntakeActors } from '@/views/intake-actors';
 import { CloudLink } from '@/views/cloud-link';
 
@@ -59,7 +59,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'podman-hosts': { label: 'Podman hosts', icon: Container, view: PodmanHosts },
   intake: { label: 'Intake', icon: UserCheck, view: IntakeActors },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
-  'landing-batches': { label: 'Landing batches', icon: Layers, view: LandingBatches }, delivery: { label: 'Delivery', icon: CalendarClock, view: DeliverySettings },
+  'landing-batches': { label: 'Landing batches', icon: Layers, view: LandingBatches }, delivery: { label: 'Delivery', icon: CalendarClock, view: Delivery },
   'github-rate-limit': { label: 'GitHub rate limit', icon: Gauge, view: GitHubRateLimiter },
   'github-webhook': { label: 'GitHub webhook', icon: GitPullRequestArrow, view: GitHubDeliveries },
   'remote-access': { label: 'Remote access', icon: Globe, view: RemoteAccess },
@@ -78,6 +78,11 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   clusters: { label: 'Clusters', icon: Boxes, view: Clusters },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
 };
+
+/** The delivery forecasts in the owner's time zone, then their settings (issue #2554 part 7). */
+function Delivery() {
+  return <div className="space-y-4"><DeliveryForecasts /><DeliverySettings /></div>;
+}
 
 function Version() {
   return <div className="space-y-3"><section className="max-w-xl rounded-lg border p-4"><h2 className="mb-3 text-sm font-medium">Version and updates</h2><VersionDetails /></section><DisplayName /></div>;
