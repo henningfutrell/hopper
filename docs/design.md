@@ -825,6 +825,14 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   version check writes `~/.terraform.d` on the machine, which the credential check reads as infra credentials. And
   `GRADLE_OPTS` ends with `-Dorg.gradle.daemon.idletimeout=300000` (`jobToolEnv`, issue #2489), after the payload's own:
   a Gradle daemon idles 3 hours by default, so one stayed after its build; now it ends 5 minutes after its last build.
+  Before the payload's own, every job's tools get the **build defaults** (`src/domain/build-defaults.ts`, issue #2622):
+  `GRADLE_OPTS` starts with `-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2
+  -Dkotlin.compiler.execution.strategy=in-process`, and `MAVEN_OPTS` with `-Xmx2g`. Four lanes on one WSL VM each ran a
+  JVM build with the project's own heap settings — a 2 GiB Gradle JVM, a Kotlin compile daemon of its own, a test worker
+  per CPU, up to ~5 GB each — and took the VM's memory together. Gradle reads these properties from its client JVM over
+  every `gradle.properties`, and Maven puts `MAVEN_OPTS` after `.mvn/jvm.config`, so a project's own files cannot raise
+  them; a payload's own options come after them and win. 2 GiB is a job's memory (`MEMORY_PER_JOB_GIB`), which admission
+  counts. Each option is one word: `gradlew` splits `GRADLE_OPTS` at spaces.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows
