@@ -44,10 +44,10 @@
 import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
 import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
-import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
+import { jobScratchOf, scratchParts, worktreeJobOf as treeJob, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts'; import { closeGone, closeLedger } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
@@ -67,22 +67,6 @@ const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'wa
 
 /** One reap the sweep asks of a machine. */
 export interface SweepReap { jobId: string; scratch?: string }
-
-/**
- * The known job a job worktree is of: `<job id>` its name (issue #1188), or `<name>-<job id>` in the layout before, whose
- * name may hold `-` too, so each split is tried.
- */
-function treeJob(path: string, jobOf: (id: string) => Job | undefined): Job | undefined {
-  const tree = worktreeParts(path);
-  if (!tree) return undefined;
-  const name = tree.name;
-  if (!tree.old) return jobOf(name);
-  for (let at = name.indexOf('-'); at >= 0; at = name.indexOf('-', at + 1)) {
-    const job = jobOf(name.slice(at + 1));
-    if (job) return job;
-  }
-  return undefined;
-}
 
 /**
  * Pure: what to reap on one machine, from what its survey found. `kept`: jobs whose work was kept and not removed since.
@@ -275,8 +259,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       if (machineRanOn(job) === m.id && await removeDiscard(job.id, m, shell)) discarded.add(job.id);
     }
     const kept = new Set(keptWork.filter((k) => !discarded.has(k.jobId)).map((k) => k.jobId));
-    // The resource ledger's entries whose thing is gone (issue #2504 part 3), also kept work's, closed.
-    const found = await shell.survey(roots), at = c.clock.now().toISOString(); closeGone(c.store, m.id, found, at);
+    // The resource ledger reconciled (issue #2504 parts 3, 6): entries whose thing is gone closed, also kept work's; what it does not name recorded.
+    const found = await shell.survey(roots), at = c.clock.now().toISOString(); reconcileLedger(c.store, m, found, jobOf, at);
     for (const g of goneKept(found, keptWork.filter((k) => kept.has(k.jobId)), jobOf, m.id)) {
       if (c.stopping()) return;
       log(`hopper: job ${g.jobId}'s kept work is gone from ${m.id}: its scratch dir ${g.scratch} is no longer there`);

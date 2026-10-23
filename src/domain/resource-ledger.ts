@@ -3,7 +3,9 @@
 // job's cleanup or by the sweep as each reap says: reaped, kept (work not pushed), or failed with why. A job's **cleanup
 // status** is read from its entries and its cleanup record. Pure: no I/O, no clock — `at` is passed in.
 import type { BomPart, BomStatus } from './job-bom.ts';
-import { jobScratchOf, scratchParts, worktreeParts } from './job-layout.ts';
+import { jobScratchOf, scratchParts, worktreeJobOf, worktreeParts } from './job-layout.ts';
+import type { SweepSettings } from './machines.ts';
+import { sweepReapAtOf } from './retention.ts';
 import type { Reaped, Survey } from './machine-shell.ts';
 import { TERMINAL_STATUSES, type Job } from './types.ts';
 
@@ -31,11 +33,11 @@ export interface LedgerEntry {
   retainedUntil?: string;
 }
 
-/** A ledger entry before the store has it. */
-export type NewLedgerEntry = Pick<LedgerEntry, 'jobId' | 'machineId' | 'kind' | 'locator' | 'createdAt'>;
+/** A ledger entry before the store has it; `retainedUntil` only for one the reconciler records (part 6). */
+export type NewLedgerEntry = Pick<LedgerEntry, 'jobId' | 'machineId' | 'kind' | 'locator' | 'createdAt' | 'retainedUntil'>;
 
 export interface ResourceLedgerRepository {
-  /** Records an entry as `live`; one already there (same job, kind and locator) is left as it is. */
+  /** Records an entry as `live`, with its `retainedUntil` if any; one already there (same job, kind and locator) is left as it is. */
   record(entry: NewLedgerEntry): void;
   /** Closes the job's entry of that kind and locator, unless it is `reaped`: a `kept` or `failed` one a later reap may close. */
   close(jobId: string, kind: LedgerKind, locator: string, state: Exclude<LedgerState, 'live'>, at: string, reason?: string): void;
@@ -45,6 +47,8 @@ export interface ResourceLedgerRepository {
   forJob(jobId: string): LedgerEntry[];
   /** Every entry still `live` or `failed`, of every job, by job then oldest first: what the leftover check reads. */
   open(): LedgerEntry[];
+  /** Every entry on the machine, open or closed: what the reconciler reads (part 6). */
+  onMachine(machineId: string): LedgerEntry[];
 }
 
 /**
@@ -144,6 +148,35 @@ export function goneClosures(open: readonly LedgerEntry[], found: Survey, machin
     const job = jobOf(e.jobId);
     return job !== undefined && TERMINAL_STATUSES.includes(job.status);
   }).map((entry) => ({ entry, state: 'reaped' as const, reason: GONE_REASON }));
+}
+
+/** An entry's key in a set: its job, kind and locator. */
+export const ledgerKey = (jobId: string, kind: LedgerKind, locator: string): string => `${jobId}\0${kind}\0${locator}`;
+
+/**
+ * The reconciler's records on machine `machineId` (issue #2504 part 6): what the survey found there of an ended job the store
+ * knows that no entry (`ledgered`: their `ledgerKey`s) names — a job outside the job list, or what was left before the ledger.
+ * Each scratch dir and job worktree, kept until the sweep's reap of it (`sweepReapAtOf`), so it is no cleanup leftover
+ * before; each scope that still runs. A job that has not ended, and one the store does not know (another hopper's, a test's),
+ * is not recorded. `at` is `nowMs`.
+ */
+export function unledgeredEntriesOf(found: Survey, ledgered: ReadonlySet<string>, jobOf: (id: string) => Pick<Job, 'id' | 'status' | 'finishedAt'> | undefined, machineId: string, s: SweepSettings | undefined, nowMs: number): NewLedgerEntry[] {
+  const createdAt = new Date(nowMs).toISOString(), out: NewLedgerEntry[] = [];
+  const ended = (job: Pick<Job, 'status'> | undefined): boolean => job !== undefined && TERMINAL_STATUSES.includes(job.status);
+  const add = (jobId: string, kind: LedgerKind, locator: string, retainedUntil?: string): void => {
+    if (ledgered.has(ledgerKey(jobId, kind, locator)) || out.some((e) => e.jobId === jobId && e.kind === kind && e.locator === locator)) return;
+    out.push({ jobId, machineId, kind, locator, createdAt, ...(retainedUntil ? { retainedUntil } : {}) });
+  };
+  for (const dir of found.scratch) {
+    const job = jobOf(dir.jobId);
+    if (job && ended(job)) add(job.id, 'scratch_dir', dir.path, sweepReapAtOf(s, job, dir.ageMs, nowMs));
+  }
+  for (const tree of found.trees ?? []) {
+    const job = worktreeJobOf(tree.path, jobOf);
+    if (job && ended(job)) add(job.id, 'job_worktree', tree.path, sweepReapAtOf(s, job, tree.ageMs, nowMs));
+  }
+  for (const id of found.scopes) if (ended(jobOf(id))) add(id, 'job_scope', `hopper-job-${id}.scope`);
+  return out;
 }
 
 /** The cleanup leftovers on one machine, as Machines shows them (issue #2504 part 3): jobs, entries, and how many of those failed. */

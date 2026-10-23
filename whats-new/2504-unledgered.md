@@ -1,0 +1,1 @@
+- When a finished job left something on a machine before the hopper kept a list of it, the hopper now adds it to the list. If the hopper cannot remove it, Failures now lists the job.

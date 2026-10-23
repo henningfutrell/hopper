@@ -27,7 +27,7 @@ describe('the sweep and the resource ledger (issue #2504)', () => {
     const r = rig({ found: { ...none, scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 25 * HOUR }], scopes: ['old'] },
       ledger: [entry('done', 'container_runtime', runtime), entry('old', 'container_runtime', '/w/.worktrees/@scratch/old/containers')] });
     await r.sweep.run(true);
-    expect(r.ledger.map((e) => [e.jobId, e.kind, e.state])).toEqual([['done', 'container_runtime', 'reaped'], ['old', 'container_runtime', 'live']]);
+    expect(r.ledger.filter((e) => e.kind === 'container_runtime').map((e) => [e.jobId, e.kind, e.state])).toEqual([['done', 'container_runtime', 'reaped'], ['old', 'container_runtime', 'live']]);
   });
 
   it('closes only the scope when the reap did not look at the scratch dir', async () => {

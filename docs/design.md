@@ -33500,3 +33500,35 @@ not name and for machines no longer known; leftover bytes on Machines.
 (`retainedEntriesOf`, the leftover after the retention, the status and the part); `test/engine/cleanup-retention.test.ts`
 (the cleanup keeps the scratch dir's entry open with its retention, and closes the scope); `test/integration/resource-ledger.test.ts`
 (real database: `retain` kept, and kept on a later close).
+
+### Part 6: the reconciler records what the ledger does not name (2026-10-23)
+
+What a job left before the ledger existed, and what a reap never recorded, had no entry: the sweep still removed it by its
+age, but a removal that failed was no **cleanup leftover**, so it was silently left. The issue asks that the reconciler
+reap what no live job holds, whether the ledger names it or not, also for a job outside the job-list window.
+
+- **The records** (`unledgeredEntriesOf`, `src/domain/resource-ledger.ts`, pure; `reconcileLedger`,
+  `src/engine/resource-ledger.ts`). With each sweep of a machine, after its survey and the closures of part 3, and before
+  its reaps: each scratch dir, job worktree (either layout) and running scope the survey found there of an ended job the
+  store knows, which no entry on that machine names (`ResourceLedgerRepository.onMachine`), is recorded `live` on that
+  machine, made now. The sweep's reaps then close it as any other entry.
+- **Kept until the sweep's reap.** A recorded scratch dir or job worktree gets `retainedUntil` (`ResourceLedgerRepository.record`
+  now takes it) set to when the sweep reaps it (`sweepReapAtOf`, `src/domain/retention.ts`, pure, as `retentionOver`
+  judges it): the dir's birth plus the scratch age, or with a retention for the status, the job's end plus it. So a
+  dir younger than that is no leftover; one whose reap fails or never comes is one 60 minutes after that time. A scope has
+  none: the sweep stops it in the same pass.
+- **Not recorded.** A thing of a job that has not ended (it records its own), and of a job the store does not know — another
+  hopper's, a test's —, which the sweep never touches. A key the ledger has, in any state, is left as it is.
+- **The job list.** The sweep looks up a job id not in its newest 2000 jobs in the store, so a job outside the window is
+  reaped, and recorded, as any other.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known;
+leftover bytes on Machines; the work trees the sweep looks in come from the newest jobs' saved state, so a work tree only
+an older job used is not surveyed.
+
+**Verification (part 6).** `test/domain/retention.test.ts` (`sweepReapAtOf`); `test/domain/resource-ledger.test.ts`
+(`unledgeredEntriesOf`: what is recorded, and what is not); `test/engine/sweep-ledger.test.ts` (a recorded dir whose reap
+failed is `failed`, its scope `reaped`; a job the hopper does not know is neither recorded nor reaped; an entry the ledger
+names is left as it is); `test/integration/resource-ledger.test.ts` (real database: `record` with `retainedUntil`, never
+over an entry there, and `onMachine`).

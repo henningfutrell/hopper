@@ -37,3 +37,15 @@ export function retainedUntilOf(s: SweepSettings | undefined, job: Pick<Job, 'st
   const end = job.finishedAt ? Date.parse(job.finishedAt) : NaN;
   return new Date((Number.isNaN(end) ? nowMs : end) + hours * HOUR_MS).toISOString();
 }
+
+/**
+ * Pure: when the sweep reaps an ended job's work it found (its dir `ageMs` old at `nowMs`), as `retentionOver` judges it
+ * (issue #2504 part 6): the dir's birth plus the scratch age, or with a retention set for the status, the job's end
+ * (`finishedAt`, else the dir's birth) plus it. Sooner when the disk is low or over its budget.
+ */
+export function sweepReapAtOf(s: SweepSettings | undefined, job: Pick<Job, 'status' | 'finishedAt'>, ageMs: number, nowMs: number): string {
+  const hours = retainHoursOf(s, job.status), born = nowMs - ageMs;
+  if (hours === undefined) return new Date(born + (s?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS) * HOUR_MS).toISOString();
+  const end = job.finishedAt ? Date.parse(job.finishedAt) : NaN;
+  return new Date((Number.isNaN(end) ? born : end) + hours * HOUR_MS).toISOString();
+}
