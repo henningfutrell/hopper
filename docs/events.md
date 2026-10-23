@@ -8931,3 +8931,23 @@ Version 1 (`docs/schemas/push_requirements.defaults_changed.v1.json`). An admin 
   "by": "owner"
 }
 ```
+
+## `delivery_expedite.changed`
+
+Version 1 (`docs/schemas/delivery_expedite.changed.v1.json`). A person turned the expedite flag of one change on or off (issue #2554 part 4): exactly one of `job` (a job id), `issue` (`owner/name#N`, lowercased) or `pullRequest` (its URL); `expedite` on or off; `by` who. A change is expedited when the newest flag that names its job, its issue or its pull request is on; its delivery forecast then shows the expedited path beside the normal one. It changes no job and no promotion: the forecast only.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | no |
+| `issue` | string | no |
+| `pullRequest` | string | no |
+| `expedite` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "issue": "octo/identity#436",
+  "expedite": true,
+  "by": "release-owner"
+}
+```

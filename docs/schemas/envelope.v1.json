@@ -405,6 +405,7 @@
         "push_requirements.evaluated",
         "delivery_settings.changed",
         "push_requirements.defaults_changed",
+        "delivery_expedite.changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

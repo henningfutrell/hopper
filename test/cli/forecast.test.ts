@@ -1,5 +1,6 @@
 // `hopper forecast --job <id> | --issue <owner/repo#N> | --pr <url> | --set <N> --repo <owner/repo>` (issue #2554 parts
 // 2 and 3): the call the operator CLI makes, before any daemon. It reads GET /api/delivery-forecast, as the UI and an agent do.
+// With `--expedite on|off` (part 4) it sets the expedite flag of the change: POST /ui/api/delivery-expedite.
 import { describe, expect, it } from 'vitest';
 import { forecastCall } from '../../src/cli-operator-forecast.ts';
 
@@ -15,8 +16,18 @@ describe('hopper forecast (issue #2554)', () => {
     expect(forecastCall(['--set', '7', '--repo', 'octo/shed'])).toEqual({ role: 'viewer', path: '/api/delivery-forecast?set=7&repo=octo%2Fshed' });
   });
 
+  it('sets the expedite flag of a job, an issue or a pull request', async () => {
+    const post = async (args: string[]) => forecastCall(args).post!(async () => undefined);
+    expect(forecastCall(['--job', 'j1', '--expedite', 'on'])).toMatchObject({ role: 'operator' });
+    expect(await post(['--job', 'j1', '--expedite', 'on'])).toEqual({ path: '/ui/api/delivery-expedite', body: { job: 'j1', expedite: true } });
+    expect(await post(['--issue', 'octo/shed#7', '--expedite', 'off'])).toEqual({ path: '/ui/api/delivery-expedite', body: { issue: 'octo/shed#7', expedite: false } });
+    expect(await post(['--pr', 'https://github.com/octo/shed/pull/12', '--expedite', 'on']))
+      .toEqual({ path: '/ui/api/delivery-expedite', body: { pr: 'https://github.com/octo/shed/pull/12', expedite: true } });
+  });
+
   it('refuses none, two, an empty one, a stray word or another option, before any call', () => {
-    for (const args of [[], ['--job', 'j1', '--issue', 'octo/shed#7'], ['--job', ''], ['j1'], ['--repo', 'octo/shed'], ['--set', '7'], ['--job', 'j1', '--repo', 'octo/shed']]) {
+    for (const args of [[], ['--job', 'j1', '--issue', 'octo/shed#7'], ['--job', ''], ['j1'], ['--repo', 'octo/shed'], ['--set', '7'], ['--job', 'j1', '--repo', 'octo/shed'],
+      ['--job', 'j1', '--expedite', 'yes'], ['--job', 'j1', '--expedite', ''], ['--set', '7', '--repo', 'octo/shed', '--expedite', 'on']]) {
       expect(() => forecastCall(args)).toThrow(/usage: hopper forecast/);
     }
   });
