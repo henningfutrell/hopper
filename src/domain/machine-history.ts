@@ -77,8 +77,11 @@ export interface ResourceReading {
 /** What holds a machine's jobs' memory (issue #2622). */
 export type JobMemoryLimit = 'scope' | 'machine' | 'none';
 
-/** A memory pressure reading (issue #2499): the share of the last 10 s, 0..100, that some task and every task waited on memory. */
-export interface MemoryPressure { someAvg10: number; fullAvg10: number }
+/**
+ * A memory pressure reading (issue #2499): the share of the last 10 s, 0..100, that some task and every task waited on memory;
+ * and of the last 60 s that some task did (`someAvg60`, issue #2622 part 5; absent: an older client or probe).
+ */
+export interface MemoryPressure { someAvg10: number; fullAvg10: number; someAvg60?: number }
 
 /**
  * What a running job's scope used so far (issue #2498), as its machine's meter read it: its peak memory (cgroup

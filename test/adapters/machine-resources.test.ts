@@ -43,7 +43,7 @@ describe('resources an ssh target prints', () => {
 
   it('its memory pressure (issue #2499 part 5), the share of the last 10 s a task waited on memory', () => {
     const psi = 'hopper-res some avg10=33.10 avg60=20.00 avg300=5.00 total=1\nhopper-res full avg10=4.00 avg60=1.00 avg300=0.00 total=1\nhopper-res 8';
-    expect(readResources(printed.replace('hopper-res 8', psi))).toMatchObject({ memPressure: { someAvg10: 33.1, fullAvg10: 4 } });
+    expect(readResources(printed.replace('hopper-res 8', psi))).toMatchObject({ memPressure: { someAvg10: 33.1, fullAvg10: 4, someAvg60: 20 } });
     expect(readResources(printed)).not.toHaveProperty('memPressure');
   });
 
@@ -124,6 +124,9 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3 } })).toEqual({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3 } });
     expect(resourcesOf({ ...r, memPressure: { someAvg10: 101, fullAvg10: 3 } })).toEqual(r);
     expect(resourcesOf({ ...r, memPressure: { someAvg10: 2 } })).toEqual(r);
+    // Issue #2622 part 5: the share of the last 60 s too, kept when it reads as 0..100; an older client says none.
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3, someAvg60: 12 } })).toEqual({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3, someAvg60: 12 } });
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3, someAvg60: 140 } })).toEqual({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3 } });
   });
 
   it('a client\'s CPU throttle (issue #2499 part 9): kept when it is a share 0..1, else dropped', () => {

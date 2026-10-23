@@ -234,6 +234,13 @@ describe('memory pressure (issue #2499)', () => {
     expect(d.start.map((s) => s.machineId)).toEqual(['b']);
   });
 
+  it('a machine whose tasks waited on memory over 10% of the last 60 s takes no new job either (issue #2622 part 5)', () => {
+    const slow = pressed(5, { resources: { cores: 8, memTotalBytes: 4 * GIB, memAvailableBytes: 3.6 * GIB, memPressure: { someAvg10: 5, fullAvg10: 1, someAvg60: 14 } } });
+    const d = decide(inputs({ machines: [slow], waiting: burst(1) }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe("waiting for memory: local's memory is under pressure: its tasks waited on memory 14% of the last 60 s, and a new job starts only at 10% or below");
+  });
+
   it('a floor of 0 turns the pressure check off too', () => {
     expect(decide(inputs({ machines: [pressed(80, { memoryFloor: { floorGiB: 0 } })], waiting: burst(1) }), 'd1').start).toHaveLength(1);
   });

@@ -59,7 +59,7 @@ export interface ResourceReading {
   kernelMemTotalBytes?: number;
   kernelMemAvailableBytes?: number;
   /** Issue #2499: the share of the last 10 s, in percent, that some task and every task waited on memory (PSI). Absent: not read. */
-  memPressure?: { someAvg10: number; fullAvg10: number };
+  memPressure?: { someAvg10: number; fullAvg10: number; someAvg60?: number };
   /** Issue #2499: when this meter last saw its OOM kill count grow (memory.events `oom_kill`, else /proc/vmstat). Absent: not seen. */
   memOomKillAt?: string;
   /** Issue #2622: what holds its jobs' memory: each job's scope, a cgroup limit over it, or nothing. Absent: not Linux. */
@@ -162,15 +162,16 @@ function fields(t: string | undefined): Map<string, number> {
 
 const clamp = (v: number): number => Math.min(1, Math.max(0, v));
 
-/** A PSI file's `some` and `full` avg10 (issue #2499); undefined when it does not say both. */
-export function pressureOf(t: string | undefined): { someAvg10: number; fullAvg10: number } | undefined {
-  const avg = (kind: string): number | undefined => {
-    const v = new RegExp(`^${kind} avg10=(\\d+(?:\\.\\d+)?)\\b`, 'm').exec(t ?? '')?.[1];
+/** A PSI file's `some` and `full` avg10 (issue #2499), and `some` avg60 (issue #2622 part 5); undefined when it does not say both avg10. */
+export function pressureOf(t: string | undefined): { someAvg10: number; fullAvg10: number; someAvg60?: number } | undefined {
+  const avg = (kind: string, of = 'avg10'): number | undefined => {
+    const v = new RegExp(`^${kind} (?:\\S+ )*?${of}=(\\d+(?:\\.\\d+)?)\\b`, 'm').exec(t ?? '')?.[1];
     return v === undefined ? undefined : Number(v);
   };
   const some = avg('some');
   const full = avg('full');
-  return some !== undefined && full !== undefined ? { someAvg10: some, fullAvg10: full } : undefined;
+  const some60 = avg('some', 'avg60');
+  return some !== undefined && full !== undefined ? { someAvg10: some, fullAvg10: full, ...(some60 !== undefined ? { someAvg60: some60 } : {}) } : undefined;
 }
 
 /** An OOM kill count (issue #2499): `oom_kill` of one cgroup's `memory.events`, or of the kernel's. */

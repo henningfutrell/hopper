@@ -194,11 +194,12 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
   };
 }
 
-/** A client's memory pressure (issue #2499), when both shares read as 0..100. */
+/** A client's memory pressure (issue #2499), when both shares read as 0..100; its avg60 (issue #2622 part 5) when that does too. */
 function pressureOfClient(v: unknown): Pick<ResourceReading, 'memPressure'> {
   if (typeof v !== 'object' || v === null) return {};
-  const { someAvg10: some, fullAvg10: full } = v as Record<string, unknown>;
-  return count(some) && count(full) && some <= 100 && full <= 100 ? { memPressure: { someAvg10: some, fullAvg10: full } } : {};
+  const { someAvg10: some, fullAvg10: full, someAvg60: some60 } = v as Record<string, unknown>;
+  return count(some) && count(full) && some <= 100 && full <= 100
+    ? { memPressure: { someAvg10: some, fullAvg10: full, ...(count(some60) && some60 <= 100 ? { someAvg60: some60 } : {}) } } : {};
 }
 
 /** A client's job scope memory (issue #2499): each entry whose key reads as a job id and whose value as bytes; none, when none does. */

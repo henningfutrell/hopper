@@ -6,10 +6,10 @@
 // not, so no waiting job holds memory. Issue #2499: the memory a job's scope still holds with no lane is in the reading, and the
 // wait names it. Machines whose readings name one kernel are a host pool: a job also needs room in that kernel's memory,
 // less what every machine of the pool keeps, over the kernel's own floor. A machine whose tasks wait on memory (its memory
-// pressure at or above MEMORY_PRESSURE_PERCENT) takes no new job, nor one that saw an OOM kill less than MEMORY_OOM_KILL_MS
+// pressure at or above MEMORY_PRESSURE_PERCENT, or over MEMORY_PRESSURE_60_PERCENT of the last minute) takes no new job, nor one that saw an OOM kill less than MEMORY_OOM_KILL_MS
 // ago. The memory pause is in memory-pause.ts. Pure: the clock is `at`.
 import {
-  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_OOM_KILL_MS, MEMORY_PRESSURE_PERCENT, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
+  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_OOM_KILL_MS, MEMORY_PRESSURE_60_PERCENT, MEMORY_PRESSURE_PERCENT, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
   type ExpectedCost, type Job, type Lane, type MachineSnapshot, type ResourceReading,
   type WaitReleasePlan, type WaitSession,
 } from '../domain/types.ts';
@@ -20,12 +20,13 @@ export const gib = (bytes: number): string => `${Math.round((bytes / GIB) * 10) 
 /**
  * A machine's memory as one Decision counts it: what it has, its floor, a job's need, and what is kept and for how many jobs.
  * `waitingBytes` (issue #2499): of what it has in use, what its job scopes hold for `waiting` jobs with no lane in use there.
- * `pressure` (issue #2499): its memory pressure, the share of the last 10 s some task waited on memory, in percent.
+ * `pressure` (issue #2499): its memory pressure, the share of the last 10 s some task waited on memory, in percent;
+ * `pressure60` (issue #2622 part 5), of the last 60 s.
  * `oomKillMs` (issue #2499): how long ago it saw an OOM kill, when that is less than MEMORY_OOM_KILL_MS.
  */
 export interface MemoryRoom {
   availableBytes: number; floorBytes: number; perJobBytes: number; keptBytes: number; kept: number; waitingBytes: number; waiting: number;
-  pool?: HostPool; pressure?: number; oomKillMs?: number;
+  pool?: HostPool; pressure?: number; pressure60?: number; oomKillMs?: number;
 }
 
 /**
@@ -59,6 +60,7 @@ export function floorOf(m: MachineSnapshot, at: number): Omit<MemoryRoom, 'keptB
   return {
     availableBytes: availableOf(r), floorBytes, perJobBytes,
     ...(r.memPressure ? { pressure: r.memPressure.someAvg10 } : {}),
+    ...(r.memPressure?.someAvg60 !== undefined ? { pressure60: r.memPressure.someAvg60 } : {}),
     ...(killMs !== undefined && killMs >= 0 && killMs < MEMORY_OOM_KILL_MS ? { oomKillMs: killMs } : {}),
   };
 }
@@ -122,7 +124,9 @@ const ownAdmits = (room: MemoryRoom, cost: ExpectedCost | undefined): boolean =>
 const poolAdmits = (room: MemoryRoom, cost: ExpectedCost | undefined): boolean =>
   !room.pool || room.pool.availableBytes - room.pool.keptBytes - needOf(room, cost) >= room.pool.floorBytes;
 
-const pressed = (room: MemoryRoom): boolean => room.pressure !== undefined && room.pressure >= MEMORY_PRESSURE_PERCENT;
+const pressed10 = (room: MemoryRoom): boolean => room.pressure !== undefined && room.pressure >= MEMORY_PRESSURE_PERCENT;
+const pressed60 = (room: MemoryRoom): boolean => room.pressure60 !== undefined && room.pressure60 > MEMORY_PRESSURE_60_PERCENT;
+const pressed = (room: MemoryRoom): boolean => pressed10(room) || pressed60(room);
 /** Issue #2499: under memory pressure, or an OOM kill lately: the machine takes no new job, whatever memory it reads. */
 const stalled = (room: MemoryRoom): boolean => pressed(room) || room.oomKillMs !== undefined;
 
@@ -211,8 +215,11 @@ export function memoryShort(r: MemoryRoom, cost: ExpectedCost | undefined, of?: 
   if (ownAdmits(r, cost) && r.oomKillMs !== undefined) {
     return `its memory killed a process ${Math.round(r.oomKillMs / 60_000)} min ago (out of memory), and a new job starts only ${MEMORY_OOM_KILL_MS / 60_000} min after`;
   }
-  if (ownAdmits(r, cost) && pressed(r)) {
+  if (ownAdmits(r, cost) && pressed10(r)) {
     return `its memory is under pressure: its tasks waited on memory ${Math.round(r.pressure!)}% of the last 10 s, and a new job starts only below ${MEMORY_PRESSURE_PERCENT}%`;
+  }
+  if (ownAdmits(r, cost) && pressed60(r)) {
+    return `its memory is under pressure: its tasks waited on memory ${Math.round(r.pressure60!)}% of the last 60 s, and a new job starts only at ${MEMORY_PRESSURE_60_PERCENT}% or below`;
   }
   if (ownAdmits(r, cost) && r.pool) {
     const p = r.pool;
