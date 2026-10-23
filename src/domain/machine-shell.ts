@@ -2,7 +2,7 @@
 // from it) for its size.
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { CheckpointCapture } from './checkpoints.ts';
-import type { ContainerStorage, SurveyedCache } from './hopper-disk.ts';
+import type { ContainerStorage, SurveyedCache, SurveyedJobDisk } from './hopper-disk.ts';
 import type { Leftover } from './leftovers.ts';
 import type { KeptReason } from './kept-work.ts';
 import type { ExitedContainer, Pruned } from './storage-prune.ts';
@@ -67,6 +67,8 @@ export interface Survey {
   storage?: ContainerStorage[];
   /** Each exited container of each container runtime there (issue #2494), for the storage prune; absent, none (or a client older than this). */
   exited?: ExitedContainer[];
+  /** Each job's scratch dir and job worktree there, measured on its own (issue #2494); absent or empty: not measured. */
+  jobs?: SurveyedJobDisk[];
 }
 
 /**

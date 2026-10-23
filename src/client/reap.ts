@@ -229,13 +229,17 @@ const SURVEY_SCRIPT = [
   '    set -- "$@" "$p";',
   '  done; [ $# -gt 0 ] || return 0;',
   `  $to du -skx "$@" 2>/dev/null | awk -F '\t' '$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-du " k " " $0 }'; };`,
+  // Each job's scratch dir and job worktree on its own (issue #2494), `hopper-jobdu <KiB> <path>`; no `@` dir but the scratch area.
+  `jobdu() { set --; for d in "$r"/${LAYOUT.worktrees}/*/*; do [ -d "$d" ] && [ ! -L "$d" ] || continue;`,
+  `    case $d in "$r"/${LAYOUT.scratch}/*) ;; "$r"/${LAYOUT.worktrees}/@*) continue;; esac; set -- "$@" "$d"; done; [ $# -gt 0 ] || return 0;`,
+  `  $to du -skx "$@" 2>/dev/null | awk -F '\t' '$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-jobdu " k " " $0 }'; };`,
   // `ages <dir|tree> <paths>`: the dirs of the paths, with their ages, by one `stat` (issue #2490: a start per dir was too
   // slow under MSYS). `for` takes its list once, so each pass shifts its path off and puts a dir back at the end.
   'ages() { k=$1; shift; for d do shift; [ -d "$d" ] && [ ! -L "$d" ] || continue;',
   `  [ "$k" = tree ] && case $d in "$r"/${LAYOUT.worktrees}/@*) continue;; esac; set -- "$@" "$d"; done; [ $# -gt 0 ] || return 0;`,
   `  mtimes "$@" 2>/dev/null | awk -v now="$now" -v k="$k" '$1 ~ /^[0-9]+$/ { m = $1; sub(/^[^ ]* /, ""); print "hopper-" k " " (now - m) " " $0 }'; };`,
   `for r in "$@"; do if [ -d "$r/${LAYOUT.worktrees}" ] || [ -d "$r/${LAYOUT.oldScratch}" ]; then printf "hopper-root %s\\n" "$r";`,
-  '  [ -n "$to" ] && measure;',
+  '  [ -n "$to" ] && { measure; jobdu; };',
   `fi; ages dir "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; ages tree "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*;`,
   'done;',
   // The machine's caches and container storage (issue #2494), once per survey, only where `timeout` cuts each call off.
@@ -351,8 +355,10 @@ export interface SurveyedCache { kind: CacheDirKind; path: string; bytes: number
 export interface SurveyedStorage { runtime: 'docker' | 'podman'; kind: 'images' | 'containers' | 'volumes' | 'build-cache'; bytes: number; reclaimableBytes: number }
 /** One exited container the survey found (issue #2494), for the storage prune: its full id, when it stopped as the runtime said, its label keys. */
 export interface SurveyedExited { runtime: 'docker' | 'podman'; id: string; finishedAt: string; labels: string[] }
+/** One job's scratch dir or job worktree the survey measured on its own (issue #2494). */
+export interface SurveyedJobDisk { jobId: string; kind: 'scratch' | 'tree'; path: string; bytes: number }
 /** What a finished survey found. Undefined when it did not finish. */
-export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[]; caches?: SurveyedCache[]; storage?: SurveyedStorage[]; exited?: SurveyedExited[] }
+export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[]; caches?: SurveyedCache[]; storage?: SurveyedStorage[]; exited?: SurveyedExited[]; jobs?: SurveyedJobDisk[] }
 
 const STORAGE_KINDS: Record<string, SurveyedStorage['kind']> = { 'Images': 'images', 'Containers': 'containers', 'Local Volumes': 'volumes', 'Build Cache': 'build-cache' };
 const UNITS: Record<string, number> = { '': 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 };
@@ -378,7 +384,10 @@ export function readSurvey(stdout: string): Survey | undefined {
   const caches: SurveyedCache[] = [];
   const storage: SurveyedStorage[] = [];
   const exited: SurveyedExited[] = [];
+  const jobs: SurveyedJobDisk[] = [];
   for (const l of lines) {
+    const j = /^hopper-jobdu (\d+) (\/.*\/\.worktrees\/(@scratch|[^/@][^/]*)\/([^/]+))$/.exec(l);
+    if (j && isJobId(j[4])) jobs.push({ jobId: j[4]!, kind: j[3] === '@scratch' ? 'scratch' : 'tree', path: j[2]!, bytes: Number(j[1]) * 1024 });
     const ca = /^hopper-cache (\d+) (\/.*)$/.exec(l);
     const kind = ca ? cacheKindOf(ca[2]!) : undefined;
     if (ca && kind) caches.push({ kind, path: ca[2]!, bytes: Number(ca[1]) * 1024 });
@@ -399,7 +408,7 @@ export function readSurvey(stdout: string): Survey | undefined {
     const t = /^hopper-tree (\d+) (\/.*\/(?:\.worktrees\/[^/@][^/]*\/[^/]+|workspace\/worktrees\/[^/]+))$/.exec(l);
     if (t) trees.push({ path: t[2]!, ageMs: Number(t[1]) * 1000 });
   }
-  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container '), caches, storage, ...(exited.length ? { exited } : {}) };
+  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container '), caches, storage, ...(exited.length ? { exited } : {}), ...(jobs.length ? { jobs } : {}) };
 }
 
 /** A scratch dir a reap may name: absolute, one line, and the job's own, of either layout. */

@@ -14,7 +14,7 @@ import { useNow } from '@/hooks/use-now';
 import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { machineBadges, nodeText } from '@/model/machine-list';
 import { jobsUseText, resourcesText } from '@/model/machine-history';
-import { cachesText, cleanupLeftoversText, hopperDiskText, storageText } from '@/model/hopper-disk';
+import { cachesText, cleanupLeftoversText, hopperDiskText, jobsDiskText, storageText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
@@ -103,6 +103,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.resources?.node && <Fact label="Node"><span className={m.resources.nodeFloor ? `font-semibold ${TEXT.warn}` : undefined}>{nodeText(m.resources)}</span></Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
         {m.hopperDisk && <Fact label="hopper's disk use"><span className={m.hopperDisk.over ? `font-semibold ${TEXT.warn}` : undefined}>{hopperDiskText(m.hopperDisk)}</span></Fact>}
+        {jobsDiskText(m.hopperDisk?.jobs) && <Fact label="biggest jobs">{jobsDiskText(m.hopperDisk?.jobs)}</Fact>}
         {cachesText(m.hopperDisk?.caches) && <Fact label="caches">{cachesText(m.hopperDisk?.caches)}</Fact>}
         {storageText(m.hopperDisk?.storage) && <Fact label="container storage">{storageText(m.hopperDisk?.storage)}</Fact>}
         {m.cleanupLeftovers && <Fact label="cleanup leftovers"><span className={`font-semibold ${TEXT.warn}`}>{cleanupLeftoversText(m.cleanupLeftovers)}</span></Fact>}
