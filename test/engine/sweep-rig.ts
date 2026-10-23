@@ -87,7 +87,7 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
       // The resource ledger (issue #2504): `ledger`'s entries, closed in place.
       resourceLedger: {
-        forJob: (id: string) => ledger.filter((e) => e.jobId === id),
+        forJob: (id: string) => ledger.filter((e) => e.jobId === id), open: () => ledger.filter((e) => e.state === 'live' || e.state === 'failed'),
         close: (id: string, kind: string, locator: string, state: LedgerEntry['state'], at: string, reason?: string) => {
           const e = ledger.find((x) => x.jobId === id && x.kind === kind && x.locator === locator && x.state !== 'reaped');
           if (e) Object.assign(e, { state, endedAt: at, ...(reason ? { reason } : {}) });

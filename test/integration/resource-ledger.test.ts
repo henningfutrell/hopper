@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor, ExecutionOutcome, Reaped } from '../../src/domain/ports.ts';
 import type { FailuresView, JobBom } from '../../src/domain/types.ts';
+import type { MachineView } from '../../src/engine/queries.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -96,5 +97,15 @@ describe('the resource ledger (issue #2504)', () => {
     store.resourceLedger.close(job.id, 'scratch_dir', `/w/.worktrees/@scratch/${job.id}`, 'reaped', new Date().toISOString());
     expect(store.resourceLedger.open()).toEqual([]);
     expect(await stuck()).toEqual([]);
+  });
+
+  it('counts the cleanup leftovers on the machine they are on (part 3)', async () => {
+    const { a, job } = await ended((id) => ({ kept: [], left: [`/w/.worktrees/@scratch/${id}/containers`] }));
+    const store = a.user().store;
+    const machineId = store.resourceLedger.forJob(job.id)[0]!.machineId;
+    const counts = async () => (await a.api<{ machines: MachineView[] }>('GET', '/api/machines')).body.machines.find((m) => m.id === machineId)?.cleanupLeftovers;
+    expect(await counts()).toBeUndefined();
+    store.jobs.update(job.id, { finishedAt: new Date(Date.now() - 2 * 3600_000).toISOString() });
+    expect(await counts()).toEqual({ jobs: 1, entries: 1, failed: 1 });
   });
 });

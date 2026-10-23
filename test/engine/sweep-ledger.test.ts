@@ -28,4 +28,18 @@ describe('the sweep and the resource ledger (issue #2504)', () => {
     expect(r.reaps).toEqual([{ jobId: 'old' }]);
     expect(r.ledger.map((e) => [e.kind, e.state])).toEqual([['scratch_dir', 'live'], ['job_scope', 'reaped']]);
   });
+
+  it('reaps an entry whose dir is no longer on the machine (removed by hand), so it is no leftover', async () => {
+    const r = rig({ found: { ...none, roots: ['/w'], trees: [] }, ledger: [entry('old', 'scratch_dir', '/w/.worktrees/@scratch/old', 'failed'), entry('old', 'job_worktree', '/w/.worktrees/app/old'), entry('run', 'scratch_dir', '/v/.worktrees/@scratch/run')] });
+    await r.sweep.run(true);
+    expect(r.ledger.map((e) => [e.jobId, e.kind, e.state, e.reason])).toEqual([
+      ['old', 'scratch_dir', 'reaped', 'not found on the machine'], ['old', 'job_worktree', 'reaped', 'not found on the machine'], ['run', 'scratch_dir', 'live', undefined],
+    ]);
+  });
+
+  it('reaps the entries of kept work that is gone from the machine', async () => {
+    const r = rig({ kept: ['done'], found: { ...none, roots: ['/w'], trees: [] }, ledger: [entry('done', 'scratch_dir', '/w/.worktrees/@scratch/done', 'kept')] });
+    await r.sweep.run(true);
+    expect(r.ledger[0]).toMatchObject({ state: 'reaped' });
+  });
 });
