@@ -6,24 +6,18 @@
 // (part 5, a person's act) ends that step from the clearance. Read only.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { deliveryForecast, scheduledPlace, type DeliveryForecast, type ForecastInput } from '../domain/delivery-forecast.ts';
-import { DEFAULT_DELIVERY_SETTINGS, deliveryOf, type DeliveryRepo } from '../domain/delivery-settings.ts';
+import type { DeliveryForecast } from '../domain/delivery-forecast.ts';
+import { DEFAULT_DELIVERY_SETTINGS, deliveryOf } from '../domain/delivery-settings.ts';
 import type { DeliveryStep } from '../domain/delivery-steps.ts';
 import { MAX_SET, promotionSetNumbered, promotionSetOf, type PromotionSet } from '../domain/promotion-sets.ts';
-import { deliveryTracks, stepHistory, TRACK_EVENTS, type DeliveryTrack } from '../domain/delivery-history.ts';
+import type { DeliveryTrack } from '../domain/delivery-history.ts';
 import { expediteOf } from '../domain/delivery-expedite.ts';
-import { gateClearancesOf } from '../domain/delivery-gates.ts';
-import type { DomainEvent } from '../domain/types.ts';
+import { carriesNoChange, clearancesOf, clearedOf, flagsOf, forecastOf, historyOf, HISTORY_DAYS, tracksOf } from '../engine/delivery-reads.ts';
 import type { Clock } from '../domain/ports.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { Operation } from './openapi-operation.ts';
 import type { TenantParts } from './tenants.ts';
 
-/** How far back the step durations are measured. */
-export const HISTORY_DAYS = 30;
-const DAY = 86_400_000;
-/** A job that ended so, with no merged pull request, carries no change. */
-const ENDED = new Set(['failed', 'cancelled', 'rejected']);
 
 export const deliveryForecastQuery = z.object({
   job: z.string().min(1).max(200).optional(),
@@ -68,42 +62,6 @@ const newest = (tracks: Iterable<DeliveryTrack>, match: (t: DeliveryTrack) => bo
   let out: DeliveryTrack | undefined;
   for (const t of tracks) if (match(t) && (!out || t.actuals[0]!.start >= out.actuals[0]!.start)) out = t;
   return out;
-};
-
-/** Every gate clearance, as the expedite flags: not bound to the window. */
-const clearancesOf = (t: TenantParts): DomainEvent[] => t.store.events.between(['delivery_gate.cleared'], new Date(0).toISOString());
-
-/** When each gate of the promotion set a change is in was cleared; none before its landing checks end. */
-function clearedOf(clearances: readonly DomainEvent[], d: DeliveryRepo, repo: string | undefined, current: DeliveryTrack['current'], set?: number): Partial<Record<DeliveryStep, string>> {
-  const n = set ?? (d.schedule && current.step === 'promotion_set' ? promotionSetOf(d.schedule, current.since)?.set : undefined);
-  if (n === undefined || !repo) return {};
-  return Object.fromEntries(Object.entries(gateClearancesOf(clearances, repo, n)).map(([step, c]) => [step, c.at]));
-}
-
-/** A change's place and forecast at `now`, by its repository's delivery settings and its set's gate clearances. */
-function forecastOf(track: DeliveryTrack, d: DeliveryRepo, history: ForecastInput['history'], now: string, cleared: Partial<Record<DeliveryStep, string>>, expedite = false): { deliveredAt: string } | { forecast: DeliveryForecast } {
-  const place = scheduledPlace(d.schedule, track.current, d.gates, now, cleared);
-  if ('deliveredAt' in place) return place;
-  return { forecast: deliveryForecast({ now, current: place, history, gates: d.gates, ...(d.schedule ? { schedule: d.schedule } : {}), ...(expedite ? { expedite } : {}) }) };
-}
-
-/** Every expedite flag: a flag is not bound to the window, since a change may be flagged before its newest job. */
-const flagsOf = (t: TenantParts): DomainEvent[] => t.store.events.between(['delivery_expedite.changed'], new Date(0).toISOString());
-
-/** The tracks of the window: from its start, or `from` when that is earlier. */
-function tracksOf(t: TenantParts, now: Date, from?: string): { tracks: Map<string, DeliveryTrack>; windowStart: string } {
-  const windowStart = new Date(now.getTime() - HISTORY_DAYS * DAY).toISOString();
-  return { tracks: deliveryTracks(t.store.events.between(TRACK_EVENTS, from && from < windowStart ? from : windowStart)), windowStart };
-}
-
-/** Measured only from the window: an old job's own early steps are no history. */
-const historyOf = (tracks: Map<string, DeliveryTrack>, windowStart: string, repo: string | undefined): ForecastInput['history'] =>
-  repo ? stepHistory([...tracks.values()].filter((x) => x.actuals[0]!.start >= windowStart), repo) : {};
-
-/** A job that ended with no merged pull request carries no change. */
-const carriesNoChange = (t: TenantParts, track: DeliveryTrack): string | undefined => {
-  const status = t.store.jobs.get(track.jobId)?.status;
-  return status && ENDED.has(status) && !track.actuals.some((a) => a.step === 'landing') ? status : undefined;
 };
 
 /** The forecast of the change the query names, or of the promotion set it names, at `now`. */

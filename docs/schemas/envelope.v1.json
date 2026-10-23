@@ -407,6 +407,8 @@
         "push_requirements.defaults_changed",
         "delivery_expedite.changed",
         "delivery_gate.cleared",
+        "push_requirements.summarized",
+        "push_requirements.ci_missed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

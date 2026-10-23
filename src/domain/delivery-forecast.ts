@@ -6,6 +6,7 @@ import {
   DEFAULT_BLOCKER, DELIVERY_STEPS, MIN_SAMPLES, SCHEDULED_STEPS, stepEstimate, type Blocker, type DeliveryStep,
 } from './delivery-steps.ts';
 import { nextCutoff, promotionSetOf, type PromotionSetSchedule } from './promotion-sets.ts';
+import type { StepActual } from './forecast-accuracy.ts';
 
 export interface ForecastInput {
   now: string;
@@ -144,20 +145,32 @@ export function deliveryForecast(f: ForecastInput): DeliveryForecast {
 }
 
 /**
- * Where a change in a scheduled step is at `now` (issue #2554 part 3): a scheduled step with no delivery gate ends at its
- * scheduled end, so past it the change is in the next step since then; a gated step holds the change until a person ends
- * it: its gate clearance (part 5, `cleared`: when, per step), and not before the step starts. Past the end of production,
- * the change is delivered. Any other step, or no schedule: the step as it is.
+ * When the scheduled steps from `from` actually started and ended by `now` (issue #2554 part 6, the delivery ledger): a
+ * scheduled step with no delivery gate ends at its scheduled end; a gated step holds the change until a person ends it: its
+ * gate clearance (part 5, `cleared`: when, per step), and not before the step starts. The step the change is in has no
+ * end. With no schedule only the start of `from` is known.
+ */
+export function scheduledActuals(s: PromotionSetSchedule | undefined, from: ForecastInput['current'], gates: ForecastInput['gates'], now: string, cleared: Partial<Record<DeliveryStep, string>> = {}): StepActual[] {
+  const at = Date.parse(now);
+  let start = Date.parse(from.since);
+  const out: StepActual[] = [];
+  for (const step of SCHEDULED_STEPS.slice(SCHEDULED_STEPS.indexOf(from.step))) {
+    const clearedAt = gates[step] ? cleared[step] : undefined;
+    const end = clearedAt === undefined ? scheduledEnd(step, start, s, false) : Math.max(start, Date.parse(clearedAt));
+    if (end === undefined || at < end || (gates[step] && clearedAt === undefined)) return [...out, { step, start: iso(start) }];
+    out.push({ step, start: iso(start), end: iso(end) });
+    start = end;
+  }
+  return out;
+}
+
+/**
+ * Where a change in a scheduled step is at `now` (issue #2554 part 3), by `scheduledActuals`: the step it is in, since its
+ * start; past the end of production, the change is delivered. Any other step, or no schedule: the step as it is.
  */
 export function scheduledPlace(s: PromotionSetSchedule | undefined, current: ForecastInput['current'], gates: ForecastInput['gates'], now: string, cleared: Partial<Record<DeliveryStep, string>> = {}): ForecastInput['current'] | { deliveredAt: string } {
   if (!s || !SCHEDULED_STEPS.includes(current.step)) return current;
-  const at = Date.parse(now);
-  let start = Date.parse(current.since);
-  for (const step of SCHEDULED_STEPS.slice(SCHEDULED_STEPS.indexOf(current.step))) {
-    const clearedAt = gates[step] ? cleared[step] : undefined;
-    const end = clearedAt === undefined ? scheduledEnd(step, start, s, false) : Math.max(start, Date.parse(clearedAt));
-    if (end === undefined || at < end || (gates[step] && clearedAt === undefined)) return step === current.step ? current : { step, since: iso(start) };
-    start = end;
-  }
-  return { deliveredAt: iso(start) };
+  const last = scheduledActuals(s, current, gates, now, cleared).at(-1)!;
+  if (last.end !== undefined) return { deliveredAt: last.end };
+  return last.step === current.step ? current : { step: last.step, since: last.start };
 }

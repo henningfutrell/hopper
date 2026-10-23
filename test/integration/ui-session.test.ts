@@ -154,11 +154,11 @@ describe('UI mutations', () => {
     const db = tempDbPath();
     const prev = cleanup;
     cleanup = () => { prev(); db.cleanup(); };
-    writeConfig(db.dbPath, 'sign-in', { version: 1, sessions: { idleHours: 0.00005, maxHours: 1 } }); // 180 ms
+    writeConfig(db.dbPath, 'sign-in', { version: 1, sessions: { idleHours: 1 / 1200, maxHours: 1 } }); // 3 s: a login and a check fit in it on a loaded CI runner
     t = await startTestApp({ dbPath: db.dbPath });
     const token = await t.login();
     expect(JSON.parse((await session(token)).text).authenticated).toBe(true);
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 3500));
     expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
     expect((await t.ui('/ui/api/queue-gate', { mode: 'review', autoAcceptPerHour: null }, { token })).status).toBe(403);
   });

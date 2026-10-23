@@ -70,6 +70,8 @@ export interface ProxyApi {
   head(repo: string, ref: string): Promise<string>;
   /** The base branch of the open pull request from `branch` of `repo` into it; undefined: none (issue #1147: the shrink guard's base). */
   pullRequestBase(repo: string, branch: string): Promise<string | undefined>;
+  /** The open pull request from `branch` of `repo` into it, its number and body; undefined: none (issue #2555 part 4: the push requirements summary). Absent: none is read. */
+  pullRequestOf?(repo: string, branch: string): Promise<{ number: number; body: string } | undefined>;
 }
 
 interface RestIssue { id?: number; number: number; title: string; state: string; body?: string | null; html_url: string; user?: { login?: string } | null; labels?: ({ name?: string } | string)[]; pull_request?: unknown }
@@ -362,6 +364,10 @@ export function createProxyApi(o: { apiUrl: string; kind?: GitHubCallKind } & To
   // A running job's requests count as its own kind (issue #985); a person's read of a job's pull request (issue #1169) as a job's other read.
   const req = makeRequest(o.apiUrl, undefined, { kind: o.kind ?? 'job' });
   const withToken = tokenCaller(o);
+  const openPull = (repo: string, branch: string): Promise<RestPull | undefined> => withToken(
+    async (token) => ((await req('GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', head: `${repo.split('/')[0]!}:${branch}`, per_page: 1, headers: { authorization: `token ${token}` } })).data as RestPull[])[0],
+    (err) => new ProxyGitHubError(messageOf(err, `the pull request of ${repo} ${branch}`), statusOf(err)),
+  );
   return {
     perform: (r, filed) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), filed), (err) => errorOf(err, r)),
     find: (r, postKey, since, login, filed = {}) => withToken((token) => findFiled(req, token, r, { postKey, since, login, ...(filed.subIssueOf ? { subIssueOf: filed.subIssueOf } : {}) }, linkSubIssue), (err) => errorOf(err, r)),
@@ -373,12 +379,7 @@ export function createProxyApi(o: { apiUrl: string; kind?: GitHubCallKind } & To
       async (token) => ((await req('GET /repos/{owner}/{repo}/commits/{ref}', { ...splitRepo(repo), ref, headers: { authorization: `token ${token}` } })).data as { sha: string }).sha,
       (err) => new ProxyGitHubError(messageOf(err, `the head of ${repo} ${ref}`), statusOf(err)),
     ),
-    pullRequestBase: (repo, branch) => withToken(
-      async (token) => {
-        const pulls = (await req('GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', head: `${repo.split('/')[0]!}:${branch}`, per_page: 1, headers: { authorization: `token ${token}` } })).data as RestPull[];
-        return pulls[0]?.base.ref;
-      },
-      (err) => new ProxyGitHubError(messageOf(err, `the pull request of ${repo} ${branch}`), statusOf(err)),
-    ),
+    pullRequestBase: async (repo, branch) => (await openPull(repo, branch))?.base.ref,
+    pullRequestOf: async (repo, branch) => { const p = await openPull(repo, branch); return p && { number: p.number, body: p.body ?? '' }; },
   };
 }

@@ -11,7 +11,7 @@ import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrin
 import type { CheckFastForward, CountPushLines } from '../git-mirror/push-lines.ts';
 import type { HoldsRequirements } from '../git-mirror/push-requirements-at.ts';
 import { REQUIREMENTS_CLIENT, REQUIREMENTS_CLIENT_FILE, REQUIREMENTS_SCRIPT, REQUIREMENTS_SCRIPT_FILE, REQUIREMENTS_SCRIPT_VARIABLE } from '../github-proxy/requirements-script.ts';
-import { PUSH_REQUIREMENTS_EVALUATED, pushRequirementsGate } from './push-requirements.ts'; import { pushRequirementOverride } from '../domain/direct-jobs.ts';
+import { PUSH_REQUIREMENTS_EVALUATED, pushRequirementsGate, storeSummaries } from './push-requirements.ts'; import { pushRequirementOverride } from '../domain/direct-jobs.ts';
 import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, directPushFor, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import { ownsPullRequest } from './owns-pull-request.ts';
@@ -183,6 +183,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     const known = knownPullRequest(number, url, { ...(card ? { card } : {}), ...(seen ? { seen } : {}), ...(item ? { item } : {}) });
     return { ...(known ? { known } : {}), ...(item ? { item: itemOf(item) } : {}) };
   };
+  const summaries = storeSummaries(o.store, (repo) => (o.accounts.account(keyOf(repo)) === undefined ? { problem: notMineAt(keyOf(repo), notMine) } : api(keyOf(repo))), (l) => o.logger.warn(l));
   const user: ProxyUser = {
     id: o.user.id,
     // A job moved off a lost machine (issue #1569) holds the token of its newest move only: the agent left there is refused.
@@ -206,6 +207,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     },
     pullRequest,
     ownsPullRequest: (job, repo, number, op) => ownsPullRequest(o.store, job, repo, number, op),
+    pushRequirementsSummary: summaries.of, // Issue #2555 part 4: the summary of the commit the job's newest push of the branch moved it to.
     // A fan-out key is the issue's (issue #1909): an earlier job of the same issue's answer too.
     replay: (jobId, key) => {
       const issue = o.store.jobs.get(jobId)?.source?.key;
@@ -384,6 +386,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         recorded: (jobId, requestId) => o.store.events.recent(500, [...PUSH_EVENTS], jobId).some((e) => (e.data as { requestId?: unknown }).requestId === requestId),
         ...(o.fastForward ? { fastForward: ({ repo, ...push }: Parameters<CheckFastForward>[2] & { repo: string }) => o.fastForward!(repo, mirrorRemote(repo), push) } : {}),
         // Push requirements (issue #2555): the job's evaluations, else the commit's tree in the mirror and the hopper's defaults.
+        pushed: summaries.pushed, // And, after a push, the summary in the branch's pull request (part 4).
         pushRequirements: pushRequirementsGate({ evaluations: (jobId) => o.store.events.recent(500, [PUSH_REQUIREMENTS_EVALUATED], jobId), defaults: () => o.store.settings.getPushRequirementDefaults(), job: (jobId) => o.store.jobs.get(jobId), override: (job) => pushRequirementOverride(job, (id) => o.store.directJobs.get(id)), ...(o.holdsRequirements ? { holds: o.holdsRequirements } : {}), remote: mirrorRemote }),
       },
     },

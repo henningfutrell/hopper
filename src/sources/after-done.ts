@@ -70,7 +70,7 @@ import { createTendAgain } from './tend-again.ts'; import { createPullRequestAct
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
-import { pullRequestCensus } from './census.ts';
+import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, jobPullRequestRepo, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
@@ -140,7 +140,8 @@ export function createAfterDone(c: AfterDoneContext) {
     keepFollowed(c, jobId, r);
     // Who merged it: the act's, else as its merge marker kept it, after a stop (issue #1588).
     const who = acting ?? r.acting;
-    if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
+    // And a CI run that failed on a check a push requirement stands for (issue #2555 part 5).
+    if (r.outcome === 'open') { seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined); recordCiMiss(store, jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined); }
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
@@ -298,7 +299,7 @@ export function createAfterDone(c: AfterDoneContext) {
     if (r?.outcome !== 'pushed') return false;
     const s = (store.jobs.get(d.jobId)?.sourceState?.source ?? {}) as { seen?: PullRequestSeen };
     if (s.seen) {
-      const { failedChecks: _f, mergeHeldBehind: _m, ...seen } = s.seen;
+      const { failedChecks: _f, failedHead: _h, mergeHeldBehind: _m, ...seen } = s.seen;
       c.setSource(d.jobId, { ...s, seen: { ...seen, conflicting: false, checks: 'pending', pushedAt: new Date(c.now()).toISOString() } satisfies PullRequestSeen });
     }
     store.events.append({ type: 'job.pull_request_base_merged', jobId: d.jobId, data: { pullRequest: d.pullRequest, commit: r.commit, resolved: r.resolved } });

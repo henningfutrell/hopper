@@ -1,0 +1,1 @@
+- The hopper now keeps, for each step of each change, the time it first expected and the time it really took. You can ask how far off its forecasts were, per step and per repository.

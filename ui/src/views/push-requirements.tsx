@@ -8,8 +8,8 @@ import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { PUSH_REQUIREMENTS_NOTE, pushRequirementsSummary, requirementsDraft, requirementsText } from '@/model/push-requirements';
-import type { PushRequirement } from '@/model/wire';
+import { PUSH_REQUIREMENTS_NOTE, pushRequirementMetricsLine, pushRequirementsSummary, requirementsDraft, requirementsText } from '@/model/push-requirements';
+import type { PushRequirement, PushRequirementMetrics } from '@/model/wire';
 import { useHopper } from '@/store';
 
 type Saved = { requirements: PushRequirement[] };
@@ -46,9 +46,12 @@ function Form({ view, onSaved }: { view: Saved; onSaved: (v: Saved) => void }) {
 /** Read when shown; an answer without a `requirements` list is refused, never read as none. Keyed by what was saved. */
 export function PushRequirements() {
   const [view, setView] = useState<Saved | null>(null);
+  const [metrics, setMetrics] = useState<(PushRequirementMetrics & { days: number }) | null>(null);
   useEffect(() => { get<Saved>('/api/push-requirements').then((v) => { if (Array.isArray(v?.requirements)) setView(v); }, () => {}); }, []);
+  useEffect(() => { get<PushRequirementMetrics & { days: number }>('/api/push-requirements/metrics').then((m) => { if (typeof m?.caught === 'number') setMetrics(m); }, () => {}); }, []);
   return (
     <Panel title="Push requirements" icon={ClipboardCheck} className="max-w-3xl">
+      {metrics && <p data-slot="push-requirements-metrics" className="mb-3 text-sm text-muted-foreground">{pushRequirementMetricsLine(metrics)}</p>}
       {view ? <Form key={JSON.stringify(view.requirements)} view={view} onSaved={setView} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
     </Panel>
   );

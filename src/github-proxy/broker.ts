@@ -28,6 +28,7 @@ import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain
 import { isGitLabItem } from '../domain/gitlab-account.ts'; import { isDirectQuery } from '../domain/direct-jobs.ts';
 import { postKeySince, withPostKey } from '../domain/post-key.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
+import { withPushRequirementsSummary } from '../domain/push-requirements-summary.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, PR_OWNED, isRead, proxyRequest, REPORT_OP, ROUTE_LABEL, reportRequest, WAIT_OP, waitRequest, type IssueParent, type ProxyAsker, type ProxyOp, type ProxyRequest, type ReportRequest } from './policy.ts';
@@ -60,6 +61,8 @@ export interface ProxyUser {
    * Absent: none.
    */
   ownsPullRequest?(job: Job, repo: string, number: number, op: ProxyOp): true | string;
+  /** The push requirements summary of the commit the job pushed to `head` (`pr create`'s, issue #2555 part 4); undefined: none. Absent: none. */
+  pushRequirementsSummary?(job: Job, repo: string, head: string): string | undefined;
   /** The first answer to the job's request with resend key `key` (issue #1607); undefined: none yet. Absent: none is kept. */
   replay?(jobId: string, key: string): ProxyReplay | undefined;
   /** When the job's request with resend key `key` was first sent, with no answer recorded (issue #1959 part 2); undefined: never. */
@@ -297,11 +300,14 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       };
       const masked = maskRequest(req);
       const parent: IssueParent | undefined = masked.op === 'issue.create' && jobRepo && issue !== undefined ? { repo: jobRepo, number: issue, required: masked.required === true } : undefined;
+      // A pull request holds the push requirements summary of the commit the job pushed (issue #2555 part 4), before its post key.
+      const withSummary = (text: string, summary: string | undefined): string => (summary ? withPushRequirementsSummary(text, maskGitHubTokens(summary)) : text);
       // A write with a resend key ends with its post key (issue #1959 part 2): what a look-up after a crash finds it by.
       const postKey = resendKey !== undefined ? proxyPostKey(job.source?.key ?? job.id, resendKey) : undefined;
       const keyed = (text: string): string => (postKey ? withPostKey(text, postKey) : text);
       const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: keyed(`${masked.body}${filedNote(job.id, requestId, parent)}`) }
-        : masked.op === 'issue.comment' || masked.op === 'pr.create' ? { ...masked, body: keyed(masked.body) } : masked;
+        : masked.op === 'issue.comment' ? { ...masked, body: keyed(masked.body) }
+          : masked.op === 'pr.create' ? { ...masked, body: keyed(withSummary(masked.body, user.pushRequirementsSummary?.(job, masked.repo, masked.head))) } : masked;
       // A repo query (issue #1074): what the cache kept, when it answers now; the ledger's word on the item beside it.
       const read = isRead(req.op);
       const key = queryKey(req);
