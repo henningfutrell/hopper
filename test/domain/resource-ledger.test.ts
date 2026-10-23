@@ -177,6 +177,13 @@ describe('goneClosures (issue #2504 part 3)', () => {
     const of = (jobId: string, machineId = 'm1') => entry('scratch_dir', `/w/.worktrees/@scratch/${jobId}`, { jobId, machineId });
     expect(goneClosures([of('live'), of('unknown'), of('j2', 'm2')], found, 'm1', ended)).toEqual([]);
   });
+
+  it('reaps a kept entry whose thing is gone, and never judges a reaped one again (part 8)', () => {
+    const kept = [entry('scratch_dir', SCRATCH, { state: 'kept' }), entry('job_worktree', TREE, { state: 'kept' }), entry('scratch_dir', '/w/.worktrees/@scratch/j2', { jobId: 'j2', state: 'reaped' })];
+    expect(goneClosures(kept, found, 'm1', ended).map((c) => [c.entry.kind, c.entry.state, c.state])).toEqual([['scratch_dir', 'kept', 'reaped'], ['job_worktree', 'kept', 'reaped']]);
+    const there = { ...found, scratch: [{ jobId: 'j1', path: SCRATCH, ageMs: 1 }], trees: [{ path: TREE, ageMs: 1 }] };
+    expect(goneClosures(kept, there, 'm1', ended)).toEqual([]);
+  });
 });
 
 describe('machineLeftoversOf (issue #2504 part 3)', () => {
@@ -225,5 +232,9 @@ describe('ledgerRootsOf (issue #2504 part 7)', () => {
       entry('job_worktree', '/t/workspace/worktrees/my-app-j4'), entry('job_scope', 'hopper-job-j1.scope'), entry('scratch_dir', '/s/.worktrees/@scratch/j5', { machineId: 'm2' }),
       entry('scratch_dir', '/w/.worktrees/@scratch/j6', { state: 'failed' }), entry('scratch_dir', '/r/.worktrees/@scratch/j7', { state: 'reaped' }), entry('scratch_dir', 'not-a-path'),
     ], 'm1')).toEqual(['/t', '/u', '/v', '/w']);
+  });
+
+  it('names the work tree of a kept entry too, so kept work an older job left is found again (part 8)', () => {
+    expect(ledgerRootsOf([entry('scratch_dir', '/k/.worktrees/@scratch/j1', { state: 'kept' }), entry('job_worktree', '/q/.worktrees/app/j2', { jobId: 'j2', state: 'kept' })], 'm1')).toEqual(['/k', '/q']);
   });
 });
