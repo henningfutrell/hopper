@@ -89,7 +89,7 @@ export function createLocalMachineSource(o: {
     list: async () => {
       ensure();
       const read = disk();
-      const d = read && judged(read, o.diskLow?.());
+      const thresholds = o.diskLow?.(), d = read && judged(read, thresholds);
       const res = resources();
       const sweep = o.sweep?.(); const memoryFloor = o.memoryFloor?.(); const jobLimits = o.jobLimits?.();
       check();
@@ -107,7 +107,7 @@ export function createLocalMachineSource(o: {
           ...(o.session ? { herdr: { session: o.session } } : {}),
           ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
           ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}),
-          ...(d ? { disk: d } : {}),
+          ...(d ? { disk: d } : {}), ...(thresholds ? { diskThresholds: { ...thresholds } } : {}),
           ...(res ? { resources: res } : {}),
           // Its jobs start with this environment (issue #1248): a token variable in it is theirs.
           infraCredentials: infraCredentialsAt(homedir(), scrubbedEnv()),
