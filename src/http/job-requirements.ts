@@ -85,8 +85,8 @@ export function jobRequirementsRoutes(app: FastifyInstance, o: { tenants: Tenant
     }
     const at = requirementsOf(call.requirementsFiles);
     if ('problem' in at) return say(422, `no: ${at.problem}`);
-    // The hopper's defaults and the job's override are not set anywhere yet: the repository's own requirements apply.
-    const plan = planPush(effectiveRequirements(at), {
+    // The hopper's defaults (Settings → Push requirements) below the commit's own; the job's override is not set anywhere yet.
+    const plan = planPush(effectiveRequirements({ defaults: t.store.settings.getPushRequirementDefaults(), ...at }), {
       files: call.files, repo: call.repo, branch: call.branch, base: call.base, kind: workKindOf(job.spec), labels: job.source?.labels ?? [],
     });
     if (call.op === 'plan') return reply.send({ plan });

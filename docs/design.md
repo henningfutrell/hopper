@@ -33929,15 +33929,30 @@ repository passed, the push goes on; it failed, the push is refused with the req
 evaluation of the commit, the commit's tree is read in the user's mirror, in the push's quarantine
 (`src/git-mirror/push-requirements-at.ts`): no requirements file, the push goes on, as before; one, the push is refused,
 as git's own refusal: `octo/tools has push requirements, and 4f1c2a9e8b7d has no passing evaluation: run sh
-"$HOPPER_REQUIREMENTS" check in the work tree at that commit, fix what fails, and push again`. A new commit (an amend, a
-rebase) needs a new evaluation. Git cannot say (no credential, git failing): the push goes on, as with the shrink guard —
+"$HOPPER_REQUIREMENTS" check in the work tree at that commit, fix what fails, and push again`. With no requirements file,
+the **default push requirements** (below) are planned against the files the commit changes from where it leaves the base,
+read in the same quarantine (`git merge-base`, `git diff --name-only --no-renames`, as the client lists them), with the
+job's kind of work and labels: one applies, the push is refused the same way, naming it (`the hopper's default push
+requirements apply to 4f1c2a9e8b7d (workflows), …`); none applies, the push goes on with no evaluation. A new commit (an
+amend, a rebase) needs a new evaluation. Git cannot say (no credential, git failing): the push goes on, as with the shrink guard —
 a net, not a gate a broken mirror may close on every push. A branch deleted is not judged.
 
 **Trust.** The job runs its checks and reports their exit codes: a job that lies passes its own gate. The gate is for a
 job that works as asked, to catch in a minute what CI catches in fifteen; CI still runs every gate on the pull request.
 
-**Left for later parts.** The hopper's default requirements (a user's setting, edited in the UI) and the job's override
-(from its item or a direct job), which the levels above already take; the evaluation summarized on the pull request; the
+**The default push requirements** (part 2, `pushRequirementDefaults`, a user setting; none by default). An admin edits them
+on Settings → Push requirements (`ui/src/views/push-requirements.tsx`): the same shape as a requirements file, as JSON, as
+every setting of the hopper is (no YAML in its own config); `GET /api/push-requirements`, `POST /ui/api/push-requirements`
+(admin; refused with the file's own reasons when it cannot be read), recorded as `push_requirements.defaults_changed` (the
+ids before and after, and who) when they change. `POST /job/requirements` puts them below the commit's own
+(`effectiveRequirements`, level `default`), so a repository's requirement of the same id replaces one whole, a stricter or a
+looser threshold alike. Read at each evaluation and each push: a change applies without a restart. Not taken: a push with
+no evaluation refused whenever defaults are set. A default that never applies to a repository would then cost every job
+of it a run of `check` before each push; the gate plans the defaults itself, as the route does, and asks only where one
+applies.
+
+**Left for later parts.** The job's override (from its item or a direct job), which the levels above already take; the
+evaluation summarized on the pull request; the
 count of CI runs that failed on a check a requirement that applied should have caught here, and the billed minutes saved.
 
 **Verification.** `test/domain/push-requirements.test.ts` (the file read and refused; every condition and `all`, `any`,
@@ -33947,7 +33962,11 @@ threshold missed, a measure not printed, checks not run); `test/integration/push
 fake GitHub's git, the real client: the dry run lists exactly the plan and records nothing; a push with no evaluation is
 refused and nothing changes on GitHub; a check under its threshold fails with its output, and the push is still refused;
 after the fix the evaluation passes, is recorded with its command, thresholds and measured values, and the push goes
-through; changes not committed are refused; a repository with no requirements file takes a push with no evaluation).
+through; changes not committed are refused; a repository with no requirements file takes a push with no evaluation; part
+2: the defaults are an admin's setting, refused when they cannot be read and recorded when they change; a repository with
+no requirements file gets them, so a push one applies to is refused until its evaluation passes, at level `default`; a
+push they all skip goes on with no evaluation; a repository's requirement of the same id replaces a default with its
+looser threshold); `test/ui/push-requirements.test.ts` (the panel's summary and the check of the JSON it sends).
 
 ## Delivery forecasts (issue #2554 part 1, 2026-10-22)
 

@@ -404,6 +404,7 @@
         "hopper.event_loop_stalled",
         "push_requirements.evaluated",
         "delivery_settings.changed",
+        "push_requirements.defaults_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]
