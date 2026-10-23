@@ -121,6 +121,24 @@ describe('a machine\'s resources', () => {
     expect(meter().read()).toMatchObject({ bootId: 'b0a1-c2d3', memTotalBytes: 4 * GIB, kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: 10 * GIB });
   });
 
+  // Issue #2499 part 5: memory pressure (PSI). A seat near its cgroup limit reclaims, and its tasks stall on memory
+  // although some memory is still available. The reading says the share of the last 10 s a task waited on memory.
+  it('says its memory pressure: the limited cgroup\'s, else the kernel\'s', () => {
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    put('proc/pressure/memory', 'some avg10=1.50 avg60=0.80 avg300=0.10 total=12345\nfull avg10=0.25 avg60=0.10 avg300=0.00 total=678\n');
+    expect(meter().read()).toMatchObject({ memPressure: { someAvg10: 1.5, fullAvg10: 0.25 } });
+    put('proc/self/cgroup', '0::/machine.slice/seat.scope\n');
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.max', `${4 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.current', `${3 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.pressure', 'some avg10=42.00 avg60=30.00 avg300=9.00 total=99\nfull avg10=12.00 avg60=8.00 avg300=1.00 total=9\n');
+    expect(meter().read()).toMatchObject({ memTotalBytes: 4 * GIB, memPressure: { someAvg10: 42, fullAvg10: 12 } });
+  });
+
+  it('no pressure file (an older kernel, PSI off): no memory pressure', () => {
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    expect(meter().read()).not.toHaveProperty('memPressure');
+  });
+
   // Issue #2499: a job on its own wait holds no lane, but its scope keeps its builds. Each job scope's memory is read, and
   // a scope outside the cgroup whose limit the reading is (a sibling of the hopper's own unit) is taken off its memory.
   describe('job scopes (issue #2499)', () => {

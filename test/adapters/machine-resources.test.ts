@@ -41,6 +41,12 @@ describe('resources an ssh target prints', () => {
     expect(readResources(printed.replace('hopper-res 8', 'hopper-res boot 0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b\nhopper-res 8'))).toMatchObject({ bootId: '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b' });
   });
 
+  it('its memory pressure (issue #2499 part 5), the share of the last 10 s a task waited on memory', () => {
+    const psi = 'hopper-res some avg10=33.10 avg60=20.00 avg300=5.00 total=1\nhopper-res full avg10=4.00 avg60=1.00 avg300=0.00 total=1\nhopper-res 8';
+    expect(readResources(printed.replace('hopper-res 8', psi))).toMatchObject({ memPressure: { someAvg10: 33.1, fullAvg10: 4 } });
+    expect(readResources(printed)).not.toHaveProperty('memPressure');
+  });
+
   it('no resource lines (a machine with no /proc): none', () => {
     expect(readResources('/home/far\nhopper-disk 1 1\nhopper-work-tree-ok')).toBeUndefined();
   });
@@ -75,6 +81,13 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, jobMemoryBytes: { j1: GIB, 'a-b_2': 2 } })).toEqual({ ...r, jobMemoryBytes: { j1: GIB, 'a-b_2': 2 } });
     expect(resourcesOf({ ...r, jobMemoryBytes: { j1: -1, 'x y': 1, j2: 'a' } })).toEqual(r);
     expect(resourcesOf({ ...r, jobMemoryBytes: [1] })).toEqual(r);
+  });
+
+  it('a client\'s memory pressure (issue #2499 part 5): kept when both shares are 0..100, else dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3 } })).toEqual({ ...r, memPressure: { someAvg10: 25.5, fullAvg10: 3 } });
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 101, fullAvg10: 3 } })).toEqual(r);
+    expect(resourcesOf({ ...r, memPressure: { someAvg10: 2 } })).toEqual(r);
   });
 
   it('a client\'s Node version (issue #2479): kept when it reads as one, its floor judged here, not taken from the client', () => {

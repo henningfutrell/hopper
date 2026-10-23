@@ -215,3 +215,26 @@ describe('a host pool (issue #2499)', () => {
     expect(d.wait[0]!.reason).toBe("waiting for memory: a's host has 3 GiB available, and a new job needs 2 GiB over its floor of 1.4 GiB");
   });
 });
+
+// Issue #2499 part 5: memory pressure (PSI). A seat near its cgroup limit reclaims all the time: its tasks stall on memory
+// while its reading still shows memory available. A machine whose tasks waited on memory too long takes no new job.
+describe('memory pressure (issue #2499)', () => {
+  const pressed = (some: number, over: Partial<MachineSnapshot> = {}): MachineSnapshot =>
+    machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 4 * GIB, memAvailableBytes: 3.6 * GIB, memPressure: { someAvg10: some, fullAvg10: 1 } }, ...over });
+
+  it('a machine whose tasks waited on memory 20% of the last 10 s or more takes no new job, though its memory holds one', () => {
+    const d = decide(inputs({ machines: [pressed(35)], waiting: burst(1) }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe("waiting for memory: local's memory is under pressure: its tasks waited on memory 35% of the last 10 s, and a new job starts only below 20%");
+  });
+
+  it('below 20% the machine takes the job, and a job goes to the machine not under pressure', () => {
+    expect(decide(inputs({ machines: [pressed(19.9)], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+    const d = decide(inputs({ machines: [pressed(50, { id: 'a' }), pressed(2, { id: 'b' })], waiting: burst(1) }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['b']);
+  });
+
+  it('a floor of 0 turns the pressure check off too', () => {
+    expect(decide(inputs({ machines: [pressed(80, { memoryFloor: { floorGiB: 0 } })], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+  });
+});
