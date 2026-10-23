@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { userSystemd } from '../support/systemd.ts';
 import { REAP_DONE, readReap, readSurvey, reapArgv, scopeUnitOf, scriptArgvOf, surveyArgv } from '../../src/client/reap.ts';
+import { withoutUse } from '../support/reap-said.ts';
 
 const JOB = 'job-401-abcdef', OTHER = 'job-401-other';
 
@@ -104,7 +105,7 @@ describe('the reap at job end (issue #401)', () => {
     writeFileSync(join(scratch, 'tmp.txt'), 'x');
     cloneAt(join(scratch, 'repo'));
     const out = reap();
-    expect(readReap(out)).toEqual({ kept: [] });
+    expect(withoutUse(readReap(out))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
     expect(existsSync(join(root, 'work', '.worktrees', '@scratch'))).toBe(true);
   });
@@ -132,7 +133,7 @@ describe('the reap at job end (issue #401)', () => {
     const tree = join(scratch, 'wt');
     git(main, 'worktree', 'add', '-q', '-b', 'issue-1', tree, 'origin/main');
     const out = reap();
-    expect(readReap(out)).toEqual({ kept: [] });
+    expect(withoutUse(readReap(out))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
     expect(git(main, 'worktree', 'list')).not.toContain(tree);
   });
@@ -146,7 +147,7 @@ describe('the reap at job end (issue #401)', () => {
     git(main, 'commit', '-q', '-m', 'c');
     const pushed = join(scratch, 'pushed');
     git(main, 'worktree', 'add', '-q', '-b', 'pushed', pushed, 'origin/main');
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
 
     mkdirSync(scratch, { recursive: true });
     const ahead = join(scratch, 'ahead');
@@ -154,13 +155,13 @@ describe('the reap at job end (issue #401)', () => {
     writeFileSync(join(ahead, 'd.txt'), 'd\n');
     git(ahead, 'add', '.');
     git(ahead, 'commit', '-q', '-m', 'd');
-    expect(readReap(reap())).toEqual({ kept: [ahead], ...tipsOf(ahead), reasons: { [ahead]: ['unpushed'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [ahead], ...tipsOf(ahead), reasons: { [ahead]: ['unpushed'] } });
   });
 
   it('touches nothing but a job scratch dir', () => {
     const elsewhere = join(root, 'work');
     writeFileSync(join(elsewhere, 'keep.txt'), 'x');
-    expect(readReap(reap(JOB, elsewhere))).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap(JOB, elsewhere)))).toEqual({ kept: [] });
     expect(existsSync(join(elsewhere, 'keep.txt'))).toBe(true);
   });
 
@@ -170,7 +171,7 @@ describe('the reap at job end (issue #401)', () => {
 
   it('with no scratch dir named, stops the job\'s processes and removes nothing', () => {
     writeFileSync(join(scratch, 'tmp.txt'), 'x');
-    expect(readReap(reap(JOB, ''))).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap(JOB, '')))).toEqual({ kept: [] });
     expect(existsSync(join(scratch, 'tmp.txt'))).toBe(true);
   });
 });
@@ -201,7 +202,7 @@ describe('a job worktree linked to shared dependencies (issue #410)', () => {
     const tree = join(scratch, 'wt');
     git(main, 'worktree', 'add', '-q', '--detach', tree, 'origin/main');
     symlinkSync(shared, join(tree, 'node_modules'));
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
     expect(existsSync(join(shared, 'left-pad', 'index.js'))).toBe(true);
     expect(git(main, 'worktree', 'list')).not.toContain(tree);
@@ -215,7 +216,7 @@ describe('a job worktree linked to shared dependencies (issue #410)', () => {
     mkdirSync(join(root, 'nm'));
     symlinkSync(join(root, 'nm'), join(tree, 'node_modules'));
     writeFileSync(join(tree, 'new.txt'), 'n\n');
-    expect(readReap(reap())).toEqual({ kept: [tree], reasons: { [tree]: ['dirty'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [tree], reasons: { [tree]: ['dirty'] } });
     expect(lstatSync(join(tree, 'node_modules')).isSymbolicLink()).toBe(true);
   });
 });
@@ -310,7 +311,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     commit(repo, 'b.txt');
     git(repo, 'push', '-q', 'origin', 'issue-1');
     cloneAt(join(scratch, 'untouched'));
-    expect(readReap(keeping())).toEqual({ kept: [], pushed: [repo] });
+    expect(withoutUse(readReap(keeping()))).toEqual({ kept: [], pushed: [repo] });
     expect(existsSync(join(repo, 'b.txt'))).toBe(true);
   });
 
@@ -321,7 +322,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     commit(repo, 'b.txt');
     git(repo, 'push', '-q', 'origin', 'issue-1');
     commit(repo, 'c.txt');
-    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo), reasons: { [repo]: ['unpushed'] }, pushed: [repo] });
+    expect(withoutUse(readReap(keeping()))).toEqual({ kept: [repo], ...tipsOf(repo), reasons: { [repo]: ['unpushed'] }, pushed: [repo] });
   });
 
   it('a branch with commits no remote has is not pushed', () => {
@@ -329,7 +330,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     cloneAt(repo);
     git(repo, 'checkout', '-q', '-b', 'issue-1');
     commit(repo, 'b.txt');
-    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo), reasons: { [repo]: ['unpushed'] } });
+    expect(withoutUse(readReap(keeping()))).toEqual({ kept: [repo], ...tipsOf(repo), reasons: { [repo]: ['unpushed'] } });
     expect(existsSync(scratch)).toBe(true);
   });
 
@@ -339,7 +340,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     git(repo, 'checkout', '-q', '-b', 'issue-1');
     commit(repo, 'b.txt');
     git(repo, 'push', '-q', 'origin', 'issue-1');
-    expect(readReap(reap())).toEqual({ kept: [], pushed: [repo] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [], pushed: [repo] });
     expect(existsSync(scratch)).toBe(false);
   });
 });

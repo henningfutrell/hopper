@@ -78,7 +78,7 @@ describe('the containers and volumes the reap removed (issue #1120)', () => {
 
 describe('what the job\'s scope used (issue #2498)', () => {
   it('is recorded on the job: job.resources_used with its machine', async () => {
-    const used = { memoryPeakBytes: 3221225472, cpuSeconds: 754.5, oomKills: 1 };
+    const used = { memoryPeakBytes: 3221225472, cpuSeconds: 754.5, oomKills: 1, diskBytes: 1073741824 };
     const { a, job } = await cancelled(undefined, undefined, undefined, undefined, used);
     await waitFor(async () => (await a.events('types=job.resources_used')).length === 1);
     const [e] = await a.events('types=job.resources_used');
