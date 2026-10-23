@@ -33782,6 +33782,31 @@ persisted work item per entry with backoff, on each machine's own transport; ent
 **Verification (part 10).** `test/domain/resource-ledger-bytes.test.ts` (the sum per entry kind, each part once; the jobs not
 measured; no bytes without a measure); `test/ui/hopper-disk.test.ts` (the card's text).
 
+### Part 11: the agent session as an entry (2026-10-23)
+
+The issue asks that a job's agent (Claude) sessions are in the ledger, so that none stays live once the job ended (issue
+#2335 ends a parked or waiting job's session). The executor already reports the session its agent runs in once the agent is
+up (`agentSession`, issue #501); the ledger did not record it.
+
+- **The kind** `agent_session`, locator the session id (`agentSessionEntryOf`, `src/domain/resource-ledger.ts`). Recorded in
+  the same transaction as the job's `agentSession`, on the machine the job runs on (`recordAgentSession`,
+  `src/engine/resource-ledger.ts`, from `src/engine/job-run.ts`). A fresh session at a re-queue is a second entry; the
+  same session resumed is the same entry.
+- **Closed by a reap** (`reapClosures`). The agent runs in the job's scope and carries `HOPPER_JOB_ID`, so the reap stops it
+  as it stops the processes: every reap closes it `reaped`, also one that did not look at the scratch dir, and a retention
+  does not keep it (`retainedEntriesOf`).
+- **Closed gone** (`goneClosures`) once the survey finds neither a process nor a scope of the job on its machine.
+- **Not recorded by the reconciler.** The survey lists no agent session, so `unledgeredEntriesOf` records none.
+- **Only the running session.** The session's own data (Claude's transcript) is not this entry: a checkpoint and a resume
+  elsewhere read it (issue #921). The reap does with it what it did before.
+
+**Left for later parts** of issue #2504: herdr panes and build daemons as entries; the cleanup as a persisted work item per
+entry with backoff, on each machine's own transport; entries on machines no longer known.
+
+**Verification (part 11).** `test/domain/resource-ledger-kinds.test.ts` (the entry; `reapClosures`, `retainedEntriesOf`,
+`goneClosures`, `ledgerRootsOf`, `unledgeredEntriesOf`); `test/integration/resource-ledger.test.ts` (real database: the
+session the executor reports is recorded, reaped by the cleanup at the end also with work kept, and on the parts list).
+
 ## Push requirements (issue #2555, 2026-10-22)
 
 **The problem.** Jobs pushed without the repository's CI gates run first. In one repository, 8 of 9 red pull request runs

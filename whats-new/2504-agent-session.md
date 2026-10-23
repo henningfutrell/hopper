@@ -1,0 +1,1 @@
+- A job's page now also says when its agent's session was stopped after the job ended, and Failures lists a session that stays too long.

@@ -24,7 +24,8 @@
               "job_scope",
               "container_runtime",
               "job_processes",
-              "job_containers"
+              "job_containers",
+              "agent_session"
             ]
           },
           "locator": {

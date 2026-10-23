@@ -1,8 +1,9 @@
 // Issue #2504 part 9: a job's processes and its labelled containers as ledger entries — recorded by the reconciler when the
-// survey finds them for an ended job, closed by a reap, and closed gone once the survey no longer finds them. Pure.
+// survey finds them for an ended job, closed by a reap, and closed gone once the survey no longer finds them; part 11 the
+// agent session. Pure.
 import { describe, expect, it } from 'vitest';
 import { JOB_LABEL } from '../../src/client/job-runtime.ts';
-import { containersLocatorOf, goneClosures, ledgerRootsOf, processesLocatorOf, reapClosures, retainedEntriesOf, unledgeredEntriesOf, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
+import { agentSessionEntryOf, containersLocatorOf, goneClosures, ledgerRootsOf, processesLocatorOf, reapClosures, retainedEntriesOf, unledgeredEntriesOf, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
 const AT = '2026-10-22T10:00:00.000Z';
 const PROCS = 'HOPPER_JOB_ID=j1', CONTAINERS = 'hopper.job=j1';
@@ -64,5 +65,33 @@ describe('unledgeredEntriesOf with processes and containers', () => {
 
   it('gives them no work tree to survey', () => {
     expect(ledgerRootsOf([entry('job_processes', PROCS), entry('job_containers', CONTAINERS)], 'm1')).toEqual([]);
+  });
+});
+
+// Part 11: the agent session the job's agent runs in, as an entry — recorded when the executor says the agent is up, stopped
+// by every reap with the job's processes, and closed gone once the survey finds neither a process nor a scope of the job.
+describe('the agent session as an entry (part 11)', () => {
+  const ended = (id: string) => (id === 'j1' ? { status: 'finished' as const } : undefined);
+  const session = entry('agent_session', 's-1');
+
+  it('is the entry the executor reports, on its machine', () => {
+    expect(agentSessionEntryOf('j1', 'm1', 's-1', AT)).toEqual({ jobId: 'j1', machineId: 'm1', kind: 'agent_session', locator: 's-1', createdAt: AT });
+  });
+
+  it('is reaped by every reap, also one that did not look at the scratch dir, and a retention does not keep it', () => {
+    expect(reapClosures([session], { kept: ['/w/.worktrees/app/j1'] }).map((c) => c.state)).toEqual(['reaped']);
+    expect(reapClosures([session], { kept: [] }, false).map((c) => c.state)).toEqual(['reaped']);
+    expect(retainedEntriesOf([session])).toEqual([]);
+  });
+
+  it('is gone once the survey finds no process and no scope of the job, and has no work tree', () => {
+    expect(goneClosures([session], { scopes: [], processes: [], scratch: [] }, 'm1', ended).map((c) => c.reason)).toEqual(['not found on the machine']);
+    expect(goneClosures([session], { scopes: ['j1'], processes: [], scratch: [] }, 'm1', ended)).toEqual([]);
+    expect(goneClosures([session], { scopes: [], processes: ['j1'], scratch: [] }, 'm1', ended)).toEqual([]);
+    expect(ledgerRootsOf([session], 'm1')).toEqual([]);
+  });
+
+  it('is not recorded by the reconciler: the survey lists no agent session', () => {
+    expect(unledgeredEntriesOf({ scopes: [], processes: [], scratch: [] }, new Set(), () => ({ id: 'j1', status: 'finished' }) as never, 'm1', undefined, Date.parse(AT))).toEqual([]);
   });
 });
