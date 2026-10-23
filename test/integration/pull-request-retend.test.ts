@@ -98,7 +98,8 @@ describe('a failed rebase tend, once its base branch moves (issue #1143 part 3)'
     expect((await cardOf(app, job.id))?.gaveUp).toMatch(/^the job that rebased it failed/);
     expect((await cardOf(app, job.id))?.gaveUp).not.toMatch(/when its base branch moves/);
     expect(gh.pullRequestComments(url)).toEqual(Array(MAX_TEND_RETRIES + 1).fill(tendNote('rebase')));
-  });
+    // Five jobs, one after another: about 2 s each under CI load (1.4 s for all of them here), so 15 s was too short (issue #2525).
+  }, 60_000);
 
   it('is not tended again once it was closed without a merge (issue #1456): the end is recorded, and it shows open no more', async () => {
     const gh = createFakeGitHub();
