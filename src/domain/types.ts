@@ -382,8 +382,8 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    * not approved (issue #602): not saved, never approved, approval revoked, or its image changed since. Absent `waiting`: approved.
    */
   template?: { name: string; waiting?: string };
-  /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. `memoryFloor`: its own memory floor (issue #2291); absent: the defaults. */
-  sweep?: import('./machines.ts').SweepSettings; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
+  /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. `memoryFloor`: its own memory floor (issue #2291); absent: the defaults. `jobLimits`: its limits for each job's scope (issue #2498); absent: none. */
+  sweep?: import('./machines.ts').SweepSettings; memoryFloor?: import('./memory-floor.ts').MemoryFloor; jobLimits?: import('./job-limits.ts').JobLimits;
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */

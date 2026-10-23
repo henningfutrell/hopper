@@ -4,7 +4,7 @@
 // reaches it through the machine-source context's `target`, never on its own.
 import type { z as Z } from 'zod';
 import type { AttachedMachine } from '../../domain/types.ts';
-import type { DiskThresholds, EndStatus, SweepSettings } from '../../domain/machines.ts'; import type { MemoryFloor } from '../../domain/memory-floor.ts';
+import type { DiskThresholds, EndStatus, SweepSettings } from '../../domain/machines.ts'; import type { MemoryFloor } from '../../domain/memory-floor.ts'; import type { JobLimits } from '../../domain/job-limits.ts';
 import type { UsageLimitPair } from '../../domain/usage.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
@@ -104,6 +104,24 @@ export const memoryFloorOf = (o: { memoryFloorGiB?: number; memoryPerJobGiB?: nu
     ...(o.memoryPerJobGiB !== undefined ? { perJobGiB: o.memoryPerJobGiB } : {}),
   });
 
+/**
+ * Its limits for each job (issue #2498, design.md "The job's scope"): set on the job's scope as it is made, where the machine
+ * runs a systemd user manager. Plain options, read at every list. Not on a container target, which makes no job scope.
+ */
+export const jobLimitsShape = (z: typeof Z) => ({
+  jobMemoryMaxGiB: z.number().positive().optional()
+    .meta({ description: 'the most memory in GiB each job there may use (its scope\'s MemoryMax); past it the OOM killer stops a process of that job only, and the job runs again; absent: no limit' }),
+  jobCpuPercent: z.number().int().positive().optional()
+    .meta({ description: 'the most CPU each job there may use, in percent of one CPU (its scope\'s CPUQuota; 200 is two CPUs); absent: no limit' }),
+});
+
+/** The job limits the options set; undefined when neither is. */
+export const jobLimitsOf = (o: { jobMemoryMaxGiB?: number; jobCpuPercent?: number }): JobLimits | undefined =>
+  (o.jobMemoryMaxGiB === undefined && o.jobCpuPercent === undefined ? undefined : {
+    ...(o.jobMemoryMaxGiB !== undefined ? { memoryMaxGiB: o.jobMemoryMaxGiB } : {}),
+    ...(o.jobCpuPercent !== undefined ? { cpuPercent: o.jobCpuPercent } : {}),
+  });
+
 /** The disk options (issue #410, critical: issue #2494). */
 export type DiskOptions = { diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number };
 
@@ -171,19 +189,19 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 
 export interface AttachedOptions {
   label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number;
-  reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number;
+  reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number; jobMemoryMaxGiB?: number; jobCpuPercent?: number;
   retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number;
 }
 
 /** The plain fields of an attached machine named `name`. */
 export const attachedBase = (name: string, o: AttachedOptions) => {
   const diskLow = diskLowOf(o);
-  const sweep = sweepOf(o); const memoryFloor = memoryFloorOf(o);
+  const sweep = sweepOf(o); const memoryFloor = memoryFloorOf(o); const jobLimits = jobLimitsOf(o);
   return {
     name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
     ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), ...windowsOf(o), ...usageLimitsOf(o), executors: [...o.executors],
     ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
-    ...(memoryFloor ? { memoryFloor } : {}),
+    ...(memoryFloor ? { memoryFloor } : {}), ...(jobLimits ? { jobLimits } : {}),
   };
 };
 

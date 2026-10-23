@@ -5,7 +5,9 @@
 // `hopper-job-<job id>`, so every process the job starts is in that scope's cgroup, whatever it does to
 // its environment; the reap stops the scope (KillMode=control-group). Without systemd, the shell stays as
 // it is and the reap falls back to the environment variable.
+// A machine's job limits (issue #2498) are the scope's properties, in the trial run too: a systemd that refuses them makes no scope.
 import { scopeUnitOf } from '../../client/reap.ts';
+import { scopeLimitProperties, type JobLimits } from '../../domain/job-limits.ts';
 
 /** What the scope commands print, followed by the outcome. */
 export const SCOPE_MARK = 'hopper-scope-';
@@ -21,9 +23,10 @@ const say = (outcome: ScopeOutcome): string => `printf 'hopper-%s-%s\\n' scope $
  * A trial run first, so a systemd that cannot make a scope leaves the shell as it is (an `exec` that fails
  * would end the pane). Prints nothing when it replaced the shell; `none` otherwise.
  */
-export function enterScopeCommand(jobId: string): string {
-  return 'if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet --collect -- true >/dev/null 2>&1;'
-    + ` then exec systemd-run --user --scope --quiet --collect --unit=${scopeUnitOf(jobId)} -p KillMode=control-group -p TimeoutStopSec=10s -- "\${SHELL:-/bin/sh}" -l; fi; ${say('none')}`;
+export function enterScopeCommand(jobId: string, limits?: JobLimits): string {
+  const props = scopeLimitProperties(limits).map((p) => ` -p ${p}`).join('');
+  return `if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet --collect${props} -- true >/dev/null 2>&1;`
+    + ` then exec systemd-run --user --scope --quiet --collect --unit=${scopeUnitOf(jobId)} -p KillMode=control-group -p TimeoutStopSec=10s${props} -- "\${SHELL:-/bin/sh}" -l; fi; ${say('none')}`;
 }
 
 /** Whether the shell runs in the job's scope: read from its own cgroup. */

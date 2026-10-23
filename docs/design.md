@@ -890,7 +890,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   environment or session. The new shell drops what is typed before its prompt, so the executor asks it
   where it runs (`/proc/self/cgroup`) until it answers (`hopper-scope-entered`; the pane state records
   `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
-  without a scope; a shell that never answers within 60000 ms fails the job, pane closed.
+  without a scope; a shell that never answers within 60000 ms fails the job, pane closed. A machine's **job limits**
+  (issue #2498, its `jobMemoryMaxGiB` and `jobCpuPercent` options) are scope properties, `-p MemoryMax=<bytes> -p
+  CPUQuota=<percent>%`, in the trial run too: a systemd that refuses them makes no scope, and the job runs without one.
 - **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
   below). After the scope, the pane's shell runs the runtime command, in two steps that each fit a terminal line (issue
   #2234, "Unhealthy lanes" below): the guards first (`hopper-guards-written`), then the setup: the job gets a podman of its own — its runtime dir
@@ -19695,12 +19697,29 @@ their environment. Three decisions:
    `hopper-used <bytes> <µs> <kills>`, `-` for a file it could not read; `readReap` reads it as `used`, and the cleanup
    records `job.resources_used` with the job's machine. A cgroup path with `..` is never read.
 2. *What it misses.* A job with no scope there (no systemd user manager), a scope that ended before the reap (a parked
-   job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job,
-   the current use of a running job, and memory or CPU limits on the scope are not read or set here: later parts of
-   issue #2498.
+   job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job
+   and the current use of a running job are not read here: later parts of issue #2498.
 3. *What the part shows.* One part, `resources` in the machines group: "Peak memory <n>, CPU <time>", the OOM kills when
    there were any, and the machines. A job reaped on more than one machine (moved, resumed elsewhere) shows the highest
    peak, and the CPU time and OOM kills of all of them (`src/domain/job-resources.ts`).
+
+**Job limits and resource-limit failures** (issue #2498 part 2). A job that used all of a machine's memory stopped the
+other jobs there too. Three decisions:
+
+1. *Where the limit is.* On the job's scope, as it is made ("The job's scope"): `MemoryMax` from the machine's
+   `jobMemoryMaxGiB`, `CPUQuota` from its `jobCpuPercent` (percent of one CPU), plain options of local, ssh and client
+   machines (`src/plugins/machine-source/attached.ts` `jobLimitsShape`, `MachineSnapshot.jobLimits`), off by default.
+   Past `MemoryMax`, the kernel's OOM killer stops a process of that scope only. No limit per seat: a seat's jobs are on
+   its machines, and the memory floor (issue #2291) keeps the machine's own headroom.
+2. *How it is seen.* When Claude exits, the pane's shell, which runs in the job's scope, says its exit code and then the
+   scope's `memory.events` `oom_kill` count (`src/executors/herdr/exited.ts` `oomKillsCommand`), read from its own cgroup
+   and only when that is `hopper-job-<job id>.scope`. A count above 0 makes the failure `claude exited (…) at a resource
+   limit: the kernel's OOM killer stopped <n> processes in the job's scope: …`. A machine OOM, with no job limit, counts
+   too: the job's process was stopped for want of memory all the same.
+3. *What happens.* The known cause **Resource limit** (`resource-limit`): transient, retry, first of the causes, so a
+   text Claude printed as it died never names another. The job runs again with backoff, by the retry limit, and the
+   memory floor decides where it starts. It is no lane fault: the lane is not wrong. An OOM kill of a build daemon that
+   Claude lives through fails nothing; the parts list counts it ("Resources used").
 
 **The route.** `GET /api/jobs/:id/bom` (`src/http/jobs.ts`), the user's own; 404 for a job it does not know. It reads the
 job's newest 2000 events (`EventLog.recent` takes a job now, over the `events_job` index of tenant migration 45), its
@@ -33161,6 +33180,8 @@ stopped.
 - **Exit at start** (glossary). Claude gone during startup is `claude exited at startup (…)`. Claude gone in the task's
   turn (its anchor is the protocol footer, which only a new session is sent) before the watch saw any line of output is
   `claude exited at the start of a new session, before any output (…)`. Any other exit is `claude exited (…)`.
+- **The known cause Resource limit** (`resource-limit`, issue #2498): an exit after OOM kills in the job's scope is
+  never an exit at start or a sign-in, whatever Claude printed ("Job limits and resource-limit failures").
 - **The known cause Exited at start** (`exited-at-start`): transient, retry, after Login expired, Disk full, Machine
   offline and Herdr outdated, so a text Claude printed that names one of those keeps that cause. It is a **lane fault**:
   the rerun avoids the lane — another machine when one may take it, else another lane ("Unhealthy lanes", issue #2234) —
