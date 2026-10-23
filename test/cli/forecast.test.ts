@@ -1,6 +1,7 @@
 // `hopper forecast --job <id> | --issue <owner/repo#N> | --pr <url> | --set <N> --repo <owner/repo>` (issue #2554 parts
 // 2 and 3): the call the operator CLI makes, before any daemon. It reads GET /api/delivery-forecast, as the UI and an agent do.
-// With `--expedite on|off` (part 4) it sets the expedite flag of the change: POST /ui/api/delivery-expedite.
+// With `--expedite on|off` (part 4) it sets the expedite flag of the change: POST /ui/api/delivery-expedite. With `--clear <step>`
+// (part 5) it clears a delivery gate of a promotion set: POST /ui/api/delivery-gate.
 import { describe, expect, it } from 'vitest';
 import { forecastCall } from '../../src/cli-operator-forecast.ts';
 
@@ -25,9 +26,17 @@ describe('hopper forecast (issue #2554)', () => {
       .toEqual({ path: '/ui/api/delivery-expedite', body: { pr: 'https://github.com/octo/shed/pull/12', expedite: true } });
   });
 
+  it('clears a delivery gate of a promotion set (part 5)', async () => {
+    expect(forecastCall(['--set', '7', '--repo', 'octo/shed', '--clear', 'test_gate'])).toMatchObject({ role: 'operator' });
+    expect(await forecastCall(['--set', '7', '--repo', 'octo/shed', '--clear', 'test_gate']).post!(async () => undefined))
+      .toEqual({ path: '/ui/api/delivery-gate', body: { repo: 'octo/shed', set: 7, step: 'test_gate' } });
+  });
+
   it('refuses none, two, an empty one, a stray word or another option, before any call', () => {
     for (const args of [[], ['--job', 'j1', '--issue', 'octo/shed#7'], ['--job', ''], ['j1'], ['--repo', 'octo/shed'], ['--set', '7'], ['--job', 'j1', '--repo', 'octo/shed'],
-      ['--job', 'j1', '--expedite', 'yes'], ['--job', 'j1', '--expedite', ''], ['--set', '7', '--repo', 'octo/shed', '--expedite', 'on']]) {
+      ['--job', 'j1', '--expedite', 'yes'], ['--job', 'j1', '--expedite', ''], ['--set', '7', '--repo', 'octo/shed', '--expedite', 'on'],
+      ['--job', 'j1', '--clear', 'test_gate'], ['--set', '7', '--repo', 'octo/shed', '--clear', ''], ['--set', 'x', '--repo', 'octo/shed', '--clear', 'test_gate'],
+      ['--set', '7', '--repo', 'octo/shed', '--clear', 'test_gate', '--expedite', 'on']]) {
       expect(() => forecastCall(args)).toThrow(/usage: hopper forecast/);
     }
   });
