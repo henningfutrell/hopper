@@ -35,6 +35,10 @@ export interface LedgerEntry {
   endedAt?: string;
   /** Until when the reap at the job's end kept it for a retention (issue #2504 part 5): no cleanup leftover before then. */
   retainedUntil?: string;
+  /** How many times the maids tried to reap it (issue #2504 part 14); absent, never. */
+  attempts?: number;
+  /** When the maids try it again (part 14), after a backoff; absent, at their next pass. */
+  nextAttemptAt?: string;
 }
 
 /** A ledger entry before the store has it; `retainedUntil` only for one the reconciler records (part 6). */
@@ -45,6 +49,11 @@ export interface ResourceLedgerRepository {
   record(entry: NewLedgerEntry): void;
   /** Closes the job's entry of that kind and locator, unless it is `reaped`: a `kept` or `failed` one a later reap may close. */
   close(jobId: string, kind: LedgerKind, locator: string, state: Exclude<LedgerState, 'live'>, at: string, reason?: string): void;
+  /**
+   * The maids' attempt on the job's entry (part 14), while `live` or `failed`, that did not close it: `failed` with `reason`,
+   * one attempt more, tried again at `next`.
+   */
+  tried(jobId: string, kind: LedgerKind, locator: string, at: string, reason: string, next: string): void;
   /** Marks the job's entry, while `live` or `failed`, kept for a retention until `until`. */
   retain(jobId: string, kind: LedgerKind, locator: string, until: string): void;
   /** The job's entries, oldest first. */
@@ -308,6 +317,10 @@ const CLEANUP_PART: Record<Exclude<CleanupStatus, 'none'>, { status: BomStatus; 
   failed: { status: 'failed', label: 'Cleanup: failed' },
 };
 
+/** The maids' attempts on an entry (part 14), for its part: how many, and when the next is while it is still open. */
+const maidAttemptsOf = (e: LedgerEntry): string => (!e.attempts ? '' : `; the maids tried it ${e.attempts} time${e.attempts === 1 ? '' : 's'}${
+  (e.state === 'live' || e.state === 'failed') && e.nextAttemptAt ? `, next at ${e.nextAttemptAt}` : ''}`);
+
 /**
  * The job's parts-list parts for its resource ledger (machines group): its cleanup status, then each entry — a record, but
  * one whose removal failed, which counts.
@@ -320,7 +333,7 @@ export function ledgerParts(job: Pick<Job, 'status' | 'cleanupDue' | 'cleanupDef
     { id: 'cleanup', group: 'machines', kind: 'cleanup', label: CLEANUP_PART[status].label, status: CLEANUP_PART[status].status, detail: `${entries.length - entries.filter((e) => e.state === 'live').length} of ${entries.length} closed${failed ? `, ${failed} failed` : ''}` },
     ...entries.map((e): BomPart => ({
       id: `resource:${e.kind}:${e.locator}`, group: 'machines', kind: e.kind, label: `${KIND_WORDS[e.kind]} on ${e.machineId}`, status: e.state === 'failed' ? 'failed' : 'recorded',
-      at: e.endedAt ?? e.createdAt, detail: `${e.locator}: ${STATE_WORDS[e.state]}${e.state === 'live' && e.retainedUntil ? `, kept until ${e.retainedUntil}` : ''}${e.reason ? ` (${e.reason})` : ''}`,
+      at: e.endedAt ?? e.createdAt, detail: `${e.locator}: ${STATE_WORDS[e.state]}${e.state === 'live' && e.retainedUntil ? `, kept until ${e.retainedUntil}` : ''}${e.reason ? ` (${e.reason})` : ''}${maidAttemptsOf(e)}`,
     })),
   ];
 }
