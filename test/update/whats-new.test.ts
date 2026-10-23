@@ -60,6 +60,12 @@ describe("what's new fragments (issue #824)", () => {
     expect(problems(base, notes({ '9.md': ['Nine.'] }, FILE.replace('- Oldest news.\n', '')))).toEqual(['a released line changed or went away; never edit one: "Oldest news."']);
   });
 
+  it('the check passes a revert that deletes a whole fragment; an assembly that drops its line is refused', () => {
+    const base = notes({ '9.md': ['Nine.'], '10.md': ['Ten.'] });
+    expect(problems(base, notes({ '10.md': ['Ten.'] }))).toEqual([]);
+    expect(problems(base, { file: assemble(notes({ '10.md': ['Ten.'] })), fragments: [] })).toEqual(['a released line changed or went away; never edit one: "Nine."']);
+  });
+
   it('the check refuses a fragment with a wrong name or no line, and a line twice', () => {
     const base = notes({});
     expect(problems(base, notes({ 'notes.md': ['A.'], '12.md': [], 'README.md': [] }))).toEqual([
