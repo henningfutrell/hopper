@@ -1,6 +1,6 @@
 // The resource ledger's writes (issue #2504, design.md "The resource ledger"): entries recorded from what a job's executor
 // saved, and closed as each reap — the cleanup at the job's end, the sweep, a discard — says.
-import { goneClosures, ledgerEntriesOf, ledgerKey, reapClosures, retainedEntriesOf, unledgeredEntriesOf } from '../domain/resource-ledger.ts';
+import { goneClosures, ledgerEntriesOf, ledgerKey, ledgerRootsOf, reapClosures, retainedEntriesOf, unledgeredEntriesOf } from '../domain/resource-ledger.ts';
 import type { Reaped, Survey } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
 import type { Job, MachineSnapshot } from '../domain/types.ts';
@@ -41,4 +41,12 @@ export function reconcileLedger(store: Ledger & Pick<UserStore, 'jobs'>, m: Pick
   closeGone(store, m.id, found, at);
   const ledgered = new Set(store.resourceLedger.onMachine(m.id).map((e) => ledgerKey(e.jobId, e.kind, e.locator)));
   for (const e of unledgeredEntriesOf(found, ledgered, jobOf, m.id, m.sweep, Date.parse(at))) store.resourceLedger.record(e);
+}
+
+/**
+ * The work trees the sweep surveys on machine `machineId` (issue #2504 part 7): `roots`, the ones the job list names, and
+ * each one an open entry there is in, so what only an older job left is surveyed too. Sorted, once each.
+ */
+export function sweptRoots(store: Ledger, machineId: string, roots: readonly string[]): string[] {
+  return [...new Set([...roots, ...ledgerRootsOf(store.resourceLedger.open(), machineId)])].sort();
 }

@@ -47,7 +47,7 @@ import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, overBudgetT
 import { jobScratchOf, scratchParts, worktreeJobOf as treeJob, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
@@ -403,7 +403,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
           schedule.swept(m, now);
           const shell = shellOf(m);
           if (!shell) continue;
-          await sweepOne(m, shell, roots, jobOf, kept, discards).catch((e: unknown) => log(`hopper: the sweep could not survey ${m.id}: ${(e as Error).message}`));
+          await sweepOne(m, shell, sweptRoots(c.store, m.id, roots), jobOf, kept, discards).catch((e: unknown) => log(`hopper: the sweep could not survey ${m.id}: ${(e as Error).message}`));
         }
       } catch (e) {
         log(`hopper: the sweep failed: ${(e as Error).message}`);

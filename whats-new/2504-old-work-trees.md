@@ -1,0 +1,1 @@
+- The hopper now also checks old job folders in places that only older jobs used, so it can remove them or report them.

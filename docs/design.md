@@ -33536,3 +33536,25 @@ an older job used is not surveyed.
 failed is `failed`, its scope `reaped`; a job the hopper does not know is neither recorded nor reaped; an entry the ledger
 names is left as it is); `test/integration/resource-ledger.test.ts` (real database: `record` with `retainedUntil`, never
 over an entry there, and `onMachine`).
+
+### Part 7: the sweep looks in the work trees the ledger names (2026-10-23)
+
+The sweep surveyed only the work trees that the newest jobs' saved state names (their `cwd`). An entry in a work tree that
+only an older job used was never surveyed again: the reconciler could not close it as gone, and the sweep's reaps never
+found it. So it stayed a **cleanup leftover** for good, also after the thing was removed.
+
+- **The roots** (`ledgerRootsOf`, `src/domain/resource-ledger.ts`, pure; `sweptRoots`, `src/engine/resource-ledger.ts`).
+  On each machine, the sweep surveys the work trees the job list names, plus the work tree of each open entry (`live` or
+  `failed`) on that machine: a scratch dir's and a container runtime's (its scratch dir's) work tree, and a job worktree's,
+  in either layout. A scope has none. Another machine's entries add nothing here.
+- **What follows.** The survey of that work tree lets the reconciler close what is gone (part 3), record what the ledger does
+  not name (part 6), and lets the sweep's reaps remove what is old, as in any other work tree. A work tree with no
+  `.worktrees` is not in the survey's `roots`, so nothing in it is closed as gone.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known;
+leftover bytes on Machines; a `kept` entry in a work tree no job in the job list used is not surveyed.
+
+**Verification (part 7).** `test/domain/resource-ledger.test.ts` (`ledgerRootsOf`: each kind, once, sorted; closed entries,
+scopes and another machine's add nothing); `test/engine/sweep-ledger.test.ts` (the sweep surveys a work tree only an open
+entry names, and closes that entry when its dir is gone).
