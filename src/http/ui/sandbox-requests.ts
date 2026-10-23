@@ -9,14 +9,18 @@
 // Issue #2206: a person grants or declines a job's ask for an AWS action (`grant-action`, `decline-action`), and revokes
 // a grant (`revokeAction` on the sandbox approvals). A person's act only: an API token is refused. The job's asks on its
 // run card are granted by its `approve-run` and declined by its `decline-run`, so a person decides the card once.
+// Issue #2639 part 3: a card that carries the job's vault grant (`vaultGrant`) grants it with its `approve-run`, after
+// Access (`vault_grant#can_grant`), as Grant on a grant ask would: template, run and grant are one decision.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ASSET_KINDS } from '../../domain/access.ts';
+import type { Access } from '../../authz/service.ts';
+import { ACCESS_UNAVAILABLE, ASSET_KINDS } from '../../domain/access.ts';
 import { profileAsk, profileNeedsPerson } from '../../domain/confirmation-asks.ts';
 import { actionsOf } from '../../domain/action-grants.ts';
 import { forgetting, rememberApproval, REMEMBER_HOURS_MAX } from '../../domain/remembered-writes.ts';
-import { approvalsOf } from '../../domain/run-cards.ts';
+import { approvalsOf, type RunCardView } from '../../domain/run-cards.ts';
 import { autoApproveOf, editedApprovals, NO_SKIPS } from '../../domain/sandbox-approvals.ts';
+import { grantKeyOf } from '../../domain/vault-grants.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -61,11 +65,13 @@ export const sandboxApprovalsBody = z.strictObject({
 const STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 409, unavailable: 503 } as const;
 
 export const SANDBOX_REQUEST_OPERATIONS: Operation[] = [
-  { method: 'post', path: '/ui/api/sandbox-requests', tag: 'Vault', summary: 'Approve or decline a job\'s sandbox request', description: 'Issue #991: a running job asks for sandbox runs of the template its needs make (`sh "$HOPPER_SKILL" sandbox --needs …`); unless skip sandbox approval is on, the auto-approve policy holds the template\'s blast radius, or a person approved the template this job asked for (issue #1001), the request waits here (the vault\'s view lists it in `sandboxRequests`). `approve` (`id`) approves the job\'s sandbox runs (`vault.sandbox_approved`): it starts no box, and each of the job\'s box steps then runs in a sandbox of its own, burned after it (issue #1349); `decline` (`id`, `reason`) tells the job no (`vault.sandbox_declined`), and is a person\'s deny at gate 2 (issue #655 part 5): the job\'s trust stamp one level lower (`job.trust_lowered`), and the second decline in the job quarantines it (`job.quarantined`, its proxy token then opens no door of the hopper). Part 13: a request Jev\'s sandbox check holds (`jev`) waits here too; one Jev reads now (`jev.state` `checking`) can still be decided, and the person\'s answer wins. Each on the job\'s timeline. 404: no such request; 409: it does not wait. Issue #2197: a run card (`runs` in the vault\'s view, one per job and template that waits for a person) is decided once. `approve-run` (`job`, `template`) approves the template as it is when it waits (`vault.approved`: its image, tools, egress, secrets and read profiles), each write, sync or apply profile it lists (`template.profile_approved`, remembered as a person\'s approval), and the job\'s waiting run (`vault.sandbox_approved`); the job\'s step then goes on with no other approval. Part 3: with no `allowAgain`, the template\'s approval is for this job\'s runs only (`approval.jobs`), so another job that asks for the same access gets a run card of its own, and no write approval is remembered; `allowAgain: true` approves it for every job, as a person\'s template approval, and remembers each write approval. An API token\'s `approve-run` of a card that lists a write, sync or apply profile is a person\'s to confirm: 202, asked (issue #909). `decline-run` (`job`, `template`, `reason`) declines the job\'s run of the template, waiting or not yet asked (`vault.sandbox_declined`), and the job\'s ask that waits on it is told no; a person\'s deny at gate 2, as `decline`. 404: no such card. Issue #2206: `grant-action` (`job`, `grant`: `role` `<account>/<role>`, `action`, `resource`) grants a job\'s waiting ask for an AWS action (`actionAsks` in the vault\'s view): its need step\'s change on that role is then minted narrowed to the reads and the granted actions, and a later ask of the same scope is covered until the time limit of remembered write approvals (`vault.action_granted`); `decline-action` (`job`, `grant`, `reason`) tells the step no (`vault.action_declined`). A person\'s act: an API token or a delegate approver is refused (403). 404: no such ask waits. An ask on a role the template of the job\'s run card changes is on that card (`runs[].actions`, not in `actionAsks`): the card\'s `approve-run` grants it, and its `decline-run` declines it, so a person decides the card once; an API token or a delegate approver may decide no card with an action (403). A box action. Answers the vault\'s view.', role: 'admin', body: sandboxRequestBody, returns: 'the new view, as GET /api/vault', errors: [400, 404, 409] },
+  { method: 'post', path: '/ui/api/sandbox-requests', tag: 'Vault', summary: 'Approve or decline a job\'s sandbox request', description: 'Issue #991: a running job asks for sandbox runs of the template its needs make (`sh "$HOPPER_SKILL" sandbox --needs …`); unless skip sandbox approval is on, the auto-approve policy holds the template\'s blast radius, or a person approved the template this job asked for (issue #1001), the request waits here (the vault\'s view lists it in `sandboxRequests`). `approve` (`id`) approves the job\'s sandbox runs (`vault.sandbox_approved`): it starts no box, and each of the job\'s box steps then runs in a sandbox of its own, burned after it (issue #1349); `decline` (`id`, `reason`) tells the job no (`vault.sandbox_declined`), and is a person\'s deny at gate 2 (issue #655 part 5): the job\'s trust stamp one level lower (`job.trust_lowered`), and the second decline in the job quarantines it (`job.quarantined`, its proxy token then opens no door of the hopper). Part 13: a request Jev\'s sandbox check holds (`jev`) waits here too; one Jev reads now (`jev.state` `checking`) can still be decided, and the person\'s answer wins. Each on the job\'s timeline. 404: no such request; 409: it does not wait. Issue #2197: a run card (`runs` in the vault\'s view, one per job and template that waits for a person) is decided once. `approve-run` (`job`, `template`) approves the template as it is when it waits (`vault.approved`: its image, tools, egress, secrets and read profiles), each write, sync or apply profile it lists (`template.profile_approved`, remembered as a person\'s approval), and the job\'s waiting run (`vault.sandbox_approved`); the job\'s step then goes on with no other approval. Issue #2639 part 3: a card with `vaultGrant` (its template gives a vault secret or a minted credential, and the job\'s item has no vault grant) also grants the job\'s item the vault (`vault.granted`), after Access (`vault_grant#can_grant`, 403; 503 when it cannot be asked), so template, run and grant are one approval; the job\'s grant ask of that template is on the card, not in `grantAsks`. Part 3: with no `allowAgain`, the template\'s approval is for this job\'s runs only (`approval.jobs`), so another job that asks for the same access gets a run card of its own, and no write approval is remembered; `allowAgain: true` approves it for every job, as a person\'s template approval, and remembers each write approval. An API token\'s `approve-run` of a card that lists a write, sync or apply profile is a person\'s to confirm: 202, asked (issue #909). `decline-run` (`job`, `template`, `reason`) declines the job\'s run of the template, waiting or not yet asked (`vault.sandbox_declined`), and the job\'s ask that waits on it is told no; a person\'s deny at gate 2, as `decline`. 404: no such card. Issue #2206: `grant-action` (`job`, `grant`: `role` `<account>/<role>`, `action`, `resource`) grants a job\'s waiting ask for an AWS action (`actionAsks` in the vault\'s view): its need step\'s change on that role is then minted narrowed to the reads and the granted actions, and a later ask of the same scope is covered until the time limit of remembered write approvals (`vault.action_granted`); `decline-action` (`job`, `grant`, `reason`) tells the step no (`vault.action_declined`). A person\'s act: an API token or a delegate approver is refused (403). 404: no such ask waits. An ask on a role the template of the job\'s run card changes is on that card (`runs[].actions`, not in `actionAsks`): the card\'s `approve-run` grants it, and its `decline-run` declines it, so a person decides the card once; an API token or a delegate approver may decide no card with an action (403). A box action. Answers the vault\'s view.', role: 'admin', body: sandboxRequestBody, returns: 'the new view, as GET /api/vault', errors: [400, 403, 404, 409, 503] },
   { method: 'post', path: '/ui/api/sandbox-approvals', tag: 'Vault', summary: 'Skip template approval, skip sandbox approval, or sandbox YOLO', description: 'Issue #991: `skipTemplateApproval`: a template the hopper makes for a job\'s request, and the read policy does not approve, is approved at once, its write, sync and apply profiles with it (`by` `skip template approval`). `skipSandboxApproval`: a box a job asks for starts the moment it asks, a high-blast-radius one too (`by` `skip sandbox approval`). `yolo` sets both; a toggle named with it wins. Issue #1001: `autoApprove` (`low`, `medium`, `high`): the blast radius levels whose templates and runs are approved with no person (`by` `the auto-approve policy`); each level named sets itself; default low on, medium and high off. `rememberWritesHours`: how long a person\'s write, sync or apply approval is remembered for later asks of that asset and access (`by` `a remembered write approval`); 0, until forgotten; default 168. `forgetWrite` (`operation`, `asset`): forget one now (`vault.write_forgotten`). Issue #2206: `revokeAction` (`role`, `action`, `resource`): revoke an action grant now (`vault.action_revoked`); 404 when there is none. Issue #1472: `standingReadGrant`: a job on a box of a template whose needs the read policy holds entirely as reads, with no vault secret, gets the vault grant with no person (`vault.granted`, `by` `standing read grant`); off by default; turned off, it grants no job that has not asked yet. Absent fields keep what was set. Both toggles off by default. Recorded as `vault.sandbox_approvals_set`. A box action: it approves work with no person. Answers the vault\'s view, with `sandboxApprovals`.', role: 'admin', body: sandboxApprovalsBody, returns: 'the new view, as GET /api/vault', errors: [400] },
 ];
 
-export function registerSandboxRequestRoutes(app: FastifyInstance, o: { admin: Guard; tenant: (req: FastifyRequest) => TenantParts; grants: Pick<ApiGrants, 'live'> }): void {
+export function registerSandboxRequestRoutes(app: FastifyInstance, o: {
+  admin: Guard; tenant: (req: FastifyRequest) => TenantParts; grants: Pick<ApiGrants, 'live'>; access: Pick<Access, 'decideVaultGrant'>;
+}): void {
   app.post('/ui/api/sandbox-requests', o.admin, async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const s = signedInOf(req);
@@ -101,9 +107,16 @@ export function registerSandboxRequestRoutes(app: FastifyInstance, o: { admin: G
         parts.engine.denied(b.job, actingOf(s));
         return await vaultAnswer(parts);
       }
+      // The card's vault grant (issue #2639 part 3): Access decides first, so a refusal changes nothing.
+      if (card.vaultGrant) {
+        const job = parts.store.jobs.get(b.job);
+        const d = job ? await o.access.decideVaultGrant(s.userId, { ownerId: s.userId, key: grantKeyOf(job) }) : undefined;
+        if (d && !d.allowed && d.unavailable) throw new HttpError(503, `${ACCESS_UNAVAILABLE}: ${d.reason}`);
+        if (d && !d.allowed) throw new HttpError(403, `granting the job the vault is refused: ${d.reason}`);
+      }
       // The card's actions are granted first, so the step that wakes on the template's approval finds its grant.
       parts.store.tx(() => { for (const a of actions) grantAction(parts.store, a, by, new Date(), b.job); });
-      return await approveRun(parts, b, t, card.waits.template, card.request, { by, ...(byApiToken(s) ? { asker: askerOf(s) } : {}), reply });
+      return await approveRun(parts, b, t, card, { by, ...(byApiToken(s) ? { asker: askerOf(s) } : {}), reply });
     }
     const request = parts.sandboxRequests.list().find((x) => x.id === b.id);
     if (delegate) {
@@ -121,15 +134,18 @@ export function registerSandboxRequestRoutes(app: FastifyInstance, o: { admin: G
    * One approval of a run card (issue #2197): the template as it is and each profile it lists, when it waits, then the
    * job's waiting run. An API token's approval of a write, sync or apply profile is asked of a person (issue #909). With
    * no allow again (part 3), the template's approval is for this job's runs only and no write approval is remembered.
+   * The card's vault grant (issue #2639 part 3) is given first, so the job's first ask of the vault finds it.
    */
-  async function approveRun(
-    parts: TenantParts, b: RunEdit, t: TemplateView, templateWaits: boolean, request: string | undefined, who: { by: string; asker?: string; reply: FastifyReply },
-  ): Promise<unknown> {
+  async function approveRun(parts: TenantParts, b: RunEdit, t: TemplateView, card: RunCardView, who: { by: string; asker?: string; reply: FastifyReply }): Promise<unknown> {
     const allowAgain = b.action === 'approve-run' && b.allowAgain === true;
-    const { whole, profiles } = templateWaits ? approvalsOf(t, b.job) : { whole: false, profiles: [] };
+    const { whole, profiles } = card.waits.template ? approvalsOf(t, b.job) : { whole: false, profiles: [] };
     if (who.asker !== undefined && profiles.some(profileNeedsPerson)) {
       const asked = profiles.filter(profileNeedsPerson).map((p) => askPerson(parts.store, who.reply, profileAsk(t.name, p, who.asker!), b.job).waiting);
       return { waiting: asked.join(' ') };
+    }
+    if (card.vaultGrant) {
+      const r = parts.vault.grant?.(b.job, who.by);
+      if (r && !r.ok) throw new HttpError(STATUS[r.code], r.error);
     }
     if (whole) {
       const r = await parts.vault.approveTemplate(t.name, who.by, allowAgain ? undefined : b.job);
@@ -140,8 +156,8 @@ export function registerSandboxRequestRoutes(app: FastifyInstance, o: { admin: G
       if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
       if (allowAgain) rememberApproval(parts.store.settings, { operation: p.operation, asset: p.asset }, who.by, new Date());
     }
-    if (request) {
-      const r = parts.sandboxRequests.approve(request, who.by);
+    if (card.request) {
+      const r = parts.sandboxRequests.approve(card.request, who.by);
       if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
     }
     return await vaultAnswer(parts);

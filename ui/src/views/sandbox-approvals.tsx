@@ -57,7 +57,7 @@ const STATE_TEXT: Record<SandboxRequestView['state'], string> = {
 const jevText = (jev: NonNullable<RunCardView['jev']>): string =>
   jev.state === 'checking' ? 'Jev checks it now: it approves it, or leaves it to a person.' : `Jev held it for a person${jev.reason ? `: ${jev.reason}` : ''}.`;
 
-/** What one approval of the card gives (issue #2197), in words for its confirm; `again`: allow again is on (part 3). */
+/** What one approval of the card gives (issue #2197), in words for its confirm; `again`: allow again is on (part 3); the vault grant it carries (issue #2639). */
 function grants(t: TemplateView | undefined, c: RunCardView, again: boolean): ReactNode {
   if (!t) return <>The job&apos;s steps run in sandboxes of <span className="font-mono">{c.template}</span>.</>;
   const changes = t.profiles.filter(highRadius), reads = t.profiles.filter((p) => !highRadius(p));
@@ -68,6 +68,7 @@ function grants(t: TemplateView | undefined, c: RunCardView, again: boolean): Re
       {c.waits.template ? (again
         ? <> Allow again: a later job with the same needs runs with no new card, and each change approval is remembered.</>
         : <> For this job only: another job that asks for the same access gets a card of its own.</>) : null}
+      {c.vaultGrant ? <> It also grants this job&apos;s item the vault: its steps get what the template gives, with no grant ask of their own.</> : null}
       {(c.actions ?? []).map((a) => <span key={`${a.role} ${a.action} ${a.resource}`}> It also grants {a.action} on {a.resource} as aws-role {a.role}: later steps of the same action are covered until the time limit of remembered write approvals.</span>)}
     </>
   );
@@ -108,6 +109,7 @@ export function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCa
           <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}{t.tools?.length ? ` + ${t.tools.join(', ')}` : ''}</dd>
           <dt className="text-muted-foreground">Secrets</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
           <dt className="text-muted-foreground">Egress</dt><dd className="font-mono break-words">{egressText(t)}</dd>
+          {c.vaultGrant && <><dt className="text-muted-foreground">Vault grant</dt><dd data-slot="run-vault-grant">granted to this job with the approval</dd></>}
         </dl>
       )}
       {c.actions?.length ? (
