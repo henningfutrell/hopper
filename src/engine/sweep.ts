@@ -42,13 +42,15 @@
 // The storage prune (issue #2494, sweep-prune.ts): last, on a machine with `sweep.pruneAfterDays`, once a day.
 // The cache caps (issue #2494, sweep-caches.ts): then, on a machine with `sweep.cacheCapsGiB`, while no job is there.
 // The trim (issue #2494, sweep-trim.ts): then, on a machine with `sweep.trimAboveGiB`, fstrim once the cleanups freed that much.
-import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
+// The dry run (issue #2494, sweep-dry-run.ts): on a machine with `sweep.dryRun`, a pass reaps, prunes, clears and trims
+// nothing, and records what it would remove. A machine's `sweep.budgetGiB` is its disk budget, in place of the user's.
+import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot, SweepSettings } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
 import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, jobDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeJobOf as treeJob, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts'; import { createCaches } from './sweep-caches.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts'; import { createCaches } from './sweep-caches.ts'; import { createDryRun } from './sweep-dry-run.ts'; import { budgetOf } from '../domain/sweep-dry-run.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
@@ -136,8 +138,8 @@ export interface Sweep {
   discarding(jobId: string): Discarding | undefined;
   /** Ends when every discard's removal under way ended. */
   removals(): Promise<void>;
-  /** The hopper's own disk use on the machine as the sweep last measured it, against the disk budget now (issue #1120); undefined: never measured. */
-  disk(machineId: string): HopperDisk | undefined;
+  /** The hopper's own disk use on the machine as the sweep last measured it, against the disk budget now (issue #1120) — its own with `sweep.budgetGiB` (issue #2494) —; undefined: never measured. */
+  disk(machineId: string, sweep?: SweepSettings): HopperDisk | undefined;
   /** The leftovers on the machine the sweep last listed, with the decisions that stand (issue #1116); undefined: none listed. */
   leftovers(machineId: string): MachineLeftovers | undefined;
   /**
@@ -168,7 +170,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** The discards whose removal runs in this process now (issue #1194), by job, and those removals. */
   const removingNow = new Set<string>();
   const removing = new Set<Promise<boolean>>();
-  const budgetNow = (): DiskBudget | undefined => c.store.settings.getDiskBudget();
+  const budgetNow = (s: SweepSettings | undefined): DiskBudget | undefined => budgetOf(s, c.store.settings.getDiskBudget());
 
   /** The machine as the first executor there that reaches it does. */
   const shellOf = (m: MachineSnapshot): MachineShell | undefined => {
@@ -179,7 +181,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     return undefined;
   };
   /** The leftovers the sweep does not judge (issue #1116), listed after each pass's reaps. */
-  const leftovers = createLeftovers(c, shellOf, log); const prune = createPrune(c, log), trim = createTrim(c, log), caches = createCaches(c, log);
+  const leftovers = createLeftovers(c, shellOf, log); const prune = createPrune(c, log), trim = createTrim(c, log), caches = createCaches(c, log), dryRun = createDryRun(c, log);
 
   /** The commits the hopper pushed for the job (issue #2087). */
   const pushedFor = (jobId: string): Set<string> => proxyPushedOf(c.store.events.recent(PUSHES_READ, [...PROXY_PUSH_EVENTS], jobId));
@@ -267,19 +269,20 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       log(`hopper: job ${g.jobId}'s kept work is gone from ${m.id}: its scratch dir ${g.scratch} is no longer there`);
       c.store.events.append({ type: 'job.work_removed', jobId: g.jobId, data: { paths: [g.scratch], gone: true } }); closeLedger(c.store, g.jobId, { kept: [] }, at);
     }
-    const budget = budgetNow();
+    const budget = budgetNow(m.sweep);
     const pressed = hopperDiskOf(found.usage, '', budget);
     if (m.disk?.low) log(`hopper: disk low on ${m.id} (${gb(m.disk!.freeBytes)} free): the sweep reaps every ended job's scratch dir now, whatever its age`);
     else if (pressed?.over) log(`hopper: the hopper's own disk use on ${m.id} is ${gb(pressed.bytes)}, over its disk budget of ${gb(budget!.bytes)}: the sweep reaps every ended job's scratch dir now, whatever its age`);
     const running = new Set([...found.scopes, ...found.processes]);
     const now = c.clock.now().getTime(), over = (job: Job, ageMs: number): boolean => m.disk?.low === true || pressed?.over === true || retentionOver(m.sweep, job, ageMs, now);
-    const removed = await reapPlan(m, shell, planSweep(found, jobOf, kept, over), jobOf, kept, running);
+    const plan = planSweep(found, jobOf, kept, over), dry = m.sweep?.dryRun === true; if (dry) dryRun.pass(m, found, plan, kept);
+    const removed = dry ? 0 : await reapPlan(m, shell, plan, jobOf, kept, running);
     if (c.stopping()) return;
     // What the reaps freed, measured again (for the budget, or the trim); a survey that fails then keeps the first measure.
     const after = (pressed?.over || m.sweep?.trimAboveGiB) && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
     measure(m, after, budget);
     if (c.stopping()) return;
-    await leftovers.list(m, shell, found.roots ?? [], jobOf); if (!c.stopping()) await trim.pass(m, shell, freedBetween(found, after) + await prune.pass(m, shell, found) + await caches.pass(m, shell, found));
+    await leftovers.list(m, shell, found.roots ?? [], jobOf); if (!c.stopping() && !dry) await trim.pass(m, shell, freedBetween(found, after) + await prune.pass(m, shell, found) + await caches.pass(m, shell, found));
   }
 
   /** The reaps of one pass on the machine; how many scratch dirs they removed. */
@@ -348,9 +351,9 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   const refuse = (jobId: string, why: string): EngineError => new EngineError('conflict', `job ${jobId}'s work cannot be discarded: ${why}`);
 
   return {
-    disk(machineId) {
+    disk(machineId, sweep) {
       const m = measured().get(machineId);
-      return m ? hopperDiskOf(m.paths, m.at, budgetNow(), m) : undefined;
+      return m ? hopperDiskOf(m.paths, m.at, budgetNow(sweep), m) : undefined;
     },
     leftovers: (machineId) => leftovers.view(machineId),
     decideLeftover: (machineId, path, decision, by) => leftovers.decide(machineId, path, decision, by),

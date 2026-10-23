@@ -88,6 +88,12 @@ describe('the disk defaults form', () => {
     });
   });
 
+  it('sends the dry run as a flag, and fills it from the defaults (issue #2494 part 14)', () => {
+    expect(diskDefaultsBody({ sweepDryRun: 'on' })).toEqual({ defaults: { sweep: { dryRun: true } } });
+    expect(diskDefaultsBody({ sweepDryRun: '' })).toEqual({ defaults: null });
+    expect(diskDefaultsDraft({ sweep: { dryRun: true } })).toEqual({ sweepDryRun: 'on' });
+  });
+
   it('refuses a field that is not a number', () => {
     expect(diskDefaultsBody({ pruneAfterDays: 'weekly' })).toBe('Days before the storage prune must be a number, or empty for no default');
   });

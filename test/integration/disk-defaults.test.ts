@@ -22,7 +22,7 @@ async function boot(): Promise<TestApp> {
 
 const DEFAULTS = {
   diskLow: { belowPercent: 100 },
-  sweep: { everyMinutes: 30, retainHours: { failed: 48 }, pruneAfterDays: 7, trimAboveGiB: 20, cacheCapsGiB: { npm: 5 } },
+  sweep: { everyMinutes: 30, retainHours: { failed: 48 }, pruneAfterDays: 7, trimAboveGiB: 20, cacheCapsGiB: { npm: 5 }, dryRun: true },
 };
 
 describe('the disk defaults', () => {

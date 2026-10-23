@@ -24691,6 +24691,22 @@ the same options on each one.
 - **No "off" for one machine.** A machine option absent means "the default", so a machine cannot turn off a default
   prune, trim or cache cap; its own value can only make it less strict (a longer age, a higher threshold or cap).
 
+**Part 14: a machine's own disk budget, and the dry run** (issue #2494, `src/domain/sweep-dry-run.ts`,
+`src/engine/sweep-dry-run.ts`). The disk budget was one value for every machine, and a person could not see what the
+sweep would remove before it removed it.
+- **A machine's own budget.** The machine option `diskBudgetGiB` (`sweep.budgetGiB`) is its disk budget, in place of the
+  user's disk budget (`budgetOf`). With no budget of the user's, it still holds. `GET /api/machines` shows each machine's
+  `hopperDisk.budgetBytes` and `over` by the budget it has. A seat is a machine (part 12), so this is the budget per seat too.
+  The disk defaults do not carry a budget: the user's disk budget is already the one for every machine.
+- **The dry run.** The machine option `sweepDryRun` (`sweep.dryRun`), or the disk defaults' dry run (a check box in the
+  Disk defaults panel). On such a machine, a pass of the sweep reaps, prunes, clears and trims nothing. It records what
+  it would remove as one `machine.sweep_dry_run` event: each scratch dir it would reap, with what the job takes there
+  (part 11), the work kept before apart; the jobs whose processes and containers it would stop; the exited containers the
+  prune would remove and what the runtimes say they could reclaim, at most; the cache places over their caps; and whether
+  the trim would be due. Again only once that changes; after a restart, once more. The reap at a job's end keeps the
+  scratch dir there (as a retention does), so the sweep lists it. A person's discard still runs, and the measure, the
+  budget's events and the leftovers listing go on as before. `sweepDryRun: false` wins over a default dry run.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24716,7 +24732,9 @@ with a fake pkill), `test/domain/cache-caps.test.ts`, `test/engine/sweep-caches.
 `test/machines/resource-sample.test.ts`, `test/integration/machine-history.test.ts` (the lines through the daemon),
 `test/machines/disk-gauges.test.ts` (the points, and the gauges through an in-memory metric reader), `test/ui/machine-history.test.ts`. Part 13:
 `test/machines/disk-defaults.test.ts`, `test/integration/disk-defaults.test.ts` (the setting through the daemon, and a machine with
-it applied), `test/ui/hopper-disk.test.ts` (the form).
+it applied), `test/ui/hopper-disk.test.ts` (the form). Part 14: `test/domain/sweep-dry-run.test.ts`, `test/engine/sweep-dry-run.test.ts`
+(nothing removed, the event once while it stays the same; a machine's own budget), `test/engine/cleanup-retention.test.ts` (the
+scratch dir kept at a job's end), `test/plugins/sweep-options.test.ts`.
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "reaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "scratch": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "number"
+          },
+          "kept": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "jobId",
+          "scratch"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reapBytes": {
+      "type": "number"
+    },
+    "stops": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prune": {
+      "type": "object",
+      "properties": {
+        "olderThanDays": {
+          "type": "number"
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reclaimableBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "olderThanDays",
+        "containers",
+        "reclaimableBytes"
+      ],
+      "additionalProperties": false
+    },
+    "caches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "nuget",
+              "gradle",
+              "go",
+              "npm",
+              "pnpm",
+              "yarn",
+              "pip",
+              "cache"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "bytes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "cacheBytes": {
+      "type": "number"
+    },
+    "trim": {
+      "type": "object",
+      "properties": {
+        "aboveGiB": {
+          "type": "number"
+        },
+        "due": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "aboveGiB",
+        "due"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "machineId",
+    "reaps",
+    "reapBytes",
+    "stops",
+    "cacheBytes"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,1 @@
+- A machine can now have its own disk budget, and a dry run that shows what the cleanup would remove before it removes anything.

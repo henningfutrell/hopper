@@ -3389,6 +3389,61 @@ Version 1 (`docs/schemas/machine.caches_cleared.v1.json`). The sweep cleared cac
 }
 ```
 
+## `machine.sweep_dry_run`
+
+Version 1 (`docs/schemas/machine.sweep_dry_run.v1.json`). The sweep ran in dry run on a machine (`machineId`) whose `sweepDryRun` option, or the disk defaults' dry run, is on (issue #2494, design.md "Hopper's own disk use" → "Part 14"): it removed nothing there, and this is what the pass would remove. `reaps`: each ended job whose scratch dir (`scratch`) and job worktrees it would reap — by age, by its retention, or at once while the disk is low or over its budget —, with what they take in `bytes` when the survey measured it; `kept`, its work was kept before, and the reap keeps it while it is not pushed. `reapBytes`: the bytes of the reaps not `kept`. `stops`: the jobs no longer live whose processes, scope and labelled containers it would stop and remove. `prune` (`pruneAfterDays`): the exited containers (`<runtime>:<id>`) it would remove, and what the runtimes say they could reclaim of images, containers and volumes, at most (`reclaimableBytes`). `caches` (`cacheCap<Kind>GiB`): each cache place it would clear, with its bytes; `cacheBytes`, their sum. `trim` (`trimAboveGiB`): `due` when those bytes reach it. Once, then again only once what it would remove changes; after a restart of the hopper, once more.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `reaps` | object[] | yes |
+| `reapBytes` | number | yes |
+| `stops` | string[] | yes |
+| `prune` | object | no |
+| `caches` | object[] | no |
+| `cacheBytes` | number | yes |
+| `trim` | object | no |
+
+```json
+{
+  "machineId": "seat-l1",
+  "reaps": [
+    {
+      "jobId": "f3b1c2d4",
+      "scratch": "/home/seat/work/.worktrees/@scratch/f3b1c2d4",
+      "bytes": 2400000000
+    },
+    {
+      "jobId": "a7e90b12",
+      "scratch": "/home/seat/work/.worktrees/@scratch/a7e90b12",
+      "bytes": 800000000,
+      "kept": true
+    }
+  ],
+  "reapBytes": 2400000000,
+  "stops": [],
+  "prune": {
+    "olderThanDays": 30,
+    "containers": [
+      "podman:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "reclaimableBytes": 6000000000
+  },
+  "caches": [
+    {
+      "kind": "gradle",
+      "path": "/home/seat/.gradle/caches",
+      "bytes": 8000000000
+    }
+  ],
+  "cacheBytes": 8000000000,
+  "trim": {
+    "aboveGiB": 10,
+    "due": true
+  }
+}
+```
+
 ## `machine.leftover_kept`
 
 Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.

@@ -27,6 +27,11 @@ describe('withDiskDefaults', () => {
     expect(out.sweep).toEqual({ pruneAfterDays: 2, everyMinutes: 30, retainHours: { finished: 1, failed: 48 }, cacheCapsGiB: { go: 10, npm: 5 } });
   });
 
+  it('a default dry run applies where the machine sets none; a machine\'s own dryRun false wins (issue #2494 part 14)', () => {
+    expect(withDiskDefaults(machine(), { sweep: { dryRun: true } }).sweep).toEqual({ dryRun: true });
+    expect(withDiskDefaults(machine({ sweep: { dryRun: false } }), { sweep: { dryRun: true } }).sweep).toEqual({ dryRun: false });
+  });
+
   it('judges the disk again by the default thresholds where the machine sets none', () => {
     // 20 GiB of 100 free: not low by the built-in 5 GiB / 10%, low by a default of 30%.
     const out = withDiskDefaults(machine(), { diskLow: { belowPercent: 30 } });

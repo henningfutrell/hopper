@@ -26,13 +26,14 @@ export const diskDefaultsBody = z.strictObject({
       retainHours: z.strictObject({ finished: hours, failed: hours, cancelled: hours, rejected: hours }).optional(),
       pruneAfterDays: z.number().int().min(1).max(3650).optional(), trimAboveGiB: z.number().positive().max(100000).optional(),
       cacheCapsGiB: z.strictObject(Object.fromEntries(CAPPED_KINDS.map((k) => [k, capGiB])) as Record<(typeof CAPPED_KINDS)[number], typeof capGiB>).optional(),
+      dryRun: z.boolean().optional(),
     }).optional(),
   }).nullable(),
 });
 
 /** The disk defaults' part of the API reference (src/http/openapi.ts). */
 export const DISK_DEFAULTS_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/machines/disk-defaults', tag: 'Machines and usage', summary: 'The disk defaults', description: 'Issue #2494. The disk thresholds (`diskLow`) and the sweep settings (`sweep`: the sweep interval, the retention per job status, the storage prune\'s age, the trim threshold and the cache caps) every machine takes where its own options are silent; null: none.', returns: '`{ diskDefaults: DiskDefaults | null }`' },
+  { method: 'get', path: '/api/machines/disk-defaults', tag: 'Machines and usage', summary: 'The disk defaults', description: 'Issue #2494. The disk thresholds (`diskLow`) and the sweep settings (`sweep`: the sweep interval, the retention per job status, the storage prune\'s age, the trim threshold, the cache caps and the dry run) every machine takes where its own options are silent; null: none.', returns: '`{ diskDefaults: DiskDefaults | null }`' },
   { method: 'post', path: '/ui/api/machines/disk-defaults', tag: 'Machines and usage', summary: 'Set the disk defaults', description: 'Issue #2494. Each field a machine\'s own options leave out takes the default here, a retention per status and a cache cap per kind each on its own; a container target takes none. They apply at the next list of the machines, with no restart: GET /api/machines shows each machine\'s `disk` judged by them and its `sweep` with them. `defaults: null` clears them.', role: 'admin', body: diskDefaultsBody, returns: '`{ diskDefaults: DiskDefaults | null }`' },
 ];
 
