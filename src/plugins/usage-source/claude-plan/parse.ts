@@ -7,6 +7,7 @@
 // window (one model's week, or a shape not known here) limits less than every job and is
 // informational — shown, never throttling.
 import type { Account } from '../../../domain/types.ts';
+import { offsetMs, zoned } from '../../../domain/zoned-time.ts';
 
 export interface PlanWindow {
   window: string;
@@ -22,22 +23,6 @@ const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', '
 /** The panel's labels for the windows that limit every job, and the window names they get. */
 const THROTTLING: Record<string, string> = { session: 'session', 'week (all models)': 'week' };
 const ORDER = ['session', 'week'];
-
-/** The wall clock in `tz` at `utcMs`, as if it were UTC, minus `utcMs`: the zone's offset. Throws on an unknown zone. */
-function offsetMs(utcMs: number, tz: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
-  }).formatToParts(new Date(utcMs));
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - utcMs;
-}
-
-/** A wall-clock time in `tz` as epoch ms (twice round, so a DST edge lands right). */
-function zoned(y: number, mo: number, d: number, h: number, mi: number, tz: string): number {
-  const wall = Date.UTC(y, mo, d, h, mi);
-  const first = wall - offsetMs(wall, tz);
-  return wall - offsetMs(first, tz);
-}
 
 /** `Aug 11, 12pm (America/Chicago)` → ISO. The year is not printed: the one nearest `now`. No date → the next such time. */
 export function resetsAtOf(when: string, now: Date): string | undefined {
