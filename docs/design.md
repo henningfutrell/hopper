@@ -19731,10 +19731,30 @@ their environment. Three decisions:
    records `job.resources_used` with the job's machine. A cgroup path with `..` is never read.
 2. *What it misses.* A job with no scope there (no systemd user manager), a scope that ended before the reap (a parked
    job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job
-   and the current use of a running job are not read here: later parts of issue #2498.
+   is not read here: a later part of issue #2498.
 3. *What the part shows.* One part, `resources` in the machines group: "Peak memory <n>, CPU <time>", the OOM kills when
    there were any, and the machines. A job reaped on more than one machine (moved, resumed elsewhere) shows the highest
    peak, and the CPU time and OOM kills of all of them (`src/domain/job-resources.ts`).
+
+**Resources in use now** (issue #2498 part 3). The reap reads a job's use only at its end; a person who looks at a running
+job, or at a machine that is full, could not see which job holds what. Three decisions:
+
+1. *Who reads it.* The machine's resource meter (`src/client/resources.ts`), which already reads each job scope's memory
+   in use for the memory floor (issue #2499, `jobMemoryBytes`). At each read it also reads the same three files as the
+   reap (`memory.peak`, `cpu.stat` `usage_usec`, `memory.events` `oom_kill`) and says them as `jobUse`, per job id, with
+   the CPU cores the scope kept busy since the read before (`cpuCores`; none at its first read, and a read sooner than a
+   second after keeps the one before). A client's reading is checked field by field before it is believed
+   (`src/machines/resources.ts`). No second reader and no new probe: a machine with no systemd user manager, an ssh
+   target and an older client say none.
+2. *Where it shows.* The job's parts list: one part `resources-now:<machine>` in the machines group, status `running`,
+   "Memory <n> now, peak <n>, CPU <n> cores", and the CPU time so far, the OOM kills and the machine
+   (`resourcesNow` in `src/domain/job-resources.ts`). `GET /api/jobs/:id/bom` reads the machines' last readings only for
+   a job that has not ended (`liveUseOf`, `Queries.getLiveUse`). On Machines, each card says what its jobs use together:
+   "<n> jobs use <memory> · <n> cores busy · <n> OOM kills" (`jobsUseText`). `GET /api/machines` has both fields in each
+   machine's `resources`.
+3. *What it is not.* No sample keeps it: the machine samples keep the waiting memory only (issue #2499), and the job's
+   record at its end is still the reap's `job.resources_used`. A seat's total is its machines' totals: a seat's jobs run
+   on its machines.
 
 **Job limits and resource-limit failures** (issue #2498 part 2). A job that used all of a machine's memory stopped the
 other jobs there too. Three decisions:

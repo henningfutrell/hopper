@@ -4,7 +4,7 @@
 // marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed.
 import { nodeFloorOf } from '../client/node-floor.ts';
 import { pressureOf } from '../client/resources.ts';
-import { WINDOWS_LINK_URL, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
+import { WINDOWS_LINK_URL, type JobUseNow, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
 const MARK = 'hopper-res ';
 
@@ -76,6 +76,7 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...(r.wsl === true && windowsLinkOf(r.windowsLink) ? { windowsLink: windowsLinkOf(r.windowsLink)! } : {}),
     ...nodeOf(r.node),
     ...jobMemoryOf(r.jobMemoryBytes),
+    ...jobUseOf(r.jobUse),
     ...bootOf(r.bootId),
     ...(count(r.kernelMemTotalBytes) && count(r.kernelMemAvailableBytes) && r.kernelMemTotalBytes > 0 && r.kernelMemAvailableBytes <= r.kernelMemTotalBytes
       ? { kernelMemTotalBytes: r.kernelMemTotalBytes, kernelMemAvailableBytes: r.kernelMemAvailableBytes } : {}),
@@ -97,6 +98,18 @@ function jobMemoryOf(v: unknown): Pick<ResourceReading, 'jobMemoryBytes'> {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return {};
   const kept = Object.entries(v).filter(([id, bytes]) => /^[A-Za-z0-9_-]{1,64}$/.test(id) && count(bytes));
   return kept.length ? { jobMemoryBytes: Object.fromEntries(kept) as Record<string, number> } : {};
+}
+
+/** A client's job scope use (issue #2498): per job id, each field that reads as a count; a job with none is left out. */
+function jobUseOf(v: unknown): Pick<ResourceReading, 'jobUse'> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return {};
+  const kept = Object.entries(v).flatMap(([id, u]): [string, JobUseNow][] => {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || typeof u !== 'object' || u === null) return [];
+    const x = u as Record<string, unknown>;
+    const use: JobUseNow = Object.fromEntries((['memoryPeakBytes', 'cpuSeconds', 'oomKills', 'cpuCores'] as const).flatMap((k) => (count(x[k]) ? [[k, x[k]]] : [])));
+    return Object.keys(use).length ? [[id, use]] : [];
+  });
+  return kept.length ? { jobUse: Object.fromEntries(kept) } : {};
 }
 
 /** A client's Node version (issue #2479), when it reads as one; its floor judged here, not taken from the client. */

@@ -21,7 +21,7 @@ import { ownWaitOf } from './own-command.ts';
 import { phaseOf } from './phase.ts';
 import type { Question } from './questions.ts';
 import { testDatabases } from './test-databases.ts';
-import { resourcesUsed } from './job-resources.ts';
+import { resourcesNow, resourcesUsed, type LiveUse } from './job-resources.ts';
 import { ledgerParts, type LedgerEntry } from './resource-ledger.ts';
 import type { DomainEvent, Job } from './types.ts';
 
@@ -69,8 +69,11 @@ export interface JobBomInput {
   runs?: readonly JobRun[];
   /** The job that took its lane, when it was preempted (issue #1525). */
   preempter?: Job;
-  /** Its resource ledger (issue #2504): its cleanup status and each entry; absent or empty: none. */
-  ledger?: readonly LedgerEntry[];
+  /**
+   * Its resource ledger (issue #2504): its cleanup status and each entry; and what its scope uses now (`live`, issue #2498
+   * part 3), per machine whose last reading has it. Absent or empty: none.
+   */
+  ledger?: readonly LedgerEntry[]; live?: readonly LiveUse[];
   now: string;
 }
 
@@ -337,7 +340,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
   const own = events.filter((e) => e.jobId === job.id);
   const parts = [
-    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...resourcesUsed(own), ...code(job, own), ...outputs(job, own, input.artifacts),
+    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...resourcesUsed(own), ...resourcesNow(input.live ?? [], now), ...code(job, own), ...outputs(job, own, input.artifacts),
     ...infra(own), ...decisions(input.questions, own, input.handoff), ...ledgerParts(job, input.ledger ?? []),
   ];
   const ordered = parts.map((p, i) => ({ p, i }))

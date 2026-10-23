@@ -86,3 +86,18 @@ export function resourcesText(r: ResourceReading | undefined): { cpu: string; me
   const host = r.hostMemFreeBytes !== undefined && r.hostMemTotalBytes !== undefined ? ` · Windows ${gb(r.hostMemFreeBytes)} free of ${gb(r.hostMemTotalBytes)}` : '';
   return { cpu, memory: `${gb(used)} used of ${gb(r.memTotalBytes)} (${share}${r.container ? ', container limit' : ''})${swap}${held}${host}` };
 }
+
+/** What the hopper's jobs use on a machine now (issue #2498), all its job scopes together; null when none was read. */
+export function jobsUseText(r: ResourceReading | undefined): string | null {
+  const jobs = Object.keys(r?.jobMemoryBytes ?? {});
+  if (!r || jobs.length === 0) return null;
+  const memory = jobs.reduce((n, id) => n + (r.jobMemoryBytes?.[id] ?? 0), 0);
+  const use = Object.values(r.jobUse ?? {});
+  const cores = use.some((u) => u.cpuCores !== undefined) ? use.reduce((n, u) => n + (u.cpuCores ?? 0), 0) : undefined;
+  const kills = use.reduce((n, u) => n + (u.oomKills ?? 0), 0);
+  return [
+    `${jobs.length} ${jobs.length === 1 ? 'job uses' : 'jobs use'} ${gb(memory)}`,
+    ...(cores !== undefined ? [`${coresText(Math.round(cores * 10) / 10)} busy`] : []),
+    ...(kills > 0 ? [`${kills} OOM ${kills === 1 ? 'kill' : 'kills'}`] : []),
+  ].join(' · ');
+}
