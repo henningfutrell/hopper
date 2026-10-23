@@ -24,7 +24,8 @@ import { branchesOf, eventsOf, linesOf, run, running, seedCommit, start, stopGit
 
 afterEach(stopGitProxies);
 
-describe('the shrink guard (issue #1096)', () => {
+// Each test clones and pushes through the guard: about 10 s apiece on a loaded CI shard, past 15 s at times.
+describe('the shrink guard (issue #1096)', { timeout: 60_000 }, () => {
   /** dev with a 200-line design; the job's branch issue-7 edits it (or `own` instead); then dev moves on to 220 lines. */
   async function branchThenDevMoves(t: Started, own: string = linesOf(201)) {
     await seedCommit(t, 'octo/tools', 'dev', { 'docs/design.md': linesOf(200) });

@@ -45,6 +45,8 @@ export interface PluginHostOptions {
   kit?: DetectionKit;
   /** Default: BUILTIN_PLUGINS. */
   builtins?: readonly PluginDefinition[];
+  /** The disk defaults (issue #2494), read at each list of the machines: each machine takes them where its own options are silent. Default: none. */
+  diskDefaults?(): import('../domain/disk-defaults.ts').DiskDefaults | undefined;
   /** How often the plugins config's version is checked; default 5000. */
   intervalMs?: number;
   /** Hears of each change of the job sources after start (issue #356): the instances built now, in the plugins config order. */

@@ -37,7 +37,7 @@ import { CredentialCheckPanel } from './machine-credentials';
 import { JobCostsPanel } from './job-costs';
 import { LaneTuningPanel } from './lane-tuning';
 import { useCpuSparks } from './machine-resources';
-import { DiskBudgetPanel } from './disk-budget';
+import { DiskBudgetPanel } from './disk-budget'; import { DiskDefaultsPanel } from './disk-defaults';
 import { SandboxPlaygroundPanel } from './sandbox-playground';
 import { MachineCard, type Ctx } from './machine-card';
 import { MachineList, MachinesModeToggle, MachinesSection } from './machine-list';
@@ -150,7 +150,7 @@ export function Machines() {
       <MachinePodmanHosts boxes={boxes} />
       {authed && <MachinesSection id="sandboxes" title="Sandbox playground"><SandboxPlaygroundPanel /></MachinesSection>}
       {machines.length > 0 && (
-        <MachinesSection id="budgets" title="Budgets and lane tuning"><DiskBudgetPanel /><LaneTuningPanel /><JobCostsPanel /></MachinesSection>
+        <MachinesSection id="budgets" title="Budgets and lane tuning"><DiskBudgetPanel /><DiskDefaultsPanel /><LaneTuningPanel /><JobCostsPanel /></MachinesSection>
       )}
       {machines.length > 0 && <MachinesSection id="lanes" title="Priority lanes and blast radius"><PriorityLanesPanel /><BlastRadiusPanel /></MachinesSection>}
       {authed && machines.length > 0 && <MachinesSection id="credentials" title="Credentials"><CredentialCheckPanel /></MachinesSection>}

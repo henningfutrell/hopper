@@ -6,7 +6,7 @@ import { isLocked } from '../domain/locked.ts';
 import type { InFlight, WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
-import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type MachineLeftovers, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
+import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type MachineLeftovers, type SweepSettings, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
@@ -52,7 +52,7 @@ export const ENDED_WINDOW_MS = 24 * 3_600_000;
 /**
  * `hopperDisk`: the hopper's own disk use there, as the sweep last measured it (issue #1120); absent, never measured.
  * `leftovers`: the leftovers there the sweep does not judge, for a person to keep or remove (issue #1116); absent, none listed.
- * `cleanupLeftovers`: the cleanup leftovers there (issue #2504 part 3), counted; absent, none.
+ * `cleanupLeftovers`: the cleanup leftovers there (issue #2504 part 3), counted, with the bytes the disk measure says they hold (part 10); absent, none.
  */
 export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; cleanupLeftovers?: MachineCleanupLeftovers };
 
@@ -76,7 +76,7 @@ function lockedOf(all: Job[], ledger: Pick<WorkItemLedger, 'get'>): Job[] {
     .sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt));
 }
 
-export function createQueries(c: EngineContext, diskOf: (machineId: string) => HopperDisk | undefined = () => undefined, leftoversOf: (machineId: string) => MachineLeftovers | undefined = () => undefined): Queries {
+export function createQueries(c: EngineContext, diskOf: (machineId: string, sweep?: SweepSettings) => HopperDisk | undefined = () => undefined, leftoversOf: (machineId: string) => MachineLeftovers | undefined = () => undefined): Queries {
   const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage().map((u) => u.poll()))).flat();
   const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
   return {
@@ -111,8 +111,8 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
       const { strict } = c.store.credentialAcceptances.settings();
       const ended = cleanupLeftoversOf(c.store.resourceLedger.open(), (id) => c.store.jobs.get(id), c.clock.now().getTime());
       return machines.map((m) => {
-        const hopperDisk = diskOf(m.id);
-        const leftovers = leftoversOf(m.id), cleanupLeftovers = machineLeftoversOf(ended, m.id);
+        const hopperDisk = diskOf(m.id, m.sweep);
+        const leftovers = leftoversOf(m.id), cleanupLeftovers = machineLeftoversOf(ended, m.id, hopperDisk?.jobs);
         const acceptance = acceptanceMap.get(m.id);
         // Issue #1467: the decider's own rule, so the card never says other than what it does.
         const held = credentialHeld(m.infraCredentials, acceptance, strict);

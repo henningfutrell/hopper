@@ -45,7 +45,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/container/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads, its deliveries kept in memory when the feed gives no store; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `prune.ts` (the storage prune, `POST /prune`, issue #2494; shared with `src/executors/machine-shell.ts`), `trim.ts` (the trim, fstrim on the home's filesystem, `POST /trim`, issue #2494; shared with `src/executors/machine-shell.ts`), `caches.ts` (the cache clear, `POST /caches`, issue #2494; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `turn.ts` (a print-mode agent's turn, `POST /turn`, issue #865), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; a container target is online while a command box can start, issue #865), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port) and the disk gauges (`disk-gauges.ts`, issue #2494), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key and the keys the hopper issues (`lane-pool.ts`, issues #1284, #1454), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; a container target is online while a command box can start, issue #865), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port) and the disk gauges (`disk-gauges.ts`, issue #2494), the disk defaults applied to a machine (`disk-defaults.ts`, issue #2494, pure), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key and the keys the hopper issues (`lane-pool.ts`, issues #1284, #1454), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
@@ -24673,6 +24673,40 @@ The measure said what `.worktrees` takes as a whole, not which jobs take it.
   it, often a host name. So a gauge sums the machines, and each machine's figures stay on Machines and `GET /api/machines`.
   Seats of one host that share a filesystem are summed as they are: each one's own places, never the free space.
 
+**Part 13: the disk defaults** (issue #2494, `src/domain/disk-defaults.ts`, `src/machines/disk-defaults.ts`
+`withDiskDefaults`, `src/http/ui/disk-defaults.ts`). Each knob was a machine option only, so a fleet of machines needed
+the same options on each one.
+- **The setting.** One user setting, `diskDefaults` (`GET /api/machines/disk-defaults`, an admin's
+  `POST /ui/api/machines/disk-defaults`, the Disk defaults panel on Machines): `diskLow` (the low and critical thresholds)
+  and `sweep` (the sweep interval, the scratch age, the retention per job status, the storage prune's age, the trim
+  threshold and the cache cap of each kind), in the shapes the machine snapshot uses. Each field has the bounds of the
+  machine option of the same meaning. `null` clears it.
+- **Applied.** The plugin host applies it to each machine as the machines are listed (every engine tick), so the decider,
+  the sweep, the disk watch and `GET /api/machines` see the same machine. A field the machine's own options set wins; a
+  field they leave out takes the default; a retention per status and a cap per cache kind each on its own. The disk is
+  judged again by the thresholds that result. The machine's own thresholds are on its snapshot (`diskThresholds`) for this.
+  A container target takes none: its disk is not read and the sweep does not treat it.
+- **Cost.** The setting is read from the store at most once a second (`DISK_DEFAULTS_READ_MS`), not at each tick, so a
+  change applies within a second with no restart.
+- **No "off" for one machine.** A machine option absent means "the default", so a machine cannot turn off a default
+  prune, trim or cache cap; its own value can only make it less strict (a longer age, a higher threshold or cap).
+
+**Part 14: a machine's own disk budget, and the dry run** (issue #2494, `src/domain/sweep-dry-run.ts`,
+`src/engine/sweep-dry-run.ts`). The disk budget was one value for every machine, and a person could not see what the
+sweep would remove before it removed it.
+- **A machine's own budget.** The machine option `diskBudgetGiB` (`sweep.budgetGiB`) is its disk budget, in place of the
+  user's disk budget (`budgetOf`). With no budget of the user's, it still holds. `GET /api/machines` shows each machine's
+  `hopperDisk.budgetBytes` and `over` by the budget it has. A seat is a machine (part 12), so this is the budget per seat too.
+  The disk defaults do not carry a budget: the user's disk budget is already the one for every machine.
+- **The dry run.** The machine option `sweepDryRun` (`sweep.dryRun`), or the disk defaults' dry run (a check box in the
+  Disk defaults panel). On such a machine, a pass of the sweep reaps, prunes, clears and trims nothing. It records what
+  it would remove as one `machine.sweep_dry_run` event: each scratch dir it would reap, with what the job takes there
+  (part 11), the work kept before apart; the jobs whose processes and containers it would stop; the exited containers the
+  prune would remove and what the runtimes say they could reclaim, at most; the cache places over their caps; and whether
+  the trim would be due. Again only once that changes; after a restart, once more. The reap at a job's end keeps the
+  scratch dir there (as a retention does), so the sweep lists it. A person's discard still runs, and the measure, the
+  budget's events and the leftovers listing go on as before. `sweepDryRun: false` wins over a default dry run.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24696,7 +24730,11 @@ container storage for real, with a fake runtime), `test/domain/hopper-disk.test.
 with a fake pkill), `test/domain/cache-caps.test.ts`, `test/engine/sweep-caches.test.ts`. Part 11:
 `test/client/survey-job-disk.test.ts` (the measure for real), `test/domain/job-disk.test.ts`, `test/engine/sweep-disk-kept.test.ts`. Part 12:
 `test/machines/resource-sample.test.ts`, `test/integration/machine-history.test.ts` (the lines through the daemon),
-`test/machines/disk-gauges.test.ts` (the points, and the gauges through an in-memory metric reader), `test/ui/machine-history.test.ts`.
+`test/machines/disk-gauges.test.ts` (the points, and the gauges through an in-memory metric reader), `test/ui/machine-history.test.ts`. Part 13:
+`test/machines/disk-defaults.test.ts`, `test/integration/disk-defaults.test.ts` (the setting through the daemon, and a machine with
+it applied), `test/ui/hopper-disk.test.ts` (the form). Part 14: `test/domain/sweep-dry-run.test.ts`, `test/engine/sweep-dry-run.test.ts`
+(nothing removed, the event once while it stays the same; a machine's own budget), `test/engine/cleanup-retention.test.ts` (the
+scratch dir kept at a job's end), `test/plugins/sweep-options.test.ts`.
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
@@ -33694,6 +33732,55 @@ leftover bytes on Machines.
 `test/engine/sweep-ledger.test.ts` (the sweep surveys the work tree of kept work no job in the job list used, and closes the
 entry once its dir is gone).
 
+### Part 9: a job's processes and containers as entries (2026-10-23)
+
+The ledger named a job's dirs and its scope, but not its processes or the containers and volumes labelled with its id. The
+survey already finds both (`processes`: a process carrying `HOPPER_JOB_ID=<job id>`; `containers`: a container or a volume
+with the label `hopper.job=<job id>`, issue #1120), and the sweep reaps an ended job that still has one. The ledger did not
+record them, so a process or a container that stayed was no cleanup leftover.
+
+- **The kinds** (`src/domain/resource-ledger.ts`). `job_processes`, locator `HOPPER_JOB_ID=<job id>`
+  (`processesLocatorOf`), and `job_containers`, locator `hopper.job=<job id>` (`containersLocatorOf`; the label is `JOB_LABEL`
+  in `src/client/job-runtime.ts`). Neither has a work tree. No migration: the kind column is text.
+- **Recorded** by the reconciler (`unledgeredEntriesOf`), from the survey, for an ended job the store knows: each job with a
+  process there, and each job with a container or a volume there. A live job's are in use and not recorded; a job the store
+  does not know is never recorded. The executor does not record them at the start: the hopper does not make them itself.
+- **Closed by a reap** (`reapClosures`). The reap always stops the processes, as it does the scope, so `job_processes` is
+  closed `reaped` by every reap, and a retention does not keep it (`retainedEntriesOf`). The reap removes the containers
+  unless it keeps the scratch dir (a timed-out job's): `job_containers` is closed `reaped` by a reap that looked at the
+  scratch dir, kept work or not; after any other reap it stays open until the survey says.
+- **Closed gone** (`goneClosures`). `job_processes` once the survey finds no process of the job; `job_containers` once the
+  survey lists containers and names none of the job's (a client older than issue #1120 lists none, so it judges none).
+- **Left as before.** The leftover check (part 2), Machines (part 3) and the parts list read these entries as any other.
+
+**Left for later parts** of issue #2504: agent sessions, herdr panes and build daemons as entries; the cleanup as a
+persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known; leftover
+bytes on Machines.
+
+**Verification (part 9).** `test/domain/resource-ledger-kinds.test.ts` (the locators match the reap's variable and label;
+`reapClosures`, `retainedEntriesOf`, `goneClosures`, `unledgeredEntriesOf` and `ledgerRootsOf` for both kinds);
+`test/engine/sweep-ledger.test.ts` (the sweep records an ended job's processes and containers, its reap closes the processes,
+and the next survey that finds no container closes the containers).
+
+### Part 10: the bytes of the cleanup leftovers on Machines (2026-10-23)
+
+Machines counted the cleanup leftovers on each machine (part 3), but not what they hold on disk. The sweep already measures
+what each job there takes (issue #2494: `jobs`, each job's `worktreeBytes` and `scratchBytes`, the 50 biggest).
+
+- **The bytes** (`machineLeftoversOf` in `src/domain/resource-ledger.ts`, given the machine's `hopperDisk.jobs`). For each job
+  with a leftover there: its `scratchBytes` when a leftover entry is its scratch dir or its container runtime (the runtime is in
+  the scratch dir), its `worktreeBytes` when one is a job worktree; each part once. A scope, processes or containers hold no
+  bytes the measure names. `bytes` is absent when the measure names none of those jobs.
+- **Not measured.** `unmeasured` counts the jobs with a leftover on disk that the measure does not name: the measure keeps
+  the biggest jobs only, and a machine may have none yet. So the bytes are at least what the leftovers hold, never more but
+  for a dir removed after the last measure, which the next survey closes gone (part 3).
+- **On the card** (`cleanupLeftoversText`): after the counts, `<size> on disk`, and `<n> jobs not measured` when there are some.
+
+**Left for later parts** of issue #2504: agent sessions, herdr panes and build daemons as entries; the cleanup as a
+persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known.
+
+**Verification (part 10).** `test/domain/resource-ledger-bytes.test.ts` (the sum per entry kind, each part once; the jobs not
+measured; no bytes without a measure); `test/ui/hopper-disk.test.ts` (the card's text).
 
 ## Push requirements (issue #2555, 2026-10-22)
 
@@ -33837,3 +33924,24 @@ promotion set; times shown in the owner's time zone in the UI; accuracy over tim
 cutoff, across a day and the end of daylight saving time), `test/domain/delivery-forecast.test.ts` (shape, order,
 `low` history, expedite, slipping, the gate wait, the same output twice), `test/domain/forecast-accuracy.test.ts` (a
 change run end to end, its ledger and the error per step and per repository).
+
+**Part 2 (2026-10-23): the measured steps and the read.** `src/domain/delivery-history.ts` reads a **delivery track**
+for each job from its events: `queued` from `job.queued` to the first `job.started`, `coding` to the first
+`job.finished`, `pr_checks` to `job.pull_request_merged`, `landing` the merge itself (no time), `landing_checks` from
+the merge to the `landing_batch.promoted` of the first batch run whose `landing_batch.started` `merges` names the pull
+request (from `pr.create` through the hopper, `job.pull_request_followed` or the merge). After that the change is in
+`promotion_set`. `stepHistory` gives each step's durations from the ended steps of a repository's tracks.
+`GET /api/delivery-forecast?job=|issue=|pr=` (`src/http/delivery-forecast.ts`) and `hopper forecast --job|--issue|--pr`
+answer the forecast of that change, from the tracks of the last 30 days (`HISTORY_DAYS`). With no promotion set schedule
+yet, the forecast's `schedule` is absent and the scheduled steps are `unknown`; there are no delivery gates and no
+expedite. A failed, cancelled or rejected job with no merge carries no change: 409.
+
+Decisions: no event ends a pull request's checks, so `pr_checks` holds the checks and the wait for the merge, and
+`landing` takes no time. A job's own ended steps count as history when they are in the window.
+
+Left: the promotion set schedule setting per repository with the gate owners; the expedite flag; the delivery ledger in
+the database; a promotion set lookup; the UI in the owner's time zone; accuracy over time.
+
+Verification: `test/domain/delivery-history.test.ts` (each step from its events, the batch run's merges, the history per
+repository), `test/integration/delivery-forecast.test.ts` (the shape of the answer for a job, an issue and a pull request,
+the order of the ends, 400, 404, 409), `test/cli/forecast.test.ts`.

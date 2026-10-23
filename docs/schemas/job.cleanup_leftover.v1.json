@@ -22,7 +22,9 @@
               "scratch_dir",
               "job_worktree",
               "job_scope",
-              "container_runtime"
+              "container_runtime",
+              "job_processes",
+              "job_containers"
             ]
           },
           "locator": {

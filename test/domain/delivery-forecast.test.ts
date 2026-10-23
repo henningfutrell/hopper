@@ -7,6 +7,7 @@
 //   Scenario: expedite skips the cadence wait; both paths are shown, and the expedited one is never later
 //   Scenario: past its p90 a step is slipping, with a blocker, and the later steps are forecast again
 //   Scenario: a change at a delivery gate waits on its owner; the person's wait is apart from machine time
+//   Scenario: with no promotion set schedule, the scheduled steps are unknown
 //   Scenario: the same inputs give the same forecast
 import { describe, expect, it } from 'vitest';
 import { deliveryForecast, type ForecastInput } from '../../src/domain/delivery-forecast.ts';
@@ -129,6 +130,15 @@ describe('deliveryForecast', () => {
     const late = deliveryForecast(input({ now: '2026-10-22T21:30:00.000Z', current: { step: 'test_gate', since: '2026-10-22T19:00:00.000Z' } }));
     expect(late.slipping).toEqual({ blocker: 'human_gate', expectedEnd: '2026-10-22T21:00:00.000Z' });
     expect(ends(late.normal)).toEqual(['2026-10-22T21:30:00.000Z', '2026-10-23T21:30:00.000Z']);
+  });
+
+  it('with no promotion set schedule (part 2), the scheduled steps are unknown and give no time', () => {
+    const f = deliveryForecast(input({ schedule: undefined, current: { step: 'landing_checks', since: '2026-10-22T16:00:00.000Z' }, expedite: true }));
+    expect(f.normal.steps.map((s) => [s.step, s.basis])).toEqual([
+      ['landing_checks', 'measured'], ['promotion_set', 'unknown'], ['test_gate', 'unknown'], ['production', 'unknown'],
+    ]);
+    expect(f.normal.productionAt).toBeUndefined();
+    expect(f.expedited).toEqual(f.normal);
   });
 
   it('the same inputs give the same forecast', () => {

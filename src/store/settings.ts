@@ -9,7 +9,7 @@ import type { AutoAnswerSettings, BlastRadiusSettings, ComponentWatcherSettings,
 import type { TokenBudgetSettings } from '../domain/token-budget.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
-import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { machineDrainSettings } from './machine-drain-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts'; import { gitlabAccountSettings } from './gitlab-account-settings.ts'; import { preemptionSettings } from './preemption-settings.ts'; import { cloudLinkSettings } from './cloud-link-settings.ts'; import { telemetrySettings } from './telemetry-settings.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { machineDrainSettings } from './machine-drain-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { diskDefaultsSettings } from './disk-defaults-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts'; import { gitlabAccountSettings } from './gitlab-account-settings.ts'; import { preemptionSettings } from './preemption-settings.ts'; import { cloudLinkSettings } from './cloud-link-settings.ts'; import { telemetrySettings } from './telemetry-settings.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -30,12 +30,12 @@ function keyValues(c: StoreContext) {
 /** The settings key of a connected account's job repositories (issue #321), by the account's key (issue #1448). */
 export const jobRepositoriesKey = (key: ConnectedAccountKey): string => `jobRepositories:${key}`;
 
-/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385), the usage limits (issue #522), the memory alert (issue #868), the disk budget (issue #1120), the header badges (issue #1181). */
+/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385), the usage limits (issue #522), the memory alert (issue #868), the disk budget (issue #1120), the disk defaults (issue #2494), the header badges (issue #1181). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
     ...sandboxSettings(read, write), // the read policy (issue #716) and the sandbox approval toggles (issue #991)
-    ...memoryAlertSettings(read, write), ...machineDrainSettings(read, write), ...diskBudgetSettings(read, write), ...headerBadgeSettings(read, write), ...taggedSettings(read, write), ...preemptionSettings(read, write), ...gitlabAccountSettings(read, write), // the GitLab account (issue #1448 part 2), the memory alert (issue #868), the disk budget (issue #1120), the header badges (issue #1181), tagged items (issue #1141), preemption (issue #1525)
+    ...memoryAlertSettings(read, write), ...machineDrainSettings(read, write), ...diskBudgetSettings(read, write), ...diskDefaultsSettings(read, write), ...headerBadgeSettings(read, write), ...taggedSettings(read, write), ...preemptionSettings(read, write), ...gitlabAccountSettings(read, write), // the GitLab account (issue #1448 part 2), the memory alert (issue #868), the disk budget (issue #1120), the header badges (issue #1181), tagged items (issue #1141), preemption (issue #1525)
     getQueueGate() {
       const text = read('queueGate');
       return text === undefined ? undefined : JSON.parse(text) as QueueGate;

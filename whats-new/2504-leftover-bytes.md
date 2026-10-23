@@ -1,0 +1,1 @@
+- Machines now also shows how much disk the things that finished jobs left on each machine take.

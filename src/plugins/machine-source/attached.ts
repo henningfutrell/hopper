@@ -172,22 +172,27 @@ export const sweepShape = (z: typeof Z) => ({
   trimAboveGiB: z.number().positive().max(100000).optional()
     .meta({ description: 'the trim (absent: off): once the sweep\'s cleanups here freed this many GiB, it runs fstrim on the filesystem the home is on (needs root, or sudo with no password for fstrim)' }),
   ...cacheCapShape(z),
+  diskBudgetGiB: z.number().positive().max(100000).optional()
+    .meta({ description: 'this machine\'s own disk budget in GiB (absent: the user\'s disk budget): over it, the sweep reaps every ended job\'s scratch dir at once, and a person is told' }),
+  sweepDryRun: z.boolean().optional()
+    .meta({ description: 'the dry run: the sweep removes nothing here, no scratch dir, container, cache or image, and runs no trim; it records what it would remove (machine.sweep_dry_run). false wins over a default dry run' }),
 });
 
 /** The sweep settings the options set; undefined when none is. */
-export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number; pruneAfterDays?: number; trimAboveGiB?: number } & RetainOptions & CacheCapOptions): SweepSettings | undefined => {
+export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number; pruneAfterDays?: number; trimAboveGiB?: number; diskBudgetGiB?: number; sweepDryRun?: boolean } & RetainOptions & CacheCapOptions): SweepSettings | undefined => {
   const retainHours: Partial<Record<EndStatus, number>> = {};
   for (const [status, key] of Object.entries(RETAIN_OPTIONS) as [EndStatus, keyof RetainOptions][]) if (o[key] !== undefined) retainHours[status] = o[key];
   const retains = Object.keys(retainHours).length > 0;
   const caps: CacheCaps = {};
   for (const [kind, key] of Object.entries(CACHE_CAP_OPTIONS) as [CappedKind, keyof CacheCapOptions][]) if (o[key] !== undefined) caps[kind] = o[key];
   const capped = Object.keys(caps).length > 0;
-  return (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined && o.pruneAfterDays === undefined && o.trimAboveGiB === undefined && !retains && !capped ? undefined : {
+  return (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined && o.pruneAfterDays === undefined && o.trimAboveGiB === undefined && o.diskBudgetGiB === undefined && o.sweepDryRun === undefined && !retains && !capped ? undefined : {
     ...(o.reapEveryMinutes !== undefined ? { everyMinutes: o.reapEveryMinutes } : {}),
     ...(o.scratchMaxAgeHours !== undefined ? { scratchMaxAgeHours: o.scratchMaxAgeHours } : {}),
     ...(retains ? { retainHours } : {}),
     ...(o.pruneAfterDays !== undefined ? { pruneAfterDays: o.pruneAfterDays } : {}), ...(o.trimAboveGiB !== undefined ? { trimAboveGiB: o.trimAboveGiB } : {}),
     ...(capped ? { cacheCapsGiB: caps } : {}),
+    ...(o.diskBudgetGiB !== undefined ? { budgetGiB: o.diskBudgetGiB } : {}), ...(o.sweepDryRun !== undefined ? { dryRun: o.sweepDryRun } : {}),
   });
 };
 
@@ -208,7 +213,7 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 export interface AttachedOptions {
   label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number; jobMemoryMaxGiB?: number; jobCpuPercent?: number;
-  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number; pruneAfterDays?: number; trimAboveGiB?: number;
+  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number; pruneAfterDays?: number; trimAboveGiB?: number; diskBudgetGiB?: number; sweepDryRun?: boolean;
   cacheCapNugetGiB?: number; cacheCapGradleGiB?: number; cacheCapGoGiB?: number; cacheCapNpmGiB?: number; cacheCapPnpmGiB?: number; cacheCapYarnGiB?: number; cacheCapPipGiB?: number;
 }
 
