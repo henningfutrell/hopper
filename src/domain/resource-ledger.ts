@@ -179,6 +179,19 @@ export function unledgeredEntriesOf(found: Survey, ledgered: ReadonlySet<string>
   return out;
 }
 
+/**
+ * The work trees the open entries (`live` or `failed`) on machine `machineId` are in (issue #2504 part 7), sorted: the sweep
+ * surveys them beside the work trees the job list names, so a thing that only an older job left is found, reaped, or closed
+ * gone. A scope has no work tree.
+ */
+export function ledgerRootsOf(open: readonly LedgerEntry[], machineId: string): string[] {
+  const rootOf = (e: LedgerEntry): string | undefined => (e.kind === 'scratch_dir' ? scratchParts(e.locator)?.workTree
+    : e.kind === 'container_runtime' ? scratchParts(e.locator.slice(0, e.locator.lastIndexOf('/')))?.workTree
+      : e.kind === 'job_worktree' ? worktreeParts(e.locator)?.workTree : undefined);
+  const roots = open.filter((e) => e.machineId === machineId && (e.state === 'live' || e.state === 'failed')).map(rootOf);
+  return [...new Set(roots.filter((r): r is string => r !== undefined))].sort();
+}
+
 /** The cleanup leftovers on one machine, as Machines shows them (issue #2504 part 3): jobs, entries, and how many of those failed. */
 export interface MachineCleanupLeftovers { jobs: number; entries: number; failed: number }
 
