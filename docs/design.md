@@ -33855,6 +33855,40 @@ check tells the leftover, then closes it retired; nothing on a listed or configu
 `test/integration/resource-ledger.test.ts` (real database: a `retired` entry is kept, is not open, is not on Failures, shows
 on the parts list, and a later reap closes it `reaped`).
 
+### Part 13: the herdr pane as an entry (2026-10-23)
+
+The issue asks that no herdr pane of a job stays once the job ended (issue #2335 ends a parked or waiting job's pane). The
+executor already saves the pane the job works in (`paneId`); the ledger did not record it, so a pane the cleanup could not
+close was no cleanup leftover.
+
+- **The kind** `herdr_pane`, locator the pane id, on the machine the job runs on. Recorded from the executor's saved state, as
+  the other entries (`ledgerEntriesOf`). A job that goes on in a new pane (a restart, a resume, a move) records the new pane
+  as a second entry.
+- **Closed only by the cleanup at the job's end** (`paneClosures`, `src/domain/resource-ledger.ts`, pure; `closeLedger` in
+  `src/engine/resource-ledger.ts`, from `src/engine/cleanup.ts`). The pane is closed by the job's executor, never by a reap
+  of the machine, so no reap closes this entry (`reapClosures` leaves it out), and a retention does not keep it.
+  - The executor's own cleanup went through: each of the job's pane entries is `reaped`. The executor closed the pane it
+    works in, or found it gone; each pane the job worked in before was closed when the job left it (a park, a restart in a
+    new pane, the end of a pane left on another machine, issue #1569).
+  - Only the reap through the machine went through (issue #2490): `failed`, with the reason "the cleanup did not reach its
+    herdr, so the pane may still be open". It is a cleanup leftover after the grace period. When the machine is retired,
+    part 12 closes it.
+  - The cleanup is deferred: the entry stays `live`. A person who marks the deferred cleanup done (they closed it by hand)
+    closes it `reaped`, with the reason "a person marked the cleanup done: closed by hand".
+- **Not judged by the reconciler.** The survey lists no pane, so `goneClosures` and `unledgeredEntriesOf` do not judge one, and
+  a pane has no work tree (`ledgerRootsOf`).
+- Shown in the parts list as "Herdr pane on <machine>", and in `job.cleanup_leftover` as any other entry. No migration: the
+  kind column is text. A build before this one reads the entry as any other.
+
+**Left for later parts** of issue #2504: the cleanup as a persisted work item per entry with backoff, on each machine's own
+transport (today the cleanup record, its deferral and the sweep's passes retry the job's cleanup as a whole).
+
+**Verification (part 13).** `test/domain/resource-ledger-panes.test.ts` (the entry from a state; no reap closes it; the
+closures of `paneClosures`; no retention; the reconciler does not judge it; the parts list); `test/engine/cleanup-panes.test.ts`
+(reaped through the executor, failed through the machine, live while deferred and reaped when a person marks it cleaned up);
+`test/integration/resource-ledger.test.ts` (real database: the pane the executor saves is recorded, and the cleanup at the
+end reaps it in each end state).
+
 ## Push requirements (issue #2555, 2026-10-22)
 
 **The problem.** Jobs pushed without the repository's CI gates run first. In one repository, 8 of 9 red pull request runs

@@ -1,6 +1,6 @@
 // The resource ledger's writes (issue #2504, design.md "The resource ledger"): entries recorded from what a job's executor
 // saved, and closed as each reap — the cleanup at the job's end, the sweep, a discard — says.
-import { agentSessionEntryOf, goneClosures, ledgerEntriesOf, ledgerKey, ledgerRootsOf, reapClosures, retainedEntriesOf, unledgeredEntriesOf } from '../domain/resource-ledger.ts';
+import { agentSessionEntryOf, goneClosures, ledgerEntriesOf, ledgerKey, ledgerRootsOf, paneClosures, reapClosures, retainedEntriesOf, unledgeredEntriesOf } from '../domain/resource-ledger.ts';
 import type { Reaped, Survey } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
 import type { Job, MachineSnapshot } from '../domain/types.ts';
@@ -17,9 +17,18 @@ export function recordAgentSession(store: Ledger, jobId: string, machineId: stri
   store.resourceLedger.record(agentSessionEntryOf(jobId, machineId, session, at));
 }
 
-/** The job's entries closed as the reap said; `scratch` false: it did not look at the scratch dir, so only its scope. */
-export function closeLedger(store: Ledger, jobId: string, said: Reaped, at: string, scratch = true): void {
-  for (const c of reapClosures(store.resourceLedger.forJob(jobId), said, scratch)) store.resourceLedger.close(jobId, c.entry.kind, c.entry.locator, c.state, at, c.reason);
+/**
+ * The job's entries closed as the reap said; `scratch` false: it did not look at the scratch dir, so only its scope. With
+ * `panes` (the cleanup at the job's end, issue #2504 part 13), its herdr panes too, as `paneClosures` says.
+ */
+export function closeLedger(store: Ledger, jobId: string, said: Reaped, at: string, scratch = true, panes?: 'closed' | 'not_reached'): void {
+  const entries = store.resourceLedger.forJob(jobId);
+  for (const c of [...reapClosures(entries, said, scratch), ...(panes ? paneClosures(entries, panes) : [])]) store.resourceLedger.close(jobId, c.entry.kind, c.entry.locator, c.state, at, c.reason);
+}
+
+/** The job's herdr panes a person closed by hand (part 13), as they said when they marked its deferred cleanup done. */
+export function closePanesByHand(store: Ledger, jobId: string, at: string): void {
+  for (const c of paneClosures(store.resourceLedger.forJob(jobId), 'by_hand')) store.resourceLedger.close(jobId, c.entry.kind, c.entry.locator, c.state, at, c.reason);
 }
 
 /** The job's entries a reap kept for a retention (issue #2504 part 5), marked kept until `until`: no cleanup leftover before then. */
