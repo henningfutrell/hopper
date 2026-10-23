@@ -33694,6 +33694,35 @@ leftover bytes on Machines.
 `test/engine/sweep-ledger.test.ts` (the sweep surveys the work tree of kept work no job in the job list used, and closes the
 entry once its dir is gone).
 
+### Part 9: a job's processes and containers as entries (2026-10-23)
+
+The ledger named a job's dirs and its scope, but not its processes or the containers and volumes labelled with its id. The
+survey already finds both (`processes`: a process carrying `HOPPER_JOB_ID=<job id>`; `containers`: a container or a volume
+with the label `hopper.job=<job id>`, issue #1120), and the sweep reaps an ended job that still has one. The ledger did not
+record them, so a process or a container that stayed was no cleanup leftover.
+
+- **The kinds** (`src/domain/resource-ledger.ts`). `job_processes`, locator `HOPPER_JOB_ID=<job id>`
+  (`processesLocatorOf`), and `job_containers`, locator `hopper.job=<job id>` (`containersLocatorOf`; the label is `JOB_LABEL`
+  in `src/client/job-runtime.ts`). Neither has a work tree. No migration: the kind column is text.
+- **Recorded** by the reconciler (`unledgeredEntriesOf`), from the survey, for an ended job the store knows: each job with a
+  process there, and each job with a container or a volume there. A live job's are in use and not recorded; a job the store
+  does not know is never recorded. The executor does not record them at the start: the hopper does not make them itself.
+- **Closed by a reap** (`reapClosures`). The reap always stops the processes, as it does the scope, so `job_processes` is
+  closed `reaped` by every reap, and a retention does not keep it (`retainedEntriesOf`). The reap removes the containers
+  unless it keeps the scratch dir (a timed-out job's): `job_containers` is closed `reaped` by a reap that looked at the
+  scratch dir, kept work or not; after any other reap it stays open until the survey says.
+- **Closed gone** (`goneClosures`). `job_processes` once the survey finds no process of the job; `job_containers` once the
+  survey lists containers and names none of the job's (a client older than issue #1120 lists none, so it judges none).
+- **Left as before.** The leftover check (part 2), Machines (part 3) and the parts list read these entries as any other.
+
+**Left for later parts** of issue #2504: agent sessions, herdr panes and build daemons as entries; the cleanup as a
+persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known; leftover
+bytes on Machines.
+
+**Verification (part 9).** `test/domain/resource-ledger-kinds.test.ts` (the locators match the reap's variable and label;
+`reapClosures`, `retainedEntriesOf`, `goneClosures`, `unledgeredEntriesOf` and `ledgerRootsOf` for both kinds);
+`test/engine/sweep-ledger.test.ts` (the sweep records an ended job's processes and containers, its reap closes the processes,
+and the next survey that finds no container closes the containers).
 
 ## Push requirements (issue #2555, 2026-10-22)
 
