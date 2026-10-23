@@ -33951,8 +33951,18 @@ no evaluation refused whenever defaults are set. A default that never applies to
 of it a run of `check` before each push; the gate plans the defaults itself, as the route does, and asks only where one
 applies.
 
-**Left for later parts.** The job's override (from its item or a direct job), which the levels above already take; the
-evaluation summarized on the pull request; the
+**The job's push requirements** (part 3, level `job`). A direct job's submitter sets them with the submission:
+`pushRequirements` on `POST /ui/api/direct-jobs` (a list, as a requirements file's `requirements`; refused 400 with the
+file's own reason, and nothing kept), `hopper job submit --push-requirements <file>` (a file in the shape of
+`.hopper/requirements.yaml`, read before the call), or the JSON field of the Run a job form. They are kept on the direct
+job's record (`pushRequirementOverride`), so Run again keeps them; `direct_job.submitted` records their ids only, as the
+defaults' event does. `POST /job/requirements` puts them above every other level, and the gate plans them with the
+defaults when the commit holds no requirements file: one applies, the push is refused, naming `the job's own push
+requirements`. The job's prompt names them and the command to run. A job of an issue has none: an issue's text is not a
+person's setting, and a requirement from it could loosen a repository's gate. Not taken: a field on the job's spec. The
+record already holds what the submitter chose, and a re-run reads it again.
+
+**Left for later parts.** The evaluation summarized on the pull request; the
 count of CI runs that failed on a check a requirement that applied should have caught here, and the billed minutes saved.
 
 **Verification.** `test/domain/push-requirements.test.ts` (the file read and refused; every condition and `all`, `any`,
@@ -33966,7 +33976,11 @@ through; changes not committed are refused; a repository with no requirements fi
 2: the defaults are an admin's setting, refused when they cannot be read and recorded when they change; a repository with
 no requirements file gets them, so a push one applies to is refused until its evaluation passes, at level `default`; a
 push they all skip goes on with no evaluation; a repository's requirement of the same id replaces a default with its
-looser threshold); `test/ui/push-requirements.test.ts` (the panel's summary and the check of the JSON it sends).
+looser threshold; part 3: a direct job's own requirement replaces the repository's, with a looser and a stricter
+threshold, at level `job`; it applies at the push in a repository with no requirements file; a submission whose
+requirements cannot be read is refused and nothing is kept); `test/ui/push-requirements.test.ts` (the panel's summary
+and the check of the JSON it sends); `test/ui/direct-jobs.test.ts`, `test/cli/direct-submit.test.ts`,
+`test/direct-jobs/item.test.ts` (the form's field, the CLI's file, the prompt line).
 
 ## Delivery forecasts (issue #2554 part 1, 2026-10-22)
 

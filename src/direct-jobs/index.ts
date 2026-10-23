@@ -135,7 +135,9 @@ export function createDirectJobs(o: {
     // Who submitted it and what they authorized, never its title or brief: those stay on the record.
     store.events.append({
       type: 'direct_job.submitted',
-      data: { id: d.id, by: by.person, via: by.via, labels: d.labels, authorizations: d.authorizations, ...(d.repo ? { repo: d.repo } : {}) },
+      data: { id: d.id, by: by.person, via: by.via, labels: d.labels, authorizations: d.authorizations, ...(d.repo ? { repo: d.repo } : {}),
+        // The ids only: a check's env can hold values that should not go to webhooks.
+        ...(d.pushRequirements?.length ? { pushRequirements: d.pushRequirements.map((q) => q.id) } : {}) },
     });
     const job = o.host().ingest(directItem(d, o.url(d.id)), SOURCE_REF) ?? undefined;
     // The submitter's vault grant, as Grant on Vault keeps it: for the item, so Run again keeps it.

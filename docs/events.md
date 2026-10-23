@@ -7324,7 +7324,7 @@ Version 1 (`docs/schemas/component_watchers.settings_changed.v1.json`). An admin
 
 ## `direct_job.submitted`
 
-Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a direct job (issue #901): `id` the direct job, `by` who and `via` the way (`ui`, `api` for an API token, `cli`), its routing `labels`, the `authorizations` they gave it, and `repo` when its work may open a pull request there. Its job is queued in the same transaction (`job.queued`, source `direct`). Never its title or brief: those stay on the record.
+Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a direct job (issue #901): `id` the direct job, `by` who and `via` the way (`ui`, `api` for an API token, `cli`), its routing `labels`, the `authorizations` they gave it, and `repo` when its work may open a pull request there, and `pushRequirements` the ids of its own push requirements when it has some (issue #2555 part 3). Its job is queued in the same transaction (`job.queued`, source `direct`). Never its title or brief: those stay on the record.
 
 | field | type | required |
 |---|---|---|
@@ -7334,6 +7334,7 @@ Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a di
 | `labels` | string[] | yes |
 | `authorizations` | string[] | yes |
 | `repo` | string | no |
+| `pushRequirements` | string[] | no |
 
 ```json
 {
@@ -7345,6 +7346,9 @@ Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a di
   ],
   "authorizations": [
     "keycloak:otp-reset"
+  ],
+  "pushRequirements": [
+    "kotlin-coverage"
   ]
 }
 ```

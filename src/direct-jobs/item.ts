@@ -61,6 +61,7 @@ export function directPrompt(d: DirectJob): string {
       : 'vault: not granted — the vault gives this job nothing',
     `submitted by: ${nameWithoutEmail(d.submittedBy.person)} (${d.submittedBy.via}) at ${d.submittedAt}`,
     d.repo ? `repository: ${d.repo} — a pull request, if the brief asks for a change, goes here` : 'repository: none — open no pull request',
+    ...(d.pushRequirements?.length ? [`push requirements: the submitter set ${d.pushRequirements.map((q) => q.id).join(', ')}. Before each push, run sh "$HOPPER_REQUIREMENTS" check in the work tree; the hopper takes the push once it passes`] : []),
     OUTPUTS_LINE,
     DONE_LINE,
   ].join('\n');

@@ -67,6 +67,9 @@ function SubmitForm({ onSubmitted }: { onSubmitted: () => void }) {
         <Field label="Authorizations" hint="what you authorize it to do or reach, one per line; vault grants it the vault">
           <Textarea aria-label="Authorizations" value={draft.authorizations} onChange={set('authorizations')} rows={2} />
         </Field>
+        <Field label="Push requirements" hint="optional, JSON as in .hopper/requirements.yaml; one of the same id replaces the repository's">
+          <Textarea aria-label="Push requirements" className="font-mono text-xs" value={draft.pushRequirements} onChange={set('pushRequirements')} rows={2} placeholder='[{ "id": "lint", "checks": [{ "name": "lint", "run": "npm run lint" }] }]' />
+        </Field>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <Field label="Priority" hint="0–100, optional"><Input aria-label="Priority" className="w-24" inputMode="numeric" value={draft.priority} onChange={set('priority')} placeholder="50" /></Field>
           <label className="flex items-center gap-2 text-xs">

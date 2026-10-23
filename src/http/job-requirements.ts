@@ -18,6 +18,7 @@ import { z } from 'zod';
 import {
   effectiveRequirements, judgeEvaluation, parseRequirements, planPush, requirementsFileDir, type PushRequirement,
 } from '../domain/push-requirements.ts';
+import { pushRequirementOverride } from '../domain/direct-jobs.ts';
 import { workKindOf } from '../domain/skill-library.ts';
 import type { JobStatus } from '../domain/types.ts';
 import { baseBranchOf } from '../github-proxy/git-broker.ts';
@@ -85,8 +86,9 @@ export function jobRequirementsRoutes(app: FastifyInstance, o: { tenants: Tenant
     }
     const at = requirementsOf(call.requirementsFiles);
     if ('problem' in at) return say(422, `no: ${at.problem}`);
-    // The hopper's defaults (Settings → Push requirements) below the commit's own; the job's override is not set anywhere yet.
-    const plan = planPush(effectiveRequirements({ defaults: t.store.settings.getPushRequirementDefaults(), ...at }), {
+    // The hopper's defaults (Settings → Push requirements) below the commit's own, and the job's own above them (part 3).
+    const own = pushRequirementOverride(job, (id) => t.store.directJobs.get(id));
+    const plan = planPush(effectiveRequirements({ defaults: t.store.settings.getPushRequirementDefaults(), ...at, ...(own ? { job: own } : {}) }), {
       files: call.files, repo: call.repo, branch: call.branch, base: call.base, kind: workKindOf(job.spec), labels: job.source?.labels ?? [],
     });
     if (call.op === 'plan') return reply.send({ plan });

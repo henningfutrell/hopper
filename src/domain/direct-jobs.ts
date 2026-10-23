@@ -5,6 +5,7 @@
 import type { ActingPerson } from './failures.ts';
 import { promotionOffer, type PromotionArtifact, type PromotionView } from './promotions.ts';
 import type { FollowsPullRequests } from './pull-requests.ts';
+import type { PushRequirement } from './push-requirements.ts';
 import type { DomainEvent, Job, JobStatus } from './types.ts';
 
 /** The name and kind of the job source that makes a direct job's job: its jobs are keyed by it. */
@@ -53,6 +54,11 @@ export interface DirectJobInput {
   priority?: number;
   /** Offer its promotion to GitHub once it finished (issue #946): never posted without a person's confirmed preview. */
   promoteWhenDone?: boolean;
+  /**
+   * The job's own push requirements (issue #2555 part 3, design.md "Push requirements"): the highest level, so one of the
+   * same id replaces the repository's, a folder's and the hopper's default. Absent: none of its own.
+   */
+  pushRequirements?: PushRequirement[];
   /** It is a direct query (issue #2184): a question its job answers by looking only. Absent: a direct job of any work. */
   query?: DirectQuery;
 }
@@ -172,6 +178,12 @@ export function directJobView(d: DirectJob, job: Job | undefined, questions: Dir
   };
   const offer = promotionOffer(v);
   return offer ? { ...v, offer } : v;
+}
+
+/** The job's own push requirements (issue #2555 part 3): its direct job's, as the submitter set them; none for any other job. */
+export function pushRequirementOverride(job: Pick<Job, 'source'>, directJob: (id: string) => DirectJob | undefined): PushRequirement[] | undefined {
+  const key = job.source?.kind === DIRECT_SOURCE ? job.source.key : undefined;
+  return key?.startsWith(`${DIRECT_SOURCE}:`) ? directJob(key.slice(DIRECT_SOURCE.length + 1))?.pushRequirements : undefined;
 }
 
 /** The direct jobs' store. */

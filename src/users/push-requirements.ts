@@ -2,7 +2,7 @@
 // push moves, whether the job may push that commit. Yes when the job's newest evaluation of that commit in that repository
 // passed; no when it failed. With no evaluation, the commit's tree is read in the user's mirror: a requirements file, the
 // push is refused until an evaluation passes; none, the hopper's default requirements are planned against the files the
-// commit changes, and the push is refused only when one applies. Git cannot say: the push goes on, as with the shrink guard.
+// commit changes, with the job's own (a direct job's, part 3), and the push is refused only when one applies. Git cannot say: the push goes on, as with the shrink guard.
 import { effectiveRequirements, planPush, type PushRequirement } from '../domain/push-requirements.ts';
 import { workKindOf } from '../domain/skill-library.ts';
 import type { DomainEvent, Job } from '../domain/types.ts';
@@ -27,6 +27,8 @@ export function pushRequirementsGate(o: {
   /** The hopper's default requirements (Settings → Push requirements), read at each push. */
   defaults(): readonly PushRequirement[];
   job(jobId: string): Pick<Job, 'spec' | 'source'> | undefined;
+  /** The job's own push requirements (a direct job's, issue #2555 part 3); undefined: none. */
+  override(job: Pick<Job, 'source'>): readonly PushRequirement[] | undefined;
   holds?: HoldsRequirements;
   remote(repo: string): () => Promise<GitRemote>;
 }): NonNullable<GitUser['pushRequirements']> {
@@ -41,13 +43,15 @@ export function pushRequirementsGate(o: {
     const tree = o.holds ? await o.holds(push.repo, o.remote(push.repo), { base: push.base, new: push.new, pack: push.pack }).catch(() => undefined) : undefined;
     if (!tree) return { ok: true };
     if (tree.file) return { ok: false, reason: `${push.repo} has push requirements, and ${commit} has no passing evaluation: run ${CHECK} in the work tree at that commit, fix what fails, and push again` };
+    const job = o.job(push.jobId);
     const defaults = o.defaults();
-    const job = defaults.length > 0 ? o.job(push.jobId) : undefined;
-    if (!job) return { ok: true };
-    const plan = planPush(effectiveRequirements({ defaults }), {
+    const own = job ? o.override(job) ?? [] : [];
+    if (!job || defaults.length + own.length === 0) return { ok: true };
+    const plan = planPush(effectiveRequirements({ defaults, job: own }), {
       files: tree.files, repo: push.repo, branch: push.branch, base: push.base, kind: workKindOf(job.spec), labels: job.source?.labels ?? [],
     });
     if (plan.matched.length === 0) return { ok: true };
-    return { ok: false, reason: `the hopper's default push requirements apply to ${commit} (${plan.matched.map((q) => q.id).join(', ')}), and it has no passing evaluation: run ${CHECK} in the work tree at that commit, fix what fails, and push again` };
+    const whose = [...new Set(plan.matched.map((q) => (q.level === 'job' ? 'the job\'s own' : 'the hopper\'s default')))].join(' and ');
+    return { ok: false, reason: `${whose} push requirements apply to ${commit} (${plan.matched.map((q) => q.id).join(', ')}), and it has no passing evaluation: run ${CHECK} in the work tree at that commit, fix what fails, and push again` };
   };
 }
