@@ -2,7 +2,8 @@
 // an issue or a pull request, the step its change is in and the expected end of each step left, from the step durations
 // measured on its repository's jobs of the last HISTORY_DAYS days; or a promotion set by its number, with the changes in
 // it. The scheduled steps take their times from the repository's delivery settings (part 3), else they are `unknown`. An
-// expedited change (part 4, a person's flag) also has the expedited path. Read only.
+// expedited change (part 4, a person's flag) also has the expedited path. A gate cleared for the change's promotion set
+// (part 5, a person's act) ends that step from the clearance. Read only.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { deliveryForecast, scheduledPlace, type DeliveryForecast, type ForecastInput } from '../domain/delivery-forecast.ts';
@@ -11,6 +12,7 @@ import type { DeliveryStep } from '../domain/delivery-steps.ts';
 import { MAX_SET, promotionSetNumbered, promotionSetOf, type PromotionSet } from '../domain/promotion-sets.ts';
 import { deliveryTracks, stepHistory, TRACK_EVENTS, type DeliveryTrack } from '../domain/delivery-history.ts';
 import { expediteOf } from '../domain/delivery-expedite.ts';
+import { gateClearancesOf } from '../domain/delivery-gates.ts';
 import type { DomainEvent } from '../domain/types.ts';
 import type { Clock } from '../domain/ports.ts';
 import { HttpError, parseWith } from './errors.ts';
@@ -59,7 +61,7 @@ export interface PromotionSetForecastView {
 }
 
 export const DELIVERY_FORECAST_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/delivery-forecast', tag: 'Jobs', summary: 'Where a change is on its way to production, and when each step left is expected to end', description: `The delivery forecast (issue #2554) of one change, named by exactly one of \`job\` (a job id), \`issue\` (\`owner/name#N\`: its newest job) or \`pr\` (a pull request URL: the job that opened or followed it). The steps: \`queued\`, \`coding\`, \`pr_checks\` (the checks and the wait for the merge), \`landing\` (the merge itself), \`landing_checks\` (the batch run into the tested branch), \`promotion_set\`, \`test_gate\`, \`production\`. \`forecast.step\` and \`since\`: the step the change is in. \`forecast.normal.steps\`: each step left, with \`start\`, its \`end\` at p50 and \`endP90\` at p90, \`basis\` \`measured\` and \`samples\` — the step durations of the repository's jobs of the last ${HISTORY_DAYS} days (\`historyDays\`) —, or \`unknown\` with no time: fewer than 5 samples, a step before it unknown, or a scheduled step with no promotion set schedule. A later step never ends before the step before it. \`slipping\` (the current step past its p90 end, with its \`blocker\`). The scheduled steps take their times from the repository's promotion set \`schedule\` in \`/api/delivery-settings\` (part 3): \`basis\` \`scheduled\`, the \`set\` at p50 and \`setP90\`. A scheduled step with no delivery gate ends at its scheduled end; a step with a gate holds the change until a person ends it: \`wait\` \`{ kind: human_gate, owner, since }\`, and \`remaining\` splits the time left at p50 into \`humanMs\`, \`scheduleMs\` and \`machineMs\`. Past the end of production with no gate holding it: \`deliveredAt\` and no \`forecast\`. Or \`set\` (a number) with its \`repo\` (\`owner/name\`): that promotion set — \`PromotionSetForecastView\` \`{ repo, set: { set, cutoffAt, testGateAt, productionAt }, opensAt, deliveredAt?, forecast?, changes }\`, its own step and the ends of its steps left, and \`changes\`: each change of the window in it (since its landing checks ended) or \`expected\` in it by its p50 path, with its \`step\` and \`expedited\`. An expedited change (part 4, \`POST /ui/api/delivery-expedite\`): \`expedited\` \`{ by, at }\`, and \`forecast.expedited\` its fastest path by its promotion set schedule's \`expedite\` (\`out_of_cadence\`: the \`promotion_set\` step ends at once, \`outOfCadence\`), beside \`forecast.normal\` and never later. Times are UTC ISO strings. 400: not exactly one of them, or a bad one. 404: no such job, no job of that issue or pull request, or no promotion set schedule for that repository. 409: the job ended with no merged pull request.`, query: deliveryForecastQuery, returns: '`DeliveryForecastView` `{ jobId, repo?, issue?, pullRequest?, historyDays, expedited?, deliveredAt?, forecast?: DeliveryForecast }`, or `PromotionSetForecastView`', errors: [400, 404, 409] },
+  { method: 'get', path: '/api/delivery-forecast', tag: 'Jobs', summary: 'Where a change is on its way to production, and when each step left is expected to end', description: `The delivery forecast (issue #2554) of one change, named by exactly one of \`job\` (a job id), \`issue\` (\`owner/name#N\`: its newest job) or \`pr\` (a pull request URL: the job that opened or followed it). The steps: \`queued\`, \`coding\`, \`pr_checks\` (the checks and the wait for the merge), \`landing\` (the merge itself), \`landing_checks\` (the batch run into the tested branch), \`promotion_set\`, \`test_gate\`, \`production\`. \`forecast.step\` and \`since\`: the step the change is in. \`forecast.normal.steps\`: each step left, with \`start\`, its \`end\` at p50 and \`endP90\` at p90, \`basis\` \`measured\` and \`samples\` — the step durations of the repository's jobs of the last ${HISTORY_DAYS} days (\`historyDays\`) —, or \`unknown\` with no time: fewer than 5 samples, a step before it unknown, or a scheduled step with no promotion set schedule. A later step never ends before the step before it. \`slipping\` (the current step past its p90 end, with its \`blocker\`). The scheduled steps take their times from the repository's promotion set \`schedule\` in \`/api/delivery-settings\` (part 3): \`basis\` \`scheduled\`, the \`set\` at p50 and \`setP90\`. A scheduled step with no delivery gate ends at its scheduled end; a step with a gate holds the change until a person clears the gate for its promotion set (part 5, \`POST /ui/api/delivery-gate\`; then the step ends at the clearance, not before it starts): \`wait\` \`{ kind: human_gate, owner, since }\`, and \`remaining\` splits the time left at p50 into \`humanMs\`, \`scheduleMs\` and \`machineMs\`. Past the end of production with no gate holding it: \`deliveredAt\` and no \`forecast\`. Or \`set\` (a number) with its \`repo\` (\`owner/name\`): that promotion set — \`PromotionSetForecastView\` \`{ repo, set: { set, cutoffAt, testGateAt, productionAt }, opensAt, deliveredAt?, forecast?, changes }\`, its own step and the ends of its steps left, and \`changes\`: each change of the window in it (since its landing checks ended) or \`expected\` in it by its p50 path, with its \`step\` and \`expedited\`. An expedited change (part 4, \`POST /ui/api/delivery-expedite\`): \`expedited\` \`{ by, at }\`, and \`forecast.expedited\` its fastest path by its promotion set schedule's \`expedite\` (\`out_of_cadence\`: the \`promotion_set\` step ends at once, \`outOfCadence\`), beside \`forecast.normal\` and never later. Times are UTC ISO strings. 400: not exactly one of them, or a bad one. 404: no such job, no job of that issue or pull request, or no promotion set schedule for that repository. 409: the job ended with no merged pull request.`, query: deliveryForecastQuery, returns: '`DeliveryForecastView` `{ jobId, repo?, issue?, pullRequest?, historyDays, expedited?, deliveredAt?, forecast?: DeliveryForecast }`, or `PromotionSetForecastView`', errors: [400, 404, 409] },
 ];
 
 const newest = (tracks: Iterable<DeliveryTrack>, match: (t: DeliveryTrack) => boolean): DeliveryTrack | undefined => {
@@ -68,9 +70,19 @@ const newest = (tracks: Iterable<DeliveryTrack>, match: (t: DeliveryTrack) => bo
   return out;
 };
 
-/** A change's place and forecast at `now`, by its repository's delivery settings. */
-function forecastOf(track: DeliveryTrack, d: DeliveryRepo, history: ForecastInput['history'], now: string, expedite = false): { deliveredAt: string } | { forecast: DeliveryForecast } {
-  const place = scheduledPlace(d.schedule, track.current, d.gates, now);
+/** Every gate clearance, as the expedite flags: not bound to the window. */
+const clearancesOf = (t: TenantParts): DomainEvent[] => t.store.events.between(['delivery_gate.cleared'], new Date(0).toISOString());
+
+/** When each gate of the promotion set a change is in was cleared; none before its landing checks end. */
+function clearedOf(clearances: readonly DomainEvent[], d: DeliveryRepo, repo: string | undefined, current: DeliveryTrack['current'], set?: number): Partial<Record<DeliveryStep, string>> {
+  const n = set ?? (d.schedule && current.step === 'promotion_set' ? promotionSetOf(d.schedule, current.since)?.set : undefined);
+  if (n === undefined || !repo) return {};
+  return Object.fromEntries(Object.entries(gateClearancesOf(clearances, repo, n)).map(([step, c]) => [step, c.at]));
+}
+
+/** A change's place and forecast at `now`, by its repository's delivery settings and its set's gate clearances. */
+function forecastOf(track: DeliveryTrack, d: DeliveryRepo, history: ForecastInput['history'], now: string, cleared: Partial<Record<DeliveryStep, string>>, expedite = false): { deliveredAt: string } | { forecast: DeliveryForecast } {
+  const place = scheduledPlace(d.schedule, track.current, d.gates, now, cleared);
   if ('deliveredAt' in place) return place;
   return { forecast: deliveryForecast({ now, current: place, history, gates: d.gates, ...(d.schedule ? { schedule: d.schedule } : {}), ...(expedite ? { expedite } : {}) }) };
 }
@@ -113,7 +125,7 @@ export function deliveryForecastOf(t: TenantParts, query: unknown, now: Date): D
     jobId: track.jobId,
     ...(track.repo ? { repo: track.repo } : {}), ...(track.issue ? { issue: track.issue } : {}), ...(track.pullRequest ? { pullRequest: track.pullRequest } : {}),
     historyDays: HISTORY_DAYS, ...(expedited ? { expedited } : {}),
-    ...forecastOf(track, d, historyOf(tracks, windowStart, track.repo), now.toISOString(), expedited !== undefined),
+    ...forecastOf(track, d, historyOf(tracks, windowStart, track.repo), now.toISOString(), clearedOf(clearancesOf(t), d, track.repo, track.current), expedited !== undefined),
   };
 }
 
@@ -128,10 +140,11 @@ function promotionSetForecastOf(t: TenantParts, repo: string, n: number, now: Da
   const { tracks, windowStart } = tracksOf(t, now);
   const history = historyOf(tracks, windowStart, repo);
   const flags = flagsOf(t);
+  const clearances = clearancesOf(t);
   const changes: PromotionSetChange[] = [];
   for (const track of [...tracks.values()].sort((a, b) => a.actuals[0]!.start.localeCompare(b.actuals[0]!.start))) {
     if (track.repo?.toLowerCase() !== repo.toLowerCase() || carriesNoChange(t, track)) continue;
-    const f = forecastOf(track, d, history, at);
+    const f = forecastOf(track, d, history, at, clearedOf(clearances, d, repo, track.current));
     // In the set once its landing checks ended (the promotion set step's start); else expected in it by its p50 path.
     const inSet = track.current.step === 'promotion_set' ? promotionSetOf(s, track.current.since)?.set : undefined;
     const expected = inSet === undefined && 'forecast' in f ? f.forecast.normal.steps.find((x) => x.step === 'promotion_set')?.set : undefined;
@@ -142,7 +155,8 @@ function promotionSetForecastOf(t: TenantParts, repo: string, n: number, now: Da
       ...(expediteOf(flags, track) ? { expedited: true as const } : {}),
     });
   }
-  const set = forecastOf({ jobId: `set-${n}`, actuals: [], current: { step: 'promotion_set', since: found.opensAt } }, d, {}, at);
+  const current = { step: 'promotion_set' as const, since: found.opensAt };
+  const set = forecastOf({ jobId: `set-${n}`, actuals: [], current }, d, {}, at, clearedOf(clearances, d, repo, current, n));
   return { repo: repo.toLowerCase(), set: found.set, opensAt: found.opensAt, ...set, changes };
 }
 

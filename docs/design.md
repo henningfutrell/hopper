@@ -34180,3 +34180,30 @@ the database; the times in the owner's time zone in the UI; accuracy over time.
 Verification: `test/domain/delivery-expedite.test.ts` (each target, the newest flag, another change's flag),
 `test/integration/delivery-expedite.test.ts` (the expedited path beside the normal one, out of cadence and never later,
 the set lookup, once only, off through another target, 400 and 403), `test/cli/forecast.test.ts`.
+
+**Part 5 (2026-10-23): a person clears a delivery gate.** A **gate clearance** is the person's act that ends a delivery
+gate — the test gate's sign-off, a production approval — for one promotion set of a repository: `POST
+/ui/api/delivery-gate` (operator) names `repo`, `set` and the gated `step` (`promotion_set`, `test_gate` or
+`production`), recorded as `delivery_gate.cleared`; `hopper forecast --set N --repo owner/name --clear <step>`. The first
+clearance of a gate counts: the same again records nothing and answers the first. 404: no promotion set schedule or no
+such set; 409: the step has no delivery gate. `gateClearancesOf` (`src/domain/delivery-gates.ts`) reads them for one set;
+`scheduledPlace` takes them: a cleared gate ends its step at the clearance, not before the step starts, so the change
+goes on to the next step from then, and a cleared production gate delivers it (`deliveredAt`). `GET
+/api/delivery-forecast` reads every clearance at each request (not bound to the window), for the set a change is in (from
+the end of its landing checks) and for a promotion set looked up by its number.
+
+Decisions: a clearance names a promotion set, not one change, because a set goes through the test gate and to production
+as one; a change expedited out of cadence keeps its normal set's place, as part 4 says. The clearance is the event of the
+test gate and of production: the hopper records the act and promotes nothing, and an ungated scheduled step still ends on
+time. The operator role clears a gate, and the clearance records who: the gate's `owner` is a name in the settings, not a
+user the daemon can check. A clearance before the step starts ends the step when it starts, so a person may sign off
+early. The forecast's path still shows a later gated step with its scheduled time and owner until the change reaches it.
+A clearance cannot be taken back: a later part can add that if it is needed.
+
+Left: the delivery ledger in the database; the times in the owner's time zone in the UI, with the gate clearance there;
+accuracy over time.
+
+Verification: `test/domain/delivery-gates.test.ts` (the first clearance per step, another repository or set, a clearance
+ending its step, before the step starts, before the cutoff, production delivered, an ungated step),
+`test/integration/delivery-gates.test.ts` (a cleared test gate moves a change and its set to production, a cleared
+production gate delivers it, once only, 400, 403, 404 and 409), `test/cli/forecast.test.ts`.

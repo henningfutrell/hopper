@@ -1,0 +1,1 @@
+- A person can now clear a release gate, such as the test sign-off or the production approval, for a release set. The changes in that set then move on in their forecast.

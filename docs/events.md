@@ -8951,3 +8951,23 @@ Version 1 (`docs/schemas/delivery_expedite.changed.v1.json`). A person turned th
   "by": "release-owner"
 }
 ```
+
+## `delivery_gate.cleared`
+
+Version 1 (`docs/schemas/delivery_gate.cleared.v1.json`). A person cleared a delivery gate of one promotion set (issue #2554 part 5): `repo` (`owner/repo`, lowercased), the `set` number and the gated `step` (`promotion_set`, `test_gate` or `production`) — the test gate's sign-off, a production approval —; `by` who. Each change of that set goes on past the gate from this time, not before the step starts; a cleared production gate delivers it. The first clearance of a gate counts. It changes no job and promotes nothing: the hopper records the act.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `set` | integer | yes |
+| `step` | `queued` \| `coding` \| `pr_checks` \| `landing` \| `landing_checks` \| `promotion_set` \| `test_gate` \| `production` | yes |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "octo/identity",
+  "set": 7,
+  "step": "test_gate",
+  "by": "release-owner"
+}
+```
