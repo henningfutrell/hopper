@@ -33744,6 +33744,26 @@ bytes on Machines.
 `test/engine/sweep-ledger.test.ts` (the sweep records an ended job's processes and containers, its reap closes the processes,
 and the next survey that finds no container closes the containers).
 
+### Part 10: the bytes of the cleanup leftovers on Machines (2026-10-23)
+
+Machines counted the cleanup leftovers on each machine (part 3), but not what they hold on disk. The sweep already measures
+what each job there takes (issue #2494: `jobs`, each job's `worktreeBytes` and `scratchBytes`, the 50 biggest).
+
+- **The bytes** (`machineLeftoversOf` in `src/domain/resource-ledger.ts`, given the machine's `hopperDisk.jobs`). For each job
+  with a leftover there: its `scratchBytes` when a leftover entry is its scratch dir or its container runtime (the runtime is in
+  the scratch dir), its `worktreeBytes` when one is a job worktree; each part once. A scope, processes or containers hold no
+  bytes the measure names. `bytes` is absent when the measure names none of those jobs.
+- **Not measured.** `unmeasured` counts the jobs with a leftover on disk that the measure does not name: the measure keeps
+  the biggest jobs only, and a machine may have none yet. So the bytes are at least what the leftovers hold, never more but
+  for a dir removed after the last measure, which the next survey closes gone (part 3).
+- **On the card** (`cleanupLeftoversText`): after the counts, `<size> on disk`, and `<n> jobs not measured` when there are some.
+
+**Left for later parts** of issue #2504: agent sessions, herdr panes and build daemons as entries; the cleanup as a
+persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known.
+
+**Verification (part 10).** `test/domain/resource-ledger-bytes.test.ts` (the sum per entry kind, each part once; the jobs not
+measured; no bytes without a measure); `test/ui/hopper-disk.test.ts` (the card's text).
+
 ## Push requirements (issue #2555, 2026-10-22)
 
 **The problem.** Jobs pushed without the repository's CI gates run first. In one repository, 8 of 9 red pull request runs

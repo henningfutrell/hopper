@@ -49,8 +49,12 @@ export function budgetBody(text: string): { budget: DiskBudget | null } | string
 /** The form's GB for the budget set; empty when there is none. */
 export const budgetDraft = (b: DiskBudget | null): string => (b ? String(b.bytes / 1e9) : '');
 
-/** The cleanup leftovers on a machine (issue #2504 part 3): what ended jobs left there after the grace period. */
+/**
+ * The cleanup leftovers on a machine (issue #2504 part 3): what ended jobs left there after the grace period, and what it holds
+ * on disk as the sweep last measured it, with the jobs the measure did not name (part 10).
+ */
 export function cleanupLeftoversText(l: MachineCleanupLeftovers): string {
   const n = (k: number, what: string): string => `${k} ${what}${k === 1 ? '' : 's'}`;
-  return `${n(l.entries, 'thing')} of ${n(l.jobs, 'ended job')}, ${l.failed > 0 ? `${n(l.failed, 'removal')} failed: see Failures` : 'not removed yet'}`;
+  const disk = [...(l.bytes !== undefined ? [`${size(l.bytes)} on disk`] : []), ...(l.unmeasured ? [`${n(l.unmeasured, 'job')} not measured`] : [])];
+  return `${n(l.entries, 'thing')} of ${n(l.jobs, 'ended job')}, ${l.failed > 0 ? `${n(l.failed, 'removal')} failed: see Failures` : 'not removed yet'}${disk.length ? `; ${disk.join(', ')}` : ''}`;
 }
