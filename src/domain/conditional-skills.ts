@@ -78,7 +78,7 @@ export function ruleMatch(rule: SkillRule, job: RuleSignals): string[] | undefin
   return why;
 }
 
-const globMatches = (glob: string, file: string): boolean =>
+export const globMatches = (glob: string, file: string): boolean =>
   posix.matchesGlob(file, glob) || (!glob.includes('/') && posix.matchesGlob(posix.basename(file), glob));
 
 /**
