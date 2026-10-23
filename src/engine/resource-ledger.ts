@@ -23,11 +23,11 @@ export function retainLedger(store: Ledger, jobId: string, until: string): void 
 }
 
 /**
- * The reconciler's step (issue #2504 part 3): each open entry on machine `machineId` of an ended job that the survey no
- * longer found is closed `reaped`, so a thing removed by hand is no cleanup leftover. How many it closed.
+ * The reconciler's step (issue #2504 parts 3, 8): each entry not yet reaped on machine `machineId` — kept work's too — of an
+ * ended job that the survey no longer found is closed `reaped`, so a thing removed by hand is no cleanup leftover. How many it closed.
  */
 export function closeGone(store: Ledger & Pick<UserStore, 'jobs'>, machineId: string, found: Survey, at: string): number {
-  const closed = goneClosures(store.resourceLedger.open(), found, machineId, (id) => store.jobs.get(id));
+  const closed = goneClosures(store.resourceLedger.onMachine(machineId), found, machineId, (id) => store.jobs.get(id));
   for (const c of closed) store.resourceLedger.close(c.entry.jobId, c.entry.kind, c.entry.locator, c.state, at, c.reason);
   return closed.length;
 }
@@ -44,9 +44,9 @@ export function reconcileLedger(store: Ledger & Pick<UserStore, 'jobs'>, m: Pick
 }
 
 /**
- * The work trees the sweep surveys on machine `machineId` (issue #2504 part 7): `roots`, the ones the job list names, and
- * each one an open entry there is in, so what only an older job left is surveyed too. Sorted, once each.
+ * The work trees the sweep surveys on machine `machineId` (issue #2504 parts 7, 8): `roots`, the ones the job list names, and
+ * each one an entry there not yet reaped is in (kept work's too), so what only an older job left is surveyed too. Sorted, once each.
  */
 export function sweptRoots(store: Ledger, machineId: string, roots: readonly string[]): string[] {
-  return [...new Set([...roots, ...ledgerRootsOf(store.resourceLedger.open(), machineId)])].sort();
+  return [...new Set([...roots, ...ledgerRootsOf(store.resourceLedger.onMachine(machineId), machineId)])].sort();
 }

@@ -33560,3 +33560,24 @@ leftover bytes on Machines; a `kept` entry in a work tree no job in the job list
 **Verification (part 7).** `test/domain/resource-ledger.test.ts` (`ledgerRootsOf`: each kind, once, sorted; closed entries,
 scopes and another machine's add nothing); `test/engine/sweep-ledger.test.ts` (the sweep surveys a work tree only an open
 entry names, and closes that entry when its dir is gone).
+
+### Part 8: kept work in the reconciler (2026-10-23)
+
+A `kept` entry (work not pushed) was not in the work trees the sweep surveys (part 7 took only `live` and `failed`), and the
+reconciler judged only `live` and `failed` entries. Kept work of a job in the job list was closed when gone (`goneKept`), but
+kept work of an older job stayed `kept` for good, also after a person removed it.
+
+- **The roots** (`ledgerRootsOf`, `sweptRoots`). The sweep surveys the work tree of each entry on the machine that is not
+  `reaped`: `live`, `failed` or `kept`. The sweep reads them with `onMachine`, as the reconciler already does.
+- **The closures** (`goneClosures`, `closeGone`). A `kept` entry of an ended job whose scratch dir or job worktree the
+  survey no longer found is closed `reaped`, with the reason "not found on the machine". A `kept` entry still there stays
+  `kept`: the reconciler removes nothing, and the reap keeps work not pushed as before.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; entries on machines no longer known;
+leftover bytes on Machines.
+
+**Verification (part 8).** `test/domain/resource-ledger.test.ts` (`ledgerRootsOf` names a kept entry's work tree;
+`goneClosures` reaps a kept entry that is gone, keeps one still there, and never judges a reaped one again);
+`test/engine/sweep-ledger.test.ts` (the sweep surveys the work tree of kept work no job in the job list used, and closes the
+entry once its dir is gone).
