@@ -17,6 +17,7 @@ import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { keepTokenUse } from './checkpoints.ts';
+import { recordLedger } from './resource-ledger.ts';
 import { agentSignIn, placeCredentials, Unreached } from './credentials.ts';
 import { moveNoWay, noWayMove } from './no-way-move.ts';
 import { moveLost, type Lost } from './lost-move.ts';
@@ -197,7 +198,8 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
     beforeNudge: () => nudgeCheck(c, j),
     // A person's notes (issue #997), read from the store each time: one sent mid-run goes in at the next turn boundary.
     notes: runNotes(c, j.id),
-    saveState: (state) => { if (!left(c, e)) store.jobs.update(j.id, { executorState: state }); },
+    // What the state names the hopper made for the job (issue #2504) goes in its resource ledger, in the same transaction.
+    saveState: (state) => { if (!left(c, e)) store.tx(() => { store.jobs.update(j.id, { executorState: state }); recordLedger(store, j.id, m.id, state, nowIso(c)); }); },
     workTree: (path) => { if (!left(c, e)) store.jobs.update(j.id, { workTree: path }); },
     // Push it (issue #1472): the job worktree its kept work names, for a job that recorded no state.
     ...(j.continued && 'keptWork' in j.continued ? withKeptTree(keptTreeOf(keptWorkOf(store.events.recent(1, [...WORK_EVENTS], j.id))[0])) : {}),

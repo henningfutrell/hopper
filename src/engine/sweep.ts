@@ -43,7 +43,7 @@ import { discardingOf, discardReasonOf, hopperDiskOf, keptData, keptPushedOf, ke
 import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger } from './resource-ledger.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 export const SCRATCH_MAX_AGE_HOURS = 24;
 /** How often the engine looks for a machine whose sweep is due. */
@@ -203,9 +203,10 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     return discardReasonOf(job, key !== undefined && c.store.workItems.get(key)?.state === 'done', key === undefined ? undefined : c.store.jobs.getBySourceKey(key), kept);
   };
 
-  /** What a reap removed of the job's containers and volumes (issue #1120), recorded. */
-  function recordRemoved(jobId: string, m: MachineSnapshot, said: Reaped): void {
-    if (!said.removed) return;
+  /** What a reap removed of the job's containers and volumes (issue #1120), recorded; `scratch` false: it did not look at the scratch dir. */
+  function recordRemoved(jobId: string, m: MachineSnapshot, said: Reaped, scratch = true): void {
+    // Its resource ledger (issue #2504) closed as the reap said.
+    closeLedger(c.store, jobId, said, c.clock.now().toISOString(), scratch); if (!said.removed) return;
     const { containers, volumes } = said.removed;
     log(`hopper: removed ${count(containers.length, 'container')} and ${count(volumes.length, 'volume')} of job ${jobId} on ${m.id}`);
     c.store.events.append({ type: 'job.containers_removed', jobId, machineId: m.id, data: said.removed });
@@ -309,7 +310,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         log(`hopper: the sweep could not reap job ${r.jobId} on ${m.id}: ${(e as Error).message}`);
         continue;
       }
-      recordRemoved(r.jobId, m, said);
+      recordRemoved(r.jobId, m, said, r.scratch !== undefined);
       // A dir the reap could not remove is still there (issue #1452): never said removed, and told once while it stays.
       if (said.left?.length) {
         if (!stuck.has(where)) log(`hopper: the sweep could not remove job ${r.jobId}'s scratch dir on ${m.id}: ${said.left.join(', ')} is still there`);

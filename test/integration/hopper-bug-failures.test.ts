@@ -12,6 +12,7 @@
 //   Scenario: the report is closed as not planned
 //     Then the problem stays open for a person
 import { afterEach, describe, expect, it } from 'vitest';
+import type { BugReport } from '../../src/domain/bug-reports.ts';
 import type { FailuresView, Job } from '../../src/domain/types.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -38,17 +39,24 @@ const chain = async (a: TestApp, key: string): Promise<Job[]> =>
 
 /**
  * A job that reports a hopper bug about itself (issue #1147 as `number`) before it fails as `message`. The report is
- * added once the job is pulled, not once it is seen running: under load a poll can miss its 1500 ms run.
+ * added as the job is queued, before it runs: under load the pull can return after its 1500 ms run failed (issue #2504).
  */
 async function reportsThenFails(a: TestApp, message: string, number = 1147) {
-  const job = await a.pull({ op: 'fail', message, ms: 1500 });
-  const report = a.user().store.bugReports.add({
-    createdAt: new Date().toISOString(), by: `job ${job.id}`, jobId: job.id, fromJob: true, title: 'The shrink guard compares a push with the default branch',
-    state: 'open', kind: 'issue', number, url: `https://github.com/henningfutrell/hopper/issues/${number}`, tries: 1,
+  const key = `manual:report:${number}:${Date.now()}`;
+  const store = a.user().store;
+  let report: BugReport | undefined;
+  const unsubscribe = store.events.subscribe((e) => {
+    if (report || e.type !== 'job.queued' || !e.jobId || (e.data as { source?: { key?: string } }).source?.key !== key) return;
+    report = store.bugReports.add({
+      createdAt: new Date().toISOString(), by: `job ${e.jobId}`, jobId: e.jobId, fromJob: true, title: 'The shrink guard compares a push with the default branch',
+      state: 'open', kind: 'issue', number, url: `https://github.com/henningfutrell/hopper/issues/${number}`, tries: 1,
+    });
   });
+  const job = await a.pull({ op: 'fail', message, ms: 1500 }, { key }).finally(unsubscribe);
+  expect(report?.jobId).toBe(job.id);
   await a.waitForStatus(job.id, 'failed');
   const problem = await waitFor(async () => (await failuresOf(a)).problems.find((p) => p.jobIds.includes(job.id)), { what: 'its problem' });
-  return { job, report, problem };
+  return { job, report: report!, problem };
 }
 
 const NOT_COMPLETE = 'not complete: tending failed: the shrink guard refused its last push, which emptied or shrank src/update/update-commands.ts, and no push went through after';

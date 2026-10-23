@@ -39,7 +39,7 @@ import { createOutboundSendRepository } from './outbound-sends.ts';
 import { createSearchPendingRepository } from './search-pending.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
 import { createRepoChecksReadRepository } from './repo-checks.ts';
-import { createIntakeArrivalRepository } from './intake-arrivals.ts'; import { createTokenLedgerRepository } from './token-ledger.ts';
+import { createIntakeArrivalRepository } from './intake-arrivals.ts'; import { createTokenLedgerRepository } from './token-ledger.ts'; import { createResourceLedgerRepository } from './resource-ledger.ts';
 import { createAppInstallationsReadRepository } from './app-installations.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
@@ -121,7 +121,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     repoChecks: createRepoChecksReadRepository(ctx),
     intakeArrivals: createIntakeArrivalRepository(ctx),
     appInstallations: createAppInstallationsReadRepository(ctx),
-    checkpoints: createCheckpointRepository(ctx), tokenLedger: createTokenLedgerRepository(ctx),
+    checkpoints: createCheckpointRepository(ctx), tokenLedger: createTokenLedgerRepository(ctx), resourceLedger: createResourceLedgerRepository(ctx),
     jobLeases: createJobLeaseRepository(ctx),
     outboundSends: createOutboundSendRepository(ctx),
     notifierDeliveries: createNotifierDeliveryRepository(ctx),

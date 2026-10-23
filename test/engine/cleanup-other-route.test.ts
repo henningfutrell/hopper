@@ -30,6 +30,8 @@ function setup(o: { deferred?: boolean; reachable?: boolean; kept?: string[]; re
     },
     events: { append: (e: { type: string; data?: unknown }) => { events.push(e); }, recent: () => [] },
     tx: <T>(f: () => T): T => f(),
+    // The resource ledger (issue #2504): no entry to close.
+    resourceLedger: { forJob: () => [], close: () => {} },
   };
   const c = {
     store, clock: { now: () => new Date('2026-10-22T00:00:00Z') }, keepPanes: false, stopping: () => false, trigger: () => {},
