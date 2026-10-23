@@ -901,7 +901,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
   without a scope; a shell that never answers within 60000 ms fails the job, pane closed. A machine's **job limits**
   (issue #2498, its `jobMemoryMaxGiB` and `jobCpuPercent` options) are scope properties, `-p MemoryMax=<bytes> -p
-  CPUQuota=<percent>%`, in the trial run too: a systemd that refuses them makes no scope, and the job runs without one.
+  MemoryHigh=<bytes> -p CPUQuota=<percent>%`, in the trial run too: a systemd that refuses them makes no scope, and the
+  job runs without one. With no `jobMemoryMaxGiB` the scope still gets a **default memory limit** (issue #2622,
+  `scopeLimitsOf` in `src/domain/job-limits.ts`): the machine's memory less its memory floor, shared by its lanes, to
+  0.1 GiB, and never less than a job's memory (`memoryPerJobGiB`, default 2 GiB); none with no memory reading.
+  `MemoryHigh` is 90% of `MemoryMax`: past it the kernel reclaims and slows the job before the OOM killer stops a process
+  of it. A print agent's turn scope gets the same limits.
 - **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
   below). After the scope, the pane's shell runs the runtime command, in two steps that each fit a terminal line (issue
   #2234, "Unhealthy lanes" below): the guards first (`hopper-guards-written`), then the setup: the job gets a podman of its own — its runtime dir
@@ -19849,7 +19854,13 @@ other jobs there too. Three decisions:
    `jobMemoryMaxGiB`, `CPUQuota` from its `jobCpuPercent` (percent of one CPU), plain options of local, ssh and client
    machines (`src/plugins/machine-source/attached.ts` `jobLimitsShape`, `MachineSnapshot.jobLimits`), off by default.
    Past `MemoryMax`, the kernel's OOM killer stops a process of that scope only. No limit per seat: a seat's jobs are on
-   its machines, and the memory floor (issue #2291) keeps the machine's own headroom.
+   its machines, and the memory floor (issue #2291) keeps the machine's own headroom. Issue #2622 made a memory limit the
+   default: lanes admitted while light started four JVM builds at once on one WSL VM, and the VM ran out of memory. With
+   no `jobMemoryMaxGiB`, each scope gets the machine's memory less its floor, shared by its lanes, with `MemoryHigh` at
+   90% of it. A machine whose jobs get no scope and that has no cgroup memory limit of its own holds nothing: its meter
+   says so (`ResourceReading.jobMemoryLimit` `none`: this machine's and a client's from their user manager's cgroup and
+   their own cgroup's limit, an ssh target's from its probe's `um` line), and the Machines page shows the warning
+   **no memory limit** with what to do. It still takes jobs: the memory floor and the host pool still admit them.
 2. *How it is seen.* When Claude exits, the pane's shell, which runs in the job's scope, says its exit code and then the
    scope's `memory.events` `oom_kill` count (`src/executors/herdr/exited.ts` `oomKillsCommand`), read from its own cgroup
    and only when that is `hopper-job-<job id>.scope`. A count above 0 makes the failure `claude exited (…) at a resource

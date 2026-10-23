@@ -11,6 +11,7 @@ import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/types.ts';
 import { scopeUnitOf } from '../client/reap.ts';
+import { scopeLimitProperties, scopeLimitsOf, type JobLimits } from '../domain/job-limits.ts';
 import { runtimeCommand, runtimeEnvOf, turnServiceCommand } from '../client/job-runtime.ts';
 import { SANDBOX_SUBDIR, sandboxCommand } from '../client/job-sandbox.ts';
 import { commandOn, run, type Ran } from './command.ts';
@@ -81,15 +82,16 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
  * The turn's command on the job's machine (issue #410): the agent in the job's own scope where the machine
  * has a systemd user manager — the scope of a turn before, and whatever it left, stopped first, since a turn
  * never waits on background work —, else as it is. A trial run first, so a systemd that cannot make a scope
- * runs the agent without one.
+ * runs the agent without one. The scope gets the machine's job limits (issue #2622, src/domain/job-limits.ts).
  */
-export function turnCommand(jobId: string, run: string): string {
+export function turnCommand(jobId: string, run: string, limits?: JobLimits): string {
   const unit = scopeUnitOf(jobId);
-  return `if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet --collect -- true >/dev/null 2>&1; then`
+  const props = scopeLimitProperties(limits).map((p) => ` -p ${p}`).join('');
+  return `if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet --collect${props} -- true >/dev/null 2>&1; then`
     // systemd 254 and later expand `$` in the command's arguments, which would rewrite a script's own variables.
     + ' x=--expand-environment=no; systemd-run --user --scope --quiet --collect $x -- true >/dev/null 2>&1 || x=;'
     + ` systemctl --user stop ${unit}.scope >/dev/null 2>&1;`
-    + ` exec systemd-run --user --scope --quiet --collect $x --unit=${unit} -p KillMode=control-group -p TimeoutStopSec=10s -- ${run}; fi; exec ${run}`;
+    + ` exec systemd-run --user --scope --quiet --collect $x --unit=${unit} -p KillMode=control-group -p TimeoutStopSec=10s${props} -- ${run}; fi; exec ${run}`;
 }
 
 /**
@@ -165,7 +167,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, ...(p.repoUrl ? { url: p.repoUrl } : {}), worktrees: false })} ) >&2; ` : '';
     // The job's own container runtime and its sandbox (issue #1295), in the turn's scope.
     const isolated = isolatedTurn(ctx.job.id, scratch, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`);
-    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`)}; }`;
+    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`, scopeLimitsOf(ctx.machine))}; }`;
     const where = ctx.machine.id;
     try {
       ctx.progress(`${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
