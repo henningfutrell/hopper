@@ -172,9 +172,11 @@ describe('sender binding (issue #892)', () => {
     const a = await boot();
     const key = await dpopKey();
     const out: string[] = [];
-    const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
+    const err: string[] = [];
+    const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: (x) => err.push(x) };
     const code = await runCli(['token', 'mint', '--label', 'Grok Bot', '--scope', '*:read', '--jkt', key.jkt, '--url', a.url], io);
-    expect(code).toBe(0);
+    // The CLI says why it failed only on err: the assertion carries it, so a failure in CI names its cause.
+    expect(code, err.join('')).toBe(0);
     const minted = JSON.parse(out.join('')) as { token: string; refresh: string; tokenType?: string };
     expect(minted.tokenType).toBe('DPoP');
     expect((await refresh(a, minted.refresh)).status).toBe(401);
