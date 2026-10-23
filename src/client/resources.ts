@@ -5,13 +5,14 @@
 // /proc/meminfo; elsewhere (Windows, macOS) from the OS, with no swap. A process in a container whose cgroup (v2)
 // sets limits reads its limits and its own use: a memory limit as its total, a CPU quota as its cores. The memory limit
 // may sit on a cgroup above the process's own (issue #2499): a seat's container, or a systemd unit's MemoryMax.
+// Each job scope's memory is read too (issue #2499): one outside the limited cgroup is taken off its memory available.
 // In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
 // (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
 // In a Kubernetes pod (issue #1289) it is never WSL, whatever the node's kernel, and always a container: its limits are
 // the cgroup's, else the pod's own through the Downward API (src/client/cluster.ts).
 // Imports nothing of hopper: a client target runs it as a plain file.
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, statfsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statfsSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, homedir, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { inCluster, podLimits, type Env } from './cluster.ts';
@@ -42,6 +43,8 @@ export interface ResourceReading {
   node?: string;
   /** The patched floor (node-floor.ts) its Node is below. Absent: patched. */
   nodeFloor?: string;
+  /** Issue #2499: each job scope's memory in use (`hopper-job-<id>.scope`, less the page cache it could drop). Absent: none read. */
+  jobMemoryBytes?: Record<string, number>;
 }
 
 /** A host's physical memory, free and total. */
@@ -67,6 +70,8 @@ export interface ResourceMeterDeps {
   env?: Env;
   /** The Node version it runs; default this process's. */
   node?: string;
+  /** Its user id, for its systemd user manager's cgroup; default this process's. */
+  uid?: number;
 }
 
 /** How often the Windows host's memory is read again, at most. */
@@ -187,25 +192,53 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
    * seen from the host's cgroup namespace, or a systemd unit's MemoryMax — the tightest, with that cgroup's use; at the
    * root, a pod's limit through the Downward API. The page cache it could drop is available, as MemAvailable counts it.
    */
-  const cgroupMemory = (): { memTotalBytes: number; memAvailableBytes: number } | undefined => {
-    const own = /^0::(\/.*)$/m.exec(text(join(root, 'proc/self/cgroup')) ?? '')?.[1] ?? '/';
-    const parts = own.split('/').filter(Boolean);
-    let tightest: { memTotalBytes: number; memAvailableBytes: number } | undefined;
+  const ownCgroup = (): string[] => (/^0::(\/.*)$/m.exec(text(join(root, 'proc/self/cgroup')) ?? '')?.[1] ?? '/').split('/').filter(Boolean);
+  /** A cgroup's memory in use, less the page cache it could drop; undefined when it says none. */
+  const usedIn = (dir: string): number | undefined => {
+    const current = limit(cgroup(join(dir, 'memory.current')));
+    return current === undefined ? undefined : Math.max(0, current - (fields(text(cgroup(join(dir, 'memory.stat')))).get('inactive_file') ?? 0));
+  };
+  const cgroupMemory = (parts: string[]): { memTotalBytes: number; memAvailableBytes: number; dir: string } | undefined => {
+    let tightest: { memTotalBytes: number; memAvailableBytes: number; dir: string } | undefined;
     for (let n = parts.length; n >= 0; n -= 1) {
       const dir = parts.slice(0, n).join('/');
       const max = limit(cgroup(join(dir, 'memory.max'))) ?? (n === 0 ? pod?.memBytes : undefined);
-      const current = max !== undefined ? limit(cgroup(join(dir, 'memory.current'))) : undefined;
-      if (max === undefined || current === undefined) continue;
-      const used = Math.max(0, current - (fields(text(cgroup(join(dir, 'memory.stat')))).get('inactive_file') ?? 0));
+      const used = max !== undefined ? usedIn(dir) : undefined;
+      if (max === undefined || used === undefined) continue;
       const available = Math.max(0, max - used);
-      if (!tightest || available < tightest.memAvailableBytes) tightest = { memTotalBytes: max, memAvailableBytes: available };
+      if (!tightest || available < tightest.memAvailableBytes) tightest = { memTotalBytes: max, memAvailableBytes: available, dir };
     }
     return tightest;
   };
 
-  const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes'> => {
-    const limited = platform === 'linux' ? cgroupMemory() : undefined;
-    if (limited) return { ...limited, container: true };
+  /**
+   * Issue #2499: each job scope (`hopper-job-<id>.scope`, job-scope.ts) of its systemd user manager — the `user@<uid>.service`
+   * its own cgroup is in, else its user's — in any slice there, with its cgroup path and its memory in use.
+   */
+  const jobScopes = (parts: string[]): { id: string; dir: string; bytes: number }[] => {
+    const at = parts.findIndex((p) => /^user@\d+\.service$/.test(p));
+    const uid = d.uid ?? process.getuid?.();
+    const manager = at >= 0 ? parts.slice(0, at + 1).join('/') : uid !== undefined ? `user.slice/user-${uid}.slice/user@${uid}.service` : undefined;
+    if (manager === undefined) return [];
+    const list = (dir: string): string[] => { try { return readdirSync(cgroup(dir)); } catch { return []; } };
+    return list(manager).filter((s) => s.endsWith('.slice')).flatMap((slice) => list(join(manager, slice)).flatMap((name) => {
+      const id = /^hopper-job-([A-Za-z0-9_-]+)\.scope$/.exec(name)?.[1];
+      const dir = join(manager, slice, name);
+      const bytes = id !== undefined ? usedIn(dir) : undefined;
+      return id !== undefined && bytes !== undefined ? [{ id, dir, bytes }] : [];
+    }));
+  };
+
+  const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes'> => {
+    const parts = platform === 'linux' ? ownCgroup() : [];
+    const scopes = platform === 'linux' ? jobScopes(parts) : [];
+    const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])) } : {};
+    const limited = platform === 'linux' ? cgroupMemory(parts) : undefined;
+    if (limited) {
+      // A scope outside the limited cgroup is not in its use, but takes the same machine's memory.
+      const outside = scopes.filter((s) => limited.dir !== '' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
+      return { memTotalBytes: limited.memTotalBytes, memAvailableBytes: Math.max(0, limited.memAvailableBytes - outside), container: true, ...jobs };
+    }
     const info = platform === 'linux' ? fields(text(join(root, 'proc/meminfo'))) : new Map<string, number>();
     const kib = (k: string) => (info.has(k) ? info.get(k)! * 1024 : undefined);
     const total = kib('MemTotal');
@@ -218,6 +251,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       memAvailableBytes: available ?? (d.freemem ?? freemem)(),
       ...(wsl && total !== undefined && free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}),
       ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
+      ...jobs,
     };
   };
 

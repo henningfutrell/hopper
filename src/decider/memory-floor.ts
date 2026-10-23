@@ -3,7 +3,8 @@
 // above its floor; else the job waits for memory, and preempts nothing. Below the floor itself, the job that started
 // there last is paused: parked on the Park button's path, its work kept, and queued again to resume there. One pause
 // per machine at a time. Issues #2303, #2326: the agent of every job on its own wait ends (its session kept), memory short or
-// not, so no waiting job holds memory. Pure: the clock is `at`.
+// not, so no waiting job holds memory. Issue #2499: the memory a job's scope still holds with no lane is in the reading, and the
+// wait names it. Pure: the clock is `at`.
 import {
   MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_PAUSE_EVERY_MS, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
   type ExpectedCost, type Job, type JobId, type Lane, type MachineSnapshot, type MemoryPausePlan, type ResourceReading,
@@ -13,15 +14,18 @@ import {
 const GIB = 1024 ** 3;
 const gib = (bytes: number): string => `${Math.round((bytes / GIB) * 10) / 10} GiB`;
 
-/** A machine's memory as one Decision counts it: what it has, its floor, a job's need, and what is kept and for how many jobs. */
-export interface MemoryRoom { availableBytes: number; floorBytes: number; perJobBytes: number; keptBytes: number; kept: number }
+/**
+ * A machine's memory as one Decision counts it: what it has, its floor, a job's need, and what is kept and for how many jobs.
+ * `waitingBytes` (issue #2499): of what it has in use, what its job scopes hold for `waiting` jobs with no lane in use there.
+ */
+export interface MemoryRoom { availableBytes: number; floorBytes: number; perJobBytes: number; keptBytes: number; kept: number; waitingBytes: number; waiting: number }
 
 /** The memory available the floor reads: Linux's, or on WSL Windows' own free memory when that is lower (issue #868). */
 const availableOf = (r: ResourceReading): number =>
   (r.wsl && r.hostMemFreeBytes !== undefined ? Math.min(r.memAvailableBytes, r.hostMemFreeBytes) : r.memAvailableBytes);
 
 /** The machine's memory, floor and need for a job; undefined when it has no memory reading or its floor is 0 (off). */
-function floorOf(m: MachineSnapshot): Omit<MemoryRoom, 'keptBytes' | 'kept'> | undefined {
+function floorOf(m: MachineSnapshot): Omit<MemoryRoom, 'keptBytes' | 'kept' | 'waitingBytes' | 'waiting'> | undefined {
   const r = m.resources;
   if (!r || r.memTotalBytes <= 0) return undefined;
   const own = m.memoryFloor?.floorGiB;
@@ -40,7 +44,9 @@ export function memoryRoom(m: MachineSnapshot, lanes: readonly Lane[], running: 
   const here = new Set(lanes.filter((l) => l.machineId === m.id).map((l) => l.id));
   const at = Date.parse(atIso);
   const kept = running.filter((j) => j.laneId !== undefined && here.has(j.laneId) && lately(j, at)).length;
-  return { ...f, keptBytes: kept * f.perJobBytes, kept };
+  const onLane = new Set(lanes.flatMap((l) => (l.machineId === m.id && l.state !== 'idle' && l.jobId !== undefined ? [l.jobId] : [])));
+  const waiting = Object.entries(m.resources?.jobMemoryBytes ?? {}).filter(([id, bytes]) => !onLane.has(id) && bytes > 0);
+  return { ...f, keptBytes: kept * f.perJobBytes, kept, waitingBytes: waiting.reduce((n, [, b]) => n + b, 0), waiting: waiting.length };
 }
 
 /** What a new job needs: a job's memory, or its expected memory peak when that is more. */
@@ -59,7 +65,7 @@ export function keepMemory(room: MemoryRoom | undefined, cost: ExpectedCost | un
 
 /** What a machine's memory room holds against a new job's need. */
 export const memoryShort = (r: MemoryRoom, cost: ExpectedCost | undefined): string =>
-  `${gib(r.availableBytes)} available${r.kept ? `, ${gib(r.keptBytes)} of it kept for ${r.kept} job${r.kept === 1 ? '' : 's'} started lately` : ''}, and a new job needs ${gib(needOf(r, cost))} over its floor of ${gib(r.floorBytes)}`;
+  `${gib(r.availableBytes)} available${r.waiting ? ` (${gib(r.waitingBytes)} is held by ${r.waiting} job${r.waiting === 1 ? '' : 's'} with no lane)` : ''}${r.kept ? `, ${gib(r.keptBytes)} of it kept for ${r.kept} job${r.kept === 1 ? '' : 's'} started lately` : ''}, and a new job needs ${gib(needOf(r, cost))} over its floor of ${gib(r.floorBytes)}`;
 
 /** The wait reason of a job that has a lane on these machines but whose memory none of them holds. */
 export function memoryWait(states: readonly { machine: MachineSnapshot; memory?: MemoryRoom }[], cost: ExpectedCost | undefined): string {

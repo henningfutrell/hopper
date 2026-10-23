@@ -175,4 +175,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 92: The resource ledger (issue #2504): each thing the hopper made for a job on a machine, and where it stands. A table
   // only: the build before runs on it, and never reads it.
   RESOURCE_LEDGER_TABLE,
+  // 93: The memory a machine's job scopes hold for jobs with no lane in use there (issue #2499), in each machine sample. A
+  // column with no default: the build before runs on it, and names its columns when it writes.
+  'ALTER TABLE machine_samples ADD COLUMN waiting_mem DOUBLE PRECISION',
 ];

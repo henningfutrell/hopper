@@ -1,0 +1,1 @@
+- The memory that a waiting job still holds now counts against its machine. A job that waits for memory says how much of it waiting jobs hold, and the memory a job is expected to need no longer grows with them.

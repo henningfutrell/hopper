@@ -13066,6 +13066,11 @@ never a hold, read from a machine reading taken before the burst took its memory
   each such machine after a `;`, then the machines left out (step 7, issue #2499). A job's need is the flat 2 GiB, or its
   expected memory peak from its repository's or kind's job cost group when that is more ("Job cost profiles"): a
   repository whose jobs peak at 3 GiB reserves 3 GiB a job.
+  Issue #2499: the memory a job holds with no lane in use (its **waiting memory**, "Machine resources over time") is in
+  the reading, so it is counted; the wait names it after the memory available: `local has 3 GiB available (2.5 GiB is held
+  by 1 job with no lane), and a new job needs …`. A machine sample keeps it (`waiting_mem`, tenant migration 93, a nullable
+  column the build before never writes), and the job costs ("Job cost profiles") and the lane load leave it out of the
+  memory used, so a job on its own wait no longer raises the expected peak of the job that runs beside it.
   A wait for memory preempts nothing: preemption frees a lane, not memory. This holds for an elbow-in and a critical job
   too, and for a job resuming on its pane.
 - **WSL.** The memory available is Linux's in the VM, or Windows' own free memory (`hostMemFreeBytes`, issue #868) when
@@ -13139,7 +13144,8 @@ the queue moved only when waits ended by chance.
   cost ("Job cost profiles") takes each run's highest sample of the machine's memory used over its idle baseline (samples with
   no busy lane), split over the busy lanes, and the group's mean of those peaks. Memory of jobs on their own wait holds no
   lane, so a waiting agent that started after the baseline counts as the running job's: with 50 agents resident, the expected
-  peaks grew with them. With waits released while a job waits for memory, that share falls away. The floor of 1.4 GiB is 10%
+  peaks grew with them. With waits released while a job waits for memory, that share falls away; what their scopes still
+  hold is left out since issue #2499 (waiting memory). The floor of 1.4 GiB is 10%
   of the 14 GiB VM, as set. Not changed here: the expected peak still counts when it is more than the job's memory.
 - **Not built.** A count of each agent's memory. (Releasing a wait before a job waits for memory: issue #2326, below.)
 - **Persisted state.** No schema change: `waitReleased` is in the job's JSON, `waitSessions` and `waitRelease` in the
@@ -15050,7 +15056,14 @@ memory total and available (available, not free), and swap total and used where 
   the VM's total; a CPU quota is its cores, and CPU busy is its own `usage_usec` against
   the quota. `container: true` says so; the card says "container limit". A container target (a command box per command) is not read,
   as its disk is not.
-- Per lane (an agent's process tree): not built.
+- **job scopes** (issue #2499): on Linux the meter also reads each job scope (`hopper-job-<id>.scope`, "The job's scope") of
+  its systemd user manager — the `user@<uid>.service` its own cgroup is in, else its user's —, in any slice there: its
+  memory in use less the page cache it could drop, by job id (`jobMemoryBytes`). A scope outside the cgroup whose limit the
+  reading is (a sibling of the hopper's own unit with a `MemoryMax`) is not in that cgroup's use, but takes the same
+  machine's memory: it is taken off the memory available. A client target's client says the same in its `/release`
+  answer, checked by `resourcesOf`; an ssh target says none. What the scopes hold for jobs with no lane in use there — a
+  job on its own wait, parked, or queued to resume, whose builds still run — is the machine's **waiting memory**.
+- Per lane (an agent's process tree): not built; a job's scope is the nearest.
 
 **Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop
 (`createRecordLoop`, `src/usage/history.ts`): every minute it lists the user's machines and keeps a **machine sample**
