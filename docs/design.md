@@ -34351,6 +34351,9 @@ and end are the newest the pass sees: the measured steps from the track, the sch
 (`src/domain/delivery-forecast.ts`: an ungated step ends at its scheduled end, a gated one at its gate clearance; the step
 the change is in has no end). `scheduledPlace` is now the last of those. `GET /api/delivery-ledger?job=|repo=` and
 `hopper forecast --ledger [--job|--repo]` answer the rows and `forecastAccuracy` of them.
+Issue #2638: the pass offers every row of the window, but the store writes only a row that is new, gets its first
+prediction, or gets a new actual time; it reads the kept rows once to compare. With ~7k rows, a full upsert held the event
+loop 2-4 s every 10 minutes; an unchanged ledger now costs that one read and no write.
 
 Decisions: the first prediction is kept, because the accuracy must measure what the hopper told a person, not a forecast
 moved by the clock; a step the first forecast could not time takes the first one that could. The ledger is written by a

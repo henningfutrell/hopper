@@ -22,8 +22,19 @@ function rowOf(r: Record<string, unknown>): DeliveryLedgerRow {
 export function createDeliveryLedgerRepository(c: StoreContext): DeliveryLedgerRepository {
   return {
     record(rows, at) {
+      // Issue #2638: the pass offers every row of the window each time; only a row that adds a first prediction or a new
+      // actual time is written, so an unchanged ledger costs one read and no write.
+      const kept = new Map(c.db.all('SELECT * FROM delivery_ledger').map((r) => { const row = rowOf(r); return [`${row.key}\n${row.step}`, row]; }));
+      const changed = rows.filter((r) => {
+        const k = kept.get(`${r.key}\n${r.step}`);
+        if (!k) return true;
+        return (k.predictedEnd === undefined && r.predictedEnd !== undefined)
+          || (r.actualStart !== undefined && r.actualStart !== k.actualStart)
+          || (r.actualEnd !== undefined && r.actualEnd !== k.actualEnd);
+      });
+      if (changed.length === 0) return 0;
       c.tx(() => {
-        for (const r of rows) {
+        for (const r of changed) {
           const predicted = r.predictedEnd !== undefined;
           c.db.run(`INSERT INTO delivery_ledger (key, step, repo, predicted_start, predicted_end, predicted_at, actual_start, actual_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (key, step) DO UPDATE SET
@@ -35,6 +46,7 @@ export function createDeliveryLedgerRepository(c: StoreContext): DeliveryLedgerR
           r.key, r.step, r.repo.toLowerCase(), predicted ? r.predictedStart ?? null : null, predicted ? r.predictedEnd! : null, predicted ? at : null, r.actualStart ?? null, r.actualEnd ?? null);
         }
       });
+      return changed.length;
     },
     list(q = {}) {
       const rows = q.key !== undefined ? c.db.all('SELECT * FROM delivery_ledger WHERE key = ?', q.key)
