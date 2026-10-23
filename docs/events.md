@@ -8971,3 +8971,21 @@ Version 1 (`docs/schemas/delivery_gate.cleared.v1.json`). A person cleared a del
   "by": "release-owner"
 }
 ```
+
+## `push_requirements.summarized`
+
+Version 1 (`docs/schemas/push_requirements.summarized.v1.json`). After a job's push (issue #2555 part 4), the hopper replaced the push requirements summary in the body of the pushed branch's open pull request `number` of `repo` with its evaluation of the commit pushed, `head`: each requirement's status, each check's command, thresholds and measured values, between two hidden lines. Only a pull request the job may edit; the rest of the body stays as it was. A job's own `pr create` holds the summary already.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `number` | integer | yes |
+| `head` | string | yes |
+
+```json
+{
+  "repo": "octo/identity",
+  "number": 41,
+  "head": "4f1c2a9e8b7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b"
+}
+```

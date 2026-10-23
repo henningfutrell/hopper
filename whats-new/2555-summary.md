@@ -1,0 +1,1 @@
+- A job's pull request now shows the checks it passed before it pushed: what each check ran, its limits and what it measured. The hopper updates it after each push.

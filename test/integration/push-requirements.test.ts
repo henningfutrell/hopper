@@ -18,28 +18,14 @@
 //     Then a requirement of the same id replaces the repository's, with a stricter or a looser threshold
 //     And a push they apply to in a repository with no requirements file needs a passing evaluation
 //     And a submission whose requirements cannot be read is refused, and nothing is kept
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { branchesOf, eventsOf, run, running, seedCommit, start, stopGitProxies, type Started } from '../support/git-proxy.ts';
+import { branchesOf, eventsOf, running, start, stopGitProxies, type Started } from '../support/git-proxy.ts';
+import { jobOnBranch, REQUIREMENTS } from '../support/push-requirements.ts';
 
 afterEach(stopGitProxies);
-
-const REQUIREMENTS = [
-  'requirements:',
-  '  - id: kotlin-coverage',
-  '    when: { paths: ["src/**/*.kt"] }',
-  '    checks:',
-  '      - name: changed-files coverage',
-  '        run: cat coverage.txt',
-  '        thresholds: { changedLines: { min: 80 } }',
-  '  - id: migrations',
-  '    when: { any: [{ paths: ["**/*.sql"] }, { paths: ["**/migrations/**"] }] }',
-  '    checks:',
-  '      - name: migration tests',
-  '        run: "false"',
-].join('\n');
 
 const KOTLIN_DEFAULT = {
   id: 'kotlin-coverage', when: { paths: ['src/**/*.kt'] },
@@ -58,24 +44,6 @@ async function directJob(t: Started, pushRequirements: unknown[]): Promise<Job> 
   const r = await t.app.ui<{ job: Job }>('/ui/api/direct-jobs', { title: 'Add B', brief: 'Add class B.', repo: 'octo/tools', executor: 'holder', pushRequirements }, { token });
   expect(r.status).toBe(200);
   return r.body.job;
-}
-
-async function jobOnBranch(t: Started, file: string | null = REQUIREMENTS, job?: Job) {
-  if (file !== null) await seedCommit(t, 'octo/tools', 'dev', { '.hopper/requirements.yaml': file });
-  const r = await running(t, 'octo/tools', job);
-  expect((await r.git(['clone', '--quiet', `${t.github.url}/octo/tools.git`, 'tools'])).code).toBe(0);
-  const work = join(r.home, 'tools');
-  await r.git(['checkout', '--quiet', '-b', 'issue-7'], work);
-  mkdirSync(join(work, 'src/a'), { recursive: true });
-  writeFileSync(join(work, 'src/a/B.kt'), 'class B\n');
-  writeFileSync(join(work, 'coverage.txt'), 'covered 70 of 100 changed lines\nhopper-measure changedLines=70\n');
-  await r.git(['add', '.'], work);
-  await r.git(['commit', '--quiet', '-m', 'Add B'], work);
-  const env = { ...process.env, HOPPER_URL: r.env.HOPPER_URL, HOPPER_TOKEN_FILE: join(t.root, r.env.HOPPER_TOKEN_FILE!), HOME: r.home, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', ...Object.fromEntries(Object.entries(r.env).filter(([k]) => k.startsWith('GIT_CONFIG_'))) };
-  // The launcher the job runs, which runs the client beside it.
-  const requirements = (...args: string[]) => run('sh', [join(t.root, r.env.HOPPER_REQUIREMENTS!), ...args], { cwd: work, env });
-  const push = () => r.git(['push', 'origin', 'HEAD:refs/heads/issue-7'], work);
-  return { ...r, work, requirements, push };
 }
 
 describe('push requirements (issue #2555)', () => {
