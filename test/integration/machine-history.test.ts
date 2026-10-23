@@ -191,6 +191,27 @@ describe('the signals admission reads (issue #2499)', () => {
   });
 });
 
+describe('the hopper\'s own disk use over time (issue #2494)', () => {
+  it('a sample keeps the hopper\'s disk use and the caches from the machine\'s last disk measure; the graph draws them as shares of the disk', async () => {
+    const a = await boot();
+    await onlineWith(a, (x) => x.online);
+    a.user().store.diskMeasures.keep('laptop', {
+      at: new Date().toISOString(), paths: [{ path: '/w/.worktrees', bytes: 20 * GIB }],
+      caches: [{ kind: 'gradle', path: '/home/far/.gradle/caches', bytes: 10 * GIB }],
+    });
+    expect(await a.user().machineHistory.record()).toBe(1);
+    const r = await history(a, '/api/machines/laptop/history?range=24h');
+    const last = (resource: string) => r.body.series.find((s) => s.resource === resource)?.points.at(-1)?.usedFrac;
+    expect(last('hopper')).toBeCloseTo(0.2);
+    expect(last('caches')).toBeCloseTo(0.1);
+
+    const b = await boot();
+    b.user().store.machineHistory.record([sample(Date.now() - HOUR, 0.5)]);
+    const q = await history(b, '/api/machines/laptop/history?range=24h');
+    expect(q.body.series.some((s) => s.resource === 'hopper' || s.resource === 'caches')).toBe(false);
+  });
+});
+
 describe('a WSL machine\'s memory and the memory alert (issue #868)', () => {
   const WSL: ResourceReading = {
     cores: 8, memTotalBytes: 20 * GIB, memAvailableBytes: 13 * GIB, wsl: true, vmHeldBytes: 19 * GIB, hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB,
