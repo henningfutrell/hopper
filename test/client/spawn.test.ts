@@ -75,9 +75,10 @@ describe('a fixed script on a Windows client (issue #2676)', () => {
       execFileSync('sh', ['-c', 'printf "%s" "$HOPPER_CLIENT_SCRIPT" | sh -n'], { env: { ...s.env, PATH: process.env.PATH }, stdio: 'pipe' });
     }
     expect(CLIENT_SCRIPT_SH).not.toContain('\n');
-    // Cut where the command line cut it, the reap is the error the client said.
+    // Cut where the command line cut it, the reap does not parse, as on the client. Where the cut lands differs by build
+    // (an open block or an open quote), so the exact bash error differs too.
     const reap = reapArgv('job-1', 'C:/w/.worktrees/@scratch/job-1');
-    expect(() => execFileSync('bash', ['-n', '-c', reap[reap.indexOf('-c') + 1]!.slice(0, 8191)], { stdio: 'pipe' })).toThrow(/unexpected end of file/);
+    expect(() => execFileSync('bash', ['-n', '-c', reap[reap.indexOf('-c') + 1]!.slice(0, 8191)], { stdio: 'pipe' })).toThrow(/-c: line \d+: (syntax error: unexpected end of file|unexpected EOF while looking for matching)/);
   });
 
   it('elsewhere the script stays on the command line', () => {
