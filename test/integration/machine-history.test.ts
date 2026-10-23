@@ -174,6 +174,23 @@ describe('lanes and usage on one machine\'s graph (issue #688)', () => {
   });
 });
 
+describe('the signals admission reads (issue #2499)', () => {
+  it('a sample keeps memory pressure and CPU throttle; the graph draws them; a sample with neither has no such line', async () => {
+    const a = await boot(true, { ...RES, memPressure: { someAvg10: 30, fullAvg10: 5 }, cpuThrottledFrac: 0.4 });
+    await onlineWith(a, (x) => x.resources?.cpuThrottledFrac !== undefined);
+    expect(await a.user().machineHistory.record()).toBe(1);
+    const r = await history(a, '/api/machines/laptop/history?range=24h');
+    const last = (resource: string) => r.body.series.find((s) => s.resource === resource)?.points.at(-1)?.usedFrac;
+    expect(last('pressure')).toBeCloseTo(0.3);
+    expect(last('throttle')).toBeCloseTo(0.4);
+
+    const b = await boot();
+    b.user().store.machineHistory.record([sample(Date.now() - HOUR, 0.5)]);
+    const q = await history(b, '/api/machines/laptop/history?range=24h');
+    expect(q.body.series.some((s) => s.resource === 'pressure' || s.resource === 'throttle')).toBe(false);
+  });
+});
+
 describe('a WSL machine\'s memory and the memory alert (issue #868)', () => {
   const WSL: ResourceReading = {
     cores: 8, memTotalBytes: 20 * GIB, memAvailableBytes: 13 * GIB, wsl: true, vmHeldBytes: 19 * GIB, hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB,
