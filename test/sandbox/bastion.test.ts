@@ -14,7 +14,7 @@ import type { OperationProfile } from '../../src/domain/access.ts';
 import { HOME } from '../../src/sandbox/flags.ts';
 import { runNeedBox, type RunningNeedBox, type SecretsRenewal } from '../../src/sandbox/need-box.ts';
 import {
-  bastionCommand, bastionEnv, bastionKubeconfig, bastionTokens, parseTargets, placeTargets, BASTION_FIRST_PORT, BASTION_TARGETS_MAX, type BastionCredential,
+  bastionCommand, bastionEnv, bastionKubeconfig, bastionTokens, parseTargets, placeTargets, BASTION_TARGETS_MAX, type BastionCredential,
 } from '../../src/sandbox/bastion.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 
@@ -50,8 +50,8 @@ describe('a bastion\'s targets (issue #2146)', () => {
     const r = placeTargets(targets, [{ operation: 'read', asset: { kind: 'cluster', name: 'uat' } }, MONITORING, UAT]);
     expect(r).toEqual({
       placed: [
-        { ...targets[0], context: 'uat-monitoring', local: BASTION_FIRST_PORT },
-        { ...targets[1], context: 'uat', local: BASTION_FIRST_PORT + 1 },
+        { ...targets[0], context: 'uat-monitoring' },
+        { ...targets[1], context: 'uat' },
       ],
       observes: [MONITORING, UAT],
     });
@@ -79,9 +79,9 @@ describe('a bastion\'s box (issue #2146)', () => {
   });
 
   it('its command forwards each target on 127.0.0.1 with its context and namespace, again when a forward ends', () => {
-    const command = bastionCommand([{ cluster: 'uat', namespace: 'monitoring', kind: 'svc', name: 'grafana', port: 80, context: 'uat-monitoring', local: 20000 }]);
-    expect(command).toContain('kubectl --context "$1" --namespace "$2" port-forward --address 127.0.0.1 "$3" "$4:$5"');
-    expect(command).toContain('forward \'uat-monitoring\' \'monitoring\' \'svc/grafana\' 20000 80 \'uat/monitoring/svc/grafana:80\' &');
+    const command = bastionCommand([{ cluster: 'uat', namespace: 'monitoring', kind: 'svc', name: 'grafana', port: 80, context: 'uat-monitoring' }]);
+    expect(command).toContain('kubectl --context "$1" --namespace "$2" port-forward --address 127.0.0.1 "$3" ":$4"');
+    expect(command).toContain('forward \'uat-monitoring\' \'monitoring\' \'svc/grafana\' 80 \'uat/monitoring/svc/grafana:80\' &');
     expect(command).toMatch(/sleep 2\n {2}done/);
   });
 
@@ -137,7 +137,7 @@ done
 
   it('forwards with the token in its file, reads a renewed token once it is copied in, and goes when it is stopped', async () => {
     const { r, home } = runtime();
-    const placed = [{ cluster: 'uat', namespace: 'monitoring', kind: 'svc' as const, name: 'grafana', port: 80, context: 'uat-monitoring', local: 20000 }];
+    const placed = [{ cluster: 'uat', namespace: 'monitoring', kind: 'svc' as const, name: 'grafana', port: 80, context: 'uat-monitoring' }];
     const creds = [credential(MONITORING, 'first-token')];
     const stop = new AbortController();
     let renew: SecretsRenewal | undefined;
@@ -151,7 +151,7 @@ done
     }, { log: (l) => lines.push(l), signal: stop.signal, pollMs: 10, running: (box) => { renew = box.renew; pipe = box.pipe; } });
     const log = join(home, 'kubectl.log');
     await until(() => existsSync(log) && readFileSync(log, 'utf8').includes('token=first-token'));
-    expect(readFileSync(log, 'utf8')).toContain('kubectl --context uat-monitoring --namespace monitoring port-forward --address 127.0.0.1 svc/grafana 20000:80 token=first-token');
+    expect(readFileSync(log, 'utf8')).toContain('kubectl --context uat-monitoring --namespace monitoring port-forward --address 127.0.0.1 svc/grafana :80 token=first-token');
     // The kubeconfig in the box holds no token: only where its file is.
     expect(readFileSync(join(home, '.kube', 'config'), 'utf8')).not.toContain('first-token');
     expect(renew).toBeDefined();

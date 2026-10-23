@@ -30,18 +30,19 @@ describe('what the bastion\'s output says of each forward (issue #2413)', () => 
     const w = forwardWatch();
     expect(w.of(PROM)).toBeUndefined();
     w.add(`[${PROM}] Forwarding from 127.0.0.1:20000 -> 9090\r\n[${PROM}] Handling connection for 20000\n`);
-    expect(w.of(PROM)).toEqual({ listening: true });
+    expect(w.of(PROM)).toEqual({ listening: true, local: 20000 });
     expect(w.of(GRAFANA)).toBeUndefined();
   });
 
   it('a forward listens once kubectl says so, before the new line of that line comes (issue #2484)', () => {
     const w = forwardWatch();
     w.add(`hopper-bastion: forwarding 2 targets\n[${PROM}] Forwarding from 127.0.0.1:20000 -> 9090`);
-    expect(w.of(PROM)).toEqual({ listening: true });
+    expect(w.of(PROM)).toEqual({ listening: true, local: 20000 });
     w.add(`\n[${GRAFANA}] Forwarding from 127.0.0.1:20001`);
     expect(w.of(GRAFANA)).toEqual({ listening: true });
     w.add(` -> 80\n[${PROM}] ${FORBIDDEN}\n[${PROM}] the forward ended: it starts again in 2 s`);
-    expect(w.of(PROM)).toEqual({ listening: true });
+    expect(w.of(GRAFANA)).toEqual({ listening: true, local: 20001 });
+    expect(w.of(PROM)).toEqual({ listening: true, local: 20000 });
     w.add('\n');
     expect(w.of(PROM)).toEqual({ listening: false, said: FORBIDDEN });
   });
@@ -58,7 +59,7 @@ describe('what the bastion\'s output says of each forward (issue #2413)', () => 
     w.add(`sh: kubectl: not found\n[${GRAFANA}] the forward ended: it starts again in 2 s\n`);
     expect(w.of(GRAFANA)).toEqual({ listening: false, said: 'the forward ended: it starts again in 2 s' });
     w.add(`[${GRAFANA}] Forwarding from 127.0.0.1:20001 -> 80\n`);
-    expect(w.of(GRAFANA)).toEqual({ listening: true });
+    expect(w.of(GRAFANA)).toEqual({ listening: true, local: 20001 });
   });
 });
 
@@ -106,11 +107,11 @@ describe('a bastion whose forward does not listen (issue #2413)', () => {
     say(`hopper-bastion: forwarding 2 targets\n[${GRAFANA}] Forwarding from 127.0.0.1:20001 -> 80\n[${PROM}] ${FORBIDDEN}\n[${PROM}] the forward ended: it starts again in 2 s\n`);
     const v = b.of('job-1')!;
     expect(v.targets).toEqual([
-      { target: PROM, local: 20000, listening: false, said: FORBIDDEN },
+      { target: PROM, listening: false, said: FORBIDDEN },
       { target: GRAFANA, local: 20001, listening: true },
     ]);
     const text = bastionText(v);
-    expect(text).toContain(`${PROM} on 127.0.0.1:20000 in the box: not listening: ${FORBIDDEN}`);
+    expect(text).toContain(`${PROM} on a port kubectl picks in the box: not listening: ${FORBIDDEN}`);
     expect(text).toContain(`${GRAFANA} on 127.0.0.1:20001 in the box: listening`);
     expect(text).toContain(`Its last output:\nhopper-bastion: forwarding 2 targets\n`);
   });
@@ -119,7 +120,7 @@ describe('a bastion whose forward does not listen (issue #2413)', () => {
     const { b } = bastions();
     await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => b.of('job-1')?.state === 'running');
-    expect(bastionText(b.of('job-1')!)).toContain(`${PROM} on 127.0.0.1:20000 in the box: not listening yet`);
+    expect(bastionText(b.of('job-1')!)).toContain(`${PROM} on a port kubectl picks in the box: not listening yet`);
   });
 
   it('refuses a relay or a read to a forward that does not listen, with what kubectl said, and starts no command for it', async () => {
