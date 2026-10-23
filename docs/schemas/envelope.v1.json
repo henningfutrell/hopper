@@ -400,6 +400,7 @@
         "landing_batch.stuck",
         "landing_batch.restarted",
         "hopper.event_loop_stalled",
+        "push_requirements.evaluated",
         "jev.mode_changed",
         "router.mode_changed"
       ]
