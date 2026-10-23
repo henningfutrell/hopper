@@ -3,10 +3,8 @@
 // person approves or declines the card once: the template as it is, each profile it lists, and the run, in one action.
 // A person never approves a template a job asked for on a card of its own: the template is the hopper's cache of the
 // access. Issue #2206: a job's asks for an AWS action on a role the card's template changes are on its card, and the one
-// approval grants them too. Issue #2639 part 3: when the card's template gives the vault and the job's item has no
-// vault grant, the card carries the grant too, so a person approves template, run and grant in one action. Pure.
+// approval grants them too. Pure.
 import type { ActionAskView } from './action-grants.ts';
-import type { VaultGrantAsk } from './vault-grants.ts';
 import type { OperationProfile } from './types.ts';
 import type { SandboxRequestView } from './sandbox-approvals.ts';
 import { approvalCovers, type TemplateView } from './vault.ts';
@@ -39,8 +37,6 @@ export interface RunCardView {
   jev?: SandboxRequestView['jev'];
   /** The job's asks for an AWS action on a role the template changes (issue #2206): the card's approval grants them. */
   actions?: ActionAskView[];
-  /** The card's approval also grants the job's item the vault (issue #2639 part 3): its template gives a vault secret or a minted credential, and the item has no grant. */
-  vaultGrant?: true;
 }
 
 /** The job as a card names it; undefined: the job ended, or the hopper does not know it. */
@@ -75,20 +71,17 @@ export function approvalsOf(t: TemplateView, jobId?: string): { whole: boolean; 
  */
 export function runCards(o: {
   templates: readonly TemplateView[]; requests: readonly SandboxRequestView[]; waits: readonly TemplateWait[]; job: CardJob; actionAsks?: readonly ActionAskView[];
-  /** Whether the job's item has a vault grant (issue #2639 part 3); absent, no card carries one. */
-  granted?: (jobId: string) => boolean;
 }): RunCardView[] {
   const byName = new Map(o.templates.map((t) => [t.name, t]));
   const cards = new Map<string, RunCardView>();
   const declined = new Set(o.requests.filter((r) => r.state === 'declined').map((r) => `${r.jobId} ${r.template}`));
-  const add = (c: Omit<RunCardView, 'jobTitle' | 'jobUrl' | 'actions' | 'vaultGrant'>): void => {
+  const add = (c: Omit<RunCardView, 'jobTitle' | 'jobUrl' | 'actions'>): void => {
     const key = `${c.jobId} ${c.template}`;
     const job = o.job(c.jobId);
     if (cards.has(key) || declined.has(key) || !job) return;
     const t = byName.get(c.template);
     const actions = (o.actionAsks ?? []).filter((a) => a.job === c.jobId && t !== undefined && changesRole(t, a.role));
-    const grant = t !== undefined && givesVault(t) && o.granted !== undefined && !o.granted(c.jobId);
-    cards.set(key, { ...c, ...(job.title ? { jobTitle: job.title } : {}), ...(job.url ? { jobUrl: job.url } : {}), ...(actions.length ? { actions } : {}), ...(grant ? { vaultGrant: true as const } : {}) });
+    cards.set(key, { ...c, ...(job.title ? { jobTitle: job.title } : {}), ...(job.url ? { jobUrl: job.url } : {}), ...(actions.length ? { actions } : {}) });
   };
   const about = (x: { purpose?: string; plan?: string }) => ({ ...(x.purpose ? { purpose: x.purpose } : {}), ...(x.plan ? { plan: x.plan } : {}) });
   const waiting = (name: string, jobId: string): boolean => { const t = byName.get(name); return t !== undefined && waitsForPerson(t, jobId); };
@@ -103,13 +96,6 @@ export function runCards(o: {
 
 /** Whether the template changes the aws-role `role` (`<account>/<role>`): a write, sync or apply profile of it. */
 const changesRole = (t: TemplateView, role: string): boolean => t.profiles.some((p) => p.asset.kind === 'aws-role' && p.asset.name === role && p.operation !== 'read');
-
-/** Whether a job on a box of the template asks the vault: it gives a vault secret or a minted credential. */
-const givesVault = (t: TemplateView): boolean => t.secrets.length > 0 || t.profiles.length > 0;
-
-/** The vault grant asks no run card holds (issue #2639 part 3): a card that grants the vault holds its job's ask of its template. */
-export const looseGrantAsks = (asks: readonly VaultGrantAsk[], runs: readonly RunCardView[]): VaultGrantAsk[] =>
-  asks.filter((a) => !runs.some((r) => r.vaultGrant && r.jobId === a.job && r.template === a.template));
 
 /** The asks for an AWS action no run card holds (issue #2206): each is an item of its own on Access requests. */
 export const looseAsks = (asks: readonly ActionAskView[], runs: readonly RunCardView[]): ActionAskView[] =>

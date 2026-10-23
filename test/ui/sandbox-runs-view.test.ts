@@ -6,7 +6,6 @@
 // Issue #2197: one card per run. A template a job asked for waits on that job's run card, never on a card of its own;
 // Approve posts one approve-run, Decline one decline-run. A template card is left for a person's own template.
 // Issue #2206: a job's asks for an AWS action are on its run card, and its Approve grants them too.
-// Issue #2639 part 3: a card that carries the job's vault grant says so; its Approve grants it too.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,7 +31,7 @@ const OWN = { ...HIGH, name: 'own-deploy', savedBy: 'Ada', askedBy: undefined, a
 // The run cards the daemon answers: the two waiting requests, and the job that waits on the template it asked for.
 const card = (r: typeof WAITING) => ({ jobId: r.jobId, jobTitle: r.jobTitle, jobUrl: r.jobUrl, template: r.template, purpose: r.purpose, plan: r.plan, askedAt: r.askedAt, waits: { template: false, run: true }, request: r.id, ...('jev' in r ? { jev: r.jev } : {}) });
 const ACTION_ASK = { job: HIGH.askedBy, role: '123456789012/hopper-action', action: 'eks:UpdateNodegroupConfig', resource: 'arn:aws:eks:us-west-1:123456789012:nodegroup/identity-eks/identity-eks-nodes/*', at: HIGH.savedAt, why: 'Scale the node group' };
-const HIGH_CARD = { jobId: HIGH.askedBy, jobTitle: 'Give X a role', jobUrl: 'https://github.com/acme/infra/issues/7', template: HIGH.name, purpose: HIGH.purpose, plan: HIGH.plan, askedAt: HIGH.savedAt, waits: { template: true, run: false }, actions: [ACTION_ASK], vaultGrant: true };
+const HIGH_CARD = { jobId: HIGH.askedBy, jobTitle: 'Give X a role', jobUrl: 'https://github.com/acme/infra/issues/7', template: HIGH.name, purpose: HIGH.purpose, plan: HIGH.plan, askedAt: HIGH.savedAt, waits: { template: true, run: false }, actions: [ACTION_ASK] };
 const RUNS = [HIGH_CARD, card(WAITING), card(WAITING_2)];
 const VIEW = { secrets: [MINTS], templates: [HIGH, OWN], sandboxRequests: [WAITING, WAITING_2, RUNNING], runs: RUNS, sandboxApprovals: { skipTemplateApproval: false, skipSandboxApproval: false }, rememberedWrites: [REMEMBERED] };
 
@@ -300,10 +299,9 @@ describe('cards that say what the sandbox is for (issue #1001)', () => {
     expect(t.querySelector('[data-slot="run-access"]')!.textContent).toContain(HIGH.image);
     // Issue #2206: the AWS action the job asks for, with its role and resource, on the card.
     const actions = t.querySelector('[data-slot="run-actions"]')!.textContent;
-    for (const part of [ACTION_ASK.action, ACTION_ASK.resource]) expect(actions).toContain(part);
+    expect(actions).toContain(ACTION_ASK.action);
+    expect(actions).toContain(ACTION_ASK.resource);
     expect(actions).toContain(`as aws-role ${ACTION_ASK.role}`);
-    // Issue #2639 part 3: the card's approval grants the job the vault; a card with no grant says nothing of it.
-    expect([t, runCard(WAITING.jobId, WAITING.template)].map((c) => c.querySelector('[data-slot="run-vault-grant"]')?.textContent)).toEqual(['granted to this job with the approval', undefined]);
   });
 
   it('a run card shows why, the job with its link, and the plan', async () => {

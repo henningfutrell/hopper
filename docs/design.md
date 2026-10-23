@@ -33244,27 +33244,6 @@ approval), `test/sandbox/requests.test.ts` (a carried run, to a second rerun too
 waits; a rerun below the trust waits), `test/integration/need-steps.test.ts` (real daemon: a run card approved for one job,
 the job cancelled and its item offered again, and the rerun's write step runs with no card).
 
-**The card carries the vault grant (issue #2639 part 3, 2026-10-23).** Seen on a hopper: a critical job needed a run
-card's approval for a template, and then, once its step asked for the template's secret, a vault grant on a card of its
-own, 6 minutes later. For one job and one template these are one decision.
-
-- **On the card** (`runCards`, `granted`): a run card carries the job's vault grant (`vaultGrant: true`) when its template
-  gives the vault — a vault secret or a profile the vault mints for — and the job's item has no grant yet. The card lists
-  it (Vault grant) and its confirm says it. A grant ask of the same job and template is on the card, not in `grantAsks`
-  (`looseGrantAsks`).
-- **One approval.** `approve-run` of such a card grants the job's item the vault (`grant`, `vault.granted`, by the
-  person), before the template and the run are approved, so the job's first ask of the vault finds it. Access decides
-  first, as on Grant (`vault_grant#can_grant`, 403; 503 when it cannot be asked): a refusal changes nothing. An API token's
-  card that waits for a person's confirm (issue #909) grants nothing until then.
-- **What it widens.** Nothing beyond Grant: the grant is kept for the item, as every vault grant is, and the template's
-  approved scope still bounds what the job gets ("Vault grants"). A person who wants the run with no grant declines the
-  card, or approves the run and revokes the grant on Vault.
-
-**Migration.** None: no stored format changes. `vaultGrant` is a new optional field of the vault's view.
-
-Tests: `test/domain/run-card-vault-grant.test.ts`, `test/integration/run-card-vault-grant.test.ts` (the real daemon: one
-`approve-run` approves the template and the run and grants the vault), `test/ui/sandbox-runs-view.test.ts`.
-
 ## A job waits on an infra plan (issue #2205, 2026-10-19)
 
 Before: a job that waited on a person's approval of an infra plan could only say so as an outside event. The hopper did
