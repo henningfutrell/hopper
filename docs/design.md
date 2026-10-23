@@ -24461,6 +24461,10 @@ left its test container, and the test sweep removed a dead run's containers with
   job's), nor at a client's isolation stop: the job may go on.
 - **The sweep removes orphans**: the survey names each job with a job container there, and the sweep reaps an ended one
   at once, whatever its age. A job the hopper does not know, or one not ended (parked too), is never touched.
+  `test/integration/sweep-orphans.test.ts` (issue #2498) checks both ends on this machine with the real reap and survey:
+  at a job's end, finished or failed, its cleanup leaves no process, container or worktree of the job; after a restart,
+  the sweep reclaims an ended job's tagged process, container and worktree; neither touches what is untagged or the
+  tag of a job the hopper does not know.
 - Each runtime call is cut off at 30 s by `timeout` where it is, and only ids a runtime gave are passed on, never one
   that starts with `-`. A machine with no runtime, or one whose runtime cannot be reached, removes and names none.
 
