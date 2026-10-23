@@ -51,6 +51,17 @@ const jobOfRow = (r: Record<string, unknown>): LedgerJob | undefined => {
 };
 const JOB_COLUMNS = "id, source_key, body::jsonb->'source'->>'kind' AS kind, body::jsonb->'sourceState'->'source'->>'pullRequest' AS pull_request";
 
+/**
+ * The job of a `job.finished` (event `seq`) whose report named no pull request yet (issue #2693): with the newest pull request
+ * it opened through the hopper before that end (`github_proxy.done` of op `pr.create`), so its own result names what it waits
+ * on, whatever GitHub's search or links say and however late its report comes.
+ */
+function withOpened(db: Db, job: LedgerJob | undefined, type: EventType, seq: number): LedgerJob | undefined {
+  if (job === undefined || type !== 'job.finished' || job.pullRequest !== undefined) return job;
+  const r = db.get("SELECT data::jsonb->>'url' AS url FROM events WHERE job_id = ? AND seq < ? AND type = 'github_proxy.done' AND data::jsonb->>'op' = 'pr.create' AND data::jsonb->>'url' IS NOT NULL ORDER BY seq DESC LIMIT 1", job.id, seq);
+  return r ? { ...job, pullRequest: String(r.url) } : job;
+}
+
 /** What a node of the issue graph says to the ledger: an issue's state and why it closed, or a pull request's state. */
 function readsOf(node: GraphNode, readAt: string): { key: string; read: Parameters<typeof applyRead>[1] } | { pullRequest: string; read: Parameters<typeof applyRead>[1] } | undefined {
   const state = node.attrs.state;
@@ -98,7 +109,7 @@ export function rebuildWorkItems(db: Db): number {
         continue;
       }
       const jobId = jobIdOfEvent(event);
-      const job = jobId !== undefined ? jobs.get(jobId) : undefined;
+      const job = withOpened(db, jobId !== undefined ? jobs.get(jobId) : undefined, event.type, Number(r.seq));
       const key = job?.key ?? keyOfEvent(event);
       if (key === undefined) continue;
       const next = applyEvent(items.get(key), event, key, job);
@@ -151,7 +162,7 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
         return;
       }
       const jobId = jobIdOfEvent(event);
-      const job = jobId !== undefined ? jobOfRow(db.get(`SELECT ${JOB_COLUMNS} FROM jobs WHERE id = ?`, jobId) ?? {}) : undefined;
+      const job = withOpened(db, jobId !== undefined ? jobOfRow(db.get(`SELECT ${JOB_COLUMNS} FROM jobs WHERE id = ?`, jobId) ?? {}) : undefined, event.type, event.seq);
       const key = job?.key ?? keyOfEvent(event);
       db.run('UPDATE work_items_applied SET seq = ?', event.seq);
       if (key === undefined) return;

@@ -127,7 +127,7 @@ export interface WorkItem {
   version: number;
 }
 
-/** What the ledger needs of the job an event names: its item, its kind, and the pull request it follows. */
+/** What the ledger needs of the job an event names: its item, its kind, and the pull request it follows — at its end, else the newest one it opened through the hopper (issue #2693). */
 export interface LedgerJob { id: string; key: string; kind?: string; pullRequest?: string }
 
 /** What a read of GitHub said of an item's issue (the issue graph's node), or of a pull request. */
