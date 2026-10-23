@@ -88,6 +88,15 @@ describe('when a wait check runs (newCheck, afterCheck)', () => {
     expect(second.overdue).toBe(false);
     expect(second.check.overdueAt).toBe(first.check.overdueAt);
   });
+
+  it('a check that cannot test its condition marks the wait broken, from the first such check, until a check tests it (issue #2684)', () => {
+    const c = newCheck(waiting({ on: { kind: 'item', number: 9 } }), at(0));
+    const first = afterCheck(c, 'the hopper cannot read the items now', at(FIRST_CHECK_MS), false, true);
+    expect(first.check.brokenAt).toBe(new Date(at(FIRST_CHECK_MS)).toISOString());
+    const second = afterCheck(first.check, 'the hopper cannot read the items now', at(3 * FIRST_CHECK_MS), false, true);
+    expect(second.check.brokenAt).toBe(first.check.brokenAt);
+    expect(afterCheck(second.check, 'not ended yet: o/r#9', at(7 * FIRST_CHECK_MS)).check.brokenAt).toBeUndefined();
+  });
 });
 
 describe('a wait on its own command (commandOutcome)', () => {

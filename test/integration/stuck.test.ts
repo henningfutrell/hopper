@@ -2,7 +2,7 @@
 // runs a cause's bulk action on each of its items, through the same path as its own button. Real daemon, real database;
 // the manual source at its seam.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { FailuresView, StuckActResult } from '../../src/domain/types.ts';
+import type { FailuresView, JobWait, StuckActResult } from '../../src/domain/types.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -53,6 +53,24 @@ describe('Stuck work (issue #1010)', () => {
       return v.handoffs.some((h) => h.status === 'open' && (h.id === h1.id || h.id === h2.id)) ? undefined : v;
     }, { what: 'both hand-offs closed' });
     expect(after.stuck.flatMap((c) => c.ids)).not.toContain(h1.id);
+  });
+
+  it('a job that only still waits is neither listed nor counted, also past its deadline with its agent ended; one whose wait broke is listed (issue #2684)', async () => {
+    const a = await boot();
+    const store = a.user().store;
+    const later = new Date(Date.now() + 3600_000).toISOString(), since = new Date(Date.now() - 2 * 86400_000).toISOString();
+    const seed = (check: Partial<NonNullable<JobWait['check']>>) => {
+      const job = store.jobs.create({ executor: 'x', payload: {} }, 50);
+      const wait: JobWait = { for: 'issue 9 to close', since, on: { kind: 'item', number: 9 }, check: { condition: { kind: 'none' }, nextCheckAt: later, everyMs: 3600_000, attempts: 30, deadline: since, overdueAt: since, ...check } };
+      return store.jobs.update(job.id, { status: 'waiting_on', wait, waitReleased: { at: since, machineId: 'local' } });
+    };
+    const parked = seed({ result: 'not ended yet: issue 9' });
+    const broken = seed({ result: 'the hopper cannot read the items now', brokenAt: since });
+    const view = await failuresOf(a);
+    expect(view.stuck.flatMap((c) => c.ids)).not.toContain(parked.id);
+    expect(view.stuck.find((c) => c.cause === 'own_wait')?.ids).toEqual([broken.id]);
+    const sections = (await a.api<{ sections: { kind: string; open: number }[] }>('GET', '/api/sections')).body.sections;
+    expect(sections.find((x) => x.kind === 'failures')).toMatchObject({ open: 0 });
   });
 
   it('a cause with no bulk action, or none at all, is refused', async () => {
