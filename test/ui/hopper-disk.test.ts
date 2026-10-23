@@ -57,6 +57,12 @@ describe('cleanupLeftoversText (issue #2504 part 3)', () => {
     expect(cleanupLeftoversText({ jobs: 1, entries: 1, failed: 0 })).toBe('1 thing of 1 ended job, not removed yet');
     expect(cleanupLeftoversText({ jobs: 2, entries: 3, failed: 2 })).toBe('3 things of 2 ended jobs, 2 removals failed: see Failures');
   });
+
+  it('says what the leftovers hold on disk, and how many jobs the measure did not name (part 10)', () => {
+    expect(cleanupLeftoversText({ jobs: 2, entries: 3, failed: 0, bytes: 4.2 * GB })).toBe('3 things of 2 ended jobs, not removed yet; 4.2 GB on disk');
+    expect(cleanupLeftoversText({ jobs: 3, entries: 3, failed: 0, bytes: 300e6, unmeasured: 1 })).toBe('3 things of 3 ended jobs, not removed yet; 300 MB on disk, 1 job not measured');
+    expect(cleanupLeftoversText({ jobs: 2, entries: 2, failed: 0, unmeasured: 2 })).toBe('2 things of 2 ended jobs, not removed yet; 2 jobs not measured');
+  });
 });
 
 describe('jobsDiskText (issue #2494)', () => {

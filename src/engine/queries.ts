@@ -52,7 +52,7 @@ export const ENDED_WINDOW_MS = 24 * 3_600_000;
 /**
  * `hopperDisk`: the hopper's own disk use there, as the sweep last measured it (issue #1120); absent, never measured.
  * `leftovers`: the leftovers there the sweep does not judge, for a person to keep or remove (issue #1116); absent, none listed.
- * `cleanupLeftovers`: the cleanup leftovers there (issue #2504 part 3), counted; absent, none.
+ * `cleanupLeftovers`: the cleanup leftovers there (issue #2504 part 3), counted, with the bytes the disk measure says they hold (part 10); absent, none.
  */
 export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; cleanupLeftovers?: MachineCleanupLeftovers };
 
@@ -112,7 +112,7 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
       const ended = cleanupLeftoversOf(c.store.resourceLedger.open(), (id) => c.store.jobs.get(id), c.clock.now().getTime());
       return machines.map((m) => {
         const hopperDisk = diskOf(m.id);
-        const leftovers = leftoversOf(m.id), cleanupLeftovers = machineLeftoversOf(ended, m.id);
+        const leftovers = leftoversOf(m.id), cleanupLeftovers = machineLeftoversOf(ended, m.id, hopperDisk?.jobs);
         const acceptance = acceptanceMap.get(m.id);
         // Issue #1467: the decider's own rule, so the card never says other than what it does.
         const held = credentialHeld(m.infraCredentials, acceptance, strict);

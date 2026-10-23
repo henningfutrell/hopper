@@ -3,6 +3,7 @@
 // job's cleanup or by the sweep as each reap says: reaped, kept (work not pushed), or failed with why. A job's **cleanup
 // status** is read from its entries and its cleanup record. Pure: no I/O, no clock — `at` is passed in.
 import type { BomPart, BomStatus } from './job-bom.ts';
+import type { JobDiskUse } from './hopper-disk.ts';
 import { jobScratchOf, scratchParts, worktreeJobOf, worktreeParts } from './job-layout.ts';
 import type { SweepSettings } from './machines.ts';
 import { sweepReapAtOf } from './retention.ts';
@@ -204,15 +205,34 @@ export function ledgerRootsOf(entries: readonly LedgerEntry[], machineId: string
   return [...new Set(roots.filter((r): r is string => r !== undefined))].sort();
 }
 
-/** The cleanup leftovers on one machine, as Machines shows them (issue #2504 part 3): jobs, entries, and how many of those failed. */
-export interface MachineCleanupLeftovers { jobs: number; entries: number; failed: number }
+/**
+ * The cleanup leftovers on one machine, as Machines shows them (issue #2504 part 3): jobs, entries, and how many of those failed.
+ * `bytes` (part 10): what they hold on disk, as the sweep last measured each job; absent when the measure names none of them.
+ * `unmeasured`: how many of the jobs with a leftover on disk the measure does not name (it keeps the biggest jobs only); absent, none.
+ */
+export interface MachineCleanupLeftovers { jobs: number; entries: number; failed: number; bytes?: number; unmeasured?: number }
 
-/** The leftovers' counts on machine `machineId`; undefined when none is there. */
-export function machineLeftoversOf(leftovers: readonly CleanupLeftover[], machineId: string): MachineCleanupLeftovers | undefined {
+/** What a leftover entry holds on disk, as a job's disk measure splits it: its scratch dir (the container runtime is in it) or its worktrees. */
+const DISK_PART: Partial<Record<LedgerKind, 'scratchBytes' | 'worktreeBytes'>> = { scratch_dir: 'scratchBytes', container_runtime: 'scratchBytes', job_worktree: 'worktreeBytes' };
+
+/**
+ * The leftovers' counts on machine `machineId`; undefined when none is there. With `disks`, the machine's last measure of each
+ * job (part 10), each leftover job's scratch dir and worktrees bytes once each, for the parts a leftover entry holds.
+ */
+export function machineLeftoversOf(leftovers: readonly CleanupLeftover[], machineId: string, disks?: readonly JobDiskUse[]): MachineCleanupLeftovers | undefined {
   const here = leftovers.map((l) => l.entries.filter((e) => e.machineId === machineId)).filter((es) => es.length > 0);
   if (here.length === 0) return undefined;
-  const entries = here.flat();
-  return { jobs: here.length, entries: entries.length, failed: entries.filter((e) => e.state === 'failed').length };
+  const entries = here.flat(), counts = { jobs: here.length, entries: entries.length, failed: entries.filter((e) => e.state === 'failed').length };
+  if (!disks) return counts;
+  let bytes: number | undefined, unmeasured = 0;
+  for (const es of here) {
+    const parts = new Set(es.map((e) => DISK_PART[e.kind]).filter((p) => p !== undefined));
+    if (parts.size === 0) continue;
+    const disk = disks.find((d) => d.jobId === es[0]!.jobId);
+    if (!disk) { unmeasured += 1; continue; }
+    bytes = (bytes ?? 0) + [...parts].reduce((sum, p) => sum + disk[p], 0);
+  }
+  return { ...counts, ...(bytes !== undefined ? { bytes } : {}), ...(unmeasured > 0 ? { unmeasured } : {}) };
 }
 
 /** The job's cleanup status, from its entries and its cleanup record (`cleanupDue`, `cleanupDeferred`). */
