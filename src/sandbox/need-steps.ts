@@ -40,6 +40,7 @@ import type { Job, NewEvent } from '../domain/types.ts';
 import { isSharedSecret, type TemplateView } from '../domain/vault.ts';
 import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
 import { maskSecrets, STEP_KEEP_MS } from '../windows-steps/service.ts';
+import { keptLog, withLostLog } from '../windows-steps/step-log.ts';
 import { needEnv, needSecrets, type NeedBox, type NeedBoxResult, type NeedCredential } from './need-box.ts';
 
 /** The most of a step's command an event keeps. */
@@ -302,7 +303,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     const stopped = new AbortController();
     const watch = setInterval(() => { if (!o.atWork(s.jobId)) stopped.abort(new Error('the job is not at work')); }, AT_WORK_MS);
     watch.unref();
-    const masked = maskSecrets([...needSecrets(credentials), ...Object.values(secrets)], (chunk) => { o.steps.appendLog(s.id, chunk); });
+    const kept = keptLog((chunk) => o.steps.appendLog(s.id, chunk), (why) => o.log(`hopper: the log of sandbox step ${s.id} is not kept from here: ${why}`));
+    const masked = maskSecrets([...needSecrets(credentials), ...Object.values(secrets)], kept.write);
     o.record({ type: 'step.started', jobId: s.jobId, data: {
       step: s.id, box: s.box, template: s.template.name, needs: s.needs.map(keyOf), command: s.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: s.timeoutSeconds,
       inputsBytes: s.inputsBytes, outputs: s.outputs, ...(s.secrets?.length ? { secrets: s.secrets } : {}),
@@ -334,7 +336,7 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
     // aborted, or its hopper stopping, keeps none: the compensation ends it, or the next try on another host does.
     if (!signal.aborted) {
       if (/timed out|did not end/.test(result.problem ?? '')) result = { ...result, problem: `timed out after ${s.timeoutSeconds} s` };
-      finish(s, result, seconds(), outputs);
+      finish(s, withLostLog(result, kept.lost()), seconds(), outputs);
     }
     // The need box is burned by now: its credentials end with it.
     await release(s.box);
