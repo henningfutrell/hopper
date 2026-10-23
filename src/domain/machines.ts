@@ -102,6 +102,8 @@ interface AttachedBase {
   diskLow?: DiskThresholds;
   /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. `memoryFloor`: its memory floor (issue #2291); absent fields take the defaults. */
   sweep?: SweepSettings; memoryFloor?: import('./memory-floor.ts').MemoryFloor;
+  /** Its limits for each job's scope (issue #2498); absent: none. Never on a container target. */
+  jobLimits?: import('./job-limits.ts').JobLimits;
   /** Lanes kept for jobs pinned to it (issue #372). */
   reservedLanes?: number;
   /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */

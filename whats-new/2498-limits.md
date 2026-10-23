@@ -1,0 +1,1 @@
+- A machine can now limit the memory and CPU each job there may use. A job that runs out of memory now runs again by itself, and the failure says that memory ran out.
