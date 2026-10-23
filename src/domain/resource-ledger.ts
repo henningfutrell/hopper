@@ -27,6 +27,8 @@ export interface LedgerEntry {
   reason?: string;
   /** When it left `live`. */
   endedAt?: string;
+  /** Until when the reap at the job's end kept it for a retention (issue #2504 part 5): no cleanup leftover before then. */
+  retainedUntil?: string;
 }
 
 /** A ledger entry before the store has it. */
@@ -37,6 +39,8 @@ export interface ResourceLedgerRepository {
   record(entry: NewLedgerEntry): void;
   /** Closes the job's entry of that kind and locator, unless it is `reaped`: a `kept` or `failed` one a later reap may close. */
   close(jobId: string, kind: LedgerKind, locator: string, state: Exclude<LedgerState, 'live'>, at: string, reason?: string): void;
+  /** Marks the job's entry, while `live` or `failed`, kept for a retention until `until`. */
+  retain(jobId: string, kind: LedgerKind, locator: string, until: string): void;
   /** The job's entries, oldest first. */
   forJob(jobId: string): LedgerEntry[];
   /** Every entry still `live` or `failed`, of every job, by job then oldest first: what the leftover check reads. */
@@ -45,9 +49,9 @@ export interface ResourceLedgerRepository {
 
 /**
  * A job's cleanup status: no entry; the job not ended, so what it has is in use; its cleanup owed (not reached, or an entry
- * still live); under way; done; done with work kept; or a removal failed.
+ * still live); under way; done; done with work kept; kept for a retention (every live entry); or a removal failed.
  */
-export const CLEANUP_STATUSES = ['none', 'in_use', 'pending', 'in_progress', 'done', 'kept_work', 'failed'] as const;
+export const CLEANUP_STATUSES = ['none', 'in_use', 'pending', 'in_progress', 'done', 'kept_work', 'retained', 'failed'] as const;
 export type CleanupStatus = typeof CLEANUP_STATUSES[number];
 
 /**
@@ -84,6 +88,14 @@ export function reapClosures(entries: readonly LedgerEntry[], said: Reaped, scra
   }).filter((c) => c.state !== c.entry.state || c.reason !== c.entry.reason);
 }
 
+/**
+ * The entries a reap that kept the scratch dir for a retention (issue #2504 part 5) leaves open: each `live` or `failed` one
+ * but the scope, which the reap stops all the same. The sweep judges them once the retention is over.
+ */
+export function retainedEntriesOf(entries: readonly LedgerEntry[]): LedgerEntry[] {
+  return entries.filter((e) => e.kind !== 'job_scope' && (e.state === 'live' || e.state === 'failed'));
+}
+
 /** How long after a job ended an entry may stay `live` or `failed` before it is a **cleanup leftover** (issue #2504). */
 export const CLEANUP_GRACE_MINUTES = 60;
 
@@ -91,9 +103,9 @@ export const CLEANUP_GRACE_MINUTES = 60;
 export interface CleanupLeftover { jobId: string; endedAt: string; entries: LedgerEntry[] }
 
 /**
- * The cleanup leftovers in `open` (every entry still `live` or `failed`), by job: a job that ended more than
- * `CLEANUP_GRACE_MINUTES` before `now`; its end is when it finished, else when it last changed. A job the store does not
- * know is not judged here.
+ * The cleanup leftovers in `open` (every entry still `live` or `failed`), by job: of a job that ended, each entry
+ * `CLEANUP_GRACE_MINUTES` past the job's end — when it finished, else when it last changed —, or past its retention
+ * (`retainedUntil`, part 5) when that ends later. A job the store does not know is not judged here.
  */
 export function cleanupLeftoversOf(open: readonly LedgerEntry[], jobOf: (id: string) => Pick<Job, 'status' | 'finishedAt' | 'updatedAt'> | undefined, now: number): CleanupLeftover[] {
   const byJob = new Map<string, LedgerEntry[]>();
@@ -103,7 +115,8 @@ export function cleanupLeftoversOf(open: readonly LedgerEntry[], jobOf: (id: str
     const job = jobOf(jobId);
     if (!job || !TERMINAL_STATUSES.includes(job.status)) continue;
     const endedAt = job.finishedAt ?? job.updatedAt;
-    if (now - Date.parse(endedAt) >= CLEANUP_GRACE_MINUTES * 60_000) out.push({ jobId, endedAt, entries });
+    const over = entries.filter((e) => now - Math.max(Date.parse(endedAt), e.retainedUntil ? Date.parse(e.retainedUntil) : 0) >= CLEANUP_GRACE_MINUTES * 60_000);
+    if (over.length > 0) out.push({ jobId, endedAt, entries: over });
   }
   return out;
 }
@@ -151,7 +164,8 @@ export function cleanupStatusOf(job: Pick<Job, 'status' | 'cleanupDue' | 'cleanu
   if (job.cleanupDeferred) return 'pending';
   if (job.cleanupDue) return 'in_progress';
   if (entries.some((e) => e.state === 'failed')) return 'failed';
-  if (entries.some((e) => e.state === 'live')) return 'pending';
+  const live = entries.filter((e) => e.state === 'live');
+  if (live.length > 0) return live.every((e) => e.retainedUntil) ? 'retained' : 'pending';
   return entries.some((e) => e.state === 'kept') ? 'kept_work' : 'done';
 }
 
@@ -163,6 +177,7 @@ const CLEANUP_PART: Record<Exclude<CleanupStatus, 'none'>, { status: BomStatus; 
   in_progress: { status: 'running', label: 'Cleanup: under way' },
   done: { status: 'done', label: 'Cleanup: done' },
   kept_work: { status: 'open', label: 'Cleanup: done, work not pushed kept' },
+  retained: { status: 'open', label: 'Cleanup: work kept for its retention' },
   failed: { status: 'failed', label: 'Cleanup: failed' },
 };
 
@@ -178,7 +193,7 @@ export function ledgerParts(job: Pick<Job, 'status' | 'cleanupDue' | 'cleanupDef
     { id: 'cleanup', group: 'machines', kind: 'cleanup', label: CLEANUP_PART[status].label, status: CLEANUP_PART[status].status, detail: `${entries.length - entries.filter((e) => e.state === 'live').length} of ${entries.length} closed${failed ? `, ${failed} failed` : ''}` },
     ...entries.map((e): BomPart => ({
       id: `resource:${e.kind}:${e.locator}`, group: 'machines', kind: e.kind, label: `${KIND_WORDS[e.kind]} on ${e.machineId}`, status: e.state === 'failed' ? 'failed' : 'recorded',
-      at: e.endedAt ?? e.createdAt, detail: `${e.locator}: ${STATE_WORDS[e.state]}${e.reason ? ` (${e.reason})` : ''}`,
+      at: e.endedAt ?? e.createdAt, detail: `${e.locator}: ${STATE_WORDS[e.state]}${e.state === 'live' && e.retainedUntil ? `, kept until ${e.retainedUntil}` : ''}${e.reason ? ` (${e.reason})` : ''}`,
     })),
   ];
 }

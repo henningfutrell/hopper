@@ -33401,3 +33401,31 @@ not name and for machines no longer known; leftover bytes on Machines.
 **Verification (part 4).** `test/domain/resource-ledger.test.ts` (the entry from a state; closed with work kept; failed
 while its storage stays; gone with its scratch dir); `test/herdr/executor-runtime.test.ts` (saved once set up, none with no
 podman); `test/engine/sweep-ledger.test.ts` (the sweep closes it with the scratch dir, not with a scope-only reap).
+
+### Part 5: entries kept for a retention (2026-10-22)
+
+With a retention set for the status a job ended in (issue #2494, `retainHours`), and for a timed-out job (`liveness`), the
+reap at the job's end keeps its scratch dir and job worktrees for the sweep. That reap said nothing kept, so the ledger
+closed those entries `reaped` while they stayed on the machine. And had it left them open, the leftover check would have
+told a leftover 60 minutes after the end, long before the retention ends.
+
+- **Until when** (`retainedUntilOf`, `src/domain/retention.ts`, pure). The job's end (`finishedAt`, else now) plus the hours
+  its machine keeps the status; a timed-out job's, plus the sweep's scratch age (`scratchMaxAgeHours`, absent 24). None: the
+  reap keeps nothing for a time.
+- **The cleanup at the end** (`src/engine/cleanup.ts`). Such a reap closes the scope only, as a reap that did not look at the
+  scratch dir. Each other entry still `live` or `failed` (`retainedEntriesOf`) gets `retainedUntil` (tenant migration 95,
+  column `retained_until`; `ResourceLedgerRepository.retain`, which does not change a closed entry). The sweep's reap once
+  the retention is over closes them as before; the column stays as the record.
+- **Leftovers.** An entry with `retainedUntil` is a cleanup leftover only `CLEANUP_GRACE_MINUTES` after the later of the
+  job's end and its `retainedUntil` (`cleanupLeftoversOf`); the job's other entries are judged from its end as before.
+- **Cleanup status** `retained` ("Cleanup: work kept for its retention") while every `live` entry has `retainedUntil` and
+  none failed; each such entry's part says "kept until <time>".
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; the reconciler for things the ledger does
+not name and for machines no longer known; leftover bytes on Machines.
+
+**Verification (part 5).** `test/domain/retention.test.ts` (`retainedUntilOf`); `test/domain/resource-ledger.test.ts`
+(`retainedEntriesOf`, the leftover after the retention, the status and the part); `test/engine/cleanup-retention.test.ts`
+(the cleanup keeps the scratch dir's entry open with its retention, and closes the scope); `test/integration/resource-ledger.test.ts`
+(real database: `retain` kept, and kept on a later close).
