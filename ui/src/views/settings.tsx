@@ -78,6 +78,8 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   clusters: { label: 'Clusters', icon: Boxes, view: Clusters },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
 };
+/** The sections by id and label, for the command palette (issue #2661). */
+export const SETTINGS_SECTIONS: readonly { id: Section; label: string }[] = SECTIONS.map((id) => ({ id, label: ITEMS[id].label }));
 
 /** The delivery forecasts in the owner's time zone, then their settings (issue #2554 part 7). */
 function Delivery() {

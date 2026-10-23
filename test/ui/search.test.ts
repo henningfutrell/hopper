@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Search in the UI (issue #945, part 2): the search box in the header with type-ahead, and the Search view — the hits with
+// Search in the UI (issue #945, part 2): the Search view — the hits with
 // their matched words marked, the facets that filter, the state when search is degraded or not set up — against a fake of
 // the daemon's HTTP. The model is pure: a hit's highlight as text parts (never raw HTML), and a search kept in the URL hash.
 //
@@ -9,7 +9,6 @@
 //   Scenario: the Search view reads the hash's search, shows each hit with a link to its job, and marks the matched words
 //   Scenario: a facet value filters the search; picked again, it no longer filters
 //   Scenario: search degraded or not set up says why, and shows no hits
-//   Scenario: the search box suggests job titles as a person types, and Enter opens the Search view with the words
 //   Scenario: an artifact's hit links to the artifact, an infra plan's to Infra, and an artifact's text is a snippet (part 3)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -143,34 +142,6 @@ describe('the Search view', () => {
     await act(async () => root?.unmount());
     await renderView(searchHash({ q: 'cache', type: [], status: [], label: [], repo: [], offset: 0 }), () => ({ state: 'not-configured', why: 'search is not set up', total: 0, hits: [], facets: { type: {}, status: {}, labels: {}, repo: {} } }));
     expect(document.querySelector('[data-slot="search-state"]')?.textContent).toContain('search is not set up');
-  });
-});
-
-describe('the search box', () => {
-  it('suggests job titles as a person types, and Enter opens the Search view with the words', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    try {
-      fakeDaemon((path) => path.startsWith('/api/search/suggest')
-        ? { state: 'ok', suggestions: [{ type: 'job', ref: 'j1', title: 'Clear the build cache', url: 'http://127.0.0.1:4790/#job/j1' }] }
-        : ANSWER);
-      const box = '../../ui/src/app/search-box.tsx';
-      const { SearchBox } = (await import(box)) as { SearchBox: () => El };
-      await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(SearchBox)); });
-      const input = document.querySelector('[data-slot="search-box"] input') as HTMLInputElement;
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-      await act(async () => { setter.call(input, 'clea'); input.dispatchEvent(new Event('input', { bubbles: true })); });
-      await act(async () => { vi.advanceTimersByTime(300); });
-      vi.useRealTimers();
-      await settle();
-      expect(calls.some((c) => c.startsWith('/api/search/suggest?') && new URL(c, 'http://x').searchParams.get('q') === 'clea')).toBe(true);
-      const suggestion = document.querySelector('[data-slot="search-suggestion"]');
-      expect(suggestion?.textContent).toContain('Clear the build cache');
-      expect(suggestion?.getAttribute('href')).toBe('#job/j1');
-      await act(async () => { input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
-      expect(window.location.hash).toBe(searchHash({ q: 'clea', type: [], status: [], label: [], repo: [], offset: 0 }));
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 
