@@ -89,7 +89,7 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       resourceLedger: {
         forJob: (id: string) => ledger.filter((e) => e.jobId === id),
         close: (id: string, kind: string, locator: string, state: LedgerEntry['state'], at: string, reason?: string) => {
-          const e = ledger.find((x) => x.jobId === id && x.kind === kind && x.locator === locator && (x.state === 'live' || x.state === 'kept'));
+          const e = ledger.find((x) => x.jobId === id && x.kind === kind && x.locator === locator && x.state !== 'reaped');
           if (e) Object.assign(e, { state, endedAt: at, ...(reason ? { reason } : {}) });
         },
       },

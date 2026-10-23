@@ -1,7 +1,7 @@
 // Issue #2504: a job's resource ledger — what the hopper made for a job on a machine, from its executor's saved state, closed
 // as each reap says — and the job's cleanup status read from it. Pure.
 import { describe, expect, it } from 'vitest';
-import { cleanupStatusOf, ledgerEntriesOf, reapClosures, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
+import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, ledgerEntriesOf, reapClosures, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
 const AT = '2026-10-22T10:00:00.000Z';
 const SCRATCH = '/w/.worktrees/@scratch/j1';
@@ -42,10 +42,17 @@ describe('reapClosures', () => {
     expect(closed.find((c) => c.entry.kind === 'job_worktree')?.state).toBe('reaped');
   });
 
-  it('closes kept work a later reap removed, and never judges a reaped or failed entry again', () => {
-    const closed = reapClosures([entry('scratch_dir', SCRATCH, { state: 'kept' }), entry('job_worktree', TREE, { state: 'reaped' }), entry('job_scope', 's', { state: 'failed' })], { kept: [] });
+  it('closes kept work a later reap removed, and never judges a reaped entry again', () => {
+    const closed = reapClosures([entry('scratch_dir', SCRATCH, { state: 'kept' }), entry('job_worktree', TREE, { state: 'reaped' })], { kept: [] });
     expect(closed.map((c) => [c.entry.kind, c.state])).toEqual([['scratch_dir', 'reaped']]);
     expect(reapClosures([entry('scratch_dir', SCRATCH, { state: 'kept' })], { kept: [SCRATCH] })).toEqual([]);
+  });
+
+  it('reaps a failed entry a later reap removed, and keeps it failed while the same dir stays', () => {
+    const failed = entry('scratch_dir', SCRATCH, { state: 'failed', reason: `${SCRATCH} is still there` });
+    expect(reapClosures([failed], { kept: [] }).map((c) => c.state)).toEqual(['reaped']);
+    expect(reapClosures([failed], { kept: [], left: [SCRATCH] })).toEqual([]);
+    expect(reapClosures([failed], { kept: [], left: [`${SCRATCH}/containers`] })).toMatchObject([{ state: 'failed', reason: `${SCRATCH}/containers is still there` }]);
   });
 });
 
@@ -66,5 +73,29 @@ describe('cleanupStatusOf', () => {
     expect(cleanupStatusOf(ended, [entry('scratch_dir', SCRATCH, { state: 'failed', reason: 'x' }), entry('job_scope', 's', { state: 'reaped' })])).toBe('failed');
     expect(cleanupStatusOf(ended, [entry('scratch_dir', SCRATCH, { state: 'kept' }), entry('job_scope', 's', { state: 'reaped' })])).toBe('kept_work');
     expect(cleanupStatusOf(ended, [entry('scratch_dir', SCRATCH, { state: 'reaped' })])).toBe('done');
+  });
+});
+
+describe('cleanupLeftoversOf (issue #2504)', () => {
+  const NOW = Date.parse(AT);
+  const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
+  const jobs: Record<string, { status: 'finished' | 'failed' | 'running'; finishedAt?: string; updatedAt: string }> = {
+    j1: { status: 'finished', finishedAt: ago(CLEANUP_GRACE_MINUTES + 1), updatedAt: ago(1) },
+    j2: { status: 'failed', updatedAt: ago(CLEANUP_GRACE_MINUTES) },
+    soon: { status: 'finished', finishedAt: ago(CLEANUP_GRACE_MINUTES - 1), updatedAt: ago(1) },
+    live: { status: 'running', updatedAt: ago(600) },
+  };
+  const of = (jobId: string, state: LedgerEntry['state'] = 'live') => entry('scratch_dir', `/w/.worktrees/@scratch/${jobId}`, { jobId, state });
+
+  it('names each ended job past the grace period with its entries still live or failed', () => {
+    const open = [of('j1'), entry('job_scope', 's', { jobId: 'j1', state: 'failed', reason: 'x' }), of('j2', 'failed'), of('soon'), of('live'), of('gone')];
+    expect(cleanupLeftoversOf(open, (id) => jobs[id], NOW)).toEqual([
+      { jobId: 'j1', endedAt: jobs.j1!.finishedAt, entries: [open[0], open[1]] },
+      { jobId: 'j2', endedAt: jobs.j2!.updatedAt, entries: [open[2]] },
+    ]);
+  });
+
+  it('never names a reaped or kept entry', () => {
+    expect(cleanupLeftoversOf([of('j1', 'reaped'), of('j1', 'kept')], (id) => jobs[id], NOW)).toEqual([]);
   });
 });
