@@ -33881,13 +33881,54 @@ close was no cleanup leftover.
   kind column is text. A build before this one reads the entry as any other.
 
 **Left for later parts** of issue #2504: the cleanup as a persisted work item per entry with backoff, on each machine's own
-transport (today the cleanup record, its deferral and the sweep's passes retry the job's cleanup as a whole).
+transport (today the cleanup record, its deferral and the sweep's passes retry the job's cleanup as a whole). Part 14 does it.
 
 **Verification (part 13).** `test/domain/resource-ledger-panes.test.ts` (the entry from a state; no reap closes it; the
 closures of `paneClosures`; no retention; the reconciler does not judge it; the parts list); `test/engine/cleanup-panes.test.ts`
 (reaped through the executor, failed through the machine, live while deferred and reaped when a person marks it cleaned up);
 `test/integration/resource-ledger.test.ts` (real database: the pane the executor saves is recorded, and the cleanup at the
 end reaps it in each end state).
+
+### Part 14: the maids — a cleanup item per entry, with backoff (2026-10-23)
+
+Before this part, the cleanup record, its deferral and the sweep's passes retried a job's cleanup as a whole: an entry the
+cleanup at the job's end left `failed` (a dir it could not remove, a machine it reached only through another route) waited
+for the sweep's reap a day later, and a deferral was tried again on every tick.
+
+- **A cleanup item** is a ledger entry still `live` or `failed` of an ended job whose own cleanup is over (no `cleanupDue`,
+  no `cleanupDeferred`: that cleanup judges the entries first), past its retention (`retainedUntil`) and its next attempt
+  (`maidWorkOf`, `src/domain/maids.ts`, pure). Never a herdr pane: only the job's executor closes one (part 13). A job the
+  store does not know is not judged.
+- **The maids** (`createMaids`, `src/engine/maids.ts`) run with each sweep check, on the sweep lease's holder, beside the
+  leftover check; one pass at a time. For each job and machine with an item due, one reap there through the machine's own
+  shell (this machine, ssh, a client target: the first executor there that gives one, as the sweep), given the job's scratch
+  dir as its entries name it (`maidScratchOf`: the scratch dir, the container runtime's dir, or the job worktree's work tree).
+  The reap is the one the job's cleanup and the sweep use: it stops the scope and the processes, removes the job's
+  containers and volumes and its own container runtime through podman (`podman system reset`, then `podman unshare rm` of what is left of its root-owned storage), then the
+  scratch dir and the job's worktrees, unless they hold work not pushed.
+- **As the reap says** (`reapClosures`): each entry it removed is `reaped`; one it kept for work not pushed is `kept`, with
+  `job.work_kept`, and never tried again (the kept-work guard). An entry it did not close — still there, or not looked at
+  because no entry names the scratch dir — is an **attempt**: `failed` with why, one attempt more, tried again after a
+  backoff (`repo.tried`). So is each item when the reap fails (`the reap on <machine> failed: <error>`), the machine is
+  offline, or no executor reaches it.
+- **Backoff** (`maidRetryMs`): 1 minute after the first attempt, doubled after each one, 1 hour at most. It goes on while
+  the entry is open: the leftover check tells it once the grace period passed (part 2), and part 12 closes it once its
+  machine is retired.
+- **Durable.** The attempts and the next attempt are on the entry (tenant migration 98: `attempts INTEGER NOT NULL DEFAULT
+  0`, `next_attempt_at TEXT`), so a hopper that stops between attempts goes on from them at its next start. **No double
+  free**: the reap removes only what is still there and a missing dir is no error, and a `reaped` entry is never judged
+  again (`close` leaves it).
+- **Not on a dry run** (issue #2494): the maids skip a machine whose sweep is on a dry run, as the sweep removes nothing
+  there. A machine no source lists is skipped too: the leftover check tells it, and part 12 closes it.
+- The entry's part in the parts list adds "the maids tried it <n> times, next at <time>" while it is open. A build before this
+  one runs on the migrated store: it names its columns when it writes, and reads no new column.
+
+**Verification (part 14).** `test/domain/maids.test.ts` (which entries are due, by job and machine; a job not ended, its own
+cleanup due or deferred, a closed entry, a herdr pane, a retention and a next attempt not due are left; the backoff; the
+scratch dir from each kind); `test/engine/maids.test.ts` (real database: a transport failure, then a new hopper on the same
+database after the backoff completes the cleanup, and a later pass reaps nothing; an entry still left is tried again with a
+longer wait; work not pushed is kept and flagged and never tried again; an offline machine is an attempt; a dry run and a
+job whose own cleanup is due are left).
 
 ## Push requirements (issue #2555, 2026-10-22)
 

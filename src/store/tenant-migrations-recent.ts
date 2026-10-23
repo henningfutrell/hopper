@@ -193,4 +193,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // before runs on it, and names its columns when it writes.
   `ALTER TABLE machine_samples ADD COLUMN hopper_disk DOUBLE PRECISION;
    ALTER TABLE machine_samples ADD COLUMN cache_disk DOUBLE PRECISION`,
+  // 98: The maids' attempts on each resource ledger entry, and when they try it again (issue #2504 part 14). A column with a
+  // default and one with none: the build before runs on it, and names its columns when it writes.
+  `ALTER TABLE job_resource_ledger ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE job_resource_ledger ADD COLUMN next_attempt_at TEXT`,
 ];

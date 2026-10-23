@@ -26,7 +26,7 @@ import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limit
 import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts'; import { createLeftoverCheck } from './cleanup-leftovers.ts';
-import { createPassLeases } from './pass-leases.ts';
+import { createPassLeases } from './pass-leases.ts'; import { createMaids } from './maids.ts';
 import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts'; import { pauseForBudget } from './token-budget.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
@@ -173,7 +173,7 @@ export function createEngine(o: EngineOptions): Engine {
     preemptRunning(c, runner, jobId, false);
   });
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
-  const sweep = createSweep(c); const leftoverCheck = createLeftoverCheck(c);
+  const sweep = createSweep(c); const leftoverCheck = createLeftoverCheck(c); const maids = createMaids(c);
   const checkpoints = createCheckpoints(c, undefined, (jobId) => pauseForBudget(c, jobId, (id) => runner.park(id) || c.leases.relay(id, { kind: 'park' })));
   c.checkpoints = checkpoints;
   // The signed-out move (issue #1211): a job held on a not-signed-in question goes on at a signed-in machine.
@@ -247,8 +247,9 @@ export function createEngine(o: EngineOptions): Engine {
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
       // On several hosts on one database (issues #1627, #1662), only the sweep lease's holder sweeps; a host that takes it
       // sweeps every machine. Only the cleanups lease's holder does the owed cleanups, at its start and when it takes the lease.
-      // With each sweep pass, the leftover check (issue #2504): an ended job whose cleanup left something is told once.
-      const sweepIfHeld = (): Promise<void> => { const h = passes.hold('sweep'); if (h.held) void leftoverCheck(); return h.held ? sweep.run(h.taken) : Promise.resolve(); };
+      // With each sweep pass, the leftover check (issue #2504): an ended job whose cleanup left something is told once; and
+      // the maids (part 14): each ledger entry its cleanup left, reaped again after its backoff.
+      const sweepIfHeld = (): Promise<void> => { const h = passes.hold('sweep'); if (h.held) { void leftoverCheck(); void maids(); } return h.held ? sweep.run(h.taken) : Promise.resolve(); };
       const resumeIfHeld = (): Promise<void> => { const h = passes.hold('cleanups'); return h.taken ? cleanups.resume() : Promise.resolve(); };
       void resumeIfHeld().then(sweepIfHeld);
       sweepTimer = setInterval(() => { void sweepIfHeld(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
