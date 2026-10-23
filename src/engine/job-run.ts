@@ -17,7 +17,7 @@ import { maskGitHubTokens, maskSecret } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { keepTokenUse } from './checkpoints.ts';
-import { recordLedger } from './resource-ledger.ts';
+import { recordAgentSession, recordLedger } from './resource-ledger.ts';
 import { agentSignIn, placeCredentials, Unreached } from './credentials.ts';
 import { moveNoWay, noWayMove } from './no-way-move.ts';
 import { moveLost, type Lost } from './lost-move.ts';
@@ -203,7 +203,8 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
     workTree: (path) => { if (!left(c, e)) store.jobs.update(j.id, { workTree: path }); },
     // Push it (issue #1472): the job worktree its kept work names, for a job that recorded no state.
     ...(j.continued && 'keptWork' in j.continued ? withKeptTree(keptTreeOf(keptWorkOf(store.events.recent(1, [...WORK_EVENTS], j.id))[0])) : {}),
-    agentSession: (id) => { if (!left(c, e)) store.jobs.update(j.id, { agentSession: id }); },
+    // The session goes in its resource ledger too (issue #2504 part 11): the reap stops it with the job's processes.
+    agentSession: (id) => { if (!left(c, e)) store.tx(() => { store.jobs.update(j.id, { agentSession: id }); recordAgentSession(store, j.id, m.id, id, nowIso(c)); }); },
     // A missed heartbeat of its machine (issue #1569): its checkpoint now, while the machine may still answer.
     missedHeartbeat: () => c.checkpoints?.soon(j.id),
     // A print-mode turn's token use (issue #2302, part 6), kept even when the job ended meanwhile.

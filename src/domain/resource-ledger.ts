@@ -1,5 +1,5 @@
 // A job's resource ledger (issue #2504, design.md "The resource ledger"): each thing the hopper made for a job on a machine —
-// its scratch dir, its job worktree, its job scope, its own container runtime, its processes and its labelled containers —, recorded once the job's executor says it made it, and closed by the
+// its scratch dir, its job worktree, its job scope, its own container runtime, its processes and its labelled containers, its agent's session —, recorded once the job's executor says it made it, and closed by the
 // job's cleanup or by the sweep as each reap says: reaped, kept (work not pushed), or failed with why. A job's **cleanup
 // status** is read from its entries and its cleanup record. Pure: no I/O, no clock — `at` is passed in.
 import type { BomPart, BomStatus } from './job-bom.ts';
@@ -11,7 +11,7 @@ import type { Reaped, Survey } from './machine-shell.ts';
 import { TERMINAL_STATUSES, type Job } from './types.ts';
 
 /** What a ledger entry is. */
-export const LEDGER_KINDS = ['scratch_dir', 'job_worktree', 'job_scope', 'container_runtime', 'job_processes', 'job_containers'] as const;
+export const LEDGER_KINDS = ['scratch_dir', 'job_worktree', 'job_scope', 'container_runtime', 'job_processes', 'job_containers', 'agent_session'] as const;
 export type LedgerKind = typeof LEDGER_KINDS[number];
 
 /** Where a ledger entry stands: still there, removed, kept for work not pushed, or a removal that failed. */
@@ -79,8 +79,14 @@ export function ledgerEntriesOf(jobId: string, machineId: string, state: unknown
 export const processesLocatorOf = (jobId: string): string => `HOPPER_JOB_ID=${jobId}`;
 /** The locator of a job's containers and volumes (part 9): the label they carry, `JOB_LABEL` in src/client/job-runtime.ts. */
 export const containersLocatorOf = (jobId: string): string => `hopper.job=${jobId}`;
-/** The kinds a reap always stops, whatever it does with the scratch dir: the scope and the processes. */
-const stopped = (kind: LedgerKind): boolean => kind === 'job_scope' || kind === 'job_processes';
+/**
+ * The entry of the agent session the job's agent runs in (issue #2504 part 11), as the executor reports it once the agent is
+ * up (`agentSession`, issue #501), on machine `machineId`: its locator is the session id.
+ */
+export const agentSessionEntryOf = (jobId: string, machineId: string, session: string, at: string): NewLedgerEntry =>
+  ({ jobId, machineId, kind: 'agent_session', locator: session, createdAt: at });
+/** The kinds a reap always stops, whatever it does with the scratch dir: the scope, the processes and the agent (part 11) among them. */
+const stopped = (kind: LedgerKind): boolean => kind === 'job_scope' || kind === 'job_processes' || kind === 'agent_session';
 
 const within = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}/`);
 
@@ -102,7 +108,7 @@ export function reapClosures(entries: readonly LedgerEntry[], said: Reaped, scra
 
 /**
  * The entries a reap that kept the scratch dir for a retention (issue #2504 part 5) leaves open: each `live` or `failed` one
- * but the scope and the processes, which the reap stops all the same. The sweep judges them once the retention is over.
+ * but the scope, the processes and the agent session, which the reap stops all the same. The sweep judges them once the retention is over.
  */
 export function retainedEntriesOf(entries: readonly LedgerEntry[]): LedgerEntry[] {
   return entries.filter((e) => !stopped(e.kind) && (e.state === 'live' || e.state === 'failed'));
@@ -141,7 +147,7 @@ export const GONE_REASON = 'not found on the machine';
  * `failed` or `kept`) of an ended job whose thing the machine's survey no longer found, closed `reaped` with `GONE_REASON`. A scratch dir only in a
  * work tree the survey looked in (`found.roots`), and a container runtime with its scratch dir; a job worktree only when the
  * survey also lists job worktrees; a scope that no longer runs; processes the survey no longer finds; containers when the survey
- * lists containers and names none of the job's (part 9). A job that has not ended, and a job the store does not know, is not judged.
+ * lists containers and names none of the job's (part 9); an agent session once neither a process nor a scope of the job runs (part 11). A job that has not ended, and a job the store does not know, is not judged.
  */
 export function goneClosures(entries: readonly LedgerEntry[], found: Survey, machineId: string, jobOf: (id: string) => Pick<Job, 'status'> | undefined): { entry: LedgerEntry; state: 'reaped'; reason: string }[] {
   const roots = new Set(found.roots ?? []);
@@ -150,6 +156,7 @@ export function goneClosures(entries: readonly LedgerEntry[], found: Survey, mac
   const gone = (e: LedgerEntry): boolean => {
     if (e.kind === 'job_scope') return !found.scopes.includes(e.jobId);
     if (e.kind === 'job_processes') return !found.processes.includes(e.jobId);
+    if (e.kind === 'agent_session') return !found.processes.includes(e.jobId) && !found.scopes.includes(e.jobId);
     if (e.kind === 'job_containers') return found.containers !== undefined && !found.containers.includes(e.jobId);
     if (e.kind === 'scratch_dir') return scratchGone(e.locator);
     if (e.kind === 'container_runtime') return scratchGone(e.locator.slice(0, e.locator.lastIndexOf('/')));
@@ -247,7 +254,7 @@ export function cleanupStatusOf(job: Pick<Job, 'status' | 'cleanupDue' | 'cleanu
   return entries.some((e) => e.state === 'kept') ? 'kept_work' : 'done';
 }
 
-const KIND_WORDS: Record<LedgerKind, string> = { scratch_dir: 'Scratch dir', job_worktree: 'Job worktree', job_scope: 'Job scope', container_runtime: 'Container runtime', job_processes: 'Job processes', job_containers: 'Job containers' };
+const KIND_WORDS: Record<LedgerKind, string> = { scratch_dir: 'Scratch dir', job_worktree: 'Job worktree', job_scope: 'Job scope', container_runtime: 'Container runtime', job_processes: 'Job processes', job_containers: 'Job containers', agent_session: 'Agent session' };
 const STATE_WORDS: Record<LedgerState, string> = { live: 'still there', reaped: 'removed', kept: 'kept: it holds work not pushed', failed: 'not removed' };
 const CLEANUP_PART: Record<Exclude<CleanupStatus, 'none'>, { status: BomStatus; label: string }> = {
   in_use: { status: 'running', label: 'Cleanup: the job still uses what it has' },
