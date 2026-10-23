@@ -71,11 +71,11 @@ afterEach(async () => {
 });
 
 describe('the top bar on a phone (issue #666)', () => {
-  it('shows only the logo, the version badge with its channel, the connection dot and the user menu button', async () => {
+  it('shows only the logo, the version badge with its channel, the command palette\'s button, the connection dot and the user menu button', async () => {
     await render();
     const header = document.querySelector('header')!;
     const controls = [...header.querySelectorAll<HTMLElement>('button, a')].filter((c) => !hiddenOnPhone(c));
-    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Version and updates: beta channel', 'User menu: Bea Lind, admin']);
+    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Version and updates: beta channel', 'Search or run a command', 'User menu: Bea Lind, admin']);
     expect(header.querySelector('img')).not.toBeNull();
     expect(hiddenOnPhone(header.querySelector('[data-slot="badge-channel"]'))).toBe(false);
     expect(hiddenOnPhone(header.querySelector('[data-slot="connection"]'))).toBe(false);

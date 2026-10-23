@@ -35,9 +35,9 @@ describe('the navigation drawer at a phone width', () => {
     expect(list).not.toBeNull();
     expect(classes(list!)).toEqual(expect.arrayContaining(['min-h-0', 'flex-1', 'overflow-y-auto', 'overscroll-contain']));
     const labels = [...list!.querySelectorAll('a')].map((a) => a.textContent);
-    // Every view, in its nav group's order (issue #906): the groups set the order, not VIEWS. Search too: a phone has no
-    // search box in the header (issue #2374).
-    expect([...labels].sort()).toEqual([...VIEWS.map(viewLabel), 'Search'].sort());
+    // Every view, in its nav group's order (issue #906): the groups set the order, not VIEWS. No Search: the command
+    // palette's button is in the header at every width (issue #2661).
+    expect([...labels].sort()).toEqual([...VIEWS.map(viewLabel)].sort());
   });
 
   it('keeps the drawer to the screen height and the list clear of the bottom safe area', async () => {
